@@ -67,6 +67,14 @@ export interface TautulliPublicationContext {
 	cleanupRunClaimToken?: string;
 }
 
+export interface OwnedTautulliRefreshContext {
+	prisma: PrismaClient;
+	encryptor: Pick<Encryptor, "decrypt">;
+	instance: ServiceInstance;
+	log: FastifyBaseLogger;
+	cleanupRunClaimToken?: string;
+}
+
 export type TautulliRefreshTerminalKind =
 	| "published-authoritative"
 	| "published-positive"
@@ -157,13 +165,75 @@ export function summarizeTautulliRefreshResultForLog(result: TautulliCacheRefres
 export async function refreshTautulliCache(
 	context: TautulliPublicationContext,
 ): Promise<TautulliCacheRefreshResult> {
-	const { prisma, instance, log } = context;
 	let attempt: ProviderCacheRefreshAttempt | null = null;
 	try {
-		attempt = await beginTautulliCacheRefreshAttempt(prisma, instance, {
+		attempt = await beginTautulliCacheRefreshAttempt(context.prisma, context.instance, {
 			cleanupRunClaimToken: context.cleanupRunClaimToken,
 		});
 		if (!attempt) return unpublished("publication_superseded");
+		return await refreshTautulliCacheWithAttempt(context, attempt);
+	} catch (error) {
+		return await rejectTautulliCacheRefresh(context, attempt, error);
+	}
+}
+
+/** Acquire attempt ownership before decrypting credentials, then execute with that exact token. */
+export async function refreshOwnedTautulliCache(
+	context: OwnedTautulliRefreshContext,
+): Promise<TautulliCacheRefreshResult> {
+	const { prisma, instance, log } = context;
+	const authority = createProviderPublicationAuthority(instance);
+	let attempt: ProviderCacheRefreshAttempt | null = null;
+	try {
+		attempt = await beginTautulliCacheRefreshAttempt(prisma, authority, {
+			cleanupRunClaimToken: context.cleanupRunClaimToken,
+		});
+		if (!attempt) return unpublished("publication_superseded");
+	} catch (error) {
+		log.error(
+			{ instanceId: instance.id, reasonCode: reasonFor(error) },
+			"Tautulli cache attempt could not be started",
+		);
+		return unpublished(reasonFor(error));
+	}
+
+	let publicationInstance: OwnedProviderPublicationSnapshot;
+	try {
+		publicationInstance = createOwnedTautulliPublicationSnapshot(context.encryptor, instance);
+	} catch (error) {
+		const finished = await finishTautulliCacheRefreshAttemptFailure(
+			prisma,
+			"credential_unavailable",
+			authority,
+			attempt,
+			boundedAttemptLogger(log, instance.id),
+			{ cleanupRunClaimToken: context.cleanupRunClaimToken },
+		);
+		if (finished === "superseded") return unpublished("publication_superseded");
+		log.error(
+			{ instanceId: instance.id, reasonCode: "credential_unavailable" },
+			"Tautulli cache credential preparation failed",
+		);
+		return unpublished("credential_unavailable");
+	}
+
+	return await refreshTautulliCacheWithAttempt(
+		{
+			prisma,
+			instance: publicationInstance,
+			log,
+			cleanupRunClaimToken: context.cleanupRunClaimToken,
+		},
+		attempt,
+	);
+}
+
+async function refreshTautulliCacheWithAttempt(
+	context: TautulliPublicationContext,
+	attempt: ProviderCacheRefreshAttempt,
+): Promise<TautulliCacheRefreshResult> {
+	const { prisma, instance, log } = context;
+	try {
 		const generationId = randomUUID();
 		return await withGuardedProviderPublication(
 			prisma,
@@ -176,25 +246,49 @@ export async function refreshTautulliCache(
 					identityGeneration: instance.identityGeneration,
 				}),
 			async (tx, collected) =>
-				await publishSnapshot(tx, instance, attempt!, generationId, collected),
+				await publishSnapshot(tx, instance, attempt, generationId, collected),
 			{ cleanupRunClaimToken: context.cleanupRunClaimToken },
 		);
 	} catch (error) {
-		const reasonCode = reasonFor(error);
-		if (attempt && reasonCode !== "publication_superseded") {
-			const finished = await finishTautulliCacheRefreshAttemptFailure(
-				prisma,
-				reasonCode,
-				instance,
-				attempt,
-				log,
-				{ cleanupRunClaimToken: context.cleanupRunClaimToken },
-			);
-			if (finished === "superseded") return unpublished("publication_superseded");
-		}
-		log.error({ instanceId: instance.id, reasonCode }, "Tautulli cache publication rejected");
-		return unpublished(reasonCode);
+		return await rejectTautulliCacheRefresh(context, attempt, error);
 	}
+}
+
+async function rejectTautulliCacheRefresh(
+	context: TautulliPublicationContext,
+	attempt: ProviderCacheRefreshAttempt | null,
+	error: unknown,
+): Promise<TautulliCacheRefreshResult> {
+	const reasonCode = reasonFor(error);
+	if (attempt && reasonCode !== "publication_superseded") {
+		const finished = await finishTautulliCacheRefreshAttemptFailure(
+			context.prisma,
+			reasonCode,
+			context.instance,
+			attempt,
+			context.log,
+			{ cleanupRunClaimToken: context.cleanupRunClaimToken },
+		);
+		if (finished === "superseded") return unpublished("publication_superseded");
+	}
+	context.log.error(
+		{ instanceId: context.instance.id, reasonCode },
+		"Tautulli cache publication rejected",
+	);
+	return unpublished(reasonCode);
+}
+
+function boundedAttemptLogger(
+	log: FastifyBaseLogger,
+	instanceId: string,
+): Pick<FastifyBaseLogger, "warn"> {
+	return {
+		warn: () =>
+			log.warn(
+				{ instanceId, reasonCode: "status_record_failed" },
+				"Tautulli cache attempt status could not be finalized",
+			),
+	} as Pick<FastifyBaseLogger, "warn">;
 }
 
 async function publishSnapshot(

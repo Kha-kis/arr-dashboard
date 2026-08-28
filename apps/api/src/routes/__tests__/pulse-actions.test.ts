@@ -41,7 +41,7 @@ vi.mock("../../lib/queue-cleaner/scheduler.js", () => ({
 }));
 
 const refreshOwnedPlexCache = vi.fn();
-const refreshTautulliCache = vi.fn();
+const refreshOwnedTautulliCache = vi.fn();
 const refreshJellyfinCache = vi.fn();
 const requireTautulliClient = vi.fn();
 const requireJellyfinClient = vi.fn();
@@ -49,8 +49,8 @@ vi.mock("../../lib/plex/plex-refresh-orchestration.js", () => ({
 	refreshOwnedPlexCache: (...args: unknown[]) => refreshOwnedPlexCache(...args),
 }));
 vi.mock("../../lib/tautulli/tautulli-cache-refresher.js", () => ({
-	createOwnedTautulliPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
-	refreshTautulliCache: (...args: unknown[]) => refreshTautulliCache(...args),
+	refreshOwnedTautulliCache: (...args: unknown[]) => refreshOwnedTautulliCache(...args),
+	summarizeTautulliRefreshResultForLog: vi.fn(),
 }));
 vi.mock("../../lib/jellyfin/jellyfin-cache-refresher.js", () => ({
 	createOwnedJellyfinPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
@@ -133,7 +133,7 @@ beforeEach(async () => {
 	queueCleanerScheduler.isRunning.mockReset();
 	queueCleanerScheduler.start.mockReset();
 	refreshOwnedPlexCache.mockReset();
-	refreshTautulliCache.mockReset();
+	refreshOwnedTautulliCache.mockReset();
 	refreshJellyfinCache.mockReset();
 	requireTautulliClient.mockReset();
 	requireJellyfinClient.mockReset();

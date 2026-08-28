@@ -42,7 +42,8 @@ vi.mock("../../lib/plex/plex-cache-refresher.js", () => ({
 	refreshPlexCache: vi.fn(),
 }));
 vi.mock("../../lib/tautulli/tautulli-cache-refresher.js", () => ({
-	refreshTautulliCache: vi.fn(),
+	refreshOwnedTautulliCache: vi.fn(),
+	summarizeTautulliRefreshResultForLog: vi.fn(),
 }));
 vi.mock("../../lib/plex/plex-helpers.js", () => ({
 	requirePlexClient: vi.fn(),

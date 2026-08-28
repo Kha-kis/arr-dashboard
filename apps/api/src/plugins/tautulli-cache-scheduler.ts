@@ -13,14 +13,8 @@ import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import type { ServiceInstance } from "../lib/prisma.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
-import { recordWatchProviderCacheRefreshFailure } from "../lib/services/provider-cache-status.js";
 import {
-	createProviderPublicationAuthority,
-	type ProviderPublicationAuthority,
-} from "../lib/services/provider-identity-guard.js";
-import {
-	createOwnedTautulliPublicationSnapshot,
-	refreshTautulliCache,
+	refreshOwnedTautulliCache,
 	summarizeTautulliRefreshResultForLog,
 } from "../lib/tautulli/tautulli-cache-refresher.js";
 
@@ -31,13 +25,11 @@ export async function refreshScheduledTautulliCacheInstance(
 	app: Pick<FastifyInstance, "encryptor" | "prisma" | "log">,
 	instance: ServiceInstance,
 ): Promise<void> {
-	const authority = createProviderPublicationAuthority(instance);
-	let publicationInstance: ReturnType<typeof createOwnedTautulliPublicationSnapshot> | undefined;
 	try {
-		publicationInstance = createOwnedTautulliPublicationSnapshot(app.encryptor, instance);
-		const result = await refreshTautulliCache({
+		const result = await refreshOwnedTautulliCache({
 			prisma: app.prisma,
-			instance: publicationInstance,
+			encryptor: app.encryptor,
+			instance,
 			log: app.log,
 		});
 		app.log.info(
@@ -46,47 +38,8 @@ export async function refreshScheduledTautulliCacheInstance(
 		);
 	} catch {
 		app.log.error(
-			{
-				instanceId: instance.id,
-				reasonCode: publicationInstance
-					? "unexpected_refresh_rejection"
-					: "credentials_unavailable",
-			},
+			{ instanceId: instance.id, reasonCode: "unexpected_refresh_rejection" },
 			"Tautulli cache refresh failed for instance",
-		);
-		if (!publicationInstance) {
-			await recordScheduledTautulliFailure(
-				app,
-				authority,
-				"Provider credentials could not be decrypted.",
-			);
-		}
-	}
-}
-
-async function recordScheduledTautulliFailure(
-	app: Pick<FastifyInstance, "prisma" | "log">,
-	publicationInstance: ProviderPublicationAuthority,
-	message: string,
-): Promise<void> {
-	try {
-		await recordWatchProviderCacheRefreshFailure(
-			app.prisma,
-			"tautulli",
-			message,
-			publicationInstance,
-			{
-				warn: () =>
-					app.log.warn(
-						{ instanceId: publicationInstance.id, reasonCode: "status_record_failed" },
-						"Tautulli cache refresh failed to record status",
-					),
-			} as Pick<typeof app.log, "warn">,
-		);
-	} catch {
-		app.log.warn(
-			{ instanceId: publicationInstance.id, reasonCode: "status_record_failed" },
-			"Tautulli cache refresh failed to record status",
 		);
 	}
 }

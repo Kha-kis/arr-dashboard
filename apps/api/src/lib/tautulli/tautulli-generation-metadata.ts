@@ -11,6 +11,7 @@ export const TAUTULLI_REASON_CODES = [
 	"metadata_identity_mismatch",
 	"metadata_tmdb_unmapped",
 	"observation_count_unavailable",
+	"credential_unavailable",
 	"history_changed",
 	"history_partial",
 	"publication_superseded",
@@ -254,6 +255,8 @@ export function evaluateTautulliPositivePublication(
 ):
 	| { available: true; metadata: TautulliGenerationMetadata }
 	| { available: false; reasonCode: string } {
+	if (status.lastAttemptResult === "error")
+		return { available: false, reasonCode: "latest_attempt_failed" };
 	const decoded = decodeTautulliGenerationMetadata(status.generationMetadata);
 	if (!decoded.ok) return { available: false, reasonCode: decoded.reasonCode };
 	const metadata = decoded.metadata;
@@ -264,7 +267,7 @@ export function evaluateTautulliPositivePublication(
 		return { available: false, reasonCode: "publication_not_positive" };
 	const reason = sanitizeTautulliReason(status.lastAttemptErrorMessage);
 	if (
-		status.lastResult !== "partial" ||
+		status.lastResult !== "success" ||
 		status.lastAttemptResult !== "partial" ||
 		reason === "legacy_error_redacted" ||
 		!metadata.partialReasons.some((entry) => entry.code === reason) ||

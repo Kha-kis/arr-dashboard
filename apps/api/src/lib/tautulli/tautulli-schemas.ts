@@ -8,6 +8,16 @@
 
 import { z } from "zod";
 
+/** Parse only canonical, authority-safe Tautulli play counts; everything else is UNKNOWN. */
+export function parseTautulliPlayCount(value: unknown): number | null {
+	if (typeof value === "number") {
+		return Number.isSafeInteger(value) && value >= 0 ? value : null;
+	}
+	if (typeof value !== "string" || !/^(0|[1-9][0-9]*)$/.test(value)) return null;
+	const parsed = Number(value);
+	return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
 /** Outer Tautulli response wrapper — validated first, then inner data with a separate schema */
 export const tautulliResponseWrapperSchema = z.looseObject({
 	response: z.looseObject({
@@ -77,10 +87,7 @@ export const tautulliLibraryMediaInfoSchema = z.looseObject({
 			section_id: z.coerce.string(),
 			rating_key: z.coerce.string(),
 			media_type: z.string(),
-			play_count: z.preprocess(
-				(value) => (value === undefined || value === null || value === "" ? null : value),
-				z.coerce.number().int().nonnegative().nullable(),
-			),
+			play_count: z.preprocess(parseTautulliPlayCount, z.number().int().nonnegative().nullable()),
 			last_played: z.preprocess(
 				(value) => (value === undefined || value === null || value === "" ? null : value),
 				z.coerce.number().int().nonnegative().nullable(),

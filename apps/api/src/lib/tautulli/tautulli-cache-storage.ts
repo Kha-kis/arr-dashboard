@@ -54,8 +54,8 @@ export async function publishAuthoritativeTautulliGeneration<AggregateRow, Exact
 		},
 		data: {
 			lastRefreshedAt: input.completedAt,
-			lastResult: partial ? "partial" : "success",
-			lastErrorMessage: partial ? input.reasonCode : null,
+			lastResult: "success",
+			lastErrorMessage: null,
 			itemCount: input.aggregateRows.length,
 			generationId: input.generationId,
 			generationMetadata: input.generationMetadata,

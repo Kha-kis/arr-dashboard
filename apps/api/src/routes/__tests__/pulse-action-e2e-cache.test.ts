@@ -31,8 +31,8 @@ vi.mock("../../lib/plex/plex-refresh-orchestration.js", () => ({
 // Tautulli helpers are not exercised by this file but need stubs because
 // the dispatcher module imports them at top level.
 vi.mock("../../lib/tautulli/tautulli-cache-refresher.js", () => ({
-	createOwnedTautulliPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
-	refreshTautulliCache: vi.fn(),
+	refreshOwnedTautulliCache: vi.fn(),
+	summarizeTautulliRefreshResultForLog: vi.fn(),
 }));
 vi.mock("../../lib/tautulli/tautulli-helpers.js", () => ({
 	requireTautulliClient: vi.fn(),

@@ -3,6 +3,7 @@ import {
 	decodeTautulliGenerationMetadata,
 	encodeTautulliGenerationMetadata,
 	evaluateTautulliExactPublication,
+	evaluateTautulliPositivePublication,
 } from "../tautulli-generation-metadata.js";
 
 const root = { version: 1 as const, count: 2, digest: "a".repeat(64) };
@@ -98,7 +99,7 @@ describe("Tautulli generation metadata", () => {
 			lastRefreshedAt: new Date("2026-08-27T12:00:00Z"),
 			lastAttemptAt: new Date("2026-08-27T12:00:00Z"),
 			lastAttemptResult: "partial",
-			lastAttemptErrorMessage: null,
+			lastAttemptErrorMessage: "history_partial",
 			generationId: "generation-1",
 			generationMetadata: JSON.stringify(positive),
 			itemCount: 1,
@@ -109,8 +110,20 @@ describe("Tautulli generation metadata", () => {
 			evaluateTautulliExactPublication(base, { connectionGeneration: 4, identityGeneration: 2 }),
 		).toEqual({ available: false, reasonCode: "publication_not_authoritative" });
 		expect(
+			evaluateTautulliPositivePublication(base, {
+				connectionGeneration: 4,
+				identityGeneration: 2,
+			}),
+		).toMatchObject({ available: true });
+		expect(
 			evaluateTautulliExactPublication(
 				{ ...base, lastAttemptResult: "error" },
+				{ connectionGeneration: 4, identityGeneration: 2 },
+			),
+		).toEqual({ available: false, reasonCode: "latest_attempt_failed" });
+		expect(
+			evaluateTautulliPositivePublication(
+				{ ...base, lastAttemptResult: "error", lastAttemptErrorMessage: "credential_unavailable" },
 				{ connectionGeneration: 4, identityGeneration: 2 },
 			),
 		).toEqual({ available: false, reasonCode: "latest_attempt_failed" });

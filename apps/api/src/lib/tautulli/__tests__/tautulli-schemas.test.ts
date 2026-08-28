@@ -99,6 +99,22 @@ describe("tautulliMetadataSchema", () => {
 });
 
 describe("tautulliLibraryMediaInfoSchema", () => {
+	function parsePlayCount(playCount: unknown): number | null {
+		const item: Record<string, unknown> = {
+			section_id: "1",
+			rating_key: "100",
+			media_type: "movie",
+			last_played: null,
+		};
+		if (playCount !== undefined) item.play_count = playCount;
+		return tautulliLibraryMediaInfoSchema.parse({
+			data: [item],
+			recordsFiltered: 1,
+			recordsTotal: 1,
+			last_refreshed: 1,
+		}).data[0]!.play_count;
+	}
+
 	it("normalizes the exact catalog fields without retaining titles or payload details", () => {
 		const parsed = tautulliLibraryMediaInfoSchema.parse({
 			data: [
@@ -139,41 +155,38 @@ describe("tautulliLibraryMediaInfoSchema", () => {
 		["missing", undefined, null],
 		["empty", "", null],
 		["explicit zero", 0, 0],
+		["canonical string zero", "0", 0],
 		["positive integer", 3, 3],
+		["canonical positive string", "3", 3],
 	])("preserves %s play-count semantics", (_label, playCount, expected) => {
-		const item: Record<string, unknown> = {
-			section_id: "1",
-			rating_key: "100",
-			media_type: "movie",
-			last_played: null,
-		};
-		if (playCount !== undefined) item.play_count = playCount;
-		const parsed = tautulliLibraryMediaInfoSchema.parse({
-			data: [item],
-			recordsFiltered: 1,
-			recordsTotal: 1,
-			last_refreshed: 1,
-		});
-		expect(parsed.data[0]?.play_count).toBe(expected);
+		expect(parsePlayCount(playCount)).toBe(expected);
 	});
 
-	it.each([-1, "not-a-count", 1.5])("rejects invalid play count %s", (playCount) => {
-		expect(() =>
-			tautulliLibraryMediaInfoSchema.parse({
-				data: [
-					{
-						section_id: "1",
-						rating_key: "100",
-						media_type: "movie",
-						play_count: playCount,
-						last_played: null,
-					},
-				],
-				recordsFiltered: 1,
-				recordsTotal: 1,
-				last_refreshed: 1,
-			}),
-		).toThrow();
+	it.each([
+		["false", false],
+		["true", true],
+		["space", " "],
+		["tab", "\t"],
+		["newline", "\n"],
+		["plus sign", "+1"],
+		["negative zero", "-0"],
+		["negative string", "-1"],
+		["decimal zero", "1.0"],
+		["fractional string", "1.5"],
+		["exponent", "1e2"],
+		["double zero", "00"],
+		["leading zero", "01"],
+		["NaN string", "NaN"],
+		["Infinity string", "Infinity"],
+		["object", {}],
+		["array", []],
+		["negative number", -1],
+		["fractional number", 1.5],
+		["NaN number", Number.NaN],
+		["Infinity number", Number.POSITIVE_INFINITY],
+		["unsafe integer", Number.MAX_SAFE_INTEGER + 1],
+	])("normalizes malformed %s play count to unknown", (_label, playCount) => {
+		expect(parsePlayCount(playCount)).toBeNull();
 	});
 });
 

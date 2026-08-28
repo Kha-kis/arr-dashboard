@@ -152,7 +152,7 @@ describe("persisted Tautulli generation reader", () => {
 		const completeness = roots(exactRows, aggregateRows);
 		const refreshedAt = new Date("2026-08-27T12:00:00.000Z");
 		const status = {
-			lastResult: "partial",
+			lastResult: "success",
 			lastRefreshedAt: refreshedAt,
 			lastAttemptAt: refreshedAt,
 			lastAttemptResult: "partial",

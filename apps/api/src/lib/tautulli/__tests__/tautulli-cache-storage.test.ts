@@ -121,7 +121,8 @@ describe("atomic Tautulli generation publication", () => {
 		expect(tx.cacheRefreshStatus.updateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
 				data: expect.objectContaining({
-					lastResult: "partial",
+					lastResult: "success",
+					lastErrorMessage: null,
 					lastAttemptResult: "partial",
 					lastAttemptErrorMessage: "metadata_tmdb_unmapped",
 				}),

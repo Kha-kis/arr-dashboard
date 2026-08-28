@@ -52,17 +52,12 @@ const plexInstance = {
 	connectionGeneration: 7,
 	identityGeneration: 3,
 };
-const refreshTautulliCache = vi.fn();
-const createOwnedTautulliPublicationSnapshot = vi.fn(
-	(_encryptor: unknown, instance: unknown) => instance,
-);
+const refreshOwnedTautulliCache = vi.fn();
 vi.mock("../../plex/plex-refresh-orchestration.js", () => ({
 	refreshOwnedPlexCache: (...args: unknown[]) => refreshOwnedPlexCache(...args),
 }));
 vi.mock("../../tautulli/tautulli-cache-refresher.js", () => ({
-	createOwnedTautulliPublicationSnapshot: (encryptor: unknown, instance: unknown) =>
-		createOwnedTautulliPublicationSnapshot(encryptor, instance),
-	refreshTautulliCache: (...args: unknown[]) => refreshTautulliCache(...args),
+	refreshOwnedTautulliCache: (...args: unknown[]) => refreshOwnedTautulliCache(...args),
 	summarizeTautulliRefreshResultForLog: (result: {
 		kind?: string;
 		upserted: number;
@@ -158,7 +153,7 @@ beforeEach(() => {
 	queueCleanerScheduler.isRunning.mockReset();
 	queueCleanerScheduler.start.mockReset();
 	refreshOwnedPlexCache.mockReset();
-	refreshTautulliCache.mockReset();
+	refreshOwnedTautulliCache.mockReset();
 	requireTautulliClient.mockReset();
 	requireTautulliInstance.mockReset();
 	markEnabled.mockReset();
@@ -300,10 +295,10 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
-	it("refreshes Tautulli from the owned snapshot without forwarding the helper client", async () => {
+	it("refreshes Tautulli through the ownership-first preparation boundary", async () => {
 		const fakeClient = { id: "tautulli-client" };
 		requireTautulliInstance.mockResolvedValue(tautulliInstance);
-		refreshTautulliCache.mockResolvedValue({
+		refreshOwnedTautulliCache.mockResolvedValue({
 			upserted: 7,
 			errors: 0,
 			complete: true,
@@ -320,22 +315,19 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		// before asserting they ran.
 		await result.backgroundTask;
 
-		expect(createOwnedTautulliPublicationSnapshot).toHaveBeenCalledWith(
-			fakeApp.encryptor,
-			tautulliInstance,
-		);
-		expect(refreshTautulliCache).toHaveBeenCalledWith({
+		expect(refreshOwnedTautulliCache).toHaveBeenCalledWith({
 			prisma: fakeApp.prisma,
+			encryptor: fakeApp.encryptor,
 			instance: tautulliInstance,
 			log: fakeLog,
 		});
-		expect(refreshTautulliCache.mock.calls[0]).not.toContain(fakeClient);
+		expect(refreshOwnedTautulliCache.mock.calls[0]).not.toContain(fakeClient);
 		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
 	it("preserves Tautulli positive publication as partial without wrapper finalization", async () => {
 		requireTautulliInstance.mockResolvedValue(tautulliInstance);
-		refreshTautulliCache.mockResolvedValue({
+		refreshOwnedTautulliCache.mockResolvedValue({
 			kind: "published-positive",
 			upserted: 1,
 			errors: 1,
@@ -362,7 +354,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 
 	it("does not log or persist a raw Tautulli refresher rejection", async () => {
 		requireTautulliInstance.mockResolvedValue(tautulliInstance);
-		refreshTautulliCache.mockRejectedValue(
+		refreshOwnedTautulliCache.mockRejectedValue(
 			new Error("CANARY_RAW_ERROR https://private.invalid token=CANARY_TOKEN"),
 		);
 
@@ -378,24 +370,24 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		expect(serializedLogs).not.toMatch(/CANARY_RAW_ERROR|private\.invalid|CANARY_TOKEN/);
 	});
 
-	it("records a bounded failure when Tautulli snapshot decryption fails before attempt ownership", async () => {
+	it("preserves a centrally sealed credential failure as a bounded background result", async () => {
 		requireTautulliInstance.mockResolvedValue(tautulliInstance);
-		createOwnedTautulliPublicationSnapshot.mockImplementationOnce(() => {
-			throw new Error("CANARY_DECRYPT_SECRET https://private.invalid");
+		refreshOwnedTautulliCache.mockResolvedValue({
+			kind: "unpublished",
+			complete: false,
+			upserted: 0,
+			errors: 1,
+			errorMessages: ["credential_unavailable"],
+			reasonCodes: ["credential_unavailable"],
 		});
 
-		await expect(dispatchPulseAction(fakeApp, "user-1", tautulliAction, fakeLog)).rejects.toThrow(
-			"Tautulli cache refresh unavailable",
-		);
+		const result = await dispatchPulseAction(fakeApp, "user-1", tautulliAction, fakeLog);
+		await result.backgroundTask;
 
-		expect(refreshTautulliCache).not.toHaveBeenCalled();
-		expect(cacheStatusUpsert).toHaveBeenCalledWith(
-			expect.objectContaining({
-				create: expect.objectContaining({
-					lastAttemptResult: "error",
-					lastAttemptErrorMessage: "credentials_unavailable",
-				}),
-			}),
+		expect(cacheStatusUpsert).not.toHaveBeenCalled();
+		expect(fakeLog.info).toHaveBeenCalledWith(
+			expect.objectContaining({ terminalKind: "unpublished", errors: 1 }),
+			"pulse-action: cache refresh completed (background)",
 		);
 		const serializedLogs = JSON.stringify([
 			...vi.mocked(fakeLog.info).mock.calls,
@@ -521,7 +513,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		).rejects.toMatchObject({
 			statusCode: 404,
 		});
-		expect(refreshTautulliCache).not.toHaveBeenCalled();
+		expect(refreshOwnedTautulliCache).not.toHaveBeenCalled();
 	});
 });
 

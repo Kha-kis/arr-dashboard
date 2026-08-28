@@ -7,11 +7,8 @@
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { recordWatchProviderCacheRefreshFailure } from "../../lib/services/provider-cache-status.js";
-import { createProviderPublicationAuthority } from "../../lib/services/provider-identity-guard.js";
 import {
-	createOwnedTautulliPublicationSnapshot,
-	refreshTautulliCache,
+	refreshOwnedTautulliCache,
 	summarizeTautulliRefreshResultForLog,
 } from "../../lib/tautulli/tautulli-cache-refresher.js";
 import { loadPersistedTautulliGeneration } from "../../lib/tautulli/tautulli-evidence-repository.js";
@@ -93,16 +90,12 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 			const userId = request.currentUser!.id;
 
 			const instance = await requireTautulliInstance(app, userId, instanceId);
-			const authority = createProviderPublicationAuthority(instance);
-			let publicationInstance:
-				| ReturnType<typeof createOwnedTautulliPublicationSnapshot>
-				| undefined;
 
 			try {
-				publicationInstance = createOwnedTautulliPublicationSnapshot(app.encryptor, instance);
-				const result = await refreshTautulliCache({
+				const result = await refreshOwnedTautulliCache({
 					prisma: app.prisma,
-					instance: publicationInstance,
+					encryptor: app.encryptor,
+					instance,
 					log: request.log,
 				});
 				request.log.info(
@@ -122,21 +115,6 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 					{ instanceId, reasonCode: "refresh_rejected" },
 					"Manual Tautulli cache refresh failed",
 				);
-				if (!publicationInstance) {
-					await recordWatchProviderCacheRefreshFailure(
-						app.prisma,
-						"tautulli",
-						"credentials_unavailable",
-						authority,
-						{
-							warn: () =>
-								request.log.warn(
-									{ instanceId, reasonCode: "status_record_failed" },
-									"Manual Tautulli cache refresh failed to record status",
-								),
-						} as Pick<typeof request.log, "warn">,
-					);
-				}
 				throw new Error("Tautulli cache refresh failed");
 			}
 		},

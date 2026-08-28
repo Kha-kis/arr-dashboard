@@ -5,9 +5,7 @@ import { createInjectAuthenticated, setupAuthInjection } from "../../__tests__/t
 const routeMocks = vi.hoisted(() => ({
 	requireClient: vi.fn(),
 	requireInstance: vi.fn(),
-	createSnapshot: vi.fn(),
-	refresh: vi.fn(),
-	recordFailure: vi.fn(),
+	refreshOwned: vi.fn(),
 	loadPersistedGeneration: vi.fn(),
 	count: vi.fn(),
 	findStatus: vi.fn(),
@@ -18,16 +16,12 @@ vi.mock("../../../lib/tautulli/tautulli-helpers.js", () => ({
 	requireTautulliInstance: routeMocks.requireInstance,
 }));
 vi.mock("../../../lib/tautulli/tautulli-cache-refresher.js", () => ({
-	createOwnedTautulliPublicationSnapshot: routeMocks.createSnapshot,
-	refreshTautulliCache: routeMocks.refresh,
+	refreshOwnedTautulliCache: routeMocks.refreshOwned,
 	summarizeTautulliRefreshResultForLog: (result: {
 		kind?: string;
 		upserted: number;
 		errors: number;
 	}) => ({ terminalKind: result.kind, upserted: result.upserted, errors: result.errors }),
-}));
-vi.mock("../../../lib/services/provider-cache-status.js", () => ({
-	recordWatchProviderCacheRefreshFailure: routeMocks.recordFailure,
 }));
 vi.mock("../../../lib/tautulli/tautulli-evidence-repository.js", () => ({
 	loadPersistedTautulliGeneration: routeMocks.loadPersistedGeneration,
@@ -39,14 +33,12 @@ describe("Tautulli cache routes", () => {
 	let app: FastifyInstance;
 	const helperClient = { source: "caller-supplied-client" };
 	const storedInstance = { id: "tautulli-1", service: "TAUTULLI" };
-	const publicationInstance = { id: "tautulli-1", identityGeneration: 6 };
 
 	beforeEach(async () => {
 		vi.clearAllMocks();
 		routeMocks.requireClient.mockResolvedValue({ client: helperClient, instance: storedInstance });
 		routeMocks.requireInstance.mockResolvedValue(storedInstance);
-		routeMocks.createSnapshot.mockReturnValue(publicationInstance);
-		routeMocks.refresh.mockResolvedValue({
+		routeMocks.refreshOwned.mockResolvedValue({
 			kind: "published-authoritative",
 			complete: true,
 			completedAt: new Date(),
@@ -77,23 +69,25 @@ describe("Tautulli cache routes", () => {
 		await app.close();
 	});
 
-	it("publishes from the sealed owned snapshot without forwarding the helper client", async () => {
+	it("publishes through the ownership-first preparation boundary without forwarding the helper client", async () => {
 		const response = await createInjectAuthenticated(app)(
 			"POST",
 			"/api/tautulli/cache/tautulli-1/refresh",
 		);
 
 		expect(response.statusCode).toBe(200);
-		expect(routeMocks.createSnapshot).toHaveBeenCalledWith(app.encryptor, storedInstance);
-		expect(routeMocks.refresh).toHaveBeenCalledWith(
-			expect.objectContaining({ prisma: app.prisma, instance: publicationInstance }),
+		expect(routeMocks.refreshOwned).toHaveBeenCalledWith(
+			expect.objectContaining({
+				prisma: app.prisma,
+				encryptor: app.encryptor,
+				instance: storedInstance,
+			}),
 		);
-		expect(routeMocks.refresh.mock.calls.flat()).not.toContain(helperClient);
-		expect(routeMocks.recordFailure).not.toHaveBeenCalled();
+		expect(routeMocks.refreshOwned.mock.calls.flat()).not.toContain(helperClient);
 	});
 
 	it("reports a positive-only manual publication as a successful partial terminal result", async () => {
-		routeMocks.refresh.mockResolvedValue({
+		routeMocks.refreshOwned.mockResolvedValue({
 			kind: "published-positive",
 			complete: false,
 			completedAt: new Date(),
@@ -117,11 +111,10 @@ describe("Tautulli cache routes", () => {
 			upserted: 1,
 			errors: 1,
 		});
-		expect(routeMocks.recordFailure).not.toHaveBeenCalled();
 	});
 
 	it("redacts unexpected manual-refresh exception details", async () => {
-		routeMocks.refresh.mockRejectedValue(
+		routeMocks.refreshOwned.mockRejectedValue(
 			new Error("CANARY_RAW_ERROR https://private.invalid token=CANARY_TOKEN"),
 		);
 
@@ -132,12 +125,16 @@ describe("Tautulli cache routes", () => {
 
 		expect(response.statusCode).toBe(500);
 		expect(response.body).not.toMatch(/CANARY_RAW_ERROR|private\.invalid|CANARY_TOKEN/);
-		expect(routeMocks.recordFailure).not.toHaveBeenCalled();
 	});
 
-	it("records only a bounded reason when owned-snapshot creation fails before attempt ownership", async () => {
-		routeMocks.createSnapshot.mockImplementation(() => {
-			throw new Error("CANARY_DECRYPT_SECRET");
+	it("returns a bounded unpublished result for a centrally sealed credential failure", async () => {
+		routeMocks.refreshOwned.mockResolvedValue({
+			kind: "unpublished",
+			complete: false,
+			upserted: 0,
+			errors: 1,
+			errorMessages: ["credential_unavailable"],
+			reasonCodes: ["credential_unavailable"],
 		});
 
 		const response = await createInjectAuthenticated(app)(
@@ -145,16 +142,15 @@ describe("Tautulli cache routes", () => {
 			"/api/tautulli/cache/tautulli-1/refresh",
 		);
 
-		expect(response.statusCode).toBe(500);
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toEqual({
+			success: false,
+			partial: false,
+			terminalResult: "unpublished",
+			upserted: 0,
+			errors: 1,
+		});
 		expect(response.body).not.toContain("CANARY_DECRYPT_SECRET");
-		expect(routeMocks.refresh).not.toHaveBeenCalled();
-		expect(routeMocks.recordFailure).toHaveBeenCalledWith(
-			app.prisma,
-			"tautulli",
-			"credentials_unavailable",
-			expect.objectContaining({ id: "tautulli-1", service: "TAUTULLI" }),
-			expect.anything(),
-		);
 	});
 
 	it("does not report a metadata-only generation as current when persisted roots fail", async () => {
