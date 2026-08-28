@@ -349,7 +349,6 @@ describe("authoritative mutation policy snapshots", () => {
 
 	it.each([
 		["Plex", "plex_watch_count", "PLEX", refreshMocks.plex, { complete: false }, "plex"],
-		["Tautulli", "tautulli_watch_count", "TAUTULLI", refreshMocks.tautulli, {}, "tautulli"],
 		[
 			"Jellyfin",
 			"jellyfin_watch_count",
@@ -375,6 +374,17 @@ describe("authoritative mutation policy snapshots", () => {
 			expect(refreshMock).toHaveBeenCalledOnce();
 		},
 	);
+
+	it("quarantines Tautulli mutation evidence without refreshing or reading cache rows", async () => {
+		const { deps } = makeDeps([rule("tautulli_watch_count")], [instance("TAUTULLI")]);
+
+		const snapshot = await createMutationPolicySnapshotGetter(deps, "user-1")();
+
+		expect(snapshot.failedSources).toEqual(new Set(["tautulli"]));
+		expect(snapshot.ctx.tautulliMap).toBeUndefined();
+		expect(refreshMocks.tautulli).not.toHaveBeenCalled();
+		expect(deps.prisma.tautulliCache.findMany).not.toHaveBeenCalled();
+	});
 
 	it("records an incomplete cleanup-triggered Jellyfin refresh without advancing freshness", async () => {
 		refreshMocks.jellyfin.mockResolvedValue({
@@ -423,7 +433,6 @@ describe("authoritative mutation policy snapshots", () => {
 
 	it.each([
 		["Plex", "plex_watch_count", "PLEX", refreshMocks.plex],
-		["Tautulli", "tautulli_watch_count", "TAUTULLI", refreshMocks.tautulli],
 		["Jellyfin", "jellyfin_watch_count", "JELLYFIN", refreshMocks.jellyfin],
 	] as const)(
 		"coordinates cleanup-owned %s publication with the active run lease",
@@ -437,6 +446,20 @@ describe("authoritative mutation policy snapshots", () => {
 			);
 		},
 	);
+
+	it("does not grant the cleanup run lease to a Tautulli publication", async () => {
+		const { deps } = makeDeps([rule("tautulli_watch_count")], [instance("TAUTULLI")]);
+
+		const snapshot = await createMutationPolicySnapshotGetter(
+			deps,
+			"user-1",
+			undefined,
+			"cleanup-run",
+		)();
+
+		expect(snapshot.failedSources).toEqual(new Set(["tautulli"]));
+		expect(refreshMocks.tautulli).not.toHaveBeenCalled();
+	});
 
 	it("rejects inventory identities that do not belong to the published Plex generation", async () => {
 		refreshMocks.plex.mockResolvedValue({
@@ -980,6 +1003,61 @@ describe("authoritative mutation policy snapshots", () => {
 		).resolves.toMatchObject({ rawItem });
 		expect(getById).toHaveBeenCalledOnce();
 	});
+
+	it.each(["approval", "direct", "retry"] as const)(
+		"blocks %s execution when the durable selection depends on quarantined Tautulli evidence",
+		async (_mode) => {
+			const tautulliRule = {
+				...rule("tautulli_watch_count"),
+				targetScope: "series",
+			};
+			const { deps } = makeDeps([tautulliRule], [instance("TAUTULLI")]);
+			const rawItem = {
+				id: 101,
+				tmdbId: 84,
+				title: "Tautulli-dependent candidate",
+				path: "/media/candidate",
+				monitored: true,
+				status: "released",
+				qualityProfileId: 1,
+				sizeOnDisk: 2_000,
+				added: "2025-01-01T00:00:00.000Z",
+				statistics: { movieFileCount: 1, sizeOnDisk: 2_000 },
+			};
+			const getById = vi.fn().mockResolvedValue(rawItem);
+			deps.arrClientFactory = {
+				create: vi.fn(() => ({ movie: { getById } })),
+			} as never;
+			const snapshot = await createMutationPolicySnapshotGetter(deps, "user-1")();
+			const upstreamMutation = vi.fn();
+			const radarr = {
+				...instance("PLEX"),
+				id: "radarr-1",
+				service: "RADARR",
+			};
+
+			await expect(
+				(async () => {
+					await assertCurrentSeriesMutationAuthority(
+						deps,
+						"user-1",
+						radarr as never,
+						101,
+						{
+							matchedRuleId: tautulliRule.id,
+							action: "delete",
+							scanMediaServerAfterDelete: false,
+							providerDependencies: ["tautulli"],
+						},
+						snapshot,
+					);
+					await upstreamMutation();
+				})(),
+			).rejects.toThrow(/provider evidence could not re-authorize/i);
+			expect(snapshot.failedSources).toContain("tautulli");
+			expect(upstreamMutation).not.toHaveBeenCalled();
+		},
+	);
 });
 
 describe("interactive preview live watch authority", () => {

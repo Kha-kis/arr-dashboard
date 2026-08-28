@@ -16,15 +16,40 @@ export type WatchProviderCacheRefreshType =
 	| "tautulli";
 export type PlexCacheRefreshType = Extract<WatchProviderCacheRefreshType, "plex" | "plex_episode">;
 
-export type PlexCacheRefreshAttempt = {
+export type ProviderCacheRefreshAttempt = {
 	attemptedAt: Date;
 	resultMarker: string;
 };
+export type PlexCacheRefreshAttempt = ProviderCacheRefreshAttempt;
 
 export type ProviderCacheStatusGenerationRelation =
 	| "current"
 	| "obsolete"
 	| "future-or-inconsistent";
+
+const TAUTULLI_STATUS_REASON_CODES = new Set([
+	"refresh_in_progress",
+	"refresh_failed",
+	"credential_unavailable",
+	"provider_identity_changed",
+	"publication_superseded",
+	"no_supported_libraries",
+	"provider_response_invalid",
+	"legacy_error_redacted",
+	"cache_generation_stale",
+	"cache_rows_stale",
+	"cache_stale",
+	"tautulli_mapping_required",
+	"unknown_failure",
+]);
+
+function boundedProviderStatusMessage(
+	cacheType: WatchProviderCacheRefreshType,
+	message: string,
+): string {
+	if (cacheType !== "tautulli") return message.slice(0, 500);
+	return TAUTULLI_STATUS_REASON_CODES.has(message) ? message : "legacy_error_redacted";
+}
 
 type ProviderCacheStatusGeneration = {
 	connectionGeneration: number | null;
@@ -69,8 +94,24 @@ export async function beginPlexCacheRefreshAttempt(
 	instance: ProviderPublicationAuthority,
 	options: ProviderIdentityGuardOptions = {},
 ): Promise<PlexCacheRefreshAttempt | null> {
+	return await beginProviderCacheRefreshAttempt(prisma, cacheType, instance, options);
+}
+
+export async function beginProviderCacheRefreshAttempt(
+	prisma: Pick<PrismaClient, "$transaction">,
+	cacheType: WatchProviderCacheRefreshType,
+	instance: ProviderPublicationAuthority,
+	options: ProviderIdentityGuardOptions = {},
+): Promise<ProviderCacheRefreshAttempt | null> {
+	if (!supportsCacheType(instance.service, cacheType)) {
+		throw new Error("Provider cache type does not match publication service");
+	}
 	const attemptedAt = new Date();
 	const resultMarker = `in_progress:${randomUUID()}`;
+	const initialFailureMessage =
+		cacheType === "tautulli"
+			? "refresh_in_progress"
+			: "Plex cache refresh has not published a generation";
 	const result = await withCurrentProviderPublicationAuthority(
 		prisma,
 		instance,
@@ -102,7 +143,7 @@ export async function beginPlexCacheRefreshAttempt(
 						data: {
 							lastRefreshedAt: attemptedAt,
 							lastResult: "error",
-							lastErrorMessage: "Plex cache refresh has not published a generation",
+							lastErrorMessage: initialFailureMessage,
 							itemCount: 0,
 							generationId: null,
 							generationMetadata: null,
@@ -123,7 +164,7 @@ export async function beginPlexCacheRefreshAttempt(
 					cacheType,
 					lastRefreshedAt: attemptedAt,
 					lastResult: "error",
-					lastErrorMessage: "Plex cache refresh has not published a generation",
+					lastErrorMessage: initialFailureMessage,
 					itemCount: 0,
 					lastAttemptAt: attemptedAt,
 					lastAttemptResult: resultMarker,
@@ -185,7 +226,30 @@ export async function finishPlexCacheRefreshAttemptFailure(
 	log: Pick<FastifyBaseLogger, "warn">,
 	options: ProviderIdentityGuardOptions = {},
 ): Promise<"recorded" | "superseded" | "failed"> {
+	return await finishProviderCacheRefreshAttemptFailure(
+		prisma,
+		cacheType,
+		message,
+		instance,
+		attempt,
+		log,
+		options,
+	);
+}
+
+export async function finishProviderCacheRefreshAttemptFailure(
+	prisma: Pick<PrismaClient, "$transaction">,
+	cacheType: WatchProviderCacheRefreshType,
+	message: string,
+	instance: ProviderPublicationAuthority,
+	attempt: ProviderCacheRefreshAttempt,
+	log: Pick<FastifyBaseLogger, "warn">,
+	options: ProviderIdentityGuardOptions = {},
+): Promise<"recorded" | "superseded" | "failed"> {
 	try {
+		if (!supportsCacheType(instance.service, cacheType)) {
+			throw new Error("Provider cache type does not match publication service");
+		}
 		const result = await withCurrentProviderPublicationAuthority(
 			prisma,
 			instance,
@@ -201,7 +265,7 @@ export async function finishPlexCacheRefreshAttemptFailure(
 					},
 					data: {
 						lastAttemptResult: "error",
-						lastAttemptErrorMessage: message.slice(0, 500),
+						lastAttemptErrorMessage: boundedProviderStatusMessage(cacheType, message),
 					},
 				});
 				return updated.count === 1;
@@ -210,9 +274,10 @@ export async function finishPlexCacheRefreshAttemptFailure(
 		);
 		return result.matched && result.value ? "recorded" : "superseded";
 	} catch (error) {
+		void error;
 		log.warn(
-			{ err: error, instanceId: instance.id, cacheType },
-			"Failed to finish Plex cache refresh attempt",
+			{ instanceId: instance.id, cacheType, reasonCode: "attempt_status_write_failed" },
+			"Failed to finish provider cache refresh attempt",
 		);
 		return "failed";
 	}
@@ -253,7 +318,7 @@ export async function recordWatchProviderCacheRefreshFailure(
 				});
 				if (status && !hasAuthoritativeProviderCacheGeneration(status, instance)) return false;
 
-				const safeMessage = message.slice(0, 500);
+				const safeMessage = boundedProviderStatusMessage(cacheType, message);
 				await tx.cacheRefreshStatus.upsert({
 					where: { instanceId_cacheType: { instanceId: instance.id, cacheType } },
 					create: {

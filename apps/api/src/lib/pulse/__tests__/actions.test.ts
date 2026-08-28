@@ -52,25 +52,20 @@ const plexInstance = {
 	connectionGeneration: 7,
 	identityGeneration: 3,
 };
-const refreshTautulliCache = vi.fn();
-const createOwnedTautulliPublicationSnapshot = vi.fn(
-	(_encryptor: unknown, instance: unknown) => instance,
-);
+const refreshOwnedTautulliCache = vi.fn();
 vi.mock("../../plex/plex-refresh-orchestration.js", () => ({
 	refreshOwnedPlexCache: (...args: unknown[]) => refreshOwnedPlexCache(...args),
 }));
 vi.mock("../../tautulli/tautulli-cache-refresher.js", () => ({
-	createOwnedTautulliPublicationSnapshot: (encryptor: unknown, instance: unknown) =>
-		createOwnedTautulliPublicationSnapshot(encryptor, instance),
-	refreshTautulliCache: (...args: unknown[]) => refreshTautulliCache(...args),
+	refreshOwnedTautulliCache: (...args: unknown[]) => refreshOwnedTautulliCache(...args),
 }));
 
-const requireTautulliClient = vi.fn();
-vi.mock("../../tautulli/tautulli-helpers.js", () => ({
-	requireTautulliClient: (...args: unknown[]) => requireTautulliClient(...args),
+const findOwnedEnabledTautulliInstance = vi.fn();
+vi.mock("../../tautulli/tautulli-cache-authority.js", () => ({
+	findOwnedEnabledTautulliInstance: (...args: unknown[]) =>
+		findOwnedEnabledTautulliInstance(...args),
 }));
 
-import { InstanceNotFoundError } from "../../errors.js";
 import { dispatchPulseAction } from "../actions.js";
 
 // -----------------------------------------------------------------------------
@@ -132,8 +127,8 @@ beforeEach(() => {
 	queueCleanerScheduler.isRunning.mockReset();
 	queueCleanerScheduler.start.mockReset();
 	refreshOwnedPlexCache.mockReset();
-	refreshTautulliCache.mockReset();
-	requireTautulliClient.mockReset();
+	refreshOwnedTautulliCache.mockReset();
+	findOwnedEnabledTautulliInstance.mockReset();
 	markEnabled.mockReset();
 	cacheStatusUpsert.mockReset();
 	cacheStatusUpsert.mockResolvedValue({});
@@ -256,7 +251,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		// don't yet know the upsert count at return time.
 		expect(result.status).toBe("ok");
 		expect(result.detail).toBeUndefined();
-		expect(requireTautulliClient).not.toHaveBeenCalled();
+		expect(findOwnedEnabledTautulliInstance).not.toHaveBeenCalled();
 
 		// Await the background task so the rest of the assertions see the
 		// post-refresh state. In production the route handler does NOT await
@@ -273,10 +268,9 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
-	it("refreshes Tautulli from the owned snapshot without forwarding the helper client", async () => {
-		const fakeClient = { id: "tautulli-client" };
-		requireTautulliClient.mockResolvedValue({ client: fakeClient, instance: tautulliInstance });
-		refreshTautulliCache.mockResolvedValue({
+	it("refreshes Tautulli through the attempt-owning credential boundary", async () => {
+		findOwnedEnabledTautulliInstance.mockResolvedValue(tautulliInstance);
+		refreshOwnedTautulliCache.mockResolvedValue({
 			upserted: 7,
 			errors: 0,
 			complete: true,
@@ -287,22 +281,21 @@ describe("dispatchPulseAction — cache.refresh", () => {
 
 		expect(result.status).toBe("ok");
 		expect(result.detail).toBeUndefined();
-		expect(requireTautulliClient).toHaveBeenCalledWith(fakeApp, "user-1", "inst-tautulli-1");
+		expect(findOwnedEnabledTautulliInstance).toHaveBeenCalledWith(fakeApp.prisma, {
+			userId: "user-1",
+			instanceId: "inst-tautulli-1",
+		});
 
 		// Wait for the fire-and-forget background refresh + write-through
 		// before asserting they ran.
 		await result.backgroundTask;
 
-		expect(createOwnedTautulliPublicationSnapshot).toHaveBeenCalledWith(
-			fakeApp.encryptor,
-			tautulliInstance,
-		);
-		expect(refreshTautulliCache).toHaveBeenCalledWith({
+		expect(refreshOwnedTautulliCache).toHaveBeenCalledWith({
 			prisma: fakeApp.prisma,
+			encryptor: fakeApp.encryptor,
 			instance: tautulliInstance,
 			log: fakeLog,
 		});
-		expect(refreshTautulliCache.mock.calls[0]).not.toContain(fakeClient);
 		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
@@ -414,15 +407,15 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		expect(refreshOwnedPlexCache).not.toHaveBeenCalled();
 	});
 
-	it("propagates InstanceNotFoundError from requireTautulliClient", async () => {
-		requireTautulliClient.mockRejectedValue(new InstanceNotFoundError("inst-tautulli-1"));
+	it("propagates InstanceNotFoundError for a missing owned Tautulli instance", async () => {
+		findOwnedEnabledTautulliInstance.mockResolvedValue(null);
 
 		await expect(
 			dispatchPulseAction(fakeApp, "user-1", tautulliAction, fakeLog),
 		).rejects.toMatchObject({
 			statusCode: 404,
 		});
-		expect(refreshTautulliCache).not.toHaveBeenCalled();
+		expect(refreshOwnedTautulliCache).not.toHaveBeenCalled();
 	});
 });
 

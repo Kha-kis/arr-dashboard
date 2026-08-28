@@ -1,63 +1,48 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-	expectPreservedSuccessWithSanitizedDecryptFailure,
-	watchSchedulerDecryptFailureFixture,
-} from "./watch-scheduler-decrypt-failure-fixture.js";
+import { watchSchedulerDecryptFailureFixture } from "./watch-scheduler-decrypt-failure-fixture.js";
 
 const mocks = vi.hoisted(() => ({
-	createSnapshot: vi.fn(),
 	refresh: vi.fn(),
 }));
 
 vi.mock("../../lib/tautulli/tautulli-cache-refresher.js", () => ({
-	createOwnedTautulliPublicationSnapshot: mocks.createSnapshot,
-	refreshTautulliCache: mocks.refresh,
+	refreshOwnedTautulliCache: mocks.refresh,
 }));
 
 import { refreshScheduledTautulliCacheInstance } from "../tautulli-cache-scheduler.js";
 
-const publicationInstance = {
-	id: "tautulli-1",
-	userId: "user-1",
-	service: "TAUTULLI",
-	label: "TAUTULLI",
-	baseUrl: "https://tautulli.example.com",
-	apiKey: "decrypted",
-	httpAuthHeaders: {},
-	enabled: true,
-	encryptedApiKey: "encrypted-secret-token",
-	encryptionIv: "token-iv",
-	encryptedHttpAuthCredentials: "encrypted-proxy-secret",
-	httpAuthEncryptionIv: "proxy-iv",
-	expectedIdentity: "tautulli-server-a",
-	identityStatus: "VERIFIED",
-	connectionGeneration: 4,
-	identityGeneration: 9,
-};
-
 describe("refreshScheduledTautulliCacheInstance", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		mocks.createSnapshot.mockReturnValue(publicationInstance);
+		mocks.refresh.mockResolvedValue({
+			complete: true,
+			completedAt: new Date(),
+			upserted: 1,
+			errors: 0,
+			errorMessages: [],
+		});
 	});
 
-	it("records a sanitized failed attempt without replacing the prior success on decrypt failure", async () => {
+	it("delegates credential handling to the attempt-owning refresher", async () => {
 		const state = watchSchedulerDecryptFailureFixture("TAUTULLI");
-		mocks.createSnapshot.mockImplementation(() => {
-			throw new Error("secret-token decrypt failed");
-		});
 
 		await refreshScheduledTautulliCacheInstance(state.app as never, state.instance as never);
 
-		expect(mocks.refresh).not.toHaveBeenCalled();
-		expectPreservedSuccessWithSanitizedDecryptFailure(state);
+		expect(mocks.refresh).toHaveBeenCalledWith({
+			prisma: state.app.prisma,
+			encryptor: state.app.encryptor,
+			instance: state.instance,
+			log: state.app.log,
+		});
 	});
 
-	it("does not record decrypt failure after a concurrent proxy credential change", async () => {
+	it("does not perform a second status write for a bounded credential failure", async () => {
 		const state = watchSchedulerDecryptFailureFixture("TAUTULLI");
-		mocks.createSnapshot.mockImplementation(() => {
-			state.current.encryptedHttpAuthCredentials = "replacement-proxy-ciphertext";
-			throw new Error("proxy-secret decrypt failed");
+		mocks.refresh.mockResolvedValue({
+			complete: false,
+			upserted: 0,
+			errors: 1,
+			errorMessages: ["credential_unavailable"],
 		});
 
 		await refreshScheduledTautulliCacheInstance(state.app as never, state.instance as never);
@@ -80,24 +65,27 @@ describe("refreshScheduledTautulliCacheInstance", () => {
 
 		expect(mocks.refresh).toHaveBeenCalledWith({
 			prisma: state.app.prisma,
-			instance: publicationInstance,
+			encryptor: state.app.encryptor,
+			instance: state.instance,
 			log: state.app.log,
 		});
 		expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
 	});
 
-	it("records incomplete attempts with the exact publication snapshot", async () => {
+	it("does not persist or log raw provider failure text outside the refresher", async () => {
 		mocks.refresh.mockResolvedValue({
 			complete: false,
 			upserted: 0,
 			errors: 1,
-			errorMessages: ["history failed"],
+			errorMessages: ["provider_response_invalid"],
 		});
 
 		const state = watchSchedulerDecryptFailureFixture("TAUTULLI");
 		await refreshScheduledTautulliCacheInstance(state.app as never, state.instance as never);
 
-		expect(state.status.lastAttemptResult).toBe("error");
-		expect(state.status.lastAttemptErrorMessage).toBe("history failed");
+		expect(state.status.lastAttemptResult).toBe("success");
+		expect(JSON.stringify(state.app.log.info.mock.calls)).not.toContain(
+			"provider_response_invalid",
+		);
 	});
 });

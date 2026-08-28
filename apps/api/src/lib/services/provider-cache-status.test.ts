@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	beginPlexCacheRefreshAttempt,
 	classifyProviderCacheStatusGeneration,
+	finishProviderCacheRefreshAttemptFailure,
 	finishPlexCacheRefreshAttemptFailure,
 	recordPlexCacheRefreshFailure,
 	recordWatchProviderCacheRefreshFailure,
@@ -154,6 +155,32 @@ describe("provider cache status generation classifier", () => {
 });
 
 describe("Plex cache refresh attempt lifecycle", () => {
+	it("claims a Tautulli attempt with a bounded non-secret initial reason", async () => {
+		const current = plexSnapshot({
+			id: "tautulli-1",
+			service: "TAUTULLI",
+			expectedIdentity: "tautulli-pms-a",
+		});
+		const state = publicationFixture(current, null);
+
+		const attempt = await beginPlexCacheRefreshAttempt(
+			state.prisma as never,
+			"tautulli" as never,
+			current,
+		);
+
+		expect(attempt?.resultMarker).toMatch(/^in_progress:/);
+		expect(state.tx.cacheRefreshStatus.upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				create: expect.objectContaining({
+					cacheType: "tautulli",
+					lastErrorMessage: "refresh_in_progress",
+					lastAttemptResult: attempt?.resultMarker,
+				}),
+			}),
+		);
+	});
+
 	it("creates an unpublished current-generation in-progress status when none exists", async () => {
 		const current = plexSnapshot();
 		const state = publicationFixture(current, null);
@@ -408,6 +435,33 @@ describe("Plex cache refresh attempt lifecycle", () => {
 				lastAttemptErrorMessage: "upstream failed",
 			},
 		});
+	});
+
+	it("redacts non-allowlisted Tautulli failure text before persistence", async () => {
+		const current = plexSnapshot({ id: "tautulli-1", service: "TAUTULLI" });
+		const state = publicationFixture(current, {
+			connectionGeneration: 4,
+			identityGeneration: 9,
+		});
+		const attempt = {
+			attemptedAt: new Date("2026-08-20T12:00:00.000Z"),
+			resultMarker: "in_progress:tautulli-a",
+		};
+
+		await finishProviderCacheRefreshAttemptFailure(
+			state.prisma as never,
+			"tautulli",
+			"https://tautulli.invalid?apikey=secret ratingKey=42",
+			current,
+			attempt,
+			log,
+		);
+
+		expect(state.tx.cacheRefreshStatus.updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: { lastAttemptResult: "error", lastAttemptErrorMessage: "legacy_error_redacted" },
+			}),
+		);
 	});
 
 	it("cannot overwrite a newer attempt marker with an older failure", async () => {

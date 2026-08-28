@@ -10,6 +10,16 @@ import {
 import type { TautulliClient } from "../tautulli-client.js";
 
 const publication = vi.hoisted(() => ({ client: undefined as TautulliClient | undefined }));
+const attemptLifecycle = vi.hoisted(() => ({
+	begin: vi.fn(),
+	finishFailure: vi.fn(),
+}));
+
+vi.mock("../../services/provider-cache-status.js", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../services/provider-cache-status.js")>()),
+	beginProviderCacheRefreshAttempt: attemptLifecycle.begin,
+	finishProviderCacheRefreshAttemptFailure: attemptLifecycle.finishFailure,
+}));
 
 vi.mock("../tautulli-client.js", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../tautulli-client.js")>();
@@ -77,6 +87,10 @@ async function refreshTautulliCache(
 			identityGeneration: 2,
 		},
 		log,
+		attempt: {
+			attemptedAt: new Date("2026-08-28T12:00:00.000Z"),
+			resultMarker: "in_progress:test-publication",
+		},
 	});
 }
 
@@ -100,6 +114,63 @@ const silentLog = {
 // ---------------------------------------------------------------------------
 
 describe("refreshTautulliCache (end-to-end)", () => {
+	it("owns the durable attempt before decrypting credentials and records only a bounded failure", async () => {
+		const events: string[] = [];
+		attemptLifecycle.begin.mockImplementationOnce(async () => {
+			events.push("attempt");
+			return {
+				attemptedAt: new Date("2026-08-28T12:00:00.000Z"),
+				resultMarker: "in_progress:test-attempt",
+			};
+		});
+		attemptLifecycle.finishFailure.mockImplementationOnce(async () => {
+			events.push("failure");
+			return "recorded";
+		});
+		const encryptor = {
+			decrypt: vi.fn(() => {
+				events.push("decrypt");
+				throw new Error("secret token decrypt failure");
+			}),
+		};
+		const module = (await import("../tautulli-cache-refresher.js")) as unknown as {
+			refreshOwnedTautulliCache: (input: Record<string, unknown>) => Promise<unknown>;
+		};
+
+		await module.refreshOwnedTautulliCache({
+			prisma: {},
+			encryptor,
+			instance: {
+				id: "tautulli-1",
+				userId: "user-1",
+				service: "TAUTULLI",
+				baseUrl: "https://tautulli.invalid",
+				enabled: true,
+				encryptedApiKey: "ciphertext",
+				encryptionIv: "iv",
+				encryptedHttpAuthCredentials: null,
+				httpAuthEncryptionIv: null,
+				expectedIdentity: "tautulli-pms-a",
+				identityStatus: "VERIFIED",
+				connectionGeneration: 4,
+				identityGeneration: 9,
+			},
+			log: silentLog,
+		});
+
+		expect(events).toEqual(["attempt", "decrypt", "failure"]);
+		expect(attemptLifecycle.finishFailure).toHaveBeenCalledWith(
+			expect.anything(),
+			"tautulli",
+			"credential_unavailable",
+			expect.objectContaining({ id: "tautulli-1" }),
+			expect.objectContaining({ resultMarker: "in_progress:test-attempt" }),
+			silentLog,
+			expect.anything(),
+		);
+		expect(JSON.stringify(attemptLifecycle.finishFailure.mock.calls)).not.toContain("secret token");
+	});
+
 	it("large stale-tail regression: refresh succeeds with only bounded DELETEs", async () => {
 		// Models the real failure mode: a cache that accumulated many rows over
 		// previous refreshes, where one refresh returns a smaller fresh set. The
@@ -155,7 +226,7 @@ describe("refreshTautulliCache (end-to-end)", () => {
 					return { count: data.length };
 				}),
 			},
-			cacheRefreshStatus: { upsert: vi.fn().mockResolvedValue({}) },
+			cacheRefreshStatus: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
 		};
 
 		const mockPrisma = {
@@ -181,10 +252,10 @@ describe("refreshTautulliCache (end-to-end)", () => {
 		expect(publishedRows[0]).toEqual(
 			expect.objectContaining({ connectionGeneration: 4, identityGeneration: 2 }),
 		);
-		expect(tx.cacheRefreshStatus.upsert).toHaveBeenCalledWith(
+		expect(tx.cacheRefreshStatus.updateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
-				create: expect.objectContaining({ connectionGeneration: 4, identityGeneration: 2 }),
-				update: expect.objectContaining({ connectionGeneration: 4, identityGeneration: 2 }),
+				where: expect.objectContaining({ connectionGeneration: 4, identityGeneration: 2 }),
+				data: expect.objectContaining({ lastResult: "success", lastAttemptResult: "success" }),
 			}),
 		);
 	});
@@ -239,7 +310,7 @@ describe("refreshTautulliCache (end-to-end)", () => {
 		);
 
 		expect(result.errors).toBe(1);
-		expect(result.errorMessages).toContain("Tautulli metadata inventory exceeded 500 unique items");
+		expect(result.errorMessages).toContain("provider_response_invalid");
 		expect(mockClient.getMetadata).toHaveBeenCalledTimes(500);
 		expect(result.upserted).toBe(0);
 	});
@@ -261,7 +332,7 @@ describe("refreshTautulliCache (end-to-end)", () => {
 		const deleteMany = vi.fn().mockResolvedValue({ count: 2 });
 		const tx = {
 			tautulliCache: { deleteMany, createMany: vi.fn() },
-			cacheRefreshStatus: { upsert: vi.fn().mockResolvedValue({}) },
+			cacheRefreshStatus: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
 		};
 		const prisma = {
 			$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
@@ -450,13 +521,13 @@ describe("refreshTautulliCache — sparse metadata handling (#497)", () => {
 		expect(result.errors).toBe(1);
 		expect(result.complete).toBe(false);
 		expect(result.errorMessages).toHaveLength(1);
-		expect(result.errorMessages[0]).toContain("rk-error");
+		expect(result.errorMessages).toEqual(["provider_response_invalid"]);
 
 		// The crucial regression assertion: the empty-metadata item must NOT
 		// produce a "failed to fetch metadata for item" warning. Before the fix,
 		// it would — one warning per missing rating_key, flooding the operator
 		// dashboards. With the schema tolerant of sparse responses, only the
-		// genuine ECONNREFUSED logs a warning.
+		// genuine failure logs one bounded warning without the rating key or raw error.
 		const metadataWarnings = (
 			log.warn as unknown as { mock: { calls: unknown[][] } }
 		).mock.calls.filter((call) => {
@@ -464,8 +535,8 @@ describe("refreshTautulliCache — sparse metadata handling (#497)", () => {
 			return typeof msg === "string" && msg.includes("failed to fetch metadata");
 		});
 		expect(metadataWarnings).toHaveLength(1);
-		const errCallArg = metadataWarnings[0]?.[0] as { ratingKey?: string } | undefined;
-		expect(errCallArg?.ratingKey).toBe("rk-error");
+		expect(JSON.stringify(metadataWarnings)).not.toContain("rk-error");
+		expect(JSON.stringify(metadataWarnings)).not.toContain("ECONNREFUSED");
 	});
 });
 
@@ -511,7 +582,7 @@ describe("refreshTautulliCache — authoritative completeness", () => {
 					return { count: data.length };
 				}),
 			},
-			cacheRefreshStatus: { upsert: vi.fn().mockResolvedValue({}) },
+			cacheRefreshStatus: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
 		};
 		const prisma = {
 			$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
@@ -564,7 +635,7 @@ describe("refreshTautulliCache — authoritative completeness", () => {
 		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
-		expect(result.errorMessages.join(" ")).toMatch(/exceeding the safe 100000-row refresh limit/i);
+		expect(result.errorMessages).toEqual(["provider_response_invalid"]);
 		expect(getHistory).toHaveBeenCalledOnce();
 		expect(mockClient.getMetadata).not.toHaveBeenCalled();
 		expect(prisma.$transaction).not.toHaveBeenCalled();
@@ -637,7 +708,7 @@ describe("refreshTautulliCache — authoritative completeness", () => {
 		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
-		expect(result.errorMessages.join(" ")).toMatch(/100001 aggregate rows/i);
+		expect(result.errorMessages).toEqual(["provider_response_invalid"]);
 		expect(getHistory).toHaveBeenCalledTimes(2);
 		expect(mockClient.getMetadata).not.toHaveBeenCalled();
 		expect(prisma.$transaction).not.toHaveBeenCalled();
@@ -692,7 +763,7 @@ describe("refreshTautulliCache — authoritative completeness", () => {
 		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
-		expect(result.errorMessages.join(" ")).toMatch(/changed before the snapshot/i);
+		expect(result.errorMessages).toEqual(["provider_response_invalid"]);
 		expect(prisma.$transaction).not.toHaveBeenCalled();
 		expect(getHistory).toHaveBeenNthCalledWith(1, expect.objectContaining({ order_dir: "asc" }));
 		expect(getHistory).toHaveBeenNthCalledWith(2, {
@@ -737,7 +808,7 @@ describe("refreshTautulliCache — authoritative completeness", () => {
 		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
-		expect(result.errorMessages.join(" ")).toMatch(/changed before the snapshot/i);
+		expect(result.errorMessages).toEqual(["provider_response_invalid"]);
 		expect(getHistory).toHaveBeenCalledTimes(2);
 		expect(prisma.$transaction).not.toHaveBeenCalled();
 	});
@@ -782,7 +853,7 @@ describe("refreshTautulliCache — authoritative completeness", () => {
 		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
-		expect(result.errorMessages.join(" ")).toMatch(/changed before the snapshot/i);
+		expect(result.errorMessages).toEqual(["provider_response_invalid"]);
 		expect(getHistory).toHaveBeenCalledTimes(2);
 		expect(prisma.$transaction).not.toHaveBeenCalled();
 	});
@@ -844,7 +915,7 @@ describe("refreshTautulliCache — authoritative completeness", () => {
 					return { count: data.length };
 				}),
 			},
-			cacheRefreshStatus: { upsert: vi.fn().mockResolvedValue({}) },
+			cacheRefreshStatus: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
 		};
 		const prisma = {
 			$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
@@ -894,7 +965,7 @@ describe("refreshTautulliCache — authoritative completeness", () => {
 		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
-		expect(result.errorMessages.join(" ")).toMatch(/grouped play rows/i);
+		expect(result.errorMessages).toEqual(["provider_response_invalid"]);
 		expect(prisma.$transaction).not.toHaveBeenCalled();
 	});
 
@@ -929,7 +1000,7 @@ describe("refreshTautulliCache — authoritative completeness", () => {
 		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
-		expect(result.errorMessages.join(" ")).toMatch(/stable row ordering/i);
+		expect(result.errorMessages).toEqual(["provider_response_invalid"]);
 		expect(prisma.$transaction).not.toHaveBeenCalled();
 	});
 
@@ -971,7 +1042,7 @@ describe("refreshTautulliCache — authoritative completeness", () => {
 		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
-		expect(result.errorMessages.join(" ")).toMatch(/changed before the snapshot/i);
+		expect(result.errorMessages).toEqual(["provider_response_invalid"]);
 		expect(getHistory).toHaveBeenCalledTimes(6);
 		expect(prisma.$transaction).not.toHaveBeenCalled();
 	});

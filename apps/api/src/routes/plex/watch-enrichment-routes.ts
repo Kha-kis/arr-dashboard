@@ -13,6 +13,7 @@ import {
 	summarizePlexEvidence,
 } from "../../lib/plex/plex-authority-service.js";
 import { PlexAuthorityService } from "../../lib/plex/plex-authority-service.js";
+import { readUserSelectedTautulliCache } from "../../lib/tautulli/tautulli-cache-authority.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { aggregateWatchEnrichment } from "./lib/watch-enrichment-helpers.js";
 
@@ -98,27 +99,24 @@ export async function registerWatchEnrichmentRoutes(
 				evidence: evidenceSummary,
 			});
 		}
-		const tautulliInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "TAUTULLI", enabled: true },
-			select: { id: true },
+		const tautulliEvidence = await readUserSelectedTautulliCache(app.prisma, {
+			userId,
+			targets: [...uniqueKeys.values()].map((target) => ({
+				tmdbId: target.tmdbId,
+				mediaType: target.mediaType as "movie" | "series",
+			})),
 		});
+		if (tautulliEvidence.configured && !tautulliEvidence.available) {
+			return reply.status(503).send({
+				error: "Tautulli cache evidence is unavailable",
+				reasonCodes: tautulliEvidence.reasonCodes,
+			});
+		}
 
-		const tautulliInstanceIds = tautulliInstances.map((i) => i.id);
-
-		// Query PlexCache and TautulliCache in parallel
-		const [plexEntries, tautulliEntries] = await Promise.all([
-			hasAuthoritativeSelectedPlexEvidence(plexEvidence)
-				? plexEvidence.flatMap((entry) => entry.rows)
-				: [],
-			tautulliInstanceIds.length > 0
-				? app.prisma.tautulliCache.findMany({
-						where: {
-							instanceId: { in: tautulliInstanceIds },
-							tmdbId: { in: tmdbIdList },
-						},
-					})
-				: [],
-		]);
+		const plexEntries = hasAuthoritativeSelectedPlexEvidence(plexEvidence)
+			? plexEvidence.flatMap((entry) => entry.rows)
+			: [];
+		const tautulliEntries = tautulliEvidence.rows;
 
 		// Aggregate into enrichment items using extracted pure helper
 		const items = aggregateWatchEnrichment(

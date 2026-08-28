@@ -7,6 +7,7 @@
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import { readUserSelectedTautulliCache } from "../../lib/tautulli/tautulli-cache-authority.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 const enrichmentQuery = z.object({
@@ -68,32 +69,31 @@ export async function registerWatchEnrichmentRoutes(
 			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 			select: { id: true },
 		});
-		const tautulliInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "TAUTULLI", enabled: true },
-			select: { id: true },
+		const tautulliEvidence = await readUserSelectedTautulliCache(app.prisma, {
+			userId,
+			targets: [...uniqueKeys.values()].map((target) => ({
+				tmdbId: target.tmdbId,
+				mediaType: target.mediaType as "movie" | "series",
+			})),
 		});
+		if (tautulliEvidence.configured && !tautulliEvidence.available) {
+			return reply.status(503).send({
+				error: "Tautulli cache evidence is unavailable",
+				reasonCodes: tautulliEvidence.reasonCodes,
+			});
+		}
 
 		const jellyfinInstanceIds = jellyfinInstances.map((i) => i.id);
-		const tautulliInstanceIds = tautulliInstances.map((i) => i.id);
 
-		const [jellyfinEntries, tautulliEntries] = await Promise.all([
-			jellyfinInstanceIds.length > 0
-				? app.prisma.jellyfinCache.findMany({
-						where: {
-							instanceId: { in: jellyfinInstanceIds },
-							tmdbId: { in: tmdbIdList },
-						},
-					})
-				: [],
-			tautulliInstanceIds.length > 0
-				? app.prisma.tautulliCache.findMany({
-						where: {
-							instanceId: { in: tautulliInstanceIds },
-							tmdbId: { in: tmdbIdList },
-						},
-					})
-				: [],
-		]);
+		const jellyfinEntries = await (jellyfinInstanceIds.length > 0
+			? app.prisma.jellyfinCache.findMany({
+					where: {
+						instanceId: { in: jellyfinInstanceIds },
+						tmdbId: { in: tmdbIdList },
+					},
+				})
+			: []);
+		const tautulliEntries = tautulliEvidence.rows;
 
 		// Aggregate enrichment data
 		const items: Record<

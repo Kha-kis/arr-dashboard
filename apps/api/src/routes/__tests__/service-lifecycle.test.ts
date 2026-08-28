@@ -443,7 +443,9 @@ describe("Service instance lifecycle", () => {
 		await app?.close();
 	});
 
-	async function createExistingUnverifiedProvider(service: "PLEX" | "JELLYFIN" = "PLEX") {
+	async function createExistingUnverifiedProvider(
+		service: "PLEX" | "JELLYFIN" | "EMBY" | "TAUTULLI" = "PLEX",
+	) {
 		const created = await inject("POST", "/services", {
 			body: {
 				label: "Legacy provider",
@@ -465,12 +467,20 @@ describe("Service instance lifecycle", () => {
 		return id;
 	}
 
-	async function createExistingVerifiedProvider() {
-		const id = await createExistingUnverifiedProvider();
+	async function createExistingVerifiedProvider(
+		service: "PLEX" | "JELLYFIN" | "EMBY" | "TAUTULLI" = "PLEX",
+	) {
+		const id = await createExistingUnverifiedProvider(service);
 		const instance = prisma._instances.get(id);
 		if (!instance) throw new Error("created service fixture is missing");
-		instance.expectedIdentity = "enrolled-plex-machine";
-		instance.identityKind = "PLEX_MACHINE_IDENTIFIER";
+		const identityByService = {
+			PLEX: ["enrolled-plex-machine", "PLEX_MACHINE_IDENTIFIER"],
+			JELLYFIN: ["enrolled-jellyfin-server", "JELLYFIN_SERVER_ID"],
+			EMBY: ["enrolled-emby-server", "EMBY_SERVER_ID"],
+			TAUTULLI: ["enrolled-tautulli-pms", "TAUTULLI_PMS_IDENTIFIER"],
+		} as const;
+		instance.expectedIdentity = identityByService[service][0];
+		instance.identityKind = identityByService[service][1];
 		instance.identityStatus = "VERIFIED";
 		instance.identityGeneration = 3;
 		instance.identityVerifiedAt = new Date("2026-08-15T00:00:00.000Z");
@@ -654,6 +664,97 @@ describe("Service instance lifecycle", () => {
 		expect(prisma._instances.get(id)?.identityVerifiedAt.getTime()).toBeGreaterThan(
 			previouslyVerifiedAt.getTime(),
 		);
+	});
+
+	it("atomically clears Tautulli rows and status when mismatch re-verification advances identity", async () => {
+		const id = await createExistingVerifiedProvider("TAUTULLI");
+		const enrolled = prisma._instances.get(id);
+		if (!enrolled) throw new Error("verified Tautulli fixture is missing");
+		enrolled.identityStatus = "MISMATCH";
+		const observation = {
+			service: "TAUTULLI" as const,
+			identityKind: "tautulli-pms-identifier" as const,
+			rawIdentity: "enrolled-tautulli-pms",
+			fingerprint: "safe-fingerprint",
+			confirmationDigest: "a".repeat(64),
+		};
+		mockReadProviderIdentity.mockResolvedValueOnce(observation).mockResolvedValueOnce(observation);
+
+		const inspected = await inject("POST", `/services/${id}/identity/inspect`, { body: {} });
+		const verified = await inject("POST", `/services/${id}/identity/verify`, {
+			body: {
+				confirmationDigest: JSON.parse(inspected.payload).candidate.confirmationDigest,
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+			},
+		});
+
+		expect(verified.statusCode).toBe(200);
+		expect(prisma._instances.get(id)).toMatchObject({
+			identityStatus: "VERIFIED",
+			identityGeneration: 4,
+		});
+		expect(prisma.tautulliCache.deleteMany).toHaveBeenCalledWith({ where: { instanceId: id } });
+		expect(prisma.cacheRefreshStatus.deleteMany).toHaveBeenCalledWith({
+			where: { instanceId: id },
+		});
+	});
+
+	it("preserves current Tautulli state when same-identity verification does not advance", async () => {
+		const id = await createExistingVerifiedProvider("TAUTULLI");
+		const observation = {
+			service: "TAUTULLI" as const,
+			identityKind: "tautulli-pms-identifier" as const,
+			rawIdentity: "enrolled-tautulli-pms",
+			fingerprint: "safe-fingerprint",
+			confirmationDigest: "a".repeat(64),
+		};
+		mockReadProviderIdentity.mockResolvedValueOnce(observation).mockResolvedValueOnce(observation);
+
+		const inspected = await inject("POST", `/services/${id}/identity/inspect`, { body: {} });
+		const verified = await inject("POST", `/services/${id}/identity/verify`, {
+			body: {
+				confirmationDigest: JSON.parse(inspected.payload).candidate.confirmationDigest,
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+			},
+		});
+
+		expect(verified.statusCode).toBe(200);
+		expect(prisma._instances.get(id)?.identityGeneration).toBe(3);
+		expect(prisma.tautulliCache.deleteMany).not.toHaveBeenCalled();
+		expect(prisma.cacheRefreshStatus.deleteMany).not.toHaveBeenCalled();
+	});
+
+	it("rolls back Tautulli identity advancement when durable reset fails", async () => {
+		const id = await createExistingVerifiedProvider("TAUTULLI");
+		const enrolled = prisma._instances.get(id);
+		if (!enrolled) throw new Error("verified Tautulli fixture is missing");
+		enrolled.identityStatus = "MISMATCH";
+		const observation = {
+			service: "TAUTULLI" as const,
+			identityKind: "tautulli-pms-identifier" as const,
+			rawIdentity: "enrolled-tautulli-pms",
+			fingerprint: "safe-fingerprint",
+			confirmationDigest: "a".repeat(64),
+		};
+		mockReadProviderIdentity.mockResolvedValueOnce(observation).mockResolvedValueOnce(observation);
+		prisma.tautulliCache.deleteMany.mockRejectedValueOnce(new Error("injected reset failure"));
+
+		const inspected = await inject("POST", `/services/${id}/identity/inspect`, { body: {} });
+		const verified = await inject("POST", `/services/${id}/identity/verify`, {
+			body: {
+				confirmationDigest: JSON.parse(inspected.payload).candidate.confirmationDigest,
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+			},
+		});
+
+		expect(verified.statusCode).toBe(500);
+		expect(prisma._instances.get(id)).toMatchObject({
+			identityStatus: "MISMATCH",
+			identityGeneration: 3,
+		});
 	});
 
 	it("rejects verification when the provider changes after inspection", async () => {

@@ -20,11 +20,16 @@ import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import {
 	createProviderPublicationAuthority,
 	type OwnedProviderPublicationSnapshot,
+	type ProviderIdentityGuardOptions,
 	ProviderIdentityGuardError,
 	withGuardedProviderPublication,
 } from "../services/provider-identity-guard.js";
+import {
+	beginProviderCacheRefreshAttempt,
+	finishProviderCacheRefreshAttemptFailure,
+	type ProviderCacheRefreshAttempt,
+} from "../services/provider-cache-status.js";
 import { delay } from "../utils/delay.js";
-import { getErrorMessage } from "../utils/error-message.js";
 import { TautulliClient } from "./tautulli-client.js";
 
 // Tautulli exposes offset/length pagination without a documented page-count
@@ -61,6 +66,15 @@ export interface TautulliPublicationContext {
 	prisma: PrismaClient;
 	instance: OwnedProviderPublicationSnapshot;
 	log: FastifyBaseLogger;
+	attempt: ProviderCacheRefreshAttempt;
+	cleanupRunClaimToken?: string;
+}
+
+export interface OwnedTautulliCacheRefreshContext {
+	prisma: PrismaClient;
+	encryptor: Pick<Encryptor, "decrypt">;
+	instance: ServiceInstance;
+	log: FastifyBaseLogger;
 	cleanupRunClaimToken?: string;
 }
 
@@ -72,6 +86,111 @@ export interface TautulliCacheRefreshResult {
 	completedAt?: Date;
 	superseded?: boolean;
 	snapshot?: TautulliCacheSnapshot;
+}
+
+/**
+ * Own the durable attempt before decrypting credentials or contacting Tautulli.
+ * Every failure exposed from this boundary is a bounded, non-secret reason code.
+ */
+export async function refreshOwnedTautulliCache(
+	context: OwnedTautulliCacheRefreshContext,
+): Promise<TautulliCacheRefreshResult> {
+	const { prisma, encryptor, instance, log } = context;
+	const authority = createProviderPublicationAuthority(instance);
+	const guardOptions: ProviderIdentityGuardOptions = {
+		cleanupRunClaimToken: context.cleanupRunClaimToken,
+	};
+	let attempt: ProviderCacheRefreshAttempt | null = null;
+	try {
+		attempt = await beginProviderCacheRefreshAttempt(prisma, "tautulli", authority, guardOptions);
+		if (!attempt) {
+			return {
+				upserted: 0,
+				errors: 0,
+				errorMessages: ["publication_superseded"],
+				complete: false,
+				superseded: true,
+			};
+		}
+
+		let ownedSnapshot: OwnedProviderPublicationSnapshot;
+		try {
+			ownedSnapshot = createOwnedTautulliPublicationSnapshot(encryptor, instance);
+		} catch {
+			await finishProviderCacheRefreshAttemptFailure(
+				prisma,
+				"tautulli",
+				"credential_unavailable",
+				authority,
+				attempt,
+				log,
+				guardOptions,
+			);
+			return {
+				upserted: 0,
+				errors: 1,
+				errorMessages: ["credential_unavailable"],
+				complete: false,
+			};
+		}
+
+		const result = await refreshTautulliCache({
+			prisma,
+			instance: ownedSnapshot,
+			log,
+			attempt,
+			cleanupRunClaimToken: context.cleanupRunClaimToken,
+		});
+		if (!result.complete && !result.superseded) {
+			await finishProviderCacheRefreshAttemptFailure(
+				prisma,
+				"tautulli",
+				boundedTautulliFailureReason(result.errorMessages),
+				authority,
+				attempt,
+				log,
+				guardOptions,
+			);
+		}
+		return result;
+	} catch {
+		if (attempt) {
+			await finishProviderCacheRefreshAttemptFailure(
+				prisma,
+				"tautulli",
+				"unknown_failure",
+				authority,
+				attempt,
+				log,
+				guardOptions,
+			);
+		}
+		log.warn(
+			{ instanceId: instance.id, reasonCode: "unknown_failure" },
+			"Tautulli cache refresh failed",
+		);
+		return {
+			upserted: 0,
+			errors: 1,
+			errorMessages: ["unknown_failure"],
+			complete: false,
+		};
+	}
+}
+
+const TAUTULLI_REFRESH_FAILURE_REASONS = new Set([
+	"no_supported_libraries",
+	"provider_response_invalid",
+	"provider_identity_changed",
+	"publication_superseded",
+	"unknown_failure",
+]);
+
+function boundedTautulliFailureReason(errorMessages: string[]): string {
+	return (
+		errorMessages.find((message) => TAUTULLI_REFRESH_FAILURE_REASONS.has(message)) ??
+		"provider_response_invalid"
+	);
 }
 
 /**
@@ -121,11 +240,20 @@ export async function refreshTautulliCache(
 					instance.id,
 					log,
 				),
-			async (tx, collected) => await publishTautulliCache(tx, instance, collected),
+			async (tx, collected) => await publishTautulliCache(tx, instance, context.attempt, collected),
 			{ cleanupRunClaimToken: context.cleanupRunClaimToken },
 		);
 	} catch (error) {
-		log.error({ err: error, instanceId: instance.id }, "Tautulli cache publication rejected");
+		log.error(
+			{
+				instanceId: instance.id,
+				reasonCode:
+					error instanceof ProviderIdentityGuardError
+						? "provider_identity_changed"
+						: "unknown_failure",
+			},
+			"Tautulli cache publication rejected",
+		);
 		if (error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_SUPERSEDED") {
 			return { upserted: 0, errors: 0, errorMessages: [], complete: false, superseded: true };
 		}
@@ -134,8 +262,8 @@ export async function refreshTautulliCache(
 			errors: 1,
 			errorMessages: [
 				error instanceof ProviderIdentityGuardError
-					? error.message
-					: `Atomic cache publication failed: ${getErrorMessage(error)}`,
+					? "provider_identity_changed"
+					: "unknown_failure",
 			],
 			complete: false,
 		};
@@ -145,10 +273,36 @@ export async function refreshTautulliCache(
 async function publishTautulliCache(
 	tx: Prisma.TransactionClient,
 	instance: OwnedProviderPublicationSnapshot,
+	attempt: ProviderCacheRefreshAttempt,
 	collected: TautulliCacheRefreshResult,
 ): Promise<TautulliCacheRefreshResult> {
 	if (!collected.complete || !collected.completedAt || !collected.snapshot) return collected;
 	const rows = collected.snapshot.rows;
+	const claimed = await tx.cacheRefreshStatus.updateMany({
+		where: {
+			instanceId: instance.id,
+			cacheType: "tautulli",
+			lastAttemptAt: attempt.attemptedAt,
+			lastAttemptResult: attempt.resultMarker,
+			connectionGeneration: instance.connectionGeneration,
+			identityGeneration: instance.identityGeneration,
+		},
+		data: {
+			lastRefreshedAt: collected.completedAt,
+			lastResult: "success",
+			lastErrorMessage: null,
+			itemCount: rows.length,
+			lastAttemptAt: collected.completedAt,
+			lastAttemptResult: "success",
+			lastAttemptErrorMessage: null,
+		},
+	});
+	if (claimed.count !== 1) {
+		throw new ProviderIdentityGuardError(
+			"PUBLICATION_SUPERSEDED",
+			"Provider cache publication was superseded by a newer refresh attempt.",
+		);
+	}
 	await tx.tautulliCache.deleteMany({ where: { instanceId: instance.id } });
 	for (let start = 0; start < rows.length; start += TAUTULLI_CACHE_PUBLICATION_CHUNK_SIZE) {
 		await tx.tautulliCache.createMany({
@@ -159,31 +313,6 @@ async function publishTautulliCache(
 			})),
 		});
 	}
-	await tx.cacheRefreshStatus.upsert({
-		where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "tautulli" } },
-		create: {
-			instanceId: instance.id,
-			cacheType: "tautulli",
-			lastRefreshedAt: collected.completedAt,
-			lastResult: "success",
-			itemCount: rows.length,
-			lastAttemptAt: collected.completedAt,
-			lastAttemptResult: "success",
-			connectionGeneration: instance.connectionGeneration,
-			identityGeneration: instance.identityGeneration,
-		},
-		update: {
-			lastRefreshedAt: collected.completedAt,
-			lastResult: "success",
-			lastErrorMessage: null,
-			itemCount: rows.length,
-			lastAttemptAt: collected.completedAt,
-			lastAttemptResult: "success",
-			lastAttemptErrorMessage: null,
-			connectionGeneration: instance.connectionGeneration,
-			identityGeneration: instance.identityGeneration,
-		},
-	});
 	return { ...collected, upserted: rows.length };
 }
 
@@ -206,7 +335,7 @@ export async function collectTautulliCacheLiveEvidence(
 		if (movieAndShowLibs.length === 0) {
 			complete = false;
 			errors++;
-			errorMessages.push("Tautulli returned no movie or show libraries");
+			errorMessages.push("no_supported_libraries");
 			log.warn({ instanceId }, "Tautulli cache refresh: no movie or show libraries discovered");
 		}
 
@@ -477,9 +606,7 @@ export async function collectTautulliCacheLiveEvidence(
 		if (itemMap.size > MAX_METADATA_LOOKUPS) {
 			complete = false;
 			errors++;
-			errorMessages.push(
-				`Tautulli metadata inventory exceeded ${MAX_METADATA_LOOKUPS} unique items`,
-			);
+			errorMessages.push("provider_response_invalid");
 			log.warn(
 				{ limit: MAX_METADATA_LOOKUPS, itemCount: itemMap.size },
 				"Tautulli cache refresh: hit metadata lookup limit",
@@ -504,14 +631,15 @@ export async function collectTautulliCacheLiveEvidence(
 				} else {
 					complete = false;
 				}
-			} catch (error) {
+			} catch {
 				complete = false;
 				errors++;
-				log.warn({ err: error, ratingKey }, "Tautulli cache: failed to fetch metadata for item");
+				log.warn(
+					{ instanceId, reasonCode: "provider_response_invalid" },
+					"Tautulli cache: failed to fetch metadata for item",
+				);
 				if (errorMessages.length < 5) {
-					errorMessages.push(
-						`Failed to fetch metadata for ratingKey ${ratingKey}: ${getErrorMessage(error)}`,
-					);
+					errorMessages.push("provider_response_invalid");
 				}
 			}
 		}
@@ -565,11 +693,14 @@ export async function collectTautulliCacheLiveEvidence(
 			complete: complete && errors === 0,
 			completedAt,
 		};
-	} catch (error) {
+	} catch {
 		complete = false;
-		log.error({ err: error, instanceId }, "Tautulli cache refresh failed");
+		log.error(
+			{ instanceId, reasonCode: "provider_response_invalid" },
+			"Tautulli cache refresh failed",
+		);
 		errors++;
-		errorMessages.push(`Tautulli cache refresh failed: ${getErrorMessage(error)}`);
+		errorMessages.push("provider_response_invalid");
 	}
 
 	return { upserted, errors, errorMessages, complete: false };
