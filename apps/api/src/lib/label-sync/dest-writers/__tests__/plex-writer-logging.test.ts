@@ -6,10 +6,14 @@ import type { DestWriterOpts } from "../../strategy-types.js";
 const mocks = vi.hoisted(() => {
 	class PlexMetadataTagWriteError extends Error {
 		readonly code = "upstream_write_failed";
+		readonly responseCategory: "client_error" | "server_error" | "timeout" | "unavailable";
 
-		constructor() {
+		constructor(
+			responseCategory: "client_error" | "server_error" | "timeout" | "unavailable" = "unavailable",
+		) {
 			super("Plex metadata tag write failed");
 			this.name = "PlexMetadataTagWriteError";
+			this.responseCategory = responseCategory;
 		}
 	}
 	return {
@@ -146,10 +150,12 @@ function allLogText(log: FastifyBaseLogger, diagnostics?: unknown): string {
 function expectPrivate(log: FastifyBaseLogger, diagnostics?: unknown) {
 	const allowedKeys = new Set([
 		"operation",
+		"state",
+		"stage",
 		"reasonCode",
 		"mediaCategory",
 		"candidateCount",
-		"responseCategory",
+		"upstreamCategory",
 	]);
 	for (const method of [log.info, log.warn, log.error, log.debug, log.trace, log.fatal]) {
 		for (const [fields] of (method as unknown as ReturnType<typeof vi.fn>).mock.calls) {
@@ -165,8 +171,8 @@ function expectPrivate(log: FastifyBaseLogger, diagnostics?: unknown) {
 
 function expectReason(log: FastifyBaseLogger, reasonCode: string) {
 	expect(log.warn).toHaveBeenCalledWith(
-		expect.objectContaining({ operation: "plex_label_mutation", reasonCode }),
-		"Plex label mutation failed",
+		expect.objectContaining({ operation: "destination_write", state: "failed", reasonCode }),
+		"Plex label-sync destination write failed",
 	);
 }
 
@@ -231,19 +237,23 @@ describe("Plex label writer privacy-safe mutation logging", () => {
 	});
 
 	it.each([
-		["changed cached evidence", "live_target_changed"],
-		["missing live target", "live_target_missing"],
-		["ambiguous live target", "live_target_ambiguous"],
-		["changed or reused rating key", "live_target_changed"],
-		["connection generation change", "provider_connection_changed"],
-		["identity generation change", "provider_identity_changed"],
-		["disabled or unowned provider", "provider_authority_unavailable"],
-		["Plex read failure", "provider_authority_unavailable"],
-		["duplicate-edition ambiguity", "live_target_ambiguous"],
-	] as const)("redacts %s diagnostics", async (_name, reasonCode) => {
+		["changed cached evidence", "live_target_changed", "live_target_changed"],
+		["missing live target", "live_target_missing", "live_target_missing"],
+		["ambiguous live target", "live_target_ambiguous", "live_target_ambiguous"],
+		["changed or reused rating key", "live_target_changed", "live_target_changed"],
+		["connection generation change", "provider_connection_changed", "provider_connection_changed"],
+		["identity generation change", "provider_identity_changed", "provider_identity_changed"],
+		[
+			"disabled or unowned provider",
+			"provider_authority_unavailable",
+			"provider_attempt_unavailable",
+		],
+		["Plex read failure", "provider_authority_unavailable", "provider_attempt_unavailable"],
+		["duplicate-edition ambiguity", "live_target_ambiguous", "live_target_ambiguous"],
+	] as const)("redacts %s diagnostics", async (_name, authorityReason, terminalReason) => {
 		mocks.mutateMetadataTag.mockResolvedValue({
 			ok: false,
-			reasonCode,
+			reasonCode: authorityReason,
 			evidence: unavailableEvidence("provider_private_reason").evidence,
 		});
 		mocks.emitProviderLog.mockImplementationOnce(async (providerLog: FastifyBaseLogger) => {
@@ -260,7 +270,7 @@ describe("Plex label writer privacy-safe mutation logging", () => {
 		const result = await apply(log);
 
 		expect(result).toEqual({ matchesFound: 1, labelsApplied: 0, failures: 1 });
-		expectReason(log, reasonCode);
+		expectReason(log, terminalReason);
 		expectPrivate(log, result);
 	});
 
@@ -278,8 +288,20 @@ describe("Plex label writer privacy-safe mutation logging", () => {
 			log,
 			providerReason.startsWith("latest_attempt_")
 				? "publication_superseded"
-				: "provider_authority_unavailable",
+				: "provider_attempt_unavailable",
 		);
+		expectPrivate(log, result);
+	});
+
+	it("maps a changed Plex content digest to a changed live target", async () => {
+		mocks.readInstanceSelected.mockResolvedValue(
+			unavailableEvidence("plex_content_digest_changed"),
+		);
+		const log = createLogger();
+		const result = await apply(log);
+
+		expect(result).toEqual({ matchesFound: 0, labelsApplied: 0, failures: 1 });
+		expectReason(log, "live_target_changed");
 		expectPrivate(log, result);
 	});
 
@@ -298,12 +320,18 @@ describe("Plex label writer privacy-safe mutation logging", () => {
 				`${canaries.rawError} ${canaries.url}`,
 			);
 		});
-		mocks.mutateMetadataTag.mockRejectedValueOnce(new mocks.PlexMetadataTagWriteError());
+		mocks.mutateMetadataTag.mockRejectedValueOnce(
+			new mocks.PlexMetadataTagWriteError(responseCategory),
+		);
 		const log = createLogger();
 		const result = await apply(log);
 
 		expect(result).toEqual({ matchesFound: 1, labelsApplied: 0, failures: 1 });
-		expectReason(log, "upstream_write_failed");
+		expect(log.warn).toHaveBeenCalledTimes(1);
+		expectReason(
+			log,
+			responseCategory === "client_error" ? "upstream_write_rejected" : "upstream_write_failed",
+		);
 		expectPrivate(log, result);
 	});
 

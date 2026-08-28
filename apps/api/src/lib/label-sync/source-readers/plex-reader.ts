@@ -13,18 +13,24 @@ import type {
 	SourceReadResult,
 } from "../strategy-types.js";
 import { PlexAuthorityService } from "../../plex/plex-authority-service.js";
+import {
+	classifyPlexLabelSyncTerminalReason,
+	createLabelSyncPlexProviderLogSink,
+	logPlexLabelSyncTerminal,
+} from "../../plex/plex-label-sync-logging.js";
 
 export const plexSourceReader: SourceReader = {
 	prismaService: "PLEX",
 	async readTaggedItems(opts: SourceReaderOpts): Promise<SourceReadResult> {
 		const { rule, sourceInstance, prisma, log } = opts;
+		const providerLog = createLabelSyncPlexProviderLogSink();
 
 		let rows: Array<{ tmdbId: number; mediaType: string; title: string; labels: string }>;
 		try {
 			const evidence = await new PlexAuthorityService({
 				prisma,
 				encryptor: opts.encryptor,
-				log,
+				log: providerLog,
 			}).readInstanceSelected({
 				userId: rule.userId,
 				instanceId: sourceInstance.id,
@@ -40,11 +46,31 @@ export const plexSourceReader: SourceReader = {
 				evidence.evidence.completeness !== "complete" ||
 				evidence.evidence.reasonCodes.length > 0
 			) {
+				const reasonCode = evidence.evidence.reasonCodes[0];
+				logPlexLabelSyncTerminal(log, {
+					operation: "source_read",
+					state: "failed",
+					stage: "source_authority",
+					reasonCode: reasonCode
+						? classifyPlexLabelSyncTerminalReason({
+								stage: "source_authority",
+								code: reasonCode,
+							})
+						: "unknown_failure",
+				});
 				return { matches: [], failed: true };
 			}
 			rows = evidence.rows;
-		} catch (err) {
-			log.warn({ err }, "Failed to query PlexCache for source labels");
+		} catch {
+			logPlexLabelSyncTerminal(log, {
+				operation: "source_read",
+				state: "failed",
+				stage: "source_read",
+				reasonCode: classifyPlexLabelSyncTerminalReason({
+					stage: "source_read",
+					code: "source_read_failed",
+				}),
+			});
 			return { matches: [], failed: true };
 		}
 

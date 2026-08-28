@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PlexClient } from "../plex-client.js";
+import { PlexClient, PlexRequestError } from "../plex-client.js";
 
 const warn = vi.fn();
 const log = { warn } as never;
@@ -515,15 +515,38 @@ describe("PlexClient authoritative inventory completeness", () => {
 		vi.stubGlobal("fetch", fetchMock);
 		const client = new PlexClient("https://CANARY_HOST_787.invalid", token, log);
 
-		await expect(
-			client.updateMetadataTags(ratingKey, "movie", "label", "add", label),
-		).rejects.toThrow();
+		let thrown: unknown;
+		try {
+			await client.updateMetadataTags(ratingKey, "movie", "label", "add", label);
+		} catch (error) {
+			thrown = error;
+		}
+		expect(thrown).toBeInstanceOf(PlexRequestError);
+		expect(thrown).toMatchObject({
+			name: "PlexRequestError",
+			code: "plex_request_failed",
+			responseCategory: "client_error",
+			message: "Plex API request failed",
+		});
+		expect(thrown).not.toHaveProperty("cause");
 
 		expect(warn).toHaveBeenCalledWith(
 			{ operation: "plex_api_request", responseCategory: "client_error" },
 			"Plex API request failed",
 		);
-		const serialized = JSON.stringify(warn.mock.calls);
+		const serialized = JSON.stringify({
+			logs: warn.mock.calls,
+			error: thrown,
+			inspection:
+				thrown instanceof Error
+					? Object.fromEntries(
+							Object.getOwnPropertyNames(thrown).map((key) => [
+								key,
+								(thrown as unknown as Record<string, unknown>)[key],
+							]),
+						)
+					: thrown,
+		});
 		for (const canary of [
 			ratingKey,
 			label,
@@ -552,18 +575,128 @@ describe("PlexClient authoritative inventory completeness", () => {
 			log,
 		);
 
-		await expect(client.getActivities()).rejects.toThrow();
+		let thrown: unknown;
+		try {
+			await client.getActivities();
+		} catch (error) {
+			thrown = error;
+		}
+		expect(thrown).toBeInstanceOf(PlexRequestError);
+		expect(thrown).toMatchObject({
+			code: "plex_request_failed",
+			responseCategory: "server_error",
+			message: "Plex API request failed",
+		});
 		expect(warn).toHaveBeenCalledWith(
 			{ operation: "plex_api_request", responseCategory: "server_error" },
 			"Plex API request failed",
 		);
-		const serialized = JSON.stringify(warn.mock.calls);
+		const serialized = JSON.stringify({
+			logs: warn.mock.calls,
+			error: thrown,
+			text: String(thrown),
+		});
 		for (const canary of [
 			"/activities",
 			"CANARY_NON_LABEL_BODY_787",
 			"CANARY_NON_LABEL_STATUS_787",
 			"CANARY_NON_LABEL_HOST_787.invalid",
 			"CANARY_NON_LABEL_TOKEN_787",
+		]) {
+			expect(serialized).not.toContain(canary);
+		}
+	});
+
+	it("preserves another ordinary Plex read's non-OK rejection contract", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValueOnce(
+				new Response("CANARY_SECTIONS_BODY_787", {
+					status: 401,
+					statusText: "CANARY_SECTIONS_STATUS_787",
+				}),
+			),
+		);
+		const client = new PlexClient(
+			"https://CANARY_SECTIONS_HOST_787.invalid",
+			"CANARY_SECTIONS_TOKEN_787",
+			log,
+		);
+
+		let thrown: unknown;
+		try {
+			await client.getLibrarySections();
+		} catch (error) {
+			thrown = error;
+		}
+		expect(thrown).toBeInstanceOf(PlexRequestError);
+		expect(thrown).toMatchObject({
+			code: "plex_request_failed",
+			responseCategory: "client_error",
+			message: "Plex API request failed",
+		});
+		expect(warn).toHaveBeenCalledWith(
+			{ operation: "plex_api_request", responseCategory: "client_error" },
+			"Plex API request failed",
+		);
+		const serialized = JSON.stringify({
+			logs: warn.mock.calls,
+			error: thrown,
+			text: String(thrown),
+		});
+		for (const canary of [
+			"/library/sections",
+			"CANARY_SECTIONS_BODY_787",
+			"CANARY_SECTIONS_STATUS_787",
+			"CANARY_SECTIONS_HOST_787.invalid",
+			"CANARY_SECTIONS_TOKEN_787",
+		]) {
+			expect(serialized).not.toContain(canary);
+		}
+	});
+
+	it.each([
+		["TimeoutError", "timeout"],
+		["TypeError", "unavailable"],
+	] as const)("bounds a %s transport failure", async (name, responseCategory) => {
+		const providerError = Object.assign(
+			new Error(
+				"CANARY_TRANSPORT_ERROR_787 https://CANARY_TRANSPORT_HOST_787.invalid/?token=CANARY_TRANSPORT_TOKEN_787",
+			),
+			{ name },
+		);
+		vi.stubGlobal("fetch", vi.fn().mockRejectedValueOnce(providerError));
+		const client = new PlexClient(
+			"https://CANARY_TRANSPORT_HOST_787.invalid",
+			"CANARY_TRANSPORT_TOKEN_787",
+			log,
+		);
+
+		let thrown: unknown;
+		try {
+			await client.getActivities();
+		} catch (error) {
+			thrown = error;
+		}
+		expect(thrown).toBeInstanceOf(PlexRequestError);
+		expect(thrown).toMatchObject({
+			code: "plex_request_failed",
+			responseCategory,
+			message: "Plex API request failed",
+		});
+		expect(warn).toHaveBeenCalledWith(
+			{ operation: "plex_api_request", responseCategory },
+			"Plex API request failed",
+		);
+		const serialized = JSON.stringify({
+			logs: warn.mock.calls,
+			error: thrown,
+			text: String(thrown),
+		});
+		for (const canary of [
+			"CANARY_TRANSPORT_ERROR_787",
+			"CANARY_TRANSPORT_HOST_787.invalid",
+			"CANARY_TRANSPORT_TOKEN_787",
 		]) {
 			expect(serialized).not.toContain(canary);
 		}

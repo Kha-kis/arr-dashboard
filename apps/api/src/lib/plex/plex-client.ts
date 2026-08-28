@@ -173,6 +173,24 @@ const SAFETY_PAGE_SIZE = 200;
 const SAFETY_MAX_ITEMS = 100_000;
 const HISTORY_SORT = "viewedAt:desc";
 
+export type PlexResponseCategory = "client_error" | "server_error" | "timeout" | "unavailable";
+
+export class PlexRequestError extends Error {
+	readonly code = "plex_request_failed" as const;
+
+	constructor(readonly responseCategory: PlexResponseCategory) {
+		super("Plex API request failed");
+		this.name = "PlexRequestError";
+		delete this.stack;
+	}
+}
+
+function transportResponseCategory(error: unknown): PlexResponseCategory {
+	return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")
+		? "timeout"
+		: "unavailable";
+}
+
 /**
  * Extract a ratingKey from a Plex path like "/library/metadata/65486".
  * The history API returns `grandparentKey` (full path) instead of
@@ -863,17 +881,24 @@ export class PlexClient {
 			fetchOptions.body = JSON.stringify(options.body);
 		}
 
-		const response = await fetch(url.toString(), fetchOptions);
+		let response: Response;
+		try {
+			response = await fetch(url.toString(), fetchOptions);
+		} catch (error) {
+			const responseCategory = transportResponseCategory(error);
+			this.log.warn({ operation: "plex_api_request", responseCategory }, "Plex API request failed");
+			throw new PlexRequestError(responseCategory);
+		}
 
 		if (!response.ok) {
-			const responseCategory =
+			const responseCategory: PlexResponseCategory =
 				response.status >= 400 && response.status < 500
 					? "client_error"
 					: response.status >= 500
 						? "server_error"
 						: "unavailable";
 			this.log.warn({ operation: "plex_api_request", responseCategory }, "Plex API request failed");
-			throw new Error(`Plex API error: HTTP ${response.status} ${response.statusText}`);
+			throw new PlexRequestError(responseCategory);
 		}
 
 		const contentType = response.headers.get("content-type") ?? "";
@@ -882,20 +907,34 @@ export class PlexClient {
 			try {
 				raw = await response.json();
 			} catch {
-				throw new Error(
-					`Plex API: invalid JSON response (path: ${path}, status: ${response.status})`,
+				this.log.warn(
+					{ operation: "plex_api_request", responseCategory: "unavailable" },
+					"Plex API request failed",
 				);
+				throw new PlexRequestError("unavailable");
 			}
 			if (!options?.schema) {
-				throw new Error(`Plex API: schema required for JSON responses (path: ${path})`);
+				throw new Error("Plex API schema required for JSON response");
 			}
 			const category = path.split("?")[0] ?? path;
-			return parseUpstreamOrThrow(raw, options.schema, { integration: "plex", category });
+			try {
+				return parseUpstreamOrThrow(raw, options.schema, { integration: "plex", category });
+			} catch {
+				this.log.warn(
+					{ operation: "plex_api_request", responseCategory: "unavailable" },
+					"Plex API request failed",
+				);
+				throw new PlexRequestError("unavailable");
+			}
 		}
 
 		// Non-JSON responses (e.g., from POST /library/sections/{id}/refresh)
 		if (options?.schema) {
-			throw new Error(`Plex API: expected JSON response but got ${contentType} (path: ${path})`);
+			this.log.warn(
+				{ operation: "plex_api_request", responseCategory: "unavailable" },
+				"Plex API request failed",
+			);
+			throw new PlexRequestError("unavailable");
 		}
 		return undefined as T;
 	}

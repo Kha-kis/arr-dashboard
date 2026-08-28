@@ -1658,6 +1658,77 @@ describe("PlexAuthorityService settlement window", () => {
 		},
 	);
 
+	it.each([
+		{
+			name: "connection generation change",
+			reread: { connectionGeneration: 5 },
+			expectedReason: "provider_connection_changed",
+			expectedDecision: { available: false, targetRatingKeys: [], writeCount: 0 },
+		},
+		{
+			name: "identity generation change",
+			reread: { identityGeneration: 10 },
+			expectedReason: "provider_identity_changed",
+			expectedDecision: { available: false, targetRatingKeys: [], writeCount: 0 },
+		},
+		{
+			name: "missing live target",
+			liveRatingKeys: [],
+			ledgerRatingKeys: ["101"],
+			expectedReason: "live_target_missing",
+			expectedDecision: { available: false, targetRatingKeys: [], writeCount: 0 },
+		},
+		{
+			name: "ambiguous live target",
+			liveRatingKeys: ["101", "102"],
+			ledgerRatingKeys: ["101", "102"],
+			expectedReason: "live_target_ambiguous",
+			expectedDecision: { available: false, targetRatingKeys: [], writeCount: 0 },
+		},
+		{
+			name: "changed live target",
+			liveRatingKeys: ["102"],
+			ledgerRatingKeys: ["101"],
+			expectedReason: "live_target_changed",
+			expectedDecision: { available: false, targetRatingKeys: [], writeCount: 0 },
+		},
+		{
+			name: "authorized target",
+			expectedDecision: { available: true, targetRatingKeys: ["101"], writeCount: 1 },
+		},
+	] as const)(
+		"keeps the authority decision and selected write targets unchanged when annotating $name",
+		async (testCase) => {
+			const input: Parameters<typeof mutateWithLedgerEvidence>[0] = { withBinding: true };
+			if ("reread" in testCase) input.reread = testCase.reread;
+			if ("liveRatingKeys" in testCase && testCase.liveRatingKeys) {
+				input.liveRatingKeys = [...testCase.liveRatingKeys];
+			}
+			if ("ledgerRatingKeys" in testCase && testCase.ledgerRatingKeys) {
+				input.ledgerRatingKeys = [...testCase.ledgerRatingKeys];
+			}
+
+			const { result, updateMetadataTags } = await mutateWithLedgerEvidence(input);
+			const decisionWithoutReasonProjection = {
+				available: result.ok,
+				targetRatingKeys: updateMetadataTags.mock.calls.map((call) => call[0]),
+				writeCount: updateMetadataTags.mock.calls.length,
+			};
+			const decisionWithReasonProjection = result.ok
+				? decisionWithoutReasonProjection
+				: { ...decisionWithoutReasonProjection, reasonCode: result.reasonCode };
+			const { reasonCode: _reasonCode, ...decisionIgnoringReason } =
+				"reasonCode" in decisionWithReasonProjection
+					? decisionWithReasonProjection
+					: { ...decisionWithReasonProjection, reasonCode: undefined };
+
+			expect(decisionIgnoringReason).toEqual(testCase.expectedDecision);
+			if ("expectedReason" in testCase) {
+				expect(decisionWithReasonProjection).toMatchObject({ reasonCode: testCase.expectedReason });
+			}
+		},
+	);
+
 	it("keeps an authorized mutation result and single-write accounting unchanged", async () => {
 		const { result, updateMetadataTags } = await mutateWithLedgerEvidence({ withBinding: true });
 
@@ -1681,10 +1752,22 @@ describe("PlexAuthorityService settlement window", () => {
 		} catch (error) {
 			thrown = error;
 		}
-		const serialized = JSON.stringify(thrown);
+		const loggerSerialization = vi.fn();
+		loggerSerialization({ err: thrown });
+		const inspection =
+			thrown instanceof Error
+				? Object.fromEntries(
+						Object.getOwnPropertyNames(thrown).map((key) => [
+							key,
+							(thrown as unknown as Record<string, unknown>)[key],
+						]),
+					)
+				: thrown;
+		const serialized = JSON.stringify({ thrown, inspection, logs: loggerSerialization.mock.calls });
 		expect(thrown).toMatchObject({
 			name: "PlexMetadataTagWriteError",
 			code: "upstream_write_failed",
+			responseCategory: "unavailable",
 			message: "Plex metadata tag write failed",
 		});
 		expect(thrown).not.toHaveProperty("cause");

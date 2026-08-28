@@ -20,7 +20,12 @@ import {
 	type PlexCanonicalObservation,
 	type PlexCanonicalSelection,
 } from "./plex-canonical-projection.js";
-import { createPlexClient, type PlexClient } from "./plex-client.js";
+import { createPlexClient, type PlexClient, PlexRequestError } from "./plex-client.js";
+import {
+	classifyPlexMetadataTagEvidenceFailure,
+	PlexMetadataTagWriteError,
+	type PlexMetadataTagMutationFailureReason,
+} from "./plex-label-sync-logging.js";
 import {
 	collectPlexEpisodeLiveEvidence,
 	createPositivePlexEpisodeDigest,
@@ -104,19 +109,10 @@ export class PlexAuthorityUnavailableError extends Error {
 	}
 }
 
-export type PlexMetadataTagMutationFailureReason =
-	| "cached_target_unavailable"
-	| "cached_target_ambiguous"
-	| "cached_target_inconsistent"
-	| "provider_authority_unavailable"
-	| "live_target_missing"
-	| "live_target_ambiguous"
-	| "live_target_changed"
-	| "provider_identity_changed"
-	| "provider_connection_changed"
-	| "upstream_write_failed"
-	| "publication_superseded"
-	| "unknown_failure";
+export {
+	PlexMetadataTagWriteError,
+	type PlexMetadataTagMutationFailureReason,
+} from "./plex-label-sync-logging.js";
 
 export type PlexMetadataTagMutationResult =
 	| { ok: true }
@@ -125,46 +121,6 @@ export type PlexMetadataTagMutationResult =
 			reasonCode: PlexMetadataTagMutationFailureReason;
 			evidence: PlexEvidenceSummary;
 	  };
-
-export class PlexMetadataTagWriteError extends Error {
-	readonly code = "upstream_write_failed" as const;
-
-	constructor() {
-		super("Plex metadata tag write failed");
-		this.name = "PlexMetadataTagWriteError";
-		delete this.stack;
-	}
-}
-
-function classifyMetadataTagEvidenceFailure(
-	evidence: PlexEvidenceSummary,
-): PlexMetadataTagMutationFailureReason {
-	if (evidence.reasonCodes.includes("connection_generation_mismatch")) {
-		return "provider_connection_changed";
-	}
-	if (evidence.reasonCodes.includes("identity_generation_mismatch")) {
-		return "provider_identity_changed";
-	}
-	if (
-		evidence.reasonCodes.some(
-			(reasonCode) =>
-				reasonCode === "latest_attempt_failed" ||
-				reasonCode === "latest_attempt_in_progress" ||
-				reasonCode === "latest_attempt_partial" ||
-				reasonCode === "latest_attempt_unknown" ||
-				reasonCode === "latest_attempt_missing" ||
-				reasonCode === "latest_attempt_future_dated" ||
-				reasonCode === "generation_changed" ||
-				reasonCode === "published_timestamp_changed",
-		)
-	) {
-		return "publication_superseded";
-	}
-	if (evidence.reasonCodes.includes("plex_content_digest_changed")) {
-		return "live_target_changed";
-	}
-	return "provider_authority_unavailable";
-}
 
 function failedMetadataTagMutation(
 	evidence: PlexEvidenceSummary,
@@ -1304,7 +1260,7 @@ export class PlexAuthorityService {
 		if (!before.available) {
 			return failedMetadataTagMutation(
 				before.evidence,
-				classifyMetadataTagEvidenceFailure(before.evidence),
+				classifyPlexMetadataTagEvidenceFailure(before.evidence),
 			);
 		}
 		const client = this.client(instance);
@@ -1327,7 +1283,7 @@ export class PlexAuthorityService {
 		if (!current.available) {
 			return failedMetadataTagMutation(
 				current.evidence,
-				classifyMetadataTagEvidenceFailure(current.evidence),
+				classifyPlexMetadataTagEvidenceFailure(current.evidence),
 			);
 		}
 		const targetBinding = requirePlexTargetLedgerBinding(current.metadata);
@@ -1366,11 +1322,12 @@ export class PlexAuthorityService {
 		);
 		const live = await collectSettledPlexCacheLiveEvidence(client, input.instanceId, this.deps.log);
 		if (!live.complete || !live.inventoryTargets) {
-			return failedMetadataTagMutation(
-				unavailableEvidence(input.instanceId, current.evidence, "plex_content_digest_changed")
-					.evidence,
-				"provider_authority_unavailable",
-			);
+			const evidence = unavailableEvidence(
+				input.instanceId,
+				current.evidence,
+				"plex_content_digest_changed",
+			).evidence;
+			return failedMetadataTagMutation(evidence, classifyPlexMetadataTagEvidenceFailure(evidence));
 		}
 		let liveTargets: PlexGenerationTarget[];
 		try {
@@ -1425,7 +1382,7 @@ export class PlexAuthorityService {
 			!samePlexGenerationBinding(current, afterInstance)
 		) {
 			const reasonCode = !after.available
-				? classifyMetadataTagEvidenceFailure(after.evidence)
+				? classifyPlexMetadataTagEvidenceFailure(after.evidence)
 				: !afterInstance
 					? "provider_authority_unavailable"
 					: after.connectionGeneration !== current.connectionGeneration ||
@@ -1484,8 +1441,10 @@ export class PlexAuthorityService {
 				input.action,
 				input.name,
 			);
-		} catch {
-			throw new PlexMetadataTagWriteError();
+		} catch (error) {
+			throw new PlexMetadataTagWriteError(
+				error instanceof PlexRequestError ? error.responseCategory : "unavailable",
+			);
 		}
 		return { ok: true };
 	}

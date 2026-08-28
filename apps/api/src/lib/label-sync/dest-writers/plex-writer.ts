@@ -6,96 +6,41 @@
  * apply the destination label.
  */
 
-import type { PlexCoverageReasonCode, PlexEvidenceSummary } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import {
 	PlexAuthorityService,
-	PlexMetadataTagWriteError,
 	type PlexMetadataTagMutationFailureReason,
+	PlexMetadataTagWriteError,
 } from "../../plex/plex-authority-service.js";
+import type { PlexResponseCategory } from "../../plex/plex-client.js";
+import {
+	classifyPlexLabelSyncTerminalReason,
+	classifyPlexMetadataTagEvidenceFailure,
+	classifyUnknownPlexLabelSyncTerminalReason,
+	createLabelSyncPlexProviderLogSink,
+	logPlexLabelSyncTerminal,
+} from "../../plex/plex-label-sync-logging.js";
 import type { DestWriteResult, DestWriter, DestWriterOpts } from "../strategy-types.js";
 
-type PlexResponseCategory = "client_error" | "server_error" | "timeout" | "unavailable";
-
-function logPlexLabelMutationFailure(
+function logDestinationAuthorityFailure(
 	log: FastifyBaseLogger,
 	reasonCode: PlexMetadataTagMutationFailureReason,
 	options: {
 		mediaCategory?: "movie" | "series";
 		candidateCount?: number;
-		responseCategory?: PlexResponseCategory;
 	} = {},
-) {
-	const projection: {
-		operation: "plex_label_mutation";
-		reasonCode: PlexMetadataTagMutationFailureReason;
-		mediaCategory?: "movie" | "series";
-		candidateCount?: number;
-		responseCategory?: PlexResponseCategory;
-	} = { operation: "plex_label_mutation", reasonCode };
-	if (options.mediaCategory) projection.mediaCategory = options.mediaCategory;
-	if (
-		options.candidateCount !== undefined &&
-		Number.isSafeInteger(options.candidateCount) &&
-		options.candidateCount >= 0
-	) {
-		projection.candidateCount = options.candidateCount;
-	}
-	if (options.responseCategory) projection.responseCategory = options.responseCategory;
-	log.warn(projection, "Plex label mutation failed");
-}
-
-function readSafeResponseCategory(args: unknown[]): PlexResponseCategory | undefined {
-	const fields = args[0];
-	if (!fields || typeof fields !== "object" || !("responseCategory" in fields)) return undefined;
-	const category = fields.responseCategory;
-	return category === "client_error" ||
-		category === "server_error" ||
-		category === "timeout" ||
-		category === "unavailable"
-		? category
-		: undefined;
-}
-
-function createPlexLabelMutationProviderLogger(log: FastifyBaseLogger): FastifyBaseLogger {
-	let safeLogger: FastifyBaseLogger;
-	const reproject = (...args: unknown[]) => {
-		logPlexLabelMutationFailure(log, "provider_authority_unavailable", {
-			responseCategory: readSafeResponseCategory(args),
-		});
-	};
-	const ignore = () => undefined;
-	safeLogger = {
-		child: () => safeLogger,
-		info: ignore,
-		warn: reproject,
-		error: reproject,
-		debug: ignore,
-		trace: ignore,
-		fatal: reproject,
-	} as unknown as FastifyBaseLogger;
-	return safeLogger;
-}
-
-function classifyEvidenceFailure(
-	evidence: PlexEvidenceSummary,
-): PlexMetadataTagMutationFailureReason {
-	const codes = new Set<PlexCoverageReasonCode>(evidence.reasonCodes);
-	if (codes.has("connection_generation_mismatch")) return "provider_connection_changed";
-	if (codes.has("identity_generation_mismatch")) return "provider_identity_changed";
-	if (
-		codes.has("latest_attempt_failed") ||
-		codes.has("latest_attempt_in_progress") ||
-		codes.has("latest_attempt_partial") ||
-		codes.has("latest_attempt_unknown") ||
-		codes.has("latest_attempt_missing") ||
-		codes.has("latest_attempt_future_dated") ||
-		codes.has("generation_changed") ||
-		codes.has("published_timestamp_changed")
-	) {
-		return "publication_superseded";
-	}
-	return "provider_authority_unavailable";
+): void {
+	logPlexLabelSyncTerminal(log, {
+		operation: "destination_write",
+		state: "failed",
+		stage: "destination_authority",
+		reasonCode: classifyUnknownPlexLabelSyncTerminalReason({
+			stage: "destination_authority",
+			code: reasonCode,
+		}),
+		...(options.mediaCategory ? { mediaCategory: options.mediaCategory } : {}),
+		...(options.candidateCount === undefined ? {} : { candidateCount: options.candidateCount }),
+	});
 }
 
 export const plexDestWriter: DestWriter = {
@@ -117,7 +62,7 @@ export const plexDestWriter: DestWriter = {
 		);
 		const ambiguousCandidateCount = candidates.length - unambiguousCandidates.length;
 		if (ambiguousCandidateCount > 0) {
-			logPlexLabelMutationFailure(log, "cached_target_ambiguous", {
+			logDestinationAuthorityFailure(log, "cached_target_ambiguous", {
 				candidateCount: ambiguousCandidateCount,
 			});
 		}
@@ -131,23 +76,35 @@ export const plexDestWriter: DestWriter = {
 		const authority = new PlexAuthorityService({
 			prisma,
 			encryptor,
-			log: createPlexLabelMutationProviderLogger(log),
+			log: createLabelSyncPlexProviderLogSink(),
 		});
-		const evidence = await authority.readInstanceSelected({
-			userId: rule.userId,
-			instanceId: rule.destInstanceId,
-			selection: { kind: "targets", targets },
-			domains: ["membership"],
-		});
+		let evidence: Awaited<ReturnType<PlexAuthorityService["readInstanceSelected"]>>;
+		try {
+			evidence = await authority.readInstanceSelected({
+				userId: rule.userId,
+				instanceId: rule.destInstanceId,
+				selection: { kind: "targets", targets },
+				domains: ["membership"],
+			});
+		} catch {
+			logDestinationAuthorityFailure(log, "provider_authority_unavailable", {
+				candidateCount: candidates.length,
+			});
+			return { matchesFound: 0, labelsApplied: 0, failures: candidates.length };
+		}
 		if (
 			!evidence.available ||
 			evidence.evidence.publicationLevel !== "authoritative" ||
 			evidence.evidence.completeness !== "complete" ||
 			evidence.evidence.reasonCodes.length > 0
 		) {
-			logPlexLabelMutationFailure(log, classifyEvidenceFailure(evidence.evidence), {
-				candidateCount: candidates.length,
-			});
+			logDestinationAuthorityFailure(
+				log,
+				classifyPlexMetadataTagEvidenceFailure(evidence.evidence),
+				{
+					candidateCount: candidates.length,
+				},
+			);
 			return { matchesFound: 0, labelsApplied: 0, failures: candidates.length };
 		}
 
@@ -159,13 +116,13 @@ export const plexDestWriter: DestWriter = {
 		const attemptedRatingKeys = new Set<string>();
 		for (const row of matched) {
 			if (row.mediaType !== "movie" && row.mediaType !== "series") {
-				logPlexLabelMutationFailure(log, "unknown_failure");
+				logDestinationAuthorityFailure(log, "unknown_failure");
 				failures++;
 				continue;
 			}
 			const cachedKey = resolveParitySafeCachedRatingKey(row);
 			if (!cachedKey.ok) {
-				logPlexLabelMutationFailure(log, cachedKey.reasonCode, {
+				logDestinationAuthorityFailure(log, cachedKey.reasonCode, {
 					mediaCategory: row.mediaType,
 				});
 				failures++;
@@ -186,16 +143,26 @@ export const plexDestWriter: DestWriter = {
 					name: rule.destTagName,
 				});
 			} catch (error) {
-				logPlexLabelMutationFailure(
-					log,
-					error instanceof PlexMetadataTagWriteError ? "upstream_write_failed" : "unknown_failure",
-					{ mediaCategory: row.mediaType },
-				);
+				const responseCategory: PlexResponseCategory | undefined =
+					error instanceof PlexMetadataTagWriteError ? error.responseCategory : undefined;
+				logPlexLabelSyncTerminal(log, {
+					operation: "destination_write",
+					state: "failed",
+					stage: "upstream_write",
+					reasonCode: responseCategory
+						? classifyPlexLabelSyncTerminalReason({
+								stage: "upstream_write",
+								code: responseCategory,
+							})
+						: "unknown_failure",
+					mediaCategory: row.mediaType,
+					...(responseCategory ? { upstreamCategory: responseCategory } : {}),
+				});
 				failures++;
 				continue;
 			}
 			if (!mutation.ok) {
-				logPlexLabelMutationFailure(log, mutation.reasonCode, {
+				logDestinationAuthorityFailure(log, mutation.reasonCode, {
 					mediaCategory: row.mediaType,
 				});
 				failures++;
