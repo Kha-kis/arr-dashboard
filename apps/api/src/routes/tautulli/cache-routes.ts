@@ -36,7 +36,8 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 		return reply.send({
 			instanceId,
 			...authority,
-			hasCacheData: authority.available && authority.cachedItems > 0,
+			hasCacheData:
+				authority.available && authority.cachedItems !== null ? authority.cachedItems > 0 : null,
 		});
 	});
 

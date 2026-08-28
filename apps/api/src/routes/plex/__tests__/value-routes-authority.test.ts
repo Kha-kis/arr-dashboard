@@ -165,6 +165,8 @@ describe("Plex value route evidence contracts", () => {
 		app = Fastify({ logger: false });
 		setupAuthInjection(app);
 		app.decorate("prisma", {
+			$transaction: async (operation: (tx: unknown) => Promise<unknown>) =>
+				await operation(app.prisma),
 			serviceInstance: {
 				findFirst: findPlexInstance,
 				findMany: vi.fn(async ({ where }: { where?: { service?: string } }) =>

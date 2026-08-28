@@ -1,6 +1,12 @@
-import type { PrismaClient, ServiceInstance } from "../prisma.js";
+import type { Prisma, PrismaClient, ServiceInstance } from "../prisma.js";
 
 export const TAUTULLI_CACHE_FRESHNESS_MS = 12 * 60 * 60 * 1000;
+const TAUTULLI_SELECTED_CACHE_PAGE_SIZE = 100;
+const TAUTULLI_SELECTED_CACHE_MAX_ROWS = 200;
+const TAUTULLI_SELECTED_CACHE_MAX_PAGES = 2;
+const TAUTULLI_SELECTED_CACHE_TRANSACTION_ATTEMPTS = 3;
+const TAUTULLI_SELECTED_CACHE_TRANSACTION_TIMEOUT_MS = 10_000;
+const TAUTULLI_SELECTED_CACHE_RETRY_DELAY_MS = 15;
 
 export type TautulliCacheAuthorityReason =
 	| "no_publication"
@@ -30,7 +36,7 @@ export interface TautulliCacheAuthorityProjection {
 	available: boolean;
 	state: TautulliCacheAuthorityState;
 	reasonCodes: TautulliCacheAuthorityReason[];
-	cachedItems: number;
+	cachedItems: number | null;
 	lastRefreshedAt: Date | null;
 }
 
@@ -72,6 +78,11 @@ type TautulliAuthorityStatus = {
 	identityGeneration: number | null;
 };
 
+type TautulliAuthorityReader = Pick<
+	Prisma.TransactionClient,
+	"serviceInstance" | "cacheRefreshStatus" | "tautulliCache"
+>;
+
 const PERSISTABLE_REASON_CODES = new Set<TautulliCacheAuthorityReason>([
 	"credential_unavailable",
 	"provider_identity_changed",
@@ -94,7 +105,7 @@ function failed(
 		available: false,
 		state,
 		reasonCodes: [...new Set(reasonCodes)],
-		cachedItems: 0,
+		cachedItems: null,
 		lastRefreshedAt: status?.lastRefreshedAt ?? null,
 	};
 }
@@ -160,7 +171,7 @@ export function evaluateTautulliCacheAuthority(
 }
 
 export async function readOwnedTautulliCacheAuthority(
-	prisma: PrismaClient,
+	prisma: TautulliAuthorityReader,
 	input: { userId: string; instanceId: string; now?: Date },
 ): Promise<TautulliCacheAuthorityProjection | null> {
 	const instance = await prisma.serviceInstance.findFirst({
@@ -215,12 +226,56 @@ export async function findOwnedEnabledTautulliInstance(
 }
 
 export async function readUserSelectedTautulliCache(
-	prisma: PrismaClient,
+	prisma: Pick<PrismaClient, "$transaction">,
 	input: {
 		userId: string;
 		targets: Array<{ tmdbId: number; mediaType: "movie" | "series" }>;
 		now?: Date;
-		pageSize?: number;
+	},
+): Promise<TautulliSelectedCacheResult> {
+	const targets = [
+		...new Map(
+			input.targets.map((target) => [`${target.mediaType}:${target.tmdbId}`, target]),
+		).values(),
+	];
+	if (targets.length > TAUTULLI_SELECTED_CACHE_MAX_ROWS) {
+		return unavailableSelectedTautulliCache();
+	}
+
+	for (let attempt = 1; attempt <= TAUTULLI_SELECTED_CACHE_TRANSACTION_ATTEMPTS; attempt++) {
+		try {
+			return await prisma.$transaction(
+				async (tx) =>
+					await readUserSelectedTautulliCacheSnapshot(tx, {
+						...input,
+						targets,
+					}),
+				{
+					isolationLevel: "Serializable",
+					timeout: TAUTULLI_SELECTED_CACHE_TRANSACTION_TIMEOUT_MS,
+				},
+			);
+		} catch (error) {
+			if (
+				attempt === TAUTULLI_SELECTED_CACHE_TRANSACTION_ATTEMPTS ||
+				!isRetryableTautulliReadTransactionError(error)
+			) {
+				return unavailableSelectedTautulliCache();
+			}
+			await new Promise<void>((resolve) =>
+				setTimeout(resolve, attempt * TAUTULLI_SELECTED_CACHE_RETRY_DELAY_MS),
+			);
+		}
+	}
+	return unavailableSelectedTautulliCache();
+}
+
+async function readUserSelectedTautulliCacheSnapshot(
+	prisma: TautulliAuthorityReader,
+	input: {
+		userId: string;
+		targets: Array<{ tmdbId: number; mediaType: "movie" | "series" }>;
+		now?: Date;
 	},
 ): Promise<TautulliSelectedCacheResult> {
 	const instances = await prisma.serviceInstance.findMany({
@@ -260,10 +315,13 @@ export async function readUserSelectedTautulliCache(
 		return { configured: true, available: true, reasonCodes: [], rows: [] };
 	}
 
-	const pageSize = Math.max(1, Math.min(input.pageSize ?? 500, 500));
 	const rows: TautulliSelectedCacheRow[] = [];
 	let cursor: string | undefined;
-	while (rows.length < input.targets.length) {
+	for (
+		let pageNumber = 0;
+		pageNumber < TAUTULLI_SELECTED_CACHE_MAX_PAGES && rows.length < input.targets.length;
+		pageNumber++
+	) {
 		const page = await prisma.tautulliCache.findMany({
 			where: {
 				instanceId: instance.id,
@@ -284,14 +342,52 @@ export async function readUserSelectedTautulliCache(
 				watchCount: true,
 				watchedByUsers: true,
 			},
-			take: pageSize,
+			take: Math.min(
+				TAUTULLI_SELECTED_CACHE_PAGE_SIZE,
+				TAUTULLI_SELECTED_CACHE_MAX_ROWS - rows.length,
+			),
 			...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
 			orderBy: { id: "asc" },
 		});
 		if (page.length === 0) break;
 		rows.push(...page);
 		cursor = page[page.length - 1]!.id;
-		if (page.length < pageSize) break;
+		if (page.length < TAUTULLI_SELECTED_CACHE_PAGE_SIZE) break;
 	}
 	return { configured: true, available: true, reasonCodes: [], rows };
+}
+
+function unavailableSelectedTautulliCache(): TautulliSelectedCacheResult {
+	return {
+		configured: true,
+		available: false,
+		reasonCodes: ["unknown_failure"],
+		rows: [],
+	};
+}
+
+function isRetryableTautulliReadTransactionError(error: unknown): boolean {
+	const pending: unknown[] = [error];
+	const visited = new Set<object>();
+	while (pending.length > 0) {
+		const candidate = pending.pop();
+		if (!candidate || typeof candidate !== "object" || visited.has(candidate)) continue;
+		visited.add(candidate);
+		const record = candidate as Record<string, unknown>;
+		const code = typeof record.code === "string" ? record.code : "";
+		const originalCode = typeof record.originalCode === "string" ? record.originalCode : "";
+		const message = typeof record.message === "string" ? record.message : "";
+		const kind = typeof record.kind === "string" ? record.kind : "";
+		if (
+			code === "P2034" ||
+			code === "SQLITE_BUSY" ||
+			code === "40001" ||
+			originalCode === "40001" ||
+			/serializ|deadlock|database is locked|transactionwriteconflict/i.test(`${kind} ${message}`)
+		) {
+			return true;
+		}
+		pending.push(record.cause, record.meta, record.driverAdapterError);
+	}
+	return false;
 }

@@ -196,9 +196,18 @@ beforeEach(async () => {
 	app.decorate("prisma", {
 		serviceInstance: {
 			findFirst: findPlexInstance,
-			findMany: async () =>
+			findMany: async ({
+				where,
+			}: {
+				where: { service: string; userId: string; enabled: boolean };
+			}) =>
 				cacheStatuses
-					.filter((status) => status.cacheType === "plex")
+					.filter(
+						(status) =>
+							status.instance.service === where.service &&
+							status.instance.enabled === where.enabled &&
+							where.userId === `e2e-cache-user-${userCounter}`,
+					)
 					.map((status) => ({
 						...status.instance,
 						id: status.instanceId,

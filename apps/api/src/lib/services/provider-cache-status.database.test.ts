@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "../../generated/prisma/client.js";
+import { createTestPgClient } from "../__tests__/test-prisma.js";
 import { publishAuthoritativePlexCacheGeneration } from "../plex/plex-cache-storage.js";
 import {
 	encodeAuthoritativePlexGenerationMetadata,
@@ -17,20 +18,26 @@ import {
 	finishPlexCacheRefreshAttemptFailure,
 } from "./provider-cache-status.js";
 import type { ProviderPublicationAuthority } from "./provider-identity-guard.js";
-import { readOwnedTautulliCacheAuthority } from "../tautulli/tautulli-cache-authority.js";
+import { clearDurableProviderCacheState } from "./service-identity-lifecycle.js";
+import {
+	readOwnedTautulliCacheAuthority,
+	readUserSelectedTautulliCache,
+} from "../tautulli/tautulli-cache-authority.js";
 
 const apiRoot = join(process.cwd());
 const log = { warn: vi.fn() };
-const databases: Array<{ client: PrismaClient; directory: string }> = [];
+const databases: Array<{
+	clients: PrismaClient[];
+	directory: string;
+	databasePath: string;
+}> = [];
 
 afterEach(async () => {
 	vi.unstubAllEnvs();
-	await Promise.all(
-		databases.splice(0).map(async ({ client, directory }) => {
-			await client.$disconnect();
-			await rm(directory, { recursive: true, force: true });
-		}),
-	);
+	for (const { clients, directory } of databases.splice(0)) {
+		await Promise.all(clients.map(async (client) => await client.$disconnect()));
+		await rm(directory, { recursive: true, force: true });
+	}
 });
 
 async function createDatabase(): Promise<PrismaClient> {
@@ -45,8 +52,19 @@ async function createDatabase(): Promise<PrismaClient> {
 		adapter: new PrismaBetterSqlite3({ url: databasePath, timeout: 1_000 }),
 	});
 	await client.$connect();
-	databases.push({ client, directory });
+	databases.push({ clients: [client], directory, databasePath });
 	return client;
+}
+
+async function createDatabasePeer(client: PrismaClient): Promise<PrismaClient> {
+	const database = databases.find((entry) => entry.clients.includes(client));
+	if (!database) throw new Error("SQLite test database is not registered");
+	const peer = new PrismaClient({
+		adapter: new PrismaBetterSqlite3({ url: database.databasePath, timeout: 1_000 }),
+	});
+	await peer.$connect();
+	database.clients.push(peer);
+	return peer;
 }
 
 const authority: ProviderPublicationAuthority = {
@@ -117,7 +135,116 @@ async function seedObsoleteStatus(
 	});
 }
 
+async function exerciseConcurrentTautulliSnapshot(
+	client: PrismaClient,
+	writer: PrismaClient,
+): Promise<void> {
+	const publishedAt = new Date("2026-08-28T12:00:00.000Z");
+	await client.user.create({
+		data: { id: tautulliAuthority.userId, username: "tautulli-snapshot", hashedPassword: "hash" },
+	});
+	await client.serviceInstance.create({
+		data: {
+			...tautulliAuthority,
+			label: "Tautulli",
+			identityKind: "TAUTULLI_PMS_IDENTIFIER",
+			identityVerifiedAt: publishedAt,
+		},
+	});
+	await client.cacheRefreshStatus.create({
+		data: {
+			instanceId: tautulliAuthority.id,
+			cacheType: "tautulli",
+			lastRefreshedAt: publishedAt,
+			lastResult: "success",
+			lastErrorMessage: null,
+			itemCount: 1,
+			lastAttemptAt: publishedAt,
+			lastAttemptResult: "success",
+			lastAttemptErrorMessage: null,
+			connectionGeneration: tautulliAuthority.connectionGeneration,
+			identityGeneration: tautulliAuthority.identityGeneration,
+		},
+	});
+	await client.tautulliCache.create({
+		data: {
+			id: "tautulli-current-row",
+			instanceId: tautulliAuthority.id,
+			tmdbId: 42,
+			mediaType: "movie",
+			lastWatchedAt: publishedAt,
+			watchCount: 3,
+			watchedByUsers: "[]",
+			connectionGeneration: tautulliAuthority.connectionGeneration,
+			identityGeneration: tautulliAuthority.identityGeneration,
+		},
+	});
+
+	let selectedReadReached!: () => void;
+	const atSelectedRead = new Promise<void>((resolve) => {
+		selectedReadReached = resolve;
+	});
+	let releaseSelectedRead!: () => void;
+	const selectedReadRelease = new Promise<void>((resolve) => {
+		releaseSelectedRead = resolve;
+	});
+	const reader = client.$extends({
+		query: {
+			tautulliCache: {
+				async findMany({ args, query }) {
+					selectedReadReached();
+					await selectedReadRelease;
+					return await query(args);
+				},
+			},
+		},
+	});
+
+	const read = readUserSelectedTautulliCache(reader as never, {
+		userId: tautulliAuthority.userId,
+		targets: [{ tmdbId: 42, mediaType: "movie" }],
+		now: publishedAt,
+	});
+	await atSelectedRead;
+	const reset = writer.$transaction(
+		async (tx) => {
+			await tx.serviceInstance.update({
+				where: { id: tautulliAuthority.id },
+				data: { connectionGeneration: { increment: 1 } },
+			});
+			await clearDurableProviderCacheState(tx, tautulliAuthority.id);
+		},
+		{ isolationLevel: "Serializable" },
+	);
+	releaseSelectedRead();
+
+	const [result] = await Promise.all([read, reset]);
+	expect(result.available && result.rows.length === 0).toBe(false);
+	if (result.available) {
+		expect(result).toMatchObject({
+			configured: true,
+			reasonCodes: [],
+			rows: [{ id: "tautulli-current-row", tmdbId: 42, watchCount: 3 }],
+		});
+	} else {
+		expect(result.reasonCodes.length).toBeGreaterThan(0);
+	}
+	await expect(
+		writer.serviceInstance.findUniqueOrThrow({ where: { id: tautulliAuthority.id } }),
+	).resolves.toMatchObject({ connectionGeneration: 5 });
+	expect(
+		await writer.cacheRefreshStatus.count({ where: { instanceId: tautulliAuthority.id } }),
+	).toBe(0);
+	expect(await writer.tautulliCache.count({ where: { instanceId: tautulliAuthority.id } })).toBe(0);
+}
+
 describe("provider cache status SQLite takeover contract", () => {
+	it("serializes a lifecycle clear at the Tautulli validation-to-row-read boundary", async () => {
+		const client = await createDatabase();
+		const writer = await createDatabasePeer(client);
+		await exerciseConcurrentTautulliSnapshot(client, writer);
+	}, 30_000);
+
 	it("keeps overlap A unavailable, publishes B, and prevents A from finishing over B", async () => {
 		const client = await createDatabase();
 		await client.user.create({
@@ -470,4 +597,27 @@ describe("provider cache status SQLite takeover contract", () => {
 			),
 		).toBe("superseded");
 	}, 30_000);
+});
+
+describe("provider cache status PostgreSQL Serializable snapshot contract", () => {
+	it.runIf(Boolean(process.env.TAUTULLI_AUTHORITY_POSTGRES_URL))(
+		"serializes the same lifecycle clear without a mixed selected-cache snapshot",
+		async () => {
+			const connectionString = process.env.TAUTULLI_AUTHORITY_POSTGRES_URL!;
+			if (new URL(connectionString).pathname !== "/tautulli_authority_test") {
+				throw new Error(
+					"TAUTULLI_AUTHORITY_POSTGRES_URL must target the disposable tautulli_authority_test database",
+				);
+			}
+			const reader = await createTestPgClient(connectionString);
+			const writer = await createTestPgClient(connectionString);
+			try {
+				await exerciseConcurrentTautulliSnapshot(reader.prisma, writer.prisma);
+			} finally {
+				await writer.cleanup();
+				await reader.cleanup();
+			}
+		},
+		30_000,
+	);
 });

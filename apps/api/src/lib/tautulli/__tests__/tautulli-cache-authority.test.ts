@@ -123,6 +123,7 @@ describe("Tautulli cache authority", () => {
 		expect(evaluated.available).toBe(false);
 		expect(evaluated.state).toBe(scenarioRecord.state ?? "failed_unavailable");
 		expect(evaluated.reasonCodes).toContain(scenarioRecord.reason);
+		expect(evaluated.cachedItems).toBeNull();
 		expect(JSON.stringify(evaluated)).not.toContain("provider leaked text");
 	});
 
@@ -175,30 +176,39 @@ describe("Tautulli cache authority", () => {
 	});
 
 	it("cursor-paginates selected rows with tenant and exact-generation scope on every page", async () => {
-		const rows = [
-			{ id: "row-1", instanceId: "tautulli-1", tmdbId: 1, mediaType: "movie" },
-			{ id: "row-2", instanceId: "tautulli-1", tmdbId: 2, mediaType: "series" },
-		];
+		const rows = Array.from({ length: 101 }, (_, index) => ({
+			id: `row-${String(index + 1).padStart(3, "0")}`,
+			instanceId: "tautulli-1",
+			tmdbId: index + 1,
+			mediaType: index % 2 === 0 ? "movie" : "series",
+		}));
 		const prisma = {
+			$transaction: vi.fn(
+				async (operation: (tx: unknown) => Promise<unknown>) => await operation(prisma),
+			),
 			serviceInstance: {
 				findMany: vi.fn().mockResolvedValue([instance]),
 				findFirst: vi.fn().mockResolvedValue(instance),
 			},
-			cacheRefreshStatus: { findFirst: vi.fn().mockResolvedValue(status) },
+			cacheRefreshStatus: {
+				findFirst: vi.fn().mockResolvedValue({ ...status, itemCount: rows.length }),
+			},
 			tautulliCache: {
-				count: vi.fn().mockResolvedValue(2),
-				findMany: vi.fn().mockResolvedValueOnce([rows[0]]).mockResolvedValueOnce([rows[1]]),
+				count: vi.fn().mockResolvedValue(rows.length),
+				findMany: vi
+					.fn()
+					.mockResolvedValueOnce(rows.slice(0, 100))
+					.mockResolvedValueOnce(rows.slice(100)),
 			},
 		};
 
 		const result = await readUserSelectedTautulliCache(prisma as never, {
 			userId: "user-1",
-			targets: [
-				{ tmdbId: 1, mediaType: "movie" },
-				{ tmdbId: 2, mediaType: "series" },
-			],
+			targets: rows.map((row) => ({
+				tmdbId: row.tmdbId,
+				mediaType: row.mediaType as "movie" | "series",
+			})),
 			now,
-			pageSize: 1,
 		});
 
 		expect(result).toMatchObject({ configured: true, available: true, rows });
@@ -213,10 +223,74 @@ describe("Tautulli cache authority", () => {
 				}),
 			);
 		}
+		expect(prisma.tautulliCache.findMany.mock.calls.map(([query]) => query.take)).toEqual([
+			100, 100,
+		]);
+	});
+
+	it("keeps lifecycle clearing between validation and row loading inside one Serializable snapshot", async () => {
+		const selectedRow = {
+			id: "row-1",
+			instanceId: "tautulli-1",
+			tmdbId: 1,
+			mediaType: "movie",
+			lastWatchedAt: now,
+			watchCount: 2,
+			watchedByUsers: "[]",
+		};
+		const snapshotPrisma = {
+			serviceInstance: {
+				findMany: vi.fn().mockResolvedValue([instance]),
+				findFirst: vi.fn().mockResolvedValue(instance),
+			},
+			cacheRefreshStatus: { findFirst: vi.fn().mockResolvedValue({ ...status, itemCount: 1 }) },
+			tautulliCache: {
+				count: vi.fn().mockResolvedValue(1),
+				findMany: vi.fn().mockResolvedValue([selectedRow]),
+			},
+		};
+		const prisma = {
+			$transaction: vi.fn(
+				async (operation: (tx: typeof snapshotPrisma) => Promise<unknown>) =>
+					await operation(snapshotPrisma),
+			),
+			// These root delegates model the mixed split-read result after the
+			// lifecycle reset clears status and rows between validation and use.
+			serviceInstance: {
+				findMany: vi.fn().mockResolvedValue([instance]),
+				findFirst: vi.fn().mockResolvedValue(instance),
+			},
+			cacheRefreshStatus: { findFirst: vi.fn().mockResolvedValue({ ...status, itemCount: 1 }) },
+			tautulliCache: {
+				count: vi.fn().mockResolvedValue(1),
+				findMany: vi.fn().mockResolvedValue([]),
+			},
+		};
+
+		await expect(
+			readUserSelectedTautulliCache(prisma as never, {
+				userId: "user-1",
+				targets: [{ tmdbId: 1, mediaType: "movie" }],
+				now,
+			}),
+		).resolves.toMatchObject({
+			configured: true,
+			available: true,
+			reasonCodes: [],
+			rows: [selectedRow],
+		});
+		expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+			isolationLevel: "Serializable",
+			timeout: expect.any(Number),
+		});
+		expect(prisma.serviceInstance.findMany).not.toHaveBeenCalled();
 	});
 
 	it("quarantines ambiguous multiple Tautulli sources before any row read", async () => {
 		const prisma = {
+			$transaction: vi.fn(
+				async (operation: (tx: unknown) => Promise<unknown>) => await operation(prisma),
+			),
 			serviceInstance: {
 				findMany: vi.fn().mockResolvedValue([instance, { ...instance, id: "tautulli-2" }]),
 			},
@@ -234,6 +308,88 @@ describe("Tautulli cache authority", () => {
 			rows: [],
 		});
 		expect(prisma.tautulliCache.findMany).not.toHaveBeenCalled();
+	});
+
+	it("retries the complete Serializable snapshot after a transaction conflict", async () => {
+		const postResetSnapshot = {
+			serviceInstance: {
+				findMany: vi.fn().mockResolvedValue([{ ...instance, connectionGeneration: 5 }]),
+				findFirst: vi.fn().mockResolvedValue({ ...instance, connectionGeneration: 5 }),
+			},
+			cacheRefreshStatus: { findFirst: vi.fn().mockResolvedValue(null) },
+			tautulliCache: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn() },
+		};
+		const transaction = vi
+			.fn()
+			.mockRejectedValueOnce(
+				Object.assign(new Error("transaction conflict"), {
+					code: "P2010",
+					meta: { driverAdapterError: { cause: { originalCode: "40001" } } },
+				}),
+			)
+			.mockImplementationOnce(
+				async (operation: (tx: typeof postResetSnapshot) => Promise<unknown>) =>
+					await operation(postResetSnapshot),
+			);
+
+		await expect(
+			readUserSelectedTautulliCache({ $transaction: transaction } as never, {
+				userId: "user-1",
+				targets: [{ tmdbId: 1, mediaType: "movie" }],
+				now,
+			}),
+		).resolves.toMatchObject({
+			configured: true,
+			available: false,
+			reasonCodes: ["no_publication"],
+			rows: [],
+		});
+		expect(transaction).toHaveBeenCalledTimes(2);
+		expect(postResetSnapshot.serviceInstance.findMany).toHaveBeenCalledOnce();
+	});
+
+	it("returns bounded unavailable after exhausting transaction retries", async () => {
+		const transaction = vi.fn().mockRejectedValue(
+			Object.assign(new Error("database is locked: secret-provider-path"), {
+				code: "SQLITE_BUSY",
+			}),
+		);
+
+		const result = await readUserSelectedTautulliCache({ $transaction: transaction } as never, {
+			userId: "user-1",
+			targets: [{ tmdbId: 1, mediaType: "movie" }],
+			now,
+		});
+
+		expect(result).toEqual({
+			configured: true,
+			available: false,
+			reasonCodes: ["unknown_failure"],
+			rows: [],
+		});
+		expect(JSON.stringify(result)).not.toContain("secret-provider-path");
+		expect(transaction).toHaveBeenCalledTimes(3);
+	});
+
+	it("rejects an oversized selection before opening a transaction", async () => {
+		const transaction = vi.fn();
+		const targets = Array.from({ length: 201 }, (_, index) => ({
+			tmdbId: index + 1,
+			mediaType: "movie" as const,
+		}));
+
+		await expect(
+			readUserSelectedTautulliCache({ $transaction: transaction } as never, {
+				userId: "user-1",
+				targets,
+			}),
+		).resolves.toEqual({
+			configured: true,
+			available: false,
+			reasonCodes: ["unknown_failure"],
+			rows: [],
+		});
+		expect(transaction).not.toHaveBeenCalled();
 	});
 
 	it("keeps every production Prisma access behind publication, lifecycle, or currentness", async () => {

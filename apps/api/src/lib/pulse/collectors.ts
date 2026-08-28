@@ -621,12 +621,17 @@ function cacheSource(cacheType: string, instanceService: string): string {
 }
 
 const collectCacheStaleness: Collector = async (app, userId) => {
-	const cacheStatuses = await app.prisma.cacheRefreshStatus.findMany({
-		where: { instance: { userId, enabled: true } },
-		include: { instance: { select: { label: true, service: true } } },
-	});
+	const [cacheStatuses, tautulliInstances] = await Promise.all([
+		app.prisma.cacheRefreshStatus.findMany({
+			where: { instance: { userId, enabled: true } },
+			include: { instance: { select: { label: true, service: true } } },
+		}),
+		app.prisma.serviceInstance.findMany({
+			where: { userId, enabled: true, service: "TAUTULLI" },
+			select: { id: true, label: true, createdAt: true },
+		}),
+	]);
 
-	if (cacheStatuses.length === 0) return [];
 	const plexEvidenceByStatus = new Map<
 		string,
 		Awaited<ReturnType<typeof loadUserGenerationObservations>>[number]["evidence"]
@@ -790,6 +795,49 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 				...(action ? { action } : {}),
 			});
 		}
+	}
+
+	const tautulliStatusInstanceIds = new Set(
+		cacheStatuses
+			.filter((status) => status.cacheType === "tautulli")
+			.map((status) => status.instanceId),
+	);
+	for (const instance of tautulliInstances) {
+		if (tautulliStatusInstanceIds.has(instance.id)) continue;
+		const authority = await readOwnedTautulliCacheAuthority(app.prisma, {
+			userId,
+			instanceId: instance.id,
+		});
+		if (!authority || authority.available) continue;
+
+		const timestamp = authority.lastRefreshedAt?.toISOString() ?? instance.createdAt.toISOString();
+		if (authority.state === "in_progress") {
+			items.push({
+				id: `cache-refreshing-tautulli-${instance.id}`,
+				severity: "info",
+				category: "health",
+				title: `${instance.label}: Tautulli cache refresh is in progress`,
+				detail: authority.reasonCodes.join(", "),
+				actionUrl: "/settings",
+				actionLabel: "View status",
+				source: "tautulli",
+				timestamp,
+			});
+			continue;
+		}
+
+		items.push({
+			id: `cache-error-tautulli-${instance.id}`,
+			severity: "warning",
+			category: "health",
+			title: `${instance.label}: Tautulli cache refresh failed`,
+			detail: authority.reasonCodes.join(", "),
+			actionUrl: "/settings",
+			actionLabel: "Check settings",
+			source: "tautulli",
+			timestamp,
+			action: actionForCache(instance.id, "tautulli", "Retry refresh"),
+		});
 	}
 	return items;
 };

@@ -88,4 +88,30 @@ describe("POST /api/tautulli/cache/:instanceId/refresh", () => {
 			lastRefreshedAt: "2026-08-28T11:00:00.000Z",
 		});
 	});
+
+	it("keeps cache count and presence unknown when current evidence is unavailable", async () => {
+		routeMocks.readAuthority.mockResolvedValueOnce({
+			available: false,
+			state: "no_publication",
+			reasonCodes: ["no_publication"],
+			cachedItems: null,
+			lastRefreshedAt: null,
+		});
+
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/api/tautulli/cache/tautulli-1/status",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toEqual({
+			instanceId: "tautulli-1",
+			available: false,
+			state: "no_publication",
+			reasonCodes: ["no_publication"],
+			cachedItems: null,
+			hasCacheData: null,
+			lastRefreshedAt: null,
+		});
+	});
 });

@@ -42,6 +42,7 @@ let app: ReturnType<typeof Fastify>;
 let injectAuthenticated: ReturnType<typeof createInjectAuthenticated>;
 let cacheStatuses: CacheStatusRow[];
 let findCacheStatuses: ReturnType<typeof vi.fn>;
+let findTautulliInstances: ReturnType<typeof vi.fn>;
 let userCounter = 0;
 
 type CacheStatusRow = {
@@ -83,6 +84,7 @@ beforeEach(async () => {
 	app = Fastify({ logger: false });
 	setupAuthInjection(app, { id: `user-cache-${userCounter}`, username: "admin" });
 	findCacheStatuses = vi.fn(async () => cacheStatuses.filter((row) => row.instance.enabled));
+	findTautulliInstances = vi.fn().mockResolvedValue([]);
 	evidenceMocks.loadUserGenerationObservations.mockImplementation(async () =>
 		cacheStatuses
 			.filter((row) => row.cacheType === "plex")
@@ -111,6 +113,9 @@ beforeEach(async () => {
 	app.decorate("prisma", {
 		cacheRefreshStatus: {
 			findMany: findCacheStatuses,
+		},
+		serviceInstance: {
+			findMany: findTautulliInstances,
 		},
 	} as unknown as never);
 	await app.register(registerPulseRoutes);
@@ -406,6 +411,44 @@ describe("GET /pulse — cache.refresh action emission", () => {
 		expect(item.action?.kind).toBe("cache.refresh");
 		expect(item.action?.target).toEqual({ instanceId: "inst-taut", cacheType: "tautulli" });
 		expect(item.detail).toContain("cache_stale");
+	});
+
+	it("reports no publication for an enabled owned Tautulli instance without a status row", async () => {
+		cacheStatuses = [];
+		findTautulliInstances.mockResolvedValueOnce([
+			{
+				id: "inst-taut-missing",
+				label: "Home Tautulli",
+				createdAt: new Date("2026-08-28T12:00:00.000Z"),
+			},
+		]);
+		evidenceMocks.readOwnedTautulliCacheAuthority.mockResolvedValueOnce({
+			available: false,
+			state: "no_publication",
+			reasonCodes: ["no_publication"],
+			cachedItems: null,
+			lastRefreshedAt: null,
+		});
+
+		const body = JSON.parse((await injectAuthenticated("GET", "/pulse")).payload);
+		const item = body.items.find(
+			(candidate: { id: string }) => candidate.id === "cache-error-tautulli-inst-taut-missing",
+		);
+
+		expect(findTautulliInstances).toHaveBeenCalledWith({
+			where: { userId: expect.any(String), enabled: true, service: "TAUTULLI" },
+			select: { id: true, label: true, createdAt: true },
+		});
+		expect(item).toMatchObject({
+			severity: "warning",
+			title: "Home Tautulli: Tautulli cache refresh failed",
+			detail: "no_publication",
+			source: "tautulli",
+			action: {
+				kind: "cache.refresh",
+				target: { instanceId: "inst-taut-missing", cacheType: "tautulli" },
+			},
+		});
 	});
 
 	it("does NOT emit an action for unsupported cacheType (plex_episode)", async () => {
