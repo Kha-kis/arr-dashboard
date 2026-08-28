@@ -17,11 +17,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const evidenceMocks = vi.hoisted(() => ({
 	loadUserGenerationObservations: vi.fn(),
 	getPublishedEpisodeGenerationObservation: vi.fn(),
+	readOwnedTautulliCacheAuthority: vi.fn(),
 }));
 
 vi.mock("../../lib/plex/plex-evidence-repository.js", () => ({
 	loadUserGenerationObservations: evidenceMocks.loadUserGenerationObservations,
 	getPublishedEpisodeGenerationObservation: evidenceMocks.getPublishedEpisodeGenerationObservation,
+}));
+vi.mock("../../lib/tautulli/tautulli-cache-authority.js", () => ({
+	readOwnedTautulliCacheAuthority: evidenceMocks.readOwnedTautulliCacheAuthority,
 }));
 
 vi.mock("../../lib/pulse/collectors.js", async () => {
@@ -103,6 +107,7 @@ beforeEach(async () => {
 			},
 		}),
 	);
+	evidenceMocks.readOwnedTautulliCacheAuthority.mockResolvedValue(null);
 	app.decorate("prisma", {
 		cacheRefreshStatus: {
 			findMany: findCacheStatuses,
@@ -386,13 +391,21 @@ describe("GET /pulse — cache.refresh action emission", () => {
 
 	it("emits a cache.refresh action on a stale Tautulli cache row", async () => {
 		cacheStatuses = [makeRow({ id: "taut-row", cacheType: "tautulli", instanceId: "inst-taut" })];
+		evidenceMocks.readOwnedTautulliCacheAuthority.mockResolvedValueOnce({
+			available: false,
+			state: "failed_unavailable",
+			reasonCodes: ["cache_stale"],
+			cachedItems: 0,
+			lastRefreshedAt: cacheStatuses[0]!.lastRefreshedAt,
+		});
 
 		const res = await injectAuthenticated("GET", "/pulse");
 		const body = JSON.parse(res.payload);
-		const item = body.items.find((i: { id: string }) => i.id === "cache-stale-taut-row");
+		const item = body.items.find((i: { id: string }) => i.id.includes("taut-row"));
 
 		expect(item.action?.kind).toBe("cache.refresh");
 		expect(item.action?.target).toEqual({ instanceId: "inst-taut", cacheType: "tautulli" });
+		expect(item.detail).toContain("cache_stale");
 	});
 
 	it("does NOT emit an action for unsupported cacheType (plex_episode)", async () => {

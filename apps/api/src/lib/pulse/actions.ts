@@ -25,7 +25,7 @@ import {
 } from "../arr/client-helpers.js";
 import { requireEnabledInstance } from "../arr/instance-helpers.js";
 import { parseQueueId } from "../dashboard/queue-utils.js";
-import { AppValidationError, ConflictError } from "../errors.js";
+import { AppValidationError, ConflictError, InstanceNotFoundError } from "../errors.js";
 import { getHuntingScheduler } from "../hunting/scheduler.js";
 import {
 	createOwnedJellyfinPublicationSnapshot,
@@ -37,11 +37,8 @@ import { refreshOwnedPlexCache } from "../plex/plex-refresh-orchestration.js";
 import { getQueueCleanerScheduler } from "../queue-cleaner/scheduler.js";
 import { recordWatchProviderCacheRefreshFailure } from "../services/provider-cache-status.js";
 import type { OwnedProviderPublicationSnapshot } from "../services/provider-identity-guard.js";
-import {
-	createOwnedTautulliPublicationSnapshot,
-	refreshTautulliCache,
-} from "../tautulli/tautulli-cache-refresher.js";
-import { requireTautulliClient } from "../tautulli/tautulli-helpers.js";
+import { refreshOwnedTautulliCache } from "../tautulli/tautulli-cache-refresher.js";
+import { findOwnedEnabledTautulliInstance } from "../tautulli/tautulli-cache-authority.js";
 
 export interface PulseActionResult {
 	status: "ok";
@@ -213,15 +210,21 @@ async function dispatchCacheRefresh(
 	}
 
 	// tautulli
-	const { instance } = await requireTautulliClient(app, userId, instanceId);
-	const publicationInstance = createOwnedTautulliPublicationSnapshot(app.encryptor, instance);
+	const instance = await findOwnedEnabledTautulliInstance(app.prisma, { userId, instanceId });
+	if (!instance) throw new InstanceNotFoundError(instanceId);
 	const backgroundTask = runBackgroundCacheRefresh({
 		app,
 		log,
 		instanceId,
 		cacheType: "tautulli",
-		refresh: () => refreshTautulliCache({ prisma: app.prisma, instance: publicationInstance, log }),
-		publicationAuthority: publicationInstance,
+		refresh: () =>
+			refreshOwnedTautulliCache({
+				prisma: app.prisma,
+				encryptor: app.encryptor,
+				instance,
+				log,
+			}),
+		failureRecordedByRefresh: true,
 	});
 	log.info({ instanceId, cacheType }, "pulse-action: tautulli cache refresh dispatched");
 	return { status: "ok", backgroundTask };
@@ -270,7 +273,12 @@ function runBackgroundCacheRefresh(opts: {
 					err instanceof Error ? err.message : String(err),
 				);
 			}
-			log.error({ err, instanceId, cacheType }, "pulse-action: cache refresh failed (background)");
+			log.error(
+				cacheType === "tautulli"
+					? { instanceId, cacheType, reasonCode: "unknown_failure" }
+					: { err, instanceId, cacheType },
+				"pulse-action: cache refresh failed (background)",
+			);
 		}
 	})();
 }

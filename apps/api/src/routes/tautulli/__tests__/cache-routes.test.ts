@@ -3,35 +3,35 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInjectAuthenticated, setupAuthInjection } from "../../__tests__/test-helpers.js";
 
 const routeMocks = vi.hoisted(() => ({
-	requireClient: vi.fn(),
-	createSnapshot: vi.fn(),
+	findInstance: vi.fn(),
 	refresh: vi.fn(),
-	recordFailure: vi.fn(),
+	readAuthority: vi.fn(),
 }));
 
-vi.mock("../../../lib/tautulli/tautulli-helpers.js", () => ({
-	requireTautulliClient: routeMocks.requireClient,
-}));
 vi.mock("../../../lib/tautulli/tautulli-cache-refresher.js", () => ({
-	createOwnedTautulliPublicationSnapshot: routeMocks.createSnapshot,
-	refreshTautulliCache: routeMocks.refresh,
+	refreshOwnedTautulliCache: routeMocks.refresh,
 }));
-vi.mock("../../../lib/services/provider-cache-status.js", () => ({
-	recordWatchProviderCacheRefreshFailure: routeMocks.recordFailure,
+vi.mock("../../../lib/tautulli/tautulli-cache-authority.js", () => ({
+	findOwnedEnabledTautulliInstance: routeMocks.findInstance,
+	readOwnedTautulliCacheAuthority: routeMocks.readAuthority,
 }));
 
 import { registerCacheRoutes } from "../cache-routes.js";
 
 describe("POST /api/tautulli/cache/:instanceId/refresh", () => {
 	let app: FastifyInstance;
-	const helperClient = { source: "caller-supplied-client" };
 	const storedInstance = { id: "tautulli-1", service: "TAUTULLI" };
-	const publicationInstance = { id: "tautulli-1", identityGeneration: 6 };
 
 	beforeEach(async () => {
 		vi.clearAllMocks();
-		routeMocks.requireClient.mockResolvedValue({ client: helperClient, instance: storedInstance });
-		routeMocks.createSnapshot.mockReturnValue(publicationInstance);
+		routeMocks.findInstance.mockResolvedValue(storedInstance);
+		routeMocks.readAuthority.mockResolvedValue({
+			available: true,
+			state: "healthy_complete",
+			reasonCodes: [],
+			cachedItems: 5,
+			lastRefreshedAt: new Date("2026-08-28T11:00:00.000Z"),
+		});
 		routeMocks.refresh.mockResolvedValue({
 			complete: true,
 			completedAt: new Date(),
@@ -51,18 +51,41 @@ describe("POST /api/tautulli/cache/:instanceId/refresh", () => {
 		await app.close();
 	});
 
-	it("publishes from the sealed owned snapshot without forwarding the helper client", async () => {
+	it("owns the attempt before the refresher decrypts the stored instance", async () => {
 		const response = await createInjectAuthenticated(app)(
 			"POST",
 			"/api/tautulli/cache/tautulli-1/refresh",
 		);
 
 		expect(response.statusCode).toBe(200);
-		expect(routeMocks.createSnapshot).toHaveBeenCalledWith(app.encryptor, storedInstance);
 		expect(routeMocks.refresh).toHaveBeenCalledWith(
-			expect.objectContaining({ prisma: app.prisma, instance: publicationInstance }),
+			expect.objectContaining({
+				prisma: app.prisma,
+				encryptor: app.encryptor,
+				instance: storedInstance,
+			}),
 		);
-		expect(routeMocks.refresh.mock.calls.flat()).not.toContain(helperClient);
-		expect(routeMocks.recordFailure).not.toHaveBeenCalled();
+	});
+
+	it("returns the bounded shared currentness projection", async () => {
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/api/tautulli/cache/tautulli-1/status",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(routeMocks.readAuthority).toHaveBeenCalledWith(app.prisma, {
+			userId: "user-1",
+			instanceId: "tautulli-1",
+		});
+		expect(response.json()).toEqual({
+			instanceId: "tautulli-1",
+			available: true,
+			state: "healthy_complete",
+			reasonCodes: [],
+			cachedItems: 5,
+			hasCacheData: true,
+			lastRefreshedAt: "2026-08-28T11:00:00.000Z",
+		});
 	});
 });

@@ -491,29 +491,9 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			}
 		};
 
-		// Extract distinct Tautulli users (cursor-paginated)
+		// B1 containment: do not offer Tautulli-dependent rule values while
+		// Tautulli is deliberately non-actionable for cleanup.
 		const tautulliUsers = new Set<string>();
-		const tautulliInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "TAUTULLI" },
-			select: { id: true },
-		});
-		if (tautulliInstances.length > 0) {
-			const tautulliInstanceIds = tautulliInstances.map((i) => i.id);
-			let cursor: string | undefined;
-			while (true) {
-				const batch = await app.prisma.tautulliCache.findMany({
-					where: { instanceId: { in: tautulliInstanceIds } },
-					select: { id: true, watchedByUsers: true },
-					take: FIELD_OPTIONS_BATCH_SIZE,
-					...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-					orderBy: { id: "asc" },
-				});
-				if (batch.length === 0) break;
-				for (const row of batch) collectStrings(row.watchedByUsers, tautulliUsers);
-				cursor = batch[batch.length - 1]!.id;
-				if (batch.length < FIELD_OPTIONS_BATCH_SIZE) break;
-			}
-		}
 
 		// Extract distinct Plex users / libraries / collections / labels in
 		// ONE cursor-paginated scan. The previous shape did three separate
@@ -616,7 +596,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			jellyfinLibraries: sorted(jellyfinLibraries),
 			arrTags,
 			hasPlex: plexEvidence.length > 0,
-			hasTautulli: tautulliInstances.length > 0,
+			hasTautulli: false,
 			hasJellyfin: jellyfinInstances.length > 0,
 			...(plexEvidence.length > 0 ? { plexEvidence: summarizePlexEvidence(plexEvidence) } : {}),
 		};

@@ -66,13 +66,6 @@ import {
 	providerIdentityAuthorityFingerprint,
 	providerInstanceAuthorityFingerprint,
 } from "../services/service-identity.js";
-import {
-	collectTautulliCacheLiveEvidence,
-	createOwnedTautulliPublicationSnapshot,
-	refreshTautulliCache,
-	type TautulliCacheSnapshotRow,
-} from "../tautulli/tautulli-cache-refresher.js";
-import { createTautulliClient } from "../tautulli/tautulli-client.js";
 import { createTmdbV3Client } from "../tmdb/list-client.js";
 import { createTraktClient } from "../trakt/list-client.js";
 import { getErrorMessage } from "../utils/error-message.js";
@@ -5909,34 +5902,6 @@ function snapshotUsers(value: string): string[] {
 	return parsed;
 }
 
-function tautulliSnapshotToWatchMap(rows: TautulliCacheSnapshotRow[]): TautulliWatchMap {
-	const map: TautulliWatchMap = new Map();
-	for (const row of rows) {
-		const key = `${row.mediaType}:${row.tmdbId}`;
-		const watchedByUsers = snapshotUsers(row.watchedByUsers);
-		const existing = map.get(key);
-		if (existing) {
-			if (
-				row.lastWatchedAt &&
-				(!existing.lastWatchedAt || row.lastWatchedAt > existing.lastWatchedAt)
-			) {
-				existing.lastWatchedAt = row.lastWatchedAt;
-			}
-			existing.watchCount += row.watchCount;
-			for (const user of watchedByUsers) {
-				if (!existing.watchedByUsers.includes(user)) existing.watchedByUsers.push(user);
-			}
-		} else {
-			map.set(key, {
-				lastWatchedAt: row.lastWatchedAt,
-				watchCount: row.watchCount,
-				watchedByUsers: [...watchedByUsers],
-			});
-		}
-	}
-	return map;
-}
-
 function plexSnapshotToWatchMap(rows: PlexCacheSnapshotRow[]): PlexWatchMap {
 	const map: PlexWatchMap = new Map();
 	for (const row of rows) {
@@ -6041,131 +6006,6 @@ function jellyfinSnapshotToWatchMap(rows: JellyfinCacheSnapshotRow[]): JellyfinW
 		}
 	}
 	return map;
-}
-
-/**
- * Prefetch Tautulli watch data from the TautulliCache table and build a lookup map.
- * Returns undefined if no Tautulli instance is configured.
- */
-async function loadTautulliDataSnapshot(
-	deps: CleanupExecutorDeps,
-	userId: string,
-): Promise<ProviderCacheSnapshot<TautulliWatchMap> | undefined> {
-	const { prisma, log } = deps;
-
-	const tautulliInstances = await loadProviderInstances(deps, userId, ["TAUTULLI"]);
-
-	// A Tautulli cache is an aggregate over a single PMS watch-history source.
-	// Combining multiple enabled sources would turn an ambiguous provider choice
-	// into a synthetic watch count, so it cannot authorize cleanup.
-	if (tautulliInstances.length !== 1) return undefined;
-
-	try {
-		const generations = await loadCompleteCacheGenerations(deps, tautulliInstances, "tautulli");
-		if (!generations) {
-			throw new Error("Tautulli cache did not have a complete fresh generation for every instance");
-		}
-		const map: TautulliWatchMap = new Map();
-		const rowCounts = new Map<string, number>();
-		const rowsByInstance = new Map<string, unknown[]>();
-		let cursor: string | undefined;
-		let totalRows = 0;
-
-		// Cursor-paginate to bound peak heap.
-		while (true) {
-			const batch = await prisma.tautulliCache.findMany({
-				where: { instanceId: { in: tautulliInstances.map((instance) => instance.id) } },
-				select: PROVIDER_CACHE_ROW_SELECTS.tautulli,
-				take: CACHE_QUERY_BATCH_SIZE,
-				...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-				orderBy: { id: "asc" },
-			});
-
-			if (batch.length === 0) break;
-			totalRows += batch.length;
-
-			for (const row of batch) {
-				try {
-					const generation = generations.get(row.instanceId);
-					if (
-						!generation ||
-						row.connectionGeneration !== generation.connectionGeneration ||
-						row.identityGeneration !== generation.identityGeneration
-					) {
-						throw new Error("Tautulli cache row provenance was unavailable");
-					}
-					rowCounts.set(row.instanceId, (rowCounts.get(row.instanceId) ?? 0) + 1);
-					const sourceRows = rowsByInstance.get(row.instanceId) ?? [];
-					sourceRows.push(row);
-					rowsByInstance.set(row.instanceId, sourceRows);
-					const key = `${row.mediaType}:${row.tmdbId}`;
-					const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
-					const existing = map.get(key);
-					if (existing) {
-						if (
-							row.lastWatchedAt &&
-							(!existing.lastWatchedAt || row.lastWatchedAt > existing.lastWatchedAt)
-						) {
-							existing.lastWatchedAt = row.lastWatchedAt;
-						}
-						existing.watchCount += row.watchCount;
-						for (const user of watchedByUsers) {
-							if (!existing.watchedByUsers.includes(user)) existing.watchedByUsers.push(user);
-						}
-					} else {
-						map.set(key, {
-							lastWatchedAt: row.lastWatchedAt,
-							watchCount: row.watchCount,
-							watchedByUsers,
-						});
-					}
-				} catch (rowErr) {
-					log.warn(
-						{ err: rowErr, tmdbId: row.tmdbId },
-						"Skipping Tautulli cache row with bad data",
-					);
-				}
-			}
-
-			cursor = batch[batch.length - 1]!.id;
-			if (batch.length < CACHE_QUERY_BATCH_SIZE) break;
-		}
-		if (
-			(rowCounts.get(tautulliInstances[0]!.id) ?? 0) !==
-			generations.get(tautulliInstances[0]!.id)!.itemCount
-		) {
-			throw new Error("Tautulli cache row count did not match its published generation");
-		}
-
-		const snapshot = createProviderCacheSnapshot(
-			map,
-			"tautulli",
-			tautulliInstances,
-			generations,
-			rowsByInstance,
-		);
-		if (!(await revalidateProviderCacheAuthority(deps, snapshot.authority, false))) {
-			throw new Error("Tautulli cache generation changed while rows were read");
-		}
-		log.info(
-			{ totalRows, totalEntries: map.size },
-			"Tautulli watch data prefetch complete for cleanup",
-		);
-		return snapshot;
-	} catch (error) {
-		log.warn(
-			{ err: error },
-			"Failed to prefetch Tautulli data for cleanup — Tautulli rules will be skipped",
-		);
-		return undefined;
-	}
-}
-
-async function prefetchTautulliData(
-	deps: CleanupExecutorDeps,
-	userId: string,
-): Promise<TautulliWatchMap | undefined> {
-	return (await loadTautulliDataSnapshot(deps, userId))?.value;
 }
 
 /**
@@ -6752,7 +6592,8 @@ async function evaluateAllItems(
 	const seerrResult = hasSeerrRules ? await prefetchSeerrRequests(deps, config.userId) : undefined;
 	const seerrMap = hasSeerrRules ? seerrResult : undefined;
 
-	// Prefetch Tautulli watch data if any Tautulli rule types are active
+	// B1 containment: Tautulli-dependent cleanup stays UNKNOWN until the later
+	// mutation-authority track is explicitly implemented.
 	const TAUTULLI_RULE_TYPES = [
 		"tautulli_last_watched",
 		"tautulli_watch_count",
@@ -6760,10 +6601,13 @@ async function evaluateAllItems(
 		"user_retention", // Can use tautulli as source
 	];
 	const hasTautulliRules = TAUTULLI_RULE_TYPES.some((t) => activeTypes.has(t));
-	const tautulliSnapshot = hasTautulliRules
-		? await loadTautulliDataSnapshot(deps, config.userId)
-		: undefined;
-	const tautulliMap = tautulliSnapshot?.value;
+	const tautulliSnapshot: ProviderCacheSnapshot<TautulliWatchMap> | undefined = undefined;
+	const tautulliMap: TautulliWatchMap | undefined = undefined;
+	if (hasTautulliRules) {
+		warnings.push(
+			"Tautulli-dependent cleanup rules are unavailable and were evaluated as unknown.",
+		);
+	}
 
 	// Prefetch Plex watch data if any Plex rule types are active
 	const PLEX_RULE_TYPES = [
@@ -10355,46 +10199,6 @@ async function _collectLivePlexPolicyEvidence(
 	}
 }
 
-async function _collectLiveTautulliPolicyEvidence(
-	deps: CleanupExecutorDeps,
-	userId: string,
-): Promise<TautulliWatchMap | undefined> {
-	try {
-		const initial = await loadProviderInstances(deps, userId, ["TAUTULLI"]);
-		if (initial.length === 0) return undefined;
-		const topology = providerTopologyFingerprint(initial);
-		let accepted: { map: TautulliWatchMap; fingerprint: string } | undefined;
-		for (let pass = 0; pass < 2; pass++) {
-			const rows: TautulliCacheSnapshotRow[] = [];
-			for (const instance of initial) {
-				const client =
-					deps.tautulliCacheClientFactory?.(instance) ??
-					(deps.encryptor ? createTautulliClient(deps.encryptor, instance, deps.log) : null);
-				if (!client) throw new Error("Tautulli credentials were unavailable");
-				const collected = await collectTautulliCacheLiveEvidence(client, instance.id, deps.log);
-				if (collected.errors > 0 || collected.complete !== true || !collected.snapshot) {
-					throw new Error("Tautulli live evidence collection was incomplete");
-				}
-				rows.push(...collected.snapshot.rows);
-			}
-			const after = await loadProviderInstances(deps, userId, ["TAUTULLI"]);
-			if (providerTopologyFingerprint(after) !== topology) {
-				throw new Error("Tautulli topology changed during live evidence collection");
-			}
-			const sortedRows = sortProviderRows(rows);
-			const fingerprint = evidenceFingerprint([topology, sortedRows]);
-			if (accepted && accepted.fingerprint !== fingerprint) {
-				throw new Error("Tautulli evidence changed between verification passes");
-			}
-			accepted = { map: tautulliSnapshotToWatchMap(sortedRows), fingerprint };
-		}
-		return accepted?.map;
-	} catch (error) {
-		deps.log.warn({ err: error }, "Live read-only Tautulli policy evidence failed closed");
-		return undefined;
-	}
-}
-
 async function _collectLiveJellyfinPolicyEvidence(
 	deps: CleanupExecutorDeps,
 	userId: string,
@@ -10599,63 +10403,6 @@ async function refreshPlexMutationEvidence(
 			: undefined;
 	} catch (error) {
 		deps.log.warn({ err: error }, "Live Plex policy evidence refresh failed closed");
-		return undefined;
-	}
-}
-
-async function refreshTautulliMutationEvidence(
-	deps: CleanupExecutorDeps,
-	userId: string,
-	cleanupRunClaimToken?: string,
-): Promise<{ map: TautulliWatchMap; completedAt: Date } | undefined> {
-	try {
-		const initial = await loadProviderInstances(deps, userId, ["TAUTULLI"]);
-		if (initial.length === 0) return undefined;
-		const topology = providerTopologyFingerprint(initial);
-		let accepted: { map: TautulliWatchMap; fingerprint: string; completedAt: Date } | undefined;
-		for (let pass = 0; pass < 2; pass++) {
-			for (const instance of initial) {
-				if (!deps.encryptor) throw new Error("Tautulli credentials were unavailable");
-				const publicationInstance = createOwnedTautulliPublicationSnapshot(
-					deps.encryptor,
-					instance,
-				);
-				const refreshed = await refreshTautulliCache({
-					prisma: deps.prisma,
-					instance: publicationInstance,
-					log: deps.log,
-					cleanupRunClaimToken,
-				});
-				if (refreshed.errors > 0 || refreshed.complete !== true) {
-					throw new Error("Tautulli cache refresh was incomplete");
-				}
-				if (!refreshed.completedAt) {
-					throw new Error("Tautulli refresh lacked a completion timestamp");
-				}
-			}
-			const after = await loadProviderInstances(deps, userId, ["TAUTULLI"]);
-			if (providerTopologyFingerprint(after) !== topology) {
-				throw new Error("Tautulli topology changed during policy revalidation");
-			}
-			const map = await prefetchTautulliData(deps, userId);
-			if (!map) throw new Error("Tautulli refreshed evidence could not be loaded");
-			const fingerprint = evidenceFingerprint(map);
-			if (accepted && accepted.fingerprint !== fingerprint) {
-				throw new Error("Tautulli evidence changed between verification passes");
-			}
-			const statuses = await loadCompleteCacheGenerations(deps, after, "tautulli");
-			if (!statuses) throw new Error("Tautulli completion timestamps were unavailable");
-			accepted = {
-				map,
-				fingerprint,
-				completedAt: new Date(
-					Math.min(...[...statuses.values()].map((status) => status.completedAt.getTime())),
-				),
-			};
-		}
-		return accepted ? { map: accepted.map, completedAt: accepted.completedAt } : undefined;
-	} catch (error) {
-		deps.log.warn({ err: error }, "Live Tautulli policy evidence refresh failed closed");
 		return undefined;
 	}
 }
@@ -10967,7 +10714,7 @@ async function buildMutationEvalContext(
 
 	const [seerrMap, tautulliMap, plexEvidence, jellyfinEvidence, listEvidence] = await Promise.all([
 		needsSeerr ? prefetchSeerrRequests(deps, userId) : undefined,
-		needsTautulli ? refreshTautulliMutationEvidence(deps, userId, cleanupRunClaimToken) : undefined,
+		undefined,
 		needsPlex || needsPlexSectionInventory
 			? refreshPlexMutationEvidence(
 					deps,
@@ -10999,7 +10746,6 @@ async function buildMutationEvalContext(
 	if (needsTrakt && !listEvidence.traktListMemberships) failedSources.add("trakt");
 	const sourceCompletedAt = new Map<Exclude<DataSourceDependency, null>, Date>();
 	if (needsSeerr && seerrMap) sourceCompletedAt.set("seerr", new Date());
-	if (tautulliMap) sourceCompletedAt.set("tautulli", tautulliMap.completedAt);
 	if (plexEvidence) sourceCompletedAt.set("plex", plexEvidence.completedAt);
 	if (jellyfinEvidence) sourceCompletedAt.set("jellyfin", jellyfinEvidence.completedAt);
 	if (listEvidence.tmdbCompletedAt) sourceCompletedAt.set("tmdb", listEvidence.tmdbCompletedAt);
@@ -11008,7 +10754,7 @@ async function buildMutationEvalContext(
 		ctx: {
 			now: new Date(),
 			seerrMap,
-			tautulliMap: tautulliMap?.map,
+			tautulliMap: undefined,
 			plexMap: plexEvidence?.plexMap,
 			plexSectionTitles: plexEvidence?.plexSectionTitles,
 			plexEpisodeMap: plexEvidence?.plexEpisodeMap,
@@ -11216,7 +10962,6 @@ export async function buildEvalContextWithHealth(
 		: undefined;
 	const [
 		seerrMap,
-		tautulliSnapshot,
 		plexSnapshot,
 		plexEpisodeSnapshot,
 		jellyfinSnapshot,
@@ -11224,7 +10969,6 @@ export async function buildEvalContextWithHealth(
 		listEvidence,
 	] = await Promise.all([
 		needsSeerr ? prefetchSeerrRequests(deps, userId) : undefined,
-		needsTautulli ? loadTautulliDataSnapshot(deps, userId) : undefined,
 		needsPlexSectionInventory
 			? plexEvidence?.snapshot
 			: needsPlex
@@ -11237,7 +10981,7 @@ export async function buildEvalContextWithHealth(
 	]);
 	const effectivePlexSnapshot = plexSnapshot;
 	const effectivePlexEvidence = plexEvidence;
-	const tautulliMap = tautulliSnapshot?.value;
+	const tautulliMap: TautulliWatchMap | undefined = undefined;
 	const plexEpisodeMap = plexEpisodeSnapshot?.value;
 	const jellyfinMap = jellyfinSnapshot?.value;
 	const jellyfinEpisodeMap = jellyfinEpisodeSnapshot?.value;
@@ -11266,7 +11010,6 @@ export async function buildEvalContextWithHealth(
 		traktListMemberships: listEvidence.traktListMemberships,
 	};
 	const contributingSnapshots = [
-		tautulliSnapshot,
 		effectivePlexSnapshot,
 		plexEpisodeSnapshot,
 		jellyfinSnapshot,

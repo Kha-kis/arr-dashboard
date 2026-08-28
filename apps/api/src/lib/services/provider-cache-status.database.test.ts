@@ -11,10 +11,13 @@ import {
 	evaluatePlexMutationAuthority,
 } from "../plex/plex-generation-metadata.js";
 import {
+	beginProviderCacheRefreshAttempt,
 	beginPlexCacheRefreshAttempt,
+	finishProviderCacheRefreshAttemptFailure,
 	finishPlexCacheRefreshAttemptFailure,
 } from "./provider-cache-status.js";
 import type { ProviderPublicationAuthority } from "./provider-identity-guard.js";
+import { readOwnedTautulliCacheAuthority } from "../tautulli/tautulli-cache-authority.js";
 
 const apiRoot = join(process.cwd());
 const log = { warn: vi.fn() };
@@ -62,6 +65,14 @@ const authority: ProviderPublicationAuthority = {
 	identityGeneration: 9,
 };
 
+const tautulliAuthority: ProviderPublicationAuthority = {
+	...authority,
+	id: "tautulli-1",
+	service: "TAUTULLI",
+	baseUrl: "https://tautulli.invalid",
+	expectedIdentity: "plex-machine-a",
+};
+
 type StatusGenerations = {
 	connectionGeneration: number | null;
 	identityGeneration: number | null;
@@ -107,6 +118,100 @@ async function seedObsoleteStatus(
 }
 
 describe("provider cache status SQLite takeover contract", () => {
+	it("keeps overlap A unavailable, publishes B, and prevents A from finishing over B", async () => {
+		const client = await createDatabase();
+		await client.user.create({
+			data: { id: tautulliAuthority.userId, username: "tautulli-status", hashedPassword: "hash" },
+		});
+		await client.serviceInstance.create({
+			data: {
+				...tautulliAuthority,
+				label: "Tautulli",
+				identityKind: "TAUTULLI_PMS_IDENTIFIER",
+				identityVerifiedAt: new Date("2026-08-28T10:00:00.000Z"),
+			},
+		});
+
+		const attemptA = await beginProviderCacheRefreshAttempt(client, "tautulli", tautulliAuthority);
+		expect(attemptA).not.toBeNull();
+		await expect(
+			readOwnedTautulliCacheAuthority(client, {
+				userId: tautulliAuthority.userId,
+				instanceId: tautulliAuthority.id,
+			}),
+		).resolves.toMatchObject({ available: false, state: "in_progress" });
+
+		const attemptB = await beginProviderCacheRefreshAttempt(client, "tautulli", tautulliAuthority);
+		expect(attemptB?.resultMarker).not.toBe(attemptA?.resultMarker);
+		const completedAt = new Date();
+		await client.$transaction(async (tx) => {
+			const claimed = await tx.cacheRefreshStatus.updateMany({
+				where: {
+					instanceId: tautulliAuthority.id,
+					cacheType: "tautulli",
+					lastAttemptAt: attemptB!.attemptedAt,
+					lastAttemptResult: attemptB!.resultMarker,
+					connectionGeneration: tautulliAuthority.connectionGeneration,
+					identityGeneration: tautulliAuthority.identityGeneration,
+				},
+				data: {
+					lastRefreshedAt: completedAt,
+					lastResult: "success",
+					lastErrorMessage: null,
+					itemCount: 1,
+					lastAttemptAt: completedAt,
+					lastAttemptResult: "success",
+					lastAttemptErrorMessage: null,
+				},
+			});
+			expect(claimed.count).toBe(1);
+			await tx.tautulliCache.create({
+				data: {
+					instanceId: tautulliAuthority.id,
+					tmdbId: 42,
+					mediaType: "movie",
+					lastWatchedAt: completedAt,
+					watchCount: 3,
+					watchedByUsers: "[]",
+					connectionGeneration: tautulliAuthority.connectionGeneration,
+					identityGeneration: tautulliAuthority.identityGeneration,
+				},
+			});
+		});
+
+		expect(
+			await finishProviderCacheRefreshAttemptFailure(
+				client,
+				"tautulli",
+				"provider_response_invalid",
+				tautulliAuthority,
+				attemptA!,
+				log,
+			),
+		).toBe("superseded");
+		await expect(
+			readOwnedTautulliCacheAuthority(client, {
+				userId: tautulliAuthority.userId,
+				instanceId: tautulliAuthority.id,
+				now: completedAt,
+			}),
+		).resolves.toMatchObject({
+			available: true,
+			state: "healthy_complete",
+			cachedItems: 1,
+		});
+		await expect(
+			client.cacheRefreshStatus.findUniqueOrThrow({
+				where: {
+					instanceId_cacheType: {
+						instanceId: tautulliAuthority.id,
+						cacheType: "tautulli",
+					},
+				},
+			}),
+		).resolves.toMatchObject({ lastResult: "success", lastAttemptResult: "success" });
+	}, 30_000);
+
 	it.each([
 		["plex", "null/null", { connectionGeneration: null, identityGeneration: null }],
 		["plex_episode", "null/null", { connectionGeneration: null, identityGeneration: null }],

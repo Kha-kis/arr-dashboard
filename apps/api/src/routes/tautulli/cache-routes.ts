@@ -7,13 +7,12 @@
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { recordWatchProviderCacheRefreshFailure } from "../../lib/services/provider-cache-status.js";
 import {
-	createOwnedTautulliPublicationSnapshot,
-	refreshTautulliCache,
-} from "../../lib/tautulli/tautulli-cache-refresher.js";
-import { requireTautulliClient } from "../../lib/tautulli/tautulli-helpers.js";
-import { getErrorMessage } from "../../lib/utils/error-message.js";
+	findOwnedEnabledTautulliInstance,
+	readOwnedTautulliCacheAuthority,
+} from "../../lib/tautulli/tautulli-cache-authority.js";
+import { refreshOwnedTautulliCache } from "../../lib/tautulli/tautulli-cache-refresher.js";
+import { InstanceNotFoundError } from "../../lib/errors.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 const instanceParams = z.object({
@@ -31,15 +30,13 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 		const { instanceId } = validateRequest(instanceParams, request.params);
 		const userId = request.currentUser!.id;
 
-		// Verify ownership
-		await requireTautulliClient(app, userId, instanceId);
-
-		const count = await app.prisma.tautulliCache.count({ where: { instanceId } });
+		const authority = await readOwnedTautulliCacheAuthority(app.prisma, { userId, instanceId });
+		if (!authority) throw new InstanceNotFoundError(instanceId);
 
 		return reply.send({
 			instanceId,
-			cachedItems: count,
-			hasCacheData: count > 0,
+			...authority,
+			hasCacheData: authority.available && authority.cachedItems > 0,
 		});
 	});
 
@@ -56,41 +53,23 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 			const { instanceId } = validateRequest(instanceParams, request.params);
 			const userId = request.currentUser!.id;
 
-			const { instance } = await requireTautulliClient(app, userId, instanceId);
-			const publicationInstance = createOwnedTautulliPublicationSnapshot(app.encryptor, instance);
+			const instance = await findOwnedEnabledTautulliInstance(app.prisma, {
+				userId,
+				instanceId,
+			});
+			if (!instance) throw new InstanceNotFoundError(instanceId);
+			const result = await refreshOwnedTautulliCache({
+				prisma: app.prisma,
+				encryptor: app.encryptor,
+				instance,
+				log: request.log,
+			});
 
-			try {
-				const result = await refreshTautulliCache({
-					prisma: app.prisma,
-					instance: publicationInstance,
-					log: request.log,
-				});
-				if ((!result.complete || !result.completedAt) && !result.superseded) {
-					await recordWatchProviderCacheRefreshFailure(
-						app.prisma,
-						"tautulli",
-						result.errorMessages.slice(0, 3).join("; ").slice(0, 200) ||
-							"Tautulli refresh did not publish a complete generation",
-						publicationInstance,
-						request.log,
-					);
-				}
-
-				return reply.send({
-					success: result.complete && Boolean(result.completedAt),
-					upserted: result.upserted,
-					errors: result.errors,
-				});
-			} catch (err) {
-				await recordWatchProviderCacheRefreshFailure(
-					app.prisma,
-					"tautulli",
-					getErrorMessage(err, "Unknown error"),
-					publicationInstance,
-					request.log,
-				);
-				throw err;
-			}
+			return reply.send({
+				success: result.complete && Boolean(result.completedAt),
+				upserted: result.upserted,
+				errors: result.errors,
+			});
 		},
 	);
 }

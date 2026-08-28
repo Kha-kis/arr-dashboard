@@ -45,6 +45,7 @@ import {
 	safeRequest,
 } from "../statistics/statistics-utils.js";
 import { createTautulliClient } from "../tautulli/tautulli-client.js";
+import { readOwnedTautulliCacheAuthority } from "../tautulli/tautulli-cache-authority.js";
 import { integrationHealth } from "../validation/integration-health.js";
 
 // ============================================================================
@@ -673,7 +674,19 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 				? "partial"
 				: status.lastResult;
 		let effectiveError = status.lastAttemptErrorMessage ?? status.lastErrorMessage;
-		if (status.cacheType === "plex" || status.cacheType === "plex_episode") {
+		if (status.cacheType === "tautulli") {
+			const authority = await readOwnedTautulliCacheAuthority(app.prisma, {
+				userId,
+				instanceId: status.instanceId,
+			});
+			if (!authority?.available) {
+				effectiveResult = authority?.state === "in_progress" ? "in_progress" : "error";
+				effectiveError = (authority?.reasonCodes ?? ["no_publication"]).join(", ");
+			} else {
+				effectiveResult = "success";
+				effectiveError = null;
+			}
+		} else if (status.cacheType === "plex" || status.cacheType === "plex_episode") {
 			const evidence = plexEvidenceByStatus.get(`${status.instanceId}:${status.cacheType}`);
 			if (evidence?.attemptState === "in_progress") {
 				effectiveResult = "in_progress";

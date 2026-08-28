@@ -72,6 +72,10 @@ const log = {
 	error: vi.fn(),
 	debug: vi.fn(),
 } as unknown as FastifyBaseLogger;
+const tautulliAttempt = {
+	attemptedAt: new Date("2026-08-28T12:00:00.000Z"),
+	resultMarker: "in_progress:test-publication",
+};
 
 function snapshot(
 	service: "JELLYFIN" | "EMBY" | "TAUTULLI",
@@ -184,6 +188,10 @@ function prisma(finalPredicateMatches = true) {
 			upsert: vi.fn(async () => {
 				authority.events.push("status");
 				return {};
+			}),
+			updateMany: vi.fn(async () => {
+				authority.events.push("status");
+				return { count: 1 };
 			}),
 		},
 	};
@@ -300,6 +308,7 @@ describe("watch-provider publication authority", () => {
 			prisma: state.db,
 			instance: snapshot("TAUTULLI"),
 			log,
+			attempt: tautulliAttempt,
 		});
 
 		expect(result).toMatchObject({ complete: false, superseded: true, upserted: 0 });
@@ -332,15 +341,20 @@ describe("watch-provider publication authority", () => {
 		const instance = snapshot("TAUTULLI");
 		const state = prisma();
 
-		const result = await refreshTautulliCache({ prisma: state.db, instance, log });
+		const result = await refreshTautulliCache({
+			prisma: state.db,
+			instance,
+			log,
+			attempt: tautulliAttempt,
+		});
 
 		expect(result).toMatchObject({ complete: true, upserted: 0 });
 		expect(authority.connections).toEqual([
 			[instance.baseUrl, instance.apiKey, log, undefined, instance.httpAuthHeaders],
 		]);
-		expect(state.tx.cacheRefreshStatus.upsert).toHaveBeenCalledWith(
+		expect(state.tx.cacheRefreshStatus.updateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
-				create: expect.objectContaining({ connectionGeneration: 4, identityGeneration: 9 }),
+				where: expect.objectContaining({ connectionGeneration: 4, identityGeneration: 9 }),
 			}),
 		);
 	});
@@ -352,6 +366,7 @@ describe("watch-provider publication authority", () => {
 			prisma: state.db,
 			instance: snapshot("TAUTULLI", { enabled: false }),
 			log,
+			attempt: tautulliAttempt,
 		});
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
@@ -367,6 +382,7 @@ describe("watch-provider publication authority", () => {
 			prisma: state.db,
 			instance: snapshot("TAUTULLI"),
 			log,
+			attempt: tautulliAttempt,
 		});
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
@@ -405,6 +421,7 @@ describe("watch-provider publication authority", () => {
 			prisma: state.db,
 			instance: snapshot("TAUTULLI"),
 			log,
+			attempt: tautulliAttempt,
 		});
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });

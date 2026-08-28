@@ -383,6 +383,30 @@ function reportHeap(message: string): void {
 
 		async function refreshTautulli(): Promise<Awaited<ReturnType<typeof refreshTautulliCache>>> {
 			publication.tautulliClient = tautulliClient;
+			const attemptedAt = new Date();
+			const resultMarker = `in_progress:heap-${attemptedAt.getTime()}`;
+			await prisma.cacheRefreshStatus.upsert({
+				where: {
+					instanceId_cacheType: { instanceId: "heap-tautulli", cacheType: "tautulli" },
+				},
+				create: {
+					instanceId: "heap-tautulli",
+					cacheType: "tautulli",
+					lastRefreshedAt: attemptedAt,
+					lastResult: "error",
+					lastErrorMessage: "refresh_in_progress",
+					itemCount: 0,
+					lastAttemptAt: attemptedAt,
+					lastAttemptResult: resultMarker,
+					connectionGeneration: 0,
+					identityGeneration: 0,
+				},
+				update: {
+					lastAttemptAt: attemptedAt,
+					lastAttemptResult: resultMarker,
+					lastAttemptErrorMessage: null,
+				},
+			});
 			return await refreshTautulliCache({
 				prisma,
 				instance: {
@@ -404,6 +428,7 @@ function reportHeap(message: string): void {
 					identityGeneration: 0,
 				},
 				log: silentLog,
+				attempt: { attemptedAt, resultMarker },
 			});
 		}
 
@@ -877,7 +902,10 @@ function reportHeap(message: string): void {
 			await prisma.$executeRawUnsafe(`
 				CREATE TRIGGER fail_tautulli_success_status
 				BEFORE UPDATE ON cache_refresh_status
-				WHEN NEW.instanceId = 'heap-tautulli' AND NEW.cacheType = 'tautulli'
+				WHEN NEW.instanceId = 'heap-tautulli'
+					AND NEW.cacheType = 'tautulli'
+					AND NEW.lastResult = 'success'
+					AND NEW.lastAttemptResult = 'success'
 				BEGIN
 					SELECT RAISE(ABORT, 'injected Tautulli status failure');
 				END

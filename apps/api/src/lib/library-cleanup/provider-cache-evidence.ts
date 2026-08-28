@@ -178,13 +178,8 @@ export async function loadExactProviderCacheRows(
 				}),
 			);
 		case "tautulli":
-			return groupProviderRowsByInstance(
-				instanceIds,
-				await tx.tautulliCache.findMany({
-					where,
-					select: PROVIDER_CACHE_ROW_SELECTS.tautulli,
-					orderBy: { id: "asc" },
-				}),
-			);
+			// B1 containment: Tautulli is not cleanup-authoritative. Returning an
+			// empty grouped result makes every exact revalidation fail closed.
+			return groupProviderRowsByInstance(instanceIds, []);
 	}
 }

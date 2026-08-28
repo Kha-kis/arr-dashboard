@@ -915,8 +915,8 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				}
 
 				const verified = verifiedIdentityData(existing, observation);
-				const updated = await app.prisma.$transaction(async (tx) =>
-					tx.serviceInstance.updateMany({
+				const updated = await app.prisma.$transaction(async (tx) => {
+					const result = await tx.serviceInstance.updateMany({
 						where: {
 							id,
 							userId,
@@ -924,8 +924,12 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 							identityGeneration: confirmation.expectedIdentityGeneration,
 						},
 						data: verified,
-					}),
-				);
+					});
+					if (result.count === 1 && verified.identityGeneration !== existing.identityGeneration) {
+						await clearDurableProviderCacheState(tx, id);
+					}
+					return result;
+				});
 				if (updated.count !== 1) {
 					const current = await requireInstance(app, userId, id);
 					throw createIdentityConflict(
