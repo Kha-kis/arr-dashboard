@@ -163,6 +163,36 @@ describe("Tautulli target catalog", () => {
 		).rejects.toMatchObject({ code: "catalog_total_mismatch" });
 	});
 
+	it.each([
+		["filtered total", { recordsFiltered: -0, recordsTotal: 1 }],
+		["record total", { recordsFiltered: 1, recordsTotal: -0 }],
+	] as const)("rejects alternate-client negative zero in the page %s", async (_label, totals) => {
+		await expect(
+			collectStableTautulliTargetCatalog(
+				client({
+					getLibraryMediaInfo: vi.fn().mockResolvedValue({
+						data: [row],
+						...totals,
+						last_refreshed: 1,
+					}),
+				}),
+				scope,
+			),
+		).rejects.toMatchObject({ code: "catalog_total_mismatch" });
+	});
+
+	it.each(["tmdb://055", " tmdb://55", "tmdb://55 "])(
+		"rejects noncanonical TMDB identifier %s",
+		async (guid) => {
+			await expect(
+				collectStableTautulliTargetCatalog(
+					client({ getMetadata: vi.fn().mockResolvedValue({ ...metadata, guids: [guid] }) }),
+					scope,
+				),
+			).rejects.toMatchObject({ code: "metadata_tmdb_unmapped" });
+		},
+	);
+
 	it.each([null, undefined, "", -1, "not-a-count"])(
 		"treats unavailable play count %s as UNKNOWN instead of zero",
 		async (playCount) => {
@@ -183,6 +213,43 @@ describe("Tautulli target catalog", () => {
 			});
 		},
 	);
+
+	it("rejects alternate-client negative zero before authoritative catalog publication", async () => {
+		const rows = [
+			{ ...row, rating_key: "100", play_count: 2 },
+			{ ...row, rating_key: "101", play_count: -0 },
+		];
+		const upstream = client({
+			getLibraries: vi
+				.fn()
+				.mockResolvedValue([
+					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "2" },
+				]),
+			getLibraryMediaInfo: vi.fn().mockResolvedValue({
+				data: rows,
+				recordsFiltered: 2,
+				recordsTotal: 2,
+				last_refreshed: 1,
+			}),
+			getMetadata: vi.fn(async (ratingKey: string) => ({
+				...metadata,
+				rating_key: ratingKey,
+				guid: `plex://movie/${ratingKey}`,
+				guids: [`tmdb://${ratingKey}`],
+			})),
+		});
+
+		const result = await collectStableTautulliTargetCatalog(upstream, scope);
+
+		expect(result.publicationLevel).toBe("positive-only");
+		expect(result.partialReasons).toEqual([{ code: "observation_count_unavailable", count: 1 }]);
+		expect(result.observations).toEqual([
+			expect.objectContaining({ ratingKey: "100", observedWatchCount: 2 }),
+		]);
+		expect(
+			result.observations.some((observation) => Object.is(observation.observedWatchCount, -0)),
+		).toBe(false);
+	});
 
 	it("publishes only explicit positives when another mapped target count is unknown", async () => {
 		const rows = [
@@ -297,6 +364,29 @@ describe("Tautulli target catalog", () => {
 				})
 				.mockResolvedValueOnce({
 					data: [{ ...row, play_count: 1 }],
+					recordsFiltered: 1,
+					recordsTotal: 1,
+					last_refreshed: 2,
+				}),
+		});
+
+		await expect(collectStableTautulliTargetCatalog(upstream, scope)).rejects.toMatchObject({
+			code: "catalog_changed",
+		});
+	});
+
+	it("does not let negative-zero and ordinary-zero timestamps share a catalog digest", async () => {
+		const upstream = client({
+			getLibraryMediaInfo: vi
+				.fn()
+				.mockResolvedValueOnce({
+					data: [{ ...row, last_played: -0 }],
+					recordsFiltered: 1,
+					recordsTotal: 1,
+					last_refreshed: 1,
+				})
+				.mockResolvedValueOnce({
+					data: [{ ...row, last_played: 0 }],
 					recordsFiltered: 1,
 					recordsTotal: 1,
 					last_refreshed: 2,

@@ -29,6 +29,30 @@ describe("Tautulli generation metadata", () => {
 		expect(decodeTautulliGenerationMetadata(encoded)).toEqual({ ok: true, metadata });
 	});
 
+	it("serializes legitimate zero counts stably and rejects negative zero before serialization", () => {
+		const zeroMetadata = {
+			...metadata,
+			completeness: {
+				targetCatalog: { ...metadata.completeness.targetCatalog, count: 0 },
+				observations: { ...metadata.completeness.observations, count: 0 },
+				aggregate: { ...metadata.completeness.aggregate, count: 0 },
+			},
+		};
+		const encoded = encodeTautulliGenerationMetadata(zeroMetadata);
+
+		expect(encodeTautulliGenerationMetadata(zeroMetadata)).toBe(encoded);
+		expect(decodeTautulliGenerationMetadata(encoded)).toEqual({ ok: true, metadata: zeroMetadata });
+		expect(() =>
+			encodeTautulliGenerationMetadata({
+				...zeroMetadata,
+				completeness: {
+					...zeroMetadata.completeness,
+					targetCatalog: { ...zeroMetadata.completeness.targetCatalog, count: -0 },
+				},
+			}),
+		).toThrow("Invalid Tautulli generation metadata");
+	});
+
 	it.each([
 		["unknown version", { ...metadata, version: 2 }],
 		["partial roots", { ...metadata, completeness: { targetCatalog: root } }],
@@ -66,6 +90,61 @@ describe("Tautulli generation metadata", () => {
 		});
 	});
 
+	it.each([
+		[
+			"target catalog root",
+			JSON.stringify(metadata).replace(
+				`"count":2,"digest":"${"a".repeat(64)}"`,
+				`"count":-0,"digest":"${"a".repeat(64)}"`,
+			),
+		],
+		[
+			"observation root",
+			JSON.stringify(metadata).replace(
+				`"count":2,"digest":"${"b".repeat(64)}"`,
+				`"count":-0,"digest":"${"b".repeat(64)}"`,
+			),
+		],
+		[
+			"aggregate root",
+			JSON.stringify(metadata).replace(
+				`"count":1,"digest":"${"c".repeat(64)}"`,
+				`"count":-0,"digest":"${"c".repeat(64)}"`,
+			),
+		],
+		[
+			"connection generation",
+			JSON.stringify(metadata).replace('"connectionGeneration":4', '"connectionGeneration":-0'),
+		],
+		[
+			"identity generation",
+			JSON.stringify(metadata).replace('"identityGeneration":2', '"identityGeneration":-0'),
+		],
+	] as const)("rejects negative zero in the %s", (_label, raw) => {
+		expect(decodeTautulliGenerationMetadata(raw)).toEqual({
+			ok: false,
+			reasonCode: "metadata_invalid",
+		});
+	});
+
+	it("rejects negative zero in a bounded partial-reason count", () => {
+		const positive = {
+			...metadata,
+			publicationLevel: "positive-only" as const,
+			capabilities: ["positive-watch-count" as const],
+			partialReasons: [{ code: "history_partial" as const, count: 1 }],
+		};
+		const raw = JSON.stringify(positive).replace(
+			'"code":"history_partial","count":1',
+			'"code":"history_partial","count":-0',
+		);
+
+		expect(decodeTautulliGenerationMetadata(raw)).toEqual({
+			ok: false,
+			reasonCode: "metadata_invalid",
+		});
+	});
+
 	it("rejects generation and provider-authority mismatches", () => {
 		const status = {
 			lastResult: "success",
@@ -85,6 +164,39 @@ describe("Tautulli generation metadata", () => {
 				identityGeneration: 2,
 			}),
 		).toEqual({ available: false, reasonCode: "metadata_invalid" });
+	});
+
+	it.each([
+		["status item count", { status: { itemCount: -0 }, authority: {} }],
+		["status connection generation", { status: { connectionGeneration: -0 }, authority: {} }],
+		["status identity generation", { status: { identityGeneration: -0 }, authority: {} }],
+		["authority connection generation", { status: {}, authority: { connectionGeneration: -0 } }],
+		["authority identity generation", { status: {}, authority: { identityGeneration: -0 } }],
+	] as const)("withholds publication for negative-zero %s", (_label, override) => {
+		const refreshedAt = new Date("2026-08-27T12:00:00Z");
+		const status = {
+			lastResult: "success",
+			lastRefreshedAt: refreshedAt,
+			lastAttemptAt: refreshedAt,
+			lastAttemptResult: "success",
+			lastAttemptErrorMessage: null,
+			generationId: "generation-1",
+			generationMetadata: JSON.stringify(metadata),
+			itemCount: 1,
+			connectionGeneration: 4,
+			identityGeneration: 2,
+			...override.status,
+		};
+		const authority = {
+			connectionGeneration: 4,
+			identityGeneration: 2,
+			...override.authority,
+		};
+
+		expect(evaluateTautulliExactPublication(status, authority)).toEqual({
+			available: false,
+			reasonCode: "metadata_invalid",
+		});
 	});
 
 	it("withholds exact authority from positive-only and failed attempts", () => {

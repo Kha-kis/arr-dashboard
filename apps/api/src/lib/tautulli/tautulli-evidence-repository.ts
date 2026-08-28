@@ -1,4 +1,9 @@
 import type { PrismaClientInstance } from "../prisma.js";
+import { isCanonicalTautulliNonNegativeSafeInteger } from "./tautulli-canonical-numbers.js";
+import {
+	evaluateTautulliExactPublication,
+	evaluateTautulliPositivePublication,
+} from "./tautulli-generation-metadata.js";
 import {
 	createTautulliAggregateRoot,
 	createTautulliGenerationObservationRoot,
@@ -9,10 +14,6 @@ import {
 	type TautulliGenerationObservation,
 	type TautulliGenerationRoot,
 } from "./tautulli-generation-observations.js";
-import {
-	evaluateTautulliExactPublication,
-	evaluateTautulliPositivePublication,
-} from "./tautulli-generation-metadata.js";
 
 type TautulliEvidencePrisma = Pick<
 	PrismaClientInstance,
@@ -92,6 +93,8 @@ async function readAggregateRows(prisma: TautulliEvidencePrisma, instanceId: str
 
 function sameRoot(actual: TautulliGenerationRoot, expected: TautulliGenerationRoot): boolean {
 	return (
+		isCanonicalTautulliNonNegativeSafeInteger(actual.count) &&
+		isCanonicalTautulliNonNegativeSafeInteger(expected.count) &&
 		actual.version === expected.version &&
 		actual.count === expected.count &&
 		actual.digest === expected.digest

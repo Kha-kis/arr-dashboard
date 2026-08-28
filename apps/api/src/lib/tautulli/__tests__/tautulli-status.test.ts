@@ -77,4 +77,22 @@ describe("Tautulli status projection", () => {
 			reasonCode: "publication_integrity_mismatch",
 		});
 	});
+
+	it.each([
+		["physical count", status, -0],
+		["status item count", { ...status, itemCount: -0 }, 4],
+		["connection generation", { ...status, connectionGeneration: -0 }, 4],
+		["identity generation", { ...status, identityGeneration: -0 }, 4],
+	] as const)("fails closed without exposing negative-zero %s", (_label, value, physicalCount) => {
+		const projected = projectTautulliCacheStatus(value, physicalCount);
+
+		expect(projected).toMatchObject({
+			publicationState: "unavailable",
+			reasonCode: "publication_integrity_mismatch",
+		});
+		expect(Object.is(projected.cachedItems, -0)).toBe(false);
+		expect(
+			Object.values(projected).some((entry) => typeof entry === "number" && Object.is(entry, -0)),
+		).toBe(false);
+	});
 });

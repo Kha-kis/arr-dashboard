@@ -1,3 +1,4 @@
+import { isCanonicalTautulliNonNegativeSafeInteger } from "./tautulli-canonical-numbers.js";
 import type { TautulliGenerationRoot } from "./tautulli-generation-observations.js";
 
 export const TAUTULLI_GENERATION_METADATA_VERSION = 1 as const;
@@ -56,7 +57,7 @@ function nonempty(value: unknown): value is string {
 }
 
 function nonnegative(value: unknown): value is number {
-	return Number.isSafeInteger(value) && (value as number) >= 0;
+	return isCanonicalTautulliNonNegativeSafeInteger(value);
 }
 
 function root(value: unknown): value is TautulliGenerationRoot {
@@ -146,8 +147,8 @@ function normalize(value: unknown): TautulliGenerationMetadata | null {
 			typeof entry.code !== "string" ||
 			!reasonCodes.has(entry.code) ||
 			entry.code <= previousReason ||
-			!Number.isSafeInteger(entry.count) ||
-			(entry.count as number) < 1
+			!isCanonicalTautulliNonNegativeSafeInteger(entry.count) ||
+			entry.count < 1
 		)
 			return null;
 		previousReason = entry.code;
@@ -227,6 +228,14 @@ export function evaluateTautulliExactPublication(
 	if (!decoded.ok) return { available: false, reasonCode: decoded.reasonCode };
 	const metadata = decoded.metadata;
 	if (
+		!isCanonicalTautulliNonNegativeSafeInteger(status.itemCount) ||
+		!isCanonicalTautulliNonNegativeSafeInteger(status.connectionGeneration) ||
+		!isCanonicalTautulliNonNegativeSafeInteger(status.identityGeneration) ||
+		!isCanonicalTautulliNonNegativeSafeInteger(authority.connectionGeneration) ||
+		!isCanonicalTautulliNonNegativeSafeInteger(authority.identityGeneration)
+	)
+		return { available: false, reasonCode: "metadata_invalid" };
+	if (
 		metadata.publicationLevel !== "authoritative" ||
 		!metadata.capabilities.includes("exact-target-observations")
 	)
@@ -260,6 +269,14 @@ export function evaluateTautulliPositivePublication(
 	const decoded = decodeTautulliGenerationMetadata(status.generationMetadata);
 	if (!decoded.ok) return { available: false, reasonCode: decoded.reasonCode };
 	const metadata = decoded.metadata;
+	if (
+		!isCanonicalTautulliNonNegativeSafeInteger(status.itemCount) ||
+		!isCanonicalTautulliNonNegativeSafeInteger(status.connectionGeneration) ||
+		!isCanonicalTautulliNonNegativeSafeInteger(status.identityGeneration) ||
+		!isCanonicalTautulliNonNegativeSafeInteger(authority.connectionGeneration) ||
+		!isCanonicalTautulliNonNegativeSafeInteger(authority.identityGeneration)
+	)
+		return { available: false, reasonCode: "metadata_invalid" };
 	if (
 		metadata.publicationLevel !== "positive-only" ||
 		!metadata.capabilities.includes("positive-watch-count")

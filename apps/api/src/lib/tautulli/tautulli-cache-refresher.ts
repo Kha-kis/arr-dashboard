@@ -5,12 +5,12 @@ import type { TautulliHistoryItem } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import type { Encryptor } from "../auth/encryption.js";
 import type { Prisma, PrismaClient, ServiceInstance } from "../prisma.js";
+import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import {
 	beginTautulliCacheRefreshAttempt,
 	finishTautulliCacheRefreshAttemptFailure,
 	type ProviderCacheRefreshAttempt,
 } from "../services/provider-cache-status.js";
-import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import {
 	createProviderPublicationAuthority,
 	type OwnedProviderPublicationSnapshot,
@@ -21,6 +21,12 @@ import {
 	publishAuthoritativeTautulliGeneration,
 	TautulliRefreshAttemptSupersededError,
 } from "./tautulli-cache-storage.js";
+import { isCanonicalTautulliNonNegativeSafeInteger } from "./tautulli-canonical-numbers.js";
+import { TautulliClient } from "./tautulli-client.js";
+import {
+	encodeTautulliGenerationMetadata,
+	type TautulliReasonCode,
+} from "./tautulli-generation-metadata.js";
 import {
 	createTautulliAggregateRoot,
 	createTautulliGenerationObservationRoot,
@@ -28,14 +34,9 @@ import {
 	type TautulliGenerationObservation,
 } from "./tautulli-generation-observations.js";
 import {
-	encodeTautulliGenerationMetadata,
-	type TautulliReasonCode,
-} from "./tautulli-generation-metadata.js";
-import { TautulliClient } from "./tautulli-client.js";
-import {
 	collectStableTautulliTargetCatalog,
-	type TautulliSupportedSection,
 	TautulliEvidenceError,
+	type TautulliSupportedSection,
 } from "./tautulli-target-catalog.js";
 
 const MAX_HISTORY_RESULTS = 100_000;
@@ -390,7 +391,7 @@ async function collectHistoryPass(
 		const seen = new Set<number>();
 		while (expectedTotal === undefined || start < expectedTotal) {
 			if (++requests > MAX_HISTORY_REQUESTS) throw new TautulliEvidenceError("history_partial");
-			let result;
+			let result: Awaited<ReturnType<TautulliClient["getHistory"]>>;
 			try {
 				result = await client.getHistory({
 					section_id: section.sectionId,
@@ -405,9 +406,8 @@ async function collectHistoryPass(
 				throw new TautulliEvidenceError("history_partial");
 			}
 			if (
-				!Number.isSafeInteger(result.recordsFiltered) ||
-				result.recordsFiltered < 0 ||
-				!Number.isSafeInteger(result.recordsTotal) ||
+				!isCanonicalTautulliNonNegativeSafeInteger(result.recordsFiltered) ||
+				!isCanonicalTautulliNonNegativeSafeInteger(result.recordsTotal) ||
 				result.recordsTotal < result.recordsFiltered
 			)
 				throw new TautulliEvidenceError("history_partial");
@@ -429,7 +429,7 @@ async function collectHistoryPass(
 					throw new TautulliEvidenceError("history_partial");
 				}
 				if (
-					!Number.isSafeInteger(item.row_id) ||
+					!isCanonicalTautulliNonNegativeSafeInteger(item.row_id) ||
 					item.row_id === undefined ||
 					item.row_id <= previousRowId ||
 					seen.has(item.row_id)
@@ -437,6 +437,12 @@ async function collectHistoryPass(
 					throw new TautulliEvidenceError("history_changed");
 				previousRowId = item.row_id;
 				seen.add(item.row_id);
+				if (
+					!isCanonicalTautulliNonNegativeSafeInteger(item.date) ||
+					(item.play_count !== undefined &&
+						!isCanonicalTautulliNonNegativeSafeInteger(item.play_count))
+				)
+					throw new TautulliEvidenceError("history_partial");
 				signatures.push(historySignature(item));
 				const ratingKey = historyTargetRatingKey(item);
 				if (!targetRatingKeys.has(ratingKey)) continue;
@@ -465,6 +471,9 @@ function aggregateObservations(
 		const users = usersByRatingKey.get(observation.ratingKey) ?? new Set<string>();
 		if (existing) {
 			existing.watchCount += observation.observedWatchCount ?? 0;
+			if (!isCanonicalTautulliNonNegativeSafeInteger(existing.watchCount)) {
+				throw new TautulliEvidenceError("observation_count_unavailable");
+			}
 			if (
 				observation.lastWatchedAt &&
 				(!existing.lastWatchedAt || observation.lastWatchedAt > existing.lastWatchedAt)

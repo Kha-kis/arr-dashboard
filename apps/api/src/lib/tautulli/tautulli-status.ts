@@ -1,3 +1,4 @@
+import { isCanonicalTautulliNonNegativeSafeInteger } from "./tautulli-canonical-numbers.js";
 import {
 	decodeTautulliGenerationMetadata,
 	sanitizeTautulliReason,
@@ -31,12 +32,14 @@ export function projectTautulliCacheStatus(
 	physicalCount: number,
 	physicalIntegrityVerified = true,
 ) {
+	const physicalCountValid = isCanonicalTautulliNonNegativeSafeInteger(physicalCount);
+	const exposedPhysicalCount = physicalCountValid ? physicalCount : 0;
 	if (!status) {
 		return {
-			cachedItems: physicalCount,
-			hasCacheData: physicalCount > 0,
+			cachedItems: exposedPhysicalCount,
+			hasCacheData: physicalCountValid && physicalCount > 0,
 			publicationState: "unavailable" as const,
-			reasonCode: "publication_missing",
+			reasonCode: physicalCountValid ? "publication_missing" : "publication_integrity_mismatch",
 			attempt: null,
 		};
 	}
@@ -47,7 +50,12 @@ export function projectTautulliCacheStatus(
 			: sanitizeTautulliReason(status.lastAttemptErrorMessage);
 	let publicationState: "current" | "last-known" | "unavailable" = "unavailable";
 	let reasonCode: string | null = null;
-	if (result === "partial" && !physicalIntegrityVerified) {
+	const numericIntegrityVerified =
+		physicalCountValid &&
+		isCanonicalTautulliNonNegativeSafeInteger(status.itemCount) &&
+		isCanonicalTautulliNonNegativeSafeInteger(status.connectionGeneration) &&
+		isCanonicalTautulliNonNegativeSafeInteger(status.identityGeneration);
+	if (!numericIntegrityVerified || (result === "partial" && !physicalIntegrityVerified)) {
 		publicationState = "unavailable";
 		reasonCode = "publication_integrity_mismatch";
 	} else if (result === "error" || result === "partial" || result === "in_progress") {
@@ -72,8 +80,8 @@ export function projectTautulliCacheStatus(
 		reasonCode = "attempt_state_unknown";
 	}
 	return {
-		cachedItems: physicalCount,
-		hasCacheData: physicalCount > 0,
+		cachedItems: exposedPhysicalCount,
+		hasCacheData: physicalCountValid && physicalCount > 0,
 		publicationState,
 		reasonCode,
 		attempt: {

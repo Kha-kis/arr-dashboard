@@ -152,6 +152,21 @@ describe("tautulliLibraryMediaInfoSchema", () => {
 	});
 
 	it.each([
+		["recordsFiltered", { recordsFiltered: -0, recordsTotal: 0 }],
+		["recordsTotal", { recordsFiltered: 0, recordsTotal: -0 }],
+		["last_refreshed", { recordsFiltered: 0, recordsTotal: 0, last_refreshed: -0 }],
+	] as const)("rejects negative zero in catalog %s", (_label, values) => {
+		expect(() =>
+			tautulliLibraryMediaInfoSchema.parse({
+				data: [],
+				recordsFiltered: values.recordsFiltered,
+				recordsTotal: values.recordsTotal,
+				last_refreshed: "last_refreshed" in values ? values.last_refreshed : null,
+			}),
+		).toThrow();
+	});
+
+	it.each([
 		["null", null, null],
 		["missing", undefined, null],
 		["empty", "", null],
@@ -161,6 +176,12 @@ describe("tautulliLibraryMediaInfoSchema", () => {
 		["positive integer", 42, 42],
 		["canonical positive string one", "1", 1],
 		["canonical positive string", "42", 42],
+		["maximum safe integer", Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER],
+		[
+			"canonical maximum safe integer string",
+			String(Number.MAX_SAFE_INTEGER),
+			Number.MAX_SAFE_INTEGER,
+		],
 	])("preserves %s play-count semantics", (_label, playCount, expected) => {
 		expect(parseTautulliPlayCount(playCount)).toBe(expected);
 		expect(parsePlayCount(playCount)).toBe(expected);
@@ -174,6 +195,7 @@ describe("tautulliLibraryMediaInfoSchema", () => {
 		["tab", "\t"],
 		["newline", "\n"],
 		["plus sign", "+1"],
+		["plus zero", "+0"],
 		["negative zero", "-0"],
 		["negative string", "-1"],
 		["decimal zero", "1.0"],
@@ -189,7 +211,10 @@ describe("tautulliLibraryMediaInfoSchema", () => {
 		["fractional number", 1.5],
 		["NaN number", Number.NaN],
 		["Infinity number", Number.POSITIVE_INFINITY],
+		["negative Infinity number", Number.NEGATIVE_INFINITY],
+		["minimum safe integer", Number.MIN_SAFE_INTEGER],
 		["unsafe integer", Number.MAX_SAFE_INTEGER + 1],
+		["boxed zero", new Number(0)],
 	])("normalizes malformed %s play count to unknown", (_label, playCount) => {
 		expect(parseTautulliPlayCount(playCount)).toBeNull();
 		expect(parsePlayCount(playCount)).toBeNull();
@@ -222,5 +247,36 @@ describe("tautulliHistoryDataSchema", () => {
 			grandparent_rating_key: "0",
 			grandparent_title: "",
 		});
+	});
+
+	it.each([
+		["row id", { row_id: -0 }],
+		["date", { date: -0 }],
+		["play count", { play_count: -0 }],
+		["group count", { group_count: -0 }],
+		["filtered total", { recordsFiltered: -0 }],
+		["record total", { recordsTotal: -0 }],
+	] as const)("rejects negative zero in history %s", (_label, override) => {
+		const fields = override as Record<string, number>;
+		const item = {
+			row_id: 1,
+			rating_key: "100",
+			parent_rating_key: "0",
+			grandparent_rating_key: "0",
+			title: "Fixture",
+			grandparent_title: "",
+			media_type: "movie",
+			user: "Fixture User",
+			date: 1_777_000_000,
+			group_count: 1,
+			...(fields.recordsFiltered === undefined && fields.recordsTotal === undefined ? fields : {}),
+		};
+		expect(() =>
+			tautulliHistoryDataSchema.parse({
+				data: [item],
+				recordsFiltered: fields.recordsFiltered ?? 1,
+				recordsTotal: fields.recordsTotal ?? 1,
+			}),
+		).toThrow();
 	});
 });

@@ -389,6 +389,70 @@ describe("Tautulli exact-evidence refresh collection", () => {
 		);
 		expect(result).toMatchObject({ complete: false, reasonCodes: ["history_partial"] });
 	});
+
+	it.each([
+		["page total", { data: history, recordsFiltered: -0, recordsTotal: 2 }, "history_partial"],
+		[
+			"row id",
+			{ data: [{ ...history[0]!, row_id: -0 }], recordsFiltered: 1, recordsTotal: 1 },
+			"history_changed",
+		],
+		[
+			"timestamp",
+			{ data: [{ ...history[0]!, date: -0 }], recordsFiltered: 1, recordsTotal: 1 },
+			"history_partial",
+		],
+		[
+			"play count",
+			{ data: [{ ...history[0]!, play_count: -0 }], recordsFiltered: 1, recordsTotal: 1 },
+			"history_partial",
+		],
+	] as const)(
+		"rejects alternate-client negative zero in history %s",
+		async (_label, page, reason) => {
+			const result = await collectTautulliCacheLiveEvidence(
+				client({ getHistory: vi.fn().mockResolvedValue(page) }),
+				"tautulli-1",
+				log,
+				scope,
+			);
+
+			expect(result).toMatchObject({ kind: "unpublished", reasonCodes: [reason] });
+			expect(JSON.stringify(logWarn.mock.calls)).not.toMatch(/Sensitive|alice|rating_key/);
+		},
+	);
+
+	it("rejects an unsafe aggregate count instead of hashing or publishing it", async () => {
+		const duplicateCatalog = [
+			{ ...catalog[0]!, play_count: Number.MAX_SAFE_INTEGER },
+			{ ...catalog[1]!, rating_key: "102", play_count: 1 },
+		];
+		const result = await collectTautulliCacheLiveEvidence(
+			client({
+				getLibraryMediaInfo: vi.fn().mockResolvedValue({
+					data: duplicateCatalog,
+					recordsFiltered: 2,
+					recordsTotal: 2,
+					last_refreshed: 1,
+				}),
+				getMetadata: vi.fn(async (ratingKey: string) => ({
+					rating_key: ratingKey,
+					section_id: "1",
+					media_type: "movie",
+					guid: `plex://movie/${ratingKey}`,
+					guids: ["tmdb://55"],
+				})),
+			}),
+			"tautulli-1",
+			log,
+			scope,
+		);
+
+		expect(result).toMatchObject({
+			kind: "unpublished",
+			reasonCodes: ["observation_count_unavailable"],
+		});
+	});
 });
 
 describe("Tautulli refresh log projection", () => {

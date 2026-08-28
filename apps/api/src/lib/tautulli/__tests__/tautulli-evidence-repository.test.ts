@@ -1,16 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+	loadExactTautulliEvidence,
+	loadPersistedTautulliGeneration,
+	loadPositiveTautulliEvidence,
+} from "../tautulli-evidence-repository.js";
+import {
 	createTautulliAggregateRoot,
 	createTautulliGenerationObservationRoot,
 	createTautulliTargetCatalogRoot,
 	type TautulliAggregateGenerationRow,
 	type TautulliGenerationObservation,
 } from "../tautulli-generation-observations.js";
-import {
-	loadExactTautulliEvidence,
-	loadPersistedTautulliGeneration,
-	loadPositiveTautulliEvidence,
-} from "../tautulli-evidence-repository.js";
 
 const scope = {
 	instanceId: "tautulli-1",
@@ -121,6 +121,18 @@ describe("persisted Tautulli generation reader", () => {
 			"legacy aggregate row",
 			(_exact: ReturnType<typeof exactRow>[], aggregate: ReturnType<typeof aggregateRow>[]) => {
 				aggregate[0] = { ...aggregate[0]!, generationId: null as never };
+			},
+		],
+		[
+			"negative-zero exact count",
+			(exact: ReturnType<typeof exactRow>[], _aggregate: ReturnType<typeof aggregateRow>[]) => {
+				exact[0] = { ...exact[0]!, observedWatchCount: -0 };
+			},
+		],
+		[
+			"negative-zero aggregate count",
+			(_exact: ReturnType<typeof exactRow>[], aggregate: ReturnType<typeof aggregateRow>[]) => {
+				aggregate[0] = { ...aggregate[0]!, watchCount: -0 };
 			},
 		],
 	] as const)("fails closed for %s", async (_label, mutate) => {

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+	createTautulliAggregateRoot,
 	createTautulliGenerationObservationRoot,
+	createTautulliTargetCatalogRoot,
 	normalizeTautulliGenerationObservations,
 	verifyTautulliGenerationObservationIntegrity,
 } from "../tautulli-generation-observations.js";
@@ -51,6 +53,51 @@ describe("Tautulli exact generation observations", () => {
 			rows: [{ ...first, providerGuidFingerprint: "b".repeat(64) }],
 		});
 		expect(reused.digest).not.toBe(original.digest);
+	});
+
+	it("rejects negative zero before observation canonicalization and digest calculation", () => {
+		const negativeZero = { ...first, observedWatchCount: -0 };
+
+		expect(() => normalizeTautulliGenerationObservations([negativeZero], scope)).toThrow(
+			"Invalid Tautulli generation observation",
+		);
+		expect(() =>
+			createTautulliGenerationObservationRoot({ ...scope, rows: [negativeZero] }),
+		).toThrow("Invalid Tautulli generation observation");
+	});
+
+	it("preserves a stable observation digest for legitimate ordinary zero", () => {
+		const firstRoot = createTautulliGenerationObservationRoot({ ...scope, rows: [first] });
+		const secondRoot = createTautulliGenerationObservationRoot({
+			...scope,
+			rows: [{ ...first, observedWatchCount: 0 }],
+		});
+
+		expect(secondRoot).toEqual(firstRoot);
+	});
+
+	it("rejects aggregate negative zero before canonicalization and digest calculation", () => {
+		const aggregate = {
+			...scope,
+			tmdbId: 55,
+			mediaType: "movie" as const,
+			lastWatchedAt: null,
+			watchCount: -0,
+			watchedByUsers: "[]",
+		};
+
+		expect(() => createTautulliAggregateRoot({ ...scope, rows: [aggregate] })).toThrow(
+			"Invalid Tautulli aggregate generation row",
+		);
+	});
+
+	it.each([
+		["observation", createTautulliGenerationObservationRoot],
+		["target catalog", createTautulliTargetCatalogRoot],
+		["aggregate", createTautulliAggregateRoot],
+	] as const)("rejects an empty %s root with a negative-zero scope", (_label, createRoot) => {
+		expect(() => createRoot({ ...scope, connectionGeneration: -0, rows: [] } as never)).toThrow();
+		expect(() => createRoot({ ...scope, identityGeneration: -0, rows: [] } as never)).toThrow();
 	});
 
 	it.each([

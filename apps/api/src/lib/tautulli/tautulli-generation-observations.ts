@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isCanonicalTautulliNonNegativeSafeInteger } from "./tautulli-canonical-numbers.js";
 
 export const TAUTULLI_GENERATION_ROOT_VERSION = 1 as const;
 export const TAUTULLI_OBSERVATION_WRITE_CHUNK_SIZE = 100;
@@ -46,11 +47,20 @@ function nonempty(value: unknown): value is string {
 }
 
 function nonnegative(value: unknown): value is number {
-	return Number.isSafeInteger(value) && (value as number) >= 0;
+	return isCanonicalTautulliNonNegativeSafeInteger(value);
 }
 
 function positive(value: unknown): value is number {
-	return Number.isSafeInteger(value) && (value as number) > 0;
+	return isCanonicalTautulliNonNegativeSafeInteger(value) && value > 0;
+}
+
+function validScope(scope: Scope): boolean {
+	return (
+		nonempty(scope.instanceId) &&
+		nonempty(scope.generationId) &&
+		nonnegative(scope.connectionGeneration) &&
+		nonnegative(scope.identityGeneration)
+	);
 }
 
 function compare(
@@ -121,12 +131,7 @@ export function normalizeTautulliGenerationObservations(
 export function createTautulliGenerationObservationRoot(
 	input: Scope & { rows: readonly TautulliGenerationObservation[] },
 ): TautulliGenerationRoot {
-	if (
-		!nonempty(input.instanceId) ||
-		!nonempty(input.generationId) ||
-		!nonnegative(input.connectionGeneration) ||
-		!nonnegative(input.identityGeneration)
-	) {
+	if (!validScope(input)) {
 		throw new Error("Invalid Tautulli observation digest scope");
 	}
 	const rows = normalizeTautulliGenerationObservations(input.rows, input);
@@ -147,6 +152,7 @@ export function createTautulliGenerationObservationRoot(
 }
 
 function createScopedRoot(input: Scope, rows: readonly unknown[]): TautulliGenerationRoot {
+	if (!validScope(input)) throw new Error("Invalid Tautulli generation root scope");
 	const digest = createHash("sha256")
 		.update(
 			JSON.stringify({

@@ -3,13 +3,21 @@ import {
 	publishAuthoritativeTautulliGeneration,
 	TautulliRefreshAttemptSupersededError,
 } from "../tautulli-cache-storage.js";
+import { encodeTautulliGenerationMetadata } from "../tautulli-generation-metadata.js";
+import {
+	createTautulliAggregateRoot,
+	createTautulliGenerationObservationRoot,
+	createTautulliTargetCatalogRoot,
+	type TautulliAggregateGenerationRow,
+	type TautulliGenerationObservation,
+} from "../tautulli-generation-observations.js";
 
-const instance = { id: "tautulli-1", connectionGeneration: 4, identityGeneration: 2 } as never;
+const instance = { id: "tautulli-1", connectionGeneration: 4, identityGeneration: 2 };
 const attempt = {
 	attemptedAt: new Date("2026-08-27T12:00:00Z"),
 	resultMarker: "in_progress:attempt-a",
 };
-const aggregateRows = [
+const aggregateRows: TautulliAggregateGenerationRow[] = [
 	{
 		instanceId: "tautulli-1",
 		generationId: "generation-1",
@@ -22,7 +30,7 @@ const aggregateRows = [
 		identityGeneration: 2,
 	},
 ];
-const exactRows = [
+const exactRows: TautulliGenerationObservation[] = [
 	{
 		instanceId: "tautulli-1",
 		generationId: "generation-1",
@@ -37,6 +45,36 @@ const exactRows = [
 		identityGeneration: 2,
 	},
 ];
+const publicationScope = {
+	instanceId: "tautulli-1",
+	generationId: "generation-1",
+	connectionGeneration: 4,
+	identityGeneration: 2,
+};
+const generationMetadata = encodeTautulliGenerationMetadata({
+	version: 1,
+	provider: "tautulli",
+	generationId: "generation-1",
+	publicationLevel: "authoritative",
+	completeness: {
+		targetCatalog: createTautulliTargetCatalogRoot({
+			...publicationScope,
+			rows: exactRows,
+		}),
+		observations: createTautulliGenerationObservationRoot({
+			...publicationScope,
+			rows: exactRows,
+		}),
+		aggregate: createTautulliAggregateRoot({
+			...publicationScope,
+			rows: aggregateRows,
+		}),
+	},
+	connectionGeneration: 4,
+	identityGeneration: 2,
+	capabilities: ["exact-target-observations"],
+	partialReasons: [],
+});
 
 function fixture(updateCount = 1) {
 	const tx = {
@@ -61,7 +99,7 @@ describe("atomic Tautulli generation publication", () => {
 			attempt,
 			completedAt: attempt.attemptedAt,
 			generationId: "generation-1",
-			generationMetadata: "metadata-v1",
+			generationMetadata,
 			aggregateRows: aggregateRows as never,
 			exactRows: exactRows as never,
 		});
@@ -73,7 +111,7 @@ describe("atomic Tautulli generation publication", () => {
 			}),
 			data: expect.objectContaining({
 				generationId: "generation-1",
-				generationMetadata: "metadata-v1",
+				generationMetadata,
 				lastAttemptResult: "success",
 				itemCount: 1,
 			}),
@@ -96,7 +134,7 @@ describe("atomic Tautulli generation publication", () => {
 				attempt,
 				completedAt: attempt.attemptedAt,
 				generationId: "generation-1",
-				generationMetadata: "metadata-v1",
+				generationMetadata,
 				aggregateRows: aggregateRows as never,
 				exactRows: exactRows as never,
 			}),
@@ -112,7 +150,7 @@ describe("atomic Tautulli generation publication", () => {
 			attempt,
 			completedAt: attempt.attemptedAt,
 			generationId: "generation-1",
-			generationMetadata: "metadata-v1",
+			generationMetadata,
 			aggregateRows: aggregateRows as never,
 			exactRows: exactRows as never,
 			publicationLevel: "positive-only",
@@ -128,5 +166,70 @@ describe("atomic Tautulli generation publication", () => {
 				}),
 			}),
 		);
+	});
+
+	it.each([
+		["aggregate watch count", [{ ...aggregateRows[0]!, watchCount: -0 }], exactRows],
+		["exact observed watch count", aggregateRows, [{ ...exactRows[0]!, observedWatchCount: -0 }]],
+	] as const)(
+		"rejects negative zero in %s before any Prisma write",
+		async (_label, aggregate, exact) => {
+			const tx = fixture();
+
+			await expect(
+				publishAuthoritativeTautulliGeneration(tx as never, {
+					instance,
+					attempt,
+					completedAt: attempt.attemptedAt,
+					generationId: "generation-1",
+					generationMetadata,
+					aggregateRows: aggregate as never,
+					exactRows: exact as never,
+				}),
+			).rejects.toThrow("Invalid Tautulli generation publication");
+			expect(tx.cacheRefreshStatus.updateMany).not.toHaveBeenCalled();
+			expect(tx.tautulliCache.createMany).not.toHaveBeenCalled();
+			expect(tx.tautulliGenerationObservation.createMany).not.toHaveBeenCalled();
+		},
+	);
+
+	it("rejects negative-zero metadata before CacheRefreshStatus receives it", async () => {
+		const tx = fixture();
+		const negativeZeroMetadata = generationMetadata.replace(
+			/"targetCatalog":\{"version":1,"count":1/,
+			'"targetCatalog":{"version":1,"count":-0',
+		);
+
+		await expect(
+			publishAuthoritativeTautulliGeneration(tx as never, {
+				instance,
+				attempt,
+				completedAt: attempt.attemptedAt,
+				generationId: "generation-1",
+				generationMetadata: negativeZeroMetadata,
+				aggregateRows: aggregateRows as never,
+				exactRows: exactRows as never,
+			}),
+		).rejects.toThrow("Invalid Tautulli generation publication");
+		expect(tx.cacheRefreshStatus.updateMany).not.toHaveBeenCalled();
+	});
+
+	it("rejects a negative-zero publication generation before any Prisma write", async () => {
+		const tx = fixture();
+
+		await expect(
+			publishAuthoritativeTautulliGeneration(tx as never, {
+				instance: { ...instance, connectionGeneration: -0 },
+				attempt,
+				completedAt: attempt.attemptedAt,
+				generationId: "generation-1",
+				generationMetadata,
+				aggregateRows: aggregateRows as never,
+				exactRows: exactRows as never,
+			}),
+		).rejects.toThrow("Invalid Tautulli generation publication");
+		expect(tx.cacheRefreshStatus.updateMany).not.toHaveBeenCalled();
+		expect(tx.tautulliCache.createMany).not.toHaveBeenCalled();
+		expect(tx.tautulliGenerationObservation.createMany).not.toHaveBeenCalled();
 	});
 });

@@ -1,13 +1,17 @@
 import { createHash } from "node:crypto";
 import type { TautulliLibrary } from "@arr/shared";
 import {
+	isCanonicalTautulliNonNegativeSafeInteger,
+	parseCanonicalTautulliNonNegativeSafeInteger,
+} from "./tautulli-canonical-numbers.js";
+import type { TautulliReasonCode } from "./tautulli-generation-metadata.js";
+import {
 	createTautulliGenerationObservationRoot,
 	createTautulliTargetCatalogRoot,
 	normalizeTautulliGenerationObservations,
 	type TautulliGenerationObservation,
 	type TautulliGenerationRoot,
 } from "./tautulli-generation-observations.js";
-import type { TautulliReasonCode } from "./tautulli-generation-metadata.js";
 
 export const TAUTULLI_CATALOG_PAGE_SIZE = 250;
 export const TAUTULLI_METADATA_CONCURRENCY = 6;
@@ -67,8 +71,7 @@ export class TautulliEvidenceError extends Error {
 
 function safeTotal(value: unknown): value is number {
 	return (
-		Number.isSafeInteger(value) &&
-		(value as number) >= 0 &&
+		isCanonicalTautulliNonNegativeSafeInteger(value) &&
 		(value as number) <= TAUTULLI_MAX_EXACT_TARGETS
 	);
 }
@@ -83,10 +86,10 @@ function fingerprintProviderGuid(value: string): string {
 function uniqueTmdbId(guids: readonly string[]): number {
 	const ids = new Set<number>();
 	for (const guid of guids) {
-		const match = /^tmdb:\/\/(\d+)$/.exec(guid.trim());
+		const match = /^tmdb:\/\/(\d+)$/.exec(guid);
 		if (match?.[1]) {
-			const id = Number.parseInt(match[1], 10);
-			if (Number.isSafeInteger(id) && id > 0) ids.add(id);
+			const id = parseCanonicalTautulliNonNegativeSafeInteger(match[1]);
+			if (isCanonicalTautulliNonNegativeSafeInteger(id) && id > 0) ids.add(id);
 		}
 	}
 	if (ids.size !== 1) throw new TautulliEvidenceError("metadata_tmdb_unmapped");
@@ -177,6 +180,10 @@ type CatalogMetadataOutcome =
 	| { observation: TautulliGenerationObservation }
 	| { reasonCode: CatalogPartialReason["code"] };
 
+function canonicalLastPlayed(value: unknown): number | null {
+	return isCanonicalTautulliNonNegativeSafeInteger(value) ? value : null;
+}
+
 function catalogDigest(rows: readonly TautulliCatalogRow[]): string {
 	return createHash("sha256")
 		.update(
@@ -186,8 +193,10 @@ function catalogDigest(rows: readonly TautulliCatalogRow[]): string {
 						row.section_id,
 						row.rating_key,
 						row.media_type,
-						row.play_count,
-						row.last_played,
+						row.play_count === null || !isCanonicalTautulliNonNegativeSafeInteger(row.play_count)
+							? null
+							: row.play_count,
+						canonicalLastPlayed(row.last_played),
 					])
 					.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
 			),
@@ -197,10 +206,8 @@ function catalogDigest(rows: readonly TautulliCatalogRow[]): string {
 }
 
 function parseDeclaredCount(value: unknown): number {
-	if (typeof value !== "string" || !/^(0|[1-9]\d*)$/.test(value)) {
-		throw new TautulliEvidenceError("catalog_total_mismatch");
-	}
-	const count = Number(value);
+	if (typeof value !== "string") throw new TautulliEvidenceError("catalog_total_mismatch");
+	const count = parseCanonicalTautulliNonNegativeSafeInteger(value);
 	if (!safeTotal(count)) throw new TautulliEvidenceError("catalog_total_mismatch");
 	return count;
 }
@@ -293,9 +300,10 @@ async function collectPass(
 				}
 				throw error;
 			}
-			if (!Number.isSafeInteger(row.play_count) || (row.play_count as number) < 0) {
+			if (!isCanonicalTautulliNonNegativeSafeInteger(row.play_count)) {
 				return { reasonCode: "observation_count_unavailable" as const };
 			}
+			const lastPlayed = canonicalLastPlayed(row.last_played);
 			return {
 				observation: {
 					...scope,
@@ -305,7 +313,7 @@ async function collectPass(
 					mediaType: row.media_type === "show" ? ("series" as const) : ("movie" as const),
 					tmdbId,
 					observedWatchCount: row.play_count,
-					lastWatchedAt: row.last_played == null ? null : new Date(row.last_played * 1000),
+					lastWatchedAt: lastPlayed === null ? null : new Date(lastPlayed * 1000),
 				},
 			};
 		},
