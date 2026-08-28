@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+	parseTautulliPlayCount,
 	tautulliHistoryDataSchema,
 	tautulliLibraryMediaInfoSchema,
 	tautulliMetadataSchema,
@@ -156,13 +157,17 @@ describe("tautulliLibraryMediaInfoSchema", () => {
 		["empty", "", null],
 		["explicit zero", 0, 0],
 		["canonical string zero", "0", 0],
-		["positive integer", 3, 3],
-		["canonical positive string", "3", 3],
+		["positive integer one", 1, 1],
+		["positive integer", 42, 42],
+		["canonical positive string one", "1", 1],
+		["canonical positive string", "42", 42],
 	])("preserves %s play-count semantics", (_label, playCount, expected) => {
+		expect(parseTautulliPlayCount(playCount)).toBe(expected);
 		expect(parsePlayCount(playCount)).toBe(expected);
 	});
 
 	it.each([
+		["numeric negative zero", -0],
 		["false", false],
 		["true", true],
 		["space", " "],
@@ -186,6 +191,7 @@ describe("tautulliLibraryMediaInfoSchema", () => {
 		["Infinity number", Number.POSITIVE_INFINITY],
 		["unsafe integer", Number.MAX_SAFE_INTEGER + 1],
 	])("normalizes malformed %s play count to unknown", (_label, playCount) => {
+		expect(parseTautulliPlayCount(playCount)).toBeNull();
 		expect(parsePlayCount(playCount)).toBeNull();
 	});
 });

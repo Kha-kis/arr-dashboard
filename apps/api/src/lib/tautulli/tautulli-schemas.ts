@@ -11,7 +11,7 @@ import { z } from "zod";
 /** Parse only canonical, authority-safe Tautulli play counts; everything else is UNKNOWN. */
 export function parseTautulliPlayCount(value: unknown): number | null {
 	if (typeof value === "number") {
-		return Number.isSafeInteger(value) && value >= 0 ? value : null;
+		return Number.isSafeInteger(value) && value >= 0 && !Object.is(value, -0) ? value : null;
 	}
 	if (typeof value !== "string" || !/^(0|[1-9][0-9]*)$/.test(value)) return null;
 	const parsed = Number(value);
