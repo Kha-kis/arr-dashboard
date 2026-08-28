@@ -104,6 +104,75 @@ export class PlexAuthorityUnavailableError extends Error {
 	}
 }
 
+export type PlexMetadataTagMutationFailureReason =
+	| "cached_target_unavailable"
+	| "cached_target_ambiguous"
+	| "cached_target_inconsistent"
+	| "provider_authority_unavailable"
+	| "live_target_missing"
+	| "live_target_ambiguous"
+	| "live_target_changed"
+	| "provider_identity_changed"
+	| "provider_connection_changed"
+	| "upstream_write_failed"
+	| "publication_superseded"
+	| "unknown_failure";
+
+export type PlexMetadataTagMutationResult =
+	| { ok: true }
+	| {
+			ok: false;
+			reasonCode: PlexMetadataTagMutationFailureReason;
+			evidence: PlexEvidenceSummary;
+	  };
+
+export class PlexMetadataTagWriteError extends Error {
+	readonly code = "upstream_write_failed" as const;
+
+	constructor() {
+		super("Plex metadata tag write failed");
+		this.name = "PlexMetadataTagWriteError";
+		delete this.stack;
+	}
+}
+
+function classifyMetadataTagEvidenceFailure(
+	evidence: PlexEvidenceSummary,
+): PlexMetadataTagMutationFailureReason {
+	if (evidence.reasonCodes.includes("connection_generation_mismatch")) {
+		return "provider_connection_changed";
+	}
+	if (evidence.reasonCodes.includes("identity_generation_mismatch")) {
+		return "provider_identity_changed";
+	}
+	if (
+		evidence.reasonCodes.some(
+			(reasonCode) =>
+				reasonCode === "latest_attempt_failed" ||
+				reasonCode === "latest_attempt_in_progress" ||
+				reasonCode === "latest_attempt_partial" ||
+				reasonCode === "latest_attempt_unknown" ||
+				reasonCode === "latest_attempt_missing" ||
+				reasonCode === "latest_attempt_future_dated" ||
+				reasonCode === "generation_changed" ||
+				reasonCode === "published_timestamp_changed",
+		)
+	) {
+		return "publication_superseded";
+	}
+	if (evidence.reasonCodes.includes("plex_content_digest_changed")) {
+		return "live_target_changed";
+	}
+	return "provider_authority_unavailable";
+}
+
+function failedMetadataTagMutation(
+	evidence: PlexEvidenceSummary,
+	reasonCode: PlexMetadataTagMutationFailureReason,
+): PlexMetadataTagMutationResult {
+	return { ok: false, reasonCode, evidence };
+}
+
 export type PlexAuthorityWindowResult =
 	| { ok: true; persisted: PlexPersistedSelectionObservation }
 	| { ok: false; reasonCode: PlexCoverageReasonCode };
@@ -1207,12 +1276,11 @@ export class PlexAuthorityService {
 		type: "collection" | "label";
 		action: "add" | "remove";
 		name: string;
-	}): Promise<{ ok: true } | { ok: false; evidence: PlexEvidenceSummary }> {
+	}): Promise<PlexMetadataTagMutationResult> {
 		const instance = await this.ownedInstance(input.userId, input.instanceId);
 		if (!instance) {
-			return {
-				ok: false,
-				evidence: unavailableEvidence(
+			return failedMetadataTagMutation(
+				unavailableEvidence(
 					input.instanceId,
 					{
 						availability: "unavailable",
@@ -1224,7 +1292,8 @@ export class PlexAuthorityService {
 					},
 					"missing_status",
 				).evidence,
-			};
+				"provider_authority_unavailable",
+			);
 		}
 		const selection: PlexCacheRowSelection = { kind: "targets", targets: [input.target] };
 		const before = await loadInstanceSelectedEvidence(this.deps.prisma, {
@@ -1232,7 +1301,12 @@ export class PlexAuthorityService {
 			instanceId: input.instanceId,
 			selection,
 		});
-		if (!before.available) return { ok: false, evidence: before.evidence };
+		if (!before.available) {
+			return failedMetadataTagMutation(
+				before.evidence,
+				classifyMetadataTagEvidenceFailure(before.evidence),
+			);
+		}
 		const client = this.client(instance);
 		const current = await this.settle({
 			userId: input.userId,
@@ -1250,17 +1324,19 @@ export class PlexAuthorityService {
 					selection,
 				}),
 		});
-		if (!current.available) return { ok: false, evidence: current.evidence };
+		if (!current.available) {
+			return failedMetadataTagMutation(
+				current.evidence,
+				classifyMetadataTagEvidenceFailure(current.evidence),
+			);
+		}
 		const targetBinding = requirePlexTargetLedgerBinding(current.metadata);
 		if (!targetBinding.ok) {
-			return {
-				ok: false,
-				evidence: unavailableEvidence(
-					input.instanceId,
-					current.evidence,
-					"target_ledger_binding_missing",
-				).evidence,
-			};
+			return failedMetadataTagMutation(
+				unavailableEvidence(input.instanceId, current.evidence, "target_ledger_binding_missing")
+					.evidence,
+				"provider_authority_unavailable",
+			);
 		}
 		const targetLedger = await verifyPersistedPlexGenerationTargets(this.deps.prisma, {
 			expected: {
@@ -1278,10 +1354,10 @@ export class PlexAuthorityService {
 		});
 		if (!targetLedger.ok) {
 			const reasonCode = targetLedger.reason as PlexCoverageReasonCode;
-			return {
-				ok: false,
-				evidence: unavailableEvidence(input.instanceId, current.evidence, reasonCode).evidence,
-			};
+			return failedMetadataTagMutation(
+				unavailableEvidence(input.instanceId, current.evidence, reasonCode).evidence,
+				"provider_authority_unavailable",
+			);
 		}
 		const persistedTargets = await readPlexGenerationTargetsForSelection(
 			this.deps.prisma,
@@ -1290,14 +1366,11 @@ export class PlexAuthorityService {
 		);
 		const live = await collectSettledPlexCacheLiveEvidence(client, input.instanceId, this.deps.log);
 		if (!live.complete || !live.inventoryTargets) {
-			return {
-				ok: false,
-				evidence: unavailableEvidence(
-					input.instanceId,
-					current.evidence,
-					"plex_content_digest_changed",
-				).evidence,
-			};
+			return failedMetadataTagMutation(
+				unavailableEvidence(input.instanceId, current.evidence, "plex_content_digest_changed")
+					.evidence,
+				"provider_authority_unavailable",
+			);
 		}
 		let liveTargets: PlexGenerationTarget[];
 		try {
@@ -1320,21 +1393,23 @@ export class PlexAuthorityService {
 				{ instanceId: input.instanceId, generationId: current.generationId },
 			);
 		} catch {
-			return {
-				ok: false,
-				evidence: unavailableEvidence(input.instanceId, current.evidence, "target_ledger_invalid")
-					.evidence,
-			};
+			return failedMetadataTagMutation(
+				unavailableEvidence(input.instanceId, current.evidence, "target_ledger_invalid").evidence,
+				"provider_authority_unavailable",
+			);
 		}
 		if (!samePlexGenerationTargetSet(persistedTargets, liveTargets)) {
-			return {
-				ok: false,
-				evidence: unavailableEvidence(
-					input.instanceId,
-					current.evidence,
-					"plex_content_digest_changed",
-				).evidence,
-			};
+			const reasonCode =
+				liveTargets.length === 0
+					? "live_target_missing"
+					: liveTargets.length > 1 || persistedTargets.length > 1
+						? "live_target_ambiguous"
+						: "live_target_changed";
+			return failedMetadataTagMutation(
+				unavailableEvidence(input.instanceId, current.evidence, "plex_content_digest_changed")
+					.evidence,
+				reasonCode,
+			);
 		}
 		const after = await loadInstanceSelectedEvidence(this.deps.prisma, {
 			userId: input.userId,
@@ -1349,22 +1424,29 @@ export class PlexAuthorityService {
 			!samePlexGenerationBinding(current, after) ||
 			!samePlexGenerationBinding(current, afterInstance)
 		) {
-			return {
-				ok: false,
-				evidence: unavailableEvidence(input.instanceId, current.evidence, "generation_changed")
-					.evidence,
-			};
+			const reasonCode = !after.available
+				? classifyMetadataTagEvidenceFailure(after.evidence)
+				: !afterInstance
+					? "provider_authority_unavailable"
+					: after.connectionGeneration !== current.connectionGeneration ||
+							afterInstance.connectionGeneration !== current.connectionGeneration
+						? "provider_connection_changed"
+						: after.identityGeneration !== current.identityGeneration ||
+								afterInstance.identityGeneration !== current.identityGeneration
+							? "provider_identity_changed"
+							: "publication_superseded";
+			return failedMetadataTagMutation(
+				unavailableEvidence(input.instanceId, current.evidence, "generation_changed").evidence,
+				reasonCode,
+			);
 		}
 		const singleTarget = selectSinglePlexGenerationTarget(persistedTargets);
 		if (!singleTarget.ok) {
-			return {
-				ok: false,
-				evidence: unavailableEvidence(
-					input.instanceId,
-					current.evidence,
-					"mutation_authority_unavailable",
-				).evidence,
-			};
+			return failedMetadataTagMutation(
+				unavailableEvidence(input.instanceId, current.evidence, "mutation_authority_unavailable")
+					.evidence,
+				persistedTargets.length === 0 ? "live_target_missing" : "live_target_ambiguous",
+			);
 		}
 		const ratingKeys = [
 			...new Set(
@@ -1385,25 +1467,26 @@ export class PlexAuthorityService {
 			ratingKeys[0] !== singleTarget.target.ratingKey ||
 			(input.expectedRatingKey !== undefined && ratingKeys[0] !== input.expectedRatingKey)
 		) {
-			return {
-				ok: false,
-				evidence: unavailableEvidence(
-					input.instanceId,
-					current.evidence,
-					"mutation_authority_unavailable",
-				).evidence,
-			};
+			return failedMetadataTagMutation(
+				unavailableEvidence(input.instanceId, current.evidence, "mutation_authority_unavailable")
+					.evidence,
+				"live_target_changed",
+			);
 		}
 		// This I/O immediately follows the terminal selected live observation.
 		// Plex has no mutation lock, so a change can begin afterward; the fixed
 		// point eliminates stale/cached authorization but cannot make Plex atomic.
-		await client.updateMetadataTags(
-			ratingKeys[0]!,
-			input.target.mediaType,
-			input.type,
-			input.action,
-			input.name,
-		);
+		try {
+			await client.updateMetadataTags(
+				ratingKeys[0]!,
+				input.target.mediaType,
+				input.type,
+				input.action,
+				input.name,
+			);
+		} catch {
+			throw new PlexMetadataTagWriteError();
+		}
 		return { ok: true };
 	}
 

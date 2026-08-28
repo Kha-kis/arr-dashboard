@@ -866,7 +866,13 @@ export class PlexClient {
 		const response = await fetch(url.toString(), fetchOptions);
 
 		if (!response.ok) {
-			this.log.warn({ status: response.status, path }, "Plex API non-OK response");
+			const responseCategory =
+				response.status >= 400 && response.status < 500
+					? "client_error"
+					: response.status >= 500
+						? "server_error"
+						: "unavailable";
+			this.log.warn({ operation: "plex_api_request", responseCategory }, "Plex API request failed");
 			throw new Error(`Plex API error: HTTP ${response.status} ${response.statusText}`);
 		}
 

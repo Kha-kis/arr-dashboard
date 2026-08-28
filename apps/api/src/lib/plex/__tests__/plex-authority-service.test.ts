@@ -168,7 +168,10 @@ async function mutateWithLedgerEvidence(input: {
 		identityGeneration: number;
 	}>;
 	ledgerRows?: unknown[];
+	ledgerRatingKeys?: string[];
+	liveRatingKeys?: string[];
 	withBinding?: boolean;
+	updateError?: Error;
 }) {
 	const targetRow = { ...rowA, thumb: "/library/metadata/101/thumb/1" };
 	const ledgerTarget = {
@@ -182,6 +185,11 @@ async function mutateWithLedgerEvidence(input: {
 		tvdbId: null,
 		ratingKey: "101",
 	};
+	const ledgerTargets = (input.ledgerRatingKeys ?? ["101"]).map((ratingKey) => ({
+		...ledgerTarget,
+		id: `target-${ratingKey}`,
+		ratingKey,
+	}));
 	const metadata =
 		input.metadata ??
 		(input.withBinding
@@ -193,7 +201,7 @@ async function mutateWithLedgerEvidence(input: {
 						generationId: "generation-1",
 						connectionGeneration: 4,
 						identityGeneration: 9,
-						targets: [ledgerTarget],
+						targets: ledgerTargets,
 					}),
 				}
 			: { ...persisted().metadata, itemCount: 1 });
@@ -223,12 +231,15 @@ async function mutateWithLedgerEvidence(input: {
 	repositoryMocks.loadInstanceSelectedEvidence.mockReset();
 	repositoryMocks.loadInstanceSelectedEvidence
 		.mockResolvedValueOnce(evidence)
-		.mockResolvedValueOnce(reread);
-	const updateMetadataTags = vi.fn().mockResolvedValue(undefined);
+		.mockResolvedValueOnce(reread)
+		.mockResolvedValue(evidence);
+	const updateMetadataTags = input.updateError
+		? vi.fn().mockRejectedValue(input.updateError)
+		: vi.fn().mockResolvedValue(undefined);
 	const plexGenerationTarget = {
 		findMany: vi
 			.fn()
-			.mockResolvedValue(input.ledgerRows ?? (input.withBinding ? [ledgerTarget] : [])),
+			.mockResolvedValue(input.ledgerRows ?? (input.withBinding ? ledgerTargets : [])),
 	};
 	const plexCache = {
 		findMany: vi.fn(() => {
@@ -244,6 +255,8 @@ async function mutateWithLedgerEvidence(input: {
 					service: "PLEX",
 					enabled: true,
 					expectedIdentity: "plex-machine-a",
+					connectionGeneration: 4,
+					identityGeneration: 9,
 				}),
 			},
 			plexGenerationTarget,
@@ -258,11 +271,14 @@ async function mutateWithLedgerEvidence(input: {
 				getLibrarySections: vi
 					.fn()
 					.mockResolvedValue([{ key: "movies", title: "Movies", type: "movie" }]),
-				getLibraryItems: vi
-					.fn()
-					.mockResolvedValue([
-						{ ratingKey: "101", title: "A", type: "movie", Guid: [{ id: "tmdb://1" }] },
-					]),
+				getLibraryItems: vi.fn().mockResolvedValue(
+					(input.liveRatingKeys ?? ["101"]).map((ratingKey) => ({
+						ratingKey,
+						title: "A",
+						type: "movie",
+						Guid: [{ id: "tmdb://1" }],
+					})),
+				),
 				getHistory: vi.fn().mockResolvedValue([]),
 				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 				getOnDeck: vi.fn().mockResolvedValue([]),
@@ -1606,5 +1622,73 @@ describe("PlexAuthorityService settlement window", () => {
 		});
 		expect(updateMetadataTags).not.toHaveBeenCalled();
 		expect(plexGenerationTarget.findMany).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["connection generation", { connectionGeneration: 5 }, "provider_connection_changed"],
+		["identity generation", { identityGeneration: 10 }, "provider_identity_changed"],
+	] as const)(
+		"adds a bounded diagnostic when %s changes without authorizing a write",
+		async (_name, reread, reasonCode) => {
+			const { result, updateMetadataTags } = await mutateWithLedgerEvidence({
+				reread,
+				withBinding: true,
+			});
+
+			expect(result).toMatchObject({ ok: false, reasonCode });
+			expect(updateMetadataTags).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each([
+		["missing", [], ["101"], "live_target_missing"],
+		["ambiguous", ["101", "102"], ["101", "102"], "live_target_ambiguous"],
+		["changed or reused", ["102"], ["101"], "live_target_changed"],
+	] as const)(
+		"classifies a %s live target without changing the fail-closed result",
+		async (_name, liveRatingKeys, ledgerRatingKeys, reasonCode) => {
+			const { result, updateMetadataTags } = await mutateWithLedgerEvidence({
+				withBinding: true,
+				liveRatingKeys: [...liveRatingKeys],
+				ledgerRatingKeys: [...ledgerRatingKeys],
+			});
+
+			expect(result).toMatchObject({ ok: false, reasonCode });
+			expect(updateMetadataTags).not.toHaveBeenCalled();
+		},
+	);
+
+	it("keeps an authorized mutation result and single-write accounting unchanged", async () => {
+		const { result, updateMetadataTags } = await mutateWithLedgerEvidence({ withBinding: true });
+
+		expect(result).toEqual({ ok: true });
+		expect(updateMetadataTags).toHaveBeenCalledOnce();
+	});
+
+	it("wraps an upstream write exception without retaining provider content", async () => {
+		const canaries = [
+			"CANARY_WRITE_ERROR_787",
+			"https://CANARY_WRITE_HOST_787.invalid/private",
+			"CANARY_WRITE_TOKEN_787",
+			"CANARY_WRITE_RESPONSE_787",
+		];
+		let thrown: unknown;
+		try {
+			await mutateWithLedgerEvidence({
+				withBinding: true,
+				updateError: new Error(canaries.join(" ")),
+			});
+		} catch (error) {
+			thrown = error;
+		}
+		const serialized = JSON.stringify(thrown);
+		expect(thrown).toMatchObject({
+			name: "PlexMetadataTagWriteError",
+			code: "upstream_write_failed",
+			message: "Plex metadata tag write failed",
+		});
+		expect(thrown).not.toHaveProperty("cause");
+		expect(thrown).not.toHaveProperty("stack");
+		for (const canary of canaries) expect(serialized).not.toContain(canary);
 	});
 });

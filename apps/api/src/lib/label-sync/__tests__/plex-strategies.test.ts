@@ -7,9 +7,13 @@ const mocks = vi.hoisted(() => ({
 	loadInstanceSelectedEvidence: vi.fn(),
 	updateMetadataTags: vi.fn(),
 	createPlexClient: vi.fn(),
+	PlexMetadataTagWriteError: class PlexMetadataTagWriteError extends Error {
+		readonly code = "upstream_write_failed";
+	},
 }));
 
 vi.mock("../../plex/plex-authority-service.js", () => ({
+	PlexMetadataTagWriteError: mocks.PlexMetadataTagWriteError,
 	PlexAuthorityService: class {
 		private readonly prisma: {
 			serviceInstance?: { findFirst: (input: unknown) => Promise<Record<string, unknown> | null> };

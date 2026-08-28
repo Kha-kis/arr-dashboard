@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PlexClient } from "../plex-client.js";
 
-const log = { warn: vi.fn() } as never;
+const warn = vi.fn();
+const log = { warn } as never;
 
 function response(MediaContainer: Record<string, unknown>): Response {
 	return new Response(JSON.stringify({ MediaContainer }), {
@@ -499,6 +500,73 @@ describe("PlexClient authoritative inventory completeness", () => {
 		expect(url.searchParams.get("label.locked")).toBe("1");
 		expect(url.searchParams.get("label[0].tag.tag")).toBe("Family");
 		expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: "PUT" });
+	});
+
+	it("logs only a coarse category when a metadata-tag write is rejected", async () => {
+		const ratingKey = "CANARY_RATING_KEY_787";
+		const label = "CANARY_LABEL_787";
+		const token = "CANARY_TOKEN_787";
+		const fetchMock = vi.fn().mockResolvedValueOnce(
+			new Response("CANARY_RESPONSE_BODY_787", {
+				status: 422,
+				statusText: "CANARY_STATUS_TEXT_787",
+			}),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("https://CANARY_HOST_787.invalid", token, log);
+
+		await expect(
+			client.updateMetadataTags(ratingKey, "movie", "label", "add", label),
+		).rejects.toThrow();
+
+		expect(warn).toHaveBeenCalledWith(
+			{ operation: "plex_api_request", responseCategory: "client_error" },
+			"Plex API request failed",
+		);
+		const serialized = JSON.stringify(warn.mock.calls);
+		for (const canary of [
+			ratingKey,
+			label,
+			token,
+			"CANARY_HOST_787.invalid",
+			"CANARY_RESPONSE_BODY_787",
+			"CANARY_STATUS_TEXT_787",
+		]) {
+			expect(serialized).not.toContain(canary);
+		}
+	});
+
+	it("preserves a non-label caller's rejection contract with sanitized logging", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValueOnce(
+				new Response("CANARY_NON_LABEL_BODY_787", {
+					status: 503,
+					statusText: "CANARY_NON_LABEL_STATUS_787",
+				}),
+			),
+		);
+		const client = new PlexClient(
+			"https://CANARY_NON_LABEL_HOST_787.invalid",
+			"CANARY_NON_LABEL_TOKEN_787",
+			log,
+		);
+
+		await expect(client.getActivities()).rejects.toThrow();
+		expect(warn).toHaveBeenCalledWith(
+			{ operation: "plex_api_request", responseCategory: "server_error" },
+			"Plex API request failed",
+		);
+		const serialized = JSON.stringify(warn.mock.calls);
+		for (const canary of [
+			"/activities",
+			"CANARY_NON_LABEL_BODY_787",
+			"CANARY_NON_LABEL_STATUS_787",
+			"CANARY_NON_LABEL_HOST_787.invalid",
+			"CANARY_NON_LABEL_TOKEN_787",
+		]) {
+			expect(serialized).not.toContain(canary);
+		}
 	});
 
 	it("loads a complete bounded activity inventory", async () => {
