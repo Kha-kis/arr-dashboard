@@ -587,6 +587,83 @@ describe("Plex label-sync evidence boundary", () => {
 		expect(mocks.updateMetadataTags).not.toHaveBeenCalled();
 	});
 
+	it("counts a mixed ambiguous batch once when later destination authority is unavailable", async () => {
+		mocks.loadInstanceSelectedEvidence.mockResolvedValue(unavailableEvidence());
+
+		const result = await plexDestWriter.applyLabels({
+			rule,
+			destInstance: { ...instance, id: "plex-dest" } as DestWriterOpts["destInstance"],
+			candidates: [
+				{ tmdbId: 42, mediaType: "movie", title: "Movie collision" },
+				{ tmdbId: 42, mediaType: "series", title: "Series collision" },
+				{ tmdbId: 99, mediaType: "movie", title: "Unambiguous movie" },
+			],
+			prisma: destinationPrisma(),
+			arrClientFactory: {} as DestWriterOpts["arrClientFactory"],
+			encryptor: {} as DestWriterOpts["encryptor"],
+			log,
+		});
+
+		expect(result).toEqual({ matchesFound: 0, labelsApplied: 0, failures: 3 });
+		expect(result.failures).toBeLessThanOrEqual(3);
+		expect(mocks.loadInstanceSelectedEvidence).toHaveBeenCalledOnce();
+		expect(mocks.updateMetadataTags).not.toHaveBeenCalled();
+	});
+
+	it("preserves mixed-batch accounting when one unambiguous target writes", async () => {
+		mocks.loadInstanceSelectedEvidence.mockResolvedValue(
+			authoritativeEvidence([
+				{
+					tmdbId: 99,
+					mediaType: "movie",
+					title: "Unambiguous movie",
+					ratingKey: "999",
+					thumb: "/library/metadata/999/thumb/1",
+				},
+			]),
+		);
+
+		const result = await plexDestWriter.applyLabels({
+			rule,
+			destInstance: { ...instance, id: "plex-dest" } as DestWriterOpts["destInstance"],
+			candidates: [
+				{ tmdbId: 42, mediaType: "movie", title: "Movie collision" },
+				{ tmdbId: 42, mediaType: "series", title: "Series collision" },
+				{ tmdbId: 99, mediaType: "movie", title: "Unambiguous movie" },
+			],
+			prisma: destinationPrisma(),
+			arrClientFactory: {} as DestWriterOpts["arrClientFactory"],
+			encryptor: {} as DestWriterOpts["encryptor"],
+			log,
+		});
+
+		expect(result).toEqual({ matchesFound: 1, labelsApplied: 1, failures: 2 });
+		expect(result.failures).toBeLessThanOrEqual(3);
+		expect(mocks.updateMetadataTags).toHaveBeenCalledOnce();
+		expect(mocks.updateMetadataTags).toHaveBeenCalledWith("999", "label", "add", "Family");
+	});
+
+	it("counts every unambiguous candidate once when destination authority is unavailable", async () => {
+		mocks.loadInstanceSelectedEvidence.mockResolvedValue(unavailableEvidence());
+
+		const result = await plexDestWriter.applyLabels({
+			rule,
+			destInstance: { ...instance, id: "plex-dest" } as DestWriterOpts["destInstance"],
+			candidates: [
+				{ tmdbId: 10, mediaType: "movie", title: "Movie ten" },
+				{ tmdbId: 11, mediaType: "series", title: "Series eleven" },
+			],
+			prisma: destinationPrisma(),
+			arrClientFactory: {} as DestWriterOpts["arrClientFactory"],
+			encryptor: {} as DestWriterOpts["encryptor"],
+			log,
+		});
+
+		expect(result).toEqual({ matchesFound: 0, labelsApplied: 0, failures: 2 });
+		expect(mocks.loadInstanceSelectedEvidence).toHaveBeenCalledOnce();
+		expect(mocks.updateMetadataTags).not.toHaveBeenCalled();
+	});
+
 	it("does not infer a complete duplicate-edition set from one persisted rating key", async () => {
 		mocks.loadInstanceSelectedEvidence.mockResolvedValue(
 			authoritativeEvidence([

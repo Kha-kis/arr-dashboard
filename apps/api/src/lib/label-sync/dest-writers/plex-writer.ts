@@ -7,12 +7,13 @@
  */
 
 import { PlexAuthorityService } from "../../plex/plex-authority-service.js";
+import { plexProviderLogSink } from "../plex-provider-log-sink.js";
 import type { DestWriteResult, DestWriter, DestWriterOpts } from "../strategy-types.js";
 
 export const plexDestWriter: DestWriter = {
 	prismaService: "PLEX",
 	async applyLabels(opts: DestWriterOpts): Promise<DestWriteResult> {
-		const { rule, candidates, prisma, encryptor, log } = opts;
+		const { rule, candidates, prisma, encryptor } = opts;
 
 		if (candidates.length === 0) {
 			return { matchesFound: 0, labelsApplied: 0, failures: 0 };
@@ -34,20 +35,28 @@ export const plexDestWriter: DestWriter = {
 			tmdbId: candidate.tmdbId,
 			mediaType: candidate.mediaType,
 		}));
-		const authority = new PlexAuthorityService({ prisma, encryptor, log });
-		const evidence = await authority.readInstanceSelected({
-			userId: rule.userId,
-			instanceId: rule.destInstanceId,
-			selection: { kind: "targets", targets },
-			domains: ["membership"],
+		const authority = new PlexAuthorityService({
+			prisma,
+			encryptor,
+			log: plexProviderLogSink,
 		});
+		let evidence: Awaited<ReturnType<PlexAuthorityService["readInstanceSelected"]>>;
+		try {
+			evidence = await authority.readInstanceSelected({
+				userId: rule.userId,
+				instanceId: rule.destInstanceId,
+				selection: { kind: "targets", targets },
+				domains: ["membership"],
+			});
+		} catch {
+			return { matchesFound: 0, labelsApplied: 0, failures: candidates.length };
+		}
 		if (
 			!evidence.available ||
 			evidence.evidence.publicationLevel !== "authoritative" ||
 			evidence.evidence.completeness !== "complete" ||
 			evidence.evidence.reasonCodes.length > 0
 		) {
-			log.warn({ instanceId: rule.destInstanceId }, "Plex label destination evidence unavailable");
 			return { matchesFound: 0, labelsApplied: 0, failures: candidates.length };
 		}
 
@@ -64,10 +73,6 @@ export const plexDestWriter: DestWriter = {
 			}
 			const ratingKey = resolveParitySafeCachedRatingKey(row);
 			if (!ratingKey) {
-				log.warn(
-					{ tmdbId: row.tmdbId, title: row.title },
-					"Plex label target lacks matching cached rating-key evidence",
-				);
 				failures++;
 				continue;
 			}
@@ -84,16 +89,11 @@ export const plexDestWriter: DestWriter = {
 					action: "add",
 					name: rule.destTagName,
 				});
-			} catch (err) {
-				log.warn({ ratingKey, err }, "Failed to apply Plex label");
+			} catch {
 				failures++;
 				continue;
 			}
 			if (!mutation.ok) {
-				log.warn(
-					{ tmdbId: row.tmdbId, ratingKey },
-					"Plex label target evidence changed before mutation",
-				);
 				failures++;
 				continue;
 			}
