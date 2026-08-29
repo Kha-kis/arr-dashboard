@@ -100,7 +100,9 @@ function configureOneUser(app: ReturnType<typeof makeApp>, instances = [instance
 }
 
 function infoHashWrites(mock: ReturnType<typeof vi.fn>) {
-	return mock.mock.calls.filter((call) => call[0]?.strings?.join("").includes('LOWER("infoHash")'));
+	return mock.mock.calls.filter(
+		(call) => call[0]?.strings !== undefined || Array.isArray(call[0]?.where?.infoHash?.in),
+	);
 }
 
 function userWideClears(mock: ReturnType<typeof vi.fn>) {
@@ -146,7 +148,9 @@ describe("runQuiTorrentStateSync", () => {
 		expect(app.__executeRaw.mock.calls[0]?.[0].values).toEqual(
 			expect.arrayContaining(["aaaa", "seeding", "bbbb", "stalled_dl", "user-1"]),
 		);
-		expect(app.__executeRaw.mock.calls[0]?.[0].strings.join("")).toContain('LOWER("infoHash")');
+		expect(app.__executeRaw.mock.calls[0]?.[0].strings.join("")).toContain(
+			'LOWER(cache."infoHash")',
+		);
 	});
 
 	it("requires the complete list fallback when the inventory API is unavailable", async () => {
@@ -449,7 +453,7 @@ describe("runQuiTorrentStateSync", () => {
 
 		await runQuiTorrentStateSync(app);
 
-		expect(infoHashWrites(app.__executeRaw)).toHaveLength(12);
+		expect(infoHashWrites(app.__executeRaw)).toHaveLength(8);
 		expect(transactionStatementCounts).toEqual([2, 2]);
 	});
 

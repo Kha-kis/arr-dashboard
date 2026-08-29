@@ -12,10 +12,10 @@ import {
 } from "./torrent-state-notifier.js";
 
 const UPDATE_CHUNK_SIZE = 500;
-// Five bound values are emitted for each staged observation (the hash in the
-// WHERE clause plus hash/state and hash/ratio CASE arms). Keep the batch below
+// Three bound values are emitted for each staged observation (hash, state, and
+// ratio in the VALUES relation), plus the user id. Keep the batch below
 // SQLite's 999-variable limit while retaining one set-based statement per table.
-const OBSERVATION_WRITE_CHUNK_SIZE = 180;
+const OBSERVATION_WRITE_CHUNK_SIZE = 300;
 const CLEAR_OBSERVATION_DATA = {
 	torrentState: null,
 	torrentRatio: null,
@@ -63,25 +63,27 @@ async function stageQuiObservationChunk(
 ): Promise<number> {
 	if (observations.length === 0) return 0;
 
-	const stateCases = Prisma.join(
-		observations.map(([hash, observation]) => Prisma.sql`WHEN ${hash} THEN ${observation.state}`),
-		" ",
+	const stagedRows = Prisma.join(
+		observations.map(
+			([hash, observation]) => Prisma.sql`(${hash}, ${observation.state}, ${observation.ratio})`,
+		),
+		", ",
 	);
-	const ratioCases = Prisma.join(
-		observations.map(([hash, observation]) => Prisma.sql`WHEN ${hash} THEN ${observation.ratio}`),
-		" ",
-	);
-	const hashes = observations.map(([hash]) => hash);
 
 	return await prisma.$executeRaw(Prisma.sql`
-		UPDATE ${Prisma.raw(`"${tableName}"`)}
-		SET "torrentState" = CASE LOWER("infoHash") ${stateCases} ELSE "torrentState" END,
-			"torrentRatio" = CASE LOWER("infoHash") ${ratioCases} ELSE "torrentRatio" END,
+		WITH staged("hash", "state", "ratio") AS (VALUES ${stagedRows})
+		UPDATE ${Prisma.raw(`"${tableName}"`)} AS cache
+		SET "torrentState" = (
+				SELECT staged."state" FROM staged WHERE staged."hash" = LOWER(cache."infoHash")
+			),
+			"torrentRatio" = (
+				SELECT staged."ratio" FROM staged WHERE staged."hash" = LOWER(cache."infoHash")
+			),
 			"torrentSyncedAt" = NULL
-		WHERE "instanceId" IN (
+		WHERE cache."instanceId" IN (
 			SELECT "id" FROM "ServiceInstance" WHERE "userId" = ${userId}
 		)
-		AND LOWER("infoHash") IN (${Prisma.join(hashes)})
+		AND LOWER(cache."infoHash") IN (SELECT staged."hash" FROM staged)
 	`);
 }
 
