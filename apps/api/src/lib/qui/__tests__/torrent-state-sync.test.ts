@@ -1,4 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
+import pg from "pg";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { backfillInfoHashForRow } from "../../library-sync/infohash-backfill.js";
 
@@ -151,6 +152,21 @@ describe("runQuiTorrentStateSync", () => {
 		expect(app.__executeRaw.mock.calls[0]?.[0].strings.join("")).toContain(
 			'LOWER(cache."infoHash")',
 		);
+		expect(app.__executeRaw.mock.calls[0]?.[0].strings.join("")).toContain("CAST( AS REAL)");
+	});
+
+	it("types nullable staged ratios for both supported database providers", async () => {
+		const app = makeApp();
+		configureOneUser(app);
+		mockCreateQuiClient.mockReturnValue(
+			completeInventory([{ hash: "AAAA", state: "uploading", ratio: Number.NaN }]),
+		);
+
+		await runQuiTorrentStateSync(app);
+
+		const statement = app.__executeRaw.mock.calls[0]?.[0];
+		expect(statement.strings.join("")).toContain("CAST( AS REAL)");
+		expect(statement.values).toContain(null);
 	});
 
 	it("requires the complete list fallback when the inventory API is unavailable", async () => {
@@ -723,5 +739,73 @@ describe("runQuiTorrentStateSync", () => {
 		expect(app.__executeRaw.mock.calls[0]?.[0].values).toEqual(
 			expect.arrayContaining(["eeee", null, "user-1"]),
 		);
+	});
+});
+
+const quiSyncPostgresUrl = process.env.QUI_SYNC_POSTGRES_URL;
+const describePostgres = quiSyncPostgresUrl ? describe : describe.skip;
+
+describePostgres("runQuiTorrentStateSync PostgreSQL staging", () => {
+	it("executes numeric and null staged ratios against PostgreSQL", async () => {
+		const client = new pg.Client({ connectionString: quiSyncPostgresUrl });
+		await client.connect();
+		try {
+			await client.query("BEGIN");
+			await client.query(
+				`CREATE TEMP TABLE "ServiceInstance" ("id" TEXT PRIMARY KEY, "userId" TEXT NOT NULL) ON COMMIT DROP`,
+			);
+			for (const tableName of ["library_cache", "episode_file_cache"]) {
+				await client.query(
+					`CREATE TEMP TABLE "${tableName}" (
+						"id" TEXT PRIMARY KEY,
+						"instanceId" TEXT NOT NULL,
+						"infoHash" TEXT,
+						"torrentState" TEXT,
+						"torrentRatio" REAL,
+						"torrentSyncedAt" TIMESTAMP(3)
+					) ON COMMIT DROP`,
+				);
+			}
+			await client.query(
+				`INSERT INTO "ServiceInstance" ("id", "userId") VALUES ('qui-1', 'user-1')`,
+			);
+			await client.query(
+				`INSERT INTO "library_cache"
+					("id", "instanceId", "infoHash", "torrentState", "torrentRatio")
+				 VALUES
+					('numeric', 'qui-1', 'AAAA', 'paused', 0),
+					('nullable', 'qui-1', 'BBBB', 'paused', 0)`,
+			);
+
+			const app = makeApp();
+			configureOneUser(app);
+			app.__executeRaw.mockImplementation(
+				async (statement: { text: string; values: unknown[] }) => {
+					const result = await client.query(statement.text, statement.values);
+					return result.rowCount ?? 0;
+				},
+			);
+			mockCreateQuiClient.mockReturnValue(
+				completeInventory([
+					{ hash: "AAAA", state: "uploading", ratio: 1.5 },
+					{ hash: "BBBB", state: "stalledDL", ratio: Number.NaN },
+				]),
+			);
+
+			await runQuiTorrentStateSync(app);
+
+			const rows = await client.query<{
+				id: string;
+				torrentState: string | null;
+				torrentRatio: number | null;
+			}>(`SELECT "id", "torrentState", "torrentRatio" FROM "library_cache" ORDER BY "id"`);
+			expect(rows.rows).toEqual([
+				{ id: "nullable", torrentState: "stalled_dl", torrentRatio: null },
+				{ id: "numeric", torrentState: "seeding", torrentRatio: 1.5 },
+			]);
+		} finally {
+			await client.query("ROLLBACK").catch(() => undefined);
+			await client.end();
+		}
 	});
 });

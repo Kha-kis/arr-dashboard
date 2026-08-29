@@ -65,7 +65,8 @@ async function stageQuiObservationChunk(
 
 	const stagedRows = Prisma.join(
 		observations.map(
-			([hash, observation]) => Prisma.sql`(${hash}, ${observation.state}, ${observation.ratio})`,
+			([hash, observation]) =>
+				Prisma.sql`(${hash}, ${observation.state}, CAST(${observation.ratio} AS REAL))`,
 		),
 		", ",
 	);
