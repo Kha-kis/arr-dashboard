@@ -152,7 +152,9 @@ describe("runQuiTorrentStateSync", () => {
 		expect(app.__executeRaw.mock.calls[0]?.[0].strings.join("")).toContain(
 			'LOWER(cache."infoHash")',
 		);
-		expect(app.__executeRaw.mock.calls[0]?.[0].strings.join("")).toContain("CAST( AS REAL)");
+		expect(app.__executeRaw.mock.calls[0]?.[0].strings.join("")).toContain(
+			"CAST( AS DOUBLE PRECISION)",
+		);
 	});
 
 	it("types nullable staged ratios for both supported database providers", async () => {
@@ -165,7 +167,7 @@ describe("runQuiTorrentStateSync", () => {
 		await runQuiTorrentStateSync(app);
 
 		const statement = app.__executeRaw.mock.calls[0]?.[0];
-		expect(statement.strings.join("")).toContain("CAST( AS REAL)");
+		expect(statement.strings.join("")).toContain("CAST( AS DOUBLE PRECISION)");
 		expect(statement.values).toContain(null);
 	});
 
@@ -761,7 +763,7 @@ describePostgres("runQuiTorrentStateSync PostgreSQL staging", () => {
 						"instanceId" TEXT NOT NULL,
 						"infoHash" TEXT,
 						"torrentState" TEXT,
-						"torrentRatio" REAL,
+						"torrentRatio" DOUBLE PRECISION,
 						"torrentSyncedAt" TIMESTAMP(3)
 					) ON COMMIT DROP`,
 				);
@@ -787,7 +789,7 @@ describePostgres("runQuiTorrentStateSync PostgreSQL staging", () => {
 			);
 			mockCreateQuiClient.mockReturnValue(
 				completeInventory([
-					{ hash: "AAAA", state: "uploading", ratio: 1.5 },
+					{ hash: "AAAA", state: "uploading", ratio: 123456.789123456 },
 					{ hash: "BBBB", state: "stalledDL", ratio: Number.NaN },
 				]),
 			);
@@ -801,7 +803,11 @@ describePostgres("runQuiTorrentStateSync PostgreSQL staging", () => {
 			}>(`SELECT "id", "torrentState", "torrentRatio" FROM "library_cache" ORDER BY "id"`);
 			expect(rows.rows).toEqual([
 				{ id: "nullable", torrentState: "stalled_dl", torrentRatio: null },
-				{ id: "numeric", torrentState: "seeding", torrentRatio: 1.5 },
+				{
+					id: "numeric",
+					torrentState: "seeding",
+					torrentRatio: 123456.789123456,
+				},
 			]);
 		} finally {
 			await client.query("ROLLBACK").catch(() => undefined);
