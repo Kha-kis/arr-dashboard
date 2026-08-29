@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { PrismaClient } from "../../lib/prisma.js";
+import type { Encryptor } from "../auth/encryption.js";
 import type { NotificationPayload } from "../notifications/types.js";
 import {
 	passthroughTickWrapper,
@@ -23,12 +24,16 @@ export class BackupScheduler {
 		private logger: FastifyBaseLogger,
 		secretsPath: string,
 		notifyFn?: (payload: NotificationPayload) => Promise<void>,
-		private options?: { trackTick?: TickWrapper; secretsSynchronized?: boolean },
+		private options?: {
+			trackTick?: TickWrapper;
+			secretsSynchronized?: boolean;
+			encryptor?: Encryptor;
+		},
 	) {
 		this.backupService = new BackupService(
 			prisma,
 			secretsPath,
-			undefined,
+			options?.encryptor,
 			options?.secretsSynchronized,
 		);
 		this.notifyFn = notifyFn;

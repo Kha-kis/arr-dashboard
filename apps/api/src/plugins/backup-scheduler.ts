@@ -43,6 +43,7 @@ const backupSchedulerPlugin = fastifyPlugin(
 						{
 							trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.backup, fn),
 							secretsSynchronized: app.secretsSynchronized,
+							encryptor: app.encryptor,
 						},
 					);
 					app.decorate("backupScheduler", scheduler);
