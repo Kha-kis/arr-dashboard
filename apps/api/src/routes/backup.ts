@@ -10,11 +10,11 @@ import {
 	updateBackupSettingsRequestSchema,
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
-import { BackupService } from "../lib/backup/backup-service.js";
+import { z } from "zod";
+import { BackupPasswordConfigurationError, BackupService } from "../lib/backup/backup-service.js";
 import { CleanupMaintenanceConflictError } from "../lib/library-cleanup/cleanup-maintenance-gate.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { resolveSecretsPath } from "../lib/utils/secrets-path.js";
-import { z } from "zod";
 import { validateRequest } from "../lib/utils/validate.js";
 import { getAppVersion } from "../lib/utils/version.js";
 
@@ -83,6 +83,14 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		} catch (error) {
 			request.log.error({ err: error }, "Failed to create backup");
 
+			if (error instanceof BackupPasswordConfigurationError) {
+				return reply.status(400).send({
+					error: "Backup password is invalid",
+					details:
+						"The stored backup password cannot be used. Reset it in Settings > Backup or set the BACKUP_PASSWORD environment variable.",
+				});
+			}
+
 			const errorMessage = getErrorMessage(error);
 
 			// Check for specific configuration errors that the user can fix
@@ -90,7 +98,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				return reply.status(400).send({
 					error: "Backup password not configured",
 					details:
-						"Set the BACKUP_PASSWORD environment variable to enable encrypted backups in production.",
+						"Set a password in Settings > Backup or set the BACKUP_PASSWORD environment variable to enable encrypted backups in production.",
 				});
 			}
 

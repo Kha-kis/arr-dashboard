@@ -9,6 +9,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Encryptor } from "../../../lib/auth/encryption.js";
 import type { PrismaClient } from "../../../lib/prisma.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import {
@@ -16,7 +17,11 @@ import {
 	withCleanupOperationGuard,
 } from "../../library-cleanup/cleanup-maintenance-gate.js";
 import { generateBackupId } from "../backup-file-utils.js";
-import { BackupService, estimateBackupBytes } from "../backup-service.js";
+import {
+	BackupPasswordConfigurationError,
+	BackupService,
+	estimateBackupBytes,
+} from "../backup-service.js";
 import {
 	isEncryptedBackupEnvelope,
 	isPlaintextBackup,
@@ -882,6 +887,139 @@ describe("BackupService - Backup Validation (Unit)", () => {
 		expect(() => validateBackup(invalidBackup)).toThrow(
 			"Invalid backup format: missing or invalid version",
 		);
+	});
+});
+
+describe("BackupService - backup password status (Unit)", () => {
+	const testSecretsPath = "/unused/secrets.json";
+	const activeKey = "a".repeat(64);
+	const previousKey = "b".repeat(64);
+
+	function serviceForSettings(
+		settings: { encryptedPassword: string | null; passwordIv: string | null } | null,
+		encryptor = new Encryptor(activeKey),
+	) {
+		const prisma = {
+			backupSettings: {
+				findUnique: vi.fn().mockResolvedValue(settings),
+			},
+		} as unknown as PrismaClient;
+
+		return new BackupService(prisma, testSecretsPath, encryptor);
+	}
+
+	beforeEach(() => {
+		vi.stubEnv("BACKUP_PASSWORD", "");
+	});
+
+	afterEach(() => {
+		vi.unstubAllEnvs();
+	});
+
+	it("reports a password encrypted by another key as invalid instead of configured", async () => {
+		const encrypted = new Encryptor(previousKey).encrypt("TestPassword123!");
+		const stored = { encryptedPassword: encrypted.value, passwordIv: encrypted.iv };
+		const status = await serviceForSettings(stored).getPasswordStatus();
+
+		expect(status).toEqual({
+			configured: false,
+			source: "database",
+			reason: "invalid_database_password",
+		});
+		expect(status).not.toHaveProperty("password");
+		expect(status).not.toHaveProperty("encryptedPassword");
+	});
+
+	it("reports corrupt ciphertext as invalid without exposing crypto details", async () => {
+		const encrypted = new Encryptor(activeKey).encrypt("TestPassword123!");
+		const stored = {
+			encryptedPassword: `${encrypted.value.slice(0, -4)}AAAA`,
+			passwordIv: encrypted.iv,
+		};
+
+		const status = await serviceForSettings(stored).getPasswordStatus();
+
+		expect(status).toMatchObject({
+			configured: false,
+			source: "database",
+			reason: "invalid_database_password",
+		});
+		expect(JSON.stringify(status)).not.toContain("Unsupported");
+	});
+
+	it("reports corrupt IV as invalid", async () => {
+		const encrypted = new Encryptor(activeKey).encrypt("TestPassword123!");
+		const stored = { encryptedPassword: encrypted.value, passwordIv: "not-a-valid-iv" };
+
+		await expect(serviceForSettings(stored).getPasswordStatus()).resolves.toEqual({
+			configured: false,
+			source: "database",
+			reason: "invalid_database_password",
+		});
+	});
+
+	it("reports a decryptable database password as configured", async () => {
+		const encrypted = new Encryptor(activeKey).encrypt("TestPassword123!");
+		const stored = { encryptedPassword: encrypted.value, passwordIv: encrypted.iv };
+
+		await expect(serviceForSettings(stored).getPasswordStatus()).resolves.toEqual({
+			configured: true,
+			source: "database",
+		});
+	});
+
+	it("falls back to the environment password when no database password exists", async () => {
+		vi.stubEnv("BACKUP_PASSWORD", "environment-password");
+
+		await expect(serviceForSettings(null).getPasswordStatus()).resolves.toEqual({
+			configured: true,
+			source: "environment",
+		});
+	});
+
+	it("uses the environment password when the stored password is invalid", async () => {
+		const encrypted = new Encryptor(previousKey).encrypt("TestPassword123!");
+		const stored = { encryptedPassword: encrypted.value, passwordIv: encrypted.iv };
+		vi.stubEnv("BACKUP_PASSWORD", "environment-password");
+
+		await expect(serviceForSettings(stored).getPasswordStatus()).resolves.toEqual({
+			configured: true,
+			source: "environment",
+		});
+	});
+
+	it("returns bounded reset guidance when production backup creation has an invalid stored password", async () => {
+		const encrypted = new Encryptor(previousKey).encrypt("TestPassword123!");
+		const stored = { encryptedPassword: encrypted.value, passwordIv: encrypted.iv };
+		vi.stubEnv("NODE_ENV", "production");
+
+		const getPassword = (
+			serviceForSettings(stored) as unknown as { getBackupPassword: () => Promise<string> }
+		).getBackupPassword();
+
+		await expect(getPassword).rejects.toThrow(
+			"The stored backup password is invalid. Reset it in Settings > Backup or set the BACKUP_PASSWORD environment variable.",
+		);
+		await expect(getPassword).rejects.not.toThrow(/cipher|decrypt|key/i);
+	});
+
+	it("rejects an invalid stored password instead of generating a development password", async () => {
+		const encrypted = new Encryptor(previousKey).encrypt("TestPassword123!");
+		const stored = { encryptedPassword: encrypted.value, passwordIv: encrypted.iv };
+		vi.stubEnv("NODE_ENV", "development");
+
+		const getPassword = (
+			serviceForSettings(stored) as unknown as { getBackupPassword: () => Promise<string> }
+		).getBackupPassword();
+
+		await expect(getPassword).rejects.toBeInstanceOf(BackupPasswordConfigurationError);
+	});
+
+	it("reports an absent password as unconfigured", async () => {
+		await expect(serviceForSettings(null).getPasswordStatus()).resolves.toEqual({
+			configured: false,
+			source: "none",
+		});
 	});
 });
 
