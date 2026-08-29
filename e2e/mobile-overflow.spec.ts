@@ -135,7 +135,18 @@ test.describe("mobile page overflow", () => {
 		await installPopulatedFixtures(page);
 		for (const width of [390, 375]) {
 			await page.setViewportSize({ width, height: 844 });
-			await assertNoHorizontalOverflow(page, "/dashboard", "items in queue");
+			await assertNoHorizontalOverflow(
+				page,
+				"/dashboard",
+				"items in queue",
+				async (currentPage, clientWidth) => {
+					const refresh = currentPage.getByRole("button", { name: "Refresh", exact: true }).first();
+					await expect(refresh).toBeVisible();
+					const box = await refresh.boundingBox();
+					expect(box?.x ?? 0).toBeGreaterThanOrEqual(0);
+					expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(clientWidth);
+				},
+			);
 		}
 	});
 
@@ -159,9 +170,25 @@ test.describe("mobile page overflow", () => {
 					const serviceTabs = currentPage
 						.getByRole("button", { name: "All", exact: true })
 						.locator("..");
+					const initialOverflow = await serviceTabs.evaluate((element) => ({
+						clientWidth: element.clientWidth,
+						scrollWidth: element.scrollWidth,
+					}));
+					expect(initialOverflow.scrollWidth).toBeGreaterThan(initialOverflow.clientWidth);
 					const box = await serviceTabs.boundingBox();
 					expect(box?.x ?? 0).toBeGreaterThanOrEqual(0);
 					expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(clientWidth);
+
+					const authorsTab = currentPage.getByRole("button", { name: "Authors", exact: true });
+					await authorsTab.scrollIntoViewIfNeeded();
+					const authorsBox = await authorsTab.boundingBox();
+					const wrapperBox = await serviceTabs.boundingBox();
+					expect(authorsBox?.x ?? 0).toBeGreaterThanOrEqual(wrapperBox?.x ?? 0);
+					expect((authorsBox?.x ?? 0) + (authorsBox?.width ?? 0)).toBeLessThanOrEqual(
+						(wrapperBox?.x ?? 0) + (wrapperBox?.width ?? 0),
+					);
+					await authorsTab.click();
+					await expect(authorsTab).toHaveClass(/text-white/);
 				},
 			);
 		}
