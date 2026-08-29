@@ -17,7 +17,11 @@ import {
 	withCleanupOperationGuard,
 } from "../../library-cleanup/cleanup-maintenance-gate.js";
 import { generateBackupId } from "../backup-file-utils.js";
-import { BackupService, estimateBackupBytes } from "../backup-service.js";
+import {
+	BackupPasswordConfigurationError,
+	BackupService,
+	estimateBackupBytes,
+} from "../backup-service.js";
 import {
 	isEncryptedBackupEnvelope,
 	isPlaintextBackup,
@@ -997,6 +1001,18 @@ describe("BackupService - backup password status (Unit)", () => {
 			"The stored backup password is invalid. Reset it in Settings > Backup or set the BACKUP_PASSWORD environment variable.",
 		);
 		await expect(getPassword).rejects.not.toThrow(/cipher|decrypt|key/i);
+	});
+
+	it("rejects an invalid stored password instead of generating a development password", async () => {
+		const encrypted = new Encryptor(previousKey).encrypt("TestPassword123!");
+		const stored = { encryptedPassword: encrypted.value, passwordIv: encrypted.iv };
+		vi.stubEnv("NODE_ENV", "development");
+
+		const getPassword = (
+			serviceForSettings(stored) as unknown as { getBackupPassword: () => Promise<string> }
+		).getBackupPassword();
+
+		await expect(getPassword).rejects.toBeInstanceOf(BackupPasswordConfigurationError);
 	});
 
 	it("reports an absent password as unconfigured", async () => {

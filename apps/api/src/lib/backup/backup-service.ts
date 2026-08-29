@@ -171,13 +171,13 @@ export class BackupService {
 			return envPassword;
 		}
 
+		if (storedPassword.state === "invalid") {
+			throw new BackupPasswordConfigurationError();
+		}
+
 		// 3. In production, fail closed - do not allow backups without explicit password
 		const isProduction = process.env.NODE_ENV === "production";
 		if (isProduction) {
-			if (storedPassword.state === "invalid") {
-				throw new BackupPasswordConfigurationError();
-			}
-
 			throw new Error(
 				"Backup password not configured. Set a backup password in Settings > Backup or set the BACKUP_PASSWORD environment variable.",
 			);

@@ -130,4 +130,22 @@ describe("BackupScheduler database password wiring", () => {
 		});
 		await expect(backupService.getBackupPassword()).resolves.toBe("scheduled-environment-password");
 	});
+
+	it("rejects a corrupt scheduled password instead of generating a development password", async () => {
+		vi.stubEnv("NODE_ENV", "development");
+		vi.stubEnv("BACKUP_PASSWORD", "");
+		const encryptor = {
+			decrypt: vi.fn(() => {
+				throw new Error("synthetic decrypt failure");
+			}),
+		} as unknown as Encryptor;
+		const backupService = schedulerPasswordService(
+			{ encryptedPassword: "corrupt", passwordIv: "corrupt-iv" },
+			encryptor,
+		);
+
+		await expect(backupService.getBackupPassword()).rejects.toBeInstanceOf(
+			BackupPasswordConfigurationError,
+		);
+	});
 });
