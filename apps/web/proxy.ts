@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 const SESSION_COOKIE_NAME = process.env.NEXT_PUBLIC_SESSION_COOKIE_NAME ?? "arr_session";
 const PUBLIC_PATHS = new Set(["/login", "/setup", "/favicon.ico", "/robots.txt", "/sitemap.xml"]);
 const PUBLIC_FILE = /\.(.*)$/;
+const sessionValidationInFlight = new Map<string, Promise<boolean>>();
 
 const isPublicPath = (pathname: string) => {
 	if (PUBLIC_PATHS.has(pathname)) {
@@ -29,12 +30,29 @@ async function validateSession(request: NextRequest): Promise<boolean> {
 		return false;
 	}
 
+	const inFlight = sessionValidationInFlight.get(sessionCookie.value);
+	if (inFlight) {
+		return inFlight;
+	}
+
+	const validation = validateSessionAgainstApi(sessionCookie.value);
+	sessionValidationInFlight.set(sessionCookie.value, validation);
+	try {
+		return await validation;
+	} finally {
+		if (sessionValidationInFlight.get(sessionCookie.value) === validation) {
+			sessionValidationInFlight.delete(sessionCookie.value);
+		}
+	}
+}
+
+async function validateSessionAgainstApi(sessionToken: string): Promise<boolean> {
 	try {
 		const apiHost = process.env.API_HOST || "http://localhost:3001";
 		const response = await fetch(`${apiHost}/auth/me`, {
 			method: "GET",
 			headers: {
-				Cookie: `${SESSION_COOKIE_NAME}=${sessionCookie.value}`,
+				Cookie: `${SESSION_COOKIE_NAME}=${sessionToken}`,
 			},
 			signal: AbortSignal.timeout(3000),
 		});
