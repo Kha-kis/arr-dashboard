@@ -14,20 +14,22 @@
  * This plugin is that runtime data.
  *
  * What gets logged:
- *   - heapUsedMB / heapTotalMB / heapPct       — V8 heap pressure
- *   - rssMB                                     — total RSS the kernel sees
- *   - externalMB / arrayBuffersMB              — Buffer / native allocations
- *   - heapDeltaMB / rssDeltaMB                 — change since last sample
- *   - secondsSinceLast / uptimeSec             — temporal context
+ *   - heapUsedMB / heapTotalMB / heapPct        — committed V8 heap occupancy
+ *   - heapLimitMB / heapLimitPct                 — V8 runtime heap headroom
+ *   - cgroupLimitMB / cgroupLimitPct             — container RSS headroom
+ *   - runtimePct / pressureSource                — effective near-OOM signal
+ *   - rssMB / externalMB / arrayBuffersMB        — process/native allocations
+ *   - heapDeltaMB / rssDeltaMB                   — change since last sample
+ *   - secondsSinceLast / uptimeSec               — temporal context
  *
  * Severity:
- *   - heapPct > 0.9 → `warn` (visible in default log levels — operator alert)
- *   - heapPct > 0.8 → `info`
- *   - else          → `debug`
+ *   - runtimePct > 0.9 → `warn` (visible in default log levels — operator alert)
+ *   - runtimePct > 0.8 → `info`
+ *   - else             → `debug`
  *
  * Auto-snapshot behavior (added 2026-05-12):
- *   When a sample crosses WARN_HEAP_PCT, the plugin streams a heap snapshot
- *   to /config/heap-snapshots/ automatically. Rate-limited to one snapshot
+ *   When a sample crosses the effective runtime warn threshold, the plugin
+ *   streams a heap snapshot to /config/heap-snapshots/ automatically. Rate-limited to one snapshot
  *   per AUTO_SNAPSHOT_MIN_INTERVAL_MS, with rotation that keeps the most
  *   recent AUTO_SNAPSHOT_MAX_RETAINED files. This removes the timing
  *   problem with the manual `dump-heap` helper (V8 takes 10-30s to write a
@@ -66,16 +68,15 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
-import { getHeapSnapshot } from "node:v8";
+import { getHeapSnapshot, getHeapStatistics } from "node:v8";
 
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 
 import { getErrorMessage } from "../lib/utils/error-message.js";
+import { classifyMemoryPressure, readCgroupMemoryLimitBytes } from "./heap-monitor-pressure.js";
 
 const SAMPLE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes — enough resolution to spot leaks, light on log volume.
-const WARN_HEAP_PCT = 0.9;
-const INFO_HEAP_PCT = 0.8;
 
 // RSS-bloat detection (issue #427 / #471 follow-up).
 //
@@ -223,6 +224,8 @@ const heapMonitorPlugin = fastifyPlugin(
 
 		const sample = (): void => {
 			const m = process.memoryUsage();
+			const heapSizeLimitBytes = getHeapStatistics().heap_size_limit;
+			const cgroupLimitBytes = readCgroupMemoryLimitBytes();
 			const heapUsedMB = Math.round(m.heapUsed / 1024 / 1024);
 			const heapTotalMB = Math.round(m.heapTotal / 1024 / 1024);
 			const rssMB = Math.round(m.rss / 1024 / 1024);
@@ -230,24 +233,40 @@ const heapMonitorPlugin = fastifyPlugin(
 			const arrayBuffersMB = Math.round((m.arrayBuffers ?? 0) / 1024 / 1024);
 			const now = Date.now();
 			const uptimeSec = Math.round(process.uptime());
-			// `heapPct` is heap-used relative to the V8-allocated heap, not the
-			// `--max-old-space-size` cap. It still tracks pressure: V8 grows
-			// heapTotal toward the cap, so heapPct climbing toward 1.0 means
-			// V8 is squeezing the live set into all the space it has left.
-			const heapPct = heapTotalMB > 0 ? heapUsedMB / heapTotalMB : 0;
+			const pressure = classifyMemoryPressure({
+				heapUsedBytes: m.heapUsed,
+				heapTotalBytes: m.heapTotal,
+				rssBytes: m.rss,
+				heapSizeLimitBytes,
+				cgroupLimitBytes,
+			});
+			const heapPct = pressure.committedHeapPct;
 			// `rssToHeapRatio` discriminates JS-side leaks (≈1.3–1.6x, normal)
 			// from external/native memory pressure or glibc fragmentation (≥2x).
 			// V8's heapPct can be healthy while RSS bloats past the container
 			// cap — that's what bit reporters in #471.
 			const rssToHeapRatio = heapTotalMB > 0 ? Math.round((rssMB / heapTotalMB) * 100) / 100 : 0;
 
-			const payload: Record<string, number | undefined> = {
+			const payload: Record<string, number | string | undefined> = {
 				heapUsedMB,
 				heapTotalMB,
+				heapLimitMB: Math.round(heapSizeLimitBytes / 1024 / 1024),
+				cgroupLimitMB:
+					cgroupLimitBytes === undefined ? undefined : Math.round(cgroupLimitBytes / 1024 / 1024),
 				rssMB,
 				externalMB,
 				arrayBuffersMB,
 				heapPct: Math.round(heapPct * 100) / 100,
+				heapLimitPct:
+					pressure.heapLimitPct === undefined
+						? undefined
+						: Math.round(pressure.heapLimitPct * 100) / 100,
+				cgroupLimitPct:
+					pressure.cgroupLimitPct === undefined
+						? undefined
+						: Math.round(pressure.cgroupLimitPct * 100) / 100,
+				runtimePct: Math.round(pressure.runtimePct * 100) / 100,
+				pressureSource: pressure.pressureSource,
 				rssToHeapRatio,
 				uptimeSec,
 			};
@@ -268,27 +287,27 @@ const heapMonitorPlugin = fastifyPlugin(
 				timestamp: now,
 			};
 
-			if (heapPct >= WARN_HEAP_PCT) {
+			if (pressure.level === "warn") {
 				app.log.warn(
 					payload,
 					AUTO_SNAPSHOT_AT_WARN
-						? "Heap usage above 90% — auto-capturing snapshot to /config/heap-snapshots/ (set HEAP_AUTO_SNAPSHOT=0 or HEAP_AUTO_SNAPSHOT_AT_WARN=0 to disable)"
-						: "Heap usage above 90% — capture a snapshot before OOM: `docker exec <container> dump-heap`",
+						? "Runtime memory usage above 90% of an effective limit — auto-capturing snapshot to /config/heap-snapshots/ (set HEAP_AUTO_SNAPSHOT=0 or HEAP_AUTO_SNAPSHOT_AT_WARN=0 to disable)"
+						: "Runtime memory usage above 90% of an effective limit — capture a snapshot before OOM: `docker exec <container> dump-heap`",
 				);
-				if (AUTO_SNAPSHOT_AT_WARN) {
+				if (AUTO_SNAPSHOT_AT_WARN && pressure.shouldSnapshot) {
 					// Fire-and-forget — captureHeapSnapshot is self-rate-limited and
 					// self-rotating; we don't want sampling to block on the (potentially
 					// multi-second) V8 walk and disk write.
 					void captureHeapSnapshot(app.log, heapUsedMB);
 				}
-			} else if (heapPct >= INFO_HEAP_PCT) {
-				app.log.info(payload, "Heap usage above 80%");
+			} else if (pressure.level === "info") {
+				app.log.info(payload, "Runtime memory usage above 80% of an effective limit");
 			} else {
 				app.log.debug(payload, "Heap usage sample");
 			}
 
 			// RSS-bloat detection runs independently of heap pressure: the V8
-			// heap can be healthy (heapPct < INFO_HEAP_PCT) while RSS climbs
+			// heap can be healthy while RSS climbs
 			// past the container limit. Skip the warmup window so startup
 			// spikes don't false-positive, and throttle to once-per-hour so
 			// a sustained-bloat process doesn't spam logs.
