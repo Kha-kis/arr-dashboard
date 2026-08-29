@@ -1,6 +1,6 @@
-import { normalizeTorrentState, type NormalizedTorrentState, type QuiTorrent } from "@arr/shared";
+import { type NormalizedTorrentState, normalizeTorrentState, type QuiTorrent } from "@arr/shared";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
-import type { Prisma } from "../prisma.js";
+import { Prisma, type Prisma as PrismaTypes } from "../prisma.js";
 import { logQuiActivity, type QuiSyncCompleteDetails } from "./activity-log.js";
 import { createQuiClient } from "./client-factory.js";
 import { listQuiInstances } from "./instance-helpers.js";
@@ -12,6 +12,10 @@ import {
 } from "./torrent-state-notifier.js";
 
 const UPDATE_CHUNK_SIZE = 500;
+// Five bound values are emitted for each staged observation (the hash in the
+// WHERE clause plus hash/state and hash/ratio CASE arms). Keep the batch below
+// SQLite's 999-variable limit while retaining one set-based statement per table.
+const OBSERVATION_WRITE_CHUNK_SIZE = 180;
 const CLEAR_OBSERVATION_DATA = {
 	torrentState: null,
 	torrentRatio: null,
@@ -47,6 +51,58 @@ interface AggregatedTorrentObservation {
 	state: NormalizedTorrentState;
 	ratio: number | null;
 	instanceLabel: string;
+}
+
+type ObservationWriteClient = Pick<PrismaTypes.TransactionClient, "$executeRaw">;
+
+async function stageQuiObservationChunk(
+	prisma: ObservationWriteClient,
+	tableName: "library_cache" | "episode_file_cache",
+	userId: string,
+	observations: ReadonlyArray<[string, AggregatedTorrentObservation]>,
+): Promise<number> {
+	if (observations.length === 0) return 0;
+
+	const stateCases = Prisma.join(
+		observations.map(([hash, observation]) => Prisma.sql`WHEN ${hash} THEN ${observation.state}`),
+		" ",
+	);
+	const ratioCases = Prisma.join(
+		observations.map(([hash, observation]) => Prisma.sql`WHEN ${hash} THEN ${observation.ratio}`),
+		" ",
+	);
+	const hashes = observations.map(([hash]) => hash);
+
+	return await prisma.$executeRaw(Prisma.sql`
+		UPDATE ${Prisma.raw(`"${tableName}"`)}
+		SET "torrentState" = CASE LOWER("infoHash") ${stateCases} ELSE "torrentState" END,
+			"torrentRatio" = CASE LOWER("infoHash") ${ratioCases} ELSE "torrentRatio" END,
+			"torrentSyncedAt" = NULL
+		WHERE "instanceId" IN (
+			SELECT "id" FROM "ServiceInstance" WHERE "userId" = ${userId}
+		)
+		AND LOWER("infoHash") IN (${Prisma.join(hashes)})
+	`);
+}
+
+async function stageQuiObservations(
+	prisma: ObservationWriteClient,
+	userId: string,
+	aggregate: ReadonlyMap<string, AggregatedTorrentObservation>,
+): Promise<number> {
+	const observations = [...aggregate.entries()];
+	let rowsUpdated = 0;
+	for (const tableName of ["library_cache", "episode_file_cache"] as const) {
+		for (let offset = 0; offset < observations.length; offset += OBSERVATION_WRITE_CHUNK_SIZE) {
+			rowsUpdated += await stageQuiObservationChunk(
+				prisma,
+				tableName,
+				userId,
+				observations.slice(offset, offset + OBSERVATION_WRITE_CHUNK_SIZE),
+			);
+		}
+	}
+	return rowsUpdated;
 }
 
 function aggregateCompleteInventories(
@@ -345,26 +401,10 @@ export async function runQuiTorrentStateSync(
 					// previous complete generation, no signal, or the new complete
 					// generation. It can never see a partially fresh generation.
 					await clearUserQuiFreshness(app, userId);
-					for (const [hash, observation] of aggregate) {
-						// qBittorrent hashes are hexadecimal and may be returned in
-						// either case. New writes are normalized, while this two-value
-						// predicate also heals observations on legacy uppercase rows.
-						const persistedHashVariants = [hash, hash.toUpperCase()];
-						const data = {
-							torrentState: observation.state,
-							torrentRatio: observation.ratio,
-							torrentSyncedAt: null,
-						};
-						const libraryRows = await app.prisma.libraryCache.updateMany({
-							where: { infoHash: { in: persistedHashVariants }, instance: { userId } },
-							data,
-						});
-						const episodeRows = await app.prisma.episodeFileCache.updateMany({
-							where: { infoHash: { in: persistedHashVariants }, instance: { userId } },
-							data,
-						});
-						publishedRowsUpdated += libraryRows.count + episodeRows.count;
-					}
+					// Stage each cache table with bounded CASE updates. This avoids one
+					// synchronous better-sqlite3 statement per hash while keeping the
+					// state and ratio paired with their normalized hash.
+					publishedRowsUpdated = await stageQuiObservations(app.prisma, userId, aggregate);
 					publishedRowsCleared = await persistCompleteAbsence(
 						app.prisma,
 						userId,
