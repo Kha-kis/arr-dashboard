@@ -1,12 +1,15 @@
 import type { PlexCoverageReasonCode, PlexEvidenceSummary } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import { describe, expect, it, vi } from "vitest";
+import type { PlexResponseCategory } from "../plex-client.js";
 import {
+	classifyPlexLabelMutationCaughtError,
 	classifyPlexLabelSyncTerminalReason,
 	classifyPlexMetadataTagEvidenceFailure,
 	classifyUnknownPlexLabelSyncTerminalReason,
 	createLabelSyncPlexProviderLogSink,
 	logPlexLabelSyncTerminal,
+	PlexMetadataTagWriteError,
 	type PlexMetadataTagMutationFailureReason,
 } from "../plex-label-sync-logging.js";
 
@@ -94,6 +97,19 @@ type MissingMutationReason = Exclude<
 >;
 const mutationMatrixIsExhaustive: MissingMutationReason extends never ? true : never = true;
 
+const upstreamWriteMatrix = [
+	["client_error", "upstream_write_rejected"],
+	["server_error", "upstream_write_failed"],
+	["timeout", "upstream_write_failed"],
+	["unavailable", "upstream_write_failed"],
+] as const satisfies ReadonlyArray<readonly [PlexResponseCategory, string]>;
+
+type MissingUpstreamCategory = Exclude<
+	PlexResponseCategory,
+	(typeof upstreamWriteMatrix)[number][0]
+>;
+const upstreamWriteMatrixIsExhaustive: MissingUpstreamCategory extends never ? true : never = true;
+
 function evidence(reasonCode: PlexCoverageReasonCode): PlexEvidenceSummary {
 	return {
 		publicationLevel: "unavailable",
@@ -138,16 +154,47 @@ describe("Plex label-sync logging boundary", () => {
 		).toBe(terminal);
 	});
 
-	it.each([
-		["client_error", "upstream_write_rejected"],
-		["server_error", "upstream_write_failed"],
-		["timeout", "upstream_write_failed"],
-		["unavailable", "upstream_write_failed"],
-	] as const)("classifies %s write failures", (category, reasonCode) => {
+	it.each(upstreamWriteMatrix)("classifies %s write failures", (category, reasonCode) => {
+		expect(upstreamWriteMatrixIsExhaustive).toBe(true);
 		expect(classifyPlexLabelSyncTerminalReason({ stage: "upstream_write", code: category })).toBe(
 			reasonCode,
 		);
 	});
+
+	it.each(upstreamWriteMatrix)(
+		"classifies a typed %s mutation exception as an attempted write",
+		(category, reasonCode) => {
+			expect(upstreamWriteMatrixIsExhaustive).toBe(true);
+			const classification = classifyPlexLabelMutationCaughtError(
+				new PlexMetadataTagWriteError(category),
+			);
+
+			expect(classification).toEqual({
+				stage: "upstream_write",
+				reasonCode,
+				upstreamCategory: category,
+			});
+		},
+	);
+
+	it.each([
+		["Error", new Error("CANARY_PRE_WRITE_ERROR_787")],
+		["string", "CANARY_PRE_WRITE_STRING_787"],
+		["object", { privateField: "CANARY_PRE_WRITE_FIELD_787" }],
+		["null", null],
+		["undefined", undefined],
+	] as const)(
+		"classifies an untyped pre-write %s without projecting its content",
+		(_name, caught) => {
+			const classification = classifyPlexLabelMutationCaughtError(caught);
+
+			expect(classification).toEqual({
+				stage: "destination_authority",
+				reasonCode: "unknown_failure",
+			});
+			expect(JSON.stringify(classification)).not.toContain("CANARY_PRE_WRITE");
+		},
+	);
 
 	it("maps unknown runtime input to the closed fallback", () => {
 		expect(

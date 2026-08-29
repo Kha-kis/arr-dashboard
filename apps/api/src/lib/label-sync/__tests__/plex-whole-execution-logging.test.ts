@@ -1,32 +1,18 @@
 import type { FastifyBaseLogger } from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PlexMetadataTagWriteError } from "../../plex/plex-label-sync-logging.js";
 import type { ServiceInstance } from "../../prisma.js";
 
 const mocks = vi.hoisted(() => {
-	class PlexMetadataTagWriteError extends Error {
-		readonly code = "upstream_write_failed" as const;
-		readonly responseCategory: "client_error" | "server_error" | "timeout" | "unavailable";
-
-		constructor(
-			responseCategory: "client_error" | "server_error" | "timeout" | "unavailable" = "unavailable",
-		) {
-			super("Plex metadata tag write failed");
-			this.name = "PlexMetadataTagWriteError";
-			this.responseCategory = responseCategory;
-			delete this.stack;
-		}
-	}
 	return {
 		readInstanceSelected: vi.fn(),
 		mutateMetadataTag: vi.fn(),
 		emitNestedReadLog: vi.fn(),
 		emitNestedMutationLog: vi.fn(),
-		PlexMetadataTagWriteError,
 	};
 });
 
 vi.mock("../../plex/plex-authority-service.js", () => ({
-	PlexMetadataTagWriteError: mocks.PlexMetadataTagWriteError,
 	PlexAuthorityService: class {
 		private readonly log: FastifyBaseLogger;
 
@@ -352,7 +338,7 @@ describe("complete Plex-to-Plex label-sync terminal logging", () => {
 		mocks.emitNestedMutationLog.mockImplementation(async (log: FastifyBaseLogger) =>
 			nestedPrivateLog(log),
 		);
-		mocks.mutateMetadataTag.mockRejectedValue(new mocks.PlexMetadataTagWriteError("unavailable"));
+		mocks.mutateMetadataTag.mockRejectedValue(new PlexMetadataTagWriteError("unavailable"));
 		const log = createLogger();
 		const result = await execute(log);
 

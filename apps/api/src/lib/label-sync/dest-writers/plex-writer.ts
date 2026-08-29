@@ -10,11 +10,9 @@ import type { FastifyBaseLogger } from "fastify";
 import {
 	PlexAuthorityService,
 	type PlexMetadataTagMutationFailureReason,
-	PlexMetadataTagWriteError,
 } from "../../plex/plex-authority-service.js";
-import type { PlexResponseCategory } from "../../plex/plex-client.js";
 import {
-	classifyPlexLabelSyncTerminalReason,
+	classifyPlexLabelMutationCaughtError,
 	classifyPlexMetadataTagEvidenceFailure,
 	classifyUnknownPlexLabelSyncTerminalReason,
 	createLabelSyncPlexProviderLogSink,
@@ -143,20 +141,12 @@ export const plexDestWriter: DestWriter = {
 					name: rule.destTagName,
 				});
 			} catch (error) {
-				const responseCategory: PlexResponseCategory | undefined =
-					error instanceof PlexMetadataTagWriteError ? error.responseCategory : undefined;
+				const classification = classifyPlexLabelMutationCaughtError(error);
 				logPlexLabelSyncTerminal(log, {
 					operation: "destination_write",
 					state: "failed",
-					stage: "upstream_write",
-					reasonCode: responseCategory
-						? classifyPlexLabelSyncTerminalReason({
-								stage: "upstream_write",
-								code: responseCategory,
-							})
-						: "unknown_failure",
+					...classification,
 					mediaCategory: row.mediaType,
-					...(responseCategory ? { upstreamCategory: responseCategory } : {}),
 				});
 				failures++;
 				continue;

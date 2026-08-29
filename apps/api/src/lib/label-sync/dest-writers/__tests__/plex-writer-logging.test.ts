@@ -1,31 +1,19 @@
 import type { FastifyBaseLogger } from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PlexMetadataTagWriteError } from "../../../plex/plex-label-sync-logging.js";
 import type { LabelSyncRuleInput } from "../../execute-rule.js";
 import type { DestWriterOpts } from "../../strategy-types.js";
 
 const mocks = vi.hoisted(() => {
-	class PlexMetadataTagWriteError extends Error {
-		readonly code = "upstream_write_failed";
-		readonly responseCategory: "client_error" | "server_error" | "timeout" | "unavailable";
-
-		constructor(
-			responseCategory: "client_error" | "server_error" | "timeout" | "unavailable" = "unavailable",
-		) {
-			super("Plex metadata tag write failed");
-			this.name = "PlexMetadataTagWriteError";
-			this.responseCategory = responseCategory;
-		}
-	}
 	return {
 		readInstanceSelected: vi.fn(),
 		mutateMetadataTag: vi.fn(),
+		upstreamWrite: vi.fn(),
 		emitProviderLog: vi.fn(),
-		PlexMetadataTagWriteError,
 	};
 });
 
 vi.mock("../../../plex/plex-authority-service.js", () => ({
-	PlexMetadataTagWriteError: mocks.PlexMetadataTagWriteError,
 	PlexAuthorityService: class {
 		private readonly log: FastifyBaseLogger;
 
@@ -196,7 +184,11 @@ async function apply(
 describe("Plex label writer privacy-safe mutation logging", () => {
 	beforeEach(() => {
 		mocks.readInstanceSelected.mockReset().mockResolvedValue(authoritativeEvidence([canaryRow()]));
-		mocks.mutateMetadataTag.mockReset().mockResolvedValue({ ok: true });
+		mocks.upstreamWrite.mockReset().mockResolvedValue(undefined);
+		mocks.mutateMetadataTag.mockReset().mockImplementation(async () => {
+			await mocks.upstreamWrite();
+			return { ok: true };
+		});
 		mocks.emitProviderLog.mockReset().mockResolvedValue(undefined);
 	});
 
@@ -320,32 +312,62 @@ describe("Plex label writer privacy-safe mutation logging", () => {
 				`${canaries.rawError} ${canaries.url}`,
 			);
 		});
-		mocks.mutateMetadataTag.mockRejectedValueOnce(
-			new mocks.PlexMetadataTagWriteError(responseCategory),
-		);
+		mocks.mutateMetadataTag.mockImplementationOnce(async () => {
+			await mocks.upstreamWrite();
+			throw new PlexMetadataTagWriteError(responseCategory);
+		});
 		const log = createLogger();
 		const result = await apply(log);
 
 		expect(result).toEqual({ matchesFound: 1, labelsApplied: 0, failures: 1 });
+		expect(mocks.upstreamWrite).toHaveBeenCalledOnce();
 		expect(log.warn).toHaveBeenCalledTimes(1);
-		expectReason(
-			log,
-			responseCategory === "client_error" ? "upstream_write_rejected" : "upstream_write_failed",
+		expect(log.warn).toHaveBeenCalledWith(
+			{
+				operation: "destination_write",
+				state: "failed",
+				stage: "upstream_write",
+				reasonCode:
+					responseCategory === "client_error" ? "upstream_write_rejected" : "upstream_write_failed",
+				mediaCategory: "movie",
+				upstreamCategory: responseCategory,
+			},
+			"Plex label-sync destination write failed",
 		);
 		expectPrivate(log, result);
 	});
 
-	it("maps an unknown outer exception to a bounded fallback", async () => {
-		mocks.mutateMetadataTag.mockRejectedValueOnce(
-			new Error(`${canaries.rawError} ${canaries.url} ${canaries.responseBody}`),
-		);
-		const log = createLogger();
-		const result = await apply(log);
+	it.each([
+		["Error", new Error(`${canaries.rawError} ${canaries.url} ${canaries.responseBody}`)],
+		["string", `${canaries.rawError} ${canaries.token}`],
+		["object", { privatePath: canaries.url, privateBody: canaries.responseBody }],
+		["null", null],
+		["undefined", undefined],
+	] as const)(
+		"classifies a pre-write %s as an unknown authority failure",
+		async (_name, thrown) => {
+			mocks.mutateMetadataTag.mockImplementationOnce(async () => {
+				throw thrown;
+			});
+			const log = createLogger();
+			const result = await apply(log);
 
-		expect(result).toEqual({ matchesFound: 1, labelsApplied: 0, failures: 1 });
-		expectReason(log, "unknown_failure");
-		expectPrivate(log, result);
-	});
+			expect(result).toEqual({ matchesFound: 1, labelsApplied: 0, failures: 1 });
+			expect(mocks.upstreamWrite).not.toHaveBeenCalled();
+			expect(log.warn).toHaveBeenCalledTimes(1);
+			expect(log.warn).toHaveBeenCalledWith(
+				{
+					operation: "destination_write",
+					state: "failed",
+					stage: "destination_authority",
+					reasonCode: "unknown_failure",
+					mediaCategory: "movie",
+				},
+				"Plex label-sync destination write failed",
+			);
+			expectPrivate(log, result);
+		},
+	);
 
 	it("keeps a successful write private and records exactly one success", async () => {
 		const log = createLogger();
@@ -353,6 +375,7 @@ describe("Plex label writer privacy-safe mutation logging", () => {
 
 		expect(result).toEqual({ matchesFound: 1, labelsApplied: 1, failures: 0 });
 		expect(mocks.mutateMetadataTag).toHaveBeenCalledOnce();
+		expect(mocks.upstreamWrite).toHaveBeenCalledOnce();
 		expect(log.warn).not.toHaveBeenCalled();
 		expect(log.error).not.toHaveBeenCalled();
 		expectPrivate(log, result);

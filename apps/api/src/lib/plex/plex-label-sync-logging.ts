@@ -54,6 +54,47 @@ export class PlexMetadataTagWriteError extends Error {
 	}
 }
 
+export type PlexLabelMutationCaughtErrorClassification =
+	| {
+			stage: "destination_authority";
+			reasonCode: "unknown_failure";
+	  }
+	| {
+			stage: "upstream_write";
+			reasonCode: "upstream_write_rejected" | "upstream_write_failed";
+			upstreamCategory: PlexResponseCategory;
+	  };
+
+function classifyPlexUpstreamWriteReason(
+	responseCategory: PlexResponseCategory,
+): "upstream_write_rejected" | "upstream_write_failed" {
+	switch (responseCategory) {
+		case "client_error":
+			return "upstream_write_rejected";
+		case "server_error":
+		case "timeout":
+		case "unavailable":
+			return "upstream_write_failed";
+	}
+	return assertNever(responseCategory);
+}
+
+export function classifyPlexLabelMutationCaughtError(
+	error: unknown,
+): PlexLabelMutationCaughtErrorClassification {
+	if (!(error instanceof PlexMetadataTagWriteError)) {
+		return {
+			stage: "destination_authority",
+			reasonCode: "unknown_failure",
+		};
+	}
+	return {
+		stage: "upstream_write",
+		reasonCode: classifyPlexUpstreamWriteReason(error.responseCategory),
+		upstreamCategory: error.responseCategory,
+	};
+}
+
 const PLEX_COVERAGE_REASON_CODES = new Set<PlexCoverageReasonCode>([
 	"disabled_instance",
 	"missing_status",
@@ -289,7 +330,7 @@ export function classifyPlexLabelSyncTerminalReason(
 		case "destination_authority":
 			return classifyMutationReason(input.code);
 		case "upstream_write":
-			return input.code === "client_error" ? "upstream_write_rejected" : "upstream_write_failed";
+			return classifyPlexUpstreamWriteReason(input.code);
 		case "success":
 			return "success";
 	}
