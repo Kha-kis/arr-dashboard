@@ -76,6 +76,28 @@ export const BackupEncryptionSection = () => {
 						<Loader2 className="h-4 w-4 animate-spin" />
 						<span>Checking password configuration...</span>
 					</div>
+				) : passwordStatus?.reason === "invalid_database_password" ? (
+					<div
+						className="flex items-center gap-3 p-4 rounded-xl"
+						style={{
+							backgroundColor: SEMANTIC_COLORS.error.bg,
+							border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+						}}
+					>
+						<AlertCircle
+							className="h-5 w-5 shrink-0"
+							style={{ color: SEMANTIC_COLORS.error.text }}
+						/>
+						<div className="flex-1">
+							<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
+								Password Needs Reset
+							</p>
+							<p className="text-xs text-muted-foreground">
+								The stored password cannot be decrypted. Reset it here or set the BACKUP_PASSWORD
+								environment variable.
+							</p>
+						</div>
+					</div>
 				) : passwordStatus?.configured ? (
 					<div
 						className="flex items-center gap-3 p-4 rounded-xl"
@@ -141,7 +163,11 @@ export const BackupEncryptionSection = () => {
 						className="gap-2 border-border/50 bg-card/50"
 					>
 						<Shield className="h-4 w-4" />
-						{passwordStatus?.configured ? "Change Password" : "Set Password"}
+						{passwordStatus?.configured
+							? "Change Password"
+							: passwordStatus?.reason === "invalid_database_password"
+								? "Reset Password"
+								: "Set Password"}
 					</Button>
 				) : (
 					<div className="rounded-xl border border-border/30 bg-muted/10 p-4">

@@ -25,6 +25,7 @@ import type {
 	BackupFileInfo,
 	BackupFileInfoInternal,
 	BackupMetadata,
+	BackupPasswordStatus,
 } from "@arr/shared";
 import type { PrismaClient } from "../../lib/prisma.js";
 import type { Encryptor } from "../auth/encryption.js";
@@ -63,6 +64,23 @@ type CreateBackupOptions = {
 	excludeOperationalHistory?: boolean;
 	historyRetentionLimit?: number;
 };
+
+type StoredBackupPassword =
+	| { state: "absent" }
+	| { state: "valid"; password: string }
+	| { state: "invalid" };
+
+/** A stored password exists but cannot be used with the active encryption key. */
+export class BackupPasswordConfigurationError extends Error {
+	readonly code = "INVALID_DATABASE_PASSWORD";
+
+	constructor() {
+		super(
+			"The stored backup password is invalid. Reset it in Settings > Backup or set the BACKUP_PASSWORD environment variable.",
+		);
+		this.name = "BackupPasswordConfigurationError";
+	}
+}
 
 /**
  * Estimate the byte size of a backup payload by sampling rows per table.
@@ -142,26 +160,9 @@ export class BackupService {
 	 */
 	private async getBackupPassword(): Promise<string> {
 		// 1. Check database for encrypted password (if encryptor available)
-		if (this.encryptor) {
-			const settings = await this.prisma.backupSettings.findUnique({
-				where: { id: 1 },
-				select: { encryptedPassword: true, passwordIv: true },
-			});
-
-			if (settings?.encryptedPassword && settings?.passwordIv) {
-				try {
-					return this.encryptor.decrypt({
-						value: settings.encryptedPassword,
-						iv: settings.passwordIv,
-					});
-				} catch (error) {
-					// Log error but continue to fallback - decryption failure shouldn't block backups
-					log.error(
-						{ err: error },
-						"Failed to decrypt backup password from database, falling back to env var",
-					);
-				}
-			}
+		const storedPassword = await this.getStoredBackupPassword();
+		if (storedPassword.state === "valid") {
+			return storedPassword.password;
 		}
 
 		// 2. If explicitly set via environment, use it
@@ -173,6 +174,10 @@ export class BackupService {
 		// 3. In production, fail closed - do not allow backups without explicit password
 		const isProduction = process.env.NODE_ENV === "production";
 		if (isProduction) {
+			if (storedPassword.state === "invalid") {
+				throw new BackupPasswordConfigurationError();
+			}
+
 			throw new Error(
 				"Backup password not configured. Set a backup password in Settings > Backup or set the BACKUP_PASSWORD environment variable.",
 			);
@@ -180,6 +185,40 @@ export class BackupService {
 
 		// 4. In development, generate and persist a secure random password
 		return this.getOrGenerateDevBackupPassword();
+	}
+
+	private async getStoredBackupPassword(): Promise<StoredBackupPassword> {
+		if (!this.encryptor) {
+			return { state: "absent" };
+		}
+
+		const settings = await this.prisma.backupSettings.findUnique({
+			where: { id: 1 },
+			select: { encryptedPassword: true, passwordIv: true },
+		});
+
+		const hasStoredPassword = settings?.encryptedPassword != null || settings?.passwordIv != null;
+		if (!hasStoredPassword) {
+			return { state: "absent" };
+		}
+
+		if (!settings?.encryptedPassword || !settings.passwordIv) {
+			log.warn("Stored backup password is incomplete and needs to be reset");
+			return { state: "invalid" };
+		}
+
+		try {
+			return {
+				state: "valid",
+				password: this.encryptor.decrypt({
+					value: settings.encryptedPassword,
+					iv: settings.passwordIv,
+				}),
+			};
+		} catch {
+			log.warn("Stored backup password cannot be decrypted and needs to be reset");
+			return { state: "invalid" };
+		}
 	}
 
 	/**
@@ -594,25 +633,23 @@ export class BackupService {
 	 * Check if a backup password is configured (either in database or env var)
 	 * Returns the source of the password configuration for UI display
 	 */
-	async getPasswordStatus(): Promise<{
-		configured: boolean;
-		source: "database" | "environment" | "none";
-	}> {
-		// Check database first
-		if (this.encryptor) {
-			const settings = await this.prisma.backupSettings.findUnique({
-				where: { id: 1 },
-				select: { encryptedPassword: true, passwordIv: true },
-			});
-
-			if (settings?.encryptedPassword && settings?.passwordIv) {
-				return { configured: true, source: "database" };
-			}
+	async getPasswordStatus(): Promise<BackupPasswordStatus> {
+		const storedPassword = await this.getStoredBackupPassword();
+		if (storedPassword.state === "valid") {
+			return { configured: true, source: "database" };
 		}
 
 		// Check environment variable
 		if (process.env.BACKUP_PASSWORD) {
 			return { configured: true, source: "environment" };
+		}
+
+		if (storedPassword.state === "invalid") {
+			return {
+				configured: false,
+				source: "database",
+				reason: "invalid_database_password",
+			};
 		}
 
 		return { configured: false, source: "none" };

@@ -160,6 +160,7 @@ export type UpdateBackupSettingsRequest = z.infer<typeof updateBackupSettingsReq
 export const backupPasswordStatusSchema = z.object({
 	configured: z.boolean(),
 	source: z.enum(["database", "environment", "none"]),
+	reason: z.enum(["invalid_database_password"]).optional(),
 });
 
 export type BackupPasswordStatus = z.infer<typeof backupPasswordStatusSchema>;
