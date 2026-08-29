@@ -218,7 +218,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 				className="relative animate-in fade-in slide-in-from-bottom-4 duration-500"
 				style={{ animationFillMode: "backwards" }}
 			>
-				<div className="flex items-start justify-between gap-4">
+				<div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
 					<div className="space-y-1">
 						{/* Label with icon */}
 						<div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -351,7 +351,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 					{/* Service Toggle + Search Row */}
 					<div className="flex flex-wrap items-center gap-4">
 						{/* Service Toggle Pills */}
-						<div className="inline-flex rounded-xl bg-background/50 border border-border/50 p-1">
+						<div className="inline-flex max-w-full shrink overflow-x-auto rounded-xl bg-background/50 border border-border/50 p-1">
 							{SERVICE_OPTIONS.map((option) => {
 								const Icon = option.icon;
 								const isActive = serviceFilter === option.value;
