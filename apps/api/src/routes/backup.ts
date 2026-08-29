@@ -10,11 +10,11 @@ import {
 	updateBackupSettingsRequestSchema,
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
+import { z } from "zod";
 import { BackupService } from "../lib/backup/backup-service.js";
 import { CleanupMaintenanceConflictError } from "../lib/library-cleanup/cleanup-maintenance-gate.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { resolveSecretsPath } from "../lib/utils/secrets-path.js";
-import { z } from "zod";
 import { validateRequest } from "../lib/utils/validate.js";
 import { getAppVersion } from "../lib/utils/version.js";
 
@@ -81,6 +81,11 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			return reply.send(response);
 		} catch (error) {
+			if (error instanceof CleanupMaintenanceConflictError) {
+				request.log.warn({ err: error }, "Backup creation blocked by active cleanup maintenance");
+				return reply.status(409).send({ error: error.message });
+			}
+
 			request.log.error({ err: error }, "Failed to create backup");
 
 			const errorMessage = getErrorMessage(error);
