@@ -37,6 +37,10 @@ import {
 } from "./queue-item-utils.js";
 import { normalizeDownloadId, resolveQuiAwareGateReasons } from "./qui-gate.js";
 import {
+	isUnsafeRetainedTorrentPolicy,
+	RETAINED_TORRENT_BLOCKLIST_ERROR,
+} from "./retained-torrent-policy.js";
+import {
 	evaluateQueueItem,
 	shouldSkipByProfileFilter,
 	shouldSkipByTagFilter,
@@ -867,6 +871,10 @@ export async function executeQueueCleaner(
 			const isTorrent = item.protocol === "torrent";
 			const isFilePolicyRemoval = item.rule === "disallowed_file_extension";
 			const useChangeCategory = !isFilePolicyRemoval && config.changeCategoryEnabled && isTorrent;
+			if (isTorrent && !isFilePolicyRemoval && isUnsafeRetainedTorrentPolicy(config)) {
+				skipped.push({ ...item, reason: RETAINED_TORRENT_BLOCKLIST_ERROR });
+				continue;
+			}
 
 			await client.queue.delete(item.id, {
 				removeFromClient: isFilePolicyRemoval ? true : config.removeFromClient,

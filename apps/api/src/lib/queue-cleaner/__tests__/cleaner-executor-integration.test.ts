@@ -284,6 +284,60 @@ describe("executeQueueCleaner — integration", () => {
 		expect(del).not.toHaveBeenCalled();
 	});
 
+	it("fails closed when a retained torrent would be recategorized without blocklisting", async () => {
+		const del = vi.fn();
+		const app = makeApp({
+			get: async () => ({ records: [STALLED_ITEM] }),
+			del,
+		});
+
+		const result = await executeQueueCleaner(
+			app,
+			makeInstance(),
+			makeConfig({
+				removeFromClient: false,
+				addToBlocklist: false,
+				changeCategoryEnabled: true,
+			}),
+		);
+
+		expect(result.itemsCleaned).toBe(0);
+		expect(result.skippedItems).toEqual([
+			expect.objectContaining({
+				id: 42,
+				reason: expect.stringContaining("blocklist"),
+			}),
+		]);
+		expect(del).not.toHaveBeenCalled();
+	});
+
+	it("retains and recategorizes a torrent when the exact release is blocklisted", async () => {
+		const del = vi.fn().mockResolvedValue(undefined);
+		const app = makeApp({
+			get: async () => ({ records: [STALLED_ITEM] }),
+			del,
+		});
+
+		const result = await executeQueueCleaner(
+			app,
+			makeInstance(),
+			makeConfig({
+				removeFromClient: false,
+				addToBlocklist: true,
+				searchAfterRemoval: false,
+				changeCategoryEnabled: true,
+			}),
+		);
+
+		expect(result.itemsCleaned).toBe(1);
+		expect(del).toHaveBeenCalledWith(42, {
+			removeFromClient: false,
+			blocklist: true,
+			skipRedownload: true,
+			changeCategory: true,
+		});
+	});
+
 	it("silent-failure contract: ARR queue.get throwing yields status:error, NOT an unhandled rejection", async () => {
 		const del = vi.fn();
 		const app = makeApp({
