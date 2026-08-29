@@ -253,4 +253,86 @@ describe("Plex label-sync whole-execution source logging", () => {
 			"Plex label-sync source read failed",
 		]);
 	});
+
+	it("contains a schema-invalid successful Plex response at the source terminal boundary", async () => {
+		const ordinaryFetch = fetch;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: string | URL | Request) => {
+				const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
+				if (url.pathname.startsWith("/library/sections/") && url.pathname.endsWith("/all")) {
+					return jsonResponse({
+						MediaContainer: {
+							offset: 0,
+							size: "CANARY_SOURCE_SCHEMA_SIZE_787",
+							totalSize: 1,
+							Metadata: [
+								{
+									ratingKey: canaries.ratingKey,
+									title: canaries.title,
+									type: "movie",
+									Guid: [{ id: canaries.guid }],
+								},
+							],
+						},
+					});
+				}
+				return await ordinaryFetch(input);
+			}),
+		);
+		const source = instance("plex-source");
+		const destination = instance("plex-dest");
+		const prisma = {
+			serviceInstance: {
+				findMany: vi.fn().mockResolvedValue([source]),
+				findFirst: vi.fn(async ({ where }: { where: { id: string } }) =>
+					where.id === source.id ? source : destination,
+				),
+			},
+		};
+		const log = createLogger();
+		const destinationSpy = vi.spyOn(plexDestWriter, "applyLabels");
+
+		const result = await executeLabelSyncRule({
+			rule: {
+				id: "rule-787",
+				userId: "user-1",
+				sourceService: "plex",
+				sourceInstanceId: source.id,
+				sourceTagName: "Private",
+				destService: "plex",
+				destInstanceId: destination.id,
+				destTagName: "Private destination",
+			},
+			prisma: prisma as never,
+			arrClientFactory: {} as never,
+			encryptor: { decrypt: vi.fn().mockReturnValue(canaries.token) } as never,
+			log,
+		});
+
+		expect(result).toMatchObject({
+			status: "failed",
+			totals: { labelsApplied: 0, failures: 1 },
+		});
+		expect(destinationSpy).not.toHaveBeenCalled();
+		const terminalEvents = (log.warn as unknown as ReturnType<typeof vi.fn>).mock.calls.filter(
+			([fields, message]) =>
+				(fields as { operation?: string })?.operation === "source_read" &&
+				message === "Plex label-sync source read failed",
+		);
+		expect(terminalEvents).toHaveLength(1);
+		expect(terminalEvents[0]).toEqual([
+			{
+				operation: "source_read",
+				state: "failed",
+				stage: "source_authority",
+				reasonCode: "source_evidence_changed",
+			},
+			"Plex label-sync source read failed",
+		]);
+		const serialized = allLogText(log, result);
+		for (const value of [...Object.values(canaries), "CANARY_SOURCE_SCHEMA_SIZE_787", "Zod"]) {
+			expect(serialized).not.toContain(String(value));
+		}
+	});
 });

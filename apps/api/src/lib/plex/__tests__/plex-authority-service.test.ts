@@ -170,6 +170,7 @@ async function mutateWithLedgerEvidence(input: {
 	ledgerRows?: unknown[];
 	ledgerRatingKeys?: string[];
 	liveRatingKeys?: string[];
+	liveCollectionFailure?: "timeout" | "settlement_probe" | "positive_only";
 	withBinding?: boolean;
 	updateError?: Error;
 }) {
@@ -246,6 +247,36 @@ async function mutateWithLedgerEvidence(input: {
 			throw new Error("synthetic cache backfill");
 		}),
 	};
+	const getActivities = vi.fn().mockResolvedValue([]);
+	const getLibrarySettlementSections = vi.fn().mockResolvedValue([section, musicSection]);
+	if (input.liveCollectionFailure === "timeout") {
+		getActivities
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([])
+			.mockRejectedValue(new DOMException("CANARY_LIVE_TIMEOUT_787", "TimeoutError"));
+	}
+	if (input.liveCollectionFailure === "settlement_probe") {
+		getLibrarySettlementSections
+			.mockResolvedValueOnce([section, musicSection])
+			.mockResolvedValueOnce([section, musicSection])
+			.mockResolvedValueOnce([section, musicSection])
+			.mockRejectedValue(new Error("CANARY_SETTLEMENT_PROBE_787"));
+	}
+	const positiveOnlySection = {
+		...section,
+		key: "shows",
+		uuid: "shows-uuid",
+		title: "Shows",
+		type: "show" as const,
+	};
+	if (input.liveCollectionFailure === "positive_only") {
+		getLibrarySettlementSections
+			.mockResolvedValueOnce([section, musicSection])
+			.mockResolvedValueOnce([section, musicSection])
+			.mockResolvedValueOnce([section, musicSection])
+			.mockResolvedValue([positiveOnlySection, musicSection]);
+	}
 	const service = new PlexAuthorityService({
 		prisma: {
 			serviceInstance: {
@@ -265,19 +296,38 @@ async function mutateWithLedgerEvidence(input: {
 		log: {} as never,
 		createClient: () =>
 			({
-				getActivities: vi.fn().mockResolvedValue([]),
-				getLibrarySettlementSections: vi.fn().mockResolvedValue([section, musicSection]),
+				getActivities,
+				getLibrarySettlementSections,
 				getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "admin" }]),
 				getLibrarySections: vi
 					.fn()
-					.mockResolvedValue([{ key: "movies", title: "Movies", type: "movie" }]),
+					.mockResolvedValue(
+						input.liveCollectionFailure === "positive_only"
+							? [{ key: "shows", title: "Shows", type: "show" }]
+							: [{ key: "movies", title: "Movies", type: "movie" }],
+					),
 				getLibraryItems: vi.fn().mockResolvedValue(
-					(input.liveRatingKeys ?? ["101"]).map((ratingKey) => ({
-						ratingKey,
-						title: "A",
-						type: "movie",
-						Guid: [{ id: "tmdb://1" }],
-					})),
+					input.liveCollectionFailure === "positive_only"
+						? [
+								{
+									ratingKey: "show-1",
+									title: "Mapped Show",
+									type: "show",
+									Guid: [{ id: "tmdb://1" }, { id: "tvdb://1" }],
+								},
+								{
+									ratingKey: "legacy-show",
+									title: "Legacy Show",
+									type: "show",
+									Guid: [],
+								},
+							]
+						: (input.liveRatingKeys ?? ["101"]).map((ratingKey) => ({
+								ratingKey,
+								title: "A",
+								type: "movie",
+								Guid: [{ id: "tmdb://1" }],
+							})),
 				),
 				getHistory: vi.fn().mockResolvedValue([]),
 				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
@@ -1654,6 +1704,27 @@ describe("PlexAuthorityService settlement window", () => {
 			});
 
 			expect(result).toMatchObject({ ok: false, reasonCode });
+			expect(updateMetadataTags).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each([
+		["a live request timeout", "timeout"],
+		["a settlement probe failure", "settlement_probe"],
+		["a positive-only live catalog", "positive_only"],
+	] as const)(
+		"classifies %s as unavailable evidence without reporting target drift",
+		async (_name, liveCollectionFailure) => {
+			const { result, updateMetadataTags } = await mutateWithLedgerEvidence({
+				withBinding: true,
+				liveCollectionFailure,
+			});
+
+			expect(result).toMatchObject({
+				ok: false,
+				reasonCode: "live_evidence_unavailable",
+			});
+			expect(result).not.toMatchObject({ reasonCode: "live_target_changed" });
 			expect(updateMetadataTags).not.toHaveBeenCalled();
 		},
 	);

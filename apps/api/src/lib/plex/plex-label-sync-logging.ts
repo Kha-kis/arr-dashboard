@@ -10,6 +10,7 @@ export type PlexMetadataTagMutationFailureReason =
 	| "live_target_missing"
 	| "live_target_ambiguous"
 	| "live_target_changed"
+	| "live_evidence_unavailable"
 	| "provider_identity_changed"
 	| "provider_connection_changed"
 	| "upstream_write_failed"
@@ -149,6 +150,7 @@ const PLEX_MUTATION_FAILURE_REASONS = new Set<PlexMetadataTagMutationFailureReas
 	"live_target_missing",
 	"live_target_ambiguous",
 	"live_target_changed",
+	"live_evidence_unavailable",
 	"provider_identity_changed",
 	"provider_connection_changed",
 	"upstream_write_failed",
@@ -233,7 +235,7 @@ function classifyDestinationCoverageReason(
 		case "latest_attempt_future_dated":
 			return "publication_superseded";
 		case "plex_content_digest_changed":
-			return "live_target_changed";
+			return "live_evidence_unavailable";
 		case "disabled_instance":
 		case "missing_status":
 		case "unpublished_generation":
@@ -281,6 +283,7 @@ function classifyMutationReason(
 		case "live_target_missing":
 		case "live_target_ambiguous":
 		case "live_target_changed":
+		case "live_evidence_unavailable":
 		case "provider_identity_changed":
 		case "provider_connection_changed":
 		case "upstream_write_failed":

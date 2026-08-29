@@ -230,6 +230,7 @@ describe("Plex label writer privacy-safe mutation logging", () => {
 
 	it.each([
 		["changed cached evidence", "live_target_changed", "live_target_changed"],
+		["incomplete live settlement", "live_evidence_unavailable", "live_evidence_unavailable"],
 		["missing live target", "live_target_missing", "live_target_missing"],
 		["ambiguous live target", "live_target_ambiguous", "live_target_ambiguous"],
 		["changed or reused rating key", "live_target_changed", "live_target_changed"],
@@ -285,7 +286,7 @@ describe("Plex label writer privacy-safe mutation logging", () => {
 		expectPrivate(log, result);
 	});
 
-	it("maps a changed Plex content digest to a changed live target", async () => {
+	it("maps a generic Plex content digest failure to unavailable live evidence", async () => {
 		mocks.readInstanceSelected.mockResolvedValue(
 			unavailableEvidence("plex_content_digest_changed"),
 		);
@@ -293,7 +294,7 @@ describe("Plex label writer privacy-safe mutation logging", () => {
 		const result = await apply(log);
 
 		expect(result).toEqual({ matchesFound: 0, labelsApplied: 0, failures: 1 });
-		expectReason(log, "live_target_changed");
+		expectReason(log, "live_evidence_unavailable");
 		expectPrivate(log, result);
 	});
 

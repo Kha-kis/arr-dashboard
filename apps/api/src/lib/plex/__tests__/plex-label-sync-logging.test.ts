@@ -57,7 +57,7 @@ const coverageMatrix = [
 	],
 	["plex_library_activity_unknown", "source_read_failed", "provider_authority_unavailable"],
 	["plex_library_revision_changed", "source_evidence_changed", "provider_authority_unavailable"],
-	["plex_content_digest_changed", "source_evidence_changed", "live_target_changed"],
+	["plex_content_digest_changed", "source_evidence_changed", "live_evidence_unavailable"],
 	[
 		"plex_settlement_metadata_missing",
 		"source_authority_unavailable",
@@ -84,6 +84,7 @@ const mutationMatrix = [
 	["live_target_missing", "live_target_missing"],
 	["live_target_ambiguous", "live_target_ambiguous"],
 	["live_target_changed", "live_target_changed"],
+	["live_evidence_unavailable", "live_evidence_unavailable"],
 	["provider_identity_changed", "provider_identity_changed"],
 	["provider_connection_changed", "provider_connection_changed"],
 	["upstream_write_failed", "upstream_write_failed"],

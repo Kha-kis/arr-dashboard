@@ -10,7 +10,7 @@ import type { z } from "zod";
 import type { ClientInstanceData } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
 import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
-import { parseUpstreamOrThrow } from "../validation/parse-upstream.js";
+import { parseUpstreamOrThrow, UpstreamValidationError } from "../validation/parse-upstream.js";
 import {
 	plexActivitiesResponseSchema,
 	plexAccountsResponseSchema,
@@ -177,10 +177,22 @@ export type PlexResponseCategory = "client_error" | "server_error" | "timeout" |
 
 export class PlexRequestError extends Error {
 	readonly code = "plex_request_failed" as const;
+	declare readonly statusCode?: number;
 
-	constructor(readonly responseCategory: PlexResponseCategory) {
+	constructor(
+		readonly responseCategory: PlexResponseCategory,
+		statusCode?: number,
+	) {
 		super("Plex API request failed");
 		this.name = "PlexRequestError";
+		if (statusCode !== undefined) {
+			Object.defineProperty(this, "statusCode", {
+				value: statusCode,
+				enumerable: true,
+				configurable: false,
+				writable: false,
+			});
+		}
 		delete this.stack;
 	}
 }
@@ -919,12 +931,15 @@ export class PlexClient {
 			const category = path.split("?")[0] ?? path;
 			try {
 				return parseUpstreamOrThrow(raw, options.schema, { integration: "plex", category });
-			} catch {
+			} catch (error) {
 				this.log.warn(
 					{ operation: "plex_api_request", responseCategory: "unavailable" },
 					"Plex API request failed",
 				);
-				throw new PlexRequestError("unavailable");
+				throw new PlexRequestError(
+					"unavailable",
+					error instanceof UpstreamValidationError ? error.statusCode : undefined,
+				);
 			}
 		}
 

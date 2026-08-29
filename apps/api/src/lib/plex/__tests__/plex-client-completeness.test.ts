@@ -655,6 +655,100 @@ describe("PlexClient authoritative inventory completeness", () => {
 		}
 	});
 
+	it("preserves a bounded 502 contract for a schema-invalid JSON response", async () => {
+		const canaries = [
+			"CANARY_SCHEMA_PAYLOAD_787",
+			"CANARY_SCHEMA_ISSUE_787",
+			"CANARY_SCHEMA_PATH_787",
+			"CANARY_SCHEMA_TOKEN_787",
+		];
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValueOnce(
+				response({
+					size: canaries[0],
+					Activity: [{ type: canaries[1], Context: { librarySectionID: canaries[2] } }],
+				}),
+			),
+		);
+		const client = new PlexClient("https://CANARY_SCHEMA_HOST_787.invalid", canaries[3]!, log);
+
+		let thrown: unknown;
+		try {
+			await client.getActivities();
+		} catch (error) {
+			thrown = error;
+		}
+
+		expect(thrown).toBeInstanceOf(PlexRequestError);
+		expect(thrown).toMatchObject({
+			name: "PlexRequestError",
+			code: "plex_request_failed",
+			responseCategory: "unavailable",
+			statusCode: 502,
+			message: "Plex API request failed",
+		});
+		expect(thrown).not.toHaveProperty("cause");
+		expect(thrown).not.toHaveProperty("stack");
+		expect(thrown).not.toHaveProperty("details");
+		expect(thrown).not.toHaveProperty("issues");
+		const serialized = JSON.stringify({
+			logs: warn.mock.calls,
+			error: thrown,
+			inspection:
+				thrown instanceof Error
+					? Object.fromEntries(
+							Object.getOwnPropertyNames(thrown).map((key) => [
+								key,
+								(thrown as unknown as Record<string, unknown>)[key],
+							]),
+						)
+					: thrown,
+		});
+		for (const canary of [...canaries, "CANARY_SCHEMA_HOST_787.invalid", "Zod"]) {
+			expect(serialized).not.toContain(canary);
+		}
+	});
+
+	it("keeps malformed JSON on the bounded generic request-failure contract", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValueOnce(
+				new Response("CANARY_MALFORMED_BODY_787", {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				}),
+			),
+		);
+		const client = new PlexClient(
+			"https://CANARY_MALFORMED_HOST_787.invalid",
+			"CANARY_MALFORMED_TOKEN_787",
+			log,
+		);
+
+		let thrown: unknown;
+		try {
+			await client.getActivities();
+		} catch (error) {
+			thrown = error;
+		}
+
+		expect(thrown).toBeInstanceOf(PlexRequestError);
+		expect(thrown).toMatchObject({
+			code: "plex_request_failed",
+			responseCategory: "unavailable",
+		});
+		expect(thrown).not.toHaveProperty("statusCode");
+		const serialized = JSON.stringify({ logs: warn.mock.calls, error: thrown });
+		for (const canary of [
+			"CANARY_MALFORMED_BODY_787",
+			"CANARY_MALFORMED_HOST_787.invalid",
+			"CANARY_MALFORMED_TOKEN_787",
+		]) {
+			expect(serialized).not.toContain(canary);
+		}
+	});
+
 	it.each([
 		["TimeoutError", "timeout"],
 		["TypeError", "unavailable"],

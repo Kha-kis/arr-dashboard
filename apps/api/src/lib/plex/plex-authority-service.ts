@@ -1327,7 +1327,7 @@ export class PlexAuthorityService {
 				current.evidence,
 				"plex_content_digest_changed",
 			).evidence;
-			return failedMetadataTagMutation(evidence, classifyPlexMetadataTagEvidenceFailure(evidence));
+			return failedMetadataTagMutation(evidence, "live_evidence_unavailable");
 		}
 		let liveTargets: PlexGenerationTarget[];
 		try {
