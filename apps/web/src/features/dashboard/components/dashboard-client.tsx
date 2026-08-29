@@ -522,7 +522,7 @@ export const DashboardClient = () => {
 				className="relative animate-in fade-in slide-in-from-bottom-4 duration-500"
 				style={{ animationDelay: "0ms" }}
 			>
-				<div className="flex items-start justify-between gap-4">
+				<div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
 					<div className="space-y-1">
 						<div className="flex items-center gap-2 text-sm text-muted-foreground">
 							<Activity className="h-4 w-4" />
