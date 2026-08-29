@@ -61,6 +61,36 @@ describe("proxy session validation during Next prefetch", () => {
 		expect(fetchSpy).toHaveBeenCalledTimes(2);
 	});
 
+	it.each([
+		["network rejection", new Error("synthetic network failure")],
+		["request abort", new DOMException("synthetic timeout", "AbortError")],
+	])("clears a coalesced %s before the next validation", async (_label, failure) => {
+		let rejectValidation!: (error: unknown) => void;
+		const pendingValidation = new Promise<Response>((_resolve, reject) => {
+			rejectValidation = reject;
+		});
+		const fetchSpy = vi
+			.fn()
+			.mockReturnValueOnce(pendingValidation)
+			.mockResolvedValueOnce(new Response(null, { status: 200 }));
+		vi.stubGlobal("fetch", fetchSpy);
+		const requestHeaders = { RSC: "1", "Next-Router-Prefetch": "1" };
+
+		const concurrent = [
+			proxy(makeRequest("session-a", requestHeaders)),
+			proxy(makeRequest("session-a", requestHeaders)),
+		];
+		await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+		rejectValidation(failure);
+
+		const failedResponses = await Promise.all(concurrent);
+		expect(failedResponses.every((response) => response.status === 200)).toBe(true);
+
+		const retry = await proxy(makeRequest("session-a", requestHeaders));
+		expect(retry.status).toBe(200);
+		expect(fetchSpy).toHaveBeenCalledTimes(2);
+	});
+
 	it("does not trust speculative headers without a valid session", async () => {
 		const fetchSpy = vi.fn(async () => new Response(null, { status: 401 }));
 		vi.stubGlobal("fetch", fetchSpy);
