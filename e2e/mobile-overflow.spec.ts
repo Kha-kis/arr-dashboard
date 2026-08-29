@@ -154,7 +154,38 @@ test.describe("mobile page overflow", () => {
 		await installPopulatedFixtures(page);
 		for (const width of [390, 375]) {
 			await page.setViewportSize({ width, height: 844 });
-			await assertNoHorizontalOverflow(page, "/history", "The Populated History Fixture");
+			await assertNoHorizontalOverflow(
+				page,
+				"/history",
+				"The Populated History Fixture",
+				async (currentPage, clientWidth) => {
+					const timeline = currentPage.getByRole("button", { name: "Timeline", exact: true });
+					const table = currentPage.getByRole("button", { name: "Table", exact: true });
+					const viewToggle = timeline.locator("..");
+					await expect(viewToggle).toBeVisible();
+					await expect(timeline).toBeVisible();
+					await expect(table).toBeVisible();
+
+					for (const control of [viewToggle, timeline, table]) {
+						const box = await control.boundingBox();
+						expect(box?.x ?? 0).toBeGreaterThanOrEqual(0);
+						expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(clientWidth);
+					}
+
+					await timeline.click();
+					await expect(timeline).toHaveClass(/(?:^|\s)text-foreground(?:\s|$)/);
+					await expect(table).toHaveClass(/(?:^|\s)text-muted-foreground(?:\s|$)/);
+					await table.click();
+					await expect(table).toHaveClass(/(?:^|\s)text-foreground(?:\s|$)/);
+					await expect(timeline).toHaveClass(/(?:^|\s)text-muted-foreground(?:\s|$)/);
+
+					const refresh = currentPage.getByRole("button", { name: "Refresh", exact: true }).first();
+					await expect(refresh).toBeVisible();
+					const refreshBox = await refresh.boundingBox();
+					expect(refreshBox?.x ?? 0).toBeGreaterThanOrEqual(0);
+					expect((refreshBox?.x ?? 0) + (refreshBox?.width ?? 0)).toBeLessThanOrEqual(clientWidth);
+				},
+			);
 		}
 	});
 
