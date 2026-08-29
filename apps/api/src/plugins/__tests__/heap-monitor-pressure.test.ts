@@ -52,7 +52,7 @@ describe("classifyMemoryPressure", () => {
 		expect(pressure.cgroupLimitPct).toBeCloseTo(0.93, 2);
 		expect(pressure.pressureSource).toBe("cgroup_memory_limit");
 		expect(pressure.level).toBe("warn");
-		expect(pressure.shouldSnapshot).toBe(true);
+		expect(pressure.shouldSnapshot).toBe(false);
 	});
 
 	it("continues to warn against the V8 limit when cgroup data is unavailable", () => {

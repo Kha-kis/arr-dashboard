@@ -288,13 +288,16 @@ const heapMonitorPlugin = fastifyPlugin(
 			};
 
 			if (pressure.level === "warn") {
+				const willAutoCapture = AUTO_SNAPSHOT_AT_WARN && pressure.shouldSnapshot;
 				app.log.warn(
 					payload,
-					AUTO_SNAPSHOT_AT_WARN
+					willAutoCapture
 						? "Runtime memory usage above 90% of an effective limit — auto-capturing snapshot to /config/heap-snapshots/ (set HEAP_AUTO_SNAPSHOT=0 or HEAP_AUTO_SNAPSHOT_AT_WARN=0 to disable)"
-						: "Runtime memory usage above 90% of an effective limit — capture a snapshot before OOM: `docker exec <container> dump-heap`",
+						: pressure.shouldSnapshot
+							? "Runtime memory usage above 90% of the V8 heap limit — capture a snapshot before OOM: `docker exec <container> dump-heap`"
+							: "Runtime memory usage above 90% of the cgroup limit — V8 heap snapshot skipped because RSS/native pressure is the binding signal",
 				);
-				if (AUTO_SNAPSHOT_AT_WARN && pressure.shouldSnapshot) {
+				if (willAutoCapture) {
 					// Fire-and-forget — captureHeapSnapshot is self-rate-limited and
 					// self-rotating; we don't want sampling to block on the (potentially
 					// multi-second) V8 walk and disk write.
