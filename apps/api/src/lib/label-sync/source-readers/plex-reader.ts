@@ -13,18 +13,19 @@ import type {
 	SourceReadResult,
 } from "../strategy-types.js";
 import { PlexAuthorityService } from "../../plex/plex-authority-service.js";
+import { plexProviderLogSink } from "../plex-provider-log-sink.js";
 
 export const plexSourceReader: SourceReader = {
 	prismaService: "PLEX",
 	async readTaggedItems(opts: SourceReaderOpts): Promise<SourceReadResult> {
-		const { rule, sourceInstance, prisma, log } = opts;
+		const { rule, sourceInstance, prisma } = opts;
 
 		let rows: Array<{ tmdbId: number; mediaType: string; title: string; labels: string }>;
 		try {
 			const evidence = await new PlexAuthorityService({
 				prisma,
 				encryptor: opts.encryptor,
-				log,
+				log: plexProviderLogSink,
 			}).readInstanceSelected({
 				userId: rule.userId,
 				instanceId: sourceInstance.id,
@@ -43,8 +44,7 @@ export const plexSourceReader: SourceReader = {
 				return { matches: [], failed: true };
 			}
 			rows = evidence.rows;
-		} catch (err) {
-			log.warn({ err }, "Failed to query PlexCache for source labels");
+		} catch {
 			return { matches: [], failed: true };
 		}
 
