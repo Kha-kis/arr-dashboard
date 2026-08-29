@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	classifyMemoryPressure,
 	parseCgroupMemoryLimitBytes,
+	parseCgroupMemoryUsageBytes,
 	readCgroupMemoryLimitBytes,
+	readCgroupMemoryStats,
 } from "../heap-monitor-pressure.js";
 
 const MIB = 1024 * 1024;
@@ -49,6 +51,21 @@ describe("classifyMemoryPressure", () => {
 		});
 
 		expect(pressure.heapLimitPct).toBeCloseTo(0.1, 2);
+		expect(pressure.cgroupLimitPct).toBeCloseTo(0.93, 2);
+		expect(pressure.pressureSource).toBe("cgroup_memory_limit");
+		expect(pressure.level).toBe("warn");
+		expect(pressure.shouldSnapshot).toBe(false);
+	});
+
+	it("uses aggregate cgroup usage instead of API RSS for container pressure", () => {
+		const pressure = classifyMemoryPressure({
+			heapUsedBytes: 200 * MIB,
+			heapTotalBytes: 210 * MIB,
+			rssBytes: 200 * MIB,
+			cgroupUsageBytes: 950 * MIB,
+			cgroupLimitBytes: 1024 * MIB,
+		});
+
 		expect(pressure.cgroupLimitPct).toBeCloseTo(0.93, 2);
 		expect(pressure.pressureSource).toBe("cgroup_memory_limit");
 		expect(pressure.level).toBe("warn");
@@ -119,6 +136,47 @@ describe("cgroup memory limits", () => {
 
 	it("parses a finite byte limit", () => {
 		expect(parseCgroupMemoryLimitBytes("1073741824\n")).toBe(1024 * MIB);
+	});
+
+	it("parses zero cgroup usage as a valid observation", () => {
+		expect(parseCgroupMemoryUsageBytes("0\n")).toBe(0);
+	});
+
+	it.each(["", "max", "unlimited", "invalid", "-1", "9223372036854771712"])(
+		"treats %j cgroup usage as unknown",
+		(value) => {
+			expect(parseCgroupMemoryUsageBytes(value)).toBeUndefined();
+		},
+	);
+
+	it("reads usage and limit from the same cgroup generation", () => {
+		const readFile = vi.fn((path: string) => {
+			if (path === "/sys/fs/cgroup/memory.max") return String(1024 * MIB);
+			if (path === "/sys/fs/cgroup/memory.current") return String(950 * MIB);
+			throw new Error("unexpected path");
+		});
+
+		expect(readCgroupMemoryStats(readFile)).toEqual({
+			generation: "v2",
+			usageBytes: 950 * MIB,
+			limitBytes: 1024 * MIB,
+		});
+	});
+
+	it("does not combine a v2 limit with a v1 usage value", () => {
+		const readFile = vi.fn((path: string) => {
+			if (path === "/sys/fs/cgroup/memory.max") return String(1024 * MIB);
+			if (path === "/sys/fs/cgroup/memory.current") throw new Error("missing v2 usage");
+			if (path === "/sys/fs/cgroup/memory/memory.limit_in_bytes") return String(512 * MIB);
+			if (path === "/sys/fs/cgroup/memory/memory.usage_in_bytes") return String(100 * MIB);
+			throw new Error("unexpected path");
+		});
+
+		expect(readCgroupMemoryStats(readFile)).toEqual({
+			generation: "v1",
+			usageBytes: 100 * MIB,
+			limitBytes: 512 * MIB,
+		});
 	});
 
 	it("falls back from an unavailable v2 limit to a finite v1 limit", () => {

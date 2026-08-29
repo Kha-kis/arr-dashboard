@@ -16,7 +16,7 @@
  * What gets logged:
  *   - heapUsedMB / heapTotalMB / heapPct        — committed V8 heap occupancy
  *   - heapLimitMB / heapLimitPct                 — V8 runtime heap headroom
- *   - cgroupLimitMB / cgroupLimitPct             — container RSS headroom
+ *   - cgroupUsageMB / cgroupLimitMB / cgroupLimitPct — aggregate container headroom
  *   - runtimePct / pressureSource                — effective near-OOM signal
  *   - rssMB / externalMB / arrayBuffersMB        — process/native allocations
  *   - heapDeltaMB / rssDeltaMB                   — change since last sample
@@ -74,7 +74,7 @@ import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 
 import { getErrorMessage } from "../lib/utils/error-message.js";
-import { classifyMemoryPressure, readCgroupMemoryLimitBytes } from "./heap-monitor-pressure.js";
+import { classifyMemoryPressure, readCgroupMemoryStats } from "./heap-monitor-pressure.js";
 
 const SAMPLE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes — enough resolution to spot leaks, light on log volume.
 
@@ -225,7 +225,7 @@ const heapMonitorPlugin = fastifyPlugin(
 		const sample = (): void => {
 			const m = process.memoryUsage();
 			const heapSizeLimitBytes = getHeapStatistics().heap_size_limit;
-			const cgroupLimitBytes = readCgroupMemoryLimitBytes();
+			const cgroupMemory = readCgroupMemoryStats();
 			const heapUsedMB = Math.round(m.heapUsed / 1024 / 1024);
 			const heapTotalMB = Math.round(m.heapTotal / 1024 / 1024);
 			const rssMB = Math.round(m.rss / 1024 / 1024);
@@ -238,7 +238,8 @@ const heapMonitorPlugin = fastifyPlugin(
 				heapTotalBytes: m.heapTotal,
 				rssBytes: m.rss,
 				heapSizeLimitBytes,
-				cgroupLimitBytes,
+				cgroupUsageBytes: cgroupMemory?.usageBytes,
+				cgroupLimitBytes: cgroupMemory?.limitBytes,
 			});
 			const heapPct = pressure.committedHeapPct;
 			// `rssToHeapRatio` discriminates JS-side leaks (≈1.3–1.6x, normal)
@@ -252,7 +253,13 @@ const heapMonitorPlugin = fastifyPlugin(
 				heapTotalMB,
 				heapLimitMB: Math.round(heapSizeLimitBytes / 1024 / 1024),
 				cgroupLimitMB:
-					cgroupLimitBytes === undefined ? undefined : Math.round(cgroupLimitBytes / 1024 / 1024),
+					cgroupMemory === undefined
+						? undefined
+						: Math.round(cgroupMemory.limitBytes / 1024 / 1024),
+				cgroupUsageMB:
+					cgroupMemory === undefined
+						? undefined
+						: Math.round(cgroupMemory.usageBytes / 1024 / 1024),
 				rssMB,
 				externalMB,
 				arrayBuffersMB,
@@ -295,7 +302,7 @@ const heapMonitorPlugin = fastifyPlugin(
 						? "Runtime memory usage above 90% of an effective limit — auto-capturing snapshot to /config/heap-snapshots/ (set HEAP_AUTO_SNAPSHOT=0 or HEAP_AUTO_SNAPSHOT_AT_WARN=0 to disable)"
 						: pressure.shouldSnapshot
 							? "Runtime memory usage above 90% of the V8 heap limit — capture a snapshot before OOM: `docker exec <container> dump-heap`"
-							: "Runtime memory usage above 90% of the cgroup limit — V8 heap snapshot skipped because RSS/native pressure is the binding signal",
+							: "Runtime memory usage above 90% of aggregate cgroup memory — V8 heap snapshot skipped because container-wide memory pressure is the binding signal",
 				);
 				if (willAutoCapture) {
 					// Fire-and-forget — captureHeapSnapshot is self-rate-limited and

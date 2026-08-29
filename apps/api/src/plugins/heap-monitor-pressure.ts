@@ -3,10 +3,20 @@ import { readFileSync } from "node:fs";
 export const MEMORY_WARN_PCT = 0.9;
 export const MEMORY_INFO_PCT = 0.8;
 
-const CGROUP_MEMORY_LIMIT_PATHS = [
-	"/sys/fs/cgroup/memory.max",
-	"/sys/fs/cgroup/memory/memory.limit_in_bytes",
+const CGROUP_MEMORY_PATHS = [
+	{
+		generation: "v2",
+		usagePath: "/sys/fs/cgroup/memory.current",
+		limitPath: "/sys/fs/cgroup/memory.max",
+	},
+	{
+		generation: "v1",
+		usagePath: "/sys/fs/cgroup/memory/memory.usage_in_bytes",
+		limitPath: "/sys/fs/cgroup/memory/memory.limit_in_bytes",
+	},
 ] as const;
+
+const CGROUP_MEMORY_LIMIT_PATHS = CGROUP_MEMORY_PATHS.map(({ limitPath }) => limitPath);
 
 type ReadTextFile = (path: string) => string;
 
@@ -15,7 +25,14 @@ export interface MemoryPressureInput {
 	heapTotalBytes: number;
 	rssBytes: number;
 	heapSizeLimitBytes?: number;
+	cgroupUsageBytes?: number;
 	cgroupLimitBytes?: number;
+}
+
+export interface CgroupMemoryStats {
+	generation: "v1" | "v2";
+	usageBytes: number;
+	limitBytes: number;
 }
 
 export type MemoryPressureSource =
@@ -55,7 +72,9 @@ function ratio(usedBytes: number, limitBytes: number | undefined): number | unde
 export function classifyMemoryPressure(input: MemoryPressureInput): MemoryPressureClassification {
 	const committedHeapPct = ratio(input.heapUsedBytes, input.heapTotalBytes) ?? 0;
 	const heapLimitPct = ratio(input.heapUsedBytes, input.heapSizeLimitBytes);
-	const cgroupLimitPct = ratio(input.rssBytes, input.cgroupLimitBytes);
+	const cgroupUsageBytes =
+		input.cgroupUsageBytes === undefined ? input.rssBytes : input.cgroupUsageBytes;
+	const cgroupLimitPct = ratio(cgroupUsageBytes, input.cgroupLimitBytes);
 
 	let runtimePct: number;
 	let pressureSource: MemoryPressureSource;
@@ -93,16 +112,46 @@ export function classifyMemoryPressure(input: MemoryPressureInput): MemoryPressu
 
 /** Parse cgroup v1/v2 memory limits while rejecting unlimited sentinels. */
 export function parseCgroupMemoryLimitBytes(rawValue: string): number | undefined {
+	return parseCgroupBytes(rawValue, false);
+}
+
+/** Parse cgroup usage bytes, where zero is a valid observed usage. */
+export function parseCgroupMemoryUsageBytes(rawValue: string): number | undefined {
+	return parseCgroupBytes(rawValue, true);
+}
+
+function parseCgroupBytes(rawValue: string, allowZero: boolean): number | undefined {
 	const value = rawValue.trim();
 	if (value.length === 0 || value === "max") return undefined;
 
 	try {
 		const parsed = BigInt(value);
-		if (parsed <= 0n || parsed > BigInt(Number.MAX_SAFE_INTEGER)) return undefined;
+		if ((allowZero ? parsed < 0n : parsed <= 0n) || parsed > BigInt(Number.MAX_SAFE_INTEGER)) {
+			return undefined;
+		}
 		return Number(parsed);
 	} catch {
 		return undefined;
 	}
+}
+
+/** Read usage and limit from one cgroup generation without mixing v1/v2 data. */
+export function readCgroupMemoryStats(
+	readTextFile: ReadTextFile = (path) => readFileSync(path, "utf8"),
+): CgroupMemoryStats | undefined {
+	for (const { generation, usagePath, limitPath } of CGROUP_MEMORY_PATHS) {
+		try {
+			const limitBytes = parseCgroupMemoryLimitBytes(readTextFile(limitPath));
+			if (limitBytes === undefined) continue;
+			const usageBytes = parseCgroupMemoryUsageBytes(readTextFile(usagePath));
+			if (usageBytes === undefined) continue;
+			return { generation, usageBytes, limitBytes };
+		} catch {
+			// Missing or malformed controller files are normal outside containers.
+			// Try the next complete cgroup generation.
+		}
+	}
+	return undefined;
 }
 
 /** Read the first finite cgroup v2 or v1 process-memory limit. */
