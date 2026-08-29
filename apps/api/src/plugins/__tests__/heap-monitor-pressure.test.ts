@@ -55,6 +55,32 @@ describe("classifyMemoryPressure", () => {
 		expect(pressure.shouldSnapshot).toBe(false);
 	});
 
+	it("does not snapshot from committed occupancy when only a finite cgroup limit is authoritative", () => {
+		const pressure = classifyMemoryPressure({
+			heapUsedBytes: 200 * MIB,
+			heapTotalBytes: 210 * MIB,
+			rssBytes: 950 * MIB,
+			cgroupLimitBytes: 1024 * MIB,
+		});
+
+		expect(pressure.heapLimitPct).toBeUndefined();
+		expect(pressure.cgroupLimitPct).toBeCloseTo(0.93, 2);
+		expect(pressure.level).toBe("warn");
+		expect(pressure.shouldSnapshot).toBe(false);
+	});
+
+	it("keeps cgroup-only low pressure from triggering a committed-heap snapshot", () => {
+		const pressure = classifyMemoryPressure({
+			heapUsedBytes: 200 * MIB,
+			heapTotalBytes: 210 * MIB,
+			rssBytes: 350 * MIB,
+			cgroupLimitBytes: 2048 * MIB,
+		});
+
+		expect(pressure.level).toBe("debug");
+		expect(pressure.shouldSnapshot).toBe(false);
+	});
+
 	it("continues to warn against the V8 limit when cgroup data is unavailable", () => {
 		const pressure = classifyMemoryPressure({
 			heapUsedBytes: 1900 * MIB,
@@ -79,6 +105,7 @@ describe("classifyMemoryPressure", () => {
 
 		expect(pressure.pressureSource).toBe("committed_heap_fallback");
 		expect(pressure.level).toBe("warn");
+		expect(pressure.shouldSnapshot).toBe(true);
 	});
 });
 

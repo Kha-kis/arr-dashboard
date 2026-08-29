@@ -84,7 +84,10 @@ export function classifyMemoryPressure(input: MemoryPressureInput): MemoryPressu
 		// A V8 heap snapshot diagnoses live JavaScript objects, not native/RSS
 		// pressure. Fall back to committed occupancy only if V8 exposes no
 		// usable heap limit; cgroup-only pressure remains warning-only.
-		shouldSnapshot: (heapLimitPct ?? committedHeapPct) >= MEMORY_WARN_PCT,
+		shouldSnapshot:
+			heapLimitPct !== undefined
+				? heapLimitPct >= MEMORY_WARN_PCT
+				: cgroupLimitPct === undefined && committedHeapPct >= MEMORY_WARN_PCT,
 	};
 }
 
