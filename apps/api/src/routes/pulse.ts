@@ -26,10 +26,10 @@ interface CacheEntry {
 
 const pulseCache = new Map<string, CacheEntry>();
 
-// The Pulse cache is process-local, and the production runtime lease permits
-// exactly one API process per database. Keep one opaque current-generation
-// token per user so invalidation can fence publications that began earlier in
-// this same process without retaining prior tokens or in-flight requests.
+// Pulse cache entries and publication generations are process-local. Stable 2.x
+// supports one API process, normally one combined container, per database.
+// Multiple replicas sharing one database are unsupported; stable does not
+// enforce this topology, and #829 tracks future enforcement.
 const pulseCacheGenerations = new Map<string, symbol>();
 
 function currentPulseCacheGeneration(userId: string): symbol {
