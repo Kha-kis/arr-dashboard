@@ -36,7 +36,7 @@ services:
 
 ## Supported Deployment Topology
 
-Stable 2.x supports exactly one arr-dashboard API/container per database. Multiple replicas or containers sharing one SQLite or PostgreSQL database are unsupported. Caches, schedulers, locks, and event fan-out are process-local and are not coordinated across API processes.
+Stable 2.x supports exactly one arr-dashboard API/container per database. Multiple replicas or containers sharing one SQLite or PostgreSQL database are unsupported. Caches, scheduler timers, event fan-out, and most runtime coordination are process-local and are not coordinated across API processes. A few library-cleanup workflows use database-backed leases, but those leases do not establish general API ownership or make a multi-API topology supported.
 
 Stable 2.x does not enforce this restriction at runtime. Enforcement is tracked by [#829](https://github.com/Kha-kis/arr-dashboard/issues/829).
 

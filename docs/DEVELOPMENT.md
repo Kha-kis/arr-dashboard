@@ -188,7 +188,7 @@ Follow [`CODE-REVIEW.md`](CODE-REVIEW.md) for the finite review contract.
 
 **Docker** (single container): Port 3000 exposed, `/config/` volume contains `prod.db` + `secrets.json`. Startup: `docker/start-combined.sh`. Schema sync is fail-closed and never approves destructive changes automatically.
 
-**Runtime topology**: Stable 2.x supports exactly one arr-dashboard API/container per database. Multiple replicas sharing one SQLite or PostgreSQL database are unsupported. Caches, schedulers, locks, and event fan-out are process-local and are not coordinated across API processes. Stable 2.x does not enforce this restriction; runtime enforcement is tracked by [#829](https://github.com/Kha-kis/arr-dashboard/issues/829).
+**Runtime topology**: Stable 2.x supports exactly one arr-dashboard API/container per database. Multiple replicas sharing one SQLite or PostgreSQL database are unsupported. Caches, scheduler timers, event fan-out, and most runtime coordination are process-local and are not coordinated across API processes. A few library-cleanup workflows use database-backed leases, but those leases do not establish general API ownership or make a multi-API topology supported. Stable 2.x does not enforce this restriction; runtime enforcement is tracked by [#829](https://github.com/Kha-kis/arr-dashboard/issues/829).
 
 **Key env vars**: `DATABASE_URL`, `API_PORT` (3001), `PORT` (3000), `HOST` (0.0.0.0), `PUID`/`PGID`, `SESSION_TTL_HOURS` (24), `ENCRYPTION_KEY` (auto-generated), `SESSION_COOKIE_SECRET` (auto-generated), `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGIN`.
 
