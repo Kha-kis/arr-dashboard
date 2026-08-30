@@ -9,6 +9,12 @@ API and Web run together in one container for simple deployment:
 - **Easier networking** — No container linking needed
 - **Lower overhead** — Shared resources and dependencies
 
+### Supported topology
+
+Stable 2.x supports exactly one arr-dashboard API/container per database. Do not run multiple replicas or containers against the same SQLite or PostgreSQL database. Caches, schedulers, locks, and event fan-out are process-local and are not coordinated across API processes.
+
+Stable 2.x does not enforce this restriction at runtime. Enforcement is tracked by [#829](https://github.com/Kha-kis/arr-dashboard/issues/829).
+
 ## Files
 
 | File | Purpose |

@@ -34,6 +34,12 @@ services:
     restart: unless-stopped
 ```
 
+## Supported Deployment Topology
+
+Stable 2.x supports exactly one arr-dashboard API/container per database. Multiple replicas or containers sharing one SQLite or PostgreSQL database are unsupported. Caches, schedulers, locks, and event fan-out are process-local and are not coordinated across API processes.
+
+Stable 2.x does not enforce this restriction at runtime. Enforcement is tracked by [#829](https://github.com/Kha-kis/arr-dashboard/issues/829).
+
 ## Features
 
 - **Unified Dashboard** — Queue, calendar, history, and statistics across all Sonarr, Radarr, Prowlarr, Lidarr, and Readarr instances
