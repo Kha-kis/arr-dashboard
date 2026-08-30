@@ -3292,6 +3292,23 @@ describe("verified Sonarr mutation handoff", () => {
 		};
 	}
 
+	const RETENTION_TRUTH_TABLE_NOW = new Date("2026-08-10T12:00:00.000Z");
+	const DAY_MS = 24 * 60 * 60 * 1000;
+
+	async function withFixedRetentionClock<T>(run: () => Promise<T>): Promise<T> {
+		vi.useFakeTimers();
+		vi.setSystemTime(RETENTION_TRUTH_TABLE_NOW);
+		try {
+			return await run();
+		} finally {
+			vi.useRealTimers();
+		}
+	}
+
+	function seriesAddedDaysAgo(days: number): string {
+		return new Date(Date.now() - days * DAY_MS).toISOString();
+	}
+
 	function directEpisodeFlaggedItem(
 		fixture: ReturnType<typeof makeSonarrDeps>,
 		action: "delete" | "delete_files" = "delete",
@@ -6104,34 +6121,38 @@ describe("verified Sonarr mutation handoff", () => {
 	});
 
 	it("allows an approved episode when live FALSE dominates provider UNKNOWN in retention AND", async () => {
-		const fixture = makeSonarrDeps();
-		(fixture.series as Record<string, unknown>).added = "2026-07-31T00:00:00.000Z";
-		const rule = nestedSeriesRule(
-			"retain-old-and-plex",
-			{
-				type: "group",
-				operator: "AND",
-				children: [
-					{
-						type: "condition",
-						ruleType: "age",
-						parameters: { operator: "older_than", days: 30 },
-					},
-					{
-						type: "condition",
-						ruleType: "plex_collection",
-						parameters: { operator: "includes_any", collections: ["Keep"] },
-					},
-				],
-			},
-			{ retentionMode: true },
-		);
+		await withFixedRetentionClock(async () => {
+			const fixture = makeSonarrDeps();
+			(fixture.series as Record<string, unknown>).added = seriesAddedDaysAgo(29);
+			const rule = nestedSeriesRule(
+				"retain-old-and-plex",
+				{
+					type: "group",
+					operator: "AND",
+					children: [
+						{
+							type: "condition",
+							ruleType: "age",
+							parameters: { operator: "older_than", days: 30 },
+						},
+						{
+							type: "condition",
+							ruleType: "plex_collection",
+							parameters: { operator: "includes_any", collections: ["Keep"] },
+						},
+					],
+				},
+				{ retentionMode: true },
+			);
 
-		const { result, storedApproval } = await executeApprovedEpisodeWithSeriesRules(fixture, [rule]);
+			const { result, storedApproval } = await executeApprovedEpisodeWithSeriesRules(fixture, [
+				rule,
+			]);
 
-		expect(result).toMatchObject({ removed: 1, failed: 0 });
-		expect(storedApproval).toMatchObject({ status: "executed" });
-		expect(fixture.bulkDelete).toHaveBeenCalledWith([3001]);
+			expect(result).toMatchObject({ removed: 1, failed: 0 });
+			expect(storedApproval).toMatchObject({ status: "executed" });
+			expect(fixture.bulkDelete).toHaveBeenCalledWith([3001]);
+		});
 	});
 
 	it.each([
@@ -6207,29 +6228,67 @@ describe("verified Sonarr mutation handoff", () => {
 	});
 
 	it("allows cleanup AND when live FALSE dominates provider UNKNOWN", async () => {
-		const fixture = makeSonarrDeps();
-		(fixture.series as Record<string, unknown>).added = "2026-07-31T00:00:00.000Z";
-		const rule = nestedSeriesRule("cleanup-old-and-plex", {
-			type: "group",
-			operator: "AND",
-			children: [
-				{
-					type: "condition",
-					ruleType: "age",
-					parameters: { operator: "older_than", days: 30 },
-				},
-				{
-					type: "condition",
-					ruleType: "plex_collection",
-					parameters: { operator: "includes_any", collections: ["Keep"] },
-				},
-			],
+		await withFixedRetentionClock(async () => {
+			const fixture = makeSonarrDeps();
+			(fixture.series as Record<string, unknown>).added = seriesAddedDaysAgo(29);
+			const rule = nestedSeriesRule("cleanup-old-and-plex", {
+				type: "group",
+				operator: "AND",
+				children: [
+					{
+						type: "condition",
+						ruleType: "age",
+						parameters: { operator: "older_than", days: 30 },
+					},
+					{
+						type: "condition",
+						ruleType: "plex_collection",
+						parameters: { operator: "includes_any", collections: ["Keep"] },
+					},
+				],
+			});
+
+			const { result } = await executeApprovedEpisodeWithSeriesRules(fixture, [rule]);
+
+			expect(result).toMatchObject({ removed: 1, failed: 0 });
+			expect(fixture.bulkDelete).toHaveBeenCalledWith([3001]);
 		});
+	});
 
-		const { result } = await executeApprovedEpisodeWithSeriesRules(fixture, [rule]);
+	it("keeps live TRUE AND provider UNKNOWN non-actionable", async () => {
+		await withFixedRetentionClock(async () => {
+			const fixture = makeSonarrDeps();
+			(fixture.series as Record<string, unknown>).added = seriesAddedDaysAgo(31);
+			const rule = nestedSeriesRule("cleanup-old-and-plex-unknown", {
+				type: "group",
+				operator: "AND",
+				children: [
+					{
+						type: "condition",
+						ruleType: "age",
+						parameters: { operator: "older_than", days: 30 },
+					},
+					{
+						type: "condition",
+						ruleType: "plex_collection",
+						parameters: { operator: "includes_any", collections: ["Keep"] },
+					},
+				],
+			});
 
-		expect(result).toMatchObject({ removed: 1, failed: 0 });
-		expect(fixture.bulkDelete).toHaveBeenCalledWith([3001]);
+			const { result, storedApproval } = await executeApprovedEpisodeWithSeriesRules(fixture, [
+				rule,
+			]);
+
+			expect(result).toMatchObject({ removed: 0, failed: 1 });
+			expect(result.errors[0]).toContain("live Sonarr series state could not be revalidated");
+			expect(storedApproval).toMatchObject({ status: "expired" });
+			expect(fixture.bulkDelete).not.toHaveBeenCalled();
+		});
+	});
+
+	it("restores real timers after fixed retention truth-table tests", () => {
+		expect(vi.isFakeTimers()).toBe(false);
 	});
 
 	it("applies filters before nested cleanup precedence", async () => {
