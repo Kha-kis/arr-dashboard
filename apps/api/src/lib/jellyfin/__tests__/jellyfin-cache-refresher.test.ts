@@ -130,6 +130,26 @@ function makeSeriesItem(overrides: Partial<JellyfinItem> = {}): JellyfinItem {
 	};
 }
 
+function makeMovieItem(overrides: Partial<JellyfinItem> = {}): JellyfinItem {
+	return makeSeriesItem({
+		id: "jf-movie-1",
+		name: "Amadeus",
+		type: "Movie",
+		tmdbId: 279,
+		...overrides,
+	});
+}
+
+function makeBoxSetItem(overrides: Partial<JellyfinItem> = {}): JellyfinItem {
+	return makeSeriesItem({
+		id: "jf-boxset-1",
+		name: "Favorites",
+		type: "BoxSet",
+		tmdbId: undefined,
+		...overrides,
+	});
+}
+
 const oneUser: JellyfinUser[] = [{ id: "user-1", name: "Alice" }];
 const oneLibrary: JellyfinLibrary[] = [
 	{ id: "lib-1", name: "TV Shows", collectionType: "tvshows" },
@@ -528,14 +548,8 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		expect(deleteMany).not.toHaveBeenCalled();
 	});
 
-	it("ignores BoxSet collection entries without blocking cache publication", async () => {
-		const collection = makeSeriesItem({
-			id: "jf-boxset-1",
-			name: "Favorites",
-			type: "BoxSet",
-			tmdbId: undefined,
-		});
-		const client = makeMockClient([makeSeriesItem(), collection]);
+	it("ignores a BoxSet alongside a Series without blocking cache publication", async () => {
+		const client = makeMockClient([makeSeriesItem(), makeBoxSetItem()]);
 		const { stub, upserts } = makeMockPrisma();
 
 		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
@@ -543,6 +557,75 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
 		expect(upserts).toHaveLength(1);
 		expect(upserts[0]).toMatchObject({ create: { jellyfinId: "jf-series-1" } });
+	});
+
+	it("ignores a BoxSet alongside a Movie without blocking cache publication", async () => {
+		const movieLibrary: JellyfinLibrary[] = [
+			{ id: "lib-movies", name: "Movies", collectionType: "movies" },
+		];
+		const client = {
+			...makeMockClient([]),
+			getLibraries: vi.fn().mockResolvedValue(movieLibrary),
+			getLibraryItems: vi.fn().mockResolvedValue([makeMovieItem(), makeBoxSetItem()]),
+		} as unknown as JellyfinClient;
+		const { stub, upserts } = makeMockPrisma();
+
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
+		expect(client.getLibraryItems).toHaveBeenCalledWith("user-1", "lib-movies", {
+			includeItemTypes: "Movie",
+		});
+		expect(upserts).toHaveLength(1);
+		expect(upserts[0]).toMatchObject({ create: { jellyfinId: "jf-movie-1" } });
+	});
+
+	it("publishes an authoritative empty cache when a library contains only BoxSets", async () => {
+		const client = makeMockClient([
+			makeBoxSetItem(),
+			makeBoxSetItem({ id: "jf-boxset-2", name: "Favorites 2" }),
+		]);
+		const { stub, tx } = makeMockPrisma();
+
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 0 });
+		expect(tx.jellyfinCache.deleteMany).toHaveBeenCalledWith({ where: { instanceId: "inst-1" } });
+		expect(tx.jellyfinCache.createMany).not.toHaveBeenCalled();
+		expect(tx.cacheRefreshStatus.upsert).toHaveBeenCalledOnce();
+	});
+
+	it("ignores several BoxSets across independently scanned libraries", async () => {
+		const libraries: JellyfinLibrary[] = [
+			{ id: "lib-movies", name: "Movies", collectionType: "movies" },
+			{ id: "lib-series", name: "Series", collectionType: "tvshows" },
+		];
+		const client = {
+			...makeMockClient([]),
+			getLibraries: vi.fn().mockResolvedValue(libraries),
+			getLibraryItems: vi.fn(async (_userId: string, libraryId: string) =>
+				libraryId === "lib-movies"
+					? [
+							makeMovieItem(),
+							makeBoxSetItem(),
+							makeBoxSetItem({ id: "jf-boxset-2", name: "Favorites 2" }),
+						]
+					: [makeSeriesItem(), makeBoxSetItem({ id: "jf-boxset-3", name: "Favorites 3" })],
+			),
+		} as unknown as JellyfinClient;
+		const { stub, upserts } = makeMockPrisma();
+
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 2 });
+		expect(client.getLibraryItems).toHaveBeenCalledTimes(2);
+		expect(upserts).toHaveLength(2);
+		expect(upserts).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ create: expect.objectContaining({ jellyfinId: "jf-movie-1" }) }),
+				expect.objectContaining({ create: expect.objectContaining({ jellyfinId: "jf-series-1" }) }),
+			]),
+		);
 	});
 
 	it("continues to fail closed for unexpected non-BoxSet library item types", async () => {
