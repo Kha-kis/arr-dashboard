@@ -289,6 +289,7 @@ export async function collectJellyfinCacheLiveEvidence(
 					});
 
 					for (const item of items) {
+						if (item.type === "BoxSet") continue;
 						if (item.type !== "Movie" && item.type !== "Series") {
 							complete = false;
 							continue;

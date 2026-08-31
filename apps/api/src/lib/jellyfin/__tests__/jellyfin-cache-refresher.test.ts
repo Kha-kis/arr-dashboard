@@ -528,6 +528,40 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		expect(deleteMany).not.toHaveBeenCalled();
 	});
 
+	it("ignores BoxSet collection entries without blocking cache publication", async () => {
+		const collection = makeSeriesItem({
+			id: "jf-boxset-1",
+			name: "Favorites",
+			type: "BoxSet",
+			tmdbId: undefined,
+		});
+		const client = makeMockClient([makeSeriesItem(), collection]);
+		const { stub, upserts } = makeMockPrisma();
+
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
+		expect(upserts).toHaveLength(1);
+		expect(upserts[0]).toMatchObject({ create: { jellyfinId: "jf-series-1" } });
+	});
+
+	it("continues to fail closed for unexpected non-BoxSet library item types", async () => {
+		const unexpected = makeSeriesItem({
+			id: "jf-playlist-1",
+			name: "Unexpected playlist",
+			type: "Playlist",
+			tmdbId: undefined,
+		});
+		const client = makeMockClient([makeSeriesItem(), unexpected]);
+		const { stub, tx } = makeMockPrisma();
+
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ complete: false, errors: 0, upserted: 0 });
+		expect(tx.jellyfinCache.deleteMany).not.toHaveBeenCalled();
+		expect(stub.$transaction).not.toHaveBeenCalled();
+	});
+
 	it("fails closed without evicting when a relevant item has no TMDb mapping", async () => {
 		const client = makeMockClient([makeSeriesItem({ tmdbId: undefined })]);
 		const deleteMany = vi.fn();
