@@ -211,6 +211,7 @@ reap_tracked() {
     set +e
     wait "$1" 2>/dev/null
     _REAPED=$?
+    echo "SUPERVISOR_WAIT_COMPLETED pid=$1 status=$_REAPED"
     set -e
 }
 
