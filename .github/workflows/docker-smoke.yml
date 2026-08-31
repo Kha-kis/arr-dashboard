@@ -301,7 +301,11 @@ jobs:
           test -x docker/test-dump-heap.sh
           test -x docker/test-shutdown-grace.sh
           test -x docker/test-stop-timing.sh
+          test -f docker/stop-timing-clock.cjs
+          test -x docker/stop-timing-query.sh
+          test -f docker/test-stop-timing-clock.test.cjs
           test -x docker/test-web-cache-permissions.sh
+          STOP_TIMING_TEST_IMAGE=arr-dashboard:smoke node --test docker/test-stop-timing-clock.test.cjs
           docker/test-web-cache-permissions.sh arr-dashboard:smoke
           docker/test-combined-supervision.sh arr-dashboard:smoke
           docker/test-launcher-contract.sh arr-dashboard:smoke
