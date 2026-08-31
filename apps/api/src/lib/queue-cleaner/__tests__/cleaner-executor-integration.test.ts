@@ -31,6 +31,10 @@ const quiMocks = vi.hoisted(() => ({
 	listQuiInstances: vi.fn(),
 }));
 
+const autoImportMocks = vi.hoisted(() => ({
+	attemptAutoImport: vi.fn(),
+}));
+
 vi.mock("../../qui/client-factory.js", () => ({
 	createQuiClient: quiMocks.createQuiClient,
 }));
@@ -38,6 +42,14 @@ vi.mock("../../qui/client-factory.js", () => ({
 vi.mock("../../qui/instance-helpers.js", () => ({
 	listQuiInstances: quiMocks.listQuiInstances,
 }));
+
+vi.mock("../auto-import-handler.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../auto-import-handler.js")>();
+	return {
+		...actual,
+		attemptAutoImport: autoImportMocks.attemptAutoImport,
+	};
+});
 
 import { executeEnhancedPreview, executeQueueCleaner } from "../cleaner-executor.js";
 
@@ -287,7 +299,7 @@ describe("executeQueueCleaner — integration", () => {
 	it("keeps both previews aligned when execution blocks unsafe retained-torrent recategorization", async () => {
 		const del = vi.fn();
 		const app = makeApp({
-			get: async () => ({ records: [STALLED_ITEM] }),
+			get: async () => ({ records: [{ ...STALLED_ITEM, protocol: "Torrent" }] }),
 			del,
 		});
 		const config = makeConfig({
@@ -325,6 +337,114 @@ describe("executeQueueCleaner — integration", () => {
 			}),
 		]);
 		expect(enhancedPreview.wouldRemove).toBe(0);
+		expect(del).not.toHaveBeenCalled();
+	});
+
+	it("blocks unsafe retained torrents before auto-import or import-attempt persistence", async () => {
+		autoImportMocks.attemptAutoImport.mockReset();
+		autoImportMocks.attemptAutoImport.mockResolvedValue({ attempted: true, success: true });
+		const del = vi.fn();
+		const importPendingItem = {
+			...STALLED_ITEM,
+			trackedDownloadState: "importPending",
+			statusMessages: [],
+			errorMessage: undefined,
+		};
+		const app = makeApp({
+			get: async () => ({ records: [importPendingItem] }),
+			del,
+		});
+		const config = makeConfig({
+			stalledEnabled: false,
+			importPendingEnabled: true,
+			importPendingThresholdMins: 0,
+			autoImportEnabled: true,
+			autoImportMaxAttempts: 2,
+			autoImportCooldownMins: 0,
+			autoImportSafeOnly: false,
+			autoImportCustomPatterns: null,
+			autoImportNeverPatterns: null,
+			removeFromClient: false,
+			addToBlocklist: false,
+			changeCategoryEnabled: true,
+		});
+
+		const execution = await executeQueueCleaner(app, makeInstance(), config);
+		const dryRun = await executeQueueCleaner(app, makeInstance(), {
+			...config,
+			dryRunMode: true,
+		});
+		const enhancedPreview = await executeEnhancedPreview(app, makeInstance(), config);
+
+		expect(execution.skippedItems).toEqual([
+			expect.objectContaining({ id: 42, reason: expect.stringContaining("blocklist") }),
+		]);
+		expect(dryRun.skippedItems).toEqual([
+			expect.objectContaining({ id: 42, reason: expect.stringContaining("blocklist") }),
+		]);
+		expect(enhancedPreview.previewItems).toEqual([
+			expect.objectContaining({
+				id: 42,
+				action: "skip",
+				reason: expect.stringContaining("blocklist"),
+			}),
+		]);
+		expect(autoImportMocks.attemptAutoImport).not.toHaveBeenCalled();
+		expect(app.prisma.queueCleanerStrike.create).not.toHaveBeenCalled();
+		expect(app.prisma.queueCleanerStrike.update).not.toHaveBeenCalled();
+		expect(del).not.toHaveBeenCalled();
+	});
+
+	it("applies the removal cap after retained-torrent authorization in every mode", async () => {
+		const unsafeTorrent = { ...STALLED_ITEM, id: 42 };
+		const safeUsenet = {
+			...STALLED_ITEM,
+			id: 43,
+			title: "Stalled.Show.S01E02",
+			downloadId: "dl-43",
+			protocol: "usenet",
+		};
+		const del = vi.fn().mockResolvedValue(undefined);
+		const app = makeApp({
+			get: async () => ({ records: [unsafeTorrent, safeUsenet] }),
+			del,
+		});
+		const config = makeConfig({
+			maxRemovalsPerRun: 1,
+			removeFromClient: false,
+			addToBlocklist: false,
+			changeCategoryEnabled: true,
+		});
+
+		const execution = await executeQueueCleaner(app, makeInstance(), config);
+		expect(execution.cleanedItems).toEqual([expect.objectContaining({ id: 43 })]);
+		expect(execution.skippedItems).toEqual([
+			expect.objectContaining({ id: 42, reason: expect.stringContaining("blocklist") }),
+		]);
+		expect(del).toHaveBeenCalledTimes(1);
+		expect(del).toHaveBeenCalledWith(43, expect.any(Object));
+
+		del.mockClear();
+		const dryRun = await executeQueueCleaner(app, makeInstance(), {
+			...config,
+			dryRunMode: true,
+		});
+		expect(dryRun.skippedItems).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ id: 42, reason: expect.stringContaining("blocklist") }),
+				expect.objectContaining({ id: 43, reason: expect.stringContaining("Would remove") }),
+			]),
+		);
+		expect(del).not.toHaveBeenCalled();
+
+		const enhancedPreview = await executeEnhancedPreview(app, makeInstance(), config);
+		expect(enhancedPreview.previewItems).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ id: 42, action: "skip" }),
+				expect.objectContaining({ id: 43, action: "remove" }),
+			]),
+		);
+		expect(enhancedPreview.wouldRemove).toBe(1);
 		expect(del).not.toHaveBeenCalled();
 	});
 

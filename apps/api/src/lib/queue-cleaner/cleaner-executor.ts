@@ -57,8 +57,10 @@ function isUnsafeRetainedTorrentAction(
 	item: Pick<CleanerResultItem, "protocol" | "rule">,
 	config: QueueCleanerConfig,
 ): boolean {
+	const normalizedProtocol =
+		typeof item.protocol === "string" ? item.protocol.toLowerCase() : undefined;
 	return (
-		item.protocol === "torrent" &&
+		normalizedProtocol !== "usenet" &&
 		item.rule !== "disallowed_file_extension" &&
 		isUnsafeRetainedTorrentPolicy(config)
 	);
@@ -690,17 +692,6 @@ export async function executeQueueCleaner(
 		toRemove = matched;
 	}
 
-	// Cap matches at maxRemovalsPerRun
-	const cappedToRemove = toRemove.slice(0, config.maxRemovalsPerRun);
-	const cappedSkip = toRemove.slice(config.maxRemovalsPerRun);
-
-	for (const item of cappedSkip) {
-		skipped.push({
-			...item,
-			reason: `Exceeded max removals per run (${config.maxRemovalsPerRun})`,
-		});
-	}
-
 	// Dry run mode: return preview
 	if (config.dryRunMode) {
 		const dryRunWarned: CleanerResultItem[] = [];
@@ -734,17 +725,19 @@ export async function executeQueueCleaner(
 			dryRunToRemove = matched;
 		}
 
-		const previewRemove = dryRunToRemove.slice(0, config.maxRemovalsPerRun);
-		const policyBlocked = previewRemove.filter((item) =>
+		const policyBlocked = dryRunToRemove.filter((item) =>
 			isUnsafeRetainedTorrentAction(item, config),
 		);
-		const authorizedPreviewRemove = previewRemove.filter(
+		const authorizedCandidates = dryRunToRemove.filter(
 			(item) => !isUnsafeRetainedTorrentAction(item, config),
 		);
+		const authorizedPreviewRemove = authorizedCandidates.slice(0, config.maxRemovalsPerRun);
+		const cappedSkip = authorizedCandidates.slice(config.maxRemovalsPerRun);
 
 		return {
 			itemsCleaned: 0,
-			itemsSkipped: previewRemove.length + skipped.length,
+			itemsSkipped:
+				authorizedPreviewRemove.length + policyBlocked.length + cappedSkip.length + skipped.length,
 			itemsWarned: dryRunWarned.length,
 			cleanedItems: [],
 			skippedItems: [
@@ -755,6 +748,10 @@ export async function executeQueueCleaner(
 				...policyBlocked.map((item) => ({
 					...item,
 					reason: RETAINED_TORRENT_BLOCKLIST_ERROR,
+				})),
+				...cappedSkip.map((item) => ({
+					...item,
+					reason: `Exceeded max removals per run (${config.maxRemovalsPerRun})`,
 				})),
 				...skipped,
 			],
@@ -773,6 +770,24 @@ export async function executeQueueCleaner(
 							? `Dry run: would skip ${policyBlocked.length} item(s) blocked by the retained-torrent policy`
 							: "Dry run: no items match removal rules",
 		};
+	}
+
+	const policyBlocked = toRemove.filter((item) => isUnsafeRetainedTorrentAction(item, config));
+	const authorizedToRemove = toRemove.filter(
+		(item) => !isUnsafeRetainedTorrentAction(item, config),
+	);
+	for (const item of policyBlocked) {
+		skipped.push({ ...item, reason: RETAINED_TORRENT_BLOCKLIST_ERROR });
+	}
+
+	// The cap throttles authorized mutations; policy-blocked items do not consume it.
+	const cappedToRemove = authorizedToRemove.slice(0, config.maxRemovalsPerRun);
+	const cappedSkip = authorizedToRemove.slice(config.maxRemovalsPerRun);
+	for (const item of cappedSkip) {
+		skipped.push({
+			...item,
+			reason: `Exceeded max removals per run (${config.maxRemovalsPerRun})`,
+		});
 	}
 
 	// Live mode: remove items (with auto-import support)
