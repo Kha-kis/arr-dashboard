@@ -115,6 +115,7 @@ describe("JellyfinClient authoritative inventory completeness", () => {
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 		for (const call of fetchMock.mock.calls) {
 			expect(String(call[0])).toContain("IncludeItemTypes=Movie%2CSeries");
+			expect(String(call[0])).toContain("CollapseBoxSetItems=false");
 		}
 	});
 
