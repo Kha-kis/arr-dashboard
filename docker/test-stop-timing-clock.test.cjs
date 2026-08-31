@@ -400,3 +400,43 @@ test("corrupt ledgers preserve QUERY_ERROR for record and release", (t) => {
 	assert.equal(release.status, 2, release.stderr);
 	assert.equal(release.stdout, "QUERY_ERROR\n");
 });
+
+test("host identity reports the numeric bind-mount owner", (t) => {
+	const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "stop-timing-identity-"));
+	t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+	writeExecutable(
+		path.join(fixture, "id"),
+		`#!/bin/sh
+case "\${1:-}" in
+-u) printf '%s\\n' 1001 ;;
+-g) printf '%s\\n' 121 ;;
+*) exit 64 ;;
+esac
+`,
+	);
+	const result = runQuery(["host-identity"], {
+		env: { PATH: `${fixture}:${process.env.PATH}` },
+	});
+	assert.equal(result.status, 0, result.stderr);
+	assert.equal(result.stdout, "1001:121\n");
+});
+
+test("host identity rejects malformed numeric output", (t) => {
+	const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "stop-timing-identity-"));
+	t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+	writeExecutable(
+		path.join(fixture, "id"),
+		`#!/bin/sh
+case "\${1:-}" in
+-u) printf '%s\\n' 1001 ;;
+-g) printf '%s\\n' not-a-gid ;;
+*) exit 64 ;;
+esac
+`,
+	);
+	const result = runQuery(["host-identity"], {
+		env: { PATH: `${fixture}:${process.env.PATH}` },
+	});
+	assert.equal(result.status, 2, result.stderr);
+	assert.equal(result.stdout, "QUERY_ERROR\n");
+});

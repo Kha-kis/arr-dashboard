@@ -7,6 +7,20 @@ stop_timing_query_error() {
     return 2
 }
 
+stop_timing_host_identity() {
+    if ! host_uid=$(id -u) || ! host_gid=$(id -g); then
+        stop_timing_query_error
+        return 2
+    fi
+    case "$host_uid" in
+        ''|*[!0-9]*) stop_timing_query_error; return 2 ;;
+    esac
+    case "$host_gid" in
+        ''|*[!0-9]*) stop_timing_query_error; return 2 ;;
+    esac
+    printf '%s:%s\n' "$host_uid" "$host_gid"
+}
+
 stop_timing_container_state() {
     name=$1
     case "$name" in
@@ -267,6 +281,7 @@ if [ "${0##*/}" = stop-timing-query.sh ]; then
     command=${1:-}
     [ "$#" -gt 0 ] && shift
     case "$command" in
+        host-identity) [ "$#" -eq 0 ] || exit 64; stop_timing_host_identity ;;
         container-state) [ "$#" -eq 1 ] || exit 64; stop_timing_container_state "$1" ;;
         runtime-state) [ "$#" -eq 1 ] || exit 64; stop_timing_runtime_state "$1" ;;
         remove-container) [ "$#" -eq 1 ] || exit 64; stop_timing_remove_container "$1" ;;

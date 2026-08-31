@@ -28,6 +28,13 @@ SHIM_DIR="$WORK/shim"
 PORT_LEDGER="$WORK/ports"
 PASS=0
 FAIL=0
+HOST_IDENTITY=$(stop_timing_host_identity) || exit 2
+TEST_RUNTIME_UID=${HOST_IDENTITY%%:*}
+TEST_RUNTIME_GID=${HOST_IDENTITY#*:}
+if [ "$TEST_RUNTIME_UID" -eq 0 ]; then
+    TEST_RUNTIME_UID=1000
+    TEST_RUNTIME_GID=1000
+fi
 
 cleanup() {
     owned=$(stop_timing_owned_names "$PREFIX" 2>/dev/null) || owned=""
@@ -86,9 +93,9 @@ start_container() {
         -v "$config_dir:/config" \
         -p 127.0.0.1::3001 -p 127.0.0.1::3000
     if [ "$mode" = rootless ]; then
-        set -- "$@" --user 1000:1000
+        set -- "$@" --user "$TEST_RUNTIME_UID:$TEST_RUNTIME_GID"
     else
-        set -- "$@" -e PUID=1000 -e PGID=1000
+        set -- "$@" -e "PUID=$TEST_RUNTIME_UID" -e "PGID=$TEST_RUNTIME_GID"
     fi
     if [ "$stubborn" = stubborn ]; then
         set -- "$@" -v "$SHIM_DIR/server.js:/app/web/server.js:ro"
