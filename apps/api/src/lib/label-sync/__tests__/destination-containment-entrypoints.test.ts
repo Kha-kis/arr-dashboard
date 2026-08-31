@@ -377,7 +377,7 @@ describe.each([
 		expectNoSensitiveCanary(capture.serialized());
 	});
 
-	it("event-triggered execution is acknowledged with no false success or provider I/O", async () => {
+	it("event-triggered execution is acknowledged before TMDb resolution or provider I/O", async () => {
 		const requests: Array<{ path: string; method: string }> = [];
 		installUnsafeProviderCapture(requests);
 		const capture = createPinoCapture();
@@ -390,7 +390,6 @@ describe.each([
 			arrItemId: 836,
 			itemType: "series",
 			tagName: PRIVATE.sourceTag,
-			tmdbId: PRIVATE.tmdbId,
 			prisma: prisma as never,
 			arrClientFactory: makeArrClientFactory() as never,
 			encryptor,
@@ -398,8 +397,9 @@ describe.each([
 		});
 
 		expect(requests).toEqual([]);
+		expect(prisma.libraryCache.findFirst).not.toHaveBeenCalled();
 		expect(result.rulesFired).toBe(1);
-		expect(result.totals).toEqual({ labelsApplied: 0, failures: 1 });
+		expect(result.totals).toEqual({ labelsApplied: 0, failures: 0 });
 		expect(result.results[0]?.outcome).toEqual({
 			status: "failed",
 			message: UNAVAILABLE_MESSAGE,

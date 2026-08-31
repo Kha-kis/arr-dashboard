@@ -23,6 +23,7 @@ import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
 import type { LibraryItemType, PrismaClient, ServiceType } from "../prisma.js";
+import { getLabelSyncDestinationMutationCapability } from "./destination-capability.js";
 import { executeLabelSyncRule, type LabelSyncRunResult } from "./execute-rule.js";
 
 export interface TriggerLabelSyncForItemArgs {
@@ -136,31 +137,20 @@ export async function triggerLabelSyncForItem(
 		return ZERO_RESULT;
 	}
 
-	// 2. Resolve tmdbId — use the explicit value when supplied (cheap), else
-	//    look up from cache. If unresolvable we can't proceed safely.
-	const tmdbId =
-		args.tmdbId ??
-		(await resolveTmdbId(
-			args.prisma,
-			args.sourceInstanceId,
-			args.arrItemId,
-			args.itemType,
-			childLog,
-		));
-
-	if (tmdbId === null) {
-		childLog.debug(
-			"Skipping Label Sync trigger: tmdbId unresolvable (item not in cache or missing tmdbId)",
-		);
-		return { rulesFired: 0, results: [], totals: { labelsApplied: 0, failures: 0 } };
-	}
-
-	// 3. Fire each matching rule with targetTmdbId set. Failures isolated.
-	const results: TriggerLabelSyncForItemResult["results"] = [];
+	const indexedRules = rules.map((rule, index) => ({
+		rule,
+		index,
+		blocked: !getLabelSyncDestinationMutationCapability(rule.destService).supported,
+	}));
+	const results: Array<TriggerLabelSyncForItemResult["results"][number] & { index: number }> = [];
 	let labelsApplied = 0;
 	let failures = 0;
 
-	for (const rule of rules) {
+	const runRule = async (
+		entry: (typeof indexedRules)[number],
+		targetTmdbId: number | undefined,
+	): Promise<void> => {
+		const { rule, index } = entry;
 		try {
 			const outcome = await executeLabelSyncRule({
 				rule: {
@@ -177,15 +167,11 @@ export async function triggerLabelSyncForItem(
 				arrClientFactory: args.arrClientFactory,
 				encryptor: args.encryptor,
 				log: childLog,
-				targetTmdbId: tmdbId,
+				targetTmdbId,
 			});
 			labelsApplied += outcome.totals.labelsApplied;
-			// Preflight containment can fail a rule before any candidate operation
-			// exists to count. Preserve the outcome's attempt counters while making
-			// the event-level summary truthful for callers that choose UI severity.
-			failures +=
-				outcome.totals.failures > 0 ? outcome.totals.failures : outcome.status === "failed" ? 1 : 0;
-			results.push({ ruleId: rule.id, ruleName: rule.name, outcome });
+			failures += outcome.totals.failures;
+			results.push({ index, ruleId: rule.id, ruleName: rule.name, outcome });
 		} catch (err) {
 			childLog.warn(
 				{ err, ruleId: rule.id, ruleName: rule.name },
@@ -193,6 +179,7 @@ export async function triggerLabelSyncForItem(
 			);
 			failures++;
 			results.push({
+				index,
 				ruleId: rule.id,
 				ruleName: rule.name,
 				outcome: {
@@ -208,11 +195,52 @@ export async function triggerLabelSyncForItem(
 				},
 			});
 		}
+	};
+
+	const buildResult = (): TriggerLabelSyncForItemResult => ({
+		rulesFired: results.length,
+		results: [...results]
+			.sort((a, b) => a.index - b.index)
+			.map(({ index: _index, ...result }) => result),
+		totals: { labelsApplied, failures },
+	});
+
+	// 2. Blocked destinations do not need item correlation. Run them through
+	//    the authoritative executor before any cache lookup so their static
+	//    failure remains visible even when the item has no usable tmdbId.
+	for (const entry of indexedRules.filter((candidate) => candidate.blocked)) {
+		await runRule(entry, undefined);
 	}
 
-	return {
-		rulesFired: rules.length,
-		results,
-		totals: { labelsApplied, failures },
-	};
+	const supportedRules = indexedRules.filter((candidate) => !candidate.blocked);
+	if (supportedRules.length === 0) {
+		return buildResult();
+	}
+
+	// 3. Resolve tmdbId for supported destinations — use the explicit value
+	//    when supplied (cheap), else look up from cache. If unresolvable, those
+	//    rules remain unattempted rather than widening into whole-library runs.
+	const tmdbId =
+		args.tmdbId ??
+		(await resolveTmdbId(
+			args.prisma,
+			args.sourceInstanceId,
+			args.arrItemId,
+			args.itemType,
+			childLog,
+		));
+
+	if (tmdbId === null) {
+		childLog.debug(
+			"Skipping Label Sync trigger: tmdbId unresolvable (item not in cache or missing tmdbId)",
+		);
+		return buildResult();
+	}
+
+	// 4. Fire supported rules with targetTmdbId set. Failures remain isolated.
+	for (const entry of supportedRules) {
+		await runRule(entry, tmdbId);
+	}
+
+	return buildResult();
 }
