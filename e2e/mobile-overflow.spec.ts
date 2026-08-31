@@ -74,16 +74,30 @@ async function installPopulatedFixtures(page: import("@playwright/test").Page) {
 	await page.route("**/api/dashboard/history**", (route) =>
 		route.fulfill({
 			json: {
+				version: 2,
 				instances: [
 					{
 						instanceId: service.id,
 						instanceName: service.label,
 						service: "sonarr",
-						data: [historyItem],
+						data: [],
+						status: "ok",
+						totalRecords: 1,
+						totalRecordsExact: true,
+						rejectedRecords: 0,
 					},
 				],
 				aggregated: [historyItem],
 				totalCount: 1,
+				pagination: {
+					pageSize: 25,
+					nextCursor: null,
+					hasMore: false,
+					incomplete: false,
+					sortKey: "date",
+					sortDirection: "descending",
+					budgetUsed: 1,
+				},
 			},
 		}),
 	);
