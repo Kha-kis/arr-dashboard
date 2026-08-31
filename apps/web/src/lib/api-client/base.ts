@@ -112,6 +112,15 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 			return (payload as Record<string, unknown>).message as string;
 		}
 
+		if (
+			payload &&
+			typeof payload === "object" &&
+			"error" in payload &&
+			typeof (payload as Record<string, unknown>).error === "string"
+		) {
+			return (payload as Record<string, unknown>).error as string;
+		}
+
 		if (typeof payload === "string" && payload.trim().length > 0) {
 			return payload;
 		}

@@ -64,4 +64,41 @@ describe("apiRequest", () => {
 			}),
 		);
 	});
+
+	it("preserves backup maintenance conflict guidance from an error payload", async () => {
+		const conflictMessage = "Database maintenance cannot overlap a library cleanup operation";
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue(
+				new Response(JSON.stringify({ error: conflictMessage }), {
+					status: 409,
+					statusText: "Conflict",
+					headers: { "Content-Type": "application/json" },
+				}),
+			),
+		);
+
+		await expect(apiRequest("/api/backup/create", { json: {} })).rejects.toMatchObject({
+			message: conflictMessage,
+			status: 409,
+		});
+	});
+
+	it("prefers a structured message over an error fallback", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue(
+				new Response(JSON.stringify({ message: "Detailed message", error: "Fallback" }), {
+					status: 409,
+					statusText: "Conflict",
+					headers: { "Content-Type": "application/json" },
+				}),
+			),
+		);
+
+		await expect(apiRequest("/api/example")).rejects.toMatchObject({
+			message: "Detailed message",
+			status: 409,
+		});
+	});
 });

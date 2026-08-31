@@ -81,6 +81,11 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			return reply.send(response);
 		} catch (error) {
+			if (error instanceof CleanupMaintenanceConflictError) {
+				request.log.warn({ err: error }, "Backup creation blocked by active cleanup maintenance");
+				return reply.status(409).send({ error: error.message });
+			}
+
 			request.log.error({ err: error }, "Failed to create backup");
 
 			if (error instanceof BackupPasswordConfigurationError) {
