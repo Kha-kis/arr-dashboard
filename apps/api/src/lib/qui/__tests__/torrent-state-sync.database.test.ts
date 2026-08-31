@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { performance } from "node:perf_hooks";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "../../../generated/prisma/client.js";
@@ -135,6 +136,17 @@ describe("runQuiTorrentStateSync SQLite scale behavior", () => {
 			}),
 		});
 
+		const stagingStatementDurationsMs: number[] = [];
+		const executeRaw = prisma.$executeRaw.bind(prisma);
+		const timedExecuteRaw = ((...args: Parameters<typeof prisma.$executeRaw>) => {
+			const startedAt = performance.now();
+			return executeRaw(...args).then((rowsUpdated) => {
+				stagingStatementDurationsMs.push(performance.now() - startedAt);
+				return rowsUpdated;
+			}) as ReturnType<typeof prisma.$executeRaw>;
+		}) as typeof prisma.$executeRaw;
+		vi.spyOn(prisma, "$executeRaw").mockImplementation(timedExecuteRaw);
+
 		const stagingPaused = deferred();
 		const releaseStaging = deferred();
 		type FindEpisodeCandidates = (
@@ -176,6 +188,8 @@ describe("runQuiTorrentStateSync SQLite scale behavior", () => {
 		});
 		expect(freshLibraryRows).toBe(0);
 		expect(freshEpisodeRows).toBe(0);
+		expect(stagingStatementDurationsMs).toHaveLength(100);
+		expect(Math.max(...stagingStatementDurationsMs)).toBeLessThan(2_000);
 		expect(result).toMatchObject({
 			torrentsSeen: 15_000,
 			rowsUpdated: 15_000,
