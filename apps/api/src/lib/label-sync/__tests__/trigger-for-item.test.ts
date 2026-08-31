@@ -200,6 +200,42 @@ describe("triggerLabelSyncForItem", () => {
 		expect(result.totals.labelsApplied).toBe(1);
 	});
 
+	it("counts a failed zero-attempt preflight as one aggregate rule failure", async () => {
+		const prisma = makePrisma({
+			rules: [
+				{
+					id: "contained-rule",
+					name: "contained destination",
+					userId: "user-1",
+					sourceService: "radarr",
+					sourceInstanceId: "inst-1",
+					sourceTagName: "kids",
+					destService: "jellyfin",
+					destInstanceId: "jellyfin-1",
+					destTagName: "kids",
+				},
+			],
+		});
+		executeMock.mockResolvedValue({
+			status: "failed",
+			message: "Destination mutation authority unavailable.",
+			totals: {
+				sourceInstancesScanned: 0,
+				taggedItemsFound: 0,
+				destMatchesFound: 0,
+				labelsApplied: 0,
+				failures: 0,
+			},
+		});
+
+		const result = await triggerLabelSyncForItem(makeArgs({ prisma, tmdbId: 100 }));
+
+		expect(result.rulesFired).toBe(1);
+		expect(result.results[0]?.outcome.status).toBe("failed");
+		expect(result.results[0]?.outcome.totals.failures).toBe(0);
+		expect(result.totals).toEqual({ labelsApplied: 0, failures: 1 });
+	});
+
 	it("includes rules with sourceInstanceId=null (match-all-instances rules)", async () => {
 		// Schema allows null sourceInstanceId meaning "match every enabled
 		// instance of the source service". The trigger lookup must include

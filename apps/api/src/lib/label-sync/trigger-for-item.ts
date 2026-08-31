@@ -180,7 +180,11 @@ export async function triggerLabelSyncForItem(
 				targetTmdbId: tmdbId,
 			});
 			labelsApplied += outcome.totals.labelsApplied;
-			failures += outcome.totals.failures;
+			// Preflight containment can fail a rule before any candidate operation
+			// exists to count. Preserve the outcome's attempt counters while making
+			// the event-level summary truthful for callers that choose UI severity.
+			failures +=
+				outcome.totals.failures > 0 ? outcome.totals.failures : outcome.status === "failed" ? 1 : 0;
 			results.push({ ruleId: rule.id, ruleName: rule.name, outcome });
 		} catch (err) {
 			childLog.warn(
