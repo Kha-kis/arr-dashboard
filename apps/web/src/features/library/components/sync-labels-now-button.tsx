@@ -34,6 +34,7 @@ export const SyncLabelsNowButton = ({ instanceId, arrItemId, itemType, service }
 	const mutation = useMutation<RunLabelSyncForItemResponse, Error>({
 		mutationFn: () => runLabelSyncForItem({ instanceId, arrItemId, itemType }),
 		onSuccess: (result) => {
+			const failedRules = result.outcomes.filter((outcome) => outcome.status === "failed").length;
 			if (result.rulesFired === 0) {
 				setFeedback({
 					kind: "warn",
@@ -41,10 +42,25 @@ export const SyncLabelsNowButton = ({ instanceId, arrItemId, itemType, service }
 				});
 				return;
 			}
-			if (result.failures > 0 && result.labelsApplied === 0) {
+			if (failedRules === result.rulesFired && result.labelsApplied === 0) {
 				setFeedback({
 					kind: "err",
 					message: `Fired ${result.rulesFired} rule${result.rulesFired === 1 ? "" : "s"}, all failed.`,
+				});
+				return;
+			}
+			if (failedRules > 0) {
+				setFeedback({
+					kind: "warn",
+					message: `${
+						result.labelsApplied > 0
+							? `Applied ${result.labelsApplied} label${result.labelsApplied === 1 ? "" : "s"}; `
+							: ""
+					}${failedRules} of ${result.rulesFired} rules failed${
+						result.failures > 0
+							? `; ${result.failures} item attempt${result.failures === 1 ? "" : "s"} failed.`
+							: "."
+					}`,
 				});
 				return;
 			}

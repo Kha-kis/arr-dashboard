@@ -21,6 +21,7 @@ import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
 import type { PrismaClient } from "../prisma.js";
+import { getLabelSyncDestinationMutationCapability } from "./destination-capability.js";
 import { DEST_WRITERS, SOURCE_READERS } from "./strategy-registry.js";
 import type { MatchCandidate } from "./strategy-types.js";
 
@@ -82,6 +83,11 @@ const ZERO_TOTALS: LabelSyncRunResult["totals"] = {
  */
 export async function executeLabelSyncRule(opts: ExecuteOpts): Promise<LabelSyncRunResult> {
 	const { rule, prisma, arrClientFactory, encryptor, log } = opts;
+	const destinationCapability = getLabelSyncDestinationMutationCapability(rule.destService);
+	if (!destinationCapability.supported) {
+		return failure(destinationCapability.message);
+	}
+
 	const childLog = log.child({
 		ruleId: rule.id,
 		sourceService: rule.sourceService,

@@ -27,15 +27,25 @@ type Spy = ReturnType<typeof vi.fn<(arg: unknown) => void>>;
 const mockState: {
 	sonarrReadResult: SourceReadResult;
 	plexReadResult: SourceReadResult;
+	jellyfinReadResult: SourceReadResult;
+	embyReadResult: SourceReadResult;
 	plexWriteResult: DestWriteResult;
 	sonarrWriteResult: DestWriteResult;
+	radarrWriteResult: DestWriteResult;
+	jellyfinWriteResult: DestWriteResult;
+	embyWriteResult: DestWriteResult;
 	sourceReaderSpy: Spy;
 	destWriterSpy: Spy;
 } = {
 	sonarrReadResult: { matches: [], failed: false },
 	plexReadResult: { matches: [], failed: false },
+	jellyfinReadResult: { matches: [], failed: false },
+	embyReadResult: { matches: [], failed: false },
 	plexWriteResult: { matchesFound: 0, labelsApplied: 0, failures: 0 },
 	sonarrWriteResult: { matchesFound: 0, labelsApplied: 0, failures: 0 },
+	radarrWriteResult: { matchesFound: 0, labelsApplied: 0, failures: 0 },
+	jellyfinWriteResult: { matchesFound: 0, labelsApplied: 0, failures: 0 },
+	embyWriteResult: { matchesFound: 0, labelsApplied: 0, failures: 0 },
 	sourceReaderSpy: vi.fn<(arg: unknown) => void>(),
 	destWriterSpy: vi.fn<(arg: unknown) => void>(),
 };
@@ -55,6 +65,20 @@ vi.mock("../strategy-registry.js", () => {
 			return mockState.plexReadResult;
 		}),
 	};
+	const jellyfinReader: SourceReader = {
+		prismaService: "JELLYFIN",
+		readTaggedItems: vi.fn(async (opts) => {
+			mockState.sourceReaderSpy(opts);
+			return mockState.jellyfinReadResult;
+		}),
+	};
+	const embyReader: SourceReader = {
+		prismaService: "EMBY",
+		readTaggedItems: vi.fn(async (opts) => {
+			mockState.sourceReaderSpy(opts);
+			return mockState.embyReadResult;
+		}),
+	};
 	const plexWriter: DestWriter = {
 		prismaService: "PLEX",
 		applyLabels: vi.fn(async (opts) => {
@@ -69,9 +93,41 @@ vi.mock("../strategy-registry.js", () => {
 			return mockState.sonarrWriteResult;
 		}),
 	};
+	const radarrWriter: DestWriter = {
+		prismaService: "RADARR",
+		applyLabels: vi.fn(async (opts) => {
+			mockState.destWriterSpy(opts);
+			return mockState.radarrWriteResult;
+		}),
+	};
+	const jellyfinWriter: DestWriter = {
+		prismaService: "JELLYFIN",
+		applyLabels: vi.fn(async (opts) => {
+			mockState.destWriterSpy(opts);
+			return mockState.jellyfinWriteResult;
+		}),
+	};
+	const embyWriter: DestWriter = {
+		prismaService: "EMBY",
+		applyLabels: vi.fn(async (opts) => {
+			mockState.destWriterSpy(opts);
+			return mockState.embyWriteResult;
+		}),
+	};
 	return {
-		SOURCE_READERS: { sonarr: sonarrReader, plex: plexReader },
-		DEST_WRITERS: { plex: plexWriter, sonarr: sonarrWriter },
+		SOURCE_READERS: {
+			sonarr: sonarrReader,
+			plex: plexReader,
+			jellyfin: jellyfinReader,
+			emby: embyReader,
+		},
+		DEST_WRITERS: {
+			plex: plexWriter,
+			sonarr: sonarrWriter,
+			radarr: radarrWriter,
+			jellyfin: jellyfinWriter,
+			emby: embyWriter,
+		},
 	};
 });
 
@@ -128,8 +184,13 @@ describe("executeLabelSyncRule (orchestration)", () => {
 	beforeEach(() => {
 		mockState.sonarrReadResult = { matches: [], failed: false };
 		mockState.plexReadResult = { matches: [], failed: false };
+		mockState.jellyfinReadResult = { matches: [], failed: false };
+		mockState.embyReadResult = { matches: [], failed: false };
 		mockState.plexWriteResult = { matchesFound: 0, labelsApplied: 0, failures: 0 };
 		mockState.sonarrWriteResult = { matchesFound: 0, labelsApplied: 0, failures: 0 };
+		mockState.radarrWriteResult = { matchesFound: 0, labelsApplied: 0, failures: 0 };
+		mockState.jellyfinWriteResult = { matchesFound: 0, labelsApplied: 0, failures: 0 };
+		mockState.embyWriteResult = { matchesFound: 0, labelsApplied: 0, failures: 0 };
 		mockState.sourceReaderSpy.mockClear();
 		mockState.destWriterSpy.mockClear();
 	});
@@ -214,6 +275,94 @@ describe("executeLabelSyncRule (orchestration)", () => {
 			where: expect.objectContaining({ service: "PLEX" }),
 		});
 	});
+
+	it.each([
+		["jellyfin", "JELLYFIN"],
+		["emby", "EMBY"],
+	] as const)(
+		"blocks a %s destination before database, source-reader, or writer activity",
+		async (destService, prismaService) => {
+			mockState.sonarrReadResult = { matches: [makeMatch(123)], failed: false };
+			if (destService === "jellyfin") {
+				mockState.jellyfinWriteResult = { matchesFound: 1, labelsApplied: 1, failures: 0 };
+			} else {
+				mockState.embyWriteResult = { matchesFound: 1, labelsApplied: 1, failures: 0 };
+			}
+			const findMany = vi.fn().mockResolvedValue([makeInstance()]);
+			const findFirst = vi
+				.fn()
+				.mockResolvedValue(makeInstance({ id: "private-destination", service: prismaService }));
+
+			const result = await executeLabelSyncRule({
+				rule: makeRule({
+					id: "private-rule-id",
+					sourceTagName: "private-source-tag",
+					destService,
+					destInstanceId: "private-destination",
+					destTagName: "private-destination-tag",
+				}),
+				prisma: { serviceInstance: { findMany, findFirst } } as never,
+				arrClientFactory: {} as never,
+				encryptor: {} as never,
+				log: fakeLogger,
+			});
+
+			expect(result).toEqual({
+				status: "failed",
+				message:
+					"Jellyfin and Emby label destinations are temporarily unavailable because the provider cannot yet be re-authorized safely at execution time.",
+				totals: {
+					sourceInstancesScanned: 0,
+					taggedItemsFound: 0,
+					destMatchesFound: 0,
+					labelsApplied: 0,
+					failures: 0,
+				},
+			});
+			expect(result.message).not.toMatch(/private|123/i);
+			expect(findMany).not.toHaveBeenCalled();
+			expect(findFirst).not.toHaveBeenCalled();
+			expect(mockState.sourceReaderSpy).not.toHaveBeenCalled();
+			expect(mockState.destWriterSpy).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each([
+		["jellyfin", "JELLYFIN", "sonarr", "SONARR"],
+		["emby", "EMBY", "radarr", "RADARR"],
+	] as const)(
+		"keeps %s source reads available for a supported %s destination",
+		async (sourceService, prismaService, destService, destPrismaService) => {
+			const sourceResult = { matches: [makeMatch(836, "movie")], failed: false };
+			if (sourceService === "jellyfin") mockState.jellyfinReadResult = sourceResult;
+			else mockState.embyReadResult = sourceResult;
+			if (destService === "sonarr") {
+				mockState.sonarrWriteResult = { matchesFound: 1, labelsApplied: 1, failures: 0 };
+			} else {
+				mockState.radarrWriteResult = { matchesFound: 1, labelsApplied: 1, failures: 0 };
+			}
+			const findMany = vi.fn().mockResolvedValue([makeInstance({ service: prismaService })]);
+			const findFirst = vi
+				.fn()
+				.mockResolvedValue(makeInstance({ id: "inst-dest", service: destPrismaService }));
+
+			const result = await executeLabelSyncRule({
+				rule: makeRule({ sourceService, destService }),
+				prisma: { serviceInstance: { findMany, findFirst } } as never,
+				arrClientFactory: {} as never,
+				encryptor: {} as never,
+				log: fakeLogger,
+			});
+
+			expect(result.status).toBe("success");
+			expect(result.totals.labelsApplied).toBe(1);
+			expect(findMany).toHaveBeenCalledWith({
+				where: expect.objectContaining({ service: prismaService }),
+			});
+			expect(mockState.sourceReaderSpy).toHaveBeenCalledOnce();
+			expect(mockState.destWriterSpy).toHaveBeenCalledOnce();
+		},
+	);
 
 	it("unsupported sourceService returns a failed result with structured message", async () => {
 		const result = await executeLabelSyncRule({

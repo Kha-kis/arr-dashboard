@@ -186,9 +186,9 @@ describe("triggerLabelSyncForItem", () => {
 				},
 			],
 		});
-		executeMock
-			.mockResolvedValueOnce({ ...okOutcome })
-			.mockRejectedValueOnce(new Error("plex unreachable"));
+		executeMock.mockImplementation(({ rule }) =>
+			rule.id === "r2" ? Promise.reject(new Error("destination unreachable")) : okOutcome,
+		);
 
 		const result = await triggerLabelSyncForItem(makeArgs({ prisma, tmdbId: 100 }));
 
@@ -198,6 +198,97 @@ describe("triggerLabelSyncForItem", () => {
 		expect(result.results[1]?.outcome.status).toBe("failed");
 		expect(result.totals.failures).toBe(1);
 		expect(result.totals.labelsApplied).toBe(1);
+	});
+
+	it("keeps zero-attempt rule failures out of the item-attempt failure total", async () => {
+		const prisma = makePrisma({
+			rules: [
+				{
+					id: "contained-rule",
+					name: "contained destination",
+					userId: "user-1",
+					sourceService: "radarr",
+					sourceInstanceId: "inst-1",
+					sourceTagName: "kids",
+					destService: "jellyfin",
+					destInstanceId: "jellyfin-1",
+					destTagName: "kids",
+				},
+			],
+		});
+		executeMock.mockResolvedValue({
+			status: "failed",
+			message: "Destination mutation authority unavailable.",
+			totals: {
+				sourceInstancesScanned: 0,
+				taggedItemsFound: 0,
+				destMatchesFound: 0,
+				labelsApplied: 0,
+				failures: 0,
+			},
+		});
+
+		const result = await triggerLabelSyncForItem(makeArgs({ prisma, tmdbId: 100 }));
+
+		expect(result.rulesFired).toBe(1);
+		expect(result.results[0]?.outcome.status).toBe("failed");
+		expect(result.results[0]?.outcome.totals.failures).toBe(0);
+		expect(result.totals).toEqual({ labelsApplied: 0, failures: 0 });
+	});
+
+	it("surfaces blocked rules before an unresolved TMDb id skips supported rules", async () => {
+		const prisma = makePrisma({
+			rules: [
+				{
+					id: "contained-rule",
+					name: "contained destination",
+					userId: "user-1",
+					sourceService: "radarr",
+					sourceInstanceId: "inst-1",
+					sourceTagName: "kids",
+					destService: "jellyfin",
+					destInstanceId: "jellyfin-1",
+					destTagName: "kids",
+				},
+				{
+					id: "supported-rule",
+					name: "supported destination",
+					userId: "user-1",
+					sourceService: "radarr",
+					sourceInstanceId: "inst-1",
+					sourceTagName: "kids",
+					destService: "plex",
+					destInstanceId: "plex-1",
+					destTagName: "kids",
+				},
+			],
+			cacheData: null,
+		});
+		executeMock.mockResolvedValue({
+			status: "failed",
+			message: "Destination mutation authority unavailable.",
+			totals: {
+				sourceInstancesScanned: 0,
+				taggedItemsFound: 0,
+				destMatchesFound: 0,
+				labelsApplied: 0,
+				failures: 0,
+			},
+		});
+
+		const result = await triggerLabelSyncForItem(makeArgs({ prisma }));
+
+		expect(executeMock).toHaveBeenCalledOnce();
+		expect(executeMock.mock.calls[0]?.[0]).toEqual(
+			expect.objectContaining({
+				rule: expect.objectContaining({ id: "contained-rule" }),
+				targetTmdbId: undefined,
+			}),
+		);
+		expect(result.rulesFired).toBe(1);
+		expect(result.results.map((entry) => entry.ruleId)).toEqual(["contained-rule"]);
+		expect(result.results[0]?.outcome.status).toBe("failed");
+		expect(result.totals).toEqual({ labelsApplied: 0, failures: 0 });
 	});
 
 	it("includes rules with sourceInstanceId=null (match-all-instances rules)", async () => {
