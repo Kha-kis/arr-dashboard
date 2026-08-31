@@ -188,6 +188,7 @@ export class JellyfinClient {
 			ParentId: libraryId,
 			Fields: "ProviderIds,DateCreated,ImageTags",
 			Recursive: "true",
+			CollapseBoxSetItems: "false",
 		});
 		if (options?.includeItemTypes) {
 			params.set("IncludeItemTypes", options.includeItemTypes);
