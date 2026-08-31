@@ -137,8 +137,21 @@ describe("runQuiTorrentStateSync SQLite scale behavior", () => {
 		});
 
 		const stagingStatementDurationsMs: number[] = [];
+		const healthLatenciesMs: number[] = [];
+		let healthProbePromises: Promise<void>[] | undefined;
 		const executeRaw = prisma.$executeRaw.bind(prisma);
 		const timedExecuteRaw = ((...args: Parameters<typeof prisma.$executeRaw>) => {
+			healthProbePromises ??= Array.from({ length: 20 }, (_, index) => {
+				const delayMs = 50 + index * 100;
+				const dueAt = performance.now() + delayMs;
+				return new Promise<void>((resolve) => {
+					setTimeout(async () => {
+						await observer.$queryRaw`SELECT 1`;
+						healthLatenciesMs.push(performance.now() - dueAt);
+						resolve();
+					}, delayMs);
+				});
+			});
 			const startedAt = performance.now();
 			return executeRaw(...args).then((rowsUpdated) => {
 				stagingStatementDurationsMs.push(performance.now() - startedAt);
@@ -164,6 +177,7 @@ describe("runQuiTorrentStateSync SQLite scale behavior", () => {
 
 		const sync = runQuiTorrentStateSync({ prisma, log, dbProvider: "sqlite" } as never);
 		await stagingPaused.promise;
+		await Promise.all(healthProbePromises ?? []);
 		const [healthRows, staged, absentBeforeCleanup, freshLibraryRows, freshEpisodeRows] =
 			await Promise.all([
 				observer.$queryRaw<Array<{ healthy: bigint }>>`SELECT 1 AS healthy`,
@@ -190,6 +204,8 @@ describe("runQuiTorrentStateSync SQLite scale behavior", () => {
 		expect(freshEpisodeRows).toBe(0);
 		expect(stagingStatementDurationsMs).toHaveLength(100);
 		expect(Math.max(...stagingStatementDurationsMs)).toBeLessThan(2_000);
+		expect(healthLatenciesMs).toHaveLength(20);
+		expect(Math.max(...healthLatenciesMs)).toBeLessThan(2_000);
 		expect(result).toMatchObject({
 			torrentsSeen: 15_000,
 			rowsUpdated: 15_000,
