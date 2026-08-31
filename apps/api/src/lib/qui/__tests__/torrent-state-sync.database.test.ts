@@ -21,16 +21,16 @@ vi.mock("../instance-helpers.js", () => ({
 
 import { runQuiTorrentStateSync } from "../torrent-state-sync.js";
 
-const databases: Array<{ client: PrismaClient; directory: string }> = [];
+const databases: Array<{ clients: PrismaClient[]; directory: string }> = [];
 
 afterEach(async () => {
-	for (const { client, directory } of databases.splice(0)) {
-		await client.$disconnect();
+	for (const { clients, directory } of databases.splice(0)) {
+		await Promise.all(clients.map(async (client) => await client.$disconnect()));
 		await rm(directory, { recursive: true, force: true });
 	}
 });
 
-async function createDatabase(): Promise<PrismaClient> {
+async function createDatabase(): Promise<{ observer: PrismaClient; prisma: PrismaClient }> {
 	const directory = await mkdtemp(join(tmpdir(), "qui-sync-scale-"));
 	const databasePath = join(directory, "scale.db");
 	execFileSync("pnpm", ["exec", "prisma", "db", "push", "--schema", "prisma/schema.prisma"], {
@@ -38,12 +38,23 @@ async function createDatabase(): Promise<PrismaClient> {
 		env: { ...process.env, DATABASE_URL: `file:${databasePath}` },
 		stdio: "pipe",
 	});
-	const client = new PrismaClient({
+	const prisma = new PrismaClient({
 		adapter: new PrismaBetterSqlite3({ url: databasePath, timeout: 5_000 }),
 	});
-	await client.$connect();
-	databases.push({ client, directory });
-	return client;
+	const observer = new PrismaClient({
+		adapter: new PrismaBetterSqlite3({ url: databasePath, timeout: 5_000 }),
+	});
+	await Promise.all([prisma.$connect(), observer.$connect()]);
+	databases.push({ clients: [prisma, observer], directory });
+	return { observer, prisma };
+}
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+	let resolve!: () => void;
+	const promise = new Promise<void>((done) => {
+		resolve = done;
+	});
+	return { promise, resolve };
 }
 
 const log = {
@@ -59,10 +70,11 @@ const log = {
 } as never;
 
 describe("runQuiTorrentStateSync SQLite scale behavior", () => {
-	it("keeps a health query responsive during a complete 15k-torrent publication", async () => {
-		const prisma = await createDatabase();
+	it("keeps database reads available while a complete 15k-torrent generation is unpublished", async () => {
+		const { observer, prisma } = await createDatabase();
 		const userId = "scale-user";
 		const quiId = "scale-qui";
+		const oldGeneration = new Date("2026-08-01T00:00:00.000Z");
 		await prisma.user.create({
 			data: { id: userId, username: "qui-scale", hashedPassword: "test" },
 		});
@@ -88,6 +100,7 @@ describe("runQuiTorrentStateSync SQLite scale behavior", () => {
 				infoHash: `hash-${index}`,
 				torrentState: "paused",
 				torrentRatio: 0,
+				torrentSyncedAt: oldGeneration,
 				data: "{}",
 			})),
 		});
@@ -104,6 +117,7 @@ describe("runQuiTorrentStateSync SQLite scale behavior", () => {
 				infoHash: `hash-${index + 15_000}`,
 				torrentState: "paused",
 				torrentRatio: 0,
+				torrentSyncedAt: oldGeneration,
 			})),
 		});
 
@@ -121,24 +135,47 @@ describe("runQuiTorrentStateSync SQLite scale behavior", () => {
 			}),
 		});
 
-		const healthLatencies: number[] = [];
-		const probePromises = Array.from({ length: 20 }, (_, index) => {
-			const dueAt = performance.now() + 50 + index * 100;
-			return new Promise<void>((resolve) => {
-				setTimeout(
-					async () => {
-						await prisma.$queryRaw`SELECT 1`;
-						healthLatencies.push(performance.now() - dueAt);
-						resolve();
-					},
-					50 + index * 100,
-				);
-			});
+		const stagingPaused = deferred();
+		const releaseStaging = deferred();
+		type FindEpisodeCandidates = (
+			args?: Parameters<typeof prisma.episodeFileCache.findMany>[0],
+		) => Promise<Awaited<ReturnType<typeof prisma.episodeFileCache.findMany>>>;
+		const episodeFileCache = prisma.episodeFileCache as unknown as {
+			findMany: FindEpisodeCandidates;
+		};
+		const findEpisodeCandidates = episodeFileCache.findMany.bind(episodeFileCache);
+		vi.spyOn(episodeFileCache, "findMany").mockImplementationOnce(async (args) => {
+			stagingPaused.resolve();
+			await releaseStaging.promise;
+			return await findEpisodeCandidates(args);
 		});
 
-		const result = await runQuiTorrentStateSync({ prisma, log, dbProvider: "sqlite" } as never);
-		await Promise.all(probePromises);
+		const sync = runQuiTorrentStateSync({ prisma, log, dbProvider: "sqlite" } as never);
+		await stagingPaused.promise;
+		const [healthRows, staged, absentBeforeCleanup, freshLibraryRows, freshEpisodeRows] =
+			await Promise.all([
+				observer.$queryRaw<Array<{ healthy: bigint }>>`SELECT 1 AS healthy`,
+				observer.libraryCache.findUnique({ where: { id: "library-0" } }),
+				observer.episodeFileCache.findUnique({ where: { id: "episode-0" } }),
+				observer.libraryCache.count({ where: { torrentSyncedAt: { not: null } } }),
+				observer.episodeFileCache.count({ where: { torrentSyncedAt: { not: null } } }),
+			]);
+		releaseStaging.resolve();
+		const result = await sync;
 
+		expect(healthRows).toEqual([{ healthy: 1n }]);
+		expect(staged).toMatchObject({
+			torrentState: "seeding",
+			torrentRatio: 1,
+			torrentSyncedAt: null,
+		});
+		expect(absentBeforeCleanup).toMatchObject({
+			torrentState: "paused",
+			torrentRatio: 0,
+			torrentSyncedAt: null,
+		});
+		expect(freshLibraryRows).toBe(0);
+		expect(freshEpisodeRows).toBe(0);
 		expect(result).toMatchObject({
 			torrentsSeen: 15_000,
 			rowsUpdated: 15_000,
@@ -150,6 +187,5 @@ describe("runQuiTorrentStateSync SQLite scale behavior", () => {
 		const absent = await prisma.episodeFileCache.findUnique({ where: { id: "episode-0" } });
 		expect(absent).toMatchObject({ torrentState: null, torrentRatio: null });
 		expect(absent?.torrentSyncedAt).toBeInstanceOf(Date);
-		expect(Math.max(...healthLatencies)).toBeLessThan(2_000);
 	}, 30_000);
 });
