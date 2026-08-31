@@ -594,6 +594,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 							)
 						: await createInstance(app.prisma);
 
+				invalidatePulseCache(userId);
 				request.log.info({ service, label: rest.label }, "Service instance added");
 
 				return reply.status(201).send({

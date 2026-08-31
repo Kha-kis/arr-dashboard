@@ -21,9 +21,24 @@ const CACHE_TTL_MS = 60_000;
 interface CacheEntry {
 	data: PulseResponse;
 	expiresAt: number;
+	generation: symbol;
 }
 
 const pulseCache = new Map<string, CacheEntry>();
+
+// Pulse cache entries and publication generations are process-local. Stable 2.x
+// supports one API process, normally one combined container, per database.
+// Multiple replicas sharing one database are unsupported; stable does not
+// enforce this topology, and #829 tracks future enforcement.
+const pulseCacheGenerations = new Map<string, symbol>();
+
+function currentPulseCacheGeneration(userId: string): symbol {
+	const current = pulseCacheGenerations.get(userId);
+	if (current) return current;
+	const initial = Symbol();
+	pulseCacheGenerations.set(userId, initial);
+	return initial;
+}
 
 /**
  * Drop the cached Pulse response for a user so the next GET /pulse call
@@ -32,6 +47,9 @@ const pulseCache = new Map<string, CacheEntry>();
  * waiting out the 60s TTL.
  */
 export function invalidatePulseCache(userId: string): void {
+	// Rotate even when Map.delete returns false: an uncached request may still
+	// be collecting under the old generation and must not publish afterward.
+	pulseCacheGenerations.set(userId, Symbol());
 	pulseCache.delete(userId);
 }
 
@@ -148,6 +166,7 @@ function applyAttentionFilter(response: PulseResponse): PulseResponse {
 export const registerPulseRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	app.get("/pulse", async (request, reply) => {
 		const userId = request.currentUser!.id;
+		const generation = currentPulseCacheGeneration(userId);
 
 		// `attentionOnly=true` is a view over the same collector output — we
 		// filter the cached/fresh response rather than running a parallel
@@ -157,7 +176,7 @@ export const registerPulseRoutes: FastifyPluginCallback = (app, _opts, done) => 
 
 		// Check cache
 		const cached = pulseCache.get(userId);
-		if (cached && Date.now() < cached.expiresAt) {
+		if (cached && cached.generation === generation && Date.now() < cached.expiresAt) {
 			return reply.send(attentionOnly ? applyAttentionFilter(cached.data) : cached.data);
 		}
 
@@ -204,7 +223,14 @@ export const registerPulseRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			generatedAt: new Date().toISOString(),
 		};
 
-		pulseCache.set(userId, { data: response, expiresAt: Date.now() + CACHE_TTL_MS });
+		const cacheEntry: CacheEntry = {
+			data: response,
+			expiresAt: Date.now() + CACHE_TTL_MS,
+			generation,
+		};
+		if (currentPulseCacheGeneration(userId) === generation) {
+			pulseCache.set(userId, cacheEntry);
+		}
 
 		return reply.send(attentionOnly ? applyAttentionFilter(response) : response);
 	});

@@ -306,6 +306,34 @@ describe("POST /services", () => {
 				}),
 			}),
 		);
+
+		expect(mockInvalidatePulseCache).toHaveBeenCalledOnce();
+		expect(mockInvalidatePulseCache).toHaveBeenCalledWith("user-1");
+	});
+
+	it("invalidates only the creating user's Pulse cache once after persistence", async () => {
+		const lifecycle: string[] = [];
+		mockPrisma.serviceInstance.create.mockImplementationOnce(async ({ data }: any) => {
+			lifecycle.push("persisted:user-1");
+			return makeInstance({ id: "inst-new", ...data });
+		});
+		mockInvalidatePulseCache.mockImplementationOnce((userId: string) => {
+			lifecycle.push(`invalidated:${userId}`);
+		});
+
+		const res = await injectAuthenticated("POST", "/services", {
+			body: {
+				label: "Tenant Sonarr",
+				baseUrl: "http://sonarr:8989",
+				apiKey: "my-secret-api-key",
+				service: "sonarr",
+			},
+		});
+
+		expect(res.statusCode).toBe(201);
+		expect(lifecycle).toEqual(["persisted:user-1", "invalidated:user-1"]);
+		expect(mockInvalidatePulseCache).toHaveBeenCalledOnce();
+		expect(mockInvalidatePulseCache).not.toHaveBeenCalledWith("user-2");
 	});
 
 	it("demotes other instances when isDefault is true", async () => {
@@ -359,6 +387,24 @@ describe("POST /services", () => {
 			"cannot be changed while a library cleanup operation is in progress",
 		);
 		expect(mockPrisma.serviceInstance.create).not.toHaveBeenCalled();
+		expect(mockInvalidatePulseCache).not.toHaveBeenCalled();
+	});
+
+	it("does not invalidate Pulse when instance creation fails", async () => {
+		mockPrisma.serviceInstance.create.mockRejectedValueOnce(new Error("database unavailable"));
+
+		const res = await injectAuthenticated("POST", "/services", {
+			body: {
+				label: "Unavailable Sonarr",
+				baseUrl: "http://sonarr:8989",
+				apiKey: "my-secret-api-key",
+				service: "sonarr",
+			},
+		});
+
+		expect(res.statusCode).toBe(500);
+		expect(mockPrisma.serviceInstance.create).toHaveBeenCalledOnce();
+		expect(mockInvalidatePulseCache).not.toHaveBeenCalled();
 	});
 });
 
