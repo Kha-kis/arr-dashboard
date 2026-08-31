@@ -53,6 +53,7 @@ export const AnyNull = runtime.AnyNull
 export const ModelName = {
   User: 'User',
   Session: 'Session',
+  HistoryCursorState: 'HistoryCursorState',
   ServiceTag: 'ServiceTag',
   ServiceInstance: 'ServiceInstance',
   InodeIndexCache: 'InodeIndexCache',
@@ -161,6 +162,18 @@ export const SessionScalarFieldEnum = {
 } as const
 
 export type SessionScalarFieldEnum = (typeof SessionScalarFieldEnum)[keyof typeof SessionScalarFieldEnum]
+
+
+export const HistoryCursorStateScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  encryptedState: 'encryptedState',
+  encryptionIv: 'encryptionIv',
+  expiresAt: 'expiresAt',
+  createdAt: 'createdAt'
+} as const
+
+export type HistoryCursorStateScalarFieldEnum = (typeof HistoryCursorStateScalarFieldEnum)[keyof typeof HistoryCursorStateScalarFieldEnum]
 
 
 export const ServiceTagScalarFieldEnum = {

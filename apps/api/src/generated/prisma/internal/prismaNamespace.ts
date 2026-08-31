@@ -399,6 +399,7 @@ type FieldRefInputType<Model, FieldType> = Model extends never ? never : FieldRe
 export const ModelName = {
   User: 'User',
   Session: 'Session',
+  HistoryCursorState: 'HistoryCursorState',
   ServiceTag: 'ServiceTag',
   ServiceInstance: 'ServiceInstance',
   InodeIndexCache: 'InodeIndexCache',
@@ -476,7 +477,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "inodeIndexCache" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "episodeFileCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupMediaServerScan" | "libraryCleanupMediaServerScanLease" | "libraryCleanupLog" | "libraryCleanupAuditEvent" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexGenerationTarget" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule" | "tmdbListCache" | "traktListCache" | "listCacheRefreshStatus" | "quiActivityLog" | "quiActionLog" | "quiEventLog"
+    modelProps: "user" | "session" | "historyCursorState" | "serviceTag" | "serviceInstance" | "inodeIndexCache" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "episodeFileCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupMediaServerScan" | "libraryCleanupMediaServerScanLease" | "libraryCleanupLog" | "libraryCleanupAuditEvent" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexGenerationTarget" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule" | "tmdbListCache" | "traktListCache" | "listCacheRefreshStatus" | "quiActivityLog" | "quiActionLog" | "quiEventLog"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -625,6 +626,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         count: {
           args: Prisma.SessionCountArgs<ExtArgs>
           result: runtime.Types.Utils.Optional<Prisma.SessionCountAggregateOutputType> | number
+        }
+      }
+    }
+    HistoryCursorState: {
+      payload: Prisma.$HistoryCursorStatePayload<ExtArgs>
+      fields: Prisma.HistoryCursorStateFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.HistoryCursorStateFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryCursorStatePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.HistoryCursorStateFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryCursorStatePayload>
+        }
+        findFirst: {
+          args: Prisma.HistoryCursorStateFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryCursorStatePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.HistoryCursorStateFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryCursorStatePayload>
+        }
+        findMany: {
+          args: Prisma.HistoryCursorStateFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryCursorStatePayload>[]
+        }
+        create: {
+          args: Prisma.HistoryCursorStateCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryCursorStatePayload>
+        }
+        createMany: {
+          args: Prisma.HistoryCursorStateCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.HistoryCursorStateCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryCursorStatePayload>[]
+        }
+        delete: {
+          args: Prisma.HistoryCursorStateDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryCursorStatePayload>
+        }
+        update: {
+          args: Prisma.HistoryCursorStateUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryCursorStatePayload>
+        }
+        deleteMany: {
+          args: Prisma.HistoryCursorStateDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.HistoryCursorStateUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.HistoryCursorStateUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryCursorStatePayload>[]
+        }
+        upsert: {
+          args: Prisma.HistoryCursorStateUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryCursorStatePayload>
+        }
+        aggregate: {
+          args: Prisma.HistoryCursorStateAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateHistoryCursorState>
+        }
+        groupBy: {
+          args: Prisma.HistoryCursorStateGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.HistoryCursorStateGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.HistoryCursorStateCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.HistoryCursorStateCountAggregateOutputType> | number
         }
       }
     }
@@ -5285,6 +5360,18 @@ export const SessionScalarFieldEnum = {
 export type SessionScalarFieldEnum = (typeof SessionScalarFieldEnum)[keyof typeof SessionScalarFieldEnum]
 
 
+export const HistoryCursorStateScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  encryptedState: 'encryptedState',
+  encryptionIv: 'encryptionIv',
+  expiresAt: 'expiresAt',
+  createdAt: 'createdAt'
+} as const
+
+export type HistoryCursorStateScalarFieldEnum = (typeof HistoryCursorStateScalarFieldEnum)[keyof typeof HistoryCursorStateScalarFieldEnum]
+
+
 export const ServiceTagScalarFieldEnum = {
   id: 'id',
   name: 'name',
@@ -6764,6 +6851,7 @@ export type PrismaClientOptions = PrismaClientOptionsWithAccelerateUrl | PrismaC
 export type GlobalOmitConfig = {
   user?: Prisma.UserOmit
   session?: Prisma.SessionOmit
+  historyCursorState?: Prisma.HistoryCursorStateOmit
   serviceTag?: Prisma.ServiceTagOmit
   serviceInstance?: Prisma.ServiceInstanceOmit
   inodeIndexCache?: Prisma.InodeIndexCacheOmit

@@ -5,6 +5,8 @@ import {
 	AlertTriangle,
 	ArrowDownToLine,
 	ChevronDown,
+	ChevronLeft,
+	ChevronRight,
 	ChevronUp,
 	Filter,
 	History,
@@ -15,7 +17,7 @@ import {
 	Table2,
 	X,
 } from "lucide-react";
-import { useDeferredValue, useMemo, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import {
 	FilterSelect,
 	PremiumPageHeader,
@@ -24,7 +26,7 @@ import {
 	StatCard,
 } from "../../../components/layout";
 import { ToggleSwitch } from "../../../components/layout/config-primitives";
-import { Alert, AlertDescription, Pagination } from "../../../components/ui";
+import { Alert, AlertDescription, NativeSelect, SelectOption } from "../../../components/ui";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { useMultiInstanceHistoryQuery } from "../../../hooks/api/useDashboard";
@@ -55,6 +57,7 @@ export const HistoryClient = () => {
 	const { gradient: themeGradient } = useThemeGradient();
 
 	const { state, actions } = useHistoryState();
+	const setPage = actions.setPage;
 	const {
 		page,
 		pageSize,
@@ -69,12 +72,46 @@ export const HistoryClient = () => {
 		timeRangePreset,
 		hideProwlarrRss,
 	} = state;
+	const deferredSearchTerm = useDeferredValue(searchTerm);
+	const queryScope = JSON.stringify({
+		startDate,
+		endDate,
+		pageSize,
+		serviceFilter,
+		instanceFilter,
+		statusFilter,
+		searchTerm: deferredSearchTerm,
+		hideProwlarrRss,
+	});
+	const [cursorNavigation, setCursorNavigation] = useState<{
+		scope: string;
+		cursors: Record<number, string | undefined>;
+	}>(() => ({ scope: queryScope, cursors: {} }));
+	const cursor = cursorNavigation.scope === queryScope ? cursorNavigation.cursors[page] : undefined;
 
 	const { data, isLoading, error, refetch } = useMultiInstanceHistoryQuery({
 		startDate: startDate || undefined,
 		endDate: endDate || undefined,
+		cursor,
+		pageSize,
+		service: serviceFilter === "all" ? undefined : serviceFilter,
+		instanceId: instanceFilter === "all" ? undefined : instanceFilter,
+		status: statusFilter === "all" ? undefined : statusFilter,
+		searchTerm: deferredSearchTerm || undefined,
+		hideProwlarrRss,
 	});
-	const [isRefreshing, handleRefresh] = useRefreshState(refetch);
+	const resetNavigation = useCallback(() => {
+		setCursorNavigation({ scope: queryScope, cursors: {} });
+		setPage(1);
+	}, [queryScope, setPage]);
+	useEffect(() => {
+		if (cursorNavigation.scope !== queryScope) resetNavigation();
+	}, [cursorNavigation.scope, queryScope, resetNavigation]);
+	const refreshFromNewest = useCallback(async () => {
+		resetNavigation();
+		if (page === 1) await refetch();
+	}, [page, refetch, resetNavigation]);
+	const [isRefreshing, handleRefresh] = useRefreshState(refreshFromNewest);
 
 	const { data: services } = useServicesQuery();
 
@@ -86,9 +123,6 @@ export const HistoryClient = () => {
 		}
 		return map;
 	}, [services]);
-
-	// Defer the search term to avoid re-filtering 10k+ items on every keystroke
-	const deferredSearchTerm = useDeferredValue(searchTerm);
 
 	const historyData = useHistoryData(
 		data,
@@ -116,18 +150,26 @@ export const HistoryClient = () => {
 		emptyMessage,
 	} = historyData;
 
-	const totalRecords = groupedItems.length;
-
-	const paginatedGroups = useMemo(() => {
-		const startIndex = (page - 1) * pageSize;
-		return groupedItems.slice(startIndex, startIndex + pageSize);
-	}, [groupedItems, page, pageSize]);
+	const paginatedGroups = groupedItems;
 
 	// Group paginated items by day for timeline view
 	const paginatedGroupedByDay = useMemo(
 		() => groupByDay(paginatedGroups, (group) => group.items[0]?.date),
 		[paginatedGroups],
 	);
+	const providerProblems = data?.instances.filter((instance) => instance.status !== "ok") ?? [];
+	const nextCursor = data?.pagination.nextCursor ?? null;
+	const handleNextPage = () => {
+		if (!nextCursor) return;
+		setCursorNavigation((current) => ({
+			scope: queryScope,
+			cursors: {
+				...(current.scope === queryScope ? current.cursors : {}),
+				[page + 1]: nextCursor,
+			},
+		}));
+		actions.setPage(page + 1);
+	};
 
 	// Extract recent failure titles for the spotlight alert
 	const recentFailureTitles = useMemo(() => {
@@ -212,7 +254,7 @@ export const HistoryClient = () => {
 				gradientTitle
 				description="Review recent activity from all configured instances."
 				highlightStat={
-					allItems.length > 0 ? { value: allItems.length, label: "events tracked" } : undefined
+					allItems.length > 0 ? { value: allItems.length, label: "events on this page" } : undefined
 				}
 				actions={
 					<div className="flex items-center gap-2">
@@ -336,14 +378,14 @@ export const HistoryClient = () => {
 					<StatCard
 						value={activitySummary.grabs}
 						label="Grabs"
-						description="Last 24 hours"
+						description="Last 24 hours on this page"
 						icon={Package}
 						animationDelay={100}
 					/>
 					<StatCard
 						value={activitySummary.imports}
 						label="Imports"
-						description="Last 24 hours"
+						description="Last 24 hours on this page"
 						icon={ArrowDownToLine}
 						gradient={{
 							from: SEMANTIC_COLORS.success.text,
@@ -355,7 +397,7 @@ export const HistoryClient = () => {
 					<StatCard
 						value={activitySummary.failures}
 						label="Failures"
-						description="Last 24 hours"
+						description="Last 24 hours on this page"
 						icon={AlertTriangle}
 						gradient={
 							activitySummary.failures > 0
@@ -640,9 +682,9 @@ export const HistoryClient = () => {
 					className="flex flex-wrap gap-2 animate-in fade-in slide-in-from-bottom-4 duration-500"
 					style={{ animationDelay: "500ms", animationFillMode: "backwards" }}
 				>
-					{statusSummary.map(([label, count], index) => (
+					{statusSummary.map(([label, count]) => (
 						<div
-							key={`${index}-${label}`}
+							key={label}
 							className="flex items-center gap-2 rounded-full px-4 py-2 text-sm"
 							style={{
 								backgroundColor: `${themeGradient.from}08`,
@@ -658,19 +700,60 @@ export const HistoryClient = () => {
 				</div>
 			)}
 
-			{/* Pagination */}
-			{totalRecords > 0 && (
-				<Pagination
-					currentPage={page}
-					totalItems={totalRecords}
-					pageSize={pageSize}
-					onPageChange={(newPage) => actions.setPage(newPage)}
-					onPageSizeChange={(newPageSize) => {
-						actions.setPageSize(newPageSize);
-						actions.setPage(1);
-					}}
-					pageSizeOptions={[25, 50, 100]}
-				/>
+			{/* Cursor pagination */}
+			{(groupedItems.length > 0 || page > 1) && (
+				<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+					<div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+						<span>
+							Page <span className="font-medium text-foreground">{page}</span>
+							{" · "}
+							<span className="font-medium text-foreground">{data?.aggregated.length ?? 0}</span>{" "}
+							events
+							{data?.totalCount !== null && data?.totalCount !== undefined
+								? ` of ${data.totalCount}`
+								: ""}
+						</span>
+						<div className="flex items-center gap-2">
+							<label htmlFor="history-page-size" className="text-sm">
+								Per page:
+							</label>
+							<NativeSelect
+								id="history-page-size"
+								value={pageSize}
+								onChange={(event) => actions.setPageSize(Number(event.target.value))}
+								className="w-20 py-1 text-sm"
+							>
+								{[25, 50, 100].map((size) => (
+									<SelectOption key={size} value={size}>
+										{size}
+									</SelectOption>
+								))}
+							</NativeSelect>
+						</div>
+					</div>
+					<div className="flex items-center gap-2">
+						<Button
+							variant="ghost"
+							size="sm"
+							onClick={() => actions.setPage(Math.max(1, page - 1))}
+							disabled={page === 1}
+							className="gap-1"
+						>
+							<ChevronLeft className="h-4 w-4" />
+							Previous
+						</Button>
+						<Button
+							variant="ghost"
+							size="sm"
+							onClick={handleNextPage}
+							disabled={!nextCursor}
+							className="gap-1"
+						>
+							Next
+							<ChevronRight className="h-4 w-4" />
+						</Button>
+					</div>
+				</div>
 			)}
 
 			{/* Error Alert */}
@@ -678,6 +761,16 @@ export const HistoryClient = () => {
 				<Alert variant="danger">
 					<AlertDescription>
 						Unable to load history data. Please refresh and try again.
+					</AlertDescription>
+				</Alert>
+			)}
+
+			{providerProblems.length > 0 && (
+				<Alert variant="warning">
+					<AlertDescription>
+						History is incomplete for {providerProblems.length} provider
+						{providerProblems.length === 1 ? "" : "s"}. Refresh after the affected service is
+						available.
 					</AlertDescription>
 				</Alert>
 			)}
@@ -697,8 +790,8 @@ export const HistoryClient = () => {
 					/>
 					<div className="flex-1 min-w-0 space-y-1">
 						<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
-							{activitySummary.failures} failure{activitySummary.failures !== 1 ? "s" : ""} in the
-							last 24 hours
+							{activitySummary.failures} failure{activitySummary.failures !== 1 ? "s" : ""} from the
+							last 24 hours on this page
 						</p>
 						{recentFailureTitles.length > 0 && (
 							<p className="text-xs text-muted-foreground truncate">

@@ -309,6 +309,7 @@ export type UserWhereInput = {
   quiActivityLogs?: Prisma.QuiActivityLogListRelationFilter
   quiActionLogs?: Prisma.QuiActionLogListRelationFilter
   quiEventLogs?: Prisma.QuiEventLogListRelationFilter
+  historyCursorStates?: Prisma.HistoryCursorStateListRelationFilter
 }
 
 export type UserOrderByWithRelationInput = {
@@ -347,6 +348,7 @@ export type UserOrderByWithRelationInput = {
   quiActivityLogs?: Prisma.QuiActivityLogOrderByRelationAggregateInput
   quiActionLogs?: Prisma.QuiActionLogOrderByRelationAggregateInput
   quiEventLogs?: Prisma.QuiEventLogOrderByRelationAggregateInput
+  historyCursorStates?: Prisma.HistoryCursorStateOrderByRelationAggregateInput
 }
 
 export type UserWhereUniqueInput = Prisma.AtLeast<{
@@ -388,6 +390,7 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   quiActivityLogs?: Prisma.QuiActivityLogListRelationFilter
   quiActionLogs?: Prisma.QuiActionLogListRelationFilter
   quiEventLogs?: Prisma.QuiEventLogListRelationFilter
+  historyCursorStates?: Prisma.HistoryCursorStateListRelationFilter
 }, "id" | "username" | "hashedWebhookSecret" | "hashedQuiWebhookSecret">
 
 export type UserOrderByWithAggregationInput = {
@@ -468,6 +471,7 @@ export type UserCreateInput = {
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateInput = {
@@ -506,6 +510,7 @@ export type UserUncheckedCreateInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserUpdateInput = {
@@ -544,6 +549,7 @@ export type UserUpdateInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateInput = {
@@ -582,6 +588,7 @@ export type UserUncheckedUpdateInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateManyInput = {
@@ -739,6 +746,20 @@ export type UserUpdateOneRequiredWithoutSessionsNestedInput = {
   upsert?: Prisma.UserUpsertWithoutSessionsInput
   connect?: Prisma.UserWhereUniqueInput
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutSessionsInput, Prisma.UserUpdateWithoutSessionsInput>, Prisma.UserUncheckedUpdateWithoutSessionsInput>
+}
+
+export type UserCreateNestedOneWithoutHistoryCursorStatesInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutHistoryCursorStatesInput, Prisma.UserUncheckedCreateWithoutHistoryCursorStatesInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutHistoryCursorStatesInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutHistoryCursorStatesNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutHistoryCursorStatesInput, Prisma.UserUncheckedCreateWithoutHistoryCursorStatesInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutHistoryCursorStatesInput
+  upsert?: Prisma.UserUpsertWithoutHistoryCursorStatesInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutHistoryCursorStatesInput, Prisma.UserUpdateWithoutHistoryCursorStatesInput>, Prisma.UserUncheckedUpdateWithoutHistoryCursorStatesInput>
 }
 
 export type UserCreateNestedOneWithoutServiceInstancesInput = {
@@ -1056,6 +1077,7 @@ export type UserCreateWithoutSessionsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutSessionsInput = {
@@ -1093,6 +1115,7 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutSessionsInput = {
@@ -1146,6 +1169,7 @@ export type UserUpdateWithoutSessionsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutSessionsInput = {
@@ -1163,6 +1187,175 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutHistoryCursorStatesInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutHistoryCursorStatesInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutHistoryCursorStatesInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutHistoryCursorStatesInput, Prisma.UserUncheckedCreateWithoutHistoryCursorStatesInput>
+}
+
+export type UserUpsertWithoutHistoryCursorStatesInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutHistoryCursorStatesInput, Prisma.UserUncheckedUpdateWithoutHistoryCursorStatesInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutHistoryCursorStatesInput, Prisma.UserUncheckedCreateWithoutHistoryCursorStatesInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutHistoryCursorStatesInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutHistoryCursorStatesInput, Prisma.UserUncheckedUpdateWithoutHistoryCursorStatesInput>
+}
+
+export type UserUpdateWithoutHistoryCursorStatesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutHistoryCursorStatesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
@@ -1220,6 +1413,7 @@ export type UserCreateWithoutServiceInstancesInput = {
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutServiceInstancesInput = {
@@ -1257,6 +1451,7 @@ export type UserUncheckedCreateWithoutServiceInstancesInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutServiceInstancesInput = {
@@ -1310,6 +1505,7 @@ export type UserUpdateWithoutServiceInstancesInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutServiceInstancesInput = {
@@ -1347,6 +1543,7 @@ export type UserUncheckedUpdateWithoutServiceInstancesInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutOidcAccountsInput = {
@@ -1384,6 +1581,7 @@ export type UserCreateWithoutOidcAccountsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutOidcAccountsInput = {
@@ -1421,6 +1619,7 @@ export type UserUncheckedCreateWithoutOidcAccountsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutOidcAccountsInput = {
@@ -1474,6 +1673,7 @@ export type UserUpdateWithoutOidcAccountsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutOidcAccountsInput = {
@@ -1511,6 +1711,7 @@ export type UserUncheckedUpdateWithoutOidcAccountsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutWebauthnCredentialsInput = {
@@ -1548,6 +1749,7 @@ export type UserCreateWithoutWebauthnCredentialsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
@@ -1585,6 +1787,7 @@ export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutWebauthnCredentialsInput = {
@@ -1638,6 +1841,7 @@ export type UserUpdateWithoutWebauthnCredentialsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
@@ -1675,6 +1879,7 @@ export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutTrashSettingsInput = {
@@ -1712,6 +1917,7 @@ export type UserCreateWithoutTrashSettingsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutTrashSettingsInput = {
@@ -1749,6 +1955,7 @@ export type UserUncheckedCreateWithoutTrashSettingsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutTrashSettingsInput = {
@@ -1802,6 +2009,7 @@ export type UserUpdateWithoutTrashSettingsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutTrashSettingsInput = {
@@ -1839,6 +2047,7 @@ export type UserUncheckedUpdateWithoutTrashSettingsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutQualitySizeMappingsInput = {
@@ -1876,6 +2085,7 @@ export type UserCreateWithoutQualitySizeMappingsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutQualitySizeMappingsInput = {
@@ -1913,6 +2123,7 @@ export type UserUncheckedCreateWithoutQualitySizeMappingsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutQualitySizeMappingsInput = {
@@ -1966,6 +2177,7 @@ export type UserUpdateWithoutQualitySizeMappingsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutQualitySizeMappingsInput = {
@@ -2003,6 +2215,7 @@ export type UserUncheckedUpdateWithoutQualitySizeMappingsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutUserCustomFormatsInput = {
@@ -2040,6 +2253,7 @@ export type UserCreateWithoutUserCustomFormatsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutUserCustomFormatsInput = {
@@ -2077,6 +2291,7 @@ export type UserUncheckedCreateWithoutUserCustomFormatsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutUserCustomFormatsInput = {
@@ -2130,6 +2345,7 @@ export type UserUpdateWithoutUserCustomFormatsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutUserCustomFormatsInput = {
@@ -2167,6 +2383,7 @@ export type UserUncheckedUpdateWithoutUserCustomFormatsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutLibraryCleanupConfigsInput = {
@@ -2204,6 +2421,7 @@ export type UserCreateWithoutLibraryCleanupConfigsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutLibraryCleanupConfigsInput = {
@@ -2241,6 +2459,7 @@ export type UserUncheckedCreateWithoutLibraryCleanupConfigsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutLibraryCleanupConfigsInput = {
@@ -2294,6 +2513,7 @@ export type UserUpdateWithoutLibraryCleanupConfigsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutLibraryCleanupConfigsInput = {
@@ -2331,6 +2551,7 @@ export type UserUncheckedUpdateWithoutLibraryCleanupConfigsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNotificationChannelsInput = {
@@ -2368,6 +2589,7 @@ export type UserCreateWithoutNotificationChannelsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNotificationChannelsInput = {
@@ -2405,6 +2627,7 @@ export type UserUncheckedCreateWithoutNotificationChannelsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNotificationChannelsInput = {
@@ -2458,6 +2681,7 @@ export type UserUpdateWithoutNotificationChannelsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNotificationChannelsInput = {
@@ -2495,6 +2719,7 @@ export type UserUncheckedUpdateWithoutNotificationChannelsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNotificationRulesInput = {
@@ -2532,6 +2757,7 @@ export type UserCreateWithoutNotificationRulesInput = {
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNotificationRulesInput = {
@@ -2569,6 +2795,7 @@ export type UserUncheckedCreateWithoutNotificationRulesInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNotificationRulesInput = {
@@ -2622,6 +2849,7 @@ export type UserUpdateWithoutNotificationRulesInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNotificationRulesInput = {
@@ -2659,6 +2887,7 @@ export type UserUncheckedUpdateWithoutNotificationRulesInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNotificationAggregationConfigsInput = {
@@ -2696,6 +2925,7 @@ export type UserCreateWithoutNotificationAggregationConfigsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNotificationAggregationConfigsInput = {
@@ -2733,6 +2963,7 @@ export type UserUncheckedCreateWithoutNotificationAggregationConfigsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNotificationAggregationConfigsInput = {
@@ -2786,6 +3017,7 @@ export type UserUpdateWithoutNotificationAggregationConfigsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNotificationAggregationConfigsInput = {
@@ -2823,6 +3055,7 @@ export type UserUncheckedUpdateWithoutNotificationAggregationConfigsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNamingConfigsInput = {
@@ -2860,6 +3093,7 @@ export type UserCreateWithoutNamingConfigsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNamingConfigsInput = {
@@ -2897,6 +3131,7 @@ export type UserUncheckedCreateWithoutNamingConfigsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNamingConfigsInput = {
@@ -2950,6 +3185,7 @@ export type UserUpdateWithoutNamingConfigsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNamingConfigsInput = {
@@ -2987,6 +3223,7 @@ export type UserUncheckedUpdateWithoutNamingConfigsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNamingDeployHistoryInput = {
@@ -3024,6 +3261,7 @@ export type UserCreateWithoutNamingDeployHistoryInput = {
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNamingDeployHistoryInput = {
@@ -3061,6 +3299,7 @@ export type UserUncheckedCreateWithoutNamingDeployHistoryInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNamingDeployHistoryInput = {
@@ -3114,6 +3353,7 @@ export type UserUpdateWithoutNamingDeployHistoryInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNamingDeployHistoryInput = {
@@ -3151,6 +3391,7 @@ export type UserUncheckedUpdateWithoutNamingDeployHistoryInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutLabelSyncRulesInput = {
@@ -3188,6 +3429,7 @@ export type UserCreateWithoutLabelSyncRulesInput = {
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutLabelSyncRulesInput = {
@@ -3225,6 +3467,7 @@ export type UserUncheckedCreateWithoutLabelSyncRulesInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutLabelSyncRulesInput = {
@@ -3278,6 +3521,7 @@ export type UserUpdateWithoutLabelSyncRulesInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutLabelSyncRulesInput = {
@@ -3315,6 +3559,7 @@ export type UserUncheckedUpdateWithoutLabelSyncRulesInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutAutoTagRulesInput = {
@@ -3352,6 +3597,7 @@ export type UserCreateWithoutAutoTagRulesInput = {
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutAutoTagRulesInput = {
@@ -3389,6 +3635,7 @@ export type UserUncheckedCreateWithoutAutoTagRulesInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutAutoTagRulesInput = {
@@ -3442,6 +3689,7 @@ export type UserUpdateWithoutAutoTagRulesInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutAutoTagRulesInput = {
@@ -3479,6 +3727,7 @@ export type UserUncheckedUpdateWithoutAutoTagRulesInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutTmdbListCacheRowsInput = {
@@ -3516,6 +3765,7 @@ export type UserCreateWithoutTmdbListCacheRowsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutTmdbListCacheRowsInput = {
@@ -3553,6 +3803,7 @@ export type UserUncheckedCreateWithoutTmdbListCacheRowsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutTmdbListCacheRowsInput = {
@@ -3606,6 +3857,7 @@ export type UserUpdateWithoutTmdbListCacheRowsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutTmdbListCacheRowsInput = {
@@ -3643,6 +3895,7 @@ export type UserUncheckedUpdateWithoutTmdbListCacheRowsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutTraktListCacheRowsInput = {
@@ -3680,6 +3933,7 @@ export type UserCreateWithoutTraktListCacheRowsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutTraktListCacheRowsInput = {
@@ -3717,6 +3971,7 @@ export type UserUncheckedCreateWithoutTraktListCacheRowsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutTraktListCacheRowsInput = {
@@ -3770,6 +4025,7 @@ export type UserUpdateWithoutTraktListCacheRowsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutTraktListCacheRowsInput = {
@@ -3807,6 +4063,7 @@ export type UserUncheckedUpdateWithoutTraktListCacheRowsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutListCacheRefreshStatusesInput = {
@@ -3844,6 +4101,7 @@ export type UserCreateWithoutListCacheRefreshStatusesInput = {
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutListCacheRefreshStatusesInput = {
@@ -3881,6 +4139,7 @@ export type UserUncheckedCreateWithoutListCacheRefreshStatusesInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutListCacheRefreshStatusesInput = {
@@ -3934,6 +4193,7 @@ export type UserUpdateWithoutListCacheRefreshStatusesInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutListCacheRefreshStatusesInput = {
@@ -3971,6 +4231,7 @@ export type UserUncheckedUpdateWithoutListCacheRefreshStatusesInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutQuiActivityLogsInput = {
@@ -4008,6 +4269,7 @@ export type UserCreateWithoutQuiActivityLogsInput = {
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutQuiActivityLogsInput = {
@@ -4045,6 +4307,7 @@ export type UserUncheckedCreateWithoutQuiActivityLogsInput = {
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutQuiActivityLogsInput = {
@@ -4098,6 +4361,7 @@ export type UserUpdateWithoutQuiActivityLogsInput = {
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutQuiActivityLogsInput = {
@@ -4135,6 +4399,7 @@ export type UserUncheckedUpdateWithoutQuiActivityLogsInput = {
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutQuiActionLogsInput = {
@@ -4172,6 +4437,7 @@ export type UserCreateWithoutQuiActionLogsInput = {
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutQuiActionLogsInput = {
@@ -4209,6 +4475,7 @@ export type UserUncheckedCreateWithoutQuiActionLogsInput = {
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutQuiActionLogsInput = {
@@ -4262,6 +4529,7 @@ export type UserUpdateWithoutQuiActionLogsInput = {
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutQuiActionLogsInput = {
@@ -4299,6 +4567,7 @@ export type UserUncheckedUpdateWithoutQuiActionLogsInput = {
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutQuiEventLogsInput = {
@@ -4336,6 +4605,7 @@ export type UserCreateWithoutQuiEventLogsInput = {
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutQuiEventLogsInput = {
@@ -4373,6 +4643,7 @@ export type UserUncheckedCreateWithoutQuiEventLogsInput = {
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutQuiEventLogsInput = {
@@ -4426,6 +4697,7 @@ export type UserUpdateWithoutQuiEventLogsInput = {
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutQuiEventLogsInput = {
@@ -4463,6 +4735,7 @@ export type UserUncheckedUpdateWithoutQuiEventLogsInput = {
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  historyCursorStates?: Prisma.HistoryCursorStateUncheckedUpdateManyWithoutUserNestedInput
 }
 
 
@@ -4491,6 +4764,7 @@ export type UserCountOutputType = {
   quiActivityLogs: number
   quiActionLogs: number
   quiEventLogs: number
+  historyCursorStates: number
 }
 
 export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -4514,6 +4788,7 @@ export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.I
   quiActivityLogs?: boolean | UserCountOutputTypeCountQuiActivityLogsArgs
   quiActionLogs?: boolean | UserCountOutputTypeCountQuiActionLogsArgs
   quiEventLogs?: boolean | UserCountOutputTypeCountQuiEventLogsArgs
+  historyCursorStates?: boolean | UserCountOutputTypeCountHistoryCursorStatesArgs
 }
 
 /**
@@ -4666,6 +4941,13 @@ export type UserCountOutputTypeCountQuiEventLogsArgs<ExtArgs extends runtime.Typ
   where?: Prisma.QuiEventLogWhereInput
 }
 
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountHistoryCursorStatesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.HistoryCursorStateWhereInput
+}
+
 
 export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -4703,6 +4985,7 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   quiActivityLogs?: boolean | Prisma.User$quiActivityLogsArgs<ExtArgs>
   quiActionLogs?: boolean | Prisma.User$quiActionLogsArgs<ExtArgs>
   quiEventLogs?: boolean | Prisma.User$quiEventLogsArgs<ExtArgs>
+  historyCursorStates?: boolean | Prisma.User$historyCursorStatesArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["user"]>
 
@@ -4780,6 +5063,7 @@ export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   quiActivityLogs?: boolean | Prisma.User$quiActivityLogsArgs<ExtArgs>
   quiActionLogs?: boolean | Prisma.User$quiActionLogsArgs<ExtArgs>
   quiEventLogs?: boolean | Prisma.User$quiEventLogsArgs<ExtArgs>
+  historyCursorStates?: boolean | Prisma.User$historyCursorStatesArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type UserIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
@@ -4809,6 +5093,7 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     quiActivityLogs: Prisma.$QuiActivityLogPayload<ExtArgs>[]
     quiActionLogs: Prisma.$QuiActionLogPayload<ExtArgs>[]
     quiEventLogs: Prisma.$QuiEventLogPayload<ExtArgs>[]
+    historyCursorStates: Prisma.$HistoryCursorStatePayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -5259,6 +5544,7 @@ export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Typ
   quiActivityLogs<T extends Prisma.User$quiActivityLogsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$quiActivityLogsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QuiActivityLogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   quiActionLogs<T extends Prisma.User$quiActionLogsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$quiActionLogsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QuiActionLogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   quiEventLogs<T extends Prisma.User$quiEventLogsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$quiEventLogsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QuiEventLogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  historyCursorStates<T extends Prisma.User$historyCursorStatesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$historyCursorStatesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$HistoryCursorStatePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -6189,6 +6475,30 @@ export type User$quiEventLogsArgs<ExtArgs extends runtime.Types.Extensions.Inter
   take?: number
   skip?: number
   distinct?: Prisma.QuiEventLogScalarFieldEnum | Prisma.QuiEventLogScalarFieldEnum[]
+}
+
+/**
+ * User.historyCursorStates
+ */
+export type User$historyCursorStatesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the HistoryCursorState
+   */
+  select?: Prisma.HistoryCursorStateSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the HistoryCursorState
+   */
+  omit?: Prisma.HistoryCursorStateOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.HistoryCursorStateInclude<ExtArgs> | null
+  where?: Prisma.HistoryCursorStateWhereInput
+  orderBy?: Prisma.HistoryCursorStateOrderByWithRelationInput | Prisma.HistoryCursorStateOrderByWithRelationInput[]
+  cursor?: Prisma.HistoryCursorStateWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.HistoryCursorStateScalarFieldEnum | Prisma.HistoryCursorStateScalarFieldEnum[]
 }
 
 /**

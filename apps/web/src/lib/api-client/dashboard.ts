@@ -25,21 +25,47 @@ export async function fetchMultiInstanceQueue(): Promise<MultiInstanceQueueRespo
 export async function fetchMultiInstanceHistory(options?: {
 	startDate?: string;
 	endDate?: string;
-	page?: number;
+	cursor?: string;
 	pageSize?: number;
+	sortDirection?: "ascending" | "descending";
+	service?: "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr";
+	instanceId?: string;
+	status?: string;
+	searchTerm?: string;
+	hideProwlarrRss?: boolean;
 }): Promise<MultiInstanceHistoryResponse> {
 	const path = buildQueryUrl("/api/dashboard/history", {
 		startDate: options?.startDate,
 		endDate: options?.endDate,
-		page: options?.page,
+		cursor: options?.cursor,
 		pageSize: options?.pageSize,
+		sortDirection: options?.sortDirection,
+		service: options?.service,
+		instanceId: options?.instanceId,
+		status: options?.status,
+		searchTerm: options?.searchTerm,
+		hideProwlarrRss: options?.hideProwlarrRss,
 	});
 
 	try {
 		return await apiRequest<MultiInstanceHistoryResponse>(path);
 	} catch (error) {
 		if (error instanceof UnauthorizedError) {
-			return { instances: [], aggregated: [], totalCount: 0 };
+			return {
+				version: 2,
+				instances: [],
+				aggregated: [],
+				totalCount: 0,
+				pagination: {
+					pageSize: options?.pageSize ?? 25,
+					nextCursor: null,
+					hasMore: false,
+					incomplete: false,
+					sortKey: "date",
+					sortDirection: options?.sortDirection ?? "descending",
+					budgetUsed: 0,
+				},
+			};
 		}
 		throw error;
 	}

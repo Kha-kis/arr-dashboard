@@ -28,6 +28,11 @@ export type User = Prisma.UserModel
  */
 export type Session = Prisma.SessionModel
 /**
+ * Model HistoryCursorState
+ * Short-lived server-side state for bounded opaque History pagination handles.
+ */
+export type HistoryCursorState = Prisma.HistoryCursorStateModel
+/**
  * Model ServiceTag
  * 
  */

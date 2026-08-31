@@ -10,6 +10,7 @@
  */
 export type * from './models/User'
 export type * from './models/Session'
+export type * from './models/HistoryCursorState'
 export type * from './models/ServiceTag'
 export type * from './models/ServiceInstance'
 export type * from './models/InodeIndexCache'

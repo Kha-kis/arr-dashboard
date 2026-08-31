@@ -28,15 +28,21 @@ export const useMultiInstanceQueueQuery = () =>
 export const useMultiInstanceHistoryQuery = (params?: {
 	startDate?: string;
 	endDate?: string;
-	page?: number;
+	cursor?: string;
 	pageSize?: number;
+	sortDirection?: "ascending" | "descending";
+	service?: "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr";
+	instanceId?: string;
+	status?: string;
+	searchTerm?: string;
+	hideProwlarrRss?: boolean;
 }) =>
 	useQuery<MultiInstanceHistoryResponse>({
 		queryKey: dashboardKeys.history(params ?? {}),
 		queryFn: () => fetchMultiInstanceHistory(params),
 		staleTime: 60 * 1000,
 		gcTime: 2 * 60 * 1000, // 2 minutes - cleanup old param combinations
-		refetchInterval: POLLING_STANDARD,
+		refetchInterval: params?.cursor ? false : POLLING_STANDARD,
 	});
 
 export const useMultiInstanceCalendarQuery = (params: {

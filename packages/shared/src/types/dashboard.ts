@@ -189,18 +189,59 @@ export const historyItemSchema = z.object({
 
 export type HistoryItem = z.infer<typeof historyItemSchema>;
 
+const historyBooleanQuerySchema = z.preprocess((value) => {
+	if (value === undefined || value === false || value === "false" || value === "0") return false;
+	if (value === true || value === "true" || value === "1") return true;
+	return value;
+}, z.boolean());
+
+/** Query contract for version 2 cursor-based History responses. */
+export const historyQuerySchema = z.object({
+	startDate: z.string().optional(),
+	endDate: z.string().optional(),
+	cursor: z
+		.string()
+		.trim()
+		.regex(/^[A-Za-z0-9_-]{43}$/)
+		.optional(),
+	pageSize: z.coerce.number().int().safe().min(1).max(100).default(25),
+	sortKey: z.enum(["date"]).default("date"),
+	sortDirection: z.enum(["ascending", "descending"]).default("descending"),
+	service: z.enum(["sonarr", "radarr", "prowlarr", "lidarr", "readarr"]).optional(),
+	instanceId: z.string().trim().min(1).max(200).optional(),
+	status: z.string().trim().min(1).max(100).optional(),
+	searchTerm: z.string().trim().max(200).optional(),
+	hideProwlarrRss: historyBooleanQuerySchema,
+});
+
+export type HistoryQuery = z.infer<typeof historyQuerySchema>;
+
 export const multiInstanceHistoryResponseSchema = z.object({
+	version: z.literal(2),
 	instances: z.array(
 		z.object({
 			instanceId: z.string(),
 			instanceName: z.string(),
 			service: z.enum(["sonarr", "radarr", "prowlarr", "lidarr", "readarr"]),
-			data: z.array(historyItemSchema),
-			totalRecords: z.number().optional(),
+			data: z.array(historyItemSchema).max(0),
+			status: z.enum(["ok", "partial", "error"]),
+			totalRecords: z.number().int().nonnegative().nullable(),
+			totalRecordsExact: z.boolean(),
+			rejectedRecords: z.number().int().nonnegative(),
+			error: z.string().max(160).optional(),
 		}),
 	),
-	aggregated: z.array(historyItemSchema),
-	totalCount: z.number(),
+	aggregated: z.array(historyItemSchema).max(100),
+	totalCount: z.number().int().nonnegative().nullable(),
+	pagination: z.object({
+		pageSize: z.number().int().min(1).max(100),
+		nextCursor: z.string().nullable(),
+		hasMore: z.boolean(),
+		incomplete: z.boolean(),
+		sortKey: z.literal("date"),
+		sortDirection: z.enum(["ascending", "descending"]),
+		budgetUsed: z.number().int().min(0).max(10_000),
+	}),
 });
 
 export type MultiInstanceHistoryResponse = z.infer<typeof multiInstanceHistoryResponseSchema>;
