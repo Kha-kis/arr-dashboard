@@ -284,30 +284,81 @@ describe("executeQueueCleaner — integration", () => {
 		expect(del).not.toHaveBeenCalled();
 	});
 
-	it("fails closed when a retained torrent would be recategorized without blocklisting", async () => {
+	it("keeps both previews aligned when execution blocks unsafe retained-torrent recategorization", async () => {
+		const del = vi.fn();
+		const app = makeApp({
+			get: async () => ({ records: [STALLED_ITEM] }),
+			del,
+		});
+		const config = makeConfig({
+			removeFromClient: false,
+			addToBlocklist: false,
+			changeCategoryEnabled: true,
+		});
+
+		const execution = await executeQueueCleaner(app, makeInstance(), config);
+		const dryRun = await executeQueueCleaner(app, makeInstance(), {
+			...config,
+			dryRunMode: true,
+		});
+		const enhancedPreview = await executeEnhancedPreview(app, makeInstance(), config);
+
+		expect(execution.itemsCleaned).toBe(0);
+		expect(execution.skippedItems).toEqual([
+			expect.objectContaining({
+				id: 42,
+				reason: expect.stringContaining("blocklist"),
+			}),
+		]);
+		expect(dryRun.itemsCleaned).toBe(0);
+		expect(dryRun.skippedItems).toEqual([
+			expect.objectContaining({
+				id: 42,
+				reason: expect.stringContaining("blocklist"),
+			}),
+		]);
+		expect(enhancedPreview.previewItems).toEqual([
+			expect.objectContaining({
+				id: 42,
+				action: "skip",
+				reason: expect.stringContaining("blocklist"),
+			}),
+		]);
+		expect(enhancedPreview.wouldRemove).toBe(0);
+		expect(del).not.toHaveBeenCalled();
+	});
+
+	it("preserves a strike warning until the retained-torrent policy would authorize removal", async () => {
 		const del = vi.fn();
 		const app = makeApp({
 			get: async () => ({ records: [STALLED_ITEM] }),
 			del,
 		});
 
-		const result = await executeQueueCleaner(
+		const preview = await executeEnhancedPreview(
 			app,
 			makeInstance(),
 			makeConfig({
 				removeFromClient: false,
 				addToBlocklist: false,
 				changeCategoryEnabled: true,
+				strikeSystemEnabled: true,
+				maxStrikes: 3,
 			}),
 		);
 
-		expect(result.itemsCleaned).toBe(0);
-		expect(result.skippedItems).toEqual([
+		expect(preview.previewItems).toEqual([
 			expect.objectContaining({
 				id: 42,
-				reason: expect.stringContaining("blocklist"),
+				action: "warn",
+				strikeInfo: {
+					currentStrikes: 1,
+					maxStrikes: 3,
+					wouldTriggerRemoval: false,
+				},
 			}),
 		]);
+		expect(preview.wouldWarn).toBe(1);
 		expect(del).not.toHaveBeenCalled();
 	});
 
@@ -440,6 +491,7 @@ describe("executeQueueCleaner — integration", () => {
 				fileExtensionAllowlistEnabled: true,
 				allowedFileExtensions: '["mkv"]',
 				removeFromClient: false,
+				addToBlocklist: false,
 				changeCategoryEnabled: true,
 				lastSeedProtection: false,
 			}),
@@ -451,7 +503,7 @@ describe("executeQueueCleaner — integration", () => {
 		});
 		expect(del).toHaveBeenCalledWith(55, {
 			removeFromClient: true,
-			blocklist: true,
+			blocklist: false,
 			skipRedownload: true,
 			changeCategory: false,
 		});
@@ -576,6 +628,9 @@ describe("executeQueueCleaner — integration", () => {
 				failedEnabled: false,
 				fileExtensionAllowlistEnabled: true,
 				allowedFileExtensions: '["mkv"]',
+				removeFromClient: false,
+				addToBlocklist: false,
+				changeCategoryEnabled: true,
 				lastSeedProtection: false,
 			}),
 		);

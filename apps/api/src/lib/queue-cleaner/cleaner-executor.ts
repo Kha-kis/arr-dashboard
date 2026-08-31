@@ -53,6 +53,17 @@ import {
 
 const log = loggers.queueCleaner;
 
+function isUnsafeRetainedTorrentAction(
+	item: Pick<CleanerResultItem, "protocol" | "rule">,
+	config: QueueCleanerConfig,
+): boolean {
+	return (
+		item.protocol === "torrent" &&
+		item.rule !== "disallowed_file_extension" &&
+		isUnsafeRetainedTorrentPolicy(config)
+	);
+}
+
 function isEligibleForFilePolicy(
 	item: RawQueueItem,
 	config: QueueCleanerConfig,
@@ -724,6 +735,12 @@ export async function executeQueueCleaner(
 		}
 
 		const previewRemove = dryRunToRemove.slice(0, config.maxRemovalsPerRun);
+		const policyBlocked = previewRemove.filter((item) =>
+			isUnsafeRetainedTorrentAction(item, config),
+		);
+		const authorizedPreviewRemove = previewRemove.filter(
+			(item) => !isUnsafeRetainedTorrentAction(item, config),
+		);
 
 		return {
 			itemsCleaned: 0,
@@ -731,9 +748,13 @@ export async function executeQueueCleaner(
 			itemsWarned: dryRunWarned.length,
 			cleanedItems: [],
 			skippedItems: [
-				...previewRemove.map((i) => ({
+				...authorizedPreviewRemove.map((i) => ({
 					...i,
 					reason: `[DRY RUN] Would remove: ${i.reason}${i.strikeCount ? ` (strike ${i.strikeCount}/${i.maxStrikes})` : ""}`,
+				})),
+				...policyBlocked.map((item) => ({
+					...item,
+					reason: RETAINED_TORRENT_BLOCKLIST_ERROR,
 				})),
 				...skipped,
 			],
@@ -744,11 +765,13 @@ export async function executeQueueCleaner(
 			isDryRun: true,
 			status: "completed",
 			message:
-				previewRemove.length > 0
-					? `Dry run: would remove ${previewRemove.length} item(s)${dryRunWarned.length > 0 ? `, warn ${dryRunWarned.length}` : ""}`
+				authorizedPreviewRemove.length > 0
+					? `Dry run: would remove ${authorizedPreviewRemove.length} item(s)${dryRunWarned.length > 0 ? `, warn ${dryRunWarned.length}` : ""}`
 					: dryRunWarned.length > 0
 						? `Dry run: would warn ${dryRunWarned.length} item(s)`
-						: "Dry run: no items match removal rules",
+						: policyBlocked.length > 0
+							? `Dry run: would skip ${policyBlocked.length} item(s) blocked by the retained-torrent policy`
+							: "Dry run: no items match removal rules",
 		};
 	}
 
@@ -871,7 +894,7 @@ export async function executeQueueCleaner(
 			const isTorrent = item.protocol === "torrent";
 			const isFilePolicyRemoval = item.rule === "disallowed_file_extension";
 			const useChangeCategory = !isFilePolicyRemoval && config.changeCategoryEnabled && isTorrent;
-			if (isTorrent && !isFilePolicyRemoval && isUnsafeRetainedTorrentPolicy(config)) {
+			if (isUnsafeRetainedTorrentAction(item, config)) {
 				skipped.push({ ...item, reason: RETAINED_TORRENT_BLOCKLIST_ERROR });
 				continue;
 			}
@@ -1347,6 +1370,36 @@ export async function executeEnhancedPreview(
 			const simulatedStrikeCount = (existingStrike?.strikeCount ?? 0) + 1;
 			const wouldTriggerRemoval =
 				!config.strikeSystemEnabled || simulatedStrikeCount >= config.maxStrikes;
+			if (
+				wouldTriggerRemoval &&
+				isUnsafeRetainedTorrentAction(
+					{
+						protocol: typeof item.protocol === "string" ? item.protocol : undefined,
+						rule: evaluation.rule,
+					},
+					config,
+				)
+			) {
+				previewItems.push({
+					id,
+					title,
+					action: "skip",
+					rule: evaluation.rule,
+					reason: RETAINED_TORRENT_BLOCKLIST_ERROR,
+					detailedReason: `${generateDetailedReason(evaluation.rule, item, config, now)} ${RETAINED_TORRENT_BLOCKLIST_ERROR}.`,
+					queueAge: ageMins,
+					size,
+					sizeleft,
+					progress,
+					protocol: typeof item.protocol === "string" ? item.protocol : undefined,
+					indexer: typeof item.indexer === "string" ? item.indexer : undefined,
+					downloadClient: typeof item.downloadClient === "string" ? item.downloadClient : undefined,
+					status:
+						typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus : undefined,
+					downloadId: typeof item.downloadId === "string" ? item.downloadId : undefined,
+				});
+				continue;
+			}
 
 			let autoImportEligible: boolean | undefined;
 			let autoImportReason: string | undefined;
