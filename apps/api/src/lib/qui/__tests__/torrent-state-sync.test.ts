@@ -1,4 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
+import pg from "pg";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { backfillInfoHashForRow } from "../../library-sync/infohash-backfill.js";
 
@@ -38,6 +39,7 @@ function makeApp(overrides: Record<string, unknown> = {}) {
 	const episodeFileCacheFindMany = vi.fn().mockResolvedValue([]);
 	const serviceInstanceFindMany = vi.fn().mockResolvedValue([]);
 	const serviceInstanceFindFirst = vi.fn().mockResolvedValue(null);
+	const executeRaw = vi.fn().mockResolvedValue(1);
 	const prisma = {
 		libraryCache: {
 			update: libraryCacheUpdate,
@@ -52,6 +54,7 @@ function makeApp(overrides: Record<string, unknown> = {}) {
 			findFirst: serviceInstanceFindFirst,
 			findMany: serviceInstanceFindMany,
 		},
+		$executeRaw: executeRaw,
 		$transaction: vi.fn(),
 	};
 	prisma.$transaction.mockImplementation(
@@ -67,6 +70,7 @@ function makeApp(overrides: Record<string, unknown> = {}) {
 		__episodeFileCacheFindMany: episodeFileCacheFindMany,
 		__serviceInstanceFindMany: serviceInstanceFindMany,
 		__serviceInstanceFindFirst: serviceInstanceFindFirst,
+		__executeRaw: executeRaw,
 		...overrides,
 	} as any;
 }
@@ -97,7 +101,9 @@ function configureOneUser(app: ReturnType<typeof makeApp>, instances = [instance
 }
 
 function infoHashWrites(mock: ReturnType<typeof vi.fn>) {
-	return mock.mock.calls.filter((call) => Array.isArray(call[0]?.where?.infoHash?.in));
+	return mock.mock.calls.filter(
+		(call) => call[0]?.strings !== undefined || Array.isArray(call[0]?.where?.infoHash?.in),
+	);
 }
 
 function userWideClears(mock: ReturnType<typeof vi.fn>) {
@@ -139,14 +145,30 @@ describe("runQuiTorrentStateSync", () => {
 		const result = await runQuiTorrentStateSync(app);
 
 		expect(result).toMatchObject({ torrentsSeen: 2, rowsUpdated: 2, errors: 0 });
-		expect(app.__libraryCacheUpdateMany).toHaveBeenCalledWith({
-			where: { infoHash: { in: ["aaaa", "AAAA"] }, instance: { userId: "user-1" } },
-			data: expect.objectContaining({ torrentState: "seeding", torrentRatio: 1.5 }),
-		});
-		expect(app.__libraryCacheUpdateMany).toHaveBeenCalledWith({
-			where: { infoHash: { in: ["bbbb", "BBBB"] }, instance: { userId: "user-1" } },
-			data: expect.objectContaining({ torrentState: "stalled_dl", torrentRatio: 0.1 }),
-		});
+		expect(app.__executeRaw).toHaveBeenCalledTimes(2);
+		expect(app.__executeRaw.mock.calls[0]?.[0].values).toEqual(
+			expect.arrayContaining(["aaaa", "seeding", "bbbb", "stalled_dl", "user-1"]),
+		);
+		expect(app.__executeRaw.mock.calls[0]?.[0].strings.join("")).toContain(
+			'LOWER(cache."infoHash")',
+		);
+		expect(app.__executeRaw.mock.calls[0]?.[0].strings.join("")).toContain(
+			"CAST( AS DOUBLE PRECISION)",
+		);
+	});
+
+	it("types nullable staged ratios for both supported database providers", async () => {
+		const app = makeApp();
+		configureOneUser(app);
+		mockCreateQuiClient.mockReturnValue(
+			completeInventory([{ hash: "AAAA", state: "uploading", ratio: Number.NaN }]),
+		);
+
+		await runQuiTorrentStateSync(app);
+
+		const statement = app.__executeRaw.mock.calls[0]?.[0];
+		expect(statement.strings.join("")).toContain("CAST( AS DOUBLE PRECISION)");
+		expect(statement.values).toContain(null);
 	});
 
 	it("requires the complete list fallback when the inventory API is unavailable", async () => {
@@ -160,7 +182,7 @@ describe("runQuiTorrentStateSync", () => {
 		await runQuiTorrentStateSync(app);
 
 		expect(listAllTorrents).toHaveBeenCalledWith({ requireComplete: true });
-		expect(infoHashWrites(app.__libraryCacheUpdateMany)).toHaveLength(1);
+		expect(infoHashWrites(app.__executeRaw)).toHaveLength(2);
 	});
 
 	it.each([
@@ -182,14 +204,10 @@ describe("runQuiTorrentStateSync", () => {
 
 			await runQuiTorrentStateSync(app);
 
-			expect(infoHashWrites(app.__libraryCacheUpdateMany)).toHaveLength(1);
-			expect(app.__libraryCacheUpdateMany).toHaveBeenCalledWith({
-				where: { infoHash: { in: ["aaaa", "AAAA"] }, instance: { userId: "user-1" } },
-				data: expect.objectContaining({
-					torrentState: "seeding",
-					torrentRatio: null,
-				}),
-			});
+			expect(infoHashWrites(app.__executeRaw)).toHaveLength(2);
+			expect(app.__executeRaw.mock.calls[0]?.[0].values).toEqual(
+				expect.arrayContaining(["aaaa", "seeding", null, "user-1"]),
+			);
 		},
 	);
 
@@ -204,10 +222,9 @@ describe("runQuiTorrentStateSync", () => {
 
 		await runQuiTorrentStateSync(app);
 
-		expect(app.__libraryCacheUpdateMany).toHaveBeenCalledWith({
-			where: { infoHash: { in: ["aaaa", "AAAA"] }, instance: { userId: "user-1" } },
-			data: expect.objectContaining({ torrentState: "unknown", torrentRatio: null }),
-		});
+		expect(app.__executeRaw.mock.calls[0]?.[0].values).toEqual(
+			expect.arrayContaining(["aaaa", "unknown", null, "user-1"]),
+		);
 	});
 
 	it("fetches every enabled inventory before publishing any durable observation", async () => {
@@ -233,7 +250,7 @@ describe("runQuiTorrentStateSync", () => {
 		releaseSecond.resolve();
 		await sync;
 
-		expect(infoHashWrites(app.__libraryCacheUpdateMany)).toHaveLength(1);
+		expect(infoHashWrites(app.__executeRaw)).toHaveLength(2);
 	});
 
 	it("keeps every staged row non-fresh until the final publication stamp commits", async () => {
@@ -263,26 +280,16 @@ describe("runQuiTorrentStateSync", () => {
 				},
 			],
 		]);
-		app.__libraryCacheUpdateMany.mockImplementation(
-			async (args: {
-				where: { infoHash?: { in: string[] } };
-				data: { torrentState?: string | null; torrentSyncedAt?: Date | null };
-			}) => {
-				const normalizedHash = args.where.infoHash?.in[0];
-				if (normalizedHash) {
-					const current = visible.get(normalizedHash)!;
-					visible.set(normalizedHash, {
-						torrentState: args.data.torrentState ?? null,
-						torrentSyncedAt: args.data.torrentSyncedAt ?? current.torrentSyncedAt,
-					});
-					if (normalizedHash === "aaaa") {
-						firstHashStaged.resolve();
-						await releaseStaging.promise;
-					}
-				}
-				return { count: 1 };
-			},
-		);
+		app.__executeRaw.mockImplementation(async (query: { strings?: string[] }) => {
+			if (query.strings?.join("").includes('"library_cache"')) {
+				visible.set("aaaa", { torrentState: "seeding", torrentSyncedAt: null });
+				visible.set("bbbb", { torrentState: "paused", torrentSyncedAt: null });
+				firstHashStaged.resolve();
+				await releaseStaging.promise;
+				return 2;
+			}
+			return 0;
+		});
 		app.prisma.$transaction.mockImplementation(
 			async (operation: (tx: typeof app.prisma) => Promise<unknown>) => {
 				const staged = new Map([...visible.entries()].map(([hash, value]) => [hash, { ...value }]));
@@ -323,7 +330,7 @@ describe("runQuiTorrentStateSync", () => {
 			torrentSyncedAt: null,
 		});
 		expect(visible.get("bbbb")).toEqual({
-			torrentState: "seeding",
+			torrentState: "paused",
 			torrentSyncedAt: null,
 		});
 
@@ -367,16 +374,16 @@ describe("runQuiTorrentStateSync", () => {
 		);
 		const stageStarted = deferred();
 		const releaseStage = deferred();
-		app.__libraryCacheUpdateMany.mockImplementation(
-			async (args: { where?: { infoHash?: { in: string[] } } }) => {
-				if (args.where?.infoHash?.in[0] === "bbbb") {
-					events.push("stage");
-					stageStarted.resolve();
-					await releaseStage.promise;
-				}
-				return { count: 1 };
-			},
-		);
+		let stageObserved = false;
+		app.__executeRaw.mockImplementation(async (query: { strings?: string[] }) => {
+			if (!stageObserved && query.strings?.join("").includes('"library_cache"')) {
+				stageObserved = true;
+				events.push("stage");
+				stageStarted.resolve();
+				await releaseStage.promise;
+			}
+			return 1;
+		});
 		app.prisma.$transaction.mockImplementation(
 			async (operation: (tx: typeof app.prisma) => Promise<unknown>) => {
 				const tx = {
@@ -464,7 +471,7 @@ describe("runQuiTorrentStateSync", () => {
 
 		await runQuiTorrentStateSync(app);
 
-		expect(infoHashWrites(app.__libraryCacheUpdateMany)).toHaveLength(1001);
+		expect(infoHashWrites(app.__executeRaw)).toHaveLength(8);
 		expect(transactionStatementCounts).toEqual([2, 2]);
 	});
 
@@ -626,10 +633,12 @@ describe("runQuiTorrentStateSync", () => {
 			where: { instance: { userId: "user-a" } },
 			data: { torrentState: null, torrentRatio: null, torrentSyncedAt: null },
 		});
-		expect(app.__libraryCacheUpdateMany).toHaveBeenCalledWith({
-			where: { infoHash: { in: ["bbbb", "BBBB"] }, instance: { userId: "user-b" } },
-			data: expect.objectContaining({ torrentState: "seeding" }),
-		});
+		expect(
+			app.__executeRaw.mock.calls.some(
+				(call: [{ values?: unknown[] }]) =>
+					call[0]?.values?.includes("user-b") && call[0]?.values?.includes("seeding"),
+			),
+		).toBe(true);
 	});
 
 	it("invalidates any partial publish when a durable write fails", async () => {
@@ -646,6 +655,7 @@ describe("runQuiTorrentStateSync", () => {
 			.mockResolvedValueOnce({ count: 1 })
 			.mockRejectedValueOnce(new Error("write failed"))
 			.mockResolvedValueOnce({ count: 1 });
+		app.__executeRaw.mockRejectedValueOnce(new Error("write failed"));
 
 		const result = await runQuiTorrentStateSync(app);
 
@@ -728,9 +738,80 @@ describe("runQuiTorrentStateSync", () => {
 
 		await runQuiTorrentStateSync(app);
 
-		expect(app.__libraryCacheUpdateMany).toHaveBeenCalledWith({
-			where: { infoHash: { in: ["eeee", "EEEE"] }, instance: { userId: "user-1" } },
-			data: expect.objectContaining({ torrentRatio: null }),
-		});
+		expect(app.__executeRaw.mock.calls[0]?.[0].values).toEqual(
+			expect.arrayContaining(["eeee", null, "user-1"]),
+		);
+	});
+});
+
+const quiSyncPostgresUrl = process.env.QUI_SYNC_POSTGRES_URL;
+const describePostgres = quiSyncPostgresUrl ? describe : describe.skip;
+
+describePostgres("runQuiTorrentStateSync PostgreSQL staging", () => {
+	it("executes numeric and null staged ratios against PostgreSQL", async () => {
+		const client = new pg.Client({ connectionString: quiSyncPostgresUrl });
+		await client.connect();
+		try {
+			await client.query("BEGIN");
+			await client.query(
+				`CREATE TEMP TABLE "ServiceInstance" ("id" TEXT PRIMARY KEY, "userId" TEXT NOT NULL) ON COMMIT DROP`,
+			);
+			for (const tableName of ["library_cache", "episode_file_cache"]) {
+				await client.query(
+					`CREATE TEMP TABLE "${tableName}" (
+						"id" TEXT PRIMARY KEY,
+						"instanceId" TEXT NOT NULL,
+						"infoHash" TEXT,
+						"torrentState" TEXT,
+						"torrentRatio" DOUBLE PRECISION,
+						"torrentSyncedAt" TIMESTAMP(3)
+					) ON COMMIT DROP`,
+				);
+			}
+			await client.query(
+				`INSERT INTO "ServiceInstance" ("id", "userId") VALUES ('qui-1', 'user-1')`,
+			);
+			await client.query(
+				`INSERT INTO "library_cache"
+					("id", "instanceId", "infoHash", "torrentState", "torrentRatio")
+				 VALUES
+					('numeric', 'qui-1', 'AAAA', 'paused', 0),
+					('nullable', 'qui-1', 'BBBB', 'paused', 0)`,
+			);
+
+			const app = makeApp();
+			configureOneUser(app);
+			app.__executeRaw.mockImplementation(
+				async (statement: { text: string; values: unknown[] }) => {
+					const result = await client.query(statement.text, statement.values);
+					return result.rowCount ?? 0;
+				},
+			);
+			mockCreateQuiClient.mockReturnValue(
+				completeInventory([
+					{ hash: "AAAA", state: "uploading", ratio: 123456.789123456 },
+					{ hash: "BBBB", state: "stalledDL", ratio: Number.NaN },
+				]),
+			);
+
+			await runQuiTorrentStateSync(app);
+
+			const rows = await client.query<{
+				id: string;
+				torrentState: string | null;
+				torrentRatio: number | null;
+			}>(`SELECT "id", "torrentState", "torrentRatio" FROM "library_cache" ORDER BY "id"`);
+			expect(rows.rows).toEqual([
+				{ id: "nullable", torrentState: "stalled_dl", torrentRatio: null },
+				{
+					id: "numeric",
+					torrentState: "seeding",
+					torrentRatio: 123456.789123456,
+				},
+			]);
+		} finally {
+			await client.query("ROLLBACK").catch(() => undefined);
+			await client.end();
+		}
 	});
 });
