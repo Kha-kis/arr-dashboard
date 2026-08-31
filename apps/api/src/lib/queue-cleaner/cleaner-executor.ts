@@ -37,6 +37,10 @@ import {
 } from "./queue-item-utils.js";
 import { normalizeDownloadId, resolveQuiAwareGateReasons } from "./qui-gate.js";
 import {
+	isUnsafeRetainedTorrentPolicy,
+	RETAINED_TORRENT_BLOCKLIST_ERROR,
+} from "./retained-torrent-policy.js";
+import {
 	evaluateQueueItem,
 	shouldSkipByProfileFilter,
 	shouldSkipByTagFilter,
@@ -48,6 +52,19 @@ import {
 } from "./torrent-file-policy.js";
 
 const log = loggers.queueCleaner;
+
+function isUnsafeRetainedTorrentAction(
+	item: Pick<CleanerResultItem, "protocol" | "rule">,
+	config: QueueCleanerConfig,
+): boolean {
+	const normalizedProtocol =
+		typeof item.protocol === "string" ? item.protocol.toLowerCase() : undefined;
+	return (
+		normalizedProtocol !== "usenet" &&
+		item.rule !== "disallowed_file_extension" &&
+		isUnsafeRetainedTorrentPolicy(config)
+	);
+}
 
 function isEligibleForFilePolicy(
 	item: RawQueueItem,
@@ -675,17 +692,6 @@ export async function executeQueueCleaner(
 		toRemove = matched;
 	}
 
-	// Cap matches at maxRemovalsPerRun
-	const cappedToRemove = toRemove.slice(0, config.maxRemovalsPerRun);
-	const cappedSkip = toRemove.slice(config.maxRemovalsPerRun);
-
-	for (const item of cappedSkip) {
-		skipped.push({
-			...item,
-			reason: `Exceeded max removals per run (${config.maxRemovalsPerRun})`,
-		});
-	}
-
 	// Dry run mode: return preview
 	if (config.dryRunMode) {
 		const dryRunWarned: CleanerResultItem[] = [];
@@ -719,17 +725,33 @@ export async function executeQueueCleaner(
 			dryRunToRemove = matched;
 		}
 
-		const previewRemove = dryRunToRemove.slice(0, config.maxRemovalsPerRun);
+		const policyBlocked = dryRunToRemove.filter((item) =>
+			isUnsafeRetainedTorrentAction(item, config),
+		);
+		const authorizedCandidates = dryRunToRemove.filter(
+			(item) => !isUnsafeRetainedTorrentAction(item, config),
+		);
+		const authorizedPreviewRemove = authorizedCandidates.slice(0, config.maxRemovalsPerRun);
+		const cappedSkip = authorizedCandidates.slice(config.maxRemovalsPerRun);
 
 		return {
 			itemsCleaned: 0,
-			itemsSkipped: previewRemove.length + skipped.length,
+			itemsSkipped:
+				authorizedPreviewRemove.length + policyBlocked.length + cappedSkip.length + skipped.length,
 			itemsWarned: dryRunWarned.length,
 			cleanedItems: [],
 			skippedItems: [
-				...previewRemove.map((i) => ({
+				...authorizedPreviewRemove.map((i) => ({
 					...i,
 					reason: `[DRY RUN] Would remove: ${i.reason}${i.strikeCount ? ` (strike ${i.strikeCount}/${i.maxStrikes})` : ""}`,
+				})),
+				...policyBlocked.map((item) => ({
+					...item,
+					reason: RETAINED_TORRENT_BLOCKLIST_ERROR,
+				})),
+				...cappedSkip.map((item) => ({
+					...item,
+					reason: `Exceeded max removals per run (${config.maxRemovalsPerRun})`,
 				})),
 				...skipped,
 			],
@@ -740,12 +762,32 @@ export async function executeQueueCleaner(
 			isDryRun: true,
 			status: "completed",
 			message:
-				previewRemove.length > 0
-					? `Dry run: would remove ${previewRemove.length} item(s)${dryRunWarned.length > 0 ? `, warn ${dryRunWarned.length}` : ""}`
+				authorizedPreviewRemove.length > 0
+					? `Dry run: would remove ${authorizedPreviewRemove.length} item(s)${dryRunWarned.length > 0 ? `, warn ${dryRunWarned.length}` : ""}`
 					: dryRunWarned.length > 0
 						? `Dry run: would warn ${dryRunWarned.length} item(s)`
-						: "Dry run: no items match removal rules",
+						: policyBlocked.length > 0
+							? `Dry run: would skip ${policyBlocked.length} item(s) blocked by the retained-torrent policy`
+							: "Dry run: no items match removal rules",
 		};
+	}
+
+	const policyBlocked = toRemove.filter((item) => isUnsafeRetainedTorrentAction(item, config));
+	const authorizedToRemove = toRemove.filter(
+		(item) => !isUnsafeRetainedTorrentAction(item, config),
+	);
+	for (const item of policyBlocked) {
+		skipped.push({ ...item, reason: RETAINED_TORRENT_BLOCKLIST_ERROR });
+	}
+
+	// The cap throttles authorized mutations; policy-blocked items do not consume it.
+	const cappedToRemove = authorizedToRemove.slice(0, config.maxRemovalsPerRun);
+	const cappedSkip = authorizedToRemove.slice(config.maxRemovalsPerRun);
+	for (const item of cappedSkip) {
+		skipped.push({
+			...item,
+			reason: `Exceeded max removals per run (${config.maxRemovalsPerRun})`,
+		});
 	}
 
 	// Live mode: remove items (with auto-import support)
@@ -867,6 +909,10 @@ export async function executeQueueCleaner(
 			const isTorrent = item.protocol === "torrent";
 			const isFilePolicyRemoval = item.rule === "disallowed_file_extension";
 			const useChangeCategory = !isFilePolicyRemoval && config.changeCategoryEnabled && isTorrent;
+			if (isUnsafeRetainedTorrentAction(item, config)) {
+				skipped.push({ ...item, reason: RETAINED_TORRENT_BLOCKLIST_ERROR });
+				continue;
+			}
 
 			await client.queue.delete(item.id, {
 				removeFromClient: isFilePolicyRemoval ? true : config.removeFromClient,
@@ -1339,6 +1385,36 @@ export async function executeEnhancedPreview(
 			const simulatedStrikeCount = (existingStrike?.strikeCount ?? 0) + 1;
 			const wouldTriggerRemoval =
 				!config.strikeSystemEnabled || simulatedStrikeCount >= config.maxStrikes;
+			if (
+				wouldTriggerRemoval &&
+				isUnsafeRetainedTorrentAction(
+					{
+						protocol: typeof item.protocol === "string" ? item.protocol : undefined,
+						rule: evaluation.rule,
+					},
+					config,
+				)
+			) {
+				previewItems.push({
+					id,
+					title,
+					action: "skip",
+					rule: evaluation.rule,
+					reason: RETAINED_TORRENT_BLOCKLIST_ERROR,
+					detailedReason: `${generateDetailedReason(evaluation.rule, item, config, now)} ${RETAINED_TORRENT_BLOCKLIST_ERROR}.`,
+					queueAge: ageMins,
+					size,
+					sizeleft,
+					progress,
+					protocol: typeof item.protocol === "string" ? item.protocol : undefined,
+					indexer: typeof item.indexer === "string" ? item.indexer : undefined,
+					downloadClient: typeof item.downloadClient === "string" ? item.downloadClient : undefined,
+					status:
+						typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus : undefined,
+					downloadId: typeof item.downloadId === "string" ? item.downloadId : undefined,
+				});
+				continue;
+			}
 
 			let autoImportEligible: boolean | undefined;
 			let autoImportReason: string | undefined;

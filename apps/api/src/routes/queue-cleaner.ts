@@ -32,6 +32,10 @@ import {
 	MIN_STALLED_THRESHOLD_MINS,
 	MIN_STRIKE_DECAY_HOURS,
 } from "../lib/queue-cleaner/constants.js";
+import {
+	isUnsafeRetainedTorrentPolicy,
+	RETAINED_TORRENT_BLOCKLIST_ERROR,
+} from "../lib/queue-cleaner/retained-torrent-policy.js";
 import { getQueueCleanerScheduler } from "../lib/queue-cleaner/scheduler.js";
 import { parseAllowedFileExtensions } from "../lib/queue-cleaner/torrent-file-policy.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
@@ -453,6 +457,16 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		if (!instance.queueCleanerConfig) {
 			return reply.status(404).send({ error: "Queue cleaner config not found for this instance" });
+		}
+
+		const effectiveRetainedTorrentPolicy = {
+			removeFromClient: data.removeFromClient ?? instance.queueCleanerConfig.removeFromClient,
+			addToBlocklist: data.addToBlocklist ?? instance.queueCleanerConfig.addToBlocklist,
+			changeCategoryEnabled:
+				data.changeCategoryEnabled ?? instance.queueCleanerConfig.changeCategoryEnabled,
+		};
+		if (isUnsafeRetainedTorrentPolicy(effectiveRetainedTorrentPolicy)) {
+			return reply.status(400).send({ error: RETAINED_TORRENT_BLOCKLIST_ERROR });
 		}
 
 		const filePolicyEnabled =

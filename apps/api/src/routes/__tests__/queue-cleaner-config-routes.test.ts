@@ -33,6 +33,9 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
 		instanceId: instance.id,
 		fileExtensionAllowlistEnabled: false,
 		allowedFileExtensions: null,
+		removeFromClient: true,
+		addToBlocklist: true,
+		changeCategoryEnabled: false,
 		lastRunAt: null,
 		createdAt: new Date("2026-01-01T00:00:00Z"),
 		updatedAt: new Date("2026-01-01T00:00:00Z"),
@@ -40,7 +43,7 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
 	};
 }
 
-describe("Queue Cleaner file-allowlist config routes", () => {
+describe("Queue Cleaner config routes", () => {
 	let app: ReturnType<typeof Fastify>;
 	let prisma: {
 		queueCleanerConfig: {
@@ -149,5 +152,52 @@ describe("Queue Cleaner file-allowlist config routes", () => {
 				data: { fileExtensionAllowlistEnabled: false },
 			}),
 		);
+	});
+
+	it("rejects retaining and recategorizing torrents without blocklisting", async () => {
+		const response = await injectAuthenticated("PATCH", "/queue-cleaner/configs/arr-1", {
+			body: {
+				removeFromClient: false,
+				addToBlocklist: false,
+				changeCategoryEnabled: true,
+			},
+		});
+
+		expect(response.statusCode).toBe(400);
+		expect(response.json().error).toContain("blocklist");
+		expect(prisma.queueCleanerConfig.update).not.toHaveBeenCalled();
+	});
+
+	it("rejects a partial update that makes an existing retained-torrent policy unsafe", async () => {
+		const existingConfig = makeConfig({
+			removeFromClient: false,
+			addToBlocklist: false,
+			changeCategoryEnabled: false,
+		});
+		mocks.requireInstance.mockResolvedValue({
+			...instance,
+			queueCleanerConfig: existingConfig,
+		});
+
+		const response = await injectAuthenticated("PATCH", "/queue-cleaner/configs/arr-1", {
+			body: { changeCategoryEnabled: true },
+		});
+
+		expect(response.statusCode).toBe(400);
+		expect(response.json().error).toContain("blocklist");
+		expect(prisma.queueCleanerConfig.update).not.toHaveBeenCalled();
+	});
+
+	it("allows retaining and recategorizing torrents when blocklisting is enabled", async () => {
+		const response = await injectAuthenticated("PATCH", "/queue-cleaner/configs/arr-1", {
+			body: {
+				removeFromClient: false,
+				addToBlocklist: true,
+				changeCategoryEnabled: true,
+			},
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(prisma.queueCleanerConfig.update).toHaveBeenCalled();
 	});
 });
