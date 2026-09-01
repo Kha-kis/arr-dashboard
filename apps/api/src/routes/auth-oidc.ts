@@ -5,15 +5,16 @@ import * as oauth from "oauth4webapi";
 import { z } from "zod";
 import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
 import { OIDCProvider } from "../lib/auth/oidc-provider.js";
-import { resolveCanonicalIssuer } from "../lib/auth/oidc-utils.js";
-import { getSessionMetadata } from "../lib/auth/session-metadata.js";
-import { getErrorMessage } from "../lib/utils/error-message.js";
-import { validateRequest } from "../lib/utils/validate.js";
 import {
 	buildOidcRedirectUriFromAppUrl,
 	oidcRedirectUriMatchesAppOrigin,
 	resolveOidcAppUrl,
 } from "../lib/auth/oidc-redirect-uri.js";
+import { resolveCanonicalIssuer } from "../lib/auth/oidc-utils.js";
+import { getSessionMetadata } from "../lib/auth/session-metadata.js";
+import { withIndependentCleanupOperationGuard } from "../lib/library-cleanup/cleanup-maintenance-gate.js";
+import { getErrorMessage } from "../lib/utils/error-message.js";
+import { validateRequest } from "../lib/utils/validate.js";
 
 /**
  * In-memory storage for OIDC states and nonces (production: use Redis)
@@ -332,7 +333,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * GET /auth/oidc/callback
 	 * Handles OIDC callback after user authorization
 	 */
-	app.get("/oidc/callback", async (request, reply) => {
+	app.get("/oidc/callback", { config: { backupMutation: true } }, async (request, reply) => {
 		const queryParams = request.query as Record<string, unknown>;
 		request.log.info({ hasCode: "code" in queryParams }, "OIDC callback received");
 
@@ -637,9 +638,11 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			);
 
 			// Pre-warm connections to ARR instances in background (don't await)
-			warmConnectionsForUser(app, user.id).catch((err) => {
-				request.log.debug({ err }, "Connection warm-up wrapper error (non-critical)");
-			});
+			withIndependentCleanupOperationGuard(() => warmConnectionsForUser(app, user.id)).catch(
+				(err) => {
+					request.log.debug({ err }, "Connection warm-up wrapper error (non-critical)");
+				},
+			);
 
 			const redirectPath = isAccountAction ? "/settings#authentication" : "/";
 			request.log.info(
