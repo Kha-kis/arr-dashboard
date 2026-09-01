@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach, afterAll } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Module-level mocks
@@ -26,12 +26,16 @@ const { mockSessionService } = vi.hoisted(() => ({
 }));
 
 // Mock OIDCProvider class — avoid real discovery/HTTP calls
-const { MockOIDCProvider } = vi.hoisted(() => {
+const { MockOIDCProvider, mockExchangeCode } = vi.hoisted(() => {
 	const mockGetAuthorizationUrl = vi
 		.fn()
 		.mockResolvedValue(
 			"https://provider.example.com/authorize?client_id=test&state=mock-state&code_challenge=mock-challenge",
 		);
+	const mockExchangeCode = vi.fn().mockResolvedValue({
+		access_token: "mock-access-token",
+		id_token: "mock-id-token",
+	});
 	class MockOIDCProvider {
 		config: Record<string, unknown>;
 		static mockGetAuthorizationUrl = mockGetAuthorizationUrl;
@@ -39,17 +43,14 @@ const { MockOIDCProvider } = vi.hoisted(() => {
 			this.config = config;
 		}
 		getAuthorizationUrl = mockGetAuthorizationUrl;
-		exchangeCode = vi.fn().mockResolvedValue({
-			access_token: "mock-access-token",
-			id_token: "mock-id-token",
-		});
+		exchangeCode = mockExchangeCode;
 		extractIdTokenClaims = vi.fn().mockReturnValue({ sub: "provider-user-1" });
 		getUserInfo = vi.fn().mockResolvedValue({
 			sub: "provider-user-1",
 			preferred_username: "oidc-admin",
 		});
 	}
-	return { MockOIDCProvider };
+	return { MockOIDCProvider, mockExchangeCode };
 });
 
 vi.mock("../../lib/auth/oidc-provider.js", () => ({
@@ -71,8 +72,9 @@ vi.mock("oauth4webapi", () => ({
 }));
 
 // Mock connection warmer
+const mockWarmConnectionsForUser = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock("../../lib/arr/connection-warmer.js", () => ({
-	warmConnectionsForUser: vi.fn().mockResolvedValue(undefined),
+	warmConnectionsForUser: mockWarmConnectionsForUser,
 }));
 
 // Mock session metadata
@@ -85,8 +87,10 @@ vi.mock("../../lib/auth/session-metadata.js", () => ({
 // ---------------------------------------------------------------------------
 
 import Fastify, { type FastifyRequest } from "fastify";
-import { registerAuthOidcRoutes } from "../auth-oidc.js";
 import { resolveCanonicalIssuer } from "../../lib/auth/oidc-utils.js";
+import { registerBackupMutationGuard } from "../../lib/backup/backup-mutation-gate.js";
+import { withCleanupMaintenanceGuard } from "../../lib/library-cleanup/cleanup-maintenance-gate.js";
+import { registerAuthOidcRoutes } from "../auth-oidc.js";
 
 // ---------------------------------------------------------------------------
 // Mock Prisma client
@@ -169,6 +173,11 @@ beforeEach(async () => {
 		(state: string) =>
 			`https://provider.example.com/authorize?client_id=test&state=${encodeURIComponent(state)}`,
 	);
+	mockExchangeCode.mockReset().mockResolvedValue({
+		access_token: "mock-access-token",
+		id_token: "mock-id-token",
+	});
+	mockWarmConnectionsForUser.mockReset().mockResolvedValue(undefined);
 
 	mockPrisma = createMockPrisma();
 	mockSessionService.rotateActiveSession.mockImplementation(
@@ -221,6 +230,9 @@ beforeEach(async () => {
 			request.sessionToken = "admin-session-token";
 		}
 	});
+
+	// Register the production request mutation barrier before route discovery.
+	registerBackupMutationGuard(app);
 
 	// Register OIDC routes
 	await app.register(registerAuthOidcRoutes, { prefix: "/auth" });
@@ -619,6 +631,89 @@ describe("POST /auth/oidc/login", () => {
 // ===========================================================================
 
 describe("GET /auth/oidc/callback", () => {
+	it("holds the restore barrier while stale OIDC provider authority is in flight", async () => {
+		mockPrisma.oIDCProvider.findFirst.mockResolvedValue(makeOidcProvider());
+		let releaseExchange: ((tokens: { access_token: string; id_token: string }) => void) | undefined;
+		mockExchangeCode.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					releaseExchange = resolve;
+				}),
+		);
+
+		const login = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/login",
+		});
+		const authorizationUrl = new URL(JSON.parse(login.payload).authorizationUrl);
+		const state = authorizationUrl.searchParams.get("state");
+
+		const callback = app.inject({
+			method: "GET",
+			url: `/auth/oidc/callback?code=mock-auth-code&state=${encodeURIComponent(state ?? "")}`,
+		});
+		try {
+			await vi.waitFor(() => expect(mockExchangeCode).toHaveBeenCalledOnce());
+
+			const restoreWork = vi.fn();
+			await expect(withCleanupMaintenanceGuard(async () => restoreWork())).rejects.toMatchObject({
+				statusCode: 409,
+			});
+			expect(restoreWork).not.toHaveBeenCalled();
+		} finally {
+			releaseExchange?.({
+				access_token: "mock-access-token",
+				id_token: "mock-id-token",
+			});
+			await callback;
+		}
+	});
+
+	it("keeps restore excluded while detached connection warming retains old authority", async () => {
+		mockPrisma.oIDCProvider.findFirst.mockResolvedValue(makeOidcProvider());
+		let releaseWarmup!: () => void;
+		const warmupBlocked = new Promise<void>((resolve) => {
+			releaseWarmup = resolve;
+		});
+		mockWarmConnectionsForUser.mockReturnValueOnce(warmupBlocked);
+
+		const login = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/login",
+		});
+		const authorizationUrl = new URL(JSON.parse(login.payload).authorizationUrl);
+		const state = authorizationUrl.searchParams.get("state");
+
+		let callbackStatus: number | undefined;
+		const callback = app
+			.inject({
+				method: "GET",
+				url: `/auth/oidc/callback?code=mock-auth-code&state=${encodeURIComponent(state ?? "")}`,
+			})
+			.then((response: { statusCode: number }) => {
+				callbackStatus = response.statusCode;
+				return response;
+			});
+		const restoreWork = vi.fn();
+		try {
+			await vi.waitFor(() => expect(callbackStatus).toBe(302));
+			expect(mockWarmConnectionsForUser).toHaveBeenCalledOnce();
+			await expect(withCleanupMaintenanceGuard(async () => restoreWork())).rejects.toMatchObject({
+				statusCode: 409,
+			});
+			expect(restoreWork).not.toHaveBeenCalled();
+		} finally {
+			releaseWarmup();
+			await warmupBlocked;
+			await callback;
+		}
+
+		await vi.waitFor(async () => {
+			await expect(withCleanupMaintenanceGuard(restoreWork)).resolves.toBeUndefined();
+		});
+		expect(restoreWork).toHaveBeenCalledOnce();
+	});
+
 	it("links the OIDC identity to the authenticated admin who initiated the flow", async () => {
 		mockPrisma.oIDCProvider.findFirst.mockResolvedValue(makeOidcProvider());
 		mockPrisma.oIDCAccount.create.mockResolvedValue({
