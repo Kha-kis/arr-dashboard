@@ -88,6 +88,7 @@ import {
 	acquireCleanupRunLease,
 	CLEANUP_RUN_LEASE_MS,
 	CleanupRunAlreadyInProgressError,
+	type CleanupRunLease,
 	CleanupRunLeaseLostError,
 	releaseCleanupRunLease,
 	renewCleanupRunLease,
@@ -96,8 +97,8 @@ import {
 import {
 	type EpisodeCleanupCandidate,
 	type EpisodePlexWatchEvidence,
-	evaluateEpisodeWatchCountRule,
 	evaluateEpisodeWatchCountEvidence,
+	evaluateEpisodeWatchCountRule,
 	isSupportedEpisodeCleanupRule,
 	toEpisodeTargetMetadata,
 } from "./episode-scope.js";
@@ -1041,6 +1042,41 @@ export async function withCleanupTopologyMutationLease<T>(
 		() => new CleanupTopologyMutationConflictError(),
 		options,
 	);
+}
+
+/**
+ * Hold and renew the cross-process cleanup lease for recovery operations whose
+ * upstream request count is not statically bounded. The callback must assert
+ * ownership at every durable or upstream mutation boundary.
+ */
+export async function withRenewableCleanupTopologyMutationLease<T>(
+	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
+	userId: string,
+	mutate: (runLease: CleanupRunLease) => Promise<T>,
+): Promise<T> {
+	return await withCleanupOperationGuard(async () => {
+		const config = await deps.prisma.libraryCleanupConfig.upsert({
+			where: { userId },
+			update: {},
+			create: { userId },
+			select: { id: true },
+		});
+		let runLease: CleanupRunLease;
+		try {
+			runLease = await startCleanupRunLease(deps, userId, config.id);
+		} catch (error) {
+			if (error instanceof CleanupRunAlreadyInProgressError) {
+				throw new CleanupTopologyMutationConflictError();
+			}
+			throw error;
+		}
+
+		try {
+			return await mutate(runLease);
+		} finally {
+			await runLease.release();
+		}
+	});
 }
 
 /** Serialize destructive ARR service deletion against every cleanup/TRaSH mutation. */

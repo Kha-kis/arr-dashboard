@@ -2,11 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	acquireCleanupRunLease,
 	CleanupPolicyMutationConflictError,
+	CleanupRunLeaseLostError,
 	CleanupTopologyMutationConflictError,
 	releaseCleanupRunLease,
 	renewCleanupRunLease,
-	withCleanupTopologyMutationLease,
 	withCleanupPolicyMutationLease,
+	withCleanupTopologyMutationLease,
+	withRenewableCleanupTopologyMutationLease,
 } from "../cleanup-executor.js";
 import type { CleanupExecutorDeps } from "../types.js";
 
@@ -184,6 +186,71 @@ describe("library cleanup database run lease", () => {
 			}),
 		).resolves.toBe("created");
 		expect(calls).toEqual(["upsert", "acquire", "mutate", "release"]);
+	});
+
+	it("keeps bounded topology callbacks separate from renewable lease authority", async () => {
+		const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+		const prisma = {
+			libraryCleanupConfig: {
+				upsert: vi.fn(async () => ({ id: "config-1" })),
+				updateMany,
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+		const log = { warn: vi.fn(), error: vi.fn() } as unknown as CleanupExecutorDeps["log"];
+		const mutate = vi.fn(async (...args: unknown[]) => args.length);
+
+		await expect(withCleanupTopologyMutationLease({ prisma, log }, "user-1", mutate)).resolves.toBe(
+			0,
+		);
+		expect(mutate).toHaveBeenCalledWith();
+	});
+
+	it("renews an explicit recovery topology lease through the ownership assertion", async () => {
+		const calls: string[] = [];
+		const updateMany = vi.fn(async ({ data }: { data: { runClaimToken?: string | null } }) => {
+			calls.push(
+				data.runClaimToken === null
+					? "release"
+					: typeof data.runClaimToken === "string"
+						? "acquire"
+						: "renew",
+			);
+			return { count: 1 };
+		});
+		const prisma = {
+			libraryCleanupConfig: {
+				upsert: vi.fn(async () => ({ id: "config-1" })),
+				updateMany,
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+		const log = { warn: vi.fn(), error: vi.fn() } as unknown as CleanupExecutorDeps["log"];
+
+		await withRenewableCleanupTopologyMutationLease({ prisma, log }, "user-1", async (runLease) => {
+			await runLease.assertOwnership();
+		});
+
+		expect(calls).toEqual(["acquire", "renew", "release"]);
+	});
+
+	it("fails closed when an explicit recovery callback loses lease ownership", async () => {
+		const updateMany = vi
+			.fn()
+			.mockResolvedValueOnce({ count: 1 })
+			.mockResolvedValueOnce({ count: 0 })
+			.mockResolvedValueOnce({ count: 0 });
+		const prisma = {
+			libraryCleanupConfig: {
+				upsert: vi.fn(async () => ({ id: "config-1" })),
+				updateMany,
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+		const log = { warn: vi.fn(), error: vi.fn() } as unknown as CleanupExecutorDeps["log"];
+
+		await expect(
+			withRenewableCleanupTopologyMutationLease({ prisma, log }, "user-1", async (runLease) => {
+				await runLease.assertOwnership();
+			}),
+		).rejects.toBeInstanceOf(CleanupRunLeaseLostError);
 	});
 
 	it("rejects a service topology mutation while cleanup owns the lease", async () => {
