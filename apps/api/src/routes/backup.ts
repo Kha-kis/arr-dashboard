@@ -12,6 +12,7 @@ import {
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { BackupPasswordConfigurationError, BackupService } from "../lib/backup/backup-service.js";
+import { BackupCompatibilityError } from "../lib/errors.js";
 import { CleanupMaintenanceConflictError } from "../lib/library-cleanup/cleanup-maintenance-gate.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { resolveSecretsPath } from "../lib/utils/secrets-path.js";
@@ -159,6 +160,14 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				await app.lifecycle.restart("backup-restore");
 			}
 		} catch (error) {
+			if (error instanceof BackupCompatibilityError) {
+				request.log.warn(
+					{ code: error.code },
+					"Backup restore rejected because configuration or recovery coverage is incomplete",
+				);
+				return reply.status(409).send({ error: error.message });
+			}
+
 			if (error instanceof CleanupMaintenanceConflictError) {
 				request.log.warn({ err: error }, "Backup restore blocked by active cleanup maintenance");
 				return reply.status(409).send({ error: error.message });
@@ -218,6 +227,14 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					await app.lifecycle.restart("backup-restore");
 				}
 			} catch (error) {
+				if (error instanceof BackupCompatibilityError) {
+					request.log.warn(
+						{ code: error.code },
+						"Backup restore from file rejected because configuration or recovery coverage is incomplete",
+					);
+					return reply.status(409).send({ error: error.message });
+				}
+
 				if (error instanceof CleanupMaintenanceConflictError) {
 					request.log.warn(
 						{ err: error },
