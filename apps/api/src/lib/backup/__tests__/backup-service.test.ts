@@ -1141,43 +1141,42 @@ describe("BackupService - cleanup maintenance exclusion", () => {
 });
 
 describe("BackupService - coordination preflight", () => {
-	it("rejects a current coordination mismatch before writing replacement secrets", async () => {
-		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "backup-coordination-preflight-"));
-		const secretsPath = path.join(tempDir, "secrets.json");
-		const durableArrays = [
-			"oidcProviders",
-			"systemSettings",
-			"trashTemplates",
-			"trashSettings",
-			"trashSyncSchedules",
-			"templateQualityProfileMappings",
-			"instanceQualityProfileOverrides",
-			"standaloneCFDeployments",
-			"qualitySizeMappings",
-			"trashSyncHistory",
-			"templateDeploymentHistory",
-			"trashBackups",
-			"huntConfigs",
-			"huntLogs",
-			"huntSearchHistory",
-			"backupSettings",
-			"vapidKeys",
-			"notificationChannel",
-			"notificationSubscription",
-			"notificationRule",
-			"notificationAggregationConfig",
-			"autoTagRule",
-			"labelSyncRule",
-			"queueCleanerConfig",
-			"libraryCleanupConfig",
-			"libraryCleanupRule",
-			"namingConfig",
-			"userCustomFormat",
-			"namingDeployHistory",
-			"libraryCleanupApproval",
-			"libraryCleanupMediaServerScan",
-		];
-		const backup = {
+	const durableArrays = [
+		"oidcProviders",
+		"systemSettings",
+		"trashTemplates",
+		"trashSettings",
+		"trashSyncSchedules",
+		"templateQualityProfileMappings",
+		"instanceQualityProfileOverrides",
+		"standaloneCFDeployments",
+		"qualitySizeMappings",
+		"trashSyncHistory",
+		"templateDeploymentHistory",
+		"trashBackups",
+		"huntConfigs",
+		"huntLogs",
+		"huntSearchHistory",
+		"backupSettings",
+		"vapidKeys",
+		"notificationChannel",
+		"notificationSubscription",
+		"notificationRule",
+		"notificationAggregationConfig",
+		"autoTagRule",
+		"labelSyncRule",
+		"queueCleanerConfig",
+		"libraryCleanupConfig",
+		"libraryCleanupRule",
+		"namingConfig",
+		"userCustomFormat",
+		"namingDeployHistory",
+		"libraryCleanupApproval",
+		"libraryCleanupMediaServerScan",
+	] as const;
+
+	function makeCompleteBackup() {
+		return {
 			version: "1.2",
 			appVersion: "2.24.2",
 			timestamp: new Date().toISOString(),
@@ -1193,6 +1192,11 @@ describe("BackupService - coordination preflight", () => {
 			},
 			secrets: { encryptionKey: "replacement-key", sessionCookieSecret: "replacement-session" },
 		};
+	}
+
+	it("rejects a current coordination mismatch before writing replacement secrets", async () => {
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "backup-coordination-preflight-"));
+		const secretsPath = path.join(tempDir, "secrets.json");
 		const prisma = {
 			trashSyncHistory: {
 				findMany: vi
@@ -1210,8 +1214,33 @@ describe("BackupService - coordination preflight", () => {
 
 		try {
 			const service = new BackupService(prisma, secretsPath);
-			await expect(service.restoreBackup(JSON.stringify(backup))).rejects.toThrow(
+			await expect(service.restoreBackup(JSON.stringify(makeCompleteBackup()))).rejects.toThrow(
 				"cannot safely replace",
+			);
+			expect(await fs.stat(secretsPath).catch(() => null)).toBeNull();
+			expect(prisma.$transaction).not.toHaveBeenCalled();
+		} finally {
+			await fs.rm(tempDir, { recursive: true, force: true });
+		}
+	});
+
+	it("preserves a coordination query failure before writing replacement secrets", async () => {
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "backup-coordination-query-"));
+		const secretsPath = path.join(tempDir, "secrets.json");
+		const queryError = new Error("database unavailable during coordination preflight");
+		const prisma = {
+			trashSyncHistory: { findMany: vi.fn().mockRejectedValue(queryError) },
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			instanceQualityProfileOverride: { findMany: vi.fn().mockResolvedValue([]) },
+			namingDeployHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			trashBackup: { findMany: vi.fn().mockResolvedValue([]) },
+			$transaction: vi.fn(),
+		} as unknown as PrismaClient;
+
+		try {
+			const service = new BackupService(prisma, secretsPath);
+			await expect(service.restoreBackup(JSON.stringify(makeCompleteBackup()))).rejects.toBe(
+				queryError,
 			);
 			expect(await fs.stat(secretsPath).catch(() => null)).toBeNull();
 			expect(prisma.$transaction).not.toHaveBeenCalled();

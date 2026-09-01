@@ -201,4 +201,18 @@ describe("POST /api/backup/create", () => {
 				"This backup does not contain complete configuration or recovery coverage and cannot safely replace the current installation. Create a new backup with the current version and retry.",
 		});
 	});
+
+	it("preserves the generic 500 mapping for a restore infrastructure failure", async () => {
+		mockRestoreBackup.mockRejectedValue(new Error("database unavailable"));
+
+		const response = await app.inject({
+			method: "POST",
+			url: "/api/backup/restore",
+			headers: { "x-test-auth": "1" },
+			payload: { backupData: Buffer.from("current-backup").toString("base64") },
+		});
+
+		expect(response.statusCode).toBe(500);
+		expect(JSON.parse(response.payload)).toEqual({ error: "Failed to restore backup" });
+	});
 });

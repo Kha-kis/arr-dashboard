@@ -159,13 +159,22 @@ export async function assertRestoreCompatibility(
 	try {
 		await validateCurrentCoordinationPreserved(prisma, data);
 	} catch (error) {
-		if (error instanceof BackupCompatibilityError) throw error;
-		throw new BackupCompatibilityError(error);
+		if (error instanceof CoordinationMismatchError) {
+			throw new BackupCompatibilityError(error);
+		}
+		throw error;
 	}
 }
 
 type CoordinationKind = "rollback" | "undeploy";
 type CoordinationRow = Record<string, unknown> & { id: string };
+
+class CoordinationMismatchError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "CoordinationMismatchError";
+	}
+}
 
 function isAuditOnlyUncertainSync(record: Record<string, unknown>): boolean {
 	return (
@@ -336,25 +345,25 @@ function assertCurrentUndeployFallbackPreserved(
 		return;
 	}
 	if (typeof current.templateId !== "string" || current.templateId.length === 0) {
-		throw new Error(
+		throw new CoordinationMismatchError(
 			`Cannot restore backup: current nonterminal coordination row ${current.id} has no undeploy template authority`,
 		);
 	}
 	const currentTemplate = current.template;
 	if (typeof currentTemplate !== "object" || currentTemplate === null) {
-		throw new Error(
+		throw new CoordinationMismatchError(
 			`Cannot restore backup: current undeploy fallback template ${current.templateId} is missing from the database`,
 		);
 	}
 	const incomingTemplate = incomingTemplates.get(current.templateId);
 	if (!incomingTemplate) {
-		throw new Error(
+		throw new CoordinationMismatchError(
 			`Cannot restore backup: current undeploy fallback template ${current.templateId} is missing from incoming data`,
 		);
 	}
 	for (const field of ["userId", "serviceType", "configData"] as const) {
 		if (incomingTemplate[field] !== (currentTemplate as Record<string, unknown>)[field]) {
-			throw new Error(
+			throw new CoordinationMismatchError(
 				`Cannot restore backup: current undeploy fallback template ${current.templateId} changed ${field}`,
 			);
 		}
@@ -384,7 +393,7 @@ function assertCurrentRowPreserved(
 ): void {
 	const incoming = incomingRows.get(current.id);
 	if (!incoming) {
-		throw new Error(
+		throw new CoordinationMismatchError(
 			`Cannot restore backup: current nonterminal coordination row ${current.id} is missing from incoming data`,
 		);
 	}
@@ -394,7 +403,7 @@ function assertCurrentRowPreserved(
 			comparableCoordinationValue(incoming[field], field) !==
 			comparableCoordinationValue(current[field], field)
 		) {
-			throw new Error(
+			throw new CoordinationMismatchError(
 				`Cannot restore backup: current nonterminal coordination row ${current.id} changed ${field}`,
 			);
 		}
@@ -409,7 +418,7 @@ function assertCurrentSpecialRowPreserved(
 ): void {
 	const incoming = incomingRows.get(current.id);
 	if (!incoming) {
-		throw new Error(
+		throw new CoordinationMismatchError(
 			`Cannot restore backup: current ${label} ${current.id} is missing from incoming data`,
 		);
 	}
@@ -418,7 +427,9 @@ function assertCurrentSpecialRowPreserved(
 			comparableCoordinationValue(incoming[field], field) !==
 			comparableCoordinationValue(current[field], field)
 		) {
-			throw new Error(`Cannot restore backup: current ${label} ${current.id} changed ${field}`);
+			throw new CoordinationMismatchError(
+				`Cannot restore backup: current ${label} ${current.id} changed ${field}`,
+			);
 		}
 	}
 }
@@ -556,7 +567,7 @@ async function validateCurrentCoordinationPreserved(
 	];
 	const requiredSnapshotIds = currentRecoveryRows.map((row) => {
 		if (typeof row.backupId !== "string" || row.backupId.length === 0) {
-			throw new Error(
+			throw new CoordinationMismatchError(
 				`Cannot restore backup: current nonterminal coordination row ${row.id} has no required recovery snapshot reference`,
 			);
 		}
@@ -571,19 +582,19 @@ async function validateCurrentCoordinationPreserved(
 	for (const snapshotId of new Set(requiredSnapshotIds)) {
 		const current = currentSnapshots.get(snapshotId);
 		if (!current) {
-			throw new Error(
+			throw new CoordinationMismatchError(
 				`Cannot restore backup: current recovery snapshot ${snapshotId} is missing from the database`,
 			);
 		}
 		const incoming = incomingSnapshots.get(snapshotId);
 		if (!incoming) {
-			throw new Error(
+			throw new CoordinationMismatchError(
 				`Cannot restore backup: current recovery snapshot ${snapshotId} is missing from incoming data`,
 			);
 		}
 		for (const field of ["userId", "instanceId", "backupData"] as const) {
 			if (incoming[field] !== current[field]) {
-				throw new Error(
+				throw new CoordinationMismatchError(
 					`Cannot restore backup: current recovery snapshot ${snapshotId} changed ${field}`,
 				);
 			}
