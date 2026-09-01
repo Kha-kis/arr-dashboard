@@ -104,6 +104,7 @@ describe("deployment history undeploy", () => {
 	let app: FastifyInstance;
 	const historyFindFirst = vi.fn();
 	const historyFindMany = vi.fn();
+	const historyCount = vi.fn();
 	const historyUpdate = vi.fn();
 	const historyUpdateMany = vi.fn();
 	const historyDeleteMany = vi.fn();
@@ -144,6 +145,7 @@ describe("deployment history undeploy", () => {
 			templateDeploymentHistory: {
 				findFirst: historyFindFirst,
 				findMany: historyFindMany,
+				count: historyCount,
 				update: historyUpdate,
 				updateMany: historyUpdateMany,
 				deleteMany: historyDeleteMany,
@@ -198,6 +200,7 @@ describe("deployment history undeploy", () => {
 		syncFindFirst.mockResolvedValue(null);
 		backupFindFirst.mockResolvedValue(null);
 		historyUpdate.mockResolvedValue({});
+		historyCount.mockResolvedValue(0);
 		historyUpdateMany.mockResolvedValue({ count: 1 });
 		historyDeleteMany.mockResolvedValue({ count: 1 });
 		syncUpdateMany.mockResolvedValue({ count: 1 });
@@ -243,6 +246,34 @@ describe("deployment history undeploy", () => {
 		});
 		expect(historyUpdateMany).not.toHaveBeenCalled();
 		expect(deleteFormat).not.toHaveBeenCalled();
+	});
+
+	it("rejects an unrolled sibling deployment before claiming or contacting ARR", async () => {
+		const history = currentHistory(backupData());
+		historyFindFirst.mockResolvedValue(history);
+		historyCount.mockResolvedValue(1);
+
+		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json()).toMatchObject({
+			message:
+				"Another unrolled deployment shares this recovery backup, so undeploy was stopped before making upstream changes.",
+		});
+		expect(historyCount).toHaveBeenCalledWith({
+			where: {
+				id: { not: "history-1" },
+				userId,
+				backupId: "backup-1",
+				rolledBack: false,
+			},
+		});
+		expect(historyUpdateMany).not.toHaveBeenCalled();
+		expect(transaction).not.toHaveBeenCalled();
+		expect(systemGet).not.toHaveBeenCalled();
+		expect(deleteFormat).not.toHaveBeenCalled();
+		expect(updateFormat).not.toHaveBeenCalled();
+		expect(updateProfile).not.toHaveBeenCalled();
 	});
 
 	it("claims undeploy without overwriting resumable progress before reading ARR", async () => {
@@ -337,7 +368,7 @@ describe("deployment history undeploy", () => {
 		getFormatById.mockResolvedValue(targetFormat);
 		let renewals = 0;
 		cleanupUpdateMany.mockImplementation(async ({ data }) => {
-			if (!("runClaimToken" in data) && ++renewals === 3) return { count: 0 };
+			if (!("runClaimToken" in data) && ++renewals === 4) return { count: 0 };
 			return { count: 1 };
 		});
 
@@ -376,7 +407,7 @@ describe("deployment history undeploy", () => {
 		getFormatById.mockResolvedValue(targetFormat);
 		let renewals = 0;
 		cleanupUpdateMany.mockImplementation(async ({ data }) => {
-			if (!("runClaimToken" in data) && ++renewals === 4) return { count: 0 };
+			if (!("runClaimToken" in data) && ++renewals === 5) return { count: 0 };
 			return { count: 1 };
 		});
 

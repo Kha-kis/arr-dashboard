@@ -564,6 +564,25 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 							"This legacy deployment has no identity-bound backup and cannot be undeployed safely.",
 					});
 				}
+				await topologyLease.assertOwnership();
+				const unrolledSiblingDeploymentCount = leasedHistory.backupId
+					? await app.prisma.templateDeploymentHistory.count({
+							where: {
+								id: { not: historyId },
+								userId,
+								backupId: leasedHistory.backupId,
+								rolledBack: false,
+							},
+						})
+					: 0;
+				if (unrolledSiblingDeploymentCount > 0) {
+					return reply.status(409).send({
+						statusCode: 409,
+						error: "Conflict",
+						message:
+							"Another unrolled deployment shares this recovery backup, so undeploy was stopped before making upstream changes.",
+					});
+				}
 				const priorPairedSyncStates = leasedHistory.backupId
 					? await app.prisma.trashSyncHistory.findMany({
 							where: { backupId: leasedHistory.backupId, userId },
