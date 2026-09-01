@@ -9,6 +9,78 @@ const sonarrUrl = process.env.SONARR_INTEGRATION_URL;
 const sonarrApiKey = process.env.SONARR_INTEGRATION_API_KEY;
 const hasLiveSonarr = Boolean(process.env.INTEGRATION_TESTS === "1" && sonarrUrl && sonarrApiKey);
 
+async function resolveLiveSonarrCleanupTarget(
+	client: Pick<SonarrClient, "customFormat">,
+	createdId: number | undefined,
+	syntheticName: string,
+): Promise<{
+	targetId: number;
+	current: Awaited<ReturnType<SonarrClient["customFormat"]["getById"]>>;
+}> {
+	let targetId = createdId;
+	if (targetId === undefined) {
+		const namedCandidates = (await client.customFormat.getAll()).filter(
+			(candidate) => candidate.name === syntheticName,
+		);
+		if (namedCandidates.length !== 1) {
+			throw new Error(
+				`Live Sonarr cleanup could not establish exactly one cleanup target named "${syntheticName}"; found ${namedCandidates.length}`,
+			);
+		}
+		targetId = namedCandidates[0]?.id;
+	}
+	if (!Number.isSafeInteger(targetId) || (targetId ?? 0) <= 0) {
+		throw new Error(
+			`Live Sonarr cleanup target "${syntheticName}" has no exact positive resource ID`,
+		);
+	}
+	return {
+		targetId: targetId!,
+		current: await client.customFormat.getById(targetId!),
+	};
+}
+
+describe("live Sonarr cleanup target discovery", () => {
+	it("recovers a unique full Custom Format by synthetic name when the POST ID is unknown", async () => {
+		const listed = { id: 42, name: "Synthetic CF" };
+		const complete = { ...listed, specifications: [] };
+		const client = {
+			customFormat: {
+				getAll: vi.fn().mockResolvedValue([listed]),
+				getById: vi.fn().mockResolvedValue(complete),
+			},
+		};
+
+		await expect(
+			resolveLiveSonarrCleanupTarget(client as never, undefined, "Synthetic CF"),
+		).resolves.toEqual({ targetId: 42, current: complete });
+		expect(client.customFormat.getById).toHaveBeenCalledWith(42);
+	});
+
+	it.each([
+		["missing", []],
+		[
+			"ambiguous",
+			[
+				{ id: 42, name: "Synthetic CF" },
+				{ id: 43, name: "Synthetic CF" },
+			],
+		],
+	])("fails closed for a %s synthetic-name match", async (_case, listed) => {
+		const client = {
+			customFormat: {
+				getAll: vi.fn().mockResolvedValue(listed),
+				getById: vi.fn(),
+			},
+		};
+
+		await expect(
+			resolveLiveSonarrCleanupTarget(client as never, undefined, "Synthetic CF"),
+		).rejects.toThrow("could not establish exactly one cleanup target");
+		expect(client.customFormat.getById).not.toHaveBeenCalled();
+	});
+});
+
 describe.skipIf(!hasLiveSonarr)("DeploymentExecutorService with live Sonarr", () => {
 	it("verifies create and update when Sonarr adds exceptLanguage=false", async () => {
 		const client = new SonarrClient({
@@ -102,32 +174,34 @@ describe.skipIf(!hasLiveSonarr)("DeploymentExecutorService with live Sonarr", ()
 
 		let cleanupError: unknown;
 		try {
-			if (createdId !== undefined) {
-				const current = await client.customFormat.getById(createdId);
-				const currentSpecification = current.specifications?.[0];
-				const currentFields = currentSpecification?.fields?.map(({ name, value }) => ({
-					name,
-					value,
-				}));
-				if (
-					current.id !== createdId ||
-					current.name !== syntheticName ||
-					current.includeCustomFormatWhenRenaming !== false ||
-					current.specifications?.length !== 1 ||
-					currentSpecification?.name !== specification.name ||
-					currentSpecification.implementation !== specification.implementation ||
-					currentSpecification.negate !== specification.negate ||
-					currentSpecification.required !== specification.required ||
-					currentFields?.length !== 2 ||
-					!currentFields.some((field) => field.name === "value" && field.value === 1) ||
-					!currentFields.some((field) => field.name === "exceptLanguage" && field.value === false)
-				) {
-					cleanupError = new Error(
-						`Refusing to clean up live Sonarr Custom Format "${syntheticName}" with exact ID ${createdId} because its identity or contents changed`,
-					);
-				} else {
-					await client.customFormat.delete(createdId);
-				}
+			const { targetId: cleanupTargetId, current } = await resolveLiveSonarrCleanupTarget(
+				client,
+				createdId,
+				syntheticName,
+			);
+			const currentSpecification = current.specifications?.[0];
+			const currentFields = currentSpecification?.fields?.map(({ name, value }) => ({
+				name,
+				value,
+			}));
+			if (
+				current.id !== cleanupTargetId ||
+				current.name !== syntheticName ||
+				current.includeCustomFormatWhenRenaming !== false ||
+				current.specifications?.length !== 1 ||
+				currentSpecification?.name !== specification.name ||
+				currentSpecification.implementation !== specification.implementation ||
+				currentSpecification.negate !== specification.negate ||
+				currentSpecification.required !== specification.required ||
+				currentFields?.length !== 2 ||
+				!currentFields.some((field) => field.name === "value" && field.value === 1) ||
+				!currentFields.some((field) => field.name === "exceptLanguage" && field.value === false)
+			) {
+				cleanupError = new Error(
+					`Refusing to clean up live Sonarr Custom Format "${syntheticName}" with exact ID ${cleanupTargetId} because its identity or contents changed`,
+				);
+			} else {
+				await client.customFormat.delete(cleanupTargetId);
 			}
 		} catch (error) {
 			cleanupError = error;

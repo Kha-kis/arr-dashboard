@@ -427,6 +427,58 @@ describe("DeploymentExecutorService - Custom Format drift", () => {
 		);
 	});
 
+	it("rejects an unpersistable intended recovery shape before starting a Custom Format POST", async () => {
+		const create = vi.fn();
+		const persistMutationState = vi.fn().mockResolvedValue(undefined);
+		const client = {
+			customFormat: {
+				getAll: vi.fn().mockResolvedValue([]),
+				create,
+			},
+		};
+		const executor = new DeploymentExecutorService({} as never, {} as never);
+		const run = (
+			executor as unknown as {
+				deployCustomFormats: (...args: unknown[]) => Promise<{ errors: string[] }>;
+			}
+		).deployCustomFormats.bind(executor);
+		const oversizedFields = Array.from({ length: 2_000 }, (_, index) => ({
+			name: `field-${index}`,
+			type: "textbox",
+			value: index,
+		}));
+
+		await expect(
+			run(
+				client,
+				[
+					{
+						trashId: "cf-oversized",
+						name: "Oversized CF",
+						originalConfig: {
+							specifications: [
+								{
+									name: "Oversized specification",
+									implementation: "ReleaseTitleSpecification",
+									negate: false,
+									required: false,
+									fields: oversizedFields,
+								},
+							],
+						},
+					},
+				],
+				new Map(),
+				new Map(),
+				undefined,
+				persistMutationState,
+				"SONARR",
+			),
+		).resolves.toMatchObject({ errors: [expect.stringContaining("too large")] });
+		expect(persistMutationState).not.toHaveBeenCalled();
+		expect(create).not.toHaveBeenCalled();
+	});
+
 	it.each(["POST", "PUT"] as const)(
 		"does not start a Custom Format %s when the initial pending ledger cannot be persisted",
 		async (method) => {

@@ -867,6 +867,12 @@ export class DeploymentExecutorService {
 							templateCF.originalConfig?.includeCustomFormatWhenRenaming ?? false,
 						specifications,
 					};
+					// The returned ARR ID changes the hash but not the persisted shape size.
+					// Preflight before writing a pending ledger or starting the POST.
+					void createIntendedCustomFormatPostStateToken(
+						{ ...newCF, id: Number.MAX_SAFE_INTEGER },
+						service,
+					);
 					const mutationState: CustomFormatRollbackState = {
 						beforeFormat: null,
 						action: "created",
