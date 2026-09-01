@@ -34,8 +34,8 @@ import { useMultiInstanceHistoryQuery } from "../../../hooks/api/useDashboard";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useRefreshState } from "../../../hooks/useRefreshState";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { dashboardKeys } from "../../../lib/query-keys";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
 import { useHistoryData } from "../hooks/use-history-data";
 import { useHistoryState } from "../hooks/use-history-state";
@@ -128,11 +128,11 @@ export const HistoryClient = () => {
 					dashboardKeys.history({ ...firstPageQuery, cursor: previousPageCursor }),
 				)
 			: undefined;
-	const groupingContextItems = useMemo(
-		() => [
-			...(previousPageContext?.aggregated ?? []),
-			...(nextCursor ? (nextPageContext?.aggregated ?? []) : []),
-		],
+	const groupingContext = useMemo(
+		() => ({
+			previousItems: previousPageContext?.aggregated ?? [],
+			nextItems: nextCursor ? (nextPageContext?.aggregated ?? []) : [],
+		}),
 		[previousPageContext?.aggregated, nextCursor, nextPageContext?.aggregated],
 	);
 	const resetNavigation = useCallback(() => {
@@ -175,7 +175,7 @@ export const HistoryClient = () => {
 		},
 		groupByDownload,
 		hideProwlarrRss,
-		groupingContextItems,
+		groupingContext,
 	);
 
 	const {

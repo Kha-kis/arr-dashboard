@@ -27,7 +27,9 @@ describe("useHistoryData cursor-page context", () => {
 		const adjacent = item("import", "downloadFolderImported", downloadId);
 
 		const { result } = renderHook(() =>
-			useHistoryData({ aggregated: [current], instances: [] }, filters, true, false, [adjacent]),
+			useHistoryData({ aggregated: [current], instances: [] }, filters, true, false, {
+				nextItems: [adjacent],
+			}),
 		);
 
 		expect(result.current.groupedItems).toHaveLength(1);
@@ -35,6 +37,35 @@ describe("useHistoryData cursor-page context", () => {
 			"grab",
 			"import",
 		]);
+	});
+
+	it("renders a cross-page lifecycle only on the page containing its newest event", () => {
+		const downloadId = "download-id-longer-than-ten";
+		const newerAdjacent = item("grab", "grabbed", downloadId);
+		const current = item("import", "downloadFolderImported", downloadId);
+
+		const { result } = renderHook(() =>
+			useHistoryData({ aggregated: [current], instances: [] }, filters, true, false, {
+				previousItems: [newerAdjacent],
+			}),
+		);
+
+		expect(result.current.groupedItems).toEqual([]);
+	});
+
+	it("uses page order to own a cross-page lifecycle when timestamps tie", () => {
+		const downloadId = "download-id-longer-than-ten";
+		const date = "2026-08-31T12:00:00.000Z";
+		const previousPageItem = { ...item("grab", "grabbed", downloadId), date };
+		const current = { ...item("import", "downloadFolderImported", downloadId), date };
+
+		const { result } = renderHook(() =>
+			useHistoryData({ aggregated: [current], instances: [] }, filters, true, false, {
+				previousItems: [previousPageItem],
+			}),
+		);
+
+		expect(result.current.groupedItems).toEqual([]);
 	});
 
 	it("offers stable server-filter values even when the current page has only grabs", () => {

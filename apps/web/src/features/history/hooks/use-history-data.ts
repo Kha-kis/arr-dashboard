@@ -37,6 +37,11 @@ export interface ProcessedHistoryData {
 	emptyMessage?: string;
 }
 
+interface HistoryGroupingContext {
+	previousItems?: HistoryItem[];
+	nextItems?: HistoryItem[];
+}
+
 const historyItemIdentity = (item: HistoryItem): string =>
 	`${item.service}:${item.instanceId}:${String(item.id)}`;
 
@@ -87,7 +92,7 @@ export const useHistoryData = (
 	filters: HistoryFilters,
 	groupByDownload: boolean,
 	hideProwlarrRss: boolean,
-	groupingContextItems: HistoryItem[] = [],
+	groupingContext: HistoryGroupingContext = {},
 ): ProcessedHistoryData => {
 	const allAggregated = useMemo(() => data?.aggregated ?? [], [data?.aggregated]);
 	const instances = useMemo(() => data?.instances ?? [], [data?.instances]);
@@ -97,9 +102,19 @@ export const useHistoryData = (
 		() => (hideProwlarrRss ? filterProwlarrRss(allAggregated) : allAggregated),
 		[allAggregated, hideProwlarrRss],
 	);
-	const rssFilteredGroupingContext = useMemo(
-		() => (hideProwlarrRss ? filterProwlarrRss(groupingContextItems) : groupingContextItems),
-		[groupingContextItems, hideProwlarrRss],
+	const rssFilteredPreviousContext = useMemo(
+		() =>
+			hideProwlarrRss
+				? filterProwlarrRss(groupingContext.previousItems ?? [])
+				: (groupingContext.previousItems ?? []),
+		[groupingContext.previousItems, hideProwlarrRss],
+	);
+	const rssFilteredNextContext = useMemo(
+		() =>
+			hideProwlarrRss
+				? filterProwlarrRss(groupingContext.nextItems ?? [])
+				: (groupingContext.nextItems ?? []),
+		[groupingContext.nextItems, hideProwlarrRss],
 	);
 
 	const instanceOptions = useMemo(() => extractInstanceOptions(instances), [instances]);
@@ -110,9 +125,13 @@ export const useHistoryData = (
 		() => filterHistoryItems(rssFilteredItems, filters),
 		[rssFilteredItems, filters],
 	);
-	const filteredGroupingContext = useMemo(
-		() => filterHistoryItems(rssFilteredGroupingContext, filters),
-		[rssFilteredGroupingContext, filters],
+	const filteredPreviousContext = useMemo(
+		() => filterHistoryItems(rssFilteredPreviousContext, filters),
+		[rssFilteredPreviousContext, filters],
+	);
+	const filteredNextContext = useMemo(
+		() => filterHistoryItems(rssFilteredNextContext, filters),
+		[rssFilteredNextContext, filters],
 	);
 
 	const serviceSummary = useMemo(() => createServiceSummary(rssFilteredItems), [rssFilteredItems]);
@@ -136,11 +155,16 @@ export const useHistoryData = (
 
 	const groupedItems = useMemo(() => {
 		const currentItemKeys = new Set(filteredItems.map(historyItemIdentity));
+		const previousItemKeys = new Set(filteredPreviousContext.map(historyItemIdentity));
 		return groupHistoryItems(
-			uniqueHistoryItems([...filteredItems, ...filteredGroupingContext]),
+			uniqueHistoryItems([...filteredPreviousContext, ...filteredItems, ...filteredNextContext]),
 			groupByDownload,
-		).filter((group) => group.items.some((item) => currentItemKeys.has(historyItemIdentity(item))));
-	}, [filteredItems, filteredGroupingContext, groupByDownload]);
+		).filter(
+			(group) =>
+				!group.items.some((item) => previousItemKeys.has(historyItemIdentity(item))) &&
+				group.items.some((item) => currentItemKeys.has(historyItemIdentity(item))),
+		);
+	}, [filteredItems, filteredNextContext, filteredPreviousContext, groupByDownload]);
 
 	const groupedByDay = useMemo(
 		() => groupByDay(groupedItems, (group) => group.items[0]?.date),
