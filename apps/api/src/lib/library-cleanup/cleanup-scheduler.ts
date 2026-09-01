@@ -38,7 +38,10 @@ import {
 	CleanupMaintenanceConflictError,
 	withCleanupOperationGuard,
 } from "./cleanup-maintenance-gate.js";
-import { retryAllPendingMediaServerRescans } from "./media-server-rescan.js";
+import {
+	recoverAllPendingTerminalAudits,
+	retryAllPendingMediaServerRescans,
+} from "./media-server-rescan.js";
 import type { CleanupExecutorDeps, CleanupRunResult } from "./types.js";
 
 const CHECK_INTERVAL_MS = 60 * 1000; // Check every minute
@@ -308,6 +311,27 @@ export class CleanupScheduler {
 
 		try {
 			await withCleanupOperationGuard(async () => {
+				try {
+					const auditRecovery = await recoverAllPendingTerminalAudits({
+						prisma: this.prisma,
+						arrClientFactory: this.arrClientFactory,
+						encryptor: this.encryptor,
+						auditTrigger: "recovery",
+						log: this.logger,
+					});
+					if (auditRecovery.failed > 0) {
+						this.logger.warn(
+							{ failedCount: auditRecovery.failed },
+							"Pending cleanup terminal audits remain retryable",
+						);
+					}
+				} catch (error) {
+					this.logger.warn(
+						{ err: error },
+						"Pending cleanup terminal audits could not be recovered",
+					);
+				}
+
 				try {
 					const rescanResult = await retryAllPendingMediaServerRescans({
 						prisma: this.prisma,

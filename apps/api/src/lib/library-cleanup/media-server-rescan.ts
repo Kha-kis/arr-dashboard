@@ -24,6 +24,8 @@ import type { CleanupExecutorDeps } from "./types.js";
 
 const RESCAN_RETRY_BASE_MS = 60 * 1000;
 const RESCAN_RETRY_MAX_MS = 6 * 60 * 60 * 1000;
+const TERMINAL_AUDIT_RECOVERY_PAGE_SIZE = 100;
+const TERMINAL_AUDIT_RETRY_RESERVED_SLOTS = 25;
 
 type RescanMediaType = "movie" | "show";
 type RescanService = "PLEX" | "JELLYFIN" | "EMBY";
@@ -42,6 +44,12 @@ export interface MediaServerRescanResult {
 		outcome: "triggered" | "skipped";
 	}>;
 	providerAuthorityFailed?: boolean;
+}
+
+export interface TerminalAuditRecoveryResult {
+	candidates: number;
+	recovered: number;
+	failed: number;
 }
 
 function auditTrigger(
@@ -101,6 +109,86 @@ async function ensureTerminalAuditRecorded(
 		select: { terminalAuditRecordedAt: true },
 	});
 	return current?.terminalAuditRecordedAt != null;
+}
+
+/**
+ * Repair executed approvals whose terminal audit was not durably recorded.
+ * Discovery is approval-based so recovery does not depend on ancillary scan
+ * state. Event-key idempotency and the approval-marker CAS make concurrent
+ * workers safe; bounded indexed partitions keep each scheduler tick finite.
+ */
+export async function recoverAllPendingTerminalAudits(
+	deps: CleanupExecutorDeps,
+): Promise<TerminalAuditRecoveryResult> {
+	const result: TerminalAuditRecoveryResult = { candidates: 0, recovered: 0, failed: 0 };
+	if (!cleanupAuditEnabled(deps.prisma)) return result;
+
+	const retryCandidates = await deps.prisma.libraryCleanupApproval.findMany({
+		where: {
+			status: "executed",
+			terminalAuditRecordedAt: null,
+			terminalAuditRecoveryAttemptedAt: { not: null },
+		},
+		include: { config: { select: { userId: true } } },
+		orderBy: [{ terminalAuditRecoveryAttemptedAt: "asc" }, { id: "asc" }],
+		take: TERMINAL_AUDIT_RECOVERY_PAGE_SIZE,
+	});
+	const reservedRetries = retryCandidates.slice(0, TERMINAL_AUDIT_RETRY_RESERVED_SLOTS);
+	const freshCandidates = await deps.prisma.libraryCleanupApproval.findMany({
+		where: {
+			status: "executed",
+			terminalAuditRecordedAt: null,
+			terminalAuditRecoveryAttemptedAt: null,
+		},
+		include: { config: { select: { userId: true } } },
+		orderBy: { id: "asc" },
+		take: TERMINAL_AUDIT_RECOVERY_PAGE_SIZE - reservedRetries.length,
+	});
+	const remainingSlots =
+		TERMINAL_AUDIT_RECOVERY_PAGE_SIZE - reservedRetries.length - freshCandidates.length;
+	const approvals = [
+		...reservedRetries,
+		...freshCandidates,
+		...retryCandidates.slice(
+			TERMINAL_AUDIT_RETRY_RESERVED_SLOTS,
+			TERMINAL_AUDIT_RETRY_RESERVED_SLOTS + remainingSlots,
+		),
+	];
+	for (const approval of approvals) {
+		result.candidates++;
+		let recovered = false;
+		try {
+			recovered = await ensureTerminalAuditRecorded(deps, approval.config.userId, approval);
+		} catch (error) {
+			deps.log.warn(
+				{ err: error },
+				"Cleanup terminal-audit recovery failed; the approval remains retryable",
+			);
+		}
+		if (recovered) {
+			result.recovered++;
+			continue;
+		}
+
+		result.failed++;
+		await deps.prisma.libraryCleanupApproval
+			.updateMany({
+				where: {
+					id: approval.id,
+					status: "executed",
+					terminalAuditRecordedAt: null,
+				},
+				data: { terminalAuditRecoveryAttemptedAt: new Date() },
+			})
+			.catch((error) => {
+				deps.log.warn(
+					{ err: error },
+					"Cleanup terminal-audit retry scheduling failed; the approval remains incomplete",
+				);
+			});
+	}
+
+	return result;
 }
 
 function isRescanService(service: ServiceInstance["service"]): service is RescanService {

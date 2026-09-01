@@ -4,6 +4,7 @@ import { withCurrentProviderPublicationAuthority } from "../../services/provider
 import { providerInstanceAuthorityFingerprint } from "../../services/service-identity.js";
 import {
 	prepareMediaServerRescans,
+	recoverAllPendingTerminalAudits,
 	retryAllPendingMediaServerRescans,
 	triggerCoalescedMediaServerRescans,
 	triggerMediaServerRescansForApproval,
@@ -202,6 +203,7 @@ function approval(overrides: Record<string, unknown> = {}) {
 		executionAuditCorrelationId: "execution-1",
 		reconciledWithoutMutation: false,
 		terminalAuditRecordedAt: new Date(),
+		terminalAuditRecoveryAttemptedAt: null,
 		expiresAt: new Date(Date.now() + 60_000),
 		createdAt: new Date(),
 		...overrides,
@@ -1485,6 +1487,187 @@ describe("durable media-server rescans", () => {
 
 		await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
 		expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledOnce();
+	});
+
+	it("recovers a missing terminal audit without requiring a media-server scan", async () => {
+		const storedApproval = approval({
+			scanMediaServerAfterDelete: false,
+			terminalAuditRecordedAt: null,
+		});
+		const fixture = deps({ approval: storedApproval });
+		Object.assign(fixture.prisma.libraryCleanupApproval, {
+			findMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
+				where.terminalAuditRecoveryAttemptedAt === null
+					? [{ ...storedApproval, config: { userId: "user-1" } }]
+					: [],
+			),
+			updateMany: vi.fn(async () => {
+				storedApproval.terminalAuditRecordedAt = new Date();
+				return { count: 1 };
+			}),
+		});
+		const auditCreate = vi.fn().mockResolvedValue({});
+		Object.assign(fixture.prisma, {
+			libraryCleanupAuditEvent: { create: auditCreate },
+		});
+
+		const result = await recoverAllPendingTerminalAudits(fixture.deps);
+
+		expect(result).toEqual({ candidates: 1, recovered: 1, failed: 0 });
+		expect(auditCreate).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				approvalId: storedApproval.id,
+				eventType: "terminal_succeeded",
+				trigger: "recovery",
+			}),
+		});
+		expect(storedApproval.terminalAuditRecordedAt).toBeInstanceOf(Date);
+		expect(fixture.prisma.libraryCleanupMediaServerScan.findMany).not.toHaveBeenCalled();
+	});
+
+	it("bounds terminal-audit recovery to one fair page per scheduler pass", async () => {
+		const approvals = Array.from({ length: 101 }, (_, index) =>
+			approval({
+				id: `approval-${String(index).padStart(3, "0")}`,
+				terminalAuditRecordedAt: null,
+				terminalAuditRecoveryAttemptedAt: null,
+			}),
+		);
+		const fixture = deps();
+		const approvalFindMany = vi.fn(
+			async ({ where, take }: { where: Record<string, unknown>; take: number }) => {
+				const attemptedAt = where.terminalAuditRecoveryAttemptedAt;
+				return (attemptedAt === null ? approvals : [])
+					.slice(0, take)
+					.map((candidate) => ({ ...candidate, config: { userId: "user-1" } }));
+			},
+		);
+		Object.assign(fixture.prisma.libraryCleanupApproval, {
+			findMany: approvalFindMany,
+			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+		});
+		Object.assign(fixture.prisma, {
+			libraryCleanupAuditEvent: { create: vi.fn().mockResolvedValue({}) },
+		});
+
+		const result = await recoverAllPendingTerminalAudits(fixture.deps);
+
+		expect(result).toEqual({ candidates: 100, recovered: 100, failed: 0 });
+		expect(approvalFindMany).toHaveBeenCalledTimes(2);
+		expect(approvalFindMany).toHaveBeenNthCalledWith(1, {
+			where: {
+				status: "executed",
+				terminalAuditRecordedAt: null,
+				terminalAuditRecoveryAttemptedAt: { not: null },
+			},
+			include: { config: { select: { userId: true } } },
+			orderBy: [{ terminalAuditRecoveryAttemptedAt: "asc" }, { id: "asc" }],
+			take: 100,
+		});
+		expect(approvalFindMany).toHaveBeenNthCalledWith(2, {
+			where: {
+				status: "executed",
+				terminalAuditRecordedAt: null,
+				terminalAuditRecoveryAttemptedAt: null,
+			},
+			include: { config: { select: { userId: true } } },
+			orderBy: { id: "asc" },
+			take: 100,
+		});
+	});
+
+	it("reserves progress for an old retry during sustained fresh arrivals", async () => {
+		const retry = approval({
+			id: "retry-oldest",
+			terminalAuditRecordedAt: null,
+			terminalAuditRecoveryAttemptedAt: new Date("2026-08-01T00:00:00.000Z"),
+		});
+		const fresh = Array.from({ length: 100 }, (_, index) =>
+			approval({
+				id: `fresh-${String(index).padStart(3, "0")}`,
+				terminalAuditRecordedAt: null,
+				terminalAuditRecoveryAttemptedAt: null,
+			}),
+		);
+		const fixture = deps();
+		Object.assign(fixture.prisma.libraryCleanupApproval, {
+			findMany: vi.fn(async ({ where, take }: { where: Record<string, unknown>; take: number }) => {
+				const attemptedAt = where.terminalAuditRecoveryAttemptedAt;
+				const rows = attemptedAt === null ? fresh : attemptedAt ? [retry] : fresh;
+				return rows
+					.slice(0, take)
+					.map((candidate) => ({ ...candidate, config: { userId: "user-1" } }));
+			}),
+			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+		});
+		Object.assign(fixture.prisma, {
+			libraryCleanupAuditEvent: { create: vi.fn().mockResolvedValue({}) },
+		});
+
+		const result = await recoverAllPendingTerminalAudits(fixture.deps);
+
+		expect(result).toEqual({ candidates: 100, recovered: 100, failed: 0 });
+		expect(fixture.prisma.libraryCleanupApproval.updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({ where: expect.objectContaining({ id: retry.id }) }),
+		);
+	});
+
+	it("leaves a failed terminal audit retryable and repairs it on the next pass", async () => {
+		const storedApproval = approval({
+			scanMediaServerAfterDelete: false,
+			terminalAuditRecordedAt: null,
+		});
+		let recoveryAttemptedAt: Date | null = null;
+		const fixture = deps({ approval: storedApproval });
+		const updateMany = vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+			if ("terminalAuditRecoveryAttemptedAt" in data) {
+				recoveryAttemptedAt = data.terminalAuditRecoveryAttemptedAt as Date;
+				return { count: 1 };
+			}
+			storedApproval.terminalAuditRecordedAt = new Date();
+			return { count: 1 };
+		});
+		Object.assign(fixture.prisma.libraryCleanupApproval, {
+			findMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+				if (storedApproval.terminalAuditRecordedAt !== null) return [];
+				const attemptedAt = where.terminalAuditRecoveryAttemptedAt;
+				const isRetryQuery = attemptedAt != null;
+				return isRetryQuery === (recoveryAttemptedAt != null)
+					? [{ ...storedApproval, config: { userId: "user-1" } }]
+					: [];
+			}),
+			updateMany,
+		});
+		const auditCreate = vi
+			.fn()
+			.mockRejectedValueOnce(new Error("audit unavailable"))
+			.mockResolvedValue({});
+		Object.assign(fixture.prisma, {
+			libraryCleanupAuditEvent: { create: auditCreate },
+		});
+
+		await expect(recoverAllPendingTerminalAudits(fixture.deps)).resolves.toEqual({
+			candidates: 1,
+			recovered: 0,
+			failed: 1,
+		});
+		expect(storedApproval.terminalAuditRecordedAt).toBeNull();
+		expect(updateMany).toHaveBeenCalledWith({
+			where: {
+				id: storedApproval.id,
+				status: "executed",
+				terminalAuditRecordedAt: null,
+			},
+			data: { terminalAuditRecoveryAttemptedAt: expect.any(Date) },
+		});
+
+		await expect(recoverAllPendingTerminalAudits(fixture.deps)).resolves.toEqual({
+			candidates: 1,
+			recovered: 1,
+			failed: 0,
+		});
+		expect(storedApproval.terminalAuditRecordedAt).toBeInstanceOf(Date);
+		expect(auditCreate).toHaveBeenCalledTimes(2);
 	});
 
 	it("fails a retry closed when its physical media-server identity changed", async () => {

@@ -74,6 +74,7 @@ export type LibraryCleanupApprovalMinAggregateOutputType = {
   executionAuditCorrelationId: string | null
   reconciledWithoutMutation: boolean | null
   terminalAuditRecordedAt: Date | null
+  terminalAuditRecoveryAttemptedAt: Date | null
   safetySnapshot: string | null
   lastExecutionError: string | null
   reviewedAt: Date | null
@@ -108,6 +109,7 @@ export type LibraryCleanupApprovalMaxAggregateOutputType = {
   executionAuditCorrelationId: string | null
   reconciledWithoutMutation: boolean | null
   terminalAuditRecordedAt: Date | null
+  terminalAuditRecoveryAttemptedAt: Date | null
   safetySnapshot: string | null
   lastExecutionError: string | null
   reviewedAt: Date | null
@@ -142,6 +144,7 @@ export type LibraryCleanupApprovalCountAggregateOutputType = {
   executionAuditCorrelationId: number
   reconciledWithoutMutation: number
   terminalAuditRecordedAt: number
+  terminalAuditRecoveryAttemptedAt: number
   safetySnapshot: number
   lastExecutionError: number
   reviewedAt: number
@@ -200,6 +203,7 @@ export type LibraryCleanupApprovalMinAggregateInputType = {
   executionAuditCorrelationId?: true
   reconciledWithoutMutation?: true
   terminalAuditRecordedAt?: true
+  terminalAuditRecoveryAttemptedAt?: true
   safetySnapshot?: true
   lastExecutionError?: true
   reviewedAt?: true
@@ -234,6 +238,7 @@ export type LibraryCleanupApprovalMaxAggregateInputType = {
   executionAuditCorrelationId?: true
   reconciledWithoutMutation?: true
   terminalAuditRecordedAt?: true
+  terminalAuditRecoveryAttemptedAt?: true
   safetySnapshot?: true
   lastExecutionError?: true
   reviewedAt?: true
@@ -268,6 +273,7 @@ export type LibraryCleanupApprovalCountAggregateInputType = {
   executionAuditCorrelationId?: true
   reconciledWithoutMutation?: true
   terminalAuditRecordedAt?: true
+  terminalAuditRecoveryAttemptedAt?: true
   safetySnapshot?: true
   lastExecutionError?: true
   reviewedAt?: true
@@ -389,6 +395,7 @@ export type LibraryCleanupApprovalGroupByOutputType = {
   executionAuditCorrelationId: string | null
   reconciledWithoutMutation: boolean
   terminalAuditRecordedAt: Date | null
+  terminalAuditRecoveryAttemptedAt: Date | null
   safetySnapshot: string | null
   lastExecutionError: string | null
   reviewedAt: Date | null
@@ -446,6 +453,7 @@ export type LibraryCleanupApprovalWhereInput = {
   executionAuditCorrelationId?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
   reconciledWithoutMutation?: Prisma.BoolFilter<"LibraryCleanupApproval"> | boolean
   terminalAuditRecordedAt?: Prisma.DateTimeNullableFilter<"LibraryCleanupApproval"> | Date | string | null
+  terminalAuditRecoveryAttemptedAt?: Prisma.DateTimeNullableFilter<"LibraryCleanupApproval"> | Date | string | null
   safetySnapshot?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
   lastExecutionError?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
   reviewedAt?: Prisma.DateTimeNullableFilter<"LibraryCleanupApproval"> | Date | string | null
@@ -482,6 +490,7 @@ export type LibraryCleanupApprovalOrderByWithRelationInput = {
   executionAuditCorrelationId?: Prisma.SortOrderInput | Prisma.SortOrder
   reconciledWithoutMutation?: Prisma.SortOrder
   terminalAuditRecordedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  terminalAuditRecoveryAttemptedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   safetySnapshot?: Prisma.SortOrderInput | Prisma.SortOrder
   lastExecutionError?: Prisma.SortOrderInput | Prisma.SortOrder
   reviewedAt?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -521,6 +530,7 @@ export type LibraryCleanupApprovalWhereUniqueInput = Prisma.AtLeast<{
   executionAuditCorrelationId?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
   reconciledWithoutMutation?: Prisma.BoolFilter<"LibraryCleanupApproval"> | boolean
   terminalAuditRecordedAt?: Prisma.DateTimeNullableFilter<"LibraryCleanupApproval"> | Date | string | null
+  terminalAuditRecoveryAttemptedAt?: Prisma.DateTimeNullableFilter<"LibraryCleanupApproval"> | Date | string | null
   safetySnapshot?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
   lastExecutionError?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
   reviewedAt?: Prisma.DateTimeNullableFilter<"LibraryCleanupApproval"> | Date | string | null
@@ -557,6 +567,7 @@ export type LibraryCleanupApprovalOrderByWithAggregationInput = {
   executionAuditCorrelationId?: Prisma.SortOrderInput | Prisma.SortOrder
   reconciledWithoutMutation?: Prisma.SortOrder
   terminalAuditRecordedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  terminalAuditRecoveryAttemptedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   safetySnapshot?: Prisma.SortOrderInput | Prisma.SortOrder
   lastExecutionError?: Prisma.SortOrderInput | Prisma.SortOrder
   reviewedAt?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -599,6 +610,7 @@ export type LibraryCleanupApprovalScalarWhereWithAggregatesInput = {
   executionAuditCorrelationId?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupApproval"> | string | null
   reconciledWithoutMutation?: Prisma.BoolWithAggregatesFilter<"LibraryCleanupApproval"> | boolean
   terminalAuditRecordedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"LibraryCleanupApproval"> | Date | string | null
+  terminalAuditRecoveryAttemptedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"LibraryCleanupApproval"> | Date | string | null
   safetySnapshot?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupApproval"> | string | null
   lastExecutionError?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupApproval"> | string | null
   reviewedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"LibraryCleanupApproval"> | Date | string | null
@@ -632,6 +644,7 @@ export type LibraryCleanupApprovalCreateInput = {
   executionAuditCorrelationId?: string | null
   reconciledWithoutMutation?: boolean
   terminalAuditRecordedAt?: Date | string | null
+  terminalAuditRecoveryAttemptedAt?: Date | string | null
   safetySnapshot?: string | null
   lastExecutionError?: string | null
   reviewedAt?: Date | string | null
@@ -668,6 +681,7 @@ export type LibraryCleanupApprovalUncheckedCreateInput = {
   executionAuditCorrelationId?: string | null
   reconciledWithoutMutation?: boolean
   terminalAuditRecordedAt?: Date | string | null
+  terminalAuditRecoveryAttemptedAt?: Date | string | null
   safetySnapshot?: string | null
   lastExecutionError?: string | null
   reviewedAt?: Date | string | null
@@ -702,6 +716,7 @@ export type LibraryCleanupApprovalUpdateInput = {
   executionAuditCorrelationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reconciledWithoutMutation?: Prisma.BoolFieldUpdateOperationsInput | boolean
   terminalAuditRecordedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  terminalAuditRecoveryAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   safetySnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastExecutionError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reviewedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -738,6 +753,7 @@ export type LibraryCleanupApprovalUncheckedUpdateInput = {
   executionAuditCorrelationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reconciledWithoutMutation?: Prisma.BoolFieldUpdateOperationsInput | boolean
   terminalAuditRecordedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  terminalAuditRecoveryAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   safetySnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastExecutionError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reviewedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -773,6 +789,7 @@ export type LibraryCleanupApprovalCreateManyInput = {
   executionAuditCorrelationId?: string | null
   reconciledWithoutMutation?: boolean
   terminalAuditRecordedAt?: Date | string | null
+  terminalAuditRecoveryAttemptedAt?: Date | string | null
   safetySnapshot?: string | null
   lastExecutionError?: string | null
   reviewedAt?: Date | string | null
@@ -806,6 +823,7 @@ export type LibraryCleanupApprovalUpdateManyMutationInput = {
   executionAuditCorrelationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reconciledWithoutMutation?: Prisma.BoolFieldUpdateOperationsInput | boolean
   terminalAuditRecordedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  terminalAuditRecoveryAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   safetySnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastExecutionError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reviewedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -840,6 +858,7 @@ export type LibraryCleanupApprovalUncheckedUpdateManyInput = {
   executionAuditCorrelationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reconciledWithoutMutation?: Prisma.BoolFieldUpdateOperationsInput | boolean
   terminalAuditRecordedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  terminalAuditRecoveryAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   safetySnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastExecutionError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reviewedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -884,6 +903,7 @@ export type LibraryCleanupApprovalCountOrderByAggregateInput = {
   executionAuditCorrelationId?: Prisma.SortOrder
   reconciledWithoutMutation?: Prisma.SortOrder
   terminalAuditRecordedAt?: Prisma.SortOrder
+  terminalAuditRecoveryAttemptedAt?: Prisma.SortOrder
   safetySnapshot?: Prisma.SortOrder
   lastExecutionError?: Prisma.SortOrder
   reviewedAt?: Prisma.SortOrder
@@ -929,6 +949,7 @@ export type LibraryCleanupApprovalMaxOrderByAggregateInput = {
   executionAuditCorrelationId?: Prisma.SortOrder
   reconciledWithoutMutation?: Prisma.SortOrder
   terminalAuditRecordedAt?: Prisma.SortOrder
+  terminalAuditRecoveryAttemptedAt?: Prisma.SortOrder
   safetySnapshot?: Prisma.SortOrder
   lastExecutionError?: Prisma.SortOrder
   reviewedAt?: Prisma.SortOrder
@@ -963,6 +984,7 @@ export type LibraryCleanupApprovalMinOrderByAggregateInput = {
   executionAuditCorrelationId?: Prisma.SortOrder
   reconciledWithoutMutation?: Prisma.SortOrder
   terminalAuditRecordedAt?: Prisma.SortOrder
+  terminalAuditRecoveryAttemptedAt?: Prisma.SortOrder
   safetySnapshot?: Prisma.SortOrder
   lastExecutionError?: Prisma.SortOrder
   reviewedAt?: Prisma.SortOrder
@@ -1068,6 +1090,7 @@ export type LibraryCleanupApprovalCreateWithoutConfigInput = {
   executionAuditCorrelationId?: string | null
   reconciledWithoutMutation?: boolean
   terminalAuditRecordedAt?: Date | string | null
+  terminalAuditRecoveryAttemptedAt?: Date | string | null
   safetySnapshot?: string | null
   lastExecutionError?: string | null
   reviewedAt?: Date | string | null
@@ -1102,6 +1125,7 @@ export type LibraryCleanupApprovalUncheckedCreateWithoutConfigInput = {
   executionAuditCorrelationId?: string | null
   reconciledWithoutMutation?: boolean
   terminalAuditRecordedAt?: Date | string | null
+  terminalAuditRecoveryAttemptedAt?: Date | string | null
   safetySnapshot?: string | null
   lastExecutionError?: string | null
   reviewedAt?: Date | string | null
@@ -1165,6 +1189,7 @@ export type LibraryCleanupApprovalScalarWhereInput = {
   executionAuditCorrelationId?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
   reconciledWithoutMutation?: Prisma.BoolFilter<"LibraryCleanupApproval"> | boolean
   terminalAuditRecordedAt?: Prisma.DateTimeNullableFilter<"LibraryCleanupApproval"> | Date | string | null
+  terminalAuditRecoveryAttemptedAt?: Prisma.DateTimeNullableFilter<"LibraryCleanupApproval"> | Date | string | null
   safetySnapshot?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
   lastExecutionError?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
   reviewedAt?: Prisma.DateTimeNullableFilter<"LibraryCleanupApproval"> | Date | string | null
@@ -1198,6 +1223,7 @@ export type LibraryCleanupApprovalCreateWithoutMediaServerScansInput = {
   executionAuditCorrelationId?: string | null
   reconciledWithoutMutation?: boolean
   terminalAuditRecordedAt?: Date | string | null
+  terminalAuditRecoveryAttemptedAt?: Date | string | null
   safetySnapshot?: string | null
   lastExecutionError?: string | null
   reviewedAt?: Date | string | null
@@ -1233,6 +1259,7 @@ export type LibraryCleanupApprovalUncheckedCreateWithoutMediaServerScansInput = 
   executionAuditCorrelationId?: string | null
   reconciledWithoutMutation?: boolean
   terminalAuditRecordedAt?: Date | string | null
+  terminalAuditRecoveryAttemptedAt?: Date | string | null
   safetySnapshot?: string | null
   lastExecutionError?: string | null
   reviewedAt?: Date | string | null
@@ -1282,6 +1309,7 @@ export type LibraryCleanupApprovalUpdateWithoutMediaServerScansInput = {
   executionAuditCorrelationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reconciledWithoutMutation?: Prisma.BoolFieldUpdateOperationsInput | boolean
   terminalAuditRecordedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  terminalAuditRecoveryAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   safetySnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastExecutionError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reviewedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1317,6 +1345,7 @@ export type LibraryCleanupApprovalUncheckedUpdateWithoutMediaServerScansInput = 
   executionAuditCorrelationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reconciledWithoutMutation?: Prisma.BoolFieldUpdateOperationsInput | boolean
   terminalAuditRecordedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  terminalAuditRecoveryAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   safetySnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastExecutionError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reviewedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1350,6 +1379,7 @@ export type LibraryCleanupApprovalCreateManyConfigInput = {
   executionAuditCorrelationId?: string | null
   reconciledWithoutMutation?: boolean
   terminalAuditRecordedAt?: Date | string | null
+  terminalAuditRecoveryAttemptedAt?: Date | string | null
   safetySnapshot?: string | null
   lastExecutionError?: string | null
   reviewedAt?: Date | string | null
@@ -1383,6 +1413,7 @@ export type LibraryCleanupApprovalUpdateWithoutConfigInput = {
   executionAuditCorrelationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reconciledWithoutMutation?: Prisma.BoolFieldUpdateOperationsInput | boolean
   terminalAuditRecordedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  terminalAuditRecoveryAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   safetySnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastExecutionError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reviewedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1417,6 +1448,7 @@ export type LibraryCleanupApprovalUncheckedUpdateWithoutConfigInput = {
   executionAuditCorrelationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reconciledWithoutMutation?: Prisma.BoolFieldUpdateOperationsInput | boolean
   terminalAuditRecordedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  terminalAuditRecoveryAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   safetySnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastExecutionError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reviewedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1451,6 +1483,7 @@ export type LibraryCleanupApprovalUncheckedUpdateManyWithoutConfigInput = {
   executionAuditCorrelationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reconciledWithoutMutation?: Prisma.BoolFieldUpdateOperationsInput | boolean
   terminalAuditRecordedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  terminalAuditRecoveryAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   safetySnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastExecutionError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reviewedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1516,6 +1549,7 @@ export type LibraryCleanupApprovalSelect<ExtArgs extends runtime.Types.Extension
   executionAuditCorrelationId?: boolean
   reconciledWithoutMutation?: boolean
   terminalAuditRecordedAt?: boolean
+  terminalAuditRecoveryAttemptedAt?: boolean
   safetySnapshot?: boolean
   lastExecutionError?: boolean
   reviewedAt?: boolean
@@ -1553,6 +1587,7 @@ export type LibraryCleanupApprovalSelectCreateManyAndReturn<ExtArgs extends runt
   executionAuditCorrelationId?: boolean
   reconciledWithoutMutation?: boolean
   terminalAuditRecordedAt?: boolean
+  terminalAuditRecoveryAttemptedAt?: boolean
   safetySnapshot?: boolean
   lastExecutionError?: boolean
   reviewedAt?: boolean
@@ -1588,6 +1623,7 @@ export type LibraryCleanupApprovalSelectUpdateManyAndReturn<ExtArgs extends runt
   executionAuditCorrelationId?: boolean
   reconciledWithoutMutation?: boolean
   terminalAuditRecordedAt?: boolean
+  terminalAuditRecoveryAttemptedAt?: boolean
   safetySnapshot?: boolean
   lastExecutionError?: boolean
   reviewedAt?: boolean
@@ -1623,6 +1659,7 @@ export type LibraryCleanupApprovalSelectScalar = {
   executionAuditCorrelationId?: boolean
   reconciledWithoutMutation?: boolean
   terminalAuditRecordedAt?: boolean
+  terminalAuditRecoveryAttemptedAt?: boolean
   safetySnapshot?: boolean
   lastExecutionError?: boolean
   reviewedAt?: boolean
@@ -1631,7 +1668,7 @@ export type LibraryCleanupApprovalSelectScalar = {
   createdAt?: boolean
 }
 
-export type LibraryCleanupApprovalOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "configId" | "instanceId" | "arrItemId" | "itemType" | "targetScope" | "arrEpisodeId" | "episodeFileId" | "seasonNumber" | "episodeNumber" | "episodeTitle" | "title" | "matchedRuleId" | "matchedRuleName" | "reason" | "action" | "scanMediaServerAfterDelete" | "sizeOnDisk" | "year" | "rating" | "status" | "executionToken" | "executionAuditCorrelationId" | "reconciledWithoutMutation" | "terminalAuditRecordedAt" | "safetySnapshot" | "lastExecutionError" | "reviewedAt" | "executedAt" | "expiresAt" | "createdAt", ExtArgs["result"]["libraryCleanupApproval"]>
+export type LibraryCleanupApprovalOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "configId" | "instanceId" | "arrItemId" | "itemType" | "targetScope" | "arrEpisodeId" | "episodeFileId" | "seasonNumber" | "episodeNumber" | "episodeTitle" | "title" | "matchedRuleId" | "matchedRuleName" | "reason" | "action" | "scanMediaServerAfterDelete" | "sizeOnDisk" | "year" | "rating" | "status" | "executionToken" | "executionAuditCorrelationId" | "reconciledWithoutMutation" | "terminalAuditRecordedAt" | "terminalAuditRecoveryAttemptedAt" | "safetySnapshot" | "lastExecutionError" | "reviewedAt" | "executedAt" | "expiresAt" | "createdAt", ExtArgs["result"]["libraryCleanupApproval"]>
 export type LibraryCleanupApprovalInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   config?: boolean | Prisma.LibraryCleanupConfigDefaultArgs<ExtArgs>
   mediaServerScans?: boolean | Prisma.LibraryCleanupApproval$mediaServerScansArgs<ExtArgs>
@@ -1676,6 +1713,7 @@ export type $LibraryCleanupApprovalPayload<ExtArgs extends runtime.Types.Extensi
     executionAuditCorrelationId: string | null
     reconciledWithoutMutation: boolean
     terminalAuditRecordedAt: Date | null
+    terminalAuditRecoveryAttemptedAt: Date | null
     safetySnapshot: string | null
     lastExecutionError: string | null
     reviewedAt: Date | null
@@ -2132,6 +2170,7 @@ export interface LibraryCleanupApprovalFieldRefs {
   readonly executionAuditCorrelationId: Prisma.FieldRef<"LibraryCleanupApproval", 'String'>
   readonly reconciledWithoutMutation: Prisma.FieldRef<"LibraryCleanupApproval", 'Boolean'>
   readonly terminalAuditRecordedAt: Prisma.FieldRef<"LibraryCleanupApproval", 'DateTime'>
+  readonly terminalAuditRecoveryAttemptedAt: Prisma.FieldRef<"LibraryCleanupApproval", 'DateTime'>
   readonly safetySnapshot: Prisma.FieldRef<"LibraryCleanupApproval", 'String'>
   readonly lastExecutionError: Prisma.FieldRef<"LibraryCleanupApproval", 'String'>
   readonly reviewedAt: Prisma.FieldRef<"LibraryCleanupApproval", 'DateTime'>

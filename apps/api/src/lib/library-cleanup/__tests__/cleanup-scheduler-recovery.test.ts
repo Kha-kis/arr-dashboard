@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const executorMocks = vi.hoisted(() => ({ executeCleanupRun: vi.fn() }));
 const rescanMocks = vi.hoisted(() => ({
+	recoverAllPendingTerminalAudits: vi
+		.fn()
+		.mockResolvedValue({ candidates: 0, recovered: 0, failed: 0 }),
 	retryAllPendingMediaServerRescans: vi
 		.fn()
 		.mockResolvedValue({ targets: 0, triggered: 0, failed: 0, warnings: [] }),
@@ -12,10 +15,10 @@ vi.mock("../cleanup-executor.js", async (importOriginal) => ({
 }));
 vi.mock("../media-server-rescan.js", async (importOriginal) => ({
 	...(await importOriginal<typeof import("../media-server-rescan.js")>()),
+	recoverAllPendingTerminalAudits: rescanMocks.recoverAllPendingTerminalAudits,
 	retryAllPendingMediaServerRescans: rescanMocks.retryAllPendingMediaServerRescans,
 }));
 
-import { CleanupScheduler } from "../cleanup-scheduler.js";
 import {
 	SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
 	SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE,
@@ -25,6 +28,7 @@ import {
 	CleanupMaintenanceConflictError,
 	withCleanupMaintenanceGuard,
 } from "../cleanup-maintenance-gate.js";
+import { CleanupScheduler } from "../cleanup-scheduler.js";
 
 describe("library cleanup scheduler recovery", () => {
 	afterEach(() => {
@@ -42,10 +46,33 @@ describe("library cleanup scheduler recovery", () => {
 
 		await (scheduler as unknown as { checkAndRun: () => Promise<void> }).checkAndRun();
 
+		expect(rescanMocks.recoverAllPendingTerminalAudits).toHaveBeenCalledWith(
+			expect.objectContaining({ prisma, auditTrigger: "recovery" }),
+		);
 		expect(rescanMocks.retryAllPendingMediaServerRescans).toHaveBeenCalledWith(
 			expect.objectContaining({ prisma, auditTrigger: "recovery" }),
 		);
 		expect(executorMocks.executeCleanupRun).not.toHaveBeenCalled();
+	});
+
+	it("keeps scan retry independent when terminal-audit discovery fails", async () => {
+		rescanMocks.recoverAllPendingTerminalAudits.mockRejectedValueOnce(
+			new Error("approval query unavailable"),
+		);
+		const prisma = {
+			libraryCleanupApproval: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+			libraryCleanupConfig: { findFirst: vi.fn().mockResolvedValue(null) },
+		};
+		const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+		const scheduler = new CleanupScheduler(prisma as never, {} as never, {} as never, log as never);
+
+		await (scheduler as unknown as { checkAndRun: () => Promise<void> }).checkAndRun();
+
+		expect(rescanMocks.retryAllPendingMediaServerRescans).toHaveBeenCalledOnce();
+		expect(log.warn).toHaveBeenCalledWith(
+			expect.objectContaining({ err: expect.any(Error) }),
+			"Pending cleanup terminal audits could not be recovered",
+		);
 	});
 
 	it("passes scheduled audit origin into an automatically consumed retry run", async () => {
