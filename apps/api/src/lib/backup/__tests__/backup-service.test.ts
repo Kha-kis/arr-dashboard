@@ -1029,6 +1029,7 @@ describe("BackupService - legacy restore normalization", () => {
 		vi.doMock("../backup-database.js", () => ({
 			exportDatabase: vi.fn(),
 			restoreDatabase: restoreSpy,
+			assertRestoreCompatibility: vi.fn().mockResolvedValue(undefined),
 		}));
 		vi.resetModules();
 		const { BackupService: IsolatedBackupService } = await import("../backup-service.js");
@@ -1255,6 +1256,7 @@ describe("BackupService - createBackup type-based defaulting (Unit)", () => {
 		vi.doMock("../backup-database.js", () => ({
 			exportDatabase: exportSpy,
 			restoreDatabase: vi.fn(),
+			assertRestoreCompatibility: vi.fn().mockResolvedValue(undefined),
 		}));
 		// Reload the BackupService module so it picks up the mock.
 		vi.resetModules();
@@ -1300,6 +1302,7 @@ describe("BackupService - createBackup type-based defaulting (Unit)", () => {
 		vi.doMock("../backup-database.js", () => ({
 			exportDatabase: exportSpy,
 			restoreDatabase: vi.fn(),
+			assertRestoreCompatibility: vi.fn().mockResolvedValue(undefined),
 		}));
 		vi.resetModules();
 		const { BackupService } = await import("../backup-service.js");
@@ -1344,6 +1347,7 @@ describe("BackupService - createBackup type-based defaulting (Unit)", () => {
 		vi.doMock("../backup-database.js", () => ({
 			exportDatabase: exportSpy,
 			restoreDatabase: vi.fn(),
+			assertRestoreCompatibility: vi.fn().mockResolvedValue(undefined),
 		}));
 		vi.resetModules();
 		const { BackupService } = await import("../backup-service.js");
@@ -1386,6 +1390,7 @@ describe("BackupService - createBackup type-based defaulting (Unit)", () => {
 		vi.doMock("../backup-database.js", () => ({
 			exportDatabase: exportSpy,
 			restoreDatabase: vi.fn(),
+			assertRestoreCompatibility: vi.fn().mockResolvedValue(undefined),
 		}));
 		vi.resetModules();
 		const { BackupService } = await import("../backup-service.js");

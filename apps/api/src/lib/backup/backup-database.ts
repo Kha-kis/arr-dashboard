@@ -6,11 +6,14 @@
  */
 
 import type { BackupData } from "@arr/shared";
+import { BackupCompatibilityError } from "../errors.js";
 import { loggers } from "../logger.js";
 import type { Prisma, PrismaClient, TrashBackup } from "../prisma.js";
 import {
+	DURABLE_CONFIG_PAYLOAD_FIELDS,
 	isNonterminalRollback,
 	isNonterminalUndeploy,
+	LEGACY_RELATIONAL_CONFIG_FIELDS,
 	validateCoordinationEvidence,
 	validateRecords,
 } from "./backup-validation.js";
@@ -33,6 +36,58 @@ export interface ExportDatabaseOptions {
 	 * months of accumulated history from blowing the heap. Default: 1000.
 	 */
 	historyRetentionLimit?: number;
+}
+
+function hasDurableConfigCoverage(data: BackupData["data"]): boolean {
+	const record = data as Record<string, unknown>;
+	return DURABLE_CONFIG_PAYLOAD_FIELDS.every((field) => Array.isArray(record[field]));
+}
+
+async function targetHasDurableConfig(
+	prisma: Prisma.TransactionClient | PrismaClient,
+	missingFields: readonly string[],
+): Promise<boolean> {
+	const client = prisma as unknown as Record<string, { count?: () => Promise<number> }>;
+	for (const field of missingFields) {
+		const accessor = client[field];
+		if (accessor?.count && (await accessor.count()) > 0) return true;
+	}
+	return false;
+}
+
+async function targetHasActiveNamingRecovery(
+	prisma: Prisma.TransactionClient | PrismaClient,
+): Promise<boolean> {
+	const model = (
+		prisma as unknown as Record<string, { findMany?: (args: unknown) => Promise<unknown[]> }>
+	).namingDeployHistory;
+	if (!model?.findMany) return false;
+	const rows = await model.findMany({
+		where: { status: { in: ["PENDING", "SUCCESS"] }, rolledBack: false },
+		select: { id: true },
+	});
+	return rows.length > 0;
+}
+
+/**
+ * Reject incomplete legacy payloads before restore mutation. Singleton rows
+ * are intentionally excluded: they are not removed by User/ServiceInstance
+ * cascades and may be preserved when absent from a legacy file.
+ */
+export async function assertRestoreCompatibility(
+	prisma: Prisma.TransactionClient | PrismaClient,
+	data: BackupData["data"],
+): Promise<void> {
+	const record = data as Record<string, unknown>;
+	const missingFields = LEGACY_RELATIONAL_CONFIG_FIELDS.filter(
+		(field) => !Array.isArray(record[field]),
+	);
+	if (missingFields.length > 0 && (await targetHasDurableConfig(prisma, missingFields))) {
+		throw new BackupCompatibilityError();
+	}
+	if (!Array.isArray(record.namingDeployHistory) && (await targetHasActiveNamingRecovery(prisma))) {
+		throw new BackupCompatibilityError();
+	}
 }
 
 type CoordinationKind = "rollback" | "undeploy";
@@ -63,6 +118,7 @@ const COORDINATION_FIELDS: Record<CoordinationKind, readonly string[]> = {
 		"rollbackAttemptedAt",
 		"rollbackProgress",
 		"backupId",
+		"startedAt",
 	],
 	undeploy: [
 		"userId",
@@ -77,8 +133,40 @@ const COORDINATION_FIELDS: Record<CoordinationKind, readonly string[]> = {
 		"undeployAttemptedAt",
 		"undeployProgress",
 		"backupId",
+		"deployedAt",
 	],
 };
+
+const SCORE_INTENT_FIELDS = [
+	"userId",
+	"instanceId",
+	"qualityProfileId",
+	"customFormatId",
+	"score",
+	"status",
+	"intentOperation",
+	"intendedScore",
+	"connectionGeneration",
+	"connectionStateToken",
+	"createdAt",
+	"updatedAt",
+] as const;
+
+const ACTIVE_NAMING_FIELDS = [
+	"instanceId",
+	"userId",
+	"status",
+	"selectedPresets",
+	"resolvedPayload",
+	"deployedHash",
+	"previousConfig",
+	"changedFields",
+	"totalFields",
+	"errorMessage",
+	"rolledBack",
+	"rolledBackAt",
+	"deployedAt",
+] as const;
 
 function recordsById(value: unknown): Map<string, CoordinationRow> {
 	const records = new Map<string, CoordinationRow>();
@@ -157,6 +245,27 @@ function assertCurrentRowPreserved(
 	}
 }
 
+function assertCurrentSpecialRowPreserved(
+	label: string,
+	current: CoordinationRow,
+	incomingRows: Map<string, CoordinationRow>,
+	fields: readonly string[],
+): void {
+	const incoming = incomingRows.get(current.id);
+	if (!incoming) {
+		throw new Error(
+			`Cannot restore backup: current ${label} ${current.id} is missing from incoming data`,
+		);
+	}
+	for (const field of fields) {
+		if (
+			comparableCoordinationValue(incoming[field]) !== comparableCoordinationValue(current[field])
+		) {
+			throw new Error(`Cannot restore backup: current ${label} ${current.id} changed ${field}`);
+		}
+	}
+}
+
 async function validateCurrentCoordinationPreserved(
 	tx: Prisma.TransactionClient,
 	data: BackupData["data"],
@@ -187,9 +296,17 @@ async function validateCurrentCoordinationPreserved(
 			},
 		})
 	).filter(isNonterminalUndeploy) as CoordinationRow[];
+	const currentScoreIntents = (await tx.instanceQualityProfileOverride.findMany({
+		where: { status: { in: ["PENDING", "UNCERTAIN"] } },
+	})) as CoordinationRow[];
+	const currentActiveNaming = (await tx.namingDeployHistory.findMany({
+		where: { status: { in: ["PENDING", "SUCCESS"] }, rolledBack: false },
+	})) as CoordinationRow[];
 	const incomingRollbackRows = recordsById(data.trashSyncHistory);
 	const incomingUndeployRows = recordsById(data.templateDeploymentHistory);
 	const incomingTemplates = recordsById(data.trashTemplates);
+	const incomingScoreIntents = recordsById(data.instanceQualityProfileOverrides);
+	const incomingActiveNaming = recordsById(data.namingDeployHistory);
 
 	for (const row of currentRollbackRows) {
 		assertCurrentRowPreserved("rollback", row, incomingRollbackRows);
@@ -197,6 +314,22 @@ async function validateCurrentCoordinationPreserved(
 	for (const row of currentUndeployRows) {
 		assertCurrentRowPreserved("undeploy", row, incomingUndeployRows);
 		assertCurrentUndeployFallbackPreserved(row, incomingTemplates);
+	}
+	for (const row of currentScoreIntents) {
+		assertCurrentSpecialRowPreserved(
+			"pending or uncertain quality-score intent",
+			row,
+			incomingScoreIntents,
+			SCORE_INTENT_FIELDS,
+		);
+	}
+	for (const row of currentActiveNaming) {
+		assertCurrentSpecialRowPreserved(
+			"active naming recovery",
+			row,
+			incomingActiveNaming,
+			ACTIVE_NAMING_FIELDS,
+		);
 	}
 
 	const currentRecoveryRows = [
@@ -283,6 +416,8 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 
 	// System settings (singleton-ish)
 	const systemSettings = await prisma.systemSettings.findMany();
+	const backupSettings = await prisma.backupSettings.findMany();
+	const vapidKeys = await prisma.vapidKeys.findMany();
 
 	// TRaSH Guides configuration (always full — these are config, not history)
 	const trashTemplates = await prisma.trashTemplate.findMany();
@@ -292,6 +427,20 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 	const instanceQualityProfileOverrides = await prisma.instanceQualityProfileOverride.findMany();
 	const standaloneCFDeployments = await prisma.standaloneCFDeployment.findMany();
 	const qualitySizeMappings = await prisma.qualitySizeMapping.findMany();
+
+	// Durable user and instance configuration (always full, including empty
+	// arrays so v1.2 distinguishes complete coverage from legacy omission).
+	const notificationChannel = await prisma.notificationChannel.findMany();
+	const notificationSubscription = await prisma.notificationSubscription.findMany();
+	const notificationRule = await prisma.notificationRule.findMany();
+	const notificationAggregationConfig = await prisma.notificationAggregationConfig.findMany();
+	const autoTagRule = await prisma.autoTagRule.findMany();
+	const labelSyncRule = await prisma.labelSyncRule.findMany();
+	const queueCleanerConfig = await prisma.queueCleanerConfig.findMany();
+	const libraryCleanupConfig = await prisma.libraryCleanupConfig.findMany();
+	const libraryCleanupRule = await prisma.libraryCleanupRule.findMany();
+	const namingConfig = await prisma.namingConfig.findMany();
+	const userCustomFormat = await prisma.userCustomFormat.findMany();
 
 	// TRaSH Guides history/audit — operational, capped or skipped.
 	// When capped, log a warn so operators can correlate restore-time gaps to
@@ -335,6 +484,9 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 			},
 		})
 	).filter(isNonterminalUndeploy);
+	const activeNamingDeployHistory = await prisma.namingDeployHistory.findMany({
+		where: { status: { in: ["PENDING", "SUCCESS"] }, rolledBack: false },
+	});
 
 	const cappedTrashSyncHistory = skipHistory
 		? []
@@ -356,6 +508,14 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 		cappedTemplateDeploymentHistory,
 		nonterminalUndeployHistory,
 	);
+	const cappedNamingDeployHistory = skipHistory
+		? []
+		: await fetchCappedHistory(
+				"namingDeployHistory",
+				() => prisma.namingDeployHistory.count(),
+				(take) => prisma.namingDeployHistory.findMany({ take, orderBy: { deployedAt: "desc" } }),
+			);
+	const namingDeployHistory = mergeRowsById(cappedNamingDeployHistory, activeNamingDeployHistory);
 
 	// Hunting feature: configs are config (always full); logs/history are operational
 	const huntConfigs = await prisma.huntConfig.findMany();
@@ -430,6 +590,8 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 		webAuthnCredentials,
 		// System settings
 		systemSettings,
+		backupSettings,
+		vapidKeys,
 		// TRaSH Guides configuration
 		trashTemplates,
 		trashSettings,
@@ -442,12 +604,25 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 		// TRaSH Guides history/audit
 		trashSyncHistory,
 		templateDeploymentHistory,
+		namingDeployHistory,
 		// TRaSH instance backups (optional)
 		trashBackups,
 		// Hunting feature
 		huntConfigs,
 		huntLogs,
 		huntSearchHistory,
+		// Durable configuration
+		notificationChannel,
+		notificationSubscription,
+		notificationRule,
+		notificationAggregationConfig,
+		autoTagRule,
+		labelSyncRule,
+		queueCleanerConfig,
+		libraryCleanupConfig,
+		libraryCleanupRule,
+		namingConfig,
+		userCustomFormat,
 	};
 }
 
@@ -462,6 +637,10 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 export async function restoreDatabase(prisma: PrismaClient, data: BackupData["data"]) {
 	// Use a transaction to ensure atomicity
 	await prisma.$transaction(async (tx) => {
+		// Recheck inside the transaction immediately before any delete. The
+		// service-level preflight closes the filesystem TOCTOU window; this check
+		// protects direct callers and races between preflight and transaction.
+		await assertRestoreCompatibility(tx, data);
 		await validateCurrentCoordinationPreserved(tx, data);
 
 		// =================================================================
@@ -476,6 +655,7 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 		// TRaSH history/audit (depends on templates, instances, backups)
 		await tx.templateDeploymentHistory.deleteMany();
 		await tx.trashSyncHistory.deleteMany();
+		await tx.namingDeployHistory.deleteMany();
 
 		// TRaSH configuration (depends on templates, instances)
 		await tx.qualitySizeMapping.deleteMany();
@@ -487,8 +667,31 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 		await tx.trashTemplate.deleteMany();
 		await tx.trashSettings.deleteMany();
 
-		// System settings (singleton)
-		await tx.systemSettings.deleteMany();
+		// Durable configuration, children before parents.
+		await tx.notificationSubscription.deleteMany();
+		await tx.libraryCleanupRule.deleteMany();
+		await tx.notificationChannel.deleteMany();
+		await tx.notificationRule.deleteMany();
+		await tx.notificationAggregationConfig.deleteMany();
+		await tx.autoTagRule.deleteMany();
+		await tx.labelSyncRule.deleteMany();
+		await tx.queueCleanerConfig.deleteMany();
+		await tx.libraryCleanupConfig.deleteMany();
+		await tx.namingConfig.deleteMany();
+		await tx.userCustomFormat.deleteMany();
+
+		// These singleton rows are not removed by user/instance cascades. Only
+		// v1.2 carries authoritative replacement coverage for them.
+		if (hasDurableConfigCoverage(data)) {
+			await tx.backupSettings.deleteMany();
+			await tx.vapidKeys.deleteMany();
+		}
+
+		// System settings are independent of user/instance cascades. Preserve
+		// them for legacy files that predate this payload coverage.
+		if (Array.isArray(data.systemSettings)) {
+			await tx.systemSettings.deleteMany();
+		}
 
 		// Core tables (existing)
 		await tx.serviceInstanceTag.deleteMany();
@@ -496,7 +699,11 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 		await tx.serviceInstance.deleteMany();
 		await tx.webAuthnCredential.deleteMany();
 		await tx.oIDCAccount.deleteMany();
-		await tx.oIDCProvider.deleteMany();
+		// OIDC providers are independent of the user/instance cascades too.
+		// Legacy files may omit them, so do not turn omission into deletion.
+		if (Array.isArray(data.oidcProviders)) {
+			await tx.oIDCProvider.deleteMany();
+		}
 		await tx.session.deleteMany();
 		await tx.user.deleteMany();
 
@@ -577,6 +784,18 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 			await tx.systemSettings.create({
 				data: { ...settingsData, id: 1 },
 			});
+		}
+
+		if (Array.isArray(data.backupSettings) && data.backupSettings.length > 0) {
+			validateRecords(data.backupSettings, "backupSettings", ["id"]);
+			const settings = data.backupSettings[0] as Prisma.BackupSettingsCreateInput;
+			await tx.backupSettings.create({ data: { ...settings, id: 1 } });
+		}
+
+		if (Array.isArray(data.vapidKeys) && data.vapidKeys.length > 0) {
+			validateRecords(data.vapidKeys, "vapidKeys", ["id", "publicKey"]);
+			const keys = data.vapidKeys[0] as Prisma.VapidKeysCreateInput;
+			await tx.vapidKeys.create({ data: { ...keys, id: 1 } });
 		}
 
 		// --- TRaSH Guides configuration ---
@@ -672,6 +891,18 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 			});
 		}
 
+		if (data.namingDeployHistory && data.namingDeployHistory.length > 0) {
+			validateRecords(data.namingDeployHistory, "namingDeployHistory", [
+				"id",
+				"instanceId",
+				"userId",
+				"status",
+			]);
+			await tx.namingDeployHistory.createMany({
+				data: data.namingDeployHistory as Prisma.NamingDeployHistoryCreateManyInput[],
+			});
+		}
+
 		// --- Hunting feature ---
 
 		if (data.huntConfigs && data.huntConfigs.length > 0) {
@@ -692,6 +923,80 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 			validateRecords(data.huntSearchHistory, "huntSearchHistory", ["id", "configId"]);
 			await tx.huntSearchHistory.createMany({
 				data: data.huntSearchHistory as Prisma.HuntSearchHistoryCreateManyInput[],
+			});
+		}
+
+		// Durable configuration (dependency order).
+		if (data.notificationChannel && data.notificationChannel.length > 0) {
+			validateRecords(data.notificationChannel, "notificationChannel", ["id", "userId"]);
+			await tx.notificationChannel.createMany({
+				data: data.notificationChannel as Prisma.NotificationChannelCreateManyInput[],
+			});
+		}
+		if (data.notificationSubscription && data.notificationSubscription.length > 0) {
+			validateRecords(data.notificationSubscription, "notificationSubscription", [
+				"channelId",
+				"eventType",
+			]);
+			await tx.notificationSubscription.createMany({
+				data: data.notificationSubscription as Prisma.NotificationSubscriptionCreateManyInput[],
+			});
+		}
+		if (data.notificationRule && data.notificationRule.length > 0) {
+			validateRecords(data.notificationRule, "notificationRule", ["id", "userId"]);
+			await tx.notificationRule.createMany({
+				data: data.notificationRule as Prisma.NotificationRuleCreateManyInput[],
+			});
+		}
+		if (data.notificationAggregationConfig && data.notificationAggregationConfig.length > 0) {
+			validateRecords(data.notificationAggregationConfig, "notificationAggregationConfig", [
+				"id",
+				"userId",
+			]);
+			await tx.notificationAggregationConfig.createMany({
+				data: data.notificationAggregationConfig as Prisma.NotificationAggregationConfigCreateManyInput[],
+			});
+		}
+		if (data.autoTagRule && data.autoTagRule.length > 0) {
+			validateRecords(data.autoTagRule, "autoTagRule", ["id", "userId"]);
+			await tx.autoTagRule.createMany({
+				data: data.autoTagRule as Prisma.AutoTagRuleCreateManyInput[],
+			});
+		}
+		if (data.labelSyncRule && data.labelSyncRule.length > 0) {
+			validateRecords(data.labelSyncRule, "labelSyncRule", ["id", "userId"]);
+			await tx.labelSyncRule.createMany({
+				data: data.labelSyncRule as Prisma.LabelSyncRuleCreateManyInput[],
+			});
+		}
+		if (data.queueCleanerConfig && data.queueCleanerConfig.length > 0) {
+			validateRecords(data.queueCleanerConfig, "queueCleanerConfig", ["id", "instanceId"]);
+			await tx.queueCleanerConfig.createMany({
+				data: data.queueCleanerConfig as Prisma.QueueCleanerConfigCreateManyInput[],
+			});
+		}
+		if (data.libraryCleanupConfig && data.libraryCleanupConfig.length > 0) {
+			validateRecords(data.libraryCleanupConfig, "libraryCleanupConfig", ["id", "userId"]);
+			await tx.libraryCleanupConfig.createMany({
+				data: data.libraryCleanupConfig as Prisma.LibraryCleanupConfigCreateManyInput[],
+			});
+		}
+		if (data.libraryCleanupRule && data.libraryCleanupRule.length > 0) {
+			validateRecords(data.libraryCleanupRule, "libraryCleanupRule", ["id", "configId"]);
+			await tx.libraryCleanupRule.createMany({
+				data: data.libraryCleanupRule as Prisma.LibraryCleanupRuleCreateManyInput[],
+			});
+		}
+		if (data.namingConfig && data.namingConfig.length > 0) {
+			validateRecords(data.namingConfig, "namingConfig", ["id", "instanceId", "userId"]);
+			await tx.namingConfig.createMany({
+				data: data.namingConfig as Prisma.NamingConfigCreateManyInput[],
+			});
+		}
+		if (data.userCustomFormat && data.userCustomFormat.length > 0) {
+			validateRecords(data.userCustomFormat, "userCustomFormat", ["id", "userId"]);
+			await tx.userCustomFormat.createMany({
+				data: data.userCustomFormat as Prisma.UserCustomFormatCreateManyInput[],
 			});
 		}
 	});

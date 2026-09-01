@@ -21,6 +21,8 @@ const TABLE_NAMES = [
 	"oIDCAccount",
 	"webAuthnCredential",
 	"systemSettings",
+	"backupSettings",
+	"vapidKeys",
 	"trashTemplate",
 	"trashSettings",
 	"trashSyncSchedule",
@@ -34,6 +36,18 @@ const TABLE_NAMES = [
 	"huntLog",
 	"huntSearchHistory",
 	"trashBackup",
+	"notificationChannel",
+	"notificationSubscription",
+	"notificationRule",
+	"notificationAggregationConfig",
+	"autoTagRule",
+	"labelSyncRule",
+	"queueCleanerConfig",
+	"libraryCleanupConfig",
+	"libraryCleanupRule",
+	"namingConfig",
+	"namingDeployHistory",
+	"userCustomFormat",
 ] as const;
 
 type TableName = (typeof TABLE_NAMES)[number];
@@ -461,6 +475,14 @@ describe("restoreDatabase — current coordination preservation", () => {
 			},
 			trashBackup: {
 				findMany: vi.fn().mockResolvedValue(options.currentSnapshots ?? []),
+				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
+			instanceQualityProfileOverride: {
+				findMany: vi.fn().mockResolvedValue([]),
+				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
+			namingDeployHistory: {
+				findMany: vi.fn().mockResolvedValue([]),
 				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
 			},
 			huntSearchHistory: { deleteMany: firstDelete },

@@ -33,7 +33,7 @@ import { withCleanupMaintenanceGuard } from "../library-cleanup/cleanup-maintena
 import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { decryptBackupData, encryptBackupData } from "./backup-crypto.js";
-import { exportDatabase, restoreDatabase } from "./backup-database.js";
+import { assertRestoreCompatibility, exportDatabase, restoreDatabase } from "./backup-database.js";
 import {
 	ensureBackupsDirectory,
 	generateBackupId,
@@ -775,6 +775,11 @@ export class BackupService {
 		let secretsBackedUp = false;
 
 		try {
+			// Compatibility must be checked before creating the secrets backup or
+			// writing replacement secrets. restoreDatabase repeats this check inside
+			// its transaction immediately before deletes.
+			await assertRestoreCompatibility(this.prisma, backup.data);
+
 			// Phase 1: Backup current secrets before making any changes
 			try {
 				const currentSecrets = await fs.readFile(this.secretsPath, "utf-8");

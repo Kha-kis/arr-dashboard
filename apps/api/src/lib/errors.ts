@@ -28,6 +28,23 @@ export class ConflictError extends Error {
 	}
 }
 
+/**
+ * Thrown when a legacy backup does not carry configuration coverage needed to
+ * safely replace an installation that already has durable configuration.
+ * Maps to a bounded HTTP 409 response without exposing backup contents.
+ */
+export class BackupCompatibilityError extends Error {
+	readonly statusCode = 409;
+	readonly code = "BACKUP_COMPATIBILITY_CONFLICT";
+
+	constructor() {
+		super(
+			"This legacy backup does not contain complete configuration coverage and cannot safely replace the current installation. Restore it to a clean installation or create a new backup with the current version.",
+		);
+		this.name = "BackupCompatibilityError";
+	}
+}
+
 /** Thrown for application-level validation failures. Maps to HTTP 400. */
 export class AppValidationError extends Error {
 	readonly statusCode = 400;
