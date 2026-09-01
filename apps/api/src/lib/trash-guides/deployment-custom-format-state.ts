@@ -14,13 +14,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function createIntendedStateShape(value: unknown): IntendedStateShape {
-	if (Array.isArray(value)) return value.map(createIntendedStateShape);
+function createIntendedStateShape(
+	value: unknown,
+	budget: { nodes: number } = { nodes: 0 },
+	depth = 0,
+): IntendedStateShape {
+	budget.nodes += 1;
+	if (budget.nodes > intendedStateShapeMaxNodes || depth > intendedStateShapeMaxDepth) {
+		throw new Error("Custom Format intended state shape is too complex to persist safely.");
+	}
+	if (Array.isArray(value)) {
+		return value.map((child) => createIntendedStateShape(child, budget, depth + 1));
+	}
 	if (isRecord(value)) {
 		return Object.fromEntries(
 			Object.entries(value)
 				.sort(([left], [right]) => left.localeCompare(right))
-				.map(([key, child]) => [key, createIntendedStateShape(child)]),
+				.map(([key, child]) => [key, createIntendedStateShape(child, budget, depth + 1)]),
 		);
 	}
 	return true;
@@ -66,9 +76,11 @@ function isIntendedStateShape(
 }
 
 function encodeIntendedStateShape(intended: unknown): string {
-	const encoded = Buffer.from(JSON.stringify(createIntendedStateShape(intended))).toString(
-		"base64url",
-	);
+	const shape = createIntendedStateShape(intended);
+	if (!isIntendedStateShape(shape, { nodes: 0 })) {
+		throw new Error("Custom Format intended state shape is too complex to persist safely.");
+	}
+	const encoded = Buffer.from(JSON.stringify(shape)).toString("base64url");
 	if (encoded.length > intendedStateShapeTokenMaxLength) {
 		throw new Error("Custom Format intended state shape is too large to persist safely.");
 	}

@@ -428,6 +428,34 @@ describe("Custom Format intended post-state tokens", () => {
 		);
 	});
 
+	it.each([
+		[
+			"depth",
+			() => {
+				let nested: unknown = true;
+				for (let depth = 0; depth < 65; depth += 1) nested = { child: nested };
+				return nested as Record<string, unknown>;
+			},
+		],
+		["node count", () => ({ children: Array.from({ length: 10_000 }, () => ({})) })],
+	] as const)(
+		"rejects an intended shape that exceeds the decoder %s bound",
+		(_label, makeShape) => {
+			expect(() => createIntendedCustomFormatPostStateToken(makeShape(), "RADARR")).toThrow(
+				"too complex to persist safely",
+			);
+		},
+	);
+
+	it("rejects extreme intended depth without exhausting the JavaScript stack", () => {
+		let nested: unknown = true;
+		for (let depth = 0; depth < 12_000; depth += 1) nested = { child: nested };
+
+		expect(() =>
+			createIntendedCustomFormatPostStateToken(nested as Record<string, unknown>, "RADARR"),
+		).toThrow("too complex to persist safely");
+	});
+
 	it("fails closed for legacy and malformed intended-state shapes", () => {
 		const token = createIntendedCustomFormatPostStateToken(intended, "SONARR");
 		expect(
