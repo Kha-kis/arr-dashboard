@@ -457,14 +457,16 @@ export async function runQuiTorrentStateSync(
 
 				if (userErrors === 0 && transitions.length > 0 && app.notificationService) {
 					const payloads = buildNotificationPayloads(transitions);
-					for (const payload of payloads) {
-						app.notificationService.notify(payload).catch((error) => {
-							log.warn(
-								{ err: error, userId, eventType: payload.eventType },
-								"qUI torrent-state notification dispatch failed",
-							);
-						});
-					}
+					await Promise.all(
+						payloads.map((payload) =>
+							app.notificationService.notify(payload).catch((error) => {
+								log.warn(
+									{ err: error, userId, eventType: payload.eventType },
+									"qUI torrent-state notification dispatch failed",
+								);
+							}),
+						),
+					);
 					log.info(
 						{ userId, transitions: transitions.length, payloads: payloads.length },
 						"qUI torrent-state sync emitted torrent-state notifications",

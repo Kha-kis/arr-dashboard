@@ -32,6 +32,7 @@ export function registerPanelRoutes(app: FastifyInstance): void {
 	// ownership pattern as the rest of qui.ts.
 	app.get<{ Params: { arrInstanceId: string; arrItemId: string } }>(
 		"/qui/series/:arrInstanceId/:arrItemId/torrents",
+		{ config: { backupMutation: true } },
 		async (request, reply) => {
 			const userId = request.currentUser!.id;
 			const { arrInstanceId } = request.params;
@@ -651,6 +652,7 @@ export function registerPanelRoutes(app: FastifyInstance): void {
 	//   - Action items (stuck, dormant, fs_unavailable, healed)
 	app.get<{ Params: { arrInstanceId: string; arrItemId: string } }>(
 		"/qui/movie/:arrInstanceId/:arrItemId/torrents",
+		{ config: { backupMutation: true } },
 		async (request, reply) => {
 			const userId = request.currentUser!.id;
 			const { arrInstanceId } = request.params;

@@ -10,6 +10,7 @@
 import type { PulseAction } from "@arr/shared";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { withCleanupMaintenanceGuard } from "../../library-cleanup/cleanup-maintenance-gate.js";
 
 // -----------------------------------------------------------------------------
 // Module mocks — declared before the dispatcher import so vi can hoist them.
@@ -350,6 +351,9 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		expect(result.status).toBe("ok");
 		// The refresher has NOT completed yet — upsert should not have fired.
 		expect(cacheStatusUpsert).not.toHaveBeenCalled();
+		await expect(withCleanupMaintenanceGuard(async () => undefined)).rejects.toMatchObject({
+			statusCode: 409,
+		});
 
 		// Let the slow refresh complete, then the background task should
 		// run the write-through.
@@ -363,6 +367,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		await result.backgroundTask;
 
 		expect(cacheStatusUpsert).not.toHaveBeenCalled();
+		await expect(withCleanupMaintenanceGuard(async () => "restored")).resolves.toBe("restored");
 	});
 
 	it("does not race the sealed refresher's attempt lifecycle when its background promise rejects", async () => {

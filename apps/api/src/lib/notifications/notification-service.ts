@@ -24,6 +24,7 @@ import type { Encryptor } from "../auth/encryption.js";
 import {
 	CleanupMaintenanceConflictError,
 	withCleanupOperationGuard,
+	withIndependentCleanupOperationGuard,
 } from "../library-cleanup/cleanup-maintenance-gate.js";
 import type { PrismaClient } from "../prisma.js";
 import type { AggregationBuffer, AggregationConfig } from "./aggregation-buffer.js";
@@ -180,7 +181,7 @@ export class NotificationService {
 			fallbackEventTypes?: NotificationEventType[];
 		},
 	): Promise<void> {
-		return withCleanupOperationGuard(() => this.notifyGuarded(payload, options));
+		return withIndependentCleanupOperationGuard(() => this.notifyGuarded(payload, options));
 	}
 
 	private async notifyGuarded(

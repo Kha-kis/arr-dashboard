@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { withIndependentCleanupOperationGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
 import { loggers } from "../logger.js";
 import {
 	passthroughTickWrapper,
@@ -41,6 +42,9 @@ class HuntingScheduler {
 	// up and multiply paginator memory + API-cap pressure. See issue #457.
 	private inFlightTick: Promise<void> | null = null;
 	private skippedTicksWhileBusy = 0;
+	// withTimeout does not cancel ARR commands. Keep per-instance ownership
+	// until the raw executor settles so a later tick cannot duplicate it.
+	private activeHuntExecutions = new Set<string>();
 
 	/**
 	 * Wire an optional tick wrapper (used by the plugin to route ticks
@@ -60,7 +64,7 @@ class HuntingScheduler {
 		this.app = app;
 
 		// Clean up any stuck hunts from previous runs
-		this.cleanupStuckHunts().catch((error) => {
+		withIndependentCleanupOperationGuard(() => this.cleanupStuckHunts()).catch((error) => {
 			log.error({ err: error }, "Failed to cleanup stuck hunts on init");
 		});
 	}
@@ -187,6 +191,9 @@ class HuntingScheduler {
 		instanceId: string,
 		type: "missing" | "upgrade",
 	): { queued: boolean; message: string } {
+		if (this.activeHuntExecutions.has(instanceId)) {
+			return { queued: false, message: "Hunt already in progress for this instance" };
+		}
 		// Check cooldowns before running
 		const cooldownCheck = this.checkCooldown(instanceId, type, true);
 		if (!cooldownCheck.ok) {
@@ -372,204 +379,232 @@ class HuntingScheduler {
 		type: "missing" | "upgrade",
 		isManual = false,
 	): Promise<void> {
-		if (!this.app) return;
-
-		// For scheduled hunts, enforce cooldown check here
-		// For manual hunts, skip this check since triggerManualHunt already checked
-		// and called updateHuntTimes (which would cause this check to fail)
-		if (!isManual) {
-			const cooldownCheck = this.checkCooldown(instanceId, type, false);
-			if (!cooldownCheck.ok) {
-				return;
+		if (this.activeHuntExecutions.has(instanceId)) return;
+		this.activeHuntExecutions.add(instanceId);
+		let executionStarted = false;
+		let executionSettled = false;
+		let outerSettled = false;
+		const releaseOwnershipIfSettled = () => {
+			if (outerSettled && (!executionStarted || executionSettled)) {
+				this.activeHuntExecutions.delete(instanceId);
 			}
-		}
-
-		const startTime = Date.now();
-
-		// Get config and instance
-		const config = await this.app.prisma.huntConfig.findUnique({
-			where: { instanceId },
-			include: { instance: true },
-		});
-
-		if (!config) {
-			log.error({ instanceId }, "No config found for instance");
-			return;
-		}
-
-		// Create log entry with "running" status
-		const huntLogEntry = await this.app.prisma.huntLog.create({
-			data: {
-				instanceId,
-				huntType: type,
-				status: "running",
-				itemsSearched: 0,
-				itemsFound: 0,
-			},
-		});
-
-		// Update hunt times immediately to prevent race conditions
-		this.updateHuntTimes(instanceId, type);
-
+		};
 		try {
-			// Execute the actual hunt using hunt-executor with timeout protection
-			const result: HuntResult = await withTimeout(
-				executeHuntWithSdk(this.app, config.instance, config, type),
-				MAX_HUNT_DURATION_MS,
-				`Hunt timed out after ${MAX_HUNT_DURATION_MS / 1000} seconds`,
-			);
+			return await withIndependentCleanupOperationGuard(async () => {
+				if (!this.app) return;
 
-			// Update log with results
-			const durationMs = Date.now() - startTime;
-			await this.app.prisma.huntLog.update({
-				where: { id: huntLogEntry.id },
-				data: {
-					itemsSearched: result.itemsSearched,
-					itemsFound: result.itemsGrabbed,
-					// searchedItems = items we triggered searches for
-					searchedItems:
-						result.searchedItems.length > 0 ? JSON.stringify(result.searchedItems) : null,
-					// foundItems = items that were actually grabbed (reusing existing field)
-					foundItems: result.grabbedItems.length > 0 ? JSON.stringify(result.grabbedItems) : null,
-					status: result.status,
-					message: result.message,
-					durationMs,
-					completedAt: new Date(),
-				},
-			});
-
-			log.info(
-				{
-					instanceLabel: config.instance.label,
-					huntType: type,
-					status: result.status,
-					itemsSearched: result.itemsSearched,
-					itemsGrabbed: result.itemsGrabbed,
-					apiCalls: result.apiCallsMade,
-					durationMs,
-				},
-				"Hunt completed",
-			);
-
-			// Fire-and-forget notification for hunt results
-			const huntMeta = {
-				instance: config.instance.label,
-				service: config.instance.service,
-				huntType: type,
-				itemsSearched: result.itemsSearched,
-				itemsGrabbed: result.itemsGrabbed,
-				apiCalls: result.apiCallsMade,
-				durationMs,
-				grabbedItems: result.grabbedItems.slice(0, 5).map((g) => g.title),
-			};
-			if (result.itemsGrabbed > 0) {
-				this.app.notificationService
-					?.notify({
-						eventType: "HUNT_CONTENT_FOUND",
-						title: `Hunt found ${result.itemsGrabbed} item(s) on ${config.instance.label}`,
-						body: result.message,
-						url: "/hunting",
-						metadata: huntMeta,
-					})
-					.catch((err) => {
-						log.warn(
-							{ err, instanceLabel: config.instance.label },
-							"Hunt notification dispatch failed",
-						);
-					});
-			} else if (result.status === "completed") {
-				this.app.notificationService
-					?.notify({
-						eventType: "HUNT_COMPLETED",
-						title: `Hunt completed on ${config.instance.label}`,
-						body: result.message,
-						url: "/hunting",
-						metadata: huntMeta,
-					})
-					.catch((err) => {
-						log.warn(
-							{ err, instanceLabel: config.instance.label },
-							"Hunt notification dispatch failed",
-						);
-					});
-			} else if (result.status === "error") {
-				// A returned error result (e.g., queue-check connectivity failure)
-				// does not throw, so the outer catch below never fires for it.
-				// Surface it explicitly so an offline instance doesn't silently
-				// stop hunting. (Issue #438 follow-up.)
-				this.app.notificationService
-					?.notify({
-						eventType: "HUNT_FAILED",
-						title: `Hunt failed on ${config.instance.label}`,
-						body: result.message,
-						url: "/hunting",
-						metadata: huntMeta,
-					})
-					.catch((err) => {
-						log.warn(
-							{ err, instanceLabel: config.instance.label },
-							"Hunt failure notification dispatch failed",
-						);
-					});
-			}
-
-			// Update config timestamps and API call count (only if we actually made API calls)
-			if (result.status !== "skipped" && result.apiCallsMade > 0) {
-				const updateData: Record<string, unknown> = {
-					apiCallsThisHour: { increment: result.apiCallsMade },
-				};
-
-				if (type === "missing") {
-					updateData.lastMissingHunt = new Date();
-				} else {
-					updateData.lastUpgradeHunt = new Date();
+				// For scheduled hunts, enforce cooldown check here
+				// For manual hunts, skip this check since triggerManualHunt already checked
+				// and called updateHuntTimes (which would cause this check to fail)
+				if (!isManual) {
+					const cooldownCheck = this.checkCooldown(instanceId, type, false);
+					if (!cooldownCheck.ok) {
+						return;
+					}
 				}
 
-				if (!config.apiCallsResetAt) {
-					updateData.apiCallsResetAt = new Date(Date.now() + 60 * 60 * 1000);
-				}
+				const startTime = Date.now();
 
-				await this.app.prisma.huntConfig.update({
-					where: { id: config.id },
-					data: updateData,
+				// Get config and instance
+				const config = await this.app.prisma.huntConfig.findUnique({
+					where: { instanceId },
+					include: { instance: true },
 				});
-			}
-		} catch (error) {
-			const durationMs = Date.now() - startTime;
-			const message = getErrorMessage(error, "Unknown error");
 
-			await this.app.prisma.huntLog.update({
-				where: { id: huntLogEntry.id },
-				data: {
-					status: "error",
-					message,
-					durationMs,
-					completedAt: new Date(),
-				},
-			});
+				if (!config) {
+					log.error({ instanceId }, "No config found for instance");
+					return;
+				}
 
-			log.error({ err: error, instanceLabel: config.instance.label }, "Hunt error");
+				// Create log entry with "running" status
+				const huntLogEntry = await this.app.prisma.huntLog.create({
+					data: {
+						instanceId,
+						huntType: type,
+						status: "running",
+						itemsSearched: 0,
+						itemsFound: 0,
+					},
+				});
 
-			// Fire-and-forget notification for hunt failure
-			this.app.notificationService
-				?.notify({
-					eventType: "HUNT_FAILED",
-					title: `Hunt failed on ${config.instance.label}`,
-					body: message,
-					url: "/hunting",
-					metadata: {
+				// Update hunt times immediately to prevent race conditions
+				this.updateHuntTimes(instanceId, type);
+
+				try {
+					// Execute the actual hunt using hunt-executor with timeout protection
+					const execution = withIndependentCleanupOperationGuard(() =>
+						executeHuntWithSdk(this.app!, config.instance, config, type),
+					);
+					executionStarted = true;
+					void execution
+						.finally(() => {
+							executionSettled = true;
+							releaseOwnershipIfSettled();
+						})
+						.catch(() => undefined);
+					const result: HuntResult = await withTimeout(
+						execution,
+						MAX_HUNT_DURATION_MS,
+						`Hunt timed out after ${MAX_HUNT_DURATION_MS / 1000} seconds`,
+					);
+
+					// Update log with results
+					const durationMs = Date.now() - startTime;
+					await this.app.prisma.huntLog.update({
+						where: { id: huntLogEntry.id },
+						data: {
+							itemsSearched: result.itemsSearched,
+							itemsFound: result.itemsGrabbed,
+							// searchedItems = items we triggered searches for
+							searchedItems:
+								result.searchedItems.length > 0 ? JSON.stringify(result.searchedItems) : null,
+							// foundItems = items that were actually grabbed (reusing existing field)
+							foundItems:
+								result.grabbedItems.length > 0 ? JSON.stringify(result.grabbedItems) : null,
+							status: result.status,
+							message: result.message,
+							durationMs,
+							completedAt: new Date(),
+						},
+					});
+
+					log.info(
+						{
+							instanceLabel: config.instance.label,
+							huntType: type,
+							status: result.status,
+							itemsSearched: result.itemsSearched,
+							itemsGrabbed: result.itemsGrabbed,
+							apiCalls: result.apiCallsMade,
+							durationMs,
+						},
+						"Hunt completed",
+					);
+
+					// Fire-and-forget notification for hunt results
+					const huntMeta = {
 						instance: config.instance.label,
 						service: config.instance.service,
 						huntType: type,
+						itemsSearched: result.itemsSearched,
+						itemsGrabbed: result.itemsGrabbed,
+						apiCalls: result.apiCallsMade,
 						durationMs,
-					},
-				})
-				.catch((err) => {
-					log.warn(
-						{ err, instanceLabel: config.instance.label },
-						"Hunt failure notification dispatch failed",
-					);
-				});
+						grabbedItems: result.grabbedItems.slice(0, 5).map((g) => g.title),
+					};
+					if (result.itemsGrabbed > 0) {
+						await this.app.notificationService
+							?.notify({
+								eventType: "HUNT_CONTENT_FOUND",
+								title: `Hunt found ${result.itemsGrabbed} item(s) on ${config.instance.label}`,
+								body: result.message,
+								url: "/hunting",
+								metadata: huntMeta,
+							})
+							.catch((err) => {
+								log.warn(
+									{ err, instanceLabel: config.instance.label },
+									"Hunt notification dispatch failed",
+								);
+							});
+					} else if (result.status === "completed") {
+						await this.app.notificationService
+							?.notify({
+								eventType: "HUNT_COMPLETED",
+								title: `Hunt completed on ${config.instance.label}`,
+								body: result.message,
+								url: "/hunting",
+								metadata: huntMeta,
+							})
+							.catch((err) => {
+								log.warn(
+									{ err, instanceLabel: config.instance.label },
+									"Hunt notification dispatch failed",
+								);
+							});
+					} else if (result.status === "error") {
+						// A returned error result (e.g., queue-check connectivity failure)
+						// does not throw, so the outer catch below never fires for it.
+						// Surface it explicitly so an offline instance doesn't silently
+						// stop hunting. (Issue #438 follow-up.)
+						await this.app.notificationService
+							?.notify({
+								eventType: "HUNT_FAILED",
+								title: `Hunt failed on ${config.instance.label}`,
+								body: result.message,
+								url: "/hunting",
+								metadata: huntMeta,
+							})
+							.catch((err) => {
+								log.warn(
+									{ err, instanceLabel: config.instance.label },
+									"Hunt failure notification dispatch failed",
+								);
+							});
+					}
+
+					// Update config timestamps and API call count (only if we actually made API calls)
+					if (result.status !== "skipped" && result.apiCallsMade > 0) {
+						const updateData: Record<string, unknown> = {
+							apiCallsThisHour: { increment: result.apiCallsMade },
+						};
+
+						if (type === "missing") {
+							updateData.lastMissingHunt = new Date();
+						} else {
+							updateData.lastUpgradeHunt = new Date();
+						}
+
+						if (!config.apiCallsResetAt) {
+							updateData.apiCallsResetAt = new Date(Date.now() + 60 * 60 * 1000);
+						}
+
+						await this.app.prisma.huntConfig.update({
+							where: { id: config.id },
+							data: updateData,
+						});
+					}
+				} catch (error) {
+					const durationMs = Date.now() - startTime;
+					const message = getErrorMessage(error, "Unknown error");
+
+					await this.app.prisma.huntLog.update({
+						where: { id: huntLogEntry.id },
+						data: {
+							status: "error",
+							message,
+							durationMs,
+							completedAt: new Date(),
+						},
+					});
+
+					log.error({ err: error, instanceLabel: config.instance.label }, "Hunt error");
+
+					// Fire-and-forget notification for hunt failure
+					await this.app.notificationService
+						?.notify({
+							eventType: "HUNT_FAILED",
+							title: `Hunt failed on ${config.instance.label}`,
+							body: message,
+							url: "/hunting",
+							metadata: {
+								instance: config.instance.label,
+								service: config.instance.service,
+								huntType: type,
+								durationMs,
+							},
+						})
+						.catch((err) => {
+							log.warn(
+								{ err, instanceLabel: config.instance.label },
+								"Hunt failure notification dispatch failed",
+							);
+						});
+				}
+			});
+		} finally {
+			outerSettled = true;
+			releaseOwnershipIfSettled();
 		}
 	}
 }

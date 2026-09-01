@@ -46,6 +46,37 @@ describe("backup request mutation gate", () => {
 		expect((await mutation).statusCode).toBe(200);
 	});
 
+	it("covers explicitly marked write-on-read handlers while leaving ordinary reads available", async () => {
+		const app = Fastify();
+		apps.push(app);
+		registerBackupMutationGuard(app);
+
+		let releaseWrite!: () => void;
+		const writeStarted = new Promise<void>((resolve) => {
+			app.get("/settings", { config: { backupMutation: true } }, async () => {
+				resolve();
+				await new Promise<void>((release) => {
+					releaseWrite = release;
+				});
+				return { saved: true };
+			});
+		});
+		app.get("/health", async () => ({ ok: true }));
+		await app.ready();
+
+		const writeOnRead = app.inject({ method: "GET", url: "/settings" });
+		await writeStarted;
+		const maintenanceWork = vi.fn();
+		await expect(withCleanupMaintenanceGuard(async () => maintenanceWork())).rejects.toMatchObject({
+			statusCode: 409,
+		});
+		expect(maintenanceWork).not.toHaveBeenCalled();
+		expect((await app.inject({ method: "GET", url: "/health" })).statusCode).toBe(200);
+
+		releaseWrite();
+		expect((await writeOnRead).statusCode).toBe(200);
+	});
+
 	it("upgrades the request's sole shared lease for a maintenance owner", async () => {
 		const app = Fastify();
 		apps.push(app);

@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	CleanupMaintenanceConflictError,
 	withCleanupMaintenanceGuard,
+	withCleanupOperationGuard,
 } from "../../library-cleanup/cleanup-maintenance-gate.js";
 import { NotificationService } from "../notification-service.js";
 import type { NotificationPayload, SendResult } from "../types.js";
@@ -145,6 +146,31 @@ describe("NotificationService", () => {
 
 		const notification = service.notify(makePayload());
 		await sendStarted.promise;
+		await expect(withCleanupMaintenanceGuard(async () => undefined)).rejects.toBeInstanceOf(
+			CleanupMaintenanceConflictError,
+		);
+
+		finishSend.resolve({ success: true, retryable: false });
+		await notification;
+		await expect(withCleanupMaintenanceGuard(async () => "restored")).resolves.toBe("restored");
+	});
+
+	it("keeps an independent lease when its guarded caller stops awaiting", async () => {
+		mockPrisma.notificationSubscription.findMany.mockResolvedValue([
+			makeSubscription("ch-1", "discord"),
+		]);
+		const sendStarted = deferred<void>();
+		const finishSend = deferred<SendResult>();
+		mockDispatcher.send.mockImplementation(async () => {
+			sendStarted.resolve();
+			return finishSend.promise;
+		});
+		let notification!: Promise<void>;
+		await withCleanupOperationGuard(async () => {
+			notification = service.notify(makePayload());
+			await sendStarted.promise;
+		});
+
 		await expect(withCleanupMaintenanceGuard(async () => undefined)).rejects.toBeInstanceOf(
 			CleanupMaintenanceConflictError,
 		);

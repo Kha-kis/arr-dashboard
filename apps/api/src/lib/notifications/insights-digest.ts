@@ -100,7 +100,7 @@ export class InsightsDigestScheduler {
 		const itemList = topItems.map((i) => `• ${i.title} (requested by ${i.requestedBy})`).join("\n");
 		const moreText = items.length > 5 ? `\n+${items.length - 5} more` : "";
 
-		this.notifyFn!({
+		await this.notifyFn!({
 			eventType: "LIBRARY_INSIGHT_REQUESTED_UNWATCHED",
 			title: `${items.length} requested item${items.length !== 1 ? "s" : ""} never watched`,
 			body: `The following Seerr requests are available but have not been watched after ${MIN_AGE_DAYS}+ days:\n${itemList}${moreText}`,
@@ -126,7 +126,7 @@ export class InsightsDigestScheduler {
 			.join("\n");
 		const moreText = items.length > 5 ? `\n+${items.length - 5} more` : "";
 
-		this.notifyFn!({
+		await this.notifyFn!({
 			eventType: "LIBRARY_INSIGHT_WATCHED_MONITORED",
 			title: `${items.length} watched item${items.length !== 1 ? "s" : ""} still monitored`,
 			body: `These items have been watched but are still being monitored for new downloads:\n${itemList}${moreText}`,
