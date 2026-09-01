@@ -20,6 +20,9 @@ const filters = {
 	statusFilter: "all",
 };
 
+const itemKey = (entry: HistoryItem): string =>
+	`${entry.service}:${entry.instanceId}:${String(entry.id)}`;
+
 describe("useHistoryData cursor-page context", () => {
 	it("keeps a download lifecycle grouped when it crosses an adjacent cursor page", () => {
 		const downloadId = "download-id-longer-than-ten";
@@ -47,6 +50,7 @@ describe("useHistoryData cursor-page context", () => {
 		const { result } = renderHook(() =>
 			useHistoryData({ aggregated: [current], instances: [] }, filters, true, false, {
 				previousItems: [newerAdjacent],
+				previouslyRenderedItemKeys: [newerAdjacent, current].map(itemKey),
 			}),
 		);
 
@@ -62,10 +66,52 @@ describe("useHistoryData cursor-page context", () => {
 		const { result } = renderHook(() =>
 			useHistoryData({ aggregated: [current], instances: [] }, filters, true, false, {
 				previousItems: [previousPageItem],
+				previouslyRenderedItemKeys: [previousPageItem, current].map(itemKey),
 			}),
 		);
 
 		expect(result.current.groupedItems).toEqual([]);
+	});
+
+	it("does not hide the unrendered tail of a lifecycle spanning three cursor pages", () => {
+		const downloadId = "download-id-longer-than-ten";
+		const page1Item = item("page-1", "grabbed", downloadId);
+		const page2Item = {
+			...item("page-2", "downloadFolderImported", downloadId),
+			date: "2026-08-31T11:00:00.000Z",
+		};
+		const page3Item = {
+			...item("page-3", "downloadFolderImported", downloadId),
+			date: "2026-08-31T10:00:00.000Z",
+		};
+
+		const firstPage = renderHook(() =>
+			useHistoryData({ aggregated: [page1Item], instances: [] }, filters, true, false, {
+				nextItems: [page2Item],
+			}),
+		);
+		const secondPage = renderHook(() =>
+			useHistoryData({ aggregated: [page2Item], instances: [] }, filters, true, false, {
+				previousItems: [page1Item],
+				nextItems: [page3Item],
+				previouslyRenderedItemKeys: firstPage.result.current.renderedItemKeys,
+			}),
+		);
+		const thirdPage = renderHook(() =>
+			useHistoryData({ aggregated: [page3Item], instances: [] }, filters, true, false, {
+				previousItems: [page2Item],
+				previouslyRenderedItemKeys: firstPage.result.current.renderedItemKeys,
+			}),
+		);
+
+		expect(firstPage.result.current.groupedItems[0]?.items.map((entry) => entry.id)).toEqual([
+			"page-1",
+			"page-2",
+		]);
+		expect(secondPage.result.current.groupedItems).toEqual([]);
+		expect(thirdPage.result.current.groupedItems[0]?.items.map((entry) => entry.id)).toEqual([
+			"page-3",
+		]);
 	});
 
 	it("offers stable server-filter values even when the current page has only grabs", () => {

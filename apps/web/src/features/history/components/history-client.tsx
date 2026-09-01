@@ -85,11 +85,13 @@ export const HistoryClient = () => {
 		statusFilter,
 		searchTerm: deferredSearchTerm,
 		hideProwlarrRss,
+		groupByDownload,
 	});
 	const [cursorNavigation, setCursorNavigation] = useState<{
 		scope: string;
 		cursors: Record<number, string | undefined>;
-	}>(() => ({ scope: queryScope, cursors: {} }));
+		renderedItemKeysByPage: Record<number, string[]>;
+	}>(() => ({ scope: queryScope, cursors: {}, renderedItemKeysByPage: {} }));
 	const cursor = cursorNavigation.scope === queryScope ? cursorNavigation.cursors[page] : undefined;
 
 	const firstPageQuery = useMemo(
@@ -128,15 +130,30 @@ export const HistoryClient = () => {
 					dashboardKeys.history({ ...firstPageQuery, cursor: previousPageCursor }),
 				)
 			: undefined;
+	const previouslyRenderedItemKeys = useMemo(
+		() =>
+			cursorNavigation.scope === queryScope
+				? Object.entries(cursorNavigation.renderedItemKeysByPage)
+						.filter(([renderedPage]) => Number(renderedPage) < page)
+						.flatMap(([, itemKeys]) => itemKeys)
+				: [],
+		[cursorNavigation.renderedItemKeysByPage, cursorNavigation.scope, page, queryScope],
+	);
 	const groupingContext = useMemo(
 		() => ({
 			previousItems: previousPageContext?.aggregated ?? [],
 			nextItems: nextCursor ? (nextPageContext?.aggregated ?? []) : [],
+			previouslyRenderedItemKeys,
 		}),
-		[previousPageContext?.aggregated, nextCursor, nextPageContext?.aggregated],
+		[
+			previousPageContext?.aggregated,
+			nextCursor,
+			nextPageContext?.aggregated,
+			previouslyRenderedItemKeys,
+		],
 	);
 	const resetNavigation = useCallback(() => {
-		setCursorNavigation({ scope: queryScope, cursors: {} });
+		setCursorNavigation({ scope: queryScope, cursors: {}, renderedItemKeysByPage: {} });
 		setPage(1);
 	}, [queryScope, setPage]);
 	useEffect(() => {
@@ -153,6 +170,23 @@ export const HistoryClient = () => {
 	const [isRefreshing, handleRefresh] = useRefreshState(refreshFromNewest);
 
 	const { data: services } = useServicesQuery();
+	const availableHistoryInstances = useMemo(
+		() =>
+			services
+				?.filter(
+					(instance) =>
+						instance.enabled &&
+						SERVICE_FILTERS.some((option) => option.value === instance.service) &&
+						(serviceFilter === "all" || instance.service === serviceFilter),
+				)
+				.map((instance) => ({ instanceId: instance.id, instanceName: instance.label })),
+		[serviceFilter, services],
+	);
+	const historyResponse = useMemo(
+		() =>
+			data && availableHistoryInstances ? { ...data, instances: availableHistoryInstances } : data,
+		[availableHistoryInstances, data],
+	);
 
 	// Build service lookup map for external links
 	const serviceMap = useMemo(() => {
@@ -164,7 +198,7 @@ export const HistoryClient = () => {
 	}, [services]);
 
 	const historyData = useHistoryData(
-		data,
+		historyResponse,
 		{
 			searchTerm: deferredSearchTerm,
 			serviceFilter,
@@ -181,6 +215,7 @@ export const HistoryClient = () => {
 	const {
 		allItems,
 		groupedItems,
+		renderedItemKeys,
 		instanceOptions,
 		statusOptions,
 		serviceSummary,
@@ -205,6 +240,10 @@ export const HistoryClient = () => {
 			cursors: {
 				...(current.scope === queryScope ? current.cursors : {}),
 				[page + 1]: nextCursor,
+			},
+			renderedItemKeysByPage: {
+				...(current.scope === queryScope ? current.renderedItemKeysByPage : {}),
+				[page]: renderedItemKeys,
 			},
 		}));
 		actions.setPage(page + 1);

@@ -27,6 +27,7 @@ export interface ProcessedHistoryData {
 	allItems: HistoryItem[];
 	filteredItems: HistoryItem[];
 	groupedItems: HistoryGroup[];
+	renderedItemKeys: string[];
 	groupedByDay: DayGroup<HistoryGroup>[];
 	instanceOptions: Array<{ value: string; label: string }>;
 	statusOptions: Array<{ value: string; label: string }>;
@@ -40,6 +41,7 @@ export interface ProcessedHistoryData {
 interface HistoryGroupingContext {
 	previousItems?: HistoryItem[];
 	nextItems?: HistoryItem[];
+	previouslyRenderedItemKeys?: string[];
 }
 
 const historyItemIdentity = (item: HistoryItem): string =>
@@ -154,17 +156,30 @@ export const useHistoryData = (
 			: undefined;
 
 	const groupedItems = useMemo(() => {
-		const currentItemKeys = new Set(filteredItems.map(historyItemIdentity));
-		const previousItemKeys = new Set(filteredPreviousContext.map(historyItemIdentity));
-		return groupHistoryItems(
-			uniqueHistoryItems([...filteredPreviousContext, ...filteredItems, ...filteredNextContext]),
-			groupByDownload,
-		).filter(
-			(group) =>
-				!group.items.some((item) => previousItemKeys.has(historyItemIdentity(item))) &&
-				group.items.some((item) => currentItemKeys.has(historyItemIdentity(item))),
+		const previouslyRenderedItemKeys = new Set(groupingContext.previouslyRenderedItemKeys ?? []);
+		const unrenderedCurrentItems = filteredItems.filter(
+			(item) => !previouslyRenderedItemKeys.has(historyItemIdentity(item)),
 		);
-	}, [filteredItems, filteredNextContext, filteredPreviousContext, groupByDownload]);
+		const currentItemKeys = new Set(unrenderedCurrentItems.map(historyItemIdentity));
+		return groupHistoryItems(
+			uniqueHistoryItems(
+				[...filteredPreviousContext, ...unrenderedCurrentItems, ...filteredNextContext].filter(
+					(item) => !previouslyRenderedItemKeys.has(historyItemIdentity(item)),
+				),
+			),
+			groupByDownload,
+		).filter((group) => group.items.some((item) => currentItemKeys.has(historyItemIdentity(item))));
+	}, [
+		filteredItems,
+		filteredNextContext,
+		filteredPreviousContext,
+		groupByDownload,
+		groupingContext.previouslyRenderedItemKeys,
+	]);
+	const renderedItemKeys = useMemo(
+		() => groupedItems.flatMap((group) => group.items.map(historyItemIdentity)),
+		[groupedItems],
+	);
 
 	const groupedByDay = useMemo(
 		() => groupByDay(groupedItems, (group) => group.items[0]?.date),
@@ -175,6 +190,7 @@ export const useHistoryData = (
 		allItems: rssFilteredItems,
 		filteredItems,
 		groupedItems,
+		renderedItemKeys,
 		groupedByDay,
 		instanceOptions,
 		statusOptions,
