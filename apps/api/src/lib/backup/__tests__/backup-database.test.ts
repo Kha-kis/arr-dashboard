@@ -60,6 +60,8 @@ type MockPrisma = {
 		findMany: ReturnType<typeof vi.fn>;
 		count: ReturnType<typeof vi.fn>;
 	};
+} & {
+	$transaction: ReturnType<typeof vi.fn>;
 };
 
 function makeMockPrisma(rows: Partial<Record<TableName, unknown[]>> = {}): {
@@ -74,10 +76,45 @@ function makeMockPrisma(rows: Partial<Record<TableName, unknown[]>> = {}): {
 			count: vi.fn().mockResolvedValue(tableRows.length),
 		};
 	}
+	mock.$transaction = vi.fn(async (operation: (tx: MockPrisma) => Promise<unknown>) =>
+		operation(mock),
+	);
 	return { prisma: mock as unknown as PrismaClient, mock };
 }
 
 describe("exportDatabase — operational history exclusion", () => {
+	it("reads the portable snapshot in one Serializable transaction", async () => {
+		const { prisma: transactionClient } = makeMockPrisma();
+		const transaction = vi.fn(
+			async (
+				operation: (tx: PrismaClient) => Promise<unknown>,
+				_options: { isolationLevel: string; timeout: number },
+			) => operation(transactionClient),
+		);
+		const rootNamingFindMany = vi.fn().mockResolvedValue([]);
+		const prisma = new Proxy(
+			{ $transaction: transaction },
+			{
+				get: (target, property) => {
+					if (property === "$transaction") return target.$transaction;
+					if (property === "namingDeployHistory") {
+						return { findMany: rootNamingFindMany };
+					}
+					throw new Error(`root delegate ${String(property)} was read outside the snapshot`);
+				},
+			},
+		) as unknown as PrismaClient;
+
+		await exportDatabase(prisma, { excludeOperationalHistory: true });
+
+		expect(transaction).toHaveBeenCalledOnce();
+		expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
+			isolationLevel: "Serializable",
+			timeout: 60_000,
+		});
+		expect(rootNamingFindMany).toHaveBeenCalledOnce();
+	});
+
 	it("skips disposable history but preserves nonterminal rollback and undeploy coordination", async () => {
 		const { prisma, mock } = makeMockPrisma({
 			serviceInstance: [{ id: "instance-1", userId: "user-1" }],

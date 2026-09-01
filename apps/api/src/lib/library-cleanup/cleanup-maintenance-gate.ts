@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 /**
  * In-process reader/writer gate around cleanup-sensitive mutations.
  *
@@ -10,6 +12,8 @@
 let activeCleanupOperations = 0;
 let maintenanceActive = false;
 let exclusiveCleanupOperationActive = false;
+type OperationGuardContext = { active: boolean };
+const operationGuardContext = new AsyncLocalStorage<OperationGuardContext>();
 
 export class CleanupMaintenanceConflictError extends Error {
 	readonly statusCode = 409;
@@ -21,7 +25,10 @@ export class CleanupMaintenanceConflictError extends Error {
 }
 
 /** Acquire a shared operation guard that remains active until the returned release is called. */
-export function acquireCleanupOperationGuard(): () => void {
+function acquireCleanupOperationGuardState(): {
+	context: OperationGuardContext;
+	release: () => void;
+} {
 	if (maintenanceActive || exclusiveCleanupOperationActive) {
 		throw new CleanupMaintenanceConflictError(
 			"Cleanup-sensitive changes are unavailable during database maintenance or ARR service deletion",
@@ -29,11 +36,18 @@ export function acquireCleanupOperationGuard(): () => void {
 	}
 	activeCleanupOperations += 1;
 	let released = false;
-	return () => {
+	const context = { active: true };
+	const release = () => {
 		if (released) return;
 		released = true;
+		context.active = false;
 		activeCleanupOperations -= 1;
 	};
+	return { context, release };
+}
+
+export function acquireCleanupOperationGuard(): () => void {
+	return acquireCleanupOperationGuardState().release;
 }
 
 /**
@@ -43,7 +57,12 @@ export function acquireCleanupOperationGuard(): () => void {
 export async function withExclusiveCleanupOperationGuard<T>(
 	operation: () => Promise<T>,
 ): Promise<T> {
-	if (maintenanceActive || exclusiveCleanupOperationActive || activeCleanupOperations > 0) {
+	const ownedSharedLease = operationGuardContext.getStore()?.active === true ? 1 : 0;
+	if (
+		maintenanceActive ||
+		exclusiveCleanupOperationActive ||
+		activeCleanupOperations > ownedSharedLease
+	) {
 		throw new CleanupMaintenanceConflictError(
 			"This service cannot be deleted while database maintenance, TRaSH, or library cleanup work is active",
 		);
@@ -57,9 +76,12 @@ export async function withExclusiveCleanupOperationGuard<T>(
 }
 
 export async function withCleanupOperationGuard<T>(operation: () => Promise<T>): Promise<T> {
-	const release = acquireCleanupOperationGuard();
-	try {
+	if (operationGuardContext.getStore()?.active === true) {
 		return await operation();
+	}
+	const { context, release } = acquireCleanupOperationGuardState();
+	try {
+		return await operationGuardContext.run(context, operation);
 	} finally {
 		release();
 	}
@@ -69,7 +91,12 @@ export async function withCleanupMaintenanceGuard<T>(
 	maintenance: () => Promise<T>,
 	options: { holdAfterSuccess?: boolean } = {},
 ): Promise<T> {
-	if (maintenanceActive || exclusiveCleanupOperationActive || activeCleanupOperations > 0) {
+	const ownedSharedLease = operationGuardContext.getStore()?.active === true ? 1 : 0;
+	if (
+		maintenanceActive ||
+		exclusiveCleanupOperationActive ||
+		activeCleanupOperations > ownedSharedLease
+	) {
 		throw new CleanupMaintenanceConflictError();
 	}
 	maintenanceActive = true;

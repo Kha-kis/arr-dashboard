@@ -97,4 +97,35 @@ describe.sequential("cleanup maintenance gate", () => {
 
 		await expect(withCleanupOperationGuard(async () => "available")).resolves.toBe("available");
 	});
+
+	it("upgrades a sole shared lease to maintenance without admitting another operation", async () => {
+		let releaseMaintenance!: () => void;
+		let upgradedOperation!: Promise<void>;
+		const maintenanceStarted = new Promise<void>((resolve) => {
+			upgradedOperation = withCleanupOperationGuard(() =>
+				withCleanupMaintenanceGuard(async () => {
+					resolve();
+					await new Promise<void>((release) => {
+						releaseMaintenance = release;
+					});
+				}),
+			);
+		});
+
+		await maintenanceStarted;
+		await expect(withCleanupOperationGuard(async () => undefined)).rejects.toBeInstanceOf(
+			CleanupMaintenanceConflictError,
+		);
+		releaseMaintenance();
+		await upgradedOperation;
+	});
+
+	it("rejects a shared-to-exclusive upgrade while another operation is active", async () => {
+		const releaseOther = acquireCleanupOperationGuard();
+
+		await expect(
+			withCleanupOperationGuard(() => withExclusiveCleanupOperationGuard(async () => undefined)),
+		).rejects.toBeInstanceOf(CleanupMaintenanceConflictError);
+		releaseOther();
+	});
 });

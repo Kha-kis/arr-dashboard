@@ -432,6 +432,26 @@ export function validateRecords(
 	}
 }
 
+const SINGLETON_PAYLOAD_FIELDS = [
+	"oidcProviders",
+	"systemSettings",
+	"backupSettings",
+	"vapidKeys",
+] as const;
+
+/** Reject payloads whose singleton selection would otherwise depend on array order. */
+export function validateSingletonCollections(
+	data: BackupData["data"] | Record<string, unknown>,
+): void {
+	const record = data as Record<string, unknown>;
+	for (const field of SINGLETON_PAYLOAD_FIELDS) {
+		const rows = record[field];
+		if (Array.isArray(rows) && rows.length > 1) {
+			throw new Error(`Invalid backup format: ${field} must contain at most one record`);
+		}
+	}
+}
+
 /**
  * Validate backup structure
  */
@@ -519,6 +539,8 @@ export function validateBackup(backup: unknown): asserts backup is BackupData {
 			}
 		}
 	}
+
+	validateSingletonCollections(dataRecord);
 
 	if (b.version === BACKUP_VERSION || b.version === PRE_CONFIG_BACKUP_VERSION) {
 		validateCoordinationEvidence(dataRecord);

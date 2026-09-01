@@ -87,6 +87,9 @@ function makePrismaWithCoordinationEvidence(): PrismaClient {
 		findMany: vi.fn().mockResolvedValue([]),
 		findUnique: vi.fn().mockResolvedValue(null),
 	};
+	prisma.$transaction = vi.fn(async (operation: (tx: unknown) => Promise<unknown>) =>
+		operation(prisma),
+	);
 
 	return prisma as unknown as PrismaClient;
 }
