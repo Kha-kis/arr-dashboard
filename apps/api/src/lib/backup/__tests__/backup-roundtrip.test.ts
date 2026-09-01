@@ -12,6 +12,7 @@ import { exportDatabase, restoreDatabase } from "../backup-database.js";
 import { BACKUP_VERSION, validateBackup } from "../backup-validation.js";
 
 const RUN_DB_TESTS = process.env.TEST_DB === "true";
+const ROUND_TRIP_HOOK_TIMEOUT_MS = 120_000;
 const execFileAsync = promisify(execFile);
 
 type DatabaseHandle = { prisma: PrismaClient; cleanup: () => Promise<void> };
@@ -529,7 +530,7 @@ const MODEL_EXPORTS = [
 			({ source, target, tempDir } = await createDatabasePair());
 			await seedDurableSource(source.prisma);
 			await seedDurableSource(target.prisma);
-		});
+		}, ROUND_TRIP_HOOK_TIMEOUT_MS);
 
 		afterAll(async () => {
 			const cleanupErrors: unknown[] = [];
@@ -548,7 +549,7 @@ const MODEL_EXPORTS = [
 			if (cleanupErrors.length > 0) {
 				throw new AggregateError(cleanupErrors, "Backup round-trip cleanup failed");
 			}
-		});
+		}, ROUND_TRIP_HOOK_TIMEOUT_MS);
 
 		it("rejects incomplete populated-target restores, then replaces complete and covered legacy state", async () => {
 			const exported = await exportDatabase(source.prisma, { excludeOperationalHistory: true });
