@@ -310,6 +310,9 @@ const ACTIVE_NAMING_INSTANCE_FIELDS = [
 	"httpAuthEncryptionIv",
 ] as const;
 
+const ACTIVE_NAMING_EXPORT_CHANGED =
+	"Cannot create backup: active naming recovery changed during export; retry";
+
 const ACTIVE_APPROVAL_FIELDS = [
 	"configId",
 	"instanceId",
@@ -491,6 +494,13 @@ function assertCurrentSpecialRowPreserved(
 	}
 }
 
+function namingInstanceFieldMatches(field: string, left: unknown, right: unknown): boolean {
+	return field === "baseUrl" && typeof left === "string" && typeof right === "string"
+		? `${left.replace(/\/$/, "")}/api/v3/config/naming` ===
+				`${right.replace(/\/$/, "")}/api/v3/config/naming`
+		: left === right;
+}
+
 function assertCurrentNamingInstancePreserved(
 	history: CoordinationRow,
 	currentInstances: Map<string, CoordinationRow>,
@@ -516,15 +526,51 @@ function assertCurrentNamingInstancePreserved(
 	for (const field of ACTIVE_NAMING_INSTANCE_FIELDS) {
 		const incomingValue = incomingInstance[field];
 		const currentValue = currentInstance[field];
-		const matches =
-			field === "baseUrl" && typeof incomingValue === "string" && typeof currentValue === "string"
-				? `${incomingValue.replace(/\/$/, "")}/api/v3/config/naming` ===
-					`${currentValue.replace(/\/$/, "")}/api/v3/config/naming`
-				: incomingValue === currentValue;
-		if (!matches) {
+		if (!namingInstanceFieldMatches(field, incomingValue, currentValue)) {
 			throw new CoordinationMismatchError(
 				`Cannot restore backup: current active naming recovery ${history.id} changed service instance ${field}`,
 			);
+		}
+	}
+}
+
+function assertActiveNamingExportStable(
+	capturedHistory: CoordinationRow[],
+	latestHistory: CoordinationRow[],
+	capturedInstances: CoordinationRow[],
+	latestInstances: CoordinationRow[],
+): void {
+	const capturedHistoryById = recordsById(capturedHistory);
+	const latestHistoryById = recordsById(latestHistory);
+	if (capturedHistoryById.size !== latestHistoryById.size) {
+		throw new Error(ACTIVE_NAMING_EXPORT_CHANGED);
+	}
+	for (const captured of capturedHistoryById.values()) {
+		const latest = latestHistoryById.get(captured.id);
+		if (!latest) throw new Error(ACTIVE_NAMING_EXPORT_CHANGED);
+		for (const field of ACTIVE_NAMING_FIELDS) {
+			if (
+				comparableCoordinationValue(captured[field], field) !==
+				comparableCoordinationValue(latest[field], field)
+			) {
+				throw new Error(ACTIVE_NAMING_EXPORT_CHANGED);
+			}
+		}
+	}
+
+	const capturedInstancesById = recordsById(capturedInstances);
+	const latestInstancesById = recordsById(latestInstances);
+	for (const history of capturedHistoryById.values()) {
+		if (typeof history.instanceId !== "string" || history.instanceId.length === 0) {
+			throw new Error(ACTIVE_NAMING_EXPORT_CHANGED);
+		}
+		const captured = capturedInstancesById.get(history.instanceId);
+		const latest = latestInstancesById.get(history.instanceId);
+		if (!captured || !latest) throw new Error(ACTIVE_NAMING_EXPORT_CHANGED);
+		for (const field of ACTIVE_NAMING_INSTANCE_FIELDS) {
+			if (!namingInstanceFieldMatches(field, captured[field], latest[field])) {
+				throw new Error(ACTIVE_NAMING_EXPORT_CHANGED);
+			}
 		}
 	}
 }
@@ -935,6 +981,32 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 		});
 		trashBackups = mergeRowsById(trashBackups, requiredSnapshots);
 	}
+
+	// Active naming rows carry rollback authority. Re-read their recovery
+	// fields and referenced connection authority at the publication boundary so
+	// a concurrent change cannot produce a backup assembled from two states.
+	const latestActiveNamingDeployHistory = await prisma.namingDeployHistory.findMany({
+		where: { status: { in: ["PENDING", "SUCCESS"] }, rolledBack: false },
+	});
+	const activeNamingInstanceIds = [
+		...new Set(
+			activeNamingDeployHistory
+				.map((row) => row.instanceId)
+				.filter((id): id is string => typeof id === "string" && id.length > 0),
+		),
+	];
+	const latestActiveNamingInstances =
+		activeNamingInstanceIds.length > 0
+			? await prisma.serviceInstance.findMany({
+					where: { id: { in: activeNamingInstanceIds } },
+				})
+			: [];
+	assertActiveNamingExportStable(
+		activeNamingDeployHistory as CoordinationRow[],
+		latestActiveNamingDeployHistory as CoordinationRow[],
+		serviceInstances as CoordinationRow[],
+		latestActiveNamingInstances as CoordinationRow[],
+	);
 
 	validateCoordinationEvidence({
 		serviceInstances,

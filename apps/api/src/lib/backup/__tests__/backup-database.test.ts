@@ -339,6 +339,59 @@ describe("exportDatabase — operational history exclusion", () => {
 		);
 	});
 
+	it("fails closed when active naming recovery changes during export", async () => {
+		const { prisma, mock } = makeMockPrisma();
+		const activeNaming = {
+			id: "active-naming-recovery",
+			instanceId: "instance-1",
+			userId: "user-1",
+			status: "SUCCESS",
+			previousConfig: '{"standardMovieFormat":"{Movie OriginalTitle}"}',
+			rolledBack: false,
+		};
+		mock.namingDeployHistory.findMany
+			.mockResolvedValueOnce([activeNaming])
+			.mockResolvedValueOnce([{ ...activeNaming, previousConfig: "changed-recovery-state" }]);
+
+		await expect(exportDatabase(prisma, { excludeOperationalHistory: true })).rejects.toThrow(
+			"Cannot create backup: active naming recovery changed during export; retry",
+		);
+	});
+
+	it("fails closed when active naming recovery service authority changes during export", async () => {
+		const { prisma, mock } = makeMockPrisma();
+		const activeNaming = {
+			id: "active-naming-recovery",
+			instanceId: "instance-1",
+			userId: "user-1",
+			status: "SUCCESS",
+			previousConfig: '{"standardMovieFormat":"{Movie OriginalTitle}"}',
+			rolledBack: false,
+		};
+		const initialInstance = {
+			id: "instance-1",
+			userId: "user-1",
+			service: "RADARR",
+			baseUrl: "https://proxy.example/arr?tenant=A",
+			encryptedApiKey: "api-key-ciphertext",
+			encryptionIv: "api-key-iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+		};
+		mock.serviceInstance.findMany
+			.mockResolvedValueOnce([initialInstance])
+			.mockResolvedValueOnce([
+				{ ...initialInstance, baseUrl: "https://proxy.example/arr?tenant=B" },
+			]);
+		mock.namingDeployHistory.findMany
+			.mockResolvedValueOnce([activeNaming])
+			.mockResolvedValueOnce([activeNaming]);
+
+		await expect(exportDatabase(prisma, { excludeOperationalHistory: true })).rejects.toThrow(
+			"Cannot create backup: active naming recovery changed during export; retry",
+		);
+	});
+
 	it("includes operational history with row cap when excludeOperationalHistory: false (default)", async () => {
 		const { prisma, mock } = makeMockPrisma({
 			huntLog: [{ id: "h1", startedAt: new Date() }],
