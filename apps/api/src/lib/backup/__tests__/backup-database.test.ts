@@ -10,7 +10,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { BackupCompatibilityError } from "../../errors.js";
 import type { PrismaClient } from "../../prisma.js";
-import { exportDatabase, restoreDatabase } from "../backup-database.js";
+import { assertRestoreCompatibility, exportDatabase, restoreDatabase } from "../backup-database.js";
 
 const TABLE_NAMES = [
 	"user",
@@ -482,15 +482,21 @@ describe("restoreDatabase — current coordination preservation", () => {
 	}
 
 	function makeRestorePrisma(options: {
+		currentInstances?: Array<Record<string, unknown>>;
 		currentSync?: Array<Record<string, unknown>>;
 		currentDeployments?: Array<Record<string, unknown>>;
 		currentSnapshots?: Array<Record<string, unknown>>;
+		currentNaming?: Array<Record<string, unknown>>;
 		currentApprovals?: Array<Record<string, unknown>>;
 		currentScanParentApprovals?: Array<Record<string, unknown>>;
 		currentScans?: Array<Record<string, unknown>>;
 	}) {
 		const firstDelete = vi.fn().mockResolvedValue({ count: 0 });
 		const tx = {
+			serviceInstance: {
+				findMany: vi.fn().mockResolvedValue(options.currentInstances ?? []),
+				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
 			trashSyncHistory: {
 				findMany: vi.fn().mockResolvedValue(options.currentSync ?? []),
 				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -508,7 +514,7 @@ describe("restoreDatabase — current coordination preservation", () => {
 				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
 			},
 			namingDeployHistory: {
-				findMany: vi.fn().mockResolvedValue([]),
+				findMany: vi.fn().mockResolvedValue(options.currentNaming ?? []),
 				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
 			},
 			libraryCleanupApproval: {
@@ -530,7 +536,7 @@ describe("restoreDatabase — current coordination preservation", () => {
 			),
 		} as unknown as PrismaClient;
 
-		return { prisma, firstDelete };
+		return { prisma, compatibilityPrisma: tx as unknown as PrismaClient, firstDelete };
 	}
 
 	function incomingData(overrides: Record<string, unknown> = {}) {
@@ -576,6 +582,157 @@ describe("restoreDatabase — current coordination preservation", () => {
 			"current nonterminal coordination row current-sync",
 		);
 		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["userId", "user-2"],
+		["service", "SONARR"],
+		["baseUrl", "http://radarr-replacement:7878"],
+		["encryptedApiKey", "replacement-api-key-ciphertext"],
+		["encryptionIv", "replacement-api-key-iv"],
+		["encryptedHttpAuthCredentials", "replacement-http-auth-ciphertext"],
+		["httpAuthEncryptionIv", "replacement-http-auth-iv"],
+	])(
+		"rejects a restore that changes active naming recovery service instance %s",
+		async (field, replacement) => {
+			const currentInstance = {
+				id: "instance-1",
+				userId: "user-1",
+				service: "RADARR",
+				baseUrl: "http://radarr-current:7878",
+				encryptedApiKey: "current-api-key-ciphertext",
+				encryptionIv: "current-api-key-iv",
+				encryptedHttpAuthCredentials: null,
+				httpAuthEncryptionIv: null,
+			};
+			const currentNaming = {
+				id: "active-naming-recovery",
+				instanceId: currentInstance.id,
+				userId: currentInstance.userId,
+				status: "SUCCESS",
+				selectedPresets: '["standard"]',
+				resolvedPayload: '{"standardMovieFormat":"{Movie Title}"}',
+				deployedHash: "deployed-hash",
+				previousConfig: '{"standardMovieFormat":"{Movie OriginalTitle}"}',
+				changedFields: 1,
+				totalFields: 1,
+				errorMessage: null,
+				rolledBack: false,
+				rolledBackAt: null,
+				deployedAt: new Date("2026-08-31T00:00:00.000Z"),
+			};
+			const { prisma, firstDelete } = makeRestorePrisma({
+				currentInstances: [currentInstance],
+				currentNaming: [currentNaming],
+			});
+
+			await expectCompatibilityFailure(
+				restoreDatabase(
+					prisma,
+					incomingData({
+						serviceInstances: [{ ...currentInstance, [field]: replacement }],
+						namingDeployHistory: [currentNaming],
+					}),
+				),
+				`current active naming recovery active-naming-recovery changed service instance ${field}`,
+			);
+			expect(firstDelete).not.toHaveBeenCalled();
+		},
+	);
+
+	it("rejects a restore that changes query-routed active naming recovery authority", async () => {
+		const currentInstance = {
+			id: "instance-1",
+			userId: "user-1",
+			service: "RADARR",
+			baseUrl: "https://proxy.example/arr?tenant=A",
+			encryptedApiKey: "current-api-key-ciphertext",
+			encryptionIv: "current-api-key-iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+		};
+		const currentNaming = {
+			id: "active-naming-recovery",
+			instanceId: currentInstance.id,
+			userId: currentInstance.userId,
+			status: "SUCCESS",
+			selectedPresets: '["standard"]',
+			resolvedPayload: '{"standardMovieFormat":"{Movie Title}"}',
+			deployedHash: "deployed-hash",
+			previousConfig: '{"standardMovieFormat":"{Movie OriginalTitle}"}',
+			changedFields: 1,
+			totalFields: 1,
+			errorMessage: null,
+			rolledBack: false,
+			rolledBackAt: null,
+			deployedAt: new Date("2026-08-31T00:00:00.000Z"),
+		};
+		const { prisma, firstDelete } = makeRestorePrisma({
+			currentInstances: [currentInstance],
+			currentNaming: [currentNaming],
+		});
+
+		await expectCompatibilityFailure(
+			restoreDatabase(
+				prisma,
+				incomingData({
+					serviceInstances: [{ ...currentInstance, baseUrl: "https://proxy.example/arr?tenant=B" }],
+					namingDeployHistory: [currentNaming],
+				}),
+			),
+			"current active naming recovery active-naming-recovery changed service instance baseUrl",
+		);
+		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
+	it("allows equivalent endpoint and display-only changes while preserving active naming recovery authority", async () => {
+		const currentInstance = {
+			id: "instance-1",
+			userId: "user-1",
+			service: "RADARR",
+			label: "Current label",
+			baseUrl: "http://radarr-current:7878",
+			encryptedApiKey: "current-api-key-ciphertext",
+			encryptionIv: "current-api-key-iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+		};
+		const currentNaming = {
+			id: "active-naming-recovery",
+			instanceId: currentInstance.id,
+			userId: currentInstance.userId,
+			status: "SUCCESS",
+			selectedPresets: '["standard"]',
+			resolvedPayload: '{"standardMovieFormat":"{Movie Title}"}',
+			deployedHash: "deployed-hash",
+			previousConfig: '{"standardMovieFormat":"{Movie OriginalTitle}"}',
+			changedFields: 1,
+			totalFields: 1,
+			errorMessage: null,
+			rolledBack: false,
+			rolledBackAt: null,
+			deployedAt: new Date("2026-08-31T00:00:00.000Z"),
+		};
+		const { compatibilityPrisma } = makeRestorePrisma({
+			currentInstances: [currentInstance],
+			currentNaming: [currentNaming],
+		});
+
+		await expect(
+			assertRestoreCompatibility(
+				compatibilityPrisma,
+				incomingData({
+					serviceInstances: [
+						{
+							...currentInstance,
+							label: "Restored display label",
+							baseUrl: `${currentInstance.baseUrl}/`,
+						},
+					],
+					namingDeployHistory: [currentNaming],
+				}),
+			),
+		).resolves.toBeUndefined();
 	});
 
 	it("rejects a restore that omits an active cleanup approval before deleting tables", async () => {

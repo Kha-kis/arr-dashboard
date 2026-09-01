@@ -300,6 +300,16 @@ const ACTIVE_NAMING_FIELDS = [
 	"deployedAt",
 ] as const;
 
+const ACTIVE_NAMING_INSTANCE_FIELDS = [
+	"userId",
+	"service",
+	"baseUrl",
+	"encryptedApiKey",
+	"encryptionIv",
+	"encryptedHttpAuthCredentials",
+	"httpAuthEncryptionIv",
+] as const;
+
 const ACTIVE_APPROVAL_FIELDS = [
 	"configId",
 	"instanceId",
@@ -481,6 +491,44 @@ function assertCurrentSpecialRowPreserved(
 	}
 }
 
+function assertCurrentNamingInstancePreserved(
+	history: CoordinationRow,
+	currentInstances: Map<string, CoordinationRow>,
+	incomingInstances: Map<string, CoordinationRow>,
+): void {
+	if (typeof history.instanceId !== "string" || history.instanceId.length === 0) {
+		throw new CoordinationMismatchError(
+			`Cannot restore backup: current active naming recovery ${history.id} has no service instance identity`,
+		);
+	}
+	const currentInstance = currentInstances.get(history.instanceId);
+	if (!currentInstance) {
+		throw new CoordinationMismatchError(
+			`Cannot restore backup: current active naming recovery ${history.id} references missing service instance ${history.instanceId}`,
+		);
+	}
+	const incomingInstance = incomingInstances.get(history.instanceId);
+	if (!incomingInstance) {
+		throw new CoordinationMismatchError(
+			`Cannot restore backup: current active naming recovery ${history.id} service instance ${history.instanceId} is missing from incoming data`,
+		);
+	}
+	for (const field of ACTIVE_NAMING_INSTANCE_FIELDS) {
+		const incomingValue = incomingInstance[field];
+		const currentValue = currentInstance[field];
+		const matches =
+			field === "baseUrl" && typeof incomingValue === "string" && typeof currentValue === "string"
+				? `${incomingValue.replace(/\/$/, "")}/api/v3/config/naming` ===
+					`${currentValue.replace(/\/$/, "")}/api/v3/config/naming`
+				: incomingValue === currentValue;
+		if (!matches) {
+			throw new CoordinationMismatchError(
+				`Cannot restore backup: current active naming recovery ${history.id} changed service instance ${field}`,
+			);
+		}
+	}
+}
+
 async function validateCurrentCoordinationPreserved(
 	tx: Prisma.TransactionClient | PrismaClient,
 	data: BackupData["data"],
@@ -531,6 +579,23 @@ async function validateCurrentCoordinationPreserved(
 	const currentActiveNaming = (await db.namingDeployHistory.findMany({
 		where: { status: { in: ["PENDING", "SUCCESS"] }, rolledBack: false },
 	})) as CoordinationRow[];
+	const currentNamingInstances = recordsById(
+		currentActiveNaming.length > 0
+			? await db.serviceInstance.findMany({
+					where: {
+						id: {
+							in: [
+								...new Set(
+									currentActiveNaming
+										.map((row) => row.instanceId)
+										.filter((id): id is string => typeof id === "string" && id.length > 0),
+								),
+							],
+						},
+					},
+				})
+			: [],
+	);
 	const currentActiveApprovals = optionalModels.libraryCleanupApproval?.findMany
 		? ((await optionalModels.libraryCleanupApproval.findMany({
 				where: activeCleanupApprovalWhere(),
@@ -559,6 +624,7 @@ async function validateCurrentCoordinationPreserved(
 	const incomingTemplates = recordsById(data.trashTemplates);
 	const incomingScoreIntents = recordsById(data.instanceQualityProfileOverrides);
 	const incomingActiveNaming = recordsById(data.namingDeployHistory);
+	const incomingInstances = recordsById(data.serviceInstances);
 	const incomingApprovals = recordsById(data.libraryCleanupApproval);
 	const incomingScans = recordsById(data.libraryCleanupMediaServerScan);
 
@@ -584,6 +650,7 @@ async function validateCurrentCoordinationPreserved(
 			incomingActiveNaming,
 			ACTIVE_NAMING_FIELDS,
 		);
+		assertCurrentNamingInstancePreserved(row, currentNamingInstances, incomingInstances);
 	}
 	for (const row of [...currentActiveApprovals, ...currentScanParentApprovals]) {
 		assertCurrentSpecialRowPreserved(
