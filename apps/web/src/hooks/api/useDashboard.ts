@@ -25,24 +25,28 @@ export const useMultiInstanceQueueQuery = () =>
 		refetchInterval: POLLING_ACTIVE,
 	});
 
-export const useMultiInstanceHistoryQuery = (params?: {
-	startDate?: string;
-	endDate?: string;
-	cursor?: string;
-	pageSize?: number;
-	sortDirection?: "ascending" | "descending";
-	service?: "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr";
-	instanceId?: string;
-	status?: string;
-	searchTerm?: string;
-	hideProwlarrRss?: boolean;
-}) =>
+export const useMultiInstanceHistoryQuery = (
+	params?: {
+		startDate?: string;
+		endDate?: string;
+		cursor?: string;
+		pageSize?: number;
+		sortDirection?: "ascending" | "descending";
+		service?: "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr";
+		instanceId?: string;
+		status?: string;
+		searchTerm?: string;
+		hideProwlarrRss?: boolean;
+	},
+	queryOptions?: { enabled?: boolean; disablePolling?: boolean },
+) =>
 	useQuery<MultiInstanceHistoryResponse>({
 		queryKey: dashboardKeys.history(params ?? {}),
 		queryFn: () => fetchMultiInstanceHistory(params),
+		enabled: queryOptions?.enabled,
 		staleTime: 60 * 1000,
 		gcTime: 2 * 60 * 1000, // 2 minutes - cleanup old param combinations
-		refetchInterval: params?.cursor ? false : POLLING_STANDARD,
+		refetchInterval: queryOptions?.disablePolling || params?.cursor ? false : POLLING_STANDARD,
 	});
 
 export const useMultiInstanceCalendarQuery = (params: {

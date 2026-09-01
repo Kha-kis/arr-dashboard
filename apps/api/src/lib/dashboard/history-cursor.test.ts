@@ -4,7 +4,9 @@ import {
 	HistoryCursorStaleError,
 	type HistoryPageOptions,
 	type HistoryProviderStream,
+	MAX_HISTORY_PROVIDERS,
 	MAX_HISTORY_REQUEST_RECORDS,
+	MAX_HISTORY_UPSTREAM_REQUESTS,
 	paginateHistoryStreams,
 } from "./history-utils.js";
 
@@ -117,6 +119,67 @@ describe("request-wide History cursor", () => {
 		expect(result.items).toHaveLength(100);
 		expect(result.budgetUsed).toBeLessThanOrEqual(MAX_HISTORY_REQUEST_RECORDS);
 		expect(requestedRecords).toBeLessThanOrEqual(MAX_HISTORY_REQUEST_RECORDS);
+	});
+
+	it("uses a bounded upstream scan window independent of the response page size", async () => {
+		const provider = stream({
+			instanceId: "sparse",
+			records: Array.from({ length: MAX_HISTORY_REQUEST_RECORDS }, (_, index) =>
+				rawItem(
+					`ignored-${index}`,
+					new Date(Date.UTC(2026, 7, 31, 12, 0, 0) - index * 1000).toISOString(),
+					"ignored",
+				),
+			),
+		});
+
+		const result = await paginateHistoryStreams({
+			streams: [provider],
+			options: options({ pageSize: 1, status: "grabbed" }),
+		});
+
+		const fetchPage = provider.fetchPage as ReturnType<typeof vi.fn>;
+		expect(result.items).toEqual([]);
+		expect(fetchPage.mock.calls.length).toBeLessThanOrEqual(MAX_HISTORY_UPSTREAM_REQUESTS);
+		expect(fetchPage.mock.calls[0]?.[0]).toMatchObject({ pageSize: 100 });
+	});
+
+	it("seeds exactly 200 configured providers without turning cardinality into an error", async () => {
+		let requests = 0;
+		const streams = Array.from(
+			{ length: MAX_HISTORY_PROVIDERS },
+			(_, streamIndex): HistoryProviderStream => {
+				const instanceId = `instance-${String(streamIndex).padStart(3, "0")}`;
+				return {
+					instanceId,
+					instanceName: instanceId,
+					service: "sonarr",
+					fetchPage: vi.fn(async () => {
+						requests += 1;
+						return {
+							records: [
+								rawItem(
+									`${instanceId}-1`,
+									new Date(Date.UTC(2026, 7, 31, 12, 0, 0) - streamIndex).toISOString(),
+								),
+							],
+							totalRecords: 1,
+						};
+					}),
+					normalize: (record) => normalizedItem(instanceId, instanceId, "sonarr", record),
+				};
+			},
+		);
+
+		const result = await paginateHistoryStreams({
+			streams,
+			options: options({ pageSize: 1 }),
+		});
+
+		expect(result.items).toHaveLength(1);
+		expect(requests).toBe(MAX_HISTORY_PROVIDERS);
+		expect(requests).toBeLessThanOrEqual(MAX_HISTORY_UPSTREAM_REQUESTS);
+		expect(result.budgetUsed).toBeLessThanOrEqual(MAX_HISTORY_REQUEST_RECORDS);
 	});
 
 	it("does not publish another provider as complete when a short page precedes its declared total", async () => {
@@ -303,7 +366,7 @@ describe("request-wide History cursor", () => {
 			streams: [leading, ...otherStreams],
 			options: options({ pageSize: 100 }),
 		});
-		expect(first.budgetUsed).toBe(MAX_HISTORY_REQUEST_RECORDS);
+		expect(first.budgetUsed).toBeLessThanOrEqual(MAX_HISTORY_REQUEST_RECORDS);
 		expect(first.items).toHaveLength(100);
 		expect(first.nextCursor).not.toBeNull();
 
@@ -326,5 +389,41 @@ describe("request-wide History cursor", () => {
 				cursor: first.nextCursor,
 			}),
 		).rejects.toBeInstanceOf(HistoryCursorStaleError);
+	});
+
+	it("reserves enough request-wide budget for a page-boundary cursor to advance", async () => {
+		const leadingRecords = Array.from({ length: 200 }, (_, index) =>
+			rawItem(
+				`leading-${index}`,
+				new Date(Date.UTC(2026, 7, 31, 12, 0, 0) - index * 1000).toISOString(),
+			),
+		);
+		const leading = stream({ instanceId: "000-leading", records: leadingRecords });
+		const otherStreams = Array.from({ length: 99 }, (_, streamIndex) =>
+			stream({
+				instanceId: `other-${String(streamIndex).padStart(3, "0")}`,
+				records: Array.from({ length: 200 }, (_, index) =>
+					rawItem(
+						`other-${streamIndex}-${index}`,
+						new Date(Date.UTC(2025, 7, 31, 12, 0, 0) - streamIndex * 100_000 - index).toISOString(),
+					),
+				),
+			}),
+		);
+
+		const first = await paginateHistoryStreams({
+			streams: [leading, ...otherStreams],
+			options: options({ pageSize: 100 }),
+		});
+		const second = await paginateHistoryStreams({
+			streams: [leading, ...otherStreams],
+			options: options({ pageSize: 100 }),
+			cursor: first.nextCursor,
+		});
+
+		expect(first.items).toHaveLength(100);
+		expect(second.items).toHaveLength(100);
+		expect(second.items[0]?.id).toBe("leading-100");
+		expect(second.nextCursor).not.toEqual(first.nextCursor);
 	});
 });

@@ -37,6 +37,43 @@ export interface ProcessedHistoryData {
 	emptyMessage?: string;
 }
 
+const historyItemIdentity = (item: HistoryItem): string =>
+	`${item.service}:${item.instanceId}:${String(item.id)}`;
+
+const uniqueHistoryItems = (items: HistoryItem[]): HistoryItem[] => {
+	const seen = new Set<string>();
+	return items.filter((item) => {
+		const key = historyItemIdentity(item);
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	});
+};
+
+const filterHistoryItems = (items: HistoryItem[], filters: HistoryFilters): HistoryItem[] => {
+	const term = filters.searchTerm.trim().toLowerCase();
+	return items.filter((item) => {
+		if (filters.serviceFilter !== "all" && item.service !== filters.serviceFilter) return false;
+		if (filters.instanceFilter !== "all" && item.instanceId !== filters.instanceFilter)
+			return false;
+		const currentStatus = normalizeStatus(item.status, item.eventType);
+		if (filters.statusFilter !== "all" && currentStatus !== filters.statusFilter) return false;
+		if (term.length > 0) {
+			const haystack = [
+				item.title,
+				item.sourceTitle,
+				item.downloadClient,
+				item.indexer,
+				item.reason,
+			]
+				.filter(Boolean)
+				.map((value) => value!.toLowerCase());
+			if (!haystack.some((value) => value.includes(term))) return false;
+		}
+		return true;
+	});
+};
+
 /**
  * Processes and filters history data
  */
@@ -50,6 +87,7 @@ export const useHistoryData = (
 	filters: HistoryFilters,
 	groupByDownload: boolean,
 	hideProwlarrRss: boolean,
+	groupingContextItems: HistoryItem[] = [],
 ): ProcessedHistoryData => {
 	const allAggregated = useMemo(() => data?.aggregated ?? [], [data?.aggregated]);
 	const instances = useMemo(() => data?.instances ?? [], [data?.instances]);
@@ -59,47 +97,23 @@ export const useHistoryData = (
 		() => (hideProwlarrRss ? filterProwlarrRss(allAggregated) : allAggregated),
 		[allAggregated, hideProwlarrRss],
 	);
+	const rssFilteredGroupingContext = useMemo(
+		() => (hideProwlarrRss ? filterProwlarrRss(groupingContextItems) : groupingContextItems),
+		[groupingContextItems, hideProwlarrRss],
+	);
 
 	const instanceOptions = useMemo(() => extractInstanceOptions(instances), [instances]);
 
 	const statusOptions = useMemo(() => extractStatusOptions(rssFilteredItems), [rssFilteredItems]);
 
-	const filteredItems = useMemo(() => {
-		const term = filters.searchTerm.trim().toLowerCase();
-		return rssFilteredItems.filter((item) => {
-			if (filters.serviceFilter !== "all" && item.service !== filters.serviceFilter) {
-				return false;
-			}
-			if (filters.instanceFilter !== "all" && item.instanceId !== filters.instanceFilter) {
-				return false;
-			}
-			const currentStatus = normalizeStatus(item.status, item.eventType);
-			if (filters.statusFilter !== "all" && currentStatus !== filters.statusFilter) {
-				return false;
-			}
-			if (term.length > 0) {
-				const haystack = [
-					item.title,
-					item.sourceTitle,
-					item.downloadClient,
-					item.indexer,
-					item.reason,
-				]
-					.filter(Boolean)
-					.map((value) => value!.toLowerCase());
-				if (!haystack.some((value) => value.includes(term))) {
-					return false;
-				}
-			}
-			return true;
-		});
-	}, [
-		rssFilteredItems,
-		filters.serviceFilter,
-		filters.instanceFilter,
-		filters.statusFilter,
-		filters.searchTerm,
-	]);
+	const filteredItems = useMemo(
+		() => filterHistoryItems(rssFilteredItems, filters),
+		[rssFilteredItems, filters],
+	);
+	const filteredGroupingContext = useMemo(
+		() => filterHistoryItems(rssFilteredGroupingContext, filters),
+		[rssFilteredGroupingContext, filters],
+	);
 
 	const serviceSummary = useMemo(() => createServiceSummary(rssFilteredItems), [rssFilteredItems]);
 
@@ -120,10 +134,13 @@ export const useHistoryData = (
 			? "No history records match the current filters."
 			: undefined;
 
-	const groupedItems = useMemo(
-		() => groupHistoryItems(filteredItems, groupByDownload),
-		[filteredItems, groupByDownload],
-	);
+	const groupedItems = useMemo(() => {
+		const currentItemKeys = new Set(filteredItems.map(historyItemIdentity));
+		return groupHistoryItems(
+			uniqueHistoryItems([...filteredItems, ...filteredGroupingContext]),
+			groupByDownload,
+		).filter((group) => group.items.some((item) => currentItemKeys.has(historyItemIdentity(item))));
+	}, [filteredItems, filteredGroupingContext, groupByDownload]);
 
 	const groupedByDay = useMemo(
 		() => groupByDay(groupedItems, (group) => group.items[0]?.date),

@@ -197,6 +197,25 @@ describe("History route cursor contract", () => {
 		}
 	});
 
+	it("returns a deliberate client error above the fixed provider concurrency limit", async () => {
+		const instances = Array.from({ length: 201 }, (_, index) => instance(`sonarr-${index}`));
+		const { app } = await buildApp({ instances, clients: new Map() });
+
+		try {
+			const response = await app.inject({
+				method: "GET",
+				url: "/dashboard/history?pageSize=25&hideProwlarrRss=true",
+			});
+			expect(response.statusCode).toBe(422);
+			expect(response.json()).toEqual({
+				error:
+					"History supports at most 200 enabled providers per request. Narrow the service or instance filter.",
+			});
+		} finally {
+			await app.close();
+		}
+	});
+
 	it("keeps a failed provider visible and does not publish healthy data as complete", async () => {
 		const failed = instance("failed");
 		const healthy = instance("healthy");

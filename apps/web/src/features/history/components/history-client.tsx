@@ -1,6 +1,7 @@
 "use client";
 
-import type { ServiceInstanceSummary } from "@arr/shared";
+import type { MultiInstanceHistoryResponse, ServiceInstanceSummary } from "@arr/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import {
 	AlertTriangle,
 	ArrowDownToLine,
@@ -34,6 +35,7 @@ import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useRefreshState } from "../../../hooks/useRefreshState";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { dashboardKeys } from "../../../lib/query-keys";
 import { cn } from "../../../lib/utils";
 import { useHistoryData } from "../hooks/use-history-data";
 import { useHistoryState } from "../hooks/use-history-state";
@@ -55,6 +57,7 @@ export const HistoryClient = () => {
 	const [filtersOpen, setFiltersOpen] = useState(false);
 	const [dismissedFailureAlert, setDismissedFailureAlert] = useState(false);
 	const { gradient: themeGradient } = useThemeGradient();
+	const queryClient = useQueryClient();
 
 	const { state, actions } = useHistoryState();
 	const setPage = actions.setPage;
@@ -89,17 +92,49 @@ export const HistoryClient = () => {
 	}>(() => ({ scope: queryScope, cursors: {} }));
 	const cursor = cursorNavigation.scope === queryScope ? cursorNavigation.cursors[page] : undefined;
 
-	const { data, isLoading, error, refetch } = useMultiInstanceHistoryQuery({
-		startDate: startDate || undefined,
-		endDate: endDate || undefined,
-		cursor,
-		pageSize,
-		service: serviceFilter === "all" ? undefined : serviceFilter,
-		instanceId: instanceFilter === "all" ? undefined : instanceFilter,
-		status: statusFilter === "all" ? undefined : statusFilter,
-		searchTerm: deferredSearchTerm || undefined,
-		hideProwlarrRss,
-	});
+	const firstPageQuery = useMemo(
+		() => ({
+			startDate: startDate || undefined,
+			endDate: endDate || undefined,
+			pageSize,
+			service: serviceFilter === "all" ? undefined : serviceFilter,
+			instanceId: instanceFilter === "all" ? undefined : instanceFilter,
+			status: statusFilter === "all" ? undefined : statusFilter,
+			searchTerm: deferredSearchTerm || undefined,
+			hideProwlarrRss,
+		}),
+		[
+			startDate,
+			endDate,
+			pageSize,
+			serviceFilter,
+			instanceFilter,
+			statusFilter,
+			deferredSearchTerm,
+			hideProwlarrRss,
+		],
+	);
+	const currentPageQuery = useMemo(() => ({ ...firstPageQuery, cursor }), [firstPageQuery, cursor]);
+	const { data, isLoading, error } = useMultiInstanceHistoryQuery(currentPageQuery);
+	const nextCursor = data?.pagination.nextCursor ?? null;
+	const { data: nextPageContext } = useMultiInstanceHistoryQuery(
+		{ ...firstPageQuery, cursor: nextCursor ?? undefined },
+		{ enabled: groupByDownload && Boolean(nextCursor), disablePolling: true },
+	);
+	const previousPageCursor = page > 1 ? cursorNavigation.cursors[page - 1] : undefined;
+	const previousPageContext =
+		page > 1
+			? queryClient.getQueryData<MultiInstanceHistoryResponse>(
+					dashboardKeys.history({ ...firstPageQuery, cursor: previousPageCursor }),
+				)
+			: undefined;
+	const groupingContextItems = useMemo(
+		() => [
+			...(previousPageContext?.aggregated ?? []),
+			...(nextCursor ? (nextPageContext?.aggregated ?? []) : []),
+		],
+		[previousPageContext?.aggregated, nextCursor, nextPageContext?.aggregated],
+	);
 	const resetNavigation = useCallback(() => {
 		setCursorNavigation({ scope: queryScope, cursors: {} });
 		setPage(1);
@@ -109,8 +144,12 @@ export const HistoryClient = () => {
 	}, [cursorNavigation.scope, queryScope, resetNavigation]);
 	const refreshFromNewest = useCallback(async () => {
 		resetNavigation();
-		if (page === 1) await refetch();
-	}, [page, refetch, resetNavigation]);
+		await queryClient.invalidateQueries({
+			queryKey: dashboardKeys.history(firstPageQuery),
+			exact: true,
+			refetchType: "all",
+		});
+	}, [firstPageQuery, queryClient, resetNavigation]);
 	const [isRefreshing, handleRefresh] = useRefreshState(refreshFromNewest);
 
 	const { data: services } = useServicesQuery();
@@ -136,6 +175,7 @@ export const HistoryClient = () => {
 		},
 		groupByDownload,
 		hideProwlarrRss,
+		groupingContextItems,
 	);
 
 	const {
@@ -158,7 +198,6 @@ export const HistoryClient = () => {
 		[paginatedGroups],
 	);
 	const providerProblems = data?.instances.filter((instance) => instance.status !== "ok") ?? [];
-	const nextCursor = data?.pagination.nextCursor ?? null;
 	const handleNextPage = () => {
 		if (!nextCursor) return;
 		setCursorNavigation((current) => ({
@@ -701,7 +740,7 @@ export const HistoryClient = () => {
 			)}
 
 			{/* Cursor pagination */}
-			{(groupedItems.length > 0 || page > 1) && (
+			{(groupedItems.length > 0 || page > 1 || data?.pagination.hasMore) && (
 				<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 					<div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
 						<span>
@@ -771,6 +810,16 @@ export const HistoryClient = () => {
 						History is incomplete for {providerProblems.length} provider
 						{providerProblems.length === 1 ? "" : "s"}. Refresh after the affected service is
 						available.
+					</AlertDescription>
+				</Alert>
+			)}
+
+			{data?.pagination.incomplete && (
+				<Alert variant="warning">
+					<AlertDescription>
+						History results are incomplete because a provider response or the request scan limit
+						prevented a complete page.
+						{nextCursor ? " Use Next to continue the bounded scan." : " Refresh to try again."}
 					</AlertDescription>
 				</Alert>
 			)}

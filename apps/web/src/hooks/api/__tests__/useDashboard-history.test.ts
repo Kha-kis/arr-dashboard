@@ -23,4 +23,14 @@ describe("useMultiInstanceHistoryQuery", () => {
 		useMultiInstanceHistoryQuery({ cursor: "opaque", pageSize: 25 });
 		expect(useQuery).toHaveBeenCalledWith(expect.objectContaining({ refetchInterval: false }));
 	});
+
+	it("can prefetch adjacent grouping context without polling it", () => {
+		useMultiInstanceHistoryQuery(
+			{ cursor: "opaque", pageSize: 25 },
+			{ enabled: true, disablePolling: true },
+		);
+		expect(useQuery).toHaveBeenCalledWith(
+			expect.objectContaining({ enabled: true, refetchInterval: false }),
+		);
+	});
 });

@@ -13,8 +13,10 @@ import {
 import {
 	type HistoryCursor,
 	HistoryCursorStaleError,
+	HistoryProviderLimitError,
 	type HistoryProviderStream,
 	type HistoryService,
+	MAX_HISTORY_PROVIDERS,
 	historyCursorSchema,
 	normalizeHistoryItem,
 	paginateHistoryStreams,
@@ -261,6 +263,11 @@ export const historyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		} catch (error) {
 			if (error instanceof HistoryCursorStaleError) {
 				return cursorConflict(reply);
+			}
+			if (error instanceof HistoryProviderLimitError) {
+				return reply.status(422).send({
+					error: `History supports at most ${MAX_HISTORY_PROVIDERS} enabled providers per request. Narrow the service or instance filter.`,
+				});
 			}
 			throw error;
 		}

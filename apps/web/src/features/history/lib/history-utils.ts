@@ -10,6 +10,33 @@ export const SERVICE_FILTERS = [
 ];
 
 /**
+ * Stable *arr History event vocabulary used by the server-side status filter.
+ * Dynamic values from the current page are appended so newer provider events
+ * remain selectable without making established choices disappear by page.
+ */
+export const HISTORY_STATUS_FILTERS: Array<{ value: string; label: string }> = [
+	{ value: "grabbed", label: "Grabbed" },
+	{ value: "downloadfolderimported", label: "Download Folder Imported" },
+	{ value: "seriesfolderimported", label: "Series Folder Imported" },
+	{ value: "trackfileimported", label: "Track File Imported" },
+	{ value: "bookfileimported", label: "Book File Imported" },
+	{ value: "imported", label: "Imported" },
+	{ value: "downloadfailed", label: "Download Failed" },
+	{ value: "failed", label: "Failed" },
+	{ value: "downloadignored", label: "Download Ignored" },
+	{ value: "episodefiledeleted", label: "Episode File Deleted" },
+	{ value: "moviefiledeleted", label: "Movie File Deleted" },
+	{ value: "trackfiledeleted", label: "Track File Deleted" },
+	{ value: "bookfiledeleted", label: "Book File Deleted" },
+	{ value: "episodefilerenamed", label: "Episode File Renamed" },
+	{ value: "moviefilerenamed", label: "Movie File Renamed" },
+	{ value: "trackfilerenamed", label: "Track File Renamed" },
+	{ value: "bookfilerenamed", label: "Book File Renamed" },
+	{ value: "indexerquery", label: "Indexer Query" },
+	{ value: "indexerrss", label: "Indexer RSS" },
+];
+
+/**
  * Normalizes status from either status or eventType field
  */
 export const normalizeStatus = (status?: string, eventType?: string): string =>
@@ -37,7 +64,7 @@ export const extractInstanceOptions = (
 export const extractStatusOptions = (
 	items: HistoryItem[],
 ): Array<{ value: string; label: string }> => {
-	const seen = new Map<string, string>();
+	const seen = new Map(HISTORY_STATUS_FILTERS.map(({ value, label }) => [value, label]));
 	for (const item of items) {
 		const rawLabel = item.status ?? item.eventType ?? "Unknown";
 		const value = rawLabel.toLowerCase();

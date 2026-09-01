@@ -11,6 +11,15 @@ export type HistorySortDirection = "ascending" | "descending";
 /** The complete upstream-record allowance for one HTTP request, across every provider. */
 export const MAX_HISTORY_REQUEST_RECORDS = 10_000;
 
+/** Maximum enabled providers that one request may seed concurrently. */
+export const MAX_HISTORY_PROVIDERS = 200;
+
+/** Fixed provider-call cap: one seed per supported provider plus one progress reserve. */
+export const MAX_HISTORY_UPSTREAM_REQUESTS = MAX_HISTORY_PROVIDERS + 1;
+
+/** Normal provider page size; response page size must not amplify upstream call count. */
+export const HISTORY_UPSTREAM_SCAN_WINDOW = 100;
+
 export interface HistoryPageOptions {
 	pageSize: number;
 	sortDirection: HistorySortDirection;
@@ -104,16 +113,30 @@ export class HistoryCursorStaleError extends Error {
 	}
 }
 
+export class HistoryProviderLimitError extends Error {
+	constructor(message = "Too many History providers for one request") {
+		super(message);
+		this.name = "HistoryProviderLimitError";
+	}
+}
+
 class HistoryRequestBudget {
 	used = 0;
+	requests = 0;
+	private readonly maxRequests: number;
+
+	constructor(maxRequests = MAX_HISTORY_UPSTREAM_REQUESTS) {
+		this.maxRequests = maxRequests;
+	}
 
 	canClaim(requested: number): boolean {
-		return MAX_HISTORY_REQUEST_RECORDS - this.used >= requested;
+		return this.requests < this.maxRequests && MAX_HISTORY_REQUEST_RECORDS - this.used >= requested;
 	}
 
 	claim(requested: number): number {
 		if (!this.canClaim(requested)) return 0;
 		this.used += requested;
+		this.requests += 1;
 		return requested;
 	}
 }
@@ -411,8 +434,8 @@ export const paginateHistoryStreams = async ({
 		const rightKey = cursorKey(right);
 		return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
 	});
-	if (orderedStreams.length > MAX_HISTORY_REQUEST_RECORDS) {
-		throw new Error("Too many History providers for the request-wide scan budget");
+	if (orderedStreams.length > MAX_HISTORY_PROVIDERS) {
+		throw new HistoryProviderLimitError();
 	}
 
 	const streamKeys = orderedStreams.map(cursorKey);
@@ -430,8 +453,8 @@ export const paginateHistoryStreams = async ({
 	const defaultWindowSize = Math.max(
 		1,
 		Math.min(
-			options.pageSize,
-			Math.floor(MAX_HISTORY_REQUEST_RECORDS / Math.max(1, orderedStreams.length)),
+			HISTORY_UPSTREAM_SCAN_WINDOW,
+			Math.floor(MAX_HISTORY_REQUEST_RECORDS / Math.max(1, orderedStreams.length + 1)),
 		),
 	);
 	const runtimes: HistoryProviderRuntime[] = orderedStreams.map((providerStream) => {
