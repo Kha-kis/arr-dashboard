@@ -16,6 +16,7 @@ import {
 	LEGACY_RELATIONAL_CONFIG_FIELDS,
 	validateCoordinationEvidence,
 	validateRecords,
+	validateSingletonCollections,
 } from "./backup-validation.js";
 
 const log = loggers.backup;
@@ -783,7 +784,10 @@ function mergeRowsById<T extends { id: string }>(rows: T[], preservedRows: T[]):
  * to keep peak heap bounded. Nonterminal rollback/undeploy coordination is
  * always exported because it is required to resume safely after restore.
  */
-export async function exportDatabase(prisma: PrismaClient, options: ExportDatabaseOptions = {}) {
+async function exportDatabaseSnapshot(
+	prisma: Prisma.TransactionClient,
+	options: ExportDatabaseOptions,
+) {
 	const skipHistory = options.excludeOperationalHistory ?? false;
 	const historyLimit = options.historyRetentionLimit ?? 1000;
 
@@ -982,32 +986,6 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 		trashBackups = mergeRowsById(trashBackups, requiredSnapshots);
 	}
 
-	// Active naming rows carry rollback authority. Re-read their recovery
-	// fields and referenced connection authority at the publication boundary so
-	// a concurrent change cannot produce a backup assembled from two states.
-	const latestActiveNamingDeployHistory = await prisma.namingDeployHistory.findMany({
-		where: { status: { in: ["PENDING", "SUCCESS"] }, rolledBack: false },
-	});
-	const activeNamingInstanceIds = [
-		...new Set(
-			activeNamingDeployHistory
-				.map((row) => row.instanceId)
-				.filter((id): id is string => typeof id === "string" && id.length > 0),
-		),
-	];
-	const latestActiveNamingInstances =
-		activeNamingInstanceIds.length > 0
-			? await prisma.serviceInstance.findMany({
-					where: { id: { in: activeNamingInstanceIds } },
-				})
-			: [];
-	assertActiveNamingExportStable(
-		activeNamingDeployHistory as CoordinationRow[],
-		latestActiveNamingDeployHistory as CoordinationRow[],
-		serviceInstances as CoordinationRow[],
-		latestActiveNamingInstances as CoordinationRow[],
-	);
-
 	validateCoordinationEvidence({
 		serviceInstances,
 		trashTemplates,
@@ -1016,7 +994,7 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 		trashBackups,
 	});
 
-	return {
+	const data = {
 		// Core authentication & services
 		users,
 		sessions,
@@ -1064,6 +1042,44 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 		libraryCleanupApproval,
 		libraryCleanupMediaServerScan: activeCleanupScans,
 	};
+
+	return { data, activeNamingDeployHistory, serviceInstances };
+}
+
+/**
+ * Capture all portable tables from one coherent database snapshot, then
+ * recheck active naming recovery authority at the publication boundary.
+ */
+export async function exportDatabase(prisma: PrismaClient, options: ExportDatabaseOptions = {}) {
+	const snapshot = await prisma.$transaction((tx) => exportDatabaseSnapshot(tx, options), {
+		isolationLevel: "Serializable",
+		timeout: 60_000,
+	});
+
+	const latestActiveNamingDeployHistory = await prisma.namingDeployHistory.findMany({
+		where: { status: { in: ["PENDING", "SUCCESS"] }, rolledBack: false },
+	});
+	const activeNamingInstanceIds = [
+		...new Set(
+			snapshot.activeNamingDeployHistory
+				.map((row) => row.instanceId)
+				.filter((id): id is string => typeof id === "string" && id.length > 0),
+		),
+	];
+	const latestActiveNamingInstances =
+		activeNamingInstanceIds.length > 0
+			? await prisma.serviceInstance.findMany({
+					where: { id: { in: activeNamingInstanceIds } },
+				})
+			: [];
+	assertActiveNamingExportStable(
+		snapshot.activeNamingDeployHistory as CoordinationRow[],
+		latestActiveNamingDeployHistory as CoordinationRow[],
+		snapshot.serviceInstances as CoordinationRow[],
+		latestActiveNamingInstances as CoordinationRow[],
+	);
+
+	return snapshot.data;
 }
 
 /**
@@ -1075,6 +1091,7 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
  * - Transaction ensures atomicity but can be long-running for large datasets
  */
 export async function restoreDatabase(prisma: PrismaClient, data: BackupData["data"]) {
+	validateSingletonCollections(data);
 	// Use a transaction to ensure atomicity
 	await prisma.$transaction(async (tx) => {
 		// Recheck inside the transaction immediately before any delete. The

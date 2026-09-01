@@ -37,7 +37,17 @@ The payload contains all of these arrays:
 The shared TypeScript shape keeps later-added properties optional so 1.0 and
 1.1 files remain representable. Runtime `validateBackup` is authoritative:
 format 1.2 rejects any missing array in the complete contract, including an
-array that would otherwise be safely interpreted as empty.
+array that would otherwise be safely interpreted as empty. The
+`oidcProviders`, `systemSettings`, `backupSettings`, and `vapidKeys` arrays may
+each contain at most one record; an ambiguous payload is rejected before
+secrets or database state can change.
+
+Every portable collection is read sequentially inside one serializable Prisma
+transaction. This keeps the bounded-heap query order while ensuring related
+parents, children, and encrypted configuration come from one database
+snapshot. Active naming recovery rows and their service authority are checked
+again after that snapshot closes so a change at the publication boundary makes
+backup creation fail closed and retry.
 
 History is capped according to the backup retention option and may be omitted
 for scheduled/update backups. The exception is safety coordination: every
@@ -126,6 +136,17 @@ their absence from the backup is not treated as durable authority or success
 evidence. Excluded notification delivery logs are cleared transactionally
 before notification channels are replaced so post-snapshot history cannot be
 reattached to a restored channel ID.
+
+Backup creation and restore also use the process-wide maintenance lease. Every
+HTTP `POST`, `PUT`, `PATCH`, and `DELETE` handler registered under the API root
+holds a shared operation lease for its full handler lifetime, so configuration
+writes cannot overlap the export snapshot or return success while restore
+replaces their rows. Backup create/restore and destructive topology routes are
+allowed to upgrade their request's sole shared lease to the existing stronger
+maintenance or exclusive topology lease. An upgrade fails closed when any
+other operation is active.
+Background notification dispatch and retry publication participate in the same
+barrier. Read-only routes remain available while a normal mutation is running.
 
 ## Legacy restore behavior
 

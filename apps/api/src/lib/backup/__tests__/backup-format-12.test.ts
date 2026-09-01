@@ -69,6 +69,19 @@ describe("backup format 1.2", () => {
 		expect(() => validateBackup(baseBackup())).not.toThrow();
 	});
 
+	it.each(["oidcProviders", "systemSettings", "backupSettings", "vapidKeys"])(
+		"rejects ambiguous duplicate %s singleton records",
+		(collection) => {
+			expect(() =>
+				validateBackup(
+					baseBackup({
+						[collection]: [{ id: 1 }, { id: 2 }],
+					}),
+				),
+			).toThrow(new RegExp(`${collection}.*at most one`, "i"));
+		},
+	);
+
 	it("rejects a 1.2 payload when a durable configuration array is missing", () => {
 		const backup = baseBackup() as { data: Record<string, unknown> };
 		delete backup.data.notificationChannel;
@@ -120,7 +133,7 @@ describe("backup format 1.2", () => {
 			"backupSettings",
 			"vapidKeys",
 		];
-		const prisma = Object.fromEntries(
+		const transactionClient = Object.fromEntries(
 			models.map((model) => [
 				model,
 				{
@@ -128,7 +141,13 @@ describe("backup format 1.2", () => {
 					count: vi.fn().mockResolvedValue(0),
 				},
 			]),
-		) as unknown as PrismaClient;
+		);
+		const prisma = {
+			...transactionClient,
+			$transaction: vi.fn(async (operation: (tx: unknown) => Promise<unknown>) =>
+				operation(transactionClient),
+			),
+		} as unknown as PrismaClient;
 
 		const data = await exportDatabase(prisma);
 
@@ -170,10 +189,14 @@ describe("backup format 1.2", () => {
 				status: "failed",
 			},
 		]);
-		const prisma = new Proxy(
+		let prisma!: PrismaClient;
+		prisma = new Proxy(
 			{},
 			{
 				get: (_target, property) => {
+					if (property === "$transaction") {
+						return async (operation: (tx: PrismaClient) => Promise<unknown>) => operation(prisma);
+					}
 					if (property === "libraryCleanupApproval") {
 						return { findMany: approvalFindMany };
 					}
@@ -373,4 +396,17 @@ describe("backup format 1.2", () => {
 		);
 		expect(firstDelete).not.toHaveBeenCalled();
 	});
+
+	it.each(["oidcProviders", "systemSettings", "backupSettings", "vapidKeys"])(
+		"rejects duplicate %s records before opening the restore transaction",
+		async (collection) => {
+			const transaction = vi.fn();
+			const prisma = { $transaction: transaction } as unknown as PrismaClient;
+
+			await expect(
+				restoreDatabase(prisma, baseBackup({ [collection]: [{ id: 1 }, { id: 2 }] }).data as never),
+			).rejects.toThrow(new RegExp(`${collection}.*at most one`, "i"));
+			expect(transaction).not.toHaveBeenCalled();
+		},
+	);
 });

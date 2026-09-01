@@ -11,6 +11,7 @@ import {
 } from "./bootstrap/index.js";
 import { type ApiEnv, envSchema } from "./config/env.js";
 import { arrErrorToHttpStatus, isArrError } from "./lib/arr/client-factory.js";
+import { registerBackupMutationGuard } from "./lib/backup/backup-mutation-gate.js";
 import { logger } from "./lib/logger.js";
 
 function isPrismaKnownError(
@@ -40,6 +41,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		trustProxy: env.TRUST_PROXY,
 	});
 	app.decorate("config", env);
+	registerBackupMutationGuard(app);
 
 	// Handle requests with unexpected Content-Type headers (e.g., Next.js proxy
 	// injecting application/octet-stream on body-less DELETE requests). Without this,
