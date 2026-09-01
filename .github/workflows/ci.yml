@@ -27,6 +27,21 @@ jobs:
     name: Lint, Type Check & Test
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+        env:
+          POSTGRES_USER: arr_backup_test
+          POSTGRES_PASSWORD: arr_backup_test
+          POSTGRES_DB: arr_backup_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U arr_backup_test -d arr_backup_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -85,6 +100,19 @@ jobs:
         env:
           INTEGRATION_TESTS: "1"
           OVERRIDE_ROUTE_DATABASE_URL: file:./prisma/test-integration.db
+
+      - name: Run backup round-trip contract on SQLite
+        run: pnpm exec vitest run src/lib/backup/__tests__/backup-roundtrip.test.ts
+        working-directory: apps/api
+        env:
+          TEST_DB: "true"
+
+      - name: Run backup round-trip contract on PostgreSQL
+        run: pnpm exec vitest run src/lib/backup/__tests__/backup-roundtrip.test.ts
+        working-directory: apps/api
+        env:
+          TEST_DB: "true"
+          TEST_DATABASE_URL: postgresql://arr_backup_test:arr_backup_test@127.0.0.1:5432/arr_backup_test
 
       - name: Check formatting
         run: pnpm run format

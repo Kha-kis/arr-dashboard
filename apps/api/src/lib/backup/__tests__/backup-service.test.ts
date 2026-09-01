@@ -1029,6 +1029,7 @@ describe("BackupService - legacy restore normalization", () => {
 		vi.doMock("../backup-database.js", () => ({
 			exportDatabase: vi.fn(),
 			restoreDatabase: restoreSpy,
+			assertRestoreCompatibility: vi.fn().mockResolvedValue(undefined),
 		}));
 		vi.resetModules();
 		const { BackupService: IsolatedBackupService } = await import("../backup-service.js");
@@ -1136,6 +1137,116 @@ describe("BackupService - cleanup maintenance exclusion", () => {
 
 		releaseCleanup();
 		await cleanup;
+	});
+});
+
+describe("BackupService - coordination preflight", () => {
+	const durableArrays = [
+		"oidcProviders",
+		"systemSettings",
+		"trashTemplates",
+		"trashSettings",
+		"trashSyncSchedules",
+		"templateQualityProfileMappings",
+		"instanceQualityProfileOverrides",
+		"standaloneCFDeployments",
+		"qualitySizeMappings",
+		"trashSyncHistory",
+		"templateDeploymentHistory",
+		"trashBackups",
+		"huntConfigs",
+		"huntLogs",
+		"huntSearchHistory",
+		"backupSettings",
+		"vapidKeys",
+		"notificationChannel",
+		"notificationSubscription",
+		"notificationRule",
+		"notificationAggregationConfig",
+		"autoTagRule",
+		"labelSyncRule",
+		"queueCleanerConfig",
+		"libraryCleanupConfig",
+		"libraryCleanupRule",
+		"namingConfig",
+		"userCustomFormat",
+		"namingDeployHistory",
+		"libraryCleanupApproval",
+		"libraryCleanupMediaServerScan",
+	] as const;
+
+	function makeCompleteBackup() {
+		return {
+			version: "1.2",
+			appVersion: "2.24.2",
+			timestamp: new Date().toISOString(),
+			data: {
+				users: [],
+				sessions: [],
+				serviceInstances: [],
+				serviceTags: [],
+				serviceInstanceTags: [],
+				oidcAccounts: [],
+				webAuthnCredentials: [],
+				...Object.fromEntries(durableArrays.map((field) => [field, []])),
+			},
+			secrets: { encryptionKey: "replacement-key", sessionCookieSecret: "replacement-session" },
+		};
+	}
+
+	it("rejects a current coordination mismatch before writing replacement secrets", async () => {
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "backup-coordination-preflight-"));
+		const secretsPath = path.join(tempDir, "secrets.json");
+		const prisma = {
+			trashSyncHistory: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						{ id: "current-sync", status: "RUNNING", instanceId: "i", userId: "u" },
+					]),
+			},
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			instanceQualityProfileOverride: { findMany: vi.fn().mockResolvedValue([]) },
+			namingDeployHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			trashBackup: { findMany: vi.fn().mockResolvedValue([]) },
+			$transaction: vi.fn(),
+		} as unknown as PrismaClient;
+
+		try {
+			const service = new BackupService(prisma, secretsPath);
+			await expect(service.restoreBackup(JSON.stringify(makeCompleteBackup()))).rejects.toThrow(
+				"cannot safely replace",
+			);
+			expect(await fs.stat(secretsPath).catch(() => null)).toBeNull();
+			expect(prisma.$transaction).not.toHaveBeenCalled();
+		} finally {
+			await fs.rm(tempDir, { recursive: true, force: true });
+		}
+	});
+
+	it("preserves a coordination query failure before writing replacement secrets", async () => {
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "backup-coordination-query-"));
+		const secretsPath = path.join(tempDir, "secrets.json");
+		const queryError = new Error("database unavailable during coordination preflight");
+		const prisma = {
+			trashSyncHistory: { findMany: vi.fn().mockRejectedValue(queryError) },
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			instanceQualityProfileOverride: { findMany: vi.fn().mockResolvedValue([]) },
+			namingDeployHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			trashBackup: { findMany: vi.fn().mockResolvedValue([]) },
+			$transaction: vi.fn(),
+		} as unknown as PrismaClient;
+
+		try {
+			const service = new BackupService(prisma, secretsPath);
+			await expect(service.restoreBackup(JSON.stringify(makeCompleteBackup()))).rejects.toBe(
+				queryError,
+			);
+			expect(await fs.stat(secretsPath).catch(() => null)).toBeNull();
+			expect(prisma.$transaction).not.toHaveBeenCalled();
+		} finally {
+			await fs.rm(tempDir, { recursive: true, force: true });
+		}
 	});
 });
 
@@ -1255,6 +1366,7 @@ describe("BackupService - createBackup type-based defaulting (Unit)", () => {
 		vi.doMock("../backup-database.js", () => ({
 			exportDatabase: exportSpy,
 			restoreDatabase: vi.fn(),
+			assertRestoreCompatibility: vi.fn().mockResolvedValue(undefined),
 		}));
 		// Reload the BackupService module so it picks up the mock.
 		vi.resetModules();
@@ -1300,6 +1412,7 @@ describe("BackupService - createBackup type-based defaulting (Unit)", () => {
 		vi.doMock("../backup-database.js", () => ({
 			exportDatabase: exportSpy,
 			restoreDatabase: vi.fn(),
+			assertRestoreCompatibility: vi.fn().mockResolvedValue(undefined),
 		}));
 		vi.resetModules();
 		const { BackupService } = await import("../backup-service.js");
@@ -1344,6 +1457,7 @@ describe("BackupService - createBackup type-based defaulting (Unit)", () => {
 		vi.doMock("../backup-database.js", () => ({
 			exportDatabase: exportSpy,
 			restoreDatabase: vi.fn(),
+			assertRestoreCompatibility: vi.fn().mockResolvedValue(undefined),
 		}));
 		vi.resetModules();
 		const { BackupService } = await import("../backup-service.js");
@@ -1386,6 +1500,7 @@ describe("BackupService - createBackup type-based defaulting (Unit)", () => {
 		vi.doMock("../backup-database.js", () => ({
 			exportDatabase: exportSpy,
 			restoreDatabase: vi.fn(),
+			assertRestoreCompatibility: vi.fn().mockResolvedValue(undefined),
 		}));
 		vi.resetModules();
 		const { BackupService } = await import("../backup-service.js");

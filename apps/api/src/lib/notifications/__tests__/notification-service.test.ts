@@ -5,7 +5,11 @@
  * send, retry enqueue, and delivery logging.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	CleanupMaintenanceConflictError,
+	withCleanupMaintenanceGuard,
+} from "../../library-cleanup/cleanup-maintenance-gate.js";
 import { NotificationService } from "../notification-service.js";
 import type { NotificationPayload, SendResult } from "../types.js";
 
@@ -16,6 +20,14 @@ let mockLogger: any;
 let mockDedupGate: any;
 let mockRetryHandler: any;
 let service: NotificationService;
+
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((resolvePromise) => {
+		resolve = resolvePromise;
+	});
+	return { promise, resolve };
+}
 
 function makePayload(overrides?: Partial<NotificationPayload>): NotificationPayload {
 	return {
@@ -118,6 +130,72 @@ describe("NotificationService", () => {
 				status: "sent",
 			}),
 		});
+	});
+
+	it("holds mutation ownership for the complete notification dispatch", async () => {
+		mockPrisma.notificationSubscription.findMany.mockResolvedValue([
+			makeSubscription("ch-1", "discord"),
+		]);
+		const sendStarted = deferred<void>();
+		const finishSend = deferred<SendResult>();
+		mockDispatcher.send.mockImplementation(async () => {
+			sendStarted.resolve();
+			return finishSend.promise;
+		});
+
+		const notification = service.notify(makePayload());
+		await sendStarted.promise;
+		await expect(withCleanupMaintenanceGuard(async () => undefined)).rejects.toBeInstanceOf(
+			CleanupMaintenanceConflictError,
+		);
+
+		finishSend.resolve({ success: true, retryable: false });
+		await notification;
+		await expect(withCleanupMaintenanceGuard(async () => "restored")).resolves.toBe("restored");
+	});
+
+	it("rejects notification dispatch while restore owns maintenance", async () => {
+		mockPrisma.notificationSubscription.findMany.mockResolvedValue([
+			makeSubscription("ch-1", "discord"),
+		]);
+		mockDispatcher.send.mockResolvedValue({ success: true, retryable: false } satisfies SendResult);
+		const finishRestore = deferred<void>();
+		const restore = withCleanupMaintenanceGuard(() => finishRestore.promise);
+
+		await expect(service.notify(makePayload())).rejects.toBeInstanceOf(
+			CleanupMaintenanceConflictError,
+		);
+		expect(mockDispatcher.send).not.toHaveBeenCalled();
+
+		finishRestore.resolve();
+		await restore;
+	});
+
+	it("keeps deferred notifications queued while restore owns maintenance", async () => {
+		mockPrisma.notificationSubscription.findMany.mockResolvedValue([
+			makeSubscription("ch-1", "discord"),
+		]);
+		mockDispatcher.send.mockResolvedValue({ success: true, retryable: false } satisfies SendResult);
+		const internals = service as unknown as {
+			deferNotification: (payload: NotificationPayload, deferUntil: string, ruleId: string) => void;
+			flushDeferredNotifications: () => Promise<void>;
+		};
+		internals.deferNotification(
+			makePayload(),
+			new Date(Date.now() - 1_000).toISOString(),
+			"quiet-hours-rule",
+		);
+		const finishRestore = deferred<void>();
+		const restore = withCleanupMaintenanceGuard(() => finishRestore.promise);
+
+		await internals.flushDeferredNotifications();
+		expect(mockDispatcher.send).not.toHaveBeenCalled();
+
+		finishRestore.resolve();
+		await restore;
+		await internals.flushDeferredNotifications();
+		expect(mockDispatcher.send).toHaveBeenCalledTimes(1);
+		expect(mockPrisma.notificationLog.create).toHaveBeenCalledTimes(1);
 	});
 
 	it("routes a logical event to explicit and legacy fallback channels once per channel", async () => {

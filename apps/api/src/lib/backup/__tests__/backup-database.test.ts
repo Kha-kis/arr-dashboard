@@ -8,8 +8,9 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
+import { BackupCompatibilityError } from "../../errors.js";
 import type { PrismaClient } from "../../prisma.js";
-import { exportDatabase, restoreDatabase } from "../backup-database.js";
+import { assertRestoreCompatibility, exportDatabase, restoreDatabase } from "../backup-database.js";
 
 const TABLE_NAMES = [
 	"user",
@@ -21,6 +22,8 @@ const TABLE_NAMES = [
 	"oIDCAccount",
 	"webAuthnCredential",
 	"systemSettings",
+	"backupSettings",
+	"vapidKeys",
 	"trashTemplate",
 	"trashSettings",
 	"trashSyncSchedule",
@@ -34,6 +37,20 @@ const TABLE_NAMES = [
 	"huntLog",
 	"huntSearchHistory",
 	"trashBackup",
+	"notificationChannel",
+	"notificationSubscription",
+	"notificationRule",
+	"notificationAggregationConfig",
+	"autoTagRule",
+	"labelSyncRule",
+	"queueCleanerConfig",
+	"libraryCleanupConfig",
+	"libraryCleanupRule",
+	"libraryCleanupApproval",
+	"libraryCleanupMediaServerScan",
+	"namingConfig",
+	"namingDeployHistory",
+	"userCustomFormat",
 ] as const;
 
 type TableName = (typeof TABLE_NAMES)[number];
@@ -322,6 +339,59 @@ describe("exportDatabase — operational history exclusion", () => {
 		);
 	});
 
+	it("fails closed when active naming recovery changes during export", async () => {
+		const { prisma, mock } = makeMockPrisma();
+		const activeNaming = {
+			id: "active-naming-recovery",
+			instanceId: "instance-1",
+			userId: "user-1",
+			status: "SUCCESS",
+			previousConfig: '{"standardMovieFormat":"{Movie OriginalTitle}"}',
+			rolledBack: false,
+		};
+		mock.namingDeployHistory.findMany
+			.mockResolvedValueOnce([activeNaming])
+			.mockResolvedValueOnce([{ ...activeNaming, previousConfig: "changed-recovery-state" }]);
+
+		await expect(exportDatabase(prisma, { excludeOperationalHistory: true })).rejects.toThrow(
+			"Cannot create backup: active naming recovery changed during export; retry",
+		);
+	});
+
+	it("fails closed when active naming recovery service authority changes during export", async () => {
+		const { prisma, mock } = makeMockPrisma();
+		const activeNaming = {
+			id: "active-naming-recovery",
+			instanceId: "instance-1",
+			userId: "user-1",
+			status: "SUCCESS",
+			previousConfig: '{"standardMovieFormat":"{Movie OriginalTitle}"}',
+			rolledBack: false,
+		};
+		const initialInstance = {
+			id: "instance-1",
+			userId: "user-1",
+			service: "RADARR",
+			baseUrl: "https://proxy.example/arr?tenant=A",
+			encryptedApiKey: "api-key-ciphertext",
+			encryptionIv: "api-key-iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+		};
+		mock.serviceInstance.findMany
+			.mockResolvedValueOnce([initialInstance])
+			.mockResolvedValueOnce([
+				{ ...initialInstance, baseUrl: "https://proxy.example/arr?tenant=B" },
+			]);
+		mock.namingDeployHistory.findMany
+			.mockResolvedValueOnce([activeNaming])
+			.mockResolvedValueOnce([activeNaming]);
+
+		await expect(exportDatabase(prisma, { excludeOperationalHistory: true })).rejects.toThrow(
+			"Cannot create backup: active naming recovery changed during export; retry",
+		);
+	});
+
 	it("includes operational history with row cap when excludeOperationalHistory: false (default)", async () => {
 		const { prisma, mock } = makeMockPrisma({
 			huntLog: [{ id: "h1", startedAt: new Date() }],
@@ -444,13 +514,42 @@ describe("exportDatabase — operational history exclusion", () => {
 });
 
 describe("restoreDatabase — current coordination preservation", () => {
+	async function expectCompatibilityFailure(
+		operation: Promise<unknown>,
+		expectedCause: string,
+	): Promise<void> {
+		let captured: unknown;
+		try {
+			await operation;
+		} catch (error) {
+			captured = error;
+		}
+
+		expect(captured).toBeInstanceOf(BackupCompatibilityError);
+		const compatibilityError = captured as BackupCompatibilityError;
+		expect(compatibilityError.message).toBe(
+			"This backup does not contain complete configuration or recovery coverage and cannot safely replace the current installation. Create a new backup with the current version and retry.",
+		);
+		expect(compatibilityError.cause).toBeInstanceOf(Error);
+		expect((compatibilityError.cause as Error).message).toContain(expectedCause);
+	}
+
 	function makeRestorePrisma(options: {
+		currentInstances?: Array<Record<string, unknown>>;
 		currentSync?: Array<Record<string, unknown>>;
 		currentDeployments?: Array<Record<string, unknown>>;
 		currentSnapshots?: Array<Record<string, unknown>>;
+		currentNaming?: Array<Record<string, unknown>>;
+		currentApprovals?: Array<Record<string, unknown>>;
+		currentScanParentApprovals?: Array<Record<string, unknown>>;
+		currentScans?: Array<Record<string, unknown>>;
 	}) {
 		const firstDelete = vi.fn().mockResolvedValue({ count: 0 });
 		const tx = {
+			serviceInstance: {
+				findMany: vi.fn().mockResolvedValue(options.currentInstances ?? []),
+				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
 			trashSyncHistory: {
 				findMany: vi.fn().mockResolvedValue(options.currentSync ?? []),
 				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -463,6 +562,25 @@ describe("restoreDatabase — current coordination preservation", () => {
 				findMany: vi.fn().mockResolvedValue(options.currentSnapshots ?? []),
 				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
 			},
+			instanceQualityProfileOverride: {
+				findMany: vi.fn().mockResolvedValue([]),
+				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
+			namingDeployHistory: {
+				findMany: vi.fn().mockResolvedValue(options.currentNaming ?? []),
+				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
+			libraryCleanupApproval: {
+				findMany: vi
+					.fn()
+					.mockResolvedValueOnce(options.currentApprovals ?? [])
+					.mockResolvedValue(options.currentScanParentApprovals ?? []),
+				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
+			libraryCleanupMediaServerScan: {
+				findMany: vi.fn().mockResolvedValue(options.currentScans ?? []),
+				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
 			huntSearchHistory: { deleteMany: firstDelete },
 		};
 		const prisma = {
@@ -471,7 +589,7 @@ describe("restoreDatabase — current coordination preservation", () => {
 			),
 		} as unknown as PrismaClient;
 
-		return { prisma, firstDelete };
+		return { prisma, compatibilityPrisma: tx as unknown as PrismaClient, firstDelete };
 	}
 
 	function incomingData(overrides: Record<string, unknown> = {}) {
@@ -512,8 +630,239 @@ describe("restoreDatabase — current coordination preservation", () => {
 			],
 		});
 
-		await expect(restoreDatabase(prisma, incomingData())).rejects.toThrow(
+		await expectCompatibilityFailure(
+			restoreDatabase(prisma, incomingData()),
 			"current nonterminal coordination row current-sync",
+		);
+		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["userId", "user-2"],
+		["service", "SONARR"],
+		["baseUrl", "http://radarr-replacement:7878"],
+		["encryptedApiKey", "replacement-api-key-ciphertext"],
+		["encryptionIv", "replacement-api-key-iv"],
+		["encryptedHttpAuthCredentials", "replacement-http-auth-ciphertext"],
+		["httpAuthEncryptionIv", "replacement-http-auth-iv"],
+	])(
+		"rejects a restore that changes active naming recovery service instance %s",
+		async (field, replacement) => {
+			const currentInstance = {
+				id: "instance-1",
+				userId: "user-1",
+				service: "RADARR",
+				baseUrl: "http://radarr-current:7878",
+				encryptedApiKey: "current-api-key-ciphertext",
+				encryptionIv: "current-api-key-iv",
+				encryptedHttpAuthCredentials: null,
+				httpAuthEncryptionIv: null,
+			};
+			const currentNaming = {
+				id: "active-naming-recovery",
+				instanceId: currentInstance.id,
+				userId: currentInstance.userId,
+				status: "SUCCESS",
+				selectedPresets: '["standard"]',
+				resolvedPayload: '{"standardMovieFormat":"{Movie Title}"}',
+				deployedHash: "deployed-hash",
+				previousConfig: '{"standardMovieFormat":"{Movie OriginalTitle}"}',
+				changedFields: 1,
+				totalFields: 1,
+				errorMessage: null,
+				rolledBack: false,
+				rolledBackAt: null,
+				deployedAt: new Date("2026-08-31T00:00:00.000Z"),
+			};
+			const { prisma, firstDelete } = makeRestorePrisma({
+				currentInstances: [currentInstance],
+				currentNaming: [currentNaming],
+			});
+
+			await expectCompatibilityFailure(
+				restoreDatabase(
+					prisma,
+					incomingData({
+						serviceInstances: [{ ...currentInstance, [field]: replacement }],
+						namingDeployHistory: [currentNaming],
+					}),
+				),
+				`current active naming recovery active-naming-recovery changed service instance ${field}`,
+			);
+			expect(firstDelete).not.toHaveBeenCalled();
+		},
+	);
+
+	it("rejects a restore that changes query-routed active naming recovery authority", async () => {
+		const currentInstance = {
+			id: "instance-1",
+			userId: "user-1",
+			service: "RADARR",
+			baseUrl: "https://proxy.example/arr?tenant=A",
+			encryptedApiKey: "current-api-key-ciphertext",
+			encryptionIv: "current-api-key-iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+		};
+		const currentNaming = {
+			id: "active-naming-recovery",
+			instanceId: currentInstance.id,
+			userId: currentInstance.userId,
+			status: "SUCCESS",
+			selectedPresets: '["standard"]',
+			resolvedPayload: '{"standardMovieFormat":"{Movie Title}"}',
+			deployedHash: "deployed-hash",
+			previousConfig: '{"standardMovieFormat":"{Movie OriginalTitle}"}',
+			changedFields: 1,
+			totalFields: 1,
+			errorMessage: null,
+			rolledBack: false,
+			rolledBackAt: null,
+			deployedAt: new Date("2026-08-31T00:00:00.000Z"),
+		};
+		const { prisma, firstDelete } = makeRestorePrisma({
+			currentInstances: [currentInstance],
+			currentNaming: [currentNaming],
+		});
+
+		await expectCompatibilityFailure(
+			restoreDatabase(
+				prisma,
+				incomingData({
+					serviceInstances: [{ ...currentInstance, baseUrl: "https://proxy.example/arr?tenant=B" }],
+					namingDeployHistory: [currentNaming],
+				}),
+			),
+			"current active naming recovery active-naming-recovery changed service instance baseUrl",
+		);
+		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
+	it("allows equivalent endpoint and display-only changes while preserving active naming recovery authority", async () => {
+		const currentInstance = {
+			id: "instance-1",
+			userId: "user-1",
+			service: "RADARR",
+			label: "Current label",
+			baseUrl: "http://radarr-current:7878",
+			encryptedApiKey: "current-api-key-ciphertext",
+			encryptionIv: "current-api-key-iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+		};
+		const currentNaming = {
+			id: "active-naming-recovery",
+			instanceId: currentInstance.id,
+			userId: currentInstance.userId,
+			status: "SUCCESS",
+			selectedPresets: '["standard"]',
+			resolvedPayload: '{"standardMovieFormat":"{Movie Title}"}',
+			deployedHash: "deployed-hash",
+			previousConfig: '{"standardMovieFormat":"{Movie OriginalTitle}"}',
+			changedFields: 1,
+			totalFields: 1,
+			errorMessage: null,
+			rolledBack: false,
+			rolledBackAt: null,
+			deployedAt: new Date("2026-08-31T00:00:00.000Z"),
+		};
+		const { compatibilityPrisma } = makeRestorePrisma({
+			currentInstances: [currentInstance],
+			currentNaming: [currentNaming],
+		});
+
+		await expect(
+			assertRestoreCompatibility(
+				compatibilityPrisma,
+				incomingData({
+					serviceInstances: [
+						{
+							...currentInstance,
+							label: "Restored display label",
+							baseUrl: `${currentInstance.baseUrl}/`,
+						},
+					],
+					namingDeployHistory: [currentNaming],
+				}),
+			),
+		).resolves.toBeUndefined();
+	});
+
+	it("rejects a restore that omits an active cleanup approval before deleting tables", async () => {
+		const currentApproval = {
+			id: "active-cleanup-approval",
+			configId: "cleanup-config",
+			instanceId: "instance-1",
+			arrItemId: 815,
+			itemType: "movie",
+			title: "Current cleanup target",
+			matchedRuleId: "rule-1",
+			matchedRuleName: "Current cleanup rule",
+			reason: "age",
+			action: "delete",
+			sizeOnDisk: BigInt(815),
+			status: "approved",
+			expiresAt: new Date("2030-01-01T00:00:00.000Z"),
+			createdAt: new Date("2026-08-31T00:00:00.000Z"),
+		};
+		const { prisma, firstDelete } = makeRestorePrisma({
+			currentApprovals: [currentApproval],
+		});
+
+		await expectCompatibilityFailure(
+			restoreDatabase(prisma, incomingData({ libraryCleanupApproval: [] })),
+			"current active cleanup approval active-cleanup-approval is missing from incoming data",
+		);
+		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
+	it("rejects a restore that omits a retryable media-server scan and its terminal parent", async () => {
+		const currentParent = {
+			id: "executed-cleanup-parent",
+			configId: "cleanup-config",
+			instanceId: "instance-1",
+			arrItemId: 816,
+			itemType: "series",
+			title: "Executed cleanup target",
+			matchedRuleId: "rule-1",
+			matchedRuleName: "Current cleanup rule",
+			reason: "size",
+			action: "delete",
+			sizeOnDisk: BigInt(816),
+			status: "executed",
+			expiresAt: new Date("2030-01-01T00:00:00.000Z"),
+			createdAt: new Date("2026-08-31T00:00:00.000Z"),
+		};
+		const currentScan = {
+			id: "retryable-cleanup-scan",
+			approvalId: currentParent.id,
+			instanceId: "instance-1",
+			service: "PLEX",
+			mediaType: "show",
+			targetKey: "series:816",
+			status: "failed",
+			attemptCount: 1,
+			completedSectionIds: "[]",
+			lastError: "temporary provider failure",
+			createdAt: new Date("2026-08-31T00:00:00.000Z"),
+			updatedAt: new Date("2026-08-31T00:01:00.000Z"),
+		};
+		const { prisma, firstDelete } = makeRestorePrisma({
+			currentScanParentApprovals: [currentParent],
+			currentScans: [currentScan],
+		});
+
+		await expectCompatibilityFailure(
+			restoreDatabase(
+				prisma,
+				incomingData({
+					libraryCleanupApproval: [
+						{ ...currentParent, sizeOnDisk: currentParent.sizeOnDisk.toString() },
+					],
+					libraryCleanupMediaServerScan: [],
+				}),
+			),
+			"current active media-server scan retryable-cleanup-scan is missing from incoming data",
 		);
 		expect(firstDelete).not.toHaveBeenCalled();
 	});
@@ -533,7 +882,8 @@ describe("restoreDatabase — current coordination preservation", () => {
 			],
 		});
 
-		await expect(restoreDatabase(prisma, incomingData())).rejects.toThrow(
+		await expectCompatibilityFailure(
+			restoreDatabase(prisma, incomingData()),
 			"current nonterminal coordination row interrupted-sync",
 		);
 		expect(firstDelete).not.toHaveBeenCalled();
@@ -561,9 +911,10 @@ describe("restoreDatabase — current coordination preservation", () => {
 			],
 		});
 
-		await expect(
+		await expectCompatibilityFailure(
 			restoreDatabase(prisma, incomingData({ templateDeploymentHistory: [currentDeployment] })),
-		).rejects.toThrow("current recovery snapshot snapshot-deployment");
+			"current recovery snapshot snapshot-deployment",
+		);
 		expect(firstDelete).not.toHaveBeenCalled();
 	});
 
@@ -591,7 +942,7 @@ describe("restoreDatabase — current coordination preservation", () => {
 			currentSnapshots: [currentSnapshot],
 		});
 
-		await expect(
+		await expectCompatibilityFailure(
 			restoreDatabase(
 				prisma,
 				incomingData({
@@ -599,7 +950,8 @@ describe("restoreDatabase — current coordination preservation", () => {
 					trashBackups: [currentSnapshot],
 				}),
 			),
-		).rejects.toThrow("current nonterminal coordination row current-sync changed userId");
+			"current nonterminal coordination row current-sync changed userId",
+		);
 		expect(firstDelete).not.toHaveBeenCalled();
 	});
 
@@ -622,7 +974,7 @@ describe("restoreDatabase — current coordination preservation", () => {
 			currentSnapshots: [currentSnapshot],
 		});
 
-		await expect(
+		await expectCompatibilityFailure(
 			restoreDatabase(
 				prisma,
 				incomingData({
@@ -630,7 +982,8 @@ describe("restoreDatabase — current coordination preservation", () => {
 					trashBackups: [{ ...currentSnapshot, backupData: "stale-sync-evidence" }],
 				}),
 			),
-		).rejects.toThrow("current recovery snapshot snapshot-sync changed backupData");
+			"current recovery snapshot snapshot-sync changed backupData",
+		);
 		expect(firstDelete).not.toHaveBeenCalled();
 	});
 
@@ -658,7 +1011,7 @@ describe("restoreDatabase — current coordination preservation", () => {
 			currentSnapshots: [currentSnapshot],
 		});
 
-		await expect(
+		await expectCompatibilityFailure(
 			restoreDatabase(
 				prisma,
 				incomingData({
@@ -668,7 +1021,6 @@ describe("restoreDatabase — current coordination preservation", () => {
 					trashBackups: [currentSnapshot],
 				}),
 			),
-		).rejects.toThrow(
 			"current nonterminal coordination row current-deployment changed appliedConfigs",
 		);
 		expect(firstDelete).not.toHaveBeenCalled();
@@ -697,7 +1049,7 @@ describe("restoreDatabase — current coordination preservation", () => {
 			currentSnapshots: [currentSnapshot],
 		});
 
-		await expect(
+		await expectCompatibilityFailure(
 			restoreDatabase(
 				prisma,
 				incomingData({
@@ -705,7 +1057,6 @@ describe("restoreDatabase — current coordination preservation", () => {
 					trashBackups: [currentSnapshot],
 				}),
 			),
-		).rejects.toThrow(
 			"current nonterminal coordination row current-deployment changed templateSnapshot",
 		);
 		expect(firstDelete).not.toHaveBeenCalled();
@@ -741,7 +1092,7 @@ describe("restoreDatabase — current coordination preservation", () => {
 			currentSnapshots: [currentSnapshot],
 		});
 
-		await expect(
+		await expectCompatibilityFailure(
 			restoreDatabase(
 				prisma,
 				incomingData({
@@ -750,7 +1101,8 @@ describe("restoreDatabase — current coordination preservation", () => {
 					trashBackups: [currentSnapshot],
 				}),
 			),
-		).rejects.toThrow("current undeploy fallback template template-1 changed configData");
+			"current undeploy fallback template template-1 changed configData",
+		);
 		expect(firstDelete).not.toHaveBeenCalled();
 	});
 
@@ -777,7 +1129,7 @@ describe("restoreDatabase — current coordination preservation", () => {
 			currentSnapshots: [currentSnapshot],
 		});
 
-		await expect(
+		await expectCompatibilityFailure(
 			restoreDatabase(
 				prisma,
 				incomingData({
@@ -785,7 +1137,8 @@ describe("restoreDatabase — current coordination preservation", () => {
 					trashBackups: [currentSnapshot],
 				}),
 			),
-		).rejects.toThrow("current nonterminal coordination row current-sync changed appliedConfigs");
+			"current nonterminal coordination row current-sync changed appliedConfigs",
+		);
 		expect(firstDelete).not.toHaveBeenCalled();
 	});
 });

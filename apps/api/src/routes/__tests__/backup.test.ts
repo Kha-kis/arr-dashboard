@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BackupPasswordConfigurationError } from "../../lib/backup/backup-service.js";
+import { BackupCompatibilityError } from "../../lib/errors.js";
 import {
 	withCleanupMaintenanceGuard,
 	withCleanupOperationGuard,
@@ -8,8 +9,9 @@ import {
 import { registerBackupRoutes } from "../backup.js";
 import { registerTestErrorHandler } from "./test-helpers.js";
 
-const { mockCreateBackup } = vi.hoisted(() => ({
+const { mockCreateBackup, mockRestoreBackup } = vi.hoisted(() => ({
 	mockCreateBackup: vi.fn(),
+	mockRestoreBackup: vi.fn(),
 }));
 
 vi.mock("../../lib/backup/backup-service.js", async (importOriginal) => {
@@ -19,6 +21,9 @@ vi.mock("../../lib/backup/backup-service.js", async (importOriginal) => {
 		BackupService: class {
 			createBackup(...args: unknown[]) {
 				return mockCreateBackup(...args);
+			}
+			restoreBackup(...args: unknown[]) {
+				return mockRestoreBackup(...args);
 			}
 		},
 	};
@@ -178,5 +183,36 @@ describe("POST /api/backup/create", () => {
 		expect(response.statusCode).toBe(401);
 		expect(JSON.parse(response.payload)).toEqual({ error: "Authentication required" });
 		expect(mockCreateBackup).not.toHaveBeenCalled();
+	});
+
+	it("returns bounded 409 for an incomplete legacy restore", async () => {
+		mockRestoreBackup.mockRejectedValue(new BackupCompatibilityError());
+
+		const response = await app.inject({
+			method: "POST",
+			url: "/api/backup/restore",
+			headers: { "x-test-auth": "1" },
+			payload: { backupData: Buffer.from("legacy-backup").toString("base64") },
+		});
+
+		expect(response.statusCode).toBe(409);
+		expect(JSON.parse(response.payload)).toEqual({
+			error:
+				"This backup does not contain complete configuration or recovery coverage and cannot safely replace the current installation. Create a new backup with the current version and retry.",
+		});
+	});
+
+	it("preserves the generic 500 mapping for a restore infrastructure failure", async () => {
+		mockRestoreBackup.mockRejectedValue(new Error("database unavailable"));
+
+		const response = await app.inject({
+			method: "POST",
+			url: "/api/backup/restore",
+			headers: { "x-test-auth": "1" },
+			payload: { backupData: Buffer.from("current-backup").toString("base64") },
+		});
+
+		expect(response.statusCode).toBe(500);
+		expect(JSON.parse(response.payload)).toEqual({ error: "Failed to restore backup" });
 	});
 });

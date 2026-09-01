@@ -74,7 +74,7 @@ export const restoreBackupFromFileRequestSchema = z.object({
 export type RestoreBackupFromFileRequest = z.infer<typeof restoreBackupFromFileRequestSchema>;
 
 // Backup structure (internal, not exposed via API)
-export type BackupFormatVersion = "1.0" | "1.1";
+export type BackupFormatVersion = "1.0" | "1.1" | "1.2";
 
 export interface BackupData {
 	version: BackupFormatVersion;
@@ -105,6 +105,7 @@ export interface BackupData {
 		// TRaSH Guides history/audit (useful for tracking)
 		trashSyncHistory?: unknown[];
 		templateDeploymentHistory?: unknown[];
+		namingDeployHistory?: unknown[];
 
 		// TRaSH instance backups (ARR config snapshots) - optional, can be large.
 		// Recent snapshots follow BackupSettings.includeTrashBackups; snapshots
@@ -118,6 +119,24 @@ export interface BackupData {
 		huntConfigs?: unknown[];
 		huntLogs?: unknown[];
 		huntSearchHistory?: unknown[];
+
+		// Durable configuration (runtime validation requires explicit arrays in v1.2;
+		// properties remain optional here so legacy payloads remain representable).
+		backupSettings?: unknown[];
+		vapidKeys?: unknown[];
+		notificationChannel?: unknown[];
+		notificationSubscription?: unknown[];
+		notificationRule?: unknown[];
+		notificationAggregationConfig?: unknown[];
+		autoTagRule?: unknown[];
+		labelSyncRule?: unknown[];
+		queueCleanerConfig?: unknown[];
+		libraryCleanupConfig?: unknown[];
+		libraryCleanupRule?: unknown[];
+		namingConfig?: unknown[];
+		userCustomFormat?: unknown[];
+		libraryCleanupApproval?: unknown[];
+		libraryCleanupMediaServerScan?: unknown[];
 	};
 	secrets: {
 		encryptionKey: string;
