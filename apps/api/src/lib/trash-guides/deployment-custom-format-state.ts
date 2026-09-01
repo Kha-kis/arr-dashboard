@@ -1,36 +1,96 @@
+import { Buffer } from "node:buffer";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import { z } from "zod";
 import { createUpstreamResourceStateToken } from "./deployment-target.js";
 
 type ArrClient = SonarrClient | RadarrClient;
-const intendedWritableStateTokenPrefix = "arr-dashboard-custom-format-writable-v1";
+type IntendedStateShape = true | IntendedStateShape[] | { [key: string]: IntendedStateShape };
+const intendedWritableStateTokenPrefix = "arr-dashboard-custom-format-writable-v2";
+const intendedStateShapeTokenMaxLength = 65_536;
+const intendedStateShapeMaxDepth = 64;
+const intendedStateShapeMaxNodes = 10_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function projectWritableCustomFormatState(value: unknown): unknown {
-	if (!isRecord(value)) return value;
-	return {
-		name: value.name,
-		includeCustomFormatWhenRenaming: value.includeCustomFormatWhenRenaming,
-		specifications: Array.isArray(value.specifications)
-			? value.specifications.map((specification) => {
-					if (!isRecord(specification)) return specification;
-					return {
-						name: specification.name,
-						implementation: specification.implementation,
-						negate: specification.negate,
-						required: specification.required,
-						fields: Array.isArray(specification.fields)
-							? specification.fields.map((field) =>
-									isRecord(field) ? { name: field.name, value: field.value } : field,
-								)
-							: specification.fields,
-					};
-				})
-			: value.specifications,
-	};
+function createIntendedStateShape(value: unknown): IntendedStateShape {
+	if (Array.isArray(value)) return value.map(createIntendedStateShape);
+	if (isRecord(value)) {
+		return Object.fromEntries(
+			Object.entries(value)
+				.sort(([left], [right]) => left.localeCompare(right))
+				.map(([key, child]) => [key, createIntendedStateShape(child)]),
+		);
+	}
+	return true;
+}
+
+function projectActualToShape(actual: unknown, shape: IntendedStateShape | undefined): unknown {
+	if (shape === undefined || shape === true) return actual;
+	if (Array.isArray(shape)) {
+		if (!Array.isArray(actual)) return actual;
+		return actual.map((item, index) => projectActualToShape(item, shape[index]));
+	}
+	if (!isRecord(actual)) return actual;
+	return Object.fromEntries(
+		Object.entries(shape).map(([key, childShape]) => [
+			key,
+			projectActualToShape(actual[key], childShape),
+		]),
+	);
+}
+
+/** Project server readback to exactly the recursively supplied intended shape. */
+export function projectActualToIntendedShape(actual: unknown, intended: unknown): unknown {
+	return projectActualToShape(actual, createIntendedStateShape(intended));
+}
+
+function isIntendedStateShape(
+	value: unknown,
+	budget: { nodes: number },
+	depth = 0,
+): value is IntendedStateShape {
+	budget.nodes += 1;
+	if (budget.nodes > intendedStateShapeMaxNodes || depth > intendedStateShapeMaxDepth) {
+		return false;
+	}
+	if (value === true) return true;
+	if (Array.isArray(value)) {
+		return value.every((child) => isIntendedStateShape(child, budget, depth + 1));
+	}
+	return (
+		isRecord(value) &&
+		Object.values(value).every((child) => isIntendedStateShape(child, budget, depth + 1))
+	);
+}
+
+function encodeIntendedStateShape(intended: unknown): string {
+	const encoded = Buffer.from(JSON.stringify(createIntendedStateShape(intended))).toString(
+		"base64url",
+	);
+	if (encoded.length > intendedStateShapeTokenMaxLength) {
+		throw new Error("Custom Format intended state shape is too large to persist safely.");
+	}
+	return encoded;
+}
+
+function decodeIntendedStateShape(encoded: string): IntendedStateShape | null {
+	if (
+		encoded.length === 0 ||
+		encoded.length > intendedStateShapeTokenMaxLength ||
+		!/^[A-Za-z0-9_-]+$/.test(encoded)
+	) {
+		return null;
+	}
+	try {
+		const decoded = Buffer.from(encoded, "base64url");
+		if (decoded.toString("base64url") !== encoded) return null;
+		const parsed: unknown = JSON.parse(decoded.toString("utf8"));
+		return isIntendedStateShape(parsed, { nodes: 0 }) ? parsed : null;
+	} catch {
+		return null;
+	}
 }
 
 function getDefaultableSonarrLanguageSpecificationIndexes(
@@ -80,10 +140,6 @@ function removeMaterializedSonarrDefaults(actual: unknown, defaultableIndexes: n
 	};
 }
 
-function createWritableCustomFormatStateToken(value: unknown): string {
-	return createUpstreamResourceStateToken(projectWritableCustomFormatState(value));
-}
-
 /**
  * Persist a versioned token in the same writable-state domain used by post-write verification.
  * The token records exactly which Sonarr LanguageSpecifications omitted exceptLanguage, so
@@ -102,7 +158,8 @@ export function createIntendedCustomFormatPostStateToken(
 		intendedWritableStateTokenPrefix,
 		service,
 		defaultableIndexes.length > 0 ? defaultableIndexes.join(",") : "-",
-		createWritableCustomFormatStateToken(intended),
+		encodeIntendedStateShape(intended),
+		createUpstreamResourceStateToken(intended),
 	].join(":");
 }
 
@@ -111,7 +168,7 @@ export function matchesIntendedCustomFormatPostStateToken(
 	actual: unknown,
 	intendedToken: string,
 ): boolean {
-	const [prefix, service, rawIndexes, expectedHash, ...extra] = intendedToken.split(":");
+	const [prefix, service, rawIndexes, rawShape, expectedHash, ...extra] = intendedToken.split(":");
 	if (
 		prefix !== intendedWritableStateTokenPrefix ||
 		(service !== "SONARR" && service !== "RADARR") ||
@@ -120,6 +177,8 @@ export function matchesIntendedCustomFormatPostStateToken(
 	) {
 		return false;
 	}
+	const intendedShape = decodeIntendedStateShape(rawShape ?? "");
+	if (!intendedShape) return false;
 	const defaultableIndexes =
 		rawIndexes === "-"
 			? []
@@ -137,13 +196,13 @@ export function matchesIntendedCustomFormatPostStateToken(
 	) {
 		return false;
 	}
-	if (createWritableCustomFormatStateToken(actual) === expectedHash) return true;
+	const matchesIntendedShape = (value: unknown) =>
+		createUpstreamResourceStateToken(projectActualToShape(value, intendedShape)) === expectedHash;
+	if (matchesIntendedShape(actual)) return true;
 	return (
 		service === "SONARR" &&
 		defaultableIndexes.length > 0 &&
-		createWritableCustomFormatStateToken(
-			removeMaterializedSonarrDefaults(actual, defaultableIndexes),
-		) === expectedHash
+		matchesIntendedShape(removeMaterializedSonarrDefaults(actual, defaultableIndexes))
 	);
 }
 

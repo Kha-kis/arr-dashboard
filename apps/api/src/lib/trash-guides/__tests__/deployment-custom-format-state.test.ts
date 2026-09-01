@@ -428,6 +428,22 @@ describe("Custom Format intended post-state tokens", () => {
 		);
 	});
 
+	it("fails closed for legacy and malformed intended-state shapes", () => {
+		const token = createIntendedCustomFormatPostStateToken(intended, "SONARR");
+		expect(
+			matchesIntendedCustomFormatPostStateToken(
+				intended,
+				token.replace("custom-format-writable-v2", "custom-format-writable-v1"),
+			),
+		).toBe(false);
+
+		const malformedShapeToken = token.split(":");
+		malformedShapeToken[3] = "not*base64url";
+		expect(matchesIntendedCustomFormatPostStateToken(intended, malformedShapeToken.join(":"))).toBe(
+			false,
+		);
+	});
+
 	it("never lets intended writable evidence override a different exact post-state token", async () => {
 		const current = {
 			...metadataRichSonarrReadback,
@@ -503,4 +519,62 @@ describe("Custom Format intended post-state tokens", () => {
 		};
 		expect(matchesIntendedCustomFormatPostStateToken(drifted, token)).toBe(false);
 	});
+
+	it.each([
+		["implementationName", { implementationName: "Changed implementation" }, {}],
+		["field label", {}, { label: "Changed label" }],
+		["field type", {}, { type: "text" }],
+	])(
+		"rejects drift in an explicitly intended %s after Sonarr materializes a default",
+		(_label, specificationDrift, fieldDrift) => {
+			const intendedWithMetadata = {
+				...intended,
+				specifications: [
+					{
+						...intended.specifications[0],
+						implementationName: "Intended implementation",
+						fields: [
+							{
+								...intended.specifications[0]!.fields[0],
+								label: "Intended label",
+								type: "select",
+							},
+						],
+					},
+				],
+			};
+			const token = createIntendedCustomFormatPostStateToken(intendedWithMetadata, "SONARR");
+			const metadataRichReadback = {
+				...intendedWithMetadata,
+				specifications: [
+					{
+						...intendedWithMetadata.specifications[0],
+						...specificationDrift,
+						fields: [
+							{
+								...intendedWithMetadata.specifications[0]!.fields[0],
+								...fieldDrift,
+							},
+							{ name: "exceptLanguage", value: false, type: "checkbox" },
+						],
+					},
+				],
+			};
+
+			const unchangedReadback = {
+				...metadataRichReadback,
+				specifications: [
+					{
+						...intendedWithMetadata.specifications[0],
+						fields: [
+							intendedWithMetadata.specifications[0]!.fields[0],
+							{ name: "exceptLanguage", value: false, type: "checkbox" },
+						],
+					},
+				],
+			};
+			expect(matchesIntendedCustomFormatPostStateToken(unchangedReadback, token)).toBe(true);
+			expect(matchesIntendedCustomFormatPostStateToken(metadataRichReadback, token)).toBe(false);
+		},
+	);
 });

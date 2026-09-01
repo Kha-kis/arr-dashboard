@@ -35,6 +35,7 @@ import { shouldRetainDeploymentBackup } from "./deployment-backup-state.js";
 import {
 	type CustomFormatRollbackState,
 	createIntendedCustomFormatPostStateToken,
+	projectActualToIntendedShape,
 } from "./deployment-custom-format-state.js";
 import {
 	finalizeDeploymentHistory,
@@ -240,27 +241,6 @@ function assertIntendedWritableState(
 	if (!actual || typeof actual !== "object" || Array.isArray(actual)) {
 		throw new ConflictError(`${resourceLabel} returned an invalid post-write state.`);
 	}
-	const projectActualToIntendedShape = (actualValue: unknown, intendedValue: unknown): unknown => {
-		if (Array.isArray(intendedValue)) {
-			if (!Array.isArray(actualValue)) return actualValue;
-			return actualValue.map((item, index) =>
-				projectActualToIntendedShape(item, intendedValue[index]),
-			);
-		}
-		if (intendedValue && typeof intendedValue === "object") {
-			if (!actualValue || typeof actualValue !== "object" || Array.isArray(actualValue)) {
-				return actualValue;
-			}
-			const actualRecord = actualValue as Record<string, unknown>;
-			return Object.fromEntries(
-				Object.entries(intendedValue as Record<string, unknown>).map(([key, value]) => [
-					key,
-					projectActualToIntendedShape(actualRecord[key], value),
-				]),
-			);
-		}
-		return actualValue;
-	};
 	const actualProjection = projectActualToIntendedShape(actual, intended);
 	if (
 		createUpstreamResourceStateToken(actualProjection) !==
