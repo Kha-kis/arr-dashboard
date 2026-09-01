@@ -5978,6 +5978,7 @@ export const LibraryCleanupApprovalScalarFieldEnum = {
   executionAuditCorrelationId: 'executionAuditCorrelationId',
   reconciledWithoutMutation: 'reconciledWithoutMutation',
   terminalAuditRecordedAt: 'terminalAuditRecordedAt',
+  terminalAuditRecoveryAttemptedAt: 'terminalAuditRecoveryAttemptedAt',
   safetySnapshot: 'safetySnapshot',
   lastExecutionError: 'lastExecutionError',
   reviewedAt: 'reviewedAt',

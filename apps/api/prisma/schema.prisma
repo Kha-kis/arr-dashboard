@@ -1335,6 +1335,7 @@ model LibraryCleanupApproval {
   executionAuditCorrelationId String? // retained after execution so restart recovery can repair terminal audit
   reconciledWithoutMutation Boolean   @default(false)
   terminalAuditRecordedAt DateTime? // post-delete scans are gated on this durable marker
+  terminalAuditRecoveryAttemptedAt DateTime? // restart-safe fair ordering for bounded terminal-audit recovery
   safetySnapshot     String? // Canonical JSON ARR target/file identity approved for mutation
   lastExecutionError String?
   reviewedAt         DateTime?
@@ -1346,6 +1347,7 @@ model LibraryCleanupApproval {
   mediaServerScans LibraryCleanupMediaServerScan[]
 
   @@index([configId, status])
+  @@index([status, terminalAuditRecordedAt, terminalAuditRecoveryAttemptedAt, id])
   @@index([expiresAt])
   @@map("library_cleanup_approvals")
 }
