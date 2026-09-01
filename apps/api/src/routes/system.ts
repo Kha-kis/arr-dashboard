@@ -56,7 +56,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * GET /system/settings
 	 * Get system-wide settings (ports, listen address, app name, etc.)
 	 */
-	app.get("/settings", async (_request, reply) => {
+	app.get("/settings", { config: { backupMutation: true } }, async (_request, reply) => {
 		// Get or create system settings (singleton)
 		let settings = await app.prisma.systemSettings.findUnique({
 			where: { id: 1 },

@@ -30,6 +30,7 @@
 import type { Dirent } from "node:fs";
 import type { QuiTorrent } from "@arr/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withCleanupMaintenanceGuard } from "../../library-cleanup/cleanup-maintenance-gate.js";
 
 // Mock fs/promises BEFORE importing the module under test. The mocks
 // return whatever we've staged via `stagedStats` / `stagedDirs`.
@@ -425,6 +426,42 @@ describe("buildFileIdIndex — folder-wrapped torrents (THE BUG FIX)", () => {
 });
 
 describe("buildFileIdIndex — caching", () => {
+	it("holds an independent restore barrier until best-effort persistence settles", async () => {
+		stageFile("/data/torrents/Foo.mkv", 100, 42, 2);
+		const client = makeFakeClient([
+			makeQuiTorrent({ hash: "h1", name: "Foo.mkv", savePath: "/data/torrents" }),
+		]);
+		let releasePersist!: () => void;
+		const upsert = vi.fn(
+			() =>
+				new Promise<void>((resolve) => {
+					releasePersist = resolve;
+				}),
+		);
+		const prisma = { inodeIndexCache: { upsert } };
+
+		let completed = false;
+		const build = buildFileIdIndex(client as never, QUI_INSTANCE, undefined, prisma as never).then(
+			(result) => {
+				completed = true;
+				return result;
+			},
+		);
+		await vi.waitFor(() => expect(upsert).toHaveBeenCalledTimes(1));
+		expect(completed).toBe(false);
+		const maintenanceWork = vi.fn(async () => undefined);
+		await expect(withCleanupMaintenanceGuard(maintenanceWork)).rejects.toMatchObject({
+			statusCode: 409,
+		});
+		expect(maintenanceWork).not.toHaveBeenCalled();
+
+		releasePersist();
+		await expect(build).resolves.toMatchObject({ statted: 1 });
+		expect(completed).toBe(true);
+		await expect(withCleanupMaintenanceGuard(maintenanceWork)).resolves.toBeUndefined();
+		expect(maintenanceWork).toHaveBeenCalledTimes(1);
+	});
+
 	it("returns cached index on second call within TTL", async () => {
 		stageFile("/data/torrents/Foo.mkv", 100, 42, 2);
 		const client = makeFakeClient([

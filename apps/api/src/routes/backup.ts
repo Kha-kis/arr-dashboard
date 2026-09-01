@@ -331,7 +331,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * GET /backup/settings
 	 * Get backup settings
 	 */
-	app.get("/settings", async (_request, reply) => {
+	app.get("/settings", { config: { backupMutation: true } }, async (_request, reply) => {
 		// Get or create settings atomically
 		const settings = await app.prisma.backupSettings.upsert({
 			where: { id: 1 },

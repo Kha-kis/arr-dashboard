@@ -27,6 +27,7 @@ import { requireEnabledInstance } from "../arr/instance-helpers.js";
 import { parseQueueId } from "../dashboard/queue-utils.js";
 import { AppValidationError, ConflictError, InstanceNotFoundError } from "../errors.js";
 import { getHuntingScheduler } from "../hunting/scheduler.js";
+import { withIndependentCleanupOperationGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
 import {
 	createOwnedJellyfinPublicationSnapshot,
 	refreshJellyfinCache,
@@ -247,7 +248,7 @@ function runBackgroundCacheRefresh(opts: {
 		failureRecordedByRefresh = false,
 		publicationAuthority,
 	} = opts;
-	return (async () => {
+	return withIndependentCleanupOperationGuard(async () => {
 		try {
 			const result = await refresh();
 			if (
@@ -280,7 +281,7 @@ function runBackgroundCacheRefresh(opts: {
 				"pulse-action: cache refresh failed (background)",
 			);
 		}
-	})();
+	});
 }
 
 async function recordBackgroundCacheRefreshFailure(

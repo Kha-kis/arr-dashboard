@@ -25,11 +25,13 @@ export class CleanupMaintenanceConflictError extends Error {
 }
 
 /** Acquire a shared operation guard that remains active until the returned release is called. */
-function acquireCleanupOperationGuardState(): {
+function acquireCleanupOperationGuardState(options: { allowNestedExclusive?: boolean } = {}): {
 	context: OperationGuardContext;
 	release: () => void;
 } {
-	if (maintenanceActive || exclusiveCleanupOperationActive) {
+	const nestedExclusiveOwner =
+		options.allowNestedExclusive === true && operationGuardContext.getStore()?.active === true;
+	if (maintenanceActive || (exclusiveCleanupOperationActive && !nestedExclusiveOwner)) {
 		throw new CleanupMaintenanceConflictError(
 			"Cleanup-sensitive changes are unavailable during database maintenance or ARR service deletion",
 		);
@@ -80,6 +82,23 @@ export async function withCleanupOperationGuard<T>(operation: () => Promise<T>):
 		return await operation();
 	}
 	const { context, release } = acquireCleanupOperationGuardState();
+	try {
+		return await operationGuardContext.run(context, operation);
+	} finally {
+		release();
+	}
+}
+
+/**
+ * Give a detached producer its own shared lease, even when it was launched
+ * from a request or scheduler callback that already owns one. The independent
+ * context prevents the parent from releasing the producer's lease when the
+ * parent returns before the producer settles.
+ */
+export async function withIndependentCleanupOperationGuard<T>(
+	operation: () => Promise<T>,
+): Promise<T> {
+	const { context, release } = acquireCleanupOperationGuardState({ allowNestedExclusive: true });
 	try {
 		return await operationGuardContext.run(context, operation);
 	} finally {

@@ -3,8 +3,9 @@
  * for the background schedulers this API runs.
  *
  * Design intent:
- *  - Observability only. The registry does NOT own scheduling, locking, or
- *    persistence. Each scheduler plugin continues to own its own timer.
+ *  - The registry does NOT own scheduling, concurrency locking, or persistence.
+ *    Each scheduler plugin continues to own its own timer. A runtime may inject
+ *    one process-wide operation wrapper for cross-cutting safety barriers.
  *  - Incremental adoption. A scheduler can register a job up-front and
  *    instrument execution later; the read-only status surface degrades
  *    gracefully if a job has never run.
@@ -124,7 +125,11 @@ export class UnknownJobError extends Error {
 export class SchedulerRegistry {
 	private readonly jobs = new Map<string, JobRecord>();
 
-	constructor(private readonly clock: Clock = systemClock) {}
+	constructor(
+		private readonly clock: Clock = systemClock,
+		private readonly operationWrapper: TickWrapper = passthroughTickWrapper,
+		private readonly isSkippedOperationError: (error: unknown) => boolean = () => false,
+	) {}
 
 	/**
 	 * Register a job's metadata. Safe to call multiple times with the same id —
@@ -186,12 +191,14 @@ export class SchedulerRegistry {
 			throw new SerialJobBusyError(jobId);
 		}
 
+		const previousState = record.state;
+		const previousLastStartedAt = record.lastStartedAt;
 		const startedAt = this.clock.now();
 		record.lastStartedAt = startedAt;
 		record.state = "running";
 
 		try {
-			const result = await fn();
+			const result = await this.operationWrapper(fn);
 			const finishedAt = this.clock.now();
 			record.lastFinishedAt = finishedAt;
 			record.lastSuccessAt = finishedAt;
@@ -204,6 +211,14 @@ export class SchedulerRegistry {
 			}
 			return result;
 		} catch (error) {
+			if (this.isSkippedOperationError(error)) {
+				// The wrapper rejected before the job body ran (for example, while
+				// restore holds maintenance). Preserve the prior execution ledger:
+				// this was neither a success nor a failure.
+				record.lastStartedAt = previousLastStartedAt;
+				record.state = previousState;
+				return undefined as T;
+			}
 			const finishedAt = this.clock.now();
 			record.lastFinishedAt = finishedAt;
 			record.lastFailureAt = finishedAt;

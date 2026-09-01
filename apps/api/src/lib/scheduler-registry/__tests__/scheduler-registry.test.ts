@@ -12,6 +12,11 @@ import {
 	SerialJobBusyError,
 	UnknownJobError,
 } from "../scheduler-registry.js";
+import {
+	CleanupMaintenanceConflictError,
+	withCleanupMaintenanceGuard,
+	withCleanupOperationGuard,
+} from "../../library-cleanup/cleanup-maintenance-gate.js";
 
 /**
  * Clock that advances through a preset sequence of Dates on each `now()` call.
@@ -92,6 +97,71 @@ describe("SchedulerRegistry", () => {
 			totalRuns: 1,
 			totalFailures: 0,
 		});
+	});
+
+	it("keeps the configured operation wrapper active for the complete tick", async () => {
+		const registry = new SchedulerRegistry(undefined, withCleanupOperationGuard);
+		registry.register(BASE_DEFINITION);
+
+		let releaseTick!: () => void;
+		const tickStarted = new Promise<void>((resolve) => {
+			void registry.track(
+				"example-job",
+				() =>
+					new Promise<void>((release) => {
+						resolve();
+						releaseTick = release;
+					}),
+			);
+		});
+		await tickStarted;
+
+		const maintenanceWork = vi.fn();
+		await expect(withCleanupMaintenanceGuard(async () => maintenanceWork())).rejects.toMatchObject({
+			statusCode: 409,
+		});
+		expect(maintenanceWork).not.toHaveBeenCalled();
+
+		releaseTick();
+		await vi.waitFor(() => expect(registry.getStatus("example-job")?.state).toBe("idle"));
+		await expect(withCleanupMaintenanceGuard(async () => "restored")).resolves.toBe("restored");
+	});
+
+	it("treats a maintenance-blocked tick as skipped without changing health history", async () => {
+		const registry = new SchedulerRegistry(
+			undefined,
+			withCleanupOperationGuard,
+			(error) => error instanceof CleanupMaintenanceConflictError,
+		);
+		registry.register(BASE_DEFINITION);
+		let releaseMaintenance!: () => void;
+		const maintenanceStarted = new Promise<void>((resolve) => {
+			void withCleanupMaintenanceGuard(
+				() =>
+					new Promise<void>((release) => {
+						resolve();
+						releaseMaintenance = release;
+					}),
+			);
+		});
+		await maintenanceStarted;
+		const tick = vi.fn(async () => "unexpected");
+
+		await expect(registry.track("example-job", tick)).resolves.toBeUndefined();
+		expect(tick).not.toHaveBeenCalled();
+		expect(registry.getStatus("example-job")).toMatchObject({
+			state: "idle",
+			lastStartedAt: null,
+			lastFinishedAt: null,
+			lastSuccessAt: null,
+			lastFailureAt: null,
+			lastError: null,
+			consecutiveFailures: 0,
+			totalRuns: 0,
+			totalFailures: 0,
+		});
+
+		releaseMaintenance();
 	});
 
 	it("tracks a failed run, re-throws, and increments consecutiveFailures", async () => {

@@ -1,5 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
+import {
+	CleanupMaintenanceConflictError,
+	withCleanupOperationGuard,
+} from "../lib/library-cleanup/cleanup-maintenance-gate.js";
 import { KNOWN_JOBS } from "../lib/scheduler-registry/job-definitions.js";
 import { SchedulerRegistry } from "../lib/scheduler-registry/scheduler-registry.js";
 
@@ -25,7 +29,11 @@ declare module "fastify" {
  */
 const schedulerRegistryPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
-		const registry = new SchedulerRegistry();
+		const registry = new SchedulerRegistry(
+			undefined,
+			withCleanupOperationGuard,
+			(error) => error instanceof CleanupMaintenanceConflictError,
+		);
 		// Pre-register every known job so the /api/system/jobs surface always
 		// reflects the full catalog — even jobs whose plugin has not yet adopted
 		// `registry.track()` show up as idle with no execution data.

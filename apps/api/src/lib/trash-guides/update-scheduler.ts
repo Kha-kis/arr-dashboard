@@ -404,7 +404,7 @@ export class UpdateScheduler {
 					templatesWithScoreConflicts += autoSyncResult.templatesWithScoreConflicts;
 					templatesWithUncertainDeployments += autoSyncResult.uncertain;
 					for (const outcome of autoSyncResult.uncertainDeployments) {
-						this.notifyFn?.(
+						await this.notifyFn?.(
 							{
 								eventType: "TRASH_DEPLOY_UNCERTAIN",
 								title: `Automatic TRaSH deployment needs review on ${outcome.instanceLabel}`,
@@ -521,7 +521,7 @@ export class UpdateScheduler {
 
 			// Notify about auto-sync results
 			if (templatesAutoSynced > 0) {
-				this.notifyFn?.({
+				await this.notifyFn?.({
 					eventType: "TRASH_PROFILE_UPDATED",
 					title: `TRaSH Guides: ${templatesAutoSynced} template(s) auto-synced`,
 					body: `${templatesAutoSynced} synced, ${templatesNeedingAttention} need attention, ${qualitySizeAutoSynced} quality sizes updated`,
@@ -567,7 +567,7 @@ export class UpdateScheduler {
 			this.stats.nextCheckAt = new Date(Date.now() + intervalMs);
 
 			// Notify about sync failure
-			this.notifyFn?.({
+			await this.notifyFn?.({
 				eventType: "TRASH_SYNC_ERROR",
 				title: "TRaSH Guides sync failed",
 				body: getErrorMessage(error),

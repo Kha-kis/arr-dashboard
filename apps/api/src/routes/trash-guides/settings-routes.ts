@@ -151,43 +151,47 @@ export async function registerSettingsRoutes(app: FastifyInstance, _opts: Fastif
 	 * Get the current user's TRaSH Guides settings.
 	 * Creates default settings if they don't exist.
 	 */
-	app.get("/", async (request: FastifyRequest, reply: FastifyReply) => {
-		const userId = request.currentUser!.id; // preHandler guarantees auth
+	app.get(
+		"/",
+		{ config: { backupMutation: true } },
+		async (request: FastifyRequest, reply: FastifyReply) => {
+			const userId = request.currentUser!.id; // preHandler guarantees auth
 
-		// Get or create settings
-		let settings = await app.prisma.trashSettings.findUnique({
-			where: { userId },
-		});
-
-		if (!settings) {
-			settings = await app.prisma.trashSettings.create({
-				data: { userId },
+			// Get or create settings
+			let settings = await app.prisma.trashSettings.findUnique({
+				where: { userId },
 			});
-		}
 
-		return reply.send({
-			settings,
-			defaultRepo: DEFAULT_TRASH_REPO,
-			// Include documentation about the settings
-			documentation: {
-				backupRetentionDays: {
-					description: "Number of days before backups automatically expire",
-					default: 30,
-					range: "0-365 (0 = never expire)",
+			if (!settings) {
+				settings = await app.prisma.trashSettings.create({
+					data: { userId },
+				});
+			}
+
+			return reply.send({
+				settings,
+				defaultRepo: DEFAULT_TRASH_REPO,
+				// Include documentation about the settings
+				documentation: {
+					backupRetentionDays: {
+						description: "Number of days before backups automatically expire",
+						default: 30,
+						range: "0-365 (0 = never expire)",
+					},
+					backupRetention: {
+						description: "Maximum number of backups to keep per instance",
+						default: 10,
+						range: "1-100",
+					},
+					checkFrequency: {
+						description: "How often to check for TRaSH Guides updates (hours)",
+						default: 12,
+						range: "1-168",
+					},
 				},
-				backupRetention: {
-					description: "Maximum number of backups to keep per instance",
-					default: 10,
-					range: "1-100",
-				},
-				checkFrequency: {
-					description: "How often to check for TRaSH Guides updates (hours)",
-					default: 12,
-					range: "1-168",
-				},
-			},
-		});
-	});
+			});
+		},
+	);
 
 	/**
 	 * PATCH /api/trash-guides/settings
