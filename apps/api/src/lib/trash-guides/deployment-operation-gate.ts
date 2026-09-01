@@ -316,10 +316,7 @@ export async function reconcileInterruptedDeploymentHistories(
 		const appliedCustomFormats = state.customFormatDeployments.filter(
 			(item) =>
 				item.status === "applied" ||
-				(item.status === "pending" &&
-					item.action === "created" &&
-					item.resourceId !== null &&
-					item.postStateToken !== null),
+				(item.status === "pending" && item.resourceId !== null && item.postStateToken !== null),
 		);
 		const appliedConfigs: Array<Record<string, unknown>> = appliedCustomFormats.map((item) => ({
 			name: item.name,

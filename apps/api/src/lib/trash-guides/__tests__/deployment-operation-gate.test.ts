@@ -580,7 +580,7 @@ describe("assertNoPendingDeploymentOperation", () => {
 });
 
 describe("reconcileInterruptedDeploymentHistories identified pending mutations", () => {
-	it("preserves identified CF creation and verified profile update audit evidence", async () => {
+	it("preserves checkpointed CF create, CF update, and profile update audit evidence", async () => {
 		const createdProfileBackup = {
 			id: "backup-created-profile",
 			backupData: JSON.stringify({
@@ -596,6 +596,15 @@ describe("reconcileInterruptedDeploymentHistories identified pending mutations",
 						name: "Created CF",
 						status: "pending",
 						postStateToken: "exact-created-format-token",
+						intendedPostStateToken: "different-intended-token",
+					},
+					{
+						beforeFormat: { id: 8, name: "Updated CF" },
+						action: "updated",
+						resourceId: 8,
+						name: "Updated CF",
+						status: "pending",
+						postStateToken: "exact-updated-format-token",
 						intendedPostStateToken: "different-intended-token",
 					},
 				],
@@ -664,6 +673,11 @@ describe("reconcileInterruptedDeploymentHistories identified pending mutations",
 			action: "created",
 			type: "custom_format",
 		};
+		const updatedFormat = {
+			name: "Updated CF",
+			action: "updated",
+			type: "custom_format",
+		};
 		const appliedProfile = {
 			name: "HD-1080p",
 			action: "updated",
@@ -674,8 +688,8 @@ describe("reconcileInterruptedDeploymentHistories identified pending mutations",
 			where: { id: "deployment-created-profile", status: "IN_PROGRESS" },
 			data: expect.objectContaining({
 				status: "UNCERTAIN",
-				appliedCFs: 1,
-				appliedConfigs: JSON.stringify([appliedFormat, appliedProfile]),
+				appliedCFs: 2,
+				appliedConfigs: JSON.stringify([appliedFormat, updatedFormat, appliedProfile]),
 			}),
 		});
 		expect(syncUpdateMany).toHaveBeenCalledWith({
@@ -685,9 +699,9 @@ describe("reconcileInterruptedDeploymentHistories identified pending mutations",
 			},
 			data: expect.objectContaining({
 				status: "UNCERTAIN",
-				configsApplied: 2,
+				configsApplied: 3,
 				configsFailed: 0,
-				appliedConfigs: JSON.stringify([appliedFormat, appliedProfile]),
+				appliedConfigs: JSON.stringify([appliedFormat, updatedFormat, appliedProfile]),
 			}),
 		});
 

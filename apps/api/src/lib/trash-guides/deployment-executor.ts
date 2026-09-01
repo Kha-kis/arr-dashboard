@@ -32,7 +32,11 @@ import {
 } from "./cf-field-utils.js";
 import { checkMutualExclusions } from "./conflict-checker.js";
 import { shouldRetainDeploymentBackup } from "./deployment-backup-state.js";
-import type { CustomFormatRollbackState } from "./deployment-custom-format-state.js";
+import {
+	type CustomFormatRollbackState,
+	createIntendedCustomFormatPostStateToken,
+	projectActualToIntendedShape,
+} from "./deployment-custom-format-state.js";
 import {
 	finalizeDeploymentHistory,
 	finalizeDeploymentHistoryWithFailure,
@@ -237,27 +241,6 @@ function assertIntendedWritableState(
 	if (!actual || typeof actual !== "object" || Array.isArray(actual)) {
 		throw new ConflictError(`${resourceLabel} returned an invalid post-write state.`);
 	}
-	const projectActualToIntendedShape = (actualValue: unknown, intendedValue: unknown): unknown => {
-		if (Array.isArray(intendedValue)) {
-			if (!Array.isArray(actualValue)) return actualValue;
-			return actualValue.map((item, index) =>
-				projectActualToIntendedShape(item, intendedValue[index]),
-			);
-		}
-		if (intendedValue && typeof intendedValue === "object") {
-			if (!actualValue || typeof actualValue !== "object" || Array.isArray(actualValue)) {
-				return actualValue;
-			}
-			const actualRecord = actualValue as Record<string, unknown>;
-			return Object.fromEntries(
-				Object.entries(intendedValue as Record<string, unknown>).map(([key, value]) => [
-					key,
-					projectActualToIntendedShape(actualRecord[key], value),
-				]),
-			);
-		}
-		return actualValue;
-	};
 	const actualProjection = projectActualToIntendedShape(actual, intended);
 	if (
 		createUpstreamResourceStateToken(actualProjection) !==
@@ -267,6 +250,90 @@ function assertIntendedWritableState(
 			`${resourceLabel} did not match the intended post-write state. Resolve or roll back the interrupted deployment before retrying.`,
 		);
 	}
+}
+
+function normalizeCustomFormatReadbackDefaults(
+	actual: unknown,
+	intended: Record<string, unknown>,
+): unknown {
+	if (!actual || typeof actual !== "object" || Array.isArray(actual)) return actual;
+	const actualRecord = actual as Record<string, unknown>;
+	const actualSpecifications = actualRecord.specifications;
+	const intendedSpecifications = intended.specifications;
+	if (!Array.isArray(actualSpecifications) || !Array.isArray(intendedSpecifications)) {
+		return actual;
+	}
+
+	return {
+		...actualRecord,
+		specifications: actualSpecifications.map((actualSpecification, index) => {
+			const intendedSpecification = intendedSpecifications[index];
+			if (
+				!actualSpecification ||
+				typeof actualSpecification !== "object" ||
+				Array.isArray(actualSpecification) ||
+				!intendedSpecification ||
+				typeof intendedSpecification !== "object" ||
+				Array.isArray(intendedSpecification)
+			) {
+				return actualSpecification;
+			}
+			const actualSpec = actualSpecification as Record<string, unknown>;
+			const intendedSpec = intendedSpecification as Record<string, unknown>;
+			if (
+				actualSpec.implementation !== "LanguageSpecification" ||
+				intendedSpec.implementation !== "LanguageSpecification" ||
+				!Array.isArray(actualSpec.fields) ||
+				!Array.isArray(intendedSpec.fields)
+			) {
+				return actualSpecification;
+			}
+			const intendedDefinesExceptLanguage = intendedSpec.fields.some(
+				(field) =>
+					field !== null &&
+					typeof field === "object" &&
+					!Array.isArray(field) &&
+					(field as Record<string, unknown>).name === "exceptLanguage",
+			);
+			if (intendedDefinesExceptLanguage) return actualSpecification;
+
+			const defaultFieldIndexes = actualSpec.fields.flatMap((field, fieldIndex) =>
+				field !== null &&
+				typeof field === "object" &&
+				!Array.isArray(field) &&
+				(field as Record<string, unknown>).name === "exceptLanguage" &&
+				(field as Record<string, unknown>).value === false
+					? [fieldIndex]
+					: [],
+			);
+			if (defaultFieldIndexes.length !== 1) return actualSpecification;
+
+			return {
+				...actualSpec,
+				fields: actualSpec.fields.filter((_, fieldIndex) => fieldIndex !== defaultFieldIndexes[0]),
+			};
+		}),
+	};
+}
+
+function assertIntendedCustomFormatWritableState(
+	actual: unknown,
+	intended: Record<string, unknown>,
+	resourceLabel: string,
+	service: ServiceType,
+): void {
+	try {
+		assertIntendedWritableState(actual, intended, resourceLabel);
+		return;
+	} catch (error) {
+		if (!(error instanceof ConflictError) || service !== "SONARR") throw error;
+	}
+
+	assertIntendedWritableState(
+		normalizeCustomFormatReadbackDefaults(actual, intended),
+		intended,
+		resourceLabel,
+	);
 }
 
 function toPublicQualityProfileMutation(
@@ -669,6 +736,7 @@ export class DeploymentExecutorService {
 			state: CustomFormatRollbackState,
 			append: boolean,
 		) => Promise<void> = async () => {},
+		service: ServiceType = "RADARR",
 	): Promise<DeployCustomFormatsResult> {
 		const errors: string[] = [];
 		const details: DeploymentDetails = {
@@ -752,7 +820,10 @@ export class DeploymentExecutorService {
 						name: templateCF.name,
 						status: "pending",
 						postStateToken: null,
-						intendedPostStateToken: createUpstreamResourceStateToken(updatedCF),
+						intendedPostStateToken: createIntendedCustomFormatPostStateToken(
+							updatedCF as Record<string, unknown>,
+							service,
+						),
 					};
 					await persistMutationState(mutationState, true);
 
@@ -762,16 +833,18 @@ export class DeploymentExecutorService {
 						updatedCF as unknown as Parameters<typeof client.customFormat.update>[1],
 					);
 					const postWriteFormat = await client.customFormat.getById(existingCF.id);
-					assertIntendedWritableState(
+					assertIntendedCustomFormatWritableState(
 						postWriteFormat,
 						updatedCF as Record<string, unknown>,
 						`Custom Format "${templateCF.name}"`,
+						service,
 					);
-					mutationState.status = "applied";
-					mutationState.postStateToken = createUpstreamResourceStateToken(postWriteFormat);
-					await persistMutationState(mutationState, false);
 					updated++;
 					details.updated.push(templateCF.name);
+					mutationState.postStateToken = createUpstreamResourceStateToken(postWriteFormat);
+					await persistMutationState(mutationState, false);
+					mutationState.status = "applied";
+					await persistMutationState(mutationState, false);
 				} else {
 					const freshFormats = await client.customFormat.getAll();
 					const appearedDuringDeployment = freshFormats.find(
@@ -794,6 +867,12 @@ export class DeploymentExecutorService {
 							templateCF.originalConfig?.includeCustomFormatWhenRenaming ?? false,
 						specifications,
 					};
+					// The returned ARR ID changes the hash but not the persisted shape size.
+					// Preflight before writing a pending ledger or starting the POST.
+					void createIntendedCustomFormatPostStateToken(
+						{ ...newCF, id: Number.MAX_SAFE_INTEGER },
+						service,
+					);
 					const mutationState: CustomFormatRollbackState = {
 						beforeFormat: null,
 						action: "created",
@@ -813,18 +892,23 @@ export class DeploymentExecutorService {
 						throw new Error("ARR created the Custom Format without returning its ID");
 					}
 					mutationState.resourceId = createdFormat.id;
-					mutationState.postStateToken = createUpstreamResourceStateToken(createdFormat);
+					mutationState.intendedPostStateToken = createIntendedCustomFormatPostStateToken(
+						{ ...newCF, id: createdFormat.id },
+						service,
+					);
 					await persistMutationState(mutationState, false);
 					const postWriteFormat = await client.customFormat.getById(createdFormat.id);
-					assertIntendedWritableState(
+					assertIntendedCustomFormatWritableState(
 						postWriteFormat,
 						newCF as Record<string, unknown>,
 						`Custom Format "${templateCF.name}"`,
+						service,
 					);
-					mutationState.status = "applied";
-					mutationState.postStateToken = createUpstreamResourceStateToken(postWriteFormat);
 					created++;
 					details.created.push(templateCF.name);
+					mutationState.postStateToken = createUpstreamResourceStateToken(postWriteFormat);
+					await persistMutationState(mutationState, false);
+					mutationState.status = "applied";
 					await persistMutationState(mutationState, false);
 					resolvedResourceIds.set(templateCF.trashId, createdFormat.id);
 				}
@@ -2183,6 +2267,7 @@ export class DeploymentExecutorService {
 						throw error;
 					}
 				},
+				instance.service,
 			);
 			partialCFResult = cfResult;
 			deploymentPhase = "quality_profile";

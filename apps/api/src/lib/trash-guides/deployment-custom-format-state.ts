@@ -1,8 +1,223 @@
+import { Buffer } from "node:buffer";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import { z } from "zod";
 import { createUpstreamResourceStateToken } from "./deployment-target.js";
 
 type ArrClient = SonarrClient | RadarrClient;
+type IntendedStateShape = true | IntendedStateShape[] | { [key: string]: IntendedStateShape };
+const intendedWritableStateTokenPrefix = "arr-dashboard-custom-format-writable-v2";
+const intendedStateShapeTokenMaxLength = 65_536;
+const intendedStateShapeMaxDepth = 64;
+const intendedStateShapeMaxNodes = 10_000;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function createIntendedStateShape(
+	value: unknown,
+	budget: { nodes: number } = { nodes: 0 },
+	depth = 0,
+): IntendedStateShape {
+	budget.nodes += 1;
+	if (budget.nodes > intendedStateShapeMaxNodes || depth > intendedStateShapeMaxDepth) {
+		throw new Error("Custom Format intended state shape is too complex to persist safely.");
+	}
+	if (Array.isArray(value)) {
+		return value.map((child) => createIntendedStateShape(child, budget, depth + 1));
+	}
+	if (isRecord(value)) {
+		return Object.fromEntries(
+			Object.entries(value)
+				.sort(([left], [right]) => left.localeCompare(right))
+				.map(([key, child]) => [key, createIntendedStateShape(child, budget, depth + 1)]),
+		);
+	}
+	return true;
+}
+
+function projectActualToShape(actual: unknown, shape: IntendedStateShape | undefined): unknown {
+	if (shape === undefined || shape === true) return actual;
+	if (Array.isArray(shape)) {
+		if (!Array.isArray(actual)) return actual;
+		return actual.map((item, index) => projectActualToShape(item, shape[index]));
+	}
+	if (!isRecord(actual)) return actual;
+	return Object.fromEntries(
+		Object.entries(shape).map(([key, childShape]) => [
+			key,
+			projectActualToShape(actual[key], childShape),
+		]),
+	);
+}
+
+/** Project server readback to exactly the recursively supplied intended shape. */
+export function projectActualToIntendedShape(actual: unknown, intended: unknown): unknown {
+	return projectActualToShape(actual, createIntendedStateShape(intended));
+}
+
+function isIntendedStateShape(
+	value: unknown,
+	budget: { nodes: number },
+	depth = 0,
+): value is IntendedStateShape {
+	budget.nodes += 1;
+	if (budget.nodes > intendedStateShapeMaxNodes || depth > intendedStateShapeMaxDepth) {
+		return false;
+	}
+	if (value === true) return true;
+	if (Array.isArray(value)) {
+		return value.every((child) => isIntendedStateShape(child, budget, depth + 1));
+	}
+	return (
+		isRecord(value) &&
+		Object.values(value).every((child) => isIntendedStateShape(child, budget, depth + 1))
+	);
+}
+
+function encodeIntendedStateShape(intended: unknown): string {
+	const shape = createIntendedStateShape(intended);
+	if (!isIntendedStateShape(shape, { nodes: 0 })) {
+		throw new Error("Custom Format intended state shape is too complex to persist safely.");
+	}
+	const encoded = Buffer.from(JSON.stringify(shape)).toString("base64url");
+	if (encoded.length > intendedStateShapeTokenMaxLength) {
+		throw new Error("Custom Format intended state shape is too large to persist safely.");
+	}
+	return encoded;
+}
+
+function decodeIntendedStateShape(encoded: string): IntendedStateShape | null {
+	if (
+		encoded.length === 0 ||
+		encoded.length > intendedStateShapeTokenMaxLength ||
+		!/^[A-Za-z0-9_-]+$/.test(encoded)
+	) {
+		return null;
+	}
+	try {
+		const decoded = Buffer.from(encoded, "base64url");
+		if (decoded.toString("base64url") !== encoded) return null;
+		const parsed: unknown = JSON.parse(decoded.toString("utf8"));
+		return isIntendedStateShape(parsed, { nodes: 0 }) ? parsed : null;
+	} catch {
+		return null;
+	}
+}
+
+function getDefaultableSonarrLanguageSpecificationIndexes(
+	intended: Record<string, unknown>,
+): number[] {
+	if (!Array.isArray(intended.specifications)) return [];
+	return intended.specifications.flatMap((specification, index) => {
+		if (
+			!isRecord(specification) ||
+			specification.implementation !== "LanguageSpecification" ||
+			!Array.isArray(specification.fields) ||
+			specification.fields.some((field) => isRecord(field) && field.name === "exceptLanguage")
+		) {
+			return [];
+		}
+		return [index];
+	});
+}
+
+function removeMaterializedSonarrDefaults(actual: unknown, defaultableIndexes: number[]): unknown {
+	if (!isRecord(actual) || !Array.isArray(actual.specifications)) return actual;
+	const defaultableIndexSet = new Set(defaultableIndexes);
+	return {
+		...actual,
+		specifications: actual.specifications.map((specification, index) => {
+			if (
+				!defaultableIndexSet.has(index) ||
+				!isRecord(specification) ||
+				specification.implementation !== "LanguageSpecification" ||
+				!Array.isArray(specification.fields)
+			) {
+				return specification;
+			}
+			const exceptLanguageFields = specification.fields.flatMap((field, fieldIndex) =>
+				isRecord(field) && field.name === "exceptLanguage" ? [{ field, fieldIndex }] : [],
+			);
+			if (exceptLanguageFields.length !== 1 || exceptLanguageFields[0]?.field.value !== false) {
+				return specification;
+			}
+			return {
+				...specification,
+				fields: specification.fields.filter(
+					(_, fieldIndex) => fieldIndex !== exceptLanguageFields[0]?.fieldIndex,
+				),
+			};
+		}),
+	};
+}
+
+/**
+ * Persist a versioned token in the same writable-state domain used by post-write verification.
+ * The token records exactly which Sonarr LanguageSpecifications omitted exceptLanguage, so
+ * recovery cannot apply Sonarr's false-default exception to Radarr or to an explicit value.
+ */
+export function createIntendedCustomFormatPostStateToken(
+	intended: Record<string, unknown>,
+	service: string,
+): string {
+	if (service !== "SONARR" && service !== "RADARR") {
+		throw new Error(`Unsupported Custom Format mutation service: ${service}`);
+	}
+	const defaultableIndexes =
+		service === "SONARR" ? getDefaultableSonarrLanguageSpecificationIndexes(intended) : [];
+	return [
+		intendedWritableStateTokenPrefix,
+		service,
+		defaultableIndexes.length > 0 ? defaultableIndexes.join(",") : "-",
+		encodeIntendedStateShape(intended),
+		createUpstreamResourceStateToken(intended),
+	].join(":");
+}
+
+/** Reconcile a pending mutation without accepting any state the original verifier rejected. */
+export function matchesIntendedCustomFormatPostStateToken(
+	actual: unknown,
+	intendedToken: string,
+): boolean {
+	const [prefix, service, rawIndexes, rawShape, expectedHash, ...extra] = intendedToken.split(":");
+	if (
+		prefix !== intendedWritableStateTokenPrefix ||
+		(service !== "SONARR" && service !== "RADARR") ||
+		extra.length > 0 ||
+		!/^[a-f0-9]{64}$/.test(expectedHash ?? "")
+	) {
+		return false;
+	}
+	const intendedShape = decodeIntendedStateShape(rawShape ?? "");
+	if (!intendedShape) return false;
+	const defaultableIndexes =
+		rawIndexes === "-"
+			? []
+			: /^\d+(?:,\d+)*$/.test(rawIndexes ?? "")
+				? rawIndexes!.split(",").map(Number)
+				: null;
+	if (
+		defaultableIndexes === null ||
+		defaultableIndexes.some(
+			(index, position) =>
+				!Number.isSafeInteger(index) ||
+				index < 0 ||
+				index <= (defaultableIndexes[position - 1] ?? -1),
+		)
+	) {
+		return false;
+	}
+	const matchesIntendedShape = (value: unknown) =>
+		createUpstreamResourceStateToken(projectActualToShape(value, intendedShape)) === expectedHash;
+	if (matchesIntendedShape(actual)) return true;
+	return (
+		service === "SONARR" &&
+		defaultableIndexes.length > 0 &&
+		matchesIntendedShape(removeMaterializedSonarrDefaults(actual, defaultableIndexes))
+	);
+}
+
 const restorableCustomFormatFieldSchema = z.looseObject({
 	name: z.string().min(1),
 	type: z.string().min(1),
@@ -77,10 +292,19 @@ export async function rollbackCustomFormatDeployment(
 		) {
 			return "noop";
 		}
-		if (state.postStateToken && currentToken === state.postStateToken) {
+		if (state.postStateToken) {
+			if (currentToken !== state.postStateToken) {
+				throw new Error(
+					`Custom Format "${state.name}" has an unverified deployment state and was not changed.`,
+				);
+			}
 			verifiedPostStateToken = state.postStateToken;
-		} else if (state.intendedPostStateToken && currentToken === state.intendedPostStateToken) {
-			verifiedPostStateToken = state.intendedPostStateToken;
+		} else if (
+			state.intendedPostStateToken &&
+			(currentToken === state.intendedPostStateToken ||
+				matchesIntendedCustomFormatPostStateToken(current, state.intendedPostStateToken))
+		) {
+			verifiedPostStateToken = currentToken;
 		} else {
 			throw new Error(
 				`Custom Format "${state.name}" has an unverified deployment state and was not changed.`,
