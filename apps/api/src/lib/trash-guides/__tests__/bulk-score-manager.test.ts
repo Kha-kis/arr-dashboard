@@ -33,6 +33,9 @@ describe("BulkScoreManager canonical profile identity", () => {
 		]);
 		const findMappings = vi.fn(async ({ where }) => {
 			const bindings = Array.isArray(where.OR) ? where.OR : [];
+			expect(bindings).not.toContainEqual(
+				expect.objectContaining({ credentialIdentity: expect.anything() }),
+			);
 			const managedCustomFormats = JSON.stringify([
 				{
 					trashId: "trash-reject",
@@ -82,8 +85,9 @@ describe("BulkScoreManager canonical profile identity", () => {
 			},
 			templateQualityProfileMapping: { findMany: findMappings },
 			trashTemplate: {
-				findMany: vi.fn(async ({ where }) =>
-					where.id.in.map((id: string) => ({
+				findMany: vi.fn(async ({ where }) => {
+					expect(where).toMatchObject({ userId });
+					return where.id.in.map((id: string) => ({
 						id,
 						configData: JSON.stringify({
 							qualityProfile: { trash_score_set: "default" },
@@ -95,8 +99,8 @@ describe("BulkScoreManager canonical profile identity", () => {
 								},
 							],
 						}),
-					})),
-				),
+					}));
+				}),
 			},
 		};
 		const clientFactory = {

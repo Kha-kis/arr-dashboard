@@ -727,6 +727,46 @@ describe("instance quality profile score persistence", () => {
 		expect(updateProfile).not.toHaveBeenCalled();
 	});
 
+	it("rebinds a saved score retry only through its owner and exact prior connection", async () => {
+		const updatedAt = new Date("2026-08-09T00:00:00Z");
+		const connectionStateToken = createDeploymentConnectionStateToken(instance);
+		findOverrides.mockResolvedValue([
+			{
+				id: "intent-7",
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				intentOperation: "SET_SCORE",
+				intendedScore: -10_000,
+				status: "UNCERTAIN",
+				updatedAt,
+				connectionGeneration: instance.connectionGeneration,
+				connectionStateToken,
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)(
+			"PATCH",
+			"/instance-1/quality-profiles/4/scores",
+			{ body: { scoreUpdates: [{ customFormatId: 7, score: -10_000 }] } },
+		);
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(updateOverrides).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({
+				where: expect.objectContaining({
+					id: "intent-7",
+					userId,
+					instanceId: instance.id,
+					connectionGeneration: instance.connectionGeneration,
+					connectionStateToken,
+					updatedAt,
+				}),
+			}),
+		);
+	});
+
 	it("rejects a recovery token after the saved intent changes", async () => {
 		findOverrides.mockResolvedValue([
 			{
@@ -811,6 +851,26 @@ describe("instance quality profile score persistence", () => {
 				}),
 			}),
 		);
+		expect(findOverrides.mock.calls[0]?.[0].where.OR[0].OR[0]).not.toHaveProperty(
+			"credentialIdentity",
+		);
+	});
+
+	it("does not pass runtime credential identity evidence to Prisma override reads", async () => {
+		findOverrides.mockImplementationOnce(async ({ where }) => {
+			if (JSON.stringify(where).includes("credentialIdentity")) {
+				throw new Error("Unknown argument `credentialIdentity`");
+			}
+			return [];
+		});
+
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/instance-1/quality-profiles/4/overrides",
+		);
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(findOverrides).toHaveBeenCalledOnce();
 	});
 
 	it("exposes retryable uncertain intent without treating it as an applied override", async () => {
@@ -1134,6 +1194,18 @@ describe("instance quality profile score persistence", () => {
 		);
 		expect(updateOverrides.mock.invocationCallOrder[0]).toBeLessThan(
 			updateProfile.mock.invocationCallOrder[0]!,
+		);
+		expect(updateOverrides).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({
+				where: expect.objectContaining({
+					id: "override-1",
+					userId,
+					instanceId: instance.id,
+					connectionGeneration: instance.connectionGeneration,
+					connectionStateToken: createDeploymentConnectionStateToken(instance),
+				}),
+			}),
 		);
 		expect(deleteOverrides.mock.invocationCallOrder[0]).toBeGreaterThan(
 			updateProfile.mock.invocationCallOrder[0]!,

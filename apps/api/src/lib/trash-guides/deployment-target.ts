@@ -39,6 +39,11 @@ export interface DeploymentConnectionBinding {
 	credentialIdentity?: string;
 }
 
+export type DeploymentConnectionPersistenceBinding = Pick<
+	DeploymentConnectionBinding,
+	"instanceId" | "connectionGeneration" | "connectionStateToken"
+>;
+
 export interface AutomationCatchUpTemplateState {
 	configData: string;
 	instanceOverrides: string | null;
@@ -397,6 +402,17 @@ export function createDeploymentConnectionBindingCandidates(
 	credentialIdentity?: string,
 ): DeploymentConnectionBinding[] {
 	return [createDeploymentConnectionBinding(instance, credentialIdentity)];
+}
+
+/** Project in-memory connection evidence to fields that exist on persisted ownership rows. */
+export function createDeploymentConnectionPersistenceBindings(
+	bindings: DeploymentConnectionBinding[],
+): DeploymentConnectionPersistenceBinding[] {
+	return bindings.map(({ instanceId, connectionGeneration, connectionStateToken }) => ({
+		instanceId,
+		connectionGeneration,
+		connectionStateToken,
+	}));
 }
 
 /** Locate pre-binding mappings so callers can reject them without trusting them as ownership. */
