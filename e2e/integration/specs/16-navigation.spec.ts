@@ -34,6 +34,10 @@ const SIDEBAR_NAVIGATION = [
 
 const EXPECTED_LIDARR_POSTER_CSP =
 	/^Loading the image 'http:\/\/lidarr:8686\/config\/MediaCover\/\d+\/poster\.jpg' violates the following Content Security Policy directive: "img-src 'self' data: https:"\. The action has been blocked\.$/;
+const HISTORY_CONTAINMENT_MESSAGE =
+	"History is temporarily unavailable while safe, bounded pagination is restored.";
+const EXPECTED_HISTORY_RESOURCE_ERROR =
+	/^Failed to load resource: the server responded with a status of 503 \(Service Unavailable\)$/;
 
 interface ConsoleError {
 	route: string;
@@ -60,6 +64,16 @@ test.describe("Full Navigation Sweep", () => {
 		await ensureAuthenticated(page);
 
 		for (const { linkName, route } of SIDEBAR_NAVIGATION) {
+			const historyResponsePromise =
+				route === "/history"
+					? page.waitForResponse((response) => {
+							const url = new URL(response.url());
+							return (
+								response.request().method() === "GET" && url.pathname === "/api/dashboard/history"
+							);
+						})
+					: undefined;
+
 			// Navigate via sidebar with a small delay to avoid rate limiting
 			await clickSidebarLink(page, linkName);
 			await waitForLoadingComplete(page);
@@ -86,6 +100,15 @@ test.describe("Full Navigation Sweep", () => {
 				).toBeVisible();
 			}
 
+			if (route === "/history") {
+				const historyResponse = await historyResponsePromise;
+				expect(historyResponse?.status()).toBe(503);
+				expect(await historyResponse?.json()).toEqual({
+					error: HISTORY_CONTAINMENT_MESSAGE,
+				});
+				await expect(page.getByText(HISTORY_CONTAINMENT_MESSAGE)).toBeVisible();
+			}
+
 			// Delay between navigations
 			await page.waitForTimeout(500);
 		}
@@ -106,9 +129,15 @@ test.describe("Full Navigation Sweep", () => {
 			(error) => error.route === "/library" && EXPECTED_LIDARR_POSTER_CSP.test(error.message),
 		);
 		expect(expectedLidarrCspErrors.length).toBeLessThanOrEqual(1);
+		const expectedHistoryContainmentErrors = consoleErrors.filter(
+			(error) => error.route === "/history" && EXPECTED_HISTORY_RESOURCE_ERROR.test(error.message),
+		);
+		expect(expectedHistoryContainmentErrors.length).toBeLessThanOrEqual(1);
 
 		const unexpectedErrors = consoleErrors.filter(
-			(error) => !(error.route === "/library" && EXPECTED_LIDARR_POSTER_CSP.test(error.message)),
+			(error) =>
+				!(error.route === "/library" && EXPECTED_LIDARR_POSTER_CSP.test(error.message)) &&
+				!(error.route === "/history" && EXPECTED_HISTORY_RESOURCE_ERROR.test(error.message)),
 		);
 
 		expect(unexpectedErrors).toHaveLength(0);
