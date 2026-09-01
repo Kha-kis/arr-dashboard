@@ -1,6 +1,7 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { PrismaClient } from "../../lib/prisma.js";
 import type { Encryptor } from "../auth/encryption.js";
+import { withCleanupOperationGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
 import type { NotificationPayload } from "../notifications/types.js";
 import {
 	passthroughTickWrapper,
@@ -90,6 +91,10 @@ export class BackupScheduler {
 	 * consider implementing a database advisory lock or a distributed lock mechanism.
 	 */
 	private async checkAndRunBackup() {
+		return withCleanupOperationGuard(() => this.checkAndRunBackupGuarded());
+	}
+
+	private async checkAndRunBackupGuarded() {
 		// In-flight guard: prevent overlapping backup runs
 		if (this.isRunning) {
 			this.logger.debug("Backup already running, skipping this check");
@@ -152,7 +157,7 @@ export class BackupScheduler {
 					"Scheduled backup completed",
 				);
 
-				this.notifyFn?.({
+				await this.notifyFn?.({
 					eventType: "BACKUP_COMPLETED",
 					title: "Scheduled backup completed",
 					body: `Next backup at ${nextRunAt.toISOString()}`,
@@ -172,7 +177,7 @@ export class BackupScheduler {
 		} catch (error) {
 			this.logger.error({ err: error }, "Error checking/running scheduled backup");
 
-			this.notifyFn?.({
+			await this.notifyFn?.({
 				eventType: "BACKUP_FAILED",
 				title: "Scheduled backup failed",
 				body: getErrorMessage(error),

@@ -187,6 +187,41 @@ describe("RetryHandler", () => {
 		expect(handler.pendingCount).toBe(0);
 	});
 
+	it("holds mutation ownership until max-retry dead-letter logging settles", async () => {
+		const deadLetterStarted = deferred<void>();
+		const finishDeadLetter = deferred<void>();
+		sendFn.mockResolvedValue({
+			success: false,
+			retryable: true,
+			error: "server error",
+		} satisfies SendResult);
+		logDeliveryFn.mockImplementation(async (_channelId, _channelType, _payload, status) => {
+			if (status === "dead_letter") {
+				deadLetterStarted.resolve();
+				await finishDeadLetter.promise;
+			}
+		});
+		handler = new RetryHandler(sendFn, logDeliveryFn, mockLogger);
+		handler.enqueue({
+			channelId: "ch-1",
+			channelType: "DISCORD",
+			config: { webhookUrl: "https://example.com" },
+			payload: createPayload(),
+		});
+
+		const advance = vi.advanceTimersByTimeAsync(30_000 + 120_000 + 600_000);
+		await deadLetterStarted.promise;
+		await Promise.resolve();
+		await Promise.resolve();
+		await expect(withCleanupMaintenanceGuard(async () => undefined)).rejects.toBeInstanceOf(
+			CleanupMaintenanceConflictError,
+		);
+
+		finishDeadLetter.resolve();
+		await advance;
+		expect(handler.pendingCount).toBe(0);
+	});
+
 	it("respects retryAfterMs from 429 response", async () => {
 		sendFn.mockResolvedValueOnce({
 			success: false,

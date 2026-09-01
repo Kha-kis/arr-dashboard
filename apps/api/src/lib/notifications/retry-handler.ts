@@ -69,13 +69,13 @@ export class RetryHandler {
 	private scheduleRetry(
 		key: string,
 		item: Omit<RetryItem, "timer"> & { retryAfterMs?: number },
-	): void {
+	): Promise<void> | void {
 		if (item.attempt >= MAX_RETRIES) {
 			this.logger.warn(
 				{ channelId: item.channelId, eventType: item.payload.eventType, attempts: item.attempt },
 				"Notification dead-lettered after max retries",
 			);
-			withCleanupOperationGuard(() =>
+			const deadLetter = withCleanupOperationGuard(() =>
 				this.logDeliveryFn(
 					item.channelId,
 					item.channelType,
@@ -86,7 +86,7 @@ export class RetryHandler {
 				),
 			).catch(() => {});
 			this.queue.delete(key);
-			return;
+			return deadLetter;
 		}
 
 		const backoffMs =
@@ -116,7 +116,7 @@ export class RetryHandler {
 						).catch(() => {});
 						this.queue.delete(key);
 					} else if (result.retryable) {
-						this.scheduleRetry(key, {
+						await this.scheduleRetry(key, {
 							...item,
 							attempt: item.attempt + 1,
 							retryAfterMs: result.retryAfterMs,
@@ -143,14 +143,14 @@ export class RetryHandler {
 						{ channelId: item.channelId, attempt: item.attempt + 1 },
 						"Notification retry paused during database maintenance",
 					);
-					this.scheduleRetry(key, { ...item, attempt: item.attempt });
+					await this.scheduleRetry(key, { ...item, attempt: item.attempt });
 					return;
 				}
 				this.logger.warn(
 					{ err: retryErr, channelId: item.channelId, attempt: item.attempt + 1 },
 					"Notification retry threw unexpected error, re-queuing",
 				);
-				this.scheduleRetry(key, { ...item, attempt: item.attempt + 1 });
+				await this.scheduleRetry(key, { ...item, attempt: item.attempt + 1 });
 			}
 		}, backoffMs);
 
