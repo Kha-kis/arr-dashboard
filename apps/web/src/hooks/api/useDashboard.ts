@@ -36,7 +36,8 @@ export const useMultiInstanceHistoryQuery = (params?: {
 		queryFn: () => fetchMultiInstanceHistory(params),
 		staleTime: 60 * 1000,
 		gcTime: 2 * 60 * 1000, // 2 minutes - cleanup old param combinations
-		refetchInterval: POLLING_STANDARD,
+		retry: false,
+		refetchInterval: false,
 	});
 
 export const useMultiInstanceCalendarQuery = (params: {

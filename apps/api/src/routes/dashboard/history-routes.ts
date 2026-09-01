@@ -1,167 +1,17 @@
-import { ARR_SERVICES_UPPER, type HistoryItem, historyItemSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
-import { z } from "zod";
-import {
-	executeOnInstances,
-	isLidarrClient,
-	isProwlarrClient,
-	isRadarrClient,
-	isReadarrClient,
-	isSonarrClient,
-} from "../../lib/arr/client-helpers.js";
-import { type HistoryService, normalizeHistoryItem } from "../../lib/dashboard/history-utils.js";
-import { validateRequest } from "../../lib/utils/validate.js";
-import { validateAndCollect } from "../../lib/validation/validate-batch.js";
+
+export const HISTORY_UNAVAILABLE_MESSAGE =
+	"History is temporarily unavailable while safe, bounded pagination is restored.";
 
 /**
- * Query schema for history endpoint.
- * Note: Pagination is handled client-side after filtering/sorting aggregated results
- * from multiple instances. Backend fetches up to 2500 records per instance.
- */
-const historyQuerySchema = z.object({
-	startDate: z.string().optional(),
-	endDate: z.string().optional(),
-});
-
-/**
- * History-related routes for the dashboard
+ * History-related routes for the dashboard.
+ *
+ * History is intentionally unavailable on stable until request-wide provider
+ * work and partial-result reporting can be bounded without hiding records.
  */
 export const historyRoutes: FastifyPluginCallback = (app, _opts, done) => {
-	/**
-	 * GET /dashboard/history
-	 * Fetches download history from all enabled Sonarr, Radarr, Prowlarr, Lidarr, and Readarr instances
-	 */
-	app.get("/dashboard/history", async (request, reply) => {
-		const { startDate, endDate } = validateRequest(historyQuerySchema, request.query ?? {});
-
-		const response = await executeOnInstances(
-			app,
-			request.currentUser!.id,
-			{ serviceTypes: [...ARR_SERVICES_UPPER] },
-			async (client, instance) => {
-				const service = instance.service.toLowerCase() as HistoryService;
-				const recordLimit = 2500;
-
-				// Fetch history using SDK with pagination params
-				let rawRecords: unknown[] = [];
-				let totalRecords = 0;
-
-				if (isSonarrClient(client)) {
-					const result = await client.history.get({
-						page: 1,
-						pageSize: recordLimit,
-						sortKey: "date",
-						sortDirection: "descending",
-						...(startDate && { since: startDate }),
-						...(endDate && { until: endDate }),
-					});
-					rawRecords = result.records ?? [];
-					totalRecords = result.totalRecords ?? rawRecords.length;
-				} else if (isRadarrClient(client)) {
-					const result = await client.history.get({
-						page: 1,
-						pageSize: recordLimit,
-						sortKey: "date",
-						sortDirection: "descending",
-						...(startDate && { since: startDate }),
-						...(endDate && { until: endDate }),
-					});
-					rawRecords = result.records ?? [];
-					totalRecords = result.totalRecords ?? rawRecords.length;
-				} else if (isProwlarrClient(client)) {
-					const result = await client.history.get({
-						page: 1,
-						pageSize: recordLimit,
-						sortKey: "date",
-						sortDirection: "descending",
-					});
-					rawRecords = result.records ?? [];
-					totalRecords = result.totalRecords ?? rawRecords.length;
-				} else if (isLidarrClient(client)) {
-					const result = await client.history.get({
-						page: 1,
-						pageSize: recordLimit,
-						sortKey: "date",
-						sortDirection: "descending",
-						...(startDate && { since: startDate }),
-						...(endDate && { until: endDate }),
-					});
-					rawRecords = result.records ?? [];
-					totalRecords = result.totalRecords ?? rawRecords.length;
-				} else if (isReadarrClient(client)) {
-					const result = await client.history.get({
-						page: 1,
-						pageSize: recordLimit,
-						sortKey: "date",
-						sortDirection: "descending",
-						...(startDate && { since: startDate }),
-						...(endDate && { until: endDate }),
-					});
-					rawRecords = result.records ?? [];
-					totalRecords = result.totalRecords ?? rawRecords.length;
-				}
-
-				// Reduce peak heap (issue #427 follow-up). With recordLimit=2500
-				// per instance × N enabled instances, the parallel fan-out inside
-				// executeOnInstances can hold all raw history payloads (each
-				// 1–2 KB) AND their normalized copies simultaneously. Drop each
-				// raw entry as it's normalized so only one copy is alive at a time.
-				const normalized: ReturnType<typeof normalizeHistoryItem>[] = [];
-				for (let i = 0; i < rawRecords.length; i++) {
-					normalized.push({
-						...normalizeHistoryItem(rawRecords[i], service),
-						instanceId: instance.id,
-						instanceName: instance.label,
-					});
-					rawRecords[i] = null;
-				}
-				rawRecords = [];
-
-				const { items } = validateAndCollect(
-					normalized,
-					historyItemSchema,
-					`dashboard/history/${service}`,
-					request.log,
-					{ integration: "dashboard", category: "history", mode: "tolerant" },
-				);
-
-				return {
-					items,
-					totalRecords,
-				};
-			},
-		);
-
-		// Transform results to match expected format
-		const results = response.instances.map((result) => ({
-			instanceId: result.instanceId,
-			instanceName: result.instanceName,
-			service: result.service as HistoryService,
-			data: result.success ? result.data.items : [],
-			totalRecords: result.success ? result.data.totalRecords : 0,
-		}));
-
-		// Collect all items for aggregation
-		const allItems: HistoryItem[] = [];
-		for (const result of response.instances) {
-			if (result.success) {
-				allItems.push(...result.data.items);
-			}
-		}
-
-		// Sort all items by date descending
-		allItems.sort((a, b) => {
-			const dateA = a.date ? new Date(a.date).getTime() : 0;
-			const dateB = b.date ? new Date(b.date).getTime() : 0;
-			return dateB - dateA;
-		});
-
-		// Return all items - frontend will handle pagination after filtering
-		return reply.send({
-			instances: results,
-			aggregated: allItems,
-			totalCount: allItems.length,
-		});
+	app.get("/dashboard/history", async (_request, reply) => {
+		return reply.code(503).send({ error: HISTORY_UNAVAILABLE_MESSAGE });
 	});
 
 	done();

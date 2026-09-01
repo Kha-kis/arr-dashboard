@@ -140,7 +140,7 @@ Per-row sleep is 100ms regardless of phase — that's the politeness budget agai
 | Route | Purpose | Refresh |
 |-------|---------|---------|
 | `/dashboard/queue` | Download queue | 30s |
-| `/dashboard/history` | Download history | 60s |
+| `/dashboard/history` | Temporarily returns 503 while request-wide History pagination is restored safely | Disabled |
 | `/dashboard/calendar` | Upcoming releases | 60s |
 | `/dashboard/statistics` | Aggregate stats | 120s |
 

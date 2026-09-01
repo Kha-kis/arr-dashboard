@@ -19,7 +19,8 @@
 export const dashboardKeys = {
 	all: ["dashboard"] as const,
 	queue: ["dashboard", "queue"] as const,
-	history: (params: Record<string, unknown>) => ["dashboard", "history", params] as const,
+	history: (params: Record<string, unknown>) =>
+		["dashboard", "history", "containment", params] as const,
 	calendar: (params: Record<string, unknown>) => ["dashboard", "calendar", params] as const,
 	statistics: ["dashboard", "statistics"] as const,
 };

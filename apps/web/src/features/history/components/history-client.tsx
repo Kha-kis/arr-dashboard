@@ -202,6 +202,25 @@ export const HistoryClient = () => {
 		);
 	}
 
+	if (error) {
+		return (
+			<div className="space-y-6">
+				<PremiumPageHeader
+					label="Activity"
+					labelIcon={History}
+					title="Download History"
+					gradientTitle
+					description="History is disabled until bounded provider pagination can be restored safely."
+				/>
+				<Alert variant="danger">
+					<AlertDescription>
+						History is temporarily unavailable while safe, bounded pagination is restored.
+					</AlertDescription>
+				</Alert>
+			</div>
+		);
+	}
+
 	return (
 		<>
 			{/* Header */}
@@ -671,15 +690,6 @@ export const HistoryClient = () => {
 					}}
 					pageSizeOptions={[25, 50, 100]}
 				/>
-			)}
-
-			{/* Error Alert */}
-			{error && (
-				<Alert variant="danger">
-					<AlertDescription>
-						Unable to load history data. Please refresh and try again.
-					</AlertDescription>
-				</Alert>
 			)}
 
 			{/* Failure Spotlight Alert */}
