@@ -10,7 +10,7 @@ import { z } from "zod";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
 import {
 	CleanupRunLeaseLostError,
-	withCleanupTopologyMutationLease,
+	withRenewableCleanupTopologyMutationLease,
 } from "../../lib/library-cleanup/cleanup-executor.js";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import {
@@ -657,7 +657,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 			initialPairedDeploymentRows.map((deployment) => deployment.id),
 		);
 
-		return await withCleanupTopologyMutationLease(
+		return await withRenewableCleanupTopologyMutationLease(
 			{ prisma: app.prisma, log: request.log },
 			userId,
 			async (topologyLease) => {

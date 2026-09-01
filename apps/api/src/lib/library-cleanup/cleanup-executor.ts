@@ -980,7 +980,7 @@ export class CleanupPolicyMutationConflictError extends Error {
 async function withCleanupMutationLease<T>(
 	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
 	userId: string,
-	mutate: (runLease: CleanupRunLease) => Promise<T>,
+	mutate: () => Promise<T>,
 	conflictError: () => Error,
 	options: {
 		configId?: string;
@@ -992,7 +992,7 @@ async function withCleanupMutationLease<T>(
 		? withExclusiveCleanupOperationGuard
 		: withCleanupOperationGuard;
 	return await runWithOperationGuard(async () => {
-		const { prisma } = deps;
+		const { prisma, log } = deps;
 		// Ensure the per-user coordination row exists when the caller does not
 		// already have its ID. This closes the initialization race between a
 		// cleanup-sensitive write and the first cleanup run.
@@ -1004,20 +1004,27 @@ async function withCleanupMutationLease<T>(
 					create: { userId },
 					select: { id: true },
 				});
-		let runLease: CleanupRunLease;
-		try {
-			runLease = await startCleanupRunLease(deps, userId, config.id, {
-				leaseRowMayBeDeleted: options.leaseRowMayBeDeleted,
-			});
-		} catch (error) {
-			if (error instanceof CleanupRunAlreadyInProgressError) throw conflictError();
-			throw error;
-		}
+		const runClaimToken = await acquireCleanupRunLease(prisma, userId, config.id);
+		if (!runClaimToken) throw conflictError();
 
 		try {
-			return await mutate(runLease);
+			return await mutate();
 		} finally {
-			await runLease.release();
+			await releaseCleanupRunLease(prisma, userId, config.id, runClaimToken)
+				.then((released) => {
+					if (!released && !options.leaseRowMayBeDeleted) {
+						log.warn(
+							{ configId: config.id },
+							"Service topology mutation finished after its cleanup lease ownership changed",
+						);
+					}
+				})
+				.catch((error) => {
+					log.error(
+						{ err: error, configId: config.id },
+						"Service topology mutation finished but its cleanup lease could not be released",
+					);
+				});
 		}
 	});
 }
@@ -1025,7 +1032,7 @@ async function withCleanupMutationLease<T>(
 export async function withCleanupTopologyMutationLease<T>(
 	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
 	userId: string,
-	mutate: (runLease: CleanupRunLease) => Promise<T>,
+	mutate: () => Promise<T>,
 	options: { leaseRowMayBeDeleted?: boolean } = {},
 ): Promise<T> {
 	return await withCleanupMutationLease(
@@ -1037,11 +1044,46 @@ export async function withCleanupTopologyMutationLease<T>(
 	);
 }
 
+/**
+ * Hold and renew the cross-process cleanup lease for recovery operations whose
+ * upstream request count is not statically bounded. The callback must assert
+ * ownership at every durable or upstream mutation boundary.
+ */
+export async function withRenewableCleanupTopologyMutationLease<T>(
+	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
+	userId: string,
+	mutate: (runLease: CleanupRunLease) => Promise<T>,
+): Promise<T> {
+	return await withCleanupOperationGuard(async () => {
+		const config = await deps.prisma.libraryCleanupConfig.upsert({
+			where: { userId },
+			update: {},
+			create: { userId },
+			select: { id: true },
+		});
+		let runLease: CleanupRunLease;
+		try {
+			runLease = await startCleanupRunLease(deps, userId, config.id);
+		} catch (error) {
+			if (error instanceof CleanupRunAlreadyInProgressError) {
+				throw new CleanupTopologyMutationConflictError();
+			}
+			throw error;
+		}
+
+		try {
+			return await mutate(runLease);
+		} finally {
+			await runLease.release();
+		}
+	});
+}
+
 /** Serialize destructive ARR service deletion against every cleanup/TRaSH mutation. */
 export async function withExclusiveCleanupTopologyMutationLease<T>(
 	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
 	userId: string,
-	mutate: (runLease: CleanupRunLease) => Promise<T>,
+	mutate: () => Promise<T>,
 	options: { leaseRowMayBeDeleted?: boolean } = {},
 ): Promise<T> {
 	return await withCleanupMutationLease(
@@ -1056,7 +1098,7 @@ export async function withExclusiveCleanupTopologyMutationLease<T>(
 export async function withCleanupPolicyMutationLease<T>(
 	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
 	userId: string,
-	mutate: (runLease: CleanupRunLease) => Promise<T>,
+	mutate: () => Promise<T>,
 	options: { configId?: string } = {},
 ): Promise<T> {
 	return await withCleanupMutationLease(

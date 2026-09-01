@@ -11,6 +11,7 @@ import { isNonterminalUndeploy } from "../../lib/backup/backup-validation.js";
 import {
 	CleanupRunLeaseLostError,
 	withCleanupTopologyMutationLease,
+	withRenewableCleanupTopologyMutationLease,
 } from "../../lib/library-cleanup/cleanup-executor.js";
 import {
 	type ActiveDeploymentOwnership,
@@ -528,7 +529,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			});
 		}
 
-		return withCleanupTopologyMutationLease(
+		return withRenewableCleanupTopologyMutationLease(
 			{ prisma: app.prisma, log: request.log },
 			userId,
 			async (topologyLease) => {
