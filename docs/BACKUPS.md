@@ -24,6 +24,9 @@ The payload contains all of these arrays:
   `notificationAggregationConfig`, `autoTagRule`, `labelSyncRule`,
   `queueCleanerConfig`, `libraryCleanupConfig`, `libraryCleanupRule`,
   `namingConfig`, and `userCustomFormat`.
+- Cleanup coordination: active `libraryCleanupApproval` rows and active
+  `libraryCleanupMediaServerScan` rows are included; an active scan also
+  carries its parent approval even when that approval is already executed.
 - Bounded operational history: `trashSyncHistory`,
   `templateDeploymentHistory`, `namingDeployHistory`, `huntLogs`, and
   `huntSearchHistory`.
@@ -91,9 +94,9 @@ are copied.
 | `LibrarySyncStatus` | disposable/rebuildable cache | excluded |
 | `QueueCleanerStrike` | audit/history | excluded |
 | `QueueCleanerLog` | audit/history | excluded |
-| `LibraryCleanupApproval` | audit/history | excluded |
-| `LibraryCleanupMediaServerScan` | disposable/rebuildable cache | excluded |
-| `LibraryCleanupMediaServerScanLease` | disposable/rebuildable cache | excluded |
+| `LibraryCleanupApproval` | coordination | active statuses included; terminal audit excluded |
+| `LibraryCleanupMediaServerScan` | coordination | pending/triggering/failed statuses included; terminal audit excluded |
+| `LibraryCleanupMediaServerScanLease` | coordination | excluded; nonportable lease is recoverable from scan state |
 | `LibraryCleanupLog` | audit/history | excluded |
 | `LibraryCleanupAuditEvent` | audit/history | excluded |
 | `NotificationLog` | audit/history | excluded |

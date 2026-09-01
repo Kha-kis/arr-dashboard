@@ -198,7 +198,7 @@ describe("POST /api/backup/create", () => {
 		expect(response.statusCode).toBe(409);
 		expect(JSON.parse(response.payload)).toEqual({
 			error:
-				"This legacy backup does not contain complete configuration coverage and cannot safely replace the current installation. Restore it to a clean installation or create a new backup with the current version.",
+				"This backup does not contain complete configuration or recovery coverage and cannot safely replace the current installation. Create a new backup with the current version and retry.",
 		});
 	});
 });

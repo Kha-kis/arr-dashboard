@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
+import { BackupCompatibilityError } from "../../errors.js";
 import type { PrismaClient } from "../../prisma.js";
 import { exportDatabase, restoreDatabase } from "../backup-database.js";
 
@@ -45,6 +46,8 @@ const TABLE_NAMES = [
 	"queueCleanerConfig",
 	"libraryCleanupConfig",
 	"libraryCleanupRule",
+	"libraryCleanupApproval",
+	"libraryCleanupMediaServerScan",
 	"namingConfig",
 	"namingDeployHistory",
 	"userCustomFormat",
@@ -458,10 +461,33 @@ describe("exportDatabase — operational history exclusion", () => {
 });
 
 describe("restoreDatabase — current coordination preservation", () => {
+	async function expectCompatibilityFailure(
+		operation: Promise<unknown>,
+		expectedCause: string,
+	): Promise<void> {
+		let captured: unknown;
+		try {
+			await operation;
+		} catch (error) {
+			captured = error;
+		}
+
+		expect(captured).toBeInstanceOf(BackupCompatibilityError);
+		const compatibilityError = captured as BackupCompatibilityError;
+		expect(compatibilityError.message).toBe(
+			"This backup does not contain complete configuration or recovery coverage and cannot safely replace the current installation. Create a new backup with the current version and retry.",
+		);
+		expect(compatibilityError.cause).toBeInstanceOf(Error);
+		expect((compatibilityError.cause as Error).message).toContain(expectedCause);
+	}
+
 	function makeRestorePrisma(options: {
 		currentSync?: Array<Record<string, unknown>>;
 		currentDeployments?: Array<Record<string, unknown>>;
 		currentSnapshots?: Array<Record<string, unknown>>;
+		currentApprovals?: Array<Record<string, unknown>>;
+		currentScanParentApprovals?: Array<Record<string, unknown>>;
+		currentScans?: Array<Record<string, unknown>>;
 	}) {
 		const firstDelete = vi.fn().mockResolvedValue({ count: 0 });
 		const tx = {
@@ -483,6 +509,17 @@ describe("restoreDatabase — current coordination preservation", () => {
 			},
 			namingDeployHistory: {
 				findMany: vi.fn().mockResolvedValue([]),
+				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
+			libraryCleanupApproval: {
+				findMany: vi
+					.fn()
+					.mockResolvedValueOnce(options.currentApprovals ?? [])
+					.mockResolvedValue(options.currentScanParentApprovals ?? []),
+				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
+			libraryCleanupMediaServerScan: {
+				findMany: vi.fn().mockResolvedValue(options.currentScans ?? []),
 				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
 			},
 			huntSearchHistory: { deleteMany: firstDelete },
@@ -534,8 +571,88 @@ describe("restoreDatabase — current coordination preservation", () => {
 			],
 		});
 
-		await expect(restoreDatabase(prisma, incomingData())).rejects.toThrow(
+		await expectCompatibilityFailure(
+			restoreDatabase(prisma, incomingData()),
 			"current nonterminal coordination row current-sync",
+		);
+		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
+	it("rejects a restore that omits an active cleanup approval before deleting tables", async () => {
+		const currentApproval = {
+			id: "active-cleanup-approval",
+			configId: "cleanup-config",
+			instanceId: "instance-1",
+			arrItemId: 815,
+			itemType: "movie",
+			title: "Current cleanup target",
+			matchedRuleId: "rule-1",
+			matchedRuleName: "Current cleanup rule",
+			reason: "age",
+			action: "delete",
+			sizeOnDisk: BigInt(815),
+			status: "approved",
+			expiresAt: new Date("2030-01-01T00:00:00.000Z"),
+			createdAt: new Date("2026-08-31T00:00:00.000Z"),
+		};
+		const { prisma, firstDelete } = makeRestorePrisma({
+			currentApprovals: [currentApproval],
+		});
+
+		await expectCompatibilityFailure(
+			restoreDatabase(prisma, incomingData({ libraryCleanupApproval: [] })),
+			"current active cleanup approval active-cleanup-approval is missing from incoming data",
+		);
+		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
+	it("rejects a restore that omits a retryable media-server scan and its terminal parent", async () => {
+		const currentParent = {
+			id: "executed-cleanup-parent",
+			configId: "cleanup-config",
+			instanceId: "instance-1",
+			arrItemId: 816,
+			itemType: "series",
+			title: "Executed cleanup target",
+			matchedRuleId: "rule-1",
+			matchedRuleName: "Current cleanup rule",
+			reason: "size",
+			action: "delete",
+			sizeOnDisk: BigInt(816),
+			status: "executed",
+			expiresAt: new Date("2030-01-01T00:00:00.000Z"),
+			createdAt: new Date("2026-08-31T00:00:00.000Z"),
+		};
+		const currentScan = {
+			id: "retryable-cleanup-scan",
+			approvalId: currentParent.id,
+			instanceId: "instance-1",
+			service: "PLEX",
+			mediaType: "show",
+			targetKey: "series:816",
+			status: "failed",
+			attemptCount: 1,
+			completedSectionIds: "[]",
+			lastError: "temporary provider failure",
+			createdAt: new Date("2026-08-31T00:00:00.000Z"),
+			updatedAt: new Date("2026-08-31T00:01:00.000Z"),
+		};
+		const { prisma, firstDelete } = makeRestorePrisma({
+			currentScanParentApprovals: [currentParent],
+			currentScans: [currentScan],
+		});
+
+		await expectCompatibilityFailure(
+			restoreDatabase(
+				prisma,
+				incomingData({
+					libraryCleanupApproval: [
+						{ ...currentParent, sizeOnDisk: currentParent.sizeOnDisk.toString() },
+					],
+					libraryCleanupMediaServerScan: [],
+				}),
+			),
+			"current active media-server scan retryable-cleanup-scan is missing from incoming data",
 		);
 		expect(firstDelete).not.toHaveBeenCalled();
 	});
@@ -555,7 +672,8 @@ describe("restoreDatabase — current coordination preservation", () => {
 			],
 		});
 
-		await expect(restoreDatabase(prisma, incomingData())).rejects.toThrow(
+		await expectCompatibilityFailure(
+			restoreDatabase(prisma, incomingData()),
 			"current nonterminal coordination row interrupted-sync",
 		);
 		expect(firstDelete).not.toHaveBeenCalled();
@@ -583,9 +701,10 @@ describe("restoreDatabase — current coordination preservation", () => {
 			],
 		});
 
-		await expect(
+		await expectCompatibilityFailure(
 			restoreDatabase(prisma, incomingData({ templateDeploymentHistory: [currentDeployment] })),
-		).rejects.toThrow("current recovery snapshot snapshot-deployment");
+			"current recovery snapshot snapshot-deployment",
+		);
 		expect(firstDelete).not.toHaveBeenCalled();
 	});
 
@@ -613,7 +732,7 @@ describe("restoreDatabase — current coordination preservation", () => {
 			currentSnapshots: [currentSnapshot],
 		});
 
-		await expect(
+		await expectCompatibilityFailure(
 			restoreDatabase(
 				prisma,
 				incomingData({
@@ -621,7 +740,8 @@ describe("restoreDatabase — current coordination preservation", () => {
 					trashBackups: [currentSnapshot],
 				}),
 			),
-		).rejects.toThrow("current nonterminal coordination row current-sync changed userId");
+			"current nonterminal coordination row current-sync changed userId",
+		);
 		expect(firstDelete).not.toHaveBeenCalled();
 	});
 
@@ -644,7 +764,7 @@ describe("restoreDatabase — current coordination preservation", () => {
 			currentSnapshots: [currentSnapshot],
 		});
 
-		await expect(
+		await expectCompatibilityFailure(
 			restoreDatabase(
 				prisma,
 				incomingData({
@@ -652,7 +772,8 @@ describe("restoreDatabase — current coordination preservation", () => {
 					trashBackups: [{ ...currentSnapshot, backupData: "stale-sync-evidence" }],
 				}),
 			),
-		).rejects.toThrow("current recovery snapshot snapshot-sync changed backupData");
+			"current recovery snapshot snapshot-sync changed backupData",
+		);
 		expect(firstDelete).not.toHaveBeenCalled();
 	});
 
@@ -680,7 +801,7 @@ describe("restoreDatabase — current coordination preservation", () => {
 			currentSnapshots: [currentSnapshot],
 		});
 
-		await expect(
+		await expectCompatibilityFailure(
 			restoreDatabase(
 				prisma,
 				incomingData({
@@ -690,7 +811,6 @@ describe("restoreDatabase — current coordination preservation", () => {
 					trashBackups: [currentSnapshot],
 				}),
 			),
-		).rejects.toThrow(
 			"current nonterminal coordination row current-deployment changed appliedConfigs",
 		);
 		expect(firstDelete).not.toHaveBeenCalled();
@@ -719,7 +839,7 @@ describe("restoreDatabase — current coordination preservation", () => {
 			currentSnapshots: [currentSnapshot],
 		});
 
-		await expect(
+		await expectCompatibilityFailure(
 			restoreDatabase(
 				prisma,
 				incomingData({
@@ -727,7 +847,6 @@ describe("restoreDatabase — current coordination preservation", () => {
 					trashBackups: [currentSnapshot],
 				}),
 			),
-		).rejects.toThrow(
 			"current nonterminal coordination row current-deployment changed templateSnapshot",
 		);
 		expect(firstDelete).not.toHaveBeenCalled();
@@ -763,7 +882,7 @@ describe("restoreDatabase — current coordination preservation", () => {
 			currentSnapshots: [currentSnapshot],
 		});
 
-		await expect(
+		await expectCompatibilityFailure(
 			restoreDatabase(
 				prisma,
 				incomingData({
@@ -772,7 +891,8 @@ describe("restoreDatabase — current coordination preservation", () => {
 					trashBackups: [currentSnapshot],
 				}),
 			),
-		).rejects.toThrow("current undeploy fallback template template-1 changed configData");
+			"current undeploy fallback template template-1 changed configData",
+		);
 		expect(firstDelete).not.toHaveBeenCalled();
 	});
 
@@ -799,7 +919,7 @@ describe("restoreDatabase — current coordination preservation", () => {
 			currentSnapshots: [currentSnapshot],
 		});
 
-		await expect(
+		await expectCompatibilityFailure(
 			restoreDatabase(
 				prisma,
 				incomingData({
@@ -807,7 +927,8 @@ describe("restoreDatabase — current coordination preservation", () => {
 					trashBackups: [currentSnapshot],
 				}),
 			),
-		).rejects.toThrow("current nonterminal coordination row current-sync changed appliedConfigs");
+			"current nonterminal coordination row current-sync changed appliedConfigs",
+		);
 		expect(firstDelete).not.toHaveBeenCalled();
 	});
 });

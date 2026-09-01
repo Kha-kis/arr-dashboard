@@ -18,6 +18,8 @@ const DURABLE_CONFIG_KEYS = [
 	"namingConfig",
 	"userCustomFormat",
 	"namingDeployHistory",
+	"libraryCleanupApproval",
+	"libraryCleanupMediaServerScan",
 ] as const;
 
 const COMPLETE_V1_2_PAYLOAD_KEYS = [
@@ -81,6 +83,13 @@ describe("backup format 1.2", () => {
 		expect(() => validateBackup(backup)).toThrow(/qualitySizeMappings/);
 	});
 
+	it("rejects a 1.2 payload when cleanup coordination coverage is missing", () => {
+		const backup = baseBackup() as { data: Record<string, unknown> };
+		delete backup.data.libraryCleanupApproval;
+
+		expect(() => validateBackup(backup)).toThrow(/libraryCleanupApproval/);
+	});
+
 	it("exports every durable configuration collection as an explicit array", async () => {
 		const models = [
 			"user",
@@ -105,6 +114,8 @@ describe("backup format 1.2", () => {
 			"huntLog",
 			"huntSearchHistory",
 			"trashBackup",
+			"libraryCleanupApproval",
+			"libraryCleanupMediaServerScan",
 			...DURABLE_CONFIG_KEYS.filter((key) => key !== "backupSettings" && key !== "vapidKeys"),
 			"backupSettings",
 			"vapidKeys",
@@ -124,6 +135,20 @@ describe("backup format 1.2", () => {
 		for (const key of DURABLE_CONFIG_KEYS) {
 			expect(data[key]).toEqual([]);
 		}
+		expect(data.libraryCleanupApproval).toEqual([]);
+		expect(data.libraryCleanupMediaServerScan).toEqual([]);
+	});
+
+	it("rejects legacy omission of an older relational config collection", async () => {
+		const prisma = {
+			trashTemplate: { count: vi.fn().mockResolvedValue(1) },
+		} as unknown as PrismaClient;
+		const legacyData = { ...baseBackup().data } as Record<string, unknown>;
+		delete legacyData.trashTemplates;
+
+		await expect(assertRestoreCompatibility(prisma, legacyData as never)).rejects.toThrow(
+			"does not contain complete configuration or recovery coverage",
+		);
 	});
 
 	it("rejects an incomplete legacy payload over a populated durable-config target", async () => {
@@ -134,7 +159,7 @@ describe("backup format 1.2", () => {
 		delete legacyData.notificationChannel;
 
 		await expect(assertRestoreCompatibility(prisma, legacyData as never)).rejects.toThrow(
-			"does not contain complete configuration coverage",
+			"does not contain complete configuration or recovery coverage",
 		);
 	});
 
@@ -177,7 +202,7 @@ describe("backup format 1.2", () => {
 		delete legacyData.namingDeployHistory;
 
 		await expect(assertRestoreCompatibility(prisma, legacyData as never)).rejects.toThrow(
-			"does not contain complete configuration coverage",
+			"does not contain complete configuration or recovery coverage",
 		);
 	});
 
@@ -194,7 +219,7 @@ describe("backup format 1.2", () => {
 		delete legacyData.notificationChannel;
 
 		await expect(restoreDatabase(prisma, legacyData as never)).rejects.toThrow(
-			"does not contain complete configuration coverage",
+			"does not contain complete configuration or recovery coverage",
 		);
 		expect(firstDelete).not.toHaveBeenCalled();
 	});

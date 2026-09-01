@@ -433,9 +433,15 @@ export class BackupService {
 				{
 					backupType: type,
 					skippedTables: ["huntLog", "huntSearchHistory"],
-					preservedTables: ["trashSyncHistory", "templateDeploymentHistory", "trashBackup"],
+					preservedTables: [
+						"trashSyncHistory",
+						"templateDeploymentHistory",
+						"trashBackup",
+						"libraryCleanupApproval",
+						"libraryCleanupMediaServerScan",
+					],
 				},
-				"Backup excluded disposable operational history while preserving nonterminal TRaSH coordination evidence",
+				"Backup excluded disposable operational history while preserving nonterminal safety coordination evidence",
 			);
 		}
 

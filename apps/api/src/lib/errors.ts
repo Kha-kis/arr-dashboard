@@ -29,18 +29,19 @@ export class ConflictError extends Error {
 }
 
 /**
- * Thrown when a legacy backup does not carry configuration coverage needed to
- * safely replace an installation that already has durable configuration.
+ * Thrown when a backup does not carry the configuration or recovery coverage
+ * needed to safely replace the current installation.
  * Maps to a bounded HTTP 409 response without exposing backup contents.
  */
 export class BackupCompatibilityError extends Error {
 	readonly statusCode = 409;
 	readonly code = "BACKUP_COMPATIBILITY_CONFLICT";
 
-	constructor() {
+	constructor(cause?: unknown) {
 		super(
-			"This legacy backup does not contain complete configuration coverage and cannot safely replace the current installation. Restore it to a clean installation or create a new backup with the current version.",
+			"This backup does not contain complete configuration or recovery coverage and cannot safely replace the current installation. Create a new backup with the current version and retry.",
 		);
+		if (cause !== undefined) this.cause = cause;
 		this.name = "BackupCompatibilityError";
 	}
 }

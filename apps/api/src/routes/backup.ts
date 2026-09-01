@@ -163,7 +163,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			if (error instanceof BackupCompatibilityError) {
 				request.log.warn(
 					{ code: error.code },
-					"Backup restore rejected because legacy configuration coverage is incomplete",
+					"Backup restore rejected because configuration or recovery coverage is incomplete",
 				);
 				return reply.status(409).send({ error: error.message });
 			}
@@ -230,7 +230,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				if (error instanceof BackupCompatibilityError) {
 					request.log.warn(
 						{ code: error.code },
-						"Backup restore from file rejected because legacy configuration coverage is incomplete",
+						"Backup restore from file rejected because configuration or recovery coverage is incomplete",
 					);
 					return reply.status(409).send({ error: error.message });
 				}

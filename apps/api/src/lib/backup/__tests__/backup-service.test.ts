@@ -1140,6 +1140,87 @@ describe("BackupService - cleanup maintenance exclusion", () => {
 	});
 });
 
+describe("BackupService - coordination preflight", () => {
+	it("rejects a current coordination mismatch before writing replacement secrets", async () => {
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "backup-coordination-preflight-"));
+		const secretsPath = path.join(tempDir, "secrets.json");
+		const durableArrays = [
+			"oidcProviders",
+			"systemSettings",
+			"trashTemplates",
+			"trashSettings",
+			"trashSyncSchedules",
+			"templateQualityProfileMappings",
+			"instanceQualityProfileOverrides",
+			"standaloneCFDeployments",
+			"qualitySizeMappings",
+			"trashSyncHistory",
+			"templateDeploymentHistory",
+			"trashBackups",
+			"huntConfigs",
+			"huntLogs",
+			"huntSearchHistory",
+			"backupSettings",
+			"vapidKeys",
+			"notificationChannel",
+			"notificationSubscription",
+			"notificationRule",
+			"notificationAggregationConfig",
+			"autoTagRule",
+			"labelSyncRule",
+			"queueCleanerConfig",
+			"libraryCleanupConfig",
+			"libraryCleanupRule",
+			"namingConfig",
+			"userCustomFormat",
+			"namingDeployHistory",
+			"libraryCleanupApproval",
+			"libraryCleanupMediaServerScan",
+		];
+		const backup = {
+			version: "1.2",
+			appVersion: "2.24.2",
+			timestamp: new Date().toISOString(),
+			data: {
+				users: [],
+				sessions: [],
+				serviceInstances: [],
+				serviceTags: [],
+				serviceInstanceTags: [],
+				oidcAccounts: [],
+				webAuthnCredentials: [],
+				...Object.fromEntries(durableArrays.map((field) => [field, []])),
+			},
+			secrets: { encryptionKey: "replacement-key", sessionCookieSecret: "replacement-session" },
+		};
+		const prisma = {
+			trashSyncHistory: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						{ id: "current-sync", status: "RUNNING", instanceId: "i", userId: "u" },
+					]),
+			},
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			instanceQualityProfileOverride: { findMany: vi.fn().mockResolvedValue([]) },
+			namingDeployHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			trashBackup: { findMany: vi.fn().mockResolvedValue([]) },
+			$transaction: vi.fn(),
+		} as unknown as PrismaClient;
+
+		try {
+			const service = new BackupService(prisma, secretsPath);
+			await expect(service.restoreBackup(JSON.stringify(backup))).rejects.toThrow(
+				"cannot safely replace",
+			);
+			expect(await fs.stat(secretsPath).catch(() => null)).toBeNull();
+			expect(prisma.$transaction).not.toHaveBeenCalled();
+		} finally {
+			await fs.rm(tempDir, { recursive: true, force: true });
+		}
+	});
+});
+
 describe("BackupService - Backup ID Generation (Unit)", () => {
 	it("should generate consistent IDs for the same path", () => {
 		const testPath = "/path/to/backup.json";

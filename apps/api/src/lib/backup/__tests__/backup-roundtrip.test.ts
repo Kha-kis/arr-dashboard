@@ -305,6 +305,63 @@ async function seedDurableSource(prisma: PrismaClient): Promise<void> {
 			parameters: '{"days":30}',
 		},
 	});
+	await prisma.libraryCleanupApproval.create({
+		data: {
+			id: "issue815-active-approval",
+			configId: cleanup.id,
+			instanceId,
+			arrItemId: 815,
+			itemType: "movie",
+			title: "Issue 815 movie",
+			matchedRuleId: "issue815-cleanup-rule",
+			matchedRuleName: "Issue 815 rule",
+			reason: "age",
+			action: "delete",
+			sizeOnDisk: BigInt(1234),
+			expiresAt: new Date("2030-01-01T00:00:00.000Z"),
+			status: "pending",
+		},
+	});
+	await prisma.libraryCleanupApproval.create({
+		data: {
+			id: "issue815-executed-parent",
+			configId: cleanup.id,
+			instanceId,
+			arrItemId: 816,
+			itemType: "series",
+			title: "Issue 815 series",
+			matchedRuleId: "issue815-cleanup-rule",
+			matchedRuleName: "Issue 815 rule",
+			reason: "size",
+			action: "delete",
+			sizeOnDisk: BigInt(5678),
+			expiresAt: new Date("2030-01-01T00:00:00.000Z"),
+			status: "executed",
+		},
+	});
+	await prisma.libraryCleanupMediaServerScan.create({
+		data: {
+			id: "issue815-pending-scan",
+			approvalId: "issue815-active-approval",
+			instanceId,
+			service: "PLEX",
+			mediaType: "movie",
+			targetKey: "movie:815",
+			status: "pending",
+		},
+	});
+	await prisma.libraryCleanupMediaServerScan.create({
+		data: {
+			id: "issue815-failed-scan",
+			approvalId: "issue815-executed-parent",
+			instanceId,
+			service: "PLEX",
+			mediaType: "show",
+			targetKey: "series:816",
+			status: "failed",
+			lastError: "test failure",
+		},
+	});
 	await prisma.userCustomFormat.create({
 		data: {
 			id: "issue815-custom-format",
@@ -387,7 +444,11 @@ async function seedDurableSource(prisma: PrismaClient): Promise<void> {
 function normalizedRows(rows: unknown[]): string[] {
 	return rows
 		.map((row) =>
-			JSON.stringify(row, (_key, value) => (value instanceof Date ? value.toISOString() : value)),
+			JSON.stringify(row, (_key, value) => {
+				if (value instanceof Date) return value.toISOString();
+				if (typeof value === "bigint") return value.toString();
+				return value;
+			}),
 		)
 		.sort();
 }
@@ -415,6 +476,8 @@ const MODEL_EXPORTS = [
 	["queueCleanerConfig", "queueCleanerConfig"],
 	["libraryCleanupConfig", "libraryCleanupConfig"],
 	["libraryCleanupRule", "libraryCleanupRule"],
+	["libraryCleanupApproval", "libraryCleanupApproval"],
+	["libraryCleanupMediaServerScan", "libraryCleanupMediaServerScan"],
 	["userCustomFormat", "userCustomFormat"],
 	["notificationChannel", "notificationChannel"],
 	["notificationSubscription", "notificationSubscription"],

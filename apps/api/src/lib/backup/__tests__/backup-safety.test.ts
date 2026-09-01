@@ -45,6 +45,8 @@ const TABLE_NAMES = [
 	"queueCleanerConfig",
 	"libraryCleanupConfig",
 	"libraryCleanupRule",
+	"libraryCleanupApproval",
+	"libraryCleanupMediaServerScan",
 	"namingConfig",
 	"namingDeployHistory",
 	"userCustomFormat",
@@ -178,9 +180,15 @@ describe("BackupService coordination safety", () => {
 				expect.objectContaining({
 					backupType: "scheduled",
 					skippedTables: ["huntLog", "huntSearchHistory"],
-					preservedTables: ["trashSyncHistory", "templateDeploymentHistory", "trashBackup"],
+					preservedTables: [
+						"trashSyncHistory",
+						"templateDeploymentHistory",
+						"trashBackup",
+						"libraryCleanupApproval",
+						"libraryCleanupMediaServerScan",
+					],
 				}),
-				"Backup excluded disposable operational history while preserving nonterminal TRaSH coordination evidence",
+				"Backup excluded disposable operational history while preserving nonterminal safety coordination evidence",
 			);
 		} finally {
 			await fs.rm(tempDir, { recursive: true, force: true });

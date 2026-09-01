@@ -13,6 +13,7 @@ import {
 	DURABLE_CONFIG_PAYLOAD_FIELDS,
 	isNonterminalRollback,
 	isNonterminalUndeploy,
+	LEGACY_RELATIONAL_CONFIG_DELEGATES,
 	LEGACY_RELATIONAL_CONFIG_FIELDS,
 	validateCoordinationEvidence,
 	validateRecords,
@@ -48,11 +49,70 @@ async function targetHasDurableConfig(
 	missingFields: readonly string[],
 ): Promise<boolean> {
 	const client = prisma as unknown as Record<string, { count?: () => Promise<number> }>;
-	for (const field of missingFields) {
-		const accessor = client[field];
+	for (const [payloadField, delegate] of LEGACY_RELATIONAL_CONFIG_DELEGATES) {
+		if (!missingFields.includes(payloadField)) continue;
+		if (
+			payloadField === "libraryCleanupApproval" ||
+			payloadField === "libraryCleanupMediaServerScan"
+		) {
+			continue;
+		}
+		const accessor = client[delegate];
 		if (accessor?.count && (await accessor.count()) > 0) return true;
 	}
 	return false;
+}
+
+const ACTIVE_APPROVAL_STATUSES = [
+	"pending",
+	"approved",
+	"retry_pending",
+	"executing",
+	"retry_executing",
+] as const;
+const ACTIVE_SCAN_STATUSES = ["pending", "triggering", "failed"] as const;
+
+async function targetHasActiveCleanupCoordination(
+	prisma: Prisma.TransactionClient | PrismaClient,
+	missingFields: readonly string[],
+): Promise<boolean> {
+	const client = prisma as unknown as Record<
+		string,
+		{ findMany?: (args: unknown) => Promise<unknown[]> }
+	>;
+	const approval = client.libraryCleanupApproval;
+	const scan = client.libraryCleanupMediaServerScan;
+	let activeScans: Array<Record<string, unknown>> = [];
+
+	if (missingFields.includes("libraryCleanupMediaServerScan") && scan?.findMany) {
+		activeScans = (await scan.findMany({
+			where: { status: { in: [...ACTIVE_SCAN_STATUSES] } },
+			select: { id: true, approvalId: true },
+		})) as Array<Record<string, unknown>>;
+		if (activeScans.length > 0) return true;
+	}
+
+	if (!missingFields.includes("libraryCleanupApproval") || !approval?.findMany) return false;
+	const activeApprovals = await approval.findMany({
+		where: { status: { in: [...ACTIVE_APPROVAL_STATUSES] } },
+		select: { id: true },
+	});
+	if (activeApprovals.length > 0) return true;
+
+	if (!scan?.findMany) return false;
+	activeScans = (await scan.findMany({
+		where: { status: { in: [...ACTIVE_SCAN_STATUSES] } },
+		select: { approvalId: true },
+	})) as Array<Record<string, unknown>>;
+	const approvalIds = activeScans
+		.map((row) => row.approvalId)
+		.filter((id): id is string => typeof id === "string" && id.length > 0);
+	if (approvalIds.length === 0) return false;
+	const parentApprovals = await approval.findMany({
+		where: { id: { in: [...new Set(approvalIds)] } },
+		select: { id: true },
+	});
+	return parentApprovals.length > 0;
 }
 
 async function targetHasActiveNamingRecovery(
@@ -85,8 +145,22 @@ export async function assertRestoreCompatibility(
 	if (missingFields.length > 0 && (await targetHasDurableConfig(prisma, missingFields))) {
 		throw new BackupCompatibilityError();
 	}
+	if (
+		missingFields.some(
+			(field) => field === "libraryCleanupApproval" || field === "libraryCleanupMediaServerScan",
+		) &&
+		(await targetHasActiveCleanupCoordination(prisma, missingFields))
+	) {
+		throw new BackupCompatibilityError();
+	}
 	if (!Array.isArray(record.namingDeployHistory) && (await targetHasActiveNamingRecovery(prisma))) {
 		throw new BackupCompatibilityError();
+	}
+	try {
+		await validateCurrentCoordinationPreserved(prisma, data);
+	} catch (error) {
+		if (error instanceof BackupCompatibilityError) throw error;
+		throw new BackupCompatibilityError(error);
 	}
 }
 
@@ -168,6 +242,75 @@ const ACTIVE_NAMING_FIELDS = [
 	"deployedAt",
 ] as const;
 
+const ACTIVE_APPROVAL_FIELDS = [
+	"configId",
+	"instanceId",
+	"arrItemId",
+	"itemType",
+	"targetScope",
+	"arrEpisodeId",
+	"episodeFileId",
+	"seasonNumber",
+	"episodeNumber",
+	"episodeTitle",
+	"title",
+	"matchedRuleId",
+	"matchedRuleName",
+	"reason",
+	"action",
+	"scanMediaServerAfterDelete",
+	"sizeOnDisk",
+	"year",
+	"rating",
+	"status",
+	"executionToken",
+	"executionAuditCorrelationId",
+	"reconciledWithoutMutation",
+	"terminalAuditRecordedAt",
+	"safetySnapshot",
+	"lastExecutionError",
+	"reviewedAt",
+	"executedAt",
+	"expiresAt",
+	"createdAt",
+] as const;
+
+const ACTIVE_SCAN_FIELDS = [
+	"approvalId",
+	"instanceId",
+	"service",
+	"serverIdentity",
+	"mediaType",
+	"plannedSectionIds",
+	"targetKey",
+	"status",
+	"executionToken",
+	"attemptCount",
+	"completedSectionIds",
+	"lastError",
+	"nextAttemptAt",
+	"requestStartedAt",
+	"triggeredAt",
+	"createdAt",
+	"updatedAt",
+] as const;
+
+const COORDINATION_DATE_FIELDS = new Set([
+	"startedAt",
+	"rollbackAttemptedAt",
+	"undeployAttemptedAt",
+	"deployedAt",
+	"createdAt",
+	"updatedAt",
+	"terminalAuditRecordedAt",
+	"reviewedAt",
+	"executedAt",
+	"expiresAt",
+	"nextAttemptAt",
+	"requestStartedAt",
+	"triggeredAt",
+]);
+
 function recordsById(value: unknown): Map<string, CoordinationRow> {
 	const records = new Map<string, CoordinationRow>();
 	if (!Array.isArray(value)) return records;
@@ -218,8 +361,20 @@ function assertCurrentUndeployFallbackPreserved(
 	}
 }
 
-function comparableCoordinationValue(value: unknown): unknown {
-	return value instanceof Date ? value.toISOString() : value;
+function comparableCoordinationValue(value: unknown, field?: string): unknown {
+	if (field === "sizeOnDisk" && (typeof value === "bigint" || typeof value === "string")) {
+		try {
+			return BigInt(value).toString();
+		} catch {
+			return value;
+		}
+	}
+	if (value instanceof Date) return value.toISOString();
+	if (typeof value === "string" && field && COORDINATION_DATE_FIELDS.has(field)) {
+		const parsed = new Date(value);
+		if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+	}
+	return value;
 }
 
 function assertCurrentRowPreserved(
@@ -236,7 +391,8 @@ function assertCurrentRowPreserved(
 
 	for (const field of COORDINATION_FIELDS[kind]) {
 		if (
-			comparableCoordinationValue(incoming[field]) !== comparableCoordinationValue(current[field])
+			comparableCoordinationValue(incoming[field], field) !==
+			comparableCoordinationValue(current[field], field)
 		) {
 			throw new Error(
 				`Cannot restore backup: current nonterminal coordination row ${current.id} changed ${field}`,
@@ -259,7 +415,8 @@ function assertCurrentSpecialRowPreserved(
 	}
 	for (const field of fields) {
 		if (
-			comparableCoordinationValue(incoming[field]) !== comparableCoordinationValue(current[field])
+			comparableCoordinationValue(incoming[field], field) !==
+			comparableCoordinationValue(current[field], field)
 		) {
 			throw new Error(`Cannot restore backup: current ${label} ${current.id} changed ${field}`);
 		}
@@ -267,11 +424,25 @@ function assertCurrentSpecialRowPreserved(
 }
 
 async function validateCurrentCoordinationPreserved(
-	tx: Prisma.TransactionClient,
+	tx: Prisma.TransactionClient | PrismaClient,
 	data: BackupData["data"],
 ): Promise<void> {
+	const db = tx as Prisma.TransactionClient;
+	const optionalModels = tx as unknown as Record<
+		string,
+		{ findMany?: (args: unknown) => Promise<unknown[]> }
+	>;
+	if (
+		!optionalModels.trashSyncHistory?.findMany ||
+		!optionalModels.templateDeploymentHistory?.findMany ||
+		!optionalModels.instanceQualityProfileOverride?.findMany ||
+		!optionalModels.namingDeployHistory?.findMany ||
+		!optionalModels.trashBackup?.findMany
+	) {
+		return;
+	}
 	const currentRollbackRows = (
-		await tx.trashSyncHistory.findMany({
+		await db.trashSyncHistory.findMany({
 			where: {
 				OR: [
 					{ rollbackStatus: { not: "COMPLETED" } },
@@ -282,7 +453,7 @@ async function validateCurrentCoordinationPreserved(
 		})
 	).filter(shouldPreserveSyncHistory) as CoordinationRow[];
 	const currentUndeployRows = (
-		await tx.templateDeploymentHistory.findMany({
+		await db.templateDeploymentHistory.findMany({
 			where: {
 				OR: [
 					{ undeployStatus: { not: "COMPLETED" } },
@@ -296,17 +467,42 @@ async function validateCurrentCoordinationPreserved(
 			},
 		})
 	).filter(isNonterminalUndeploy) as CoordinationRow[];
-	const currentScoreIntents = (await tx.instanceQualityProfileOverride.findMany({
+	const currentScoreIntents = (await db.instanceQualityProfileOverride.findMany({
 		where: { status: { in: ["PENDING", "UNCERTAIN"] } },
 	})) as CoordinationRow[];
-	const currentActiveNaming = (await tx.namingDeployHistory.findMany({
+	const currentActiveNaming = (await db.namingDeployHistory.findMany({
 		where: { status: { in: ["PENDING", "SUCCESS"] }, rolledBack: false },
 	})) as CoordinationRow[];
+	const currentActiveApprovals = optionalModels.libraryCleanupApproval?.findMany
+		? ((await optionalModels.libraryCleanupApproval.findMany({
+				where: { status: { in: [...ACTIVE_APPROVAL_STATUSES] } },
+			})) as CoordinationRow[])
+		: [];
+	const currentActiveScans = optionalModels.libraryCleanupMediaServerScan?.findMany
+		? ((await optionalModels.libraryCleanupMediaServerScan.findMany({
+				where: { status: { in: [...ACTIVE_SCAN_STATUSES] } },
+			})) as CoordinationRow[])
+		: [];
+	const scanApprovalIds = [
+		...new Set(
+			currentActiveScans
+				.map((row) => row.approvalId)
+				.filter((id): id is string => typeof id === "string" && id.length > 0),
+		),
+	];
+	const currentScanParentApprovals =
+		scanApprovalIds.length > 0 && optionalModels.libraryCleanupApproval?.findMany
+			? ((await optionalModels.libraryCleanupApproval.findMany({
+					where: { id: { in: scanApprovalIds } },
+				})) as CoordinationRow[])
+			: [];
 	const incomingRollbackRows = recordsById(data.trashSyncHistory);
 	const incomingUndeployRows = recordsById(data.templateDeploymentHistory);
 	const incomingTemplates = recordsById(data.trashTemplates);
 	const incomingScoreIntents = recordsById(data.instanceQualityProfileOverrides);
 	const incomingActiveNaming = recordsById(data.namingDeployHistory);
+	const incomingApprovals = recordsById(data.libraryCleanupApproval);
+	const incomingScans = recordsById(data.libraryCleanupMediaServerScan);
 
 	for (const row of currentRollbackRows) {
 		assertCurrentRowPreserved("rollback", row, incomingRollbackRows);
@@ -331,6 +527,22 @@ async function validateCurrentCoordinationPreserved(
 			ACTIVE_NAMING_FIELDS,
 		);
 	}
+	for (const row of [...currentActiveApprovals, ...currentScanParentApprovals]) {
+		assertCurrentSpecialRowPreserved(
+			"active cleanup approval",
+			row,
+			incomingApprovals,
+			ACTIVE_APPROVAL_FIELDS,
+		);
+	}
+	for (const row of currentActiveScans) {
+		assertCurrentSpecialRowPreserved(
+			"active media-server scan",
+			row,
+			incomingScans,
+			ACTIVE_SCAN_FIELDS,
+		);
+	}
 
 	const currentRecoveryRows = [
 		...currentRollbackRows.filter((row) =>
@@ -353,7 +565,7 @@ async function validateCurrentCoordinationPreserved(
 	if (requiredSnapshotIds.length === 0) return;
 
 	const currentSnapshots = recordsById(
-		await tx.trashBackup.findMany({ where: { id: { in: [...new Set(requiredSnapshotIds)] } } }),
+		await db.trashBackup.findMany({ where: { id: { in: [...new Set(requiredSnapshotIds)] } } }),
 	);
 	const incomingSnapshots = recordsById(data.trashBackups);
 	for (const snapshotId of new Set(requiredSnapshotIds)) {
@@ -441,6 +653,33 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 	const libraryCleanupRule = await prisma.libraryCleanupRule.findMany();
 	const namingConfig = await prisma.namingConfig.findMany();
 	const userCustomFormat = await prisma.userCustomFormat.findMany();
+	const activeCleanupApprovals = await prisma.libraryCleanupApproval.findMany({
+		where: { status: { in: [...ACTIVE_APPROVAL_STATUSES] } },
+	});
+	const activeCleanupScans = await prisma.libraryCleanupMediaServerScan.findMany({
+		where: { status: { in: [...ACTIVE_SCAN_STATUSES] } },
+	});
+	const cleanupScanApprovalIds = [
+		...new Set(
+			activeCleanupScans
+				.map((row) => row.approvalId)
+				.filter((id): id is string => typeof id === "string" && id.length > 0),
+		),
+	];
+	const cleanupScanParentApprovals =
+		cleanupScanApprovalIds.length > 0
+			? await prisma.libraryCleanupApproval.findMany({
+					where: { id: { in: cleanupScanApprovalIds } },
+				})
+			: [];
+	const serializeCleanupApproval = (row: (typeof activeCleanupApprovals)[number]) => ({
+		...row,
+		sizeOnDisk: row.sizeOnDisk.toString(),
+	});
+	const libraryCleanupApproval = mergeRowsById(
+		activeCleanupApprovals.map(serializeCleanupApproval),
+		cleanupScanParentApprovals.map(serializeCleanupApproval),
+	);
 
 	// TRaSH Guides history/audit — operational, capped or skipped.
 	// When capped, log a warn so operators can correlate restore-time gaps to
@@ -623,6 +862,8 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 		libraryCleanupRule,
 		namingConfig,
 		userCustomFormat,
+		libraryCleanupApproval,
+		libraryCleanupMediaServerScan: activeCleanupScans,
 	};
 }
 
@@ -641,7 +882,6 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 		// service-level preflight closes the filesystem TOCTOU window; this check
 		// protects direct callers and races between preflight and transaction.
 		await assertRestoreCompatibility(tx, data);
-		await validateCurrentCoordinationPreserved(tx, data);
 
 		// =================================================================
 		// DELETE all existing data (in reverse order of dependencies)
@@ -668,6 +908,8 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 		await tx.trashSettings.deleteMany();
 
 		// Durable configuration, children before parents.
+		await tx.libraryCleanupMediaServerScan.deleteMany();
+		await tx.libraryCleanupApproval.deleteMany();
 		await tx.notificationSubscription.deleteMany();
 		await tx.libraryCleanupRule.deleteMany();
 		await tx.notificationChannel.deleteMany();
@@ -985,6 +1227,39 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 			validateRecords(data.libraryCleanupRule, "libraryCleanupRule", ["id", "configId"]);
 			await tx.libraryCleanupRule.createMany({
 				data: data.libraryCleanupRule as Prisma.LibraryCleanupRuleCreateManyInput[],
+			});
+		}
+		if (data.libraryCleanupApproval && data.libraryCleanupApproval.length > 0) {
+			validateRecords(data.libraryCleanupApproval, "libraryCleanupApproval", [
+				"id",
+				"configId",
+				"instanceId",
+				"status",
+				"sizeOnDisk",
+				"expiresAt",
+			]);
+			await tx.libraryCleanupApproval.createMany({
+				data: data.libraryCleanupApproval.map((row) => ({
+					...(row as Prisma.LibraryCleanupApprovalCreateManyInput),
+					sizeOnDisk:
+						typeof (row as Record<string, unknown>).sizeOnDisk === "string"
+							? BigInt((row as Record<string, unknown>).sizeOnDisk as string)
+							: (row as Prisma.LibraryCleanupApprovalCreateManyInput).sizeOnDisk,
+				})) as Prisma.LibraryCleanupApprovalCreateManyInput[],
+			});
+		}
+		if (data.libraryCleanupMediaServerScan && data.libraryCleanupMediaServerScan.length > 0) {
+			validateRecords(data.libraryCleanupMediaServerScan, "libraryCleanupMediaServerScan", [
+				"id",
+				"approvalId",
+				"instanceId",
+				"service",
+				"mediaType",
+				"targetKey",
+				"status",
+			]);
+			await tx.libraryCleanupMediaServerScan.createMany({
+				data: data.libraryCleanupMediaServerScan as Prisma.LibraryCleanupMediaServerScanCreateManyInput[],
 			});
 		}
 		if (data.namingConfig && data.namingConfig.length > 0) {

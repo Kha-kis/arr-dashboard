@@ -34,6 +34,8 @@ export const DURABLE_CONFIG_PAYLOAD_FIELDS = [
 	"namingConfig",
 	"userCustomFormat",
 	"namingDeployHistory",
+	"libraryCleanupApproval",
+	"libraryCleanupMediaServerScan",
 ] as const;
 
 /** Every optional array emitted by exportDatabase and required by v1.2. */
@@ -56,9 +58,34 @@ export const COMPLETE_V1_2_PAYLOAD_FIELDS = [
 	...DURABLE_CONFIG_PAYLOAD_FIELDS,
 ] as const;
 
+/** Explicit payload-to-Prisma mapping for relational legacy coverage checks. */
+export const LEGACY_RELATIONAL_CONFIG_DELEGATES = [
+	["trashTemplates", "trashTemplate"],
+	["trashSettings", "trashSettings"],
+	["trashSyncSchedules", "trashSyncSchedule"],
+	["templateQualityProfileMappings", "templateQualityProfileMapping"],
+	["instanceQualityProfileOverrides", "instanceQualityProfileOverride"],
+	["standaloneCFDeployments", "standaloneCFDeployment"],
+	["qualitySizeMappings", "qualitySizeMapping"],
+	["huntConfigs", "huntConfig"],
+	["notificationChannel", "notificationChannel"],
+	["notificationSubscription", "notificationSubscription"],
+	["notificationRule", "notificationRule"],
+	["notificationAggregationConfig", "notificationAggregationConfig"],
+	["autoTagRule", "autoTagRule"],
+	["labelSyncRule", "labelSyncRule"],
+	["queueCleanerConfig", "queueCleanerConfig"],
+	["libraryCleanupConfig", "libraryCleanupConfig"],
+	["libraryCleanupRule", "libraryCleanupRule"],
+	["libraryCleanupApproval", "libraryCleanupApproval"],
+	["libraryCleanupMediaServerScan", "libraryCleanupMediaServerScan"],
+	["namingConfig", "namingConfig"],
+	["userCustomFormat", "userCustomFormat"],
+] as const;
+
 /** Relational durable configuration that legacy files cannot safely replace. */
-export const LEGACY_RELATIONAL_CONFIG_FIELDS = DURABLE_CONFIG_PAYLOAD_FIELDS.filter(
-	(field) => field !== "backupSettings" && field !== "vapidKeys" && field !== "namingDeployHistory",
+export const LEGACY_RELATIONAL_CONFIG_FIELDS = LEGACY_RELATIONAL_CONFIG_DELEGATES.map(
+	([payloadField]) => payloadField,
 );
 
 type CoordinationRecord = Record<string, unknown>;

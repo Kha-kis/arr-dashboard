@@ -135,6 +135,8 @@ export interface BackupData {
 		libraryCleanupRule?: unknown[];
 		namingConfig?: unknown[];
 		userCustomFormat?: unknown[];
+		libraryCleanupApproval?: unknown[];
+		libraryCleanupMediaServerScan?: unknown[];
 	};
 	secrets: {
 		encryptionKey: string;
