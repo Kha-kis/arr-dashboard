@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import { BackupCompatibilityError } from "../../errors.js";
-import type { PrismaClient } from "../../prisma.js";
+import type { Prisma, PrismaClient } from "../../prisma.js";
 import { exportDatabase, restoreDatabase } from "../backup-database.js";
 import { BACKUP_VERSION, validateBackup } from "../backup-validation.js";
 
@@ -16,6 +16,39 @@ const ROUND_TRIP_HOOK_TIMEOUT_MS = 120_000;
 const execFileAsync = promisify(execFile);
 
 type DatabaseHandle = { prisma: PrismaClient; cleanup: () => Promise<void> };
+
+type InteractiveTransaction = (
+	operation: (tx: Prisma.TransactionClient) => Promise<unknown>,
+	options?: {
+		maxWait?: number;
+		timeout?: number;
+		isolationLevel?: Prisma.TransactionIsolationLevel;
+	},
+) => Promise<unknown>;
+
+function withInteractiveTransactionDefaultTimeout(
+	prisma: PrismaClient,
+	timeout: number,
+	startDelay: number,
+): PrismaClient {
+	const rootTransaction = prisma.$transaction.bind(prisma) as InteractiveTransaction;
+	return new Proxy(prisma, {
+		get(target, property) {
+			if (property === "$transaction") {
+				return (
+					operation: (tx: Prisma.TransactionClient) => Promise<unknown>,
+					options?: Parameters<InteractiveTransaction>[1],
+				) =>
+					rootTransaction(async (tx) => {
+						await new Promise((resolve) => setTimeout(resolve, startDelay));
+						return operation(tx);
+					}, options ?? { timeout });
+			}
+			const value = Reflect.get(target, property, target);
+			return typeof value === "function" ? value.bind(target) : value;
+		},
+	}) as PrismaClient;
+}
 
 async function pushSqliteSchema(databasePath: string, apiDir: string): Promise<void> {
 	await execFileAsync(
@@ -699,6 +732,15 @@ const MODEL_EXPORTS = [
 				terminalAuditRecordedAt: null,
 				terminalAuditRecoveryAttemptedAt: null,
 			});
+		});
+
+		it("overrides a short client transaction default for a populated restore", async () => {
+			const exported = await exportDatabase(source.prisma, { excludeOperationalHistory: true });
+			const constrainedTarget = withInteractiveTransactionDefaultTimeout(target.prisma, 1, 25);
+
+			await expect(restoreDatabase(constrainedTarget, exported)).resolves.toBeUndefined();
+			expect(await target.prisma.queueCleanerConfig.count()).toBe(1);
+			expect(await target.prisma.notificationChannel.count()).toBe(1);
 		});
 	},
 );

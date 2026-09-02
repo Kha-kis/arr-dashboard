@@ -626,7 +626,12 @@ describe("restoreDatabase — current coordination preservation", () => {
 			),
 		} as unknown as PrismaClient;
 
-		return { prisma, compatibilityPrisma: tx as unknown as PrismaClient, firstDelete };
+		return {
+			prisma,
+			compatibilityPrisma: tx as unknown as PrismaClient,
+			firstDelete,
+			transaction: prisma.$transaction,
+		};
 	}
 
 	function incomingData(overrides: Record<string, unknown> = {}) {
@@ -645,6 +650,38 @@ describe("restoreDatabase — current coordination preservation", () => {
 			...overrides,
 		} as never;
 	}
+
+	it("rejects malformed bulk rows before opening the destructive transaction", async () => {
+		const { prisma, transaction } = makeRestorePrisma({});
+
+		await expect(
+			restoreDatabase(prisma, incomingData({ users: [{ id: "missing-required-username" }] })),
+		).rejects.toThrow("Invalid user record at index 0: missing required field 'username'");
+		expect(transaction).not.toHaveBeenCalled();
+	});
+
+	it("rejects malformed approval sizes before opening the destructive transaction", async () => {
+		const { prisma, transaction } = makeRestorePrisma({});
+
+		await expect(
+			restoreDatabase(
+				prisma,
+				incomingData({
+					libraryCleanupApproval: [
+						{
+							id: "approval-with-invalid-size",
+							configId: "cleanup-config",
+							instanceId: "instance-1",
+							status: "pending",
+							sizeOnDisk: "not-an-integer",
+							expiresAt: "2030-01-01T00:00:00.000Z",
+						},
+					],
+				}),
+			),
+		).rejects.toThrow("Cannot convert not-an-integer to a BigInt");
+		expect(transaction).not.toHaveBeenCalled();
+	});
 
 	it("rejects a restore that omits a current nonterminal sync row before deleting tables", async () => {
 		const { prisma, firstDelete } = makeRestorePrisma({
@@ -1103,6 +1140,7 @@ describe("restoreDatabase — current coordination preservation", () => {
 		const currentTemplate = {
 			id: "template-1",
 			userId: "user-1",
+			name: "Current template",
 			serviceType: "RADARR",
 			configData: '{"customFormats":[{"name":"Current CF"}]}',
 		};

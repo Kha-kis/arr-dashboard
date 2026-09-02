@@ -21,6 +21,11 @@ import {
 
 const log = loggers.backup;
 
+// Restores accept encrypted payloads up to 200 MB. Keep the destructive
+// transaction bounded while allowing a supported populated restore to exceed
+// Prisma's five-second interactive-transaction default on slower storage.
+const RESTORE_TRANSACTION_TIMEOUT_MS = 5 * 60 * 1000;
+
 export interface ExportDatabaseOptions {
 	/** Include TRaSH ARR config snapshots (can be large) */
 	includeTrashBackups?: boolean;
@@ -1082,6 +1087,177 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 	return snapshot.data;
 }
 
+function validateRestoreRecords(data: BackupData["data"]): void {
+	if (data.users.length > 0) validateRecords(data.users, "user", ["id", "username"]);
+	if (data.sessions.length > 0) {
+		validateRecords(data.sessions, "session", ["id", "userId", "expiresAt"]);
+	}
+	if (data.oidcProviders && data.oidcProviders.length > 0) {
+		validateRecords(data.oidcProviders, "oidcProvider", ["id", "clientId", "issuer"]);
+	}
+	if (data.oidcAccounts.length > 0) {
+		validateRecords(data.oidcAccounts, "oidcAccount", ["id", "userId", "providerUserId"]);
+	}
+	if (data.webAuthnCredentials.length > 0) {
+		validateRecords(data.webAuthnCredentials, "webAuthnCredential", ["id", "userId", "publicKey"]);
+	}
+	if (data.serviceInstances.length > 0) {
+		validateRecords(data.serviceInstances, "serviceInstance", ["id", "service", "baseUrl"]);
+	}
+	if (data.serviceTags.length > 0) {
+		validateRecords(data.serviceTags, "serviceTag", ["id", "name"]);
+	}
+	if (data.serviceInstanceTags.length > 0) {
+		validateRecords(data.serviceInstanceTags, "serviceInstanceTag", ["instanceId", "tagId"]);
+	}
+	if (data.systemSettings && data.systemSettings.length > 0) {
+		validateRecords(data.systemSettings, "systemSettings", ["id"]);
+	}
+	if (Array.isArray(data.backupSettings) && data.backupSettings.length > 0) {
+		validateRecords(data.backupSettings, "backupSettings", ["id"]);
+	}
+	if (Array.isArray(data.vapidKeys) && data.vapidKeys.length > 0) {
+		validateRecords(data.vapidKeys, "vapidKeys", ["id", "publicKey"]);
+	}
+	if (data.trashSettings && data.trashSettings.length > 0) {
+		validateRecords(data.trashSettings, "trashSettings", ["id", "userId"]);
+	}
+	if (data.trashTemplates && data.trashTemplates.length > 0) {
+		validateRecords(data.trashTemplates, "trashTemplate", ["id", "name", "serviceType"]);
+	}
+	if (data.trashSyncSchedules && data.trashSyncSchedules.length > 0) {
+		validateRecords(data.trashSyncSchedules, "trashSyncSchedule", ["id", "userId"]);
+	}
+	if (data.trashBackups && data.trashBackups.length > 0) {
+		validateRecords(data.trashBackups, "trashBackup", ["id", "instanceId", "userId"]);
+	}
+	if (data.templateQualityProfileMappings && data.templateQualityProfileMappings.length > 0) {
+		validateRecords(data.templateQualityProfileMappings, "templateQualityProfileMapping", [
+			"id",
+			"templateId",
+			"instanceId",
+		]);
+	}
+	if (data.instanceQualityProfileOverrides && data.instanceQualityProfileOverrides.length > 0) {
+		validateRecords(data.instanceQualityProfileOverrides, "instanceQualityProfileOverride", [
+			"id",
+			"instanceId",
+		]);
+	}
+	if (data.standaloneCFDeployments && data.standaloneCFDeployments.length > 0) {
+		validateRecords(data.standaloneCFDeployments, "standaloneCFDeployment", [
+			"id",
+			"instanceId",
+			"cfTrashId",
+		]);
+	}
+	if (data.qualitySizeMappings && data.qualitySizeMappings.length > 0) {
+		validateRecords(data.qualitySizeMappings, "qualitySizeMapping", ["id", "instanceId", "userId"]);
+	}
+	if (data.trashSyncHistory && data.trashSyncHistory.length > 0) {
+		validateRecords(data.trashSyncHistory, "trashSyncHistory", ["id", "instanceId", "userId"]);
+	}
+	if (data.templateDeploymentHistory && data.templateDeploymentHistory.length > 0) {
+		validateRecords(data.templateDeploymentHistory, "templateDeploymentHistory", [
+			"id",
+			"templateId",
+			"instanceId",
+		]);
+	}
+	if (data.namingDeployHistory && data.namingDeployHistory.length > 0) {
+		validateRecords(data.namingDeployHistory, "namingDeployHistory", [
+			"id",
+			"instanceId",
+			"userId",
+			"status",
+		]);
+	}
+	if (data.huntConfigs && data.huntConfigs.length > 0) {
+		validateRecords(data.huntConfigs, "huntConfig", ["id", "instanceId"]);
+	}
+	if (data.huntLogs && data.huntLogs.length > 0) {
+		validateRecords(data.huntLogs, "huntLog", ["id", "instanceId"]);
+	}
+	if (data.huntSearchHistory && data.huntSearchHistory.length > 0) {
+		validateRecords(data.huntSearchHistory, "huntSearchHistory", ["id", "configId"]);
+	}
+	if (data.notificationChannel && data.notificationChannel.length > 0) {
+		validateRecords(data.notificationChannel, "notificationChannel", ["id", "userId"]);
+	}
+	if (data.notificationSubscription && data.notificationSubscription.length > 0) {
+		validateRecords(data.notificationSubscription, "notificationSubscription", [
+			"channelId",
+			"eventType",
+		]);
+	}
+	if (data.notificationRule && data.notificationRule.length > 0) {
+		validateRecords(data.notificationRule, "notificationRule", ["id", "userId"]);
+	}
+	if (data.notificationAggregationConfig && data.notificationAggregationConfig.length > 0) {
+		validateRecords(data.notificationAggregationConfig, "notificationAggregationConfig", [
+			"id",
+			"userId",
+		]);
+	}
+	if (data.autoTagRule && data.autoTagRule.length > 0) {
+		validateRecords(data.autoTagRule, "autoTagRule", ["id", "userId"]);
+	}
+	if (data.labelSyncRule && data.labelSyncRule.length > 0) {
+		validateRecords(data.labelSyncRule, "labelSyncRule", ["id", "userId"]);
+	}
+	if (data.queueCleanerConfig && data.queueCleanerConfig.length > 0) {
+		validateRecords(data.queueCleanerConfig, "queueCleanerConfig", ["id", "instanceId"]);
+	}
+	if (data.libraryCleanupConfig && data.libraryCleanupConfig.length > 0) {
+		validateRecords(data.libraryCleanupConfig, "libraryCleanupConfig", ["id", "userId"]);
+	}
+	if (data.libraryCleanupRule && data.libraryCleanupRule.length > 0) {
+		validateRecords(data.libraryCleanupRule, "libraryCleanupRule", ["id", "configId"]);
+	}
+	if (data.libraryCleanupApproval && data.libraryCleanupApproval.length > 0) {
+		validateRecords(data.libraryCleanupApproval, "libraryCleanupApproval", [
+			"id",
+			"configId",
+			"instanceId",
+			"status",
+			"sizeOnDisk",
+			"expiresAt",
+		]);
+	}
+	if (data.libraryCleanupMediaServerScan && data.libraryCleanupMediaServerScan.length > 0) {
+		validateRecords(data.libraryCleanupMediaServerScan, "libraryCleanupMediaServerScan", [
+			"id",
+			"approvalId",
+			"instanceId",
+			"service",
+			"mediaType",
+			"targetKey",
+			"status",
+		]);
+	}
+	if (data.namingConfig && data.namingConfig.length > 0) {
+		validateRecords(data.namingConfig, "namingConfig", ["id", "instanceId", "userId"]);
+	}
+	if (data.userCustomFormat && data.userCustomFormat.length > 0) {
+		validateRecords(data.userCustomFormat, "userCustomFormat", ["id", "userId"]);
+	}
+}
+
+function prepareLibraryCleanupApprovals(
+	data: BackupData["data"],
+): Prisma.LibraryCleanupApprovalCreateManyInput[] {
+	if (!data.libraryCleanupApproval) return [];
+	return data.libraryCleanupApproval.map((row) => ({
+		...(row as Prisma.LibraryCleanupApprovalCreateManyInput),
+		terminalAuditRecordedAt: null,
+		terminalAuditRecoveryAttemptedAt: null,
+		sizeOnDisk:
+			typeof (row as Record<string, unknown>).sizeOnDisk === "string"
+				? BigInt((row as Record<string, unknown>).sizeOnDisk as string)
+				: (row as Prisma.LibraryCleanupApprovalCreateManyInput).sizeOnDisk,
+	}));
+}
+
 /**
  * Restore database from backup data
  * Uses bulk inserts for better performance and validates data before restoration
@@ -1092,410 +1268,320 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
  */
 export async function restoreDatabase(prisma: PrismaClient, data: BackupData["data"]) {
 	validateSingletonCollections(data);
+	validateRestoreRecords(data);
+	const libraryCleanupApprovals = prepareLibraryCleanupApprovals(data);
 	// Use a transaction to ensure atomicity
-	await prisma.$transaction(async (tx) => {
-		// Recheck inside the transaction immediately before any delete. The
-		// service-level preflight closes the filesystem TOCTOU window; this check
-		// protects direct callers and races between preflight and transaction.
-		await assertRestoreCompatibility(tx, data);
+	await prisma.$transaction(
+		async (tx) => {
+			// Recheck inside the transaction immediately before any delete. The
+			// service-level preflight closes the filesystem TOCTOU window; this check
+			// protects direct callers and races between preflight and transaction.
+			await assertRestoreCompatibility(tx, data);
 
-		// =================================================================
-		// DELETE all existing data (in reverse order of dependencies)
-		// =================================================================
+			// =================================================================
+			// DELETE all existing data (in reverse order of dependencies)
+			// =================================================================
 
-		// Hunting feature (HuntSearchHistory → HuntLog → HuntConfig)
-		await tx.huntSearchHistory.deleteMany();
-		await tx.huntLog.deleteMany();
-		await tx.huntConfig.deleteMany();
+			// Hunting feature (HuntSearchHistory → HuntLog → HuntConfig)
+			await tx.huntSearchHistory.deleteMany();
+			await tx.huntLog.deleteMany();
+			await tx.huntConfig.deleteMany();
 
-		// TRaSH history/audit (depends on templates, instances, backups)
-		await tx.templateDeploymentHistory.deleteMany();
-		await tx.trashSyncHistory.deleteMany();
-		await tx.namingDeployHistory.deleteMany();
-		await tx.trashCache.deleteMany();
+			// TRaSH history/audit (depends on templates, instances, backups)
+			await tx.templateDeploymentHistory.deleteMany();
+			await tx.trashSyncHistory.deleteMany();
+			await tx.namingDeployHistory.deleteMany();
+			await tx.trashCache.deleteMany();
 
-		// TRaSH configuration (depends on templates, instances)
-		await tx.qualitySizeMapping.deleteMany();
-		await tx.templateQualityProfileMapping.deleteMany();
-		await tx.instanceQualityProfileOverride.deleteMany();
-		await tx.standaloneCFDeployment.deleteMany();
-		await tx.trashBackup.deleteMany();
-		await tx.trashSyncSchedule.deleteMany();
-		await tx.trashTemplate.deleteMany();
-		await tx.trashSettings.deleteMany();
+			// TRaSH configuration (depends on templates, instances)
+			await tx.qualitySizeMapping.deleteMany();
+			await tx.templateQualityProfileMapping.deleteMany();
+			await tx.instanceQualityProfileOverride.deleteMany();
+			await tx.standaloneCFDeployment.deleteMany();
+			await tx.trashBackup.deleteMany();
+			await tx.trashSyncSchedule.deleteMany();
+			await tx.trashTemplate.deleteMany();
+			await tx.trashSettings.deleteMany();
 
-		// Durable configuration, children before parents.
-		await tx.libraryCleanupMediaServerScanLease.deleteMany();
-		await tx.libraryCleanupMediaServerScan.deleteMany();
-		await tx.libraryCleanupApproval.deleteMany();
-		await tx.notificationLog.deleteMany();
-		await tx.notificationSubscription.deleteMany();
-		await tx.libraryCleanupRule.deleteMany();
-		await tx.notificationChannel.deleteMany();
-		await tx.notificationRule.deleteMany();
-		await tx.notificationAggregationConfig.deleteMany();
-		await tx.autoTagRule.deleteMany();
-		await tx.labelSyncRule.deleteMany();
-		await tx.queueCleanerConfig.deleteMany();
-		await tx.libraryCleanupConfig.deleteMany();
-		await tx.namingConfig.deleteMany();
-		await tx.userCustomFormat.deleteMany();
+			// Durable configuration, children before parents.
+			await tx.libraryCleanupMediaServerScanLease.deleteMany();
+			await tx.libraryCleanupMediaServerScan.deleteMany();
+			await tx.libraryCleanupApproval.deleteMany();
+			await tx.notificationLog.deleteMany();
+			await tx.notificationSubscription.deleteMany();
+			await tx.libraryCleanupRule.deleteMany();
+			await tx.notificationChannel.deleteMany();
+			await tx.notificationRule.deleteMany();
+			await tx.notificationAggregationConfig.deleteMany();
+			await tx.autoTagRule.deleteMany();
+			await tx.labelSyncRule.deleteMany();
+			await tx.queueCleanerConfig.deleteMany();
+			await tx.libraryCleanupConfig.deleteMany();
+			await tx.namingConfig.deleteMany();
+			await tx.userCustomFormat.deleteMany();
 
-		// These singleton rows are not removed by user/instance cascades. Each
-		// incoming array independently authorizes replacement of its own model.
-		if (Array.isArray(data.backupSettings)) {
-			await tx.backupSettings.deleteMany();
-		}
-		if (Array.isArray(data.vapidKeys)) {
-			await tx.vapidKeys.deleteMany();
-		}
+			// These singleton rows are not removed by user/instance cascades. Each
+			// incoming array independently authorizes replacement of its own model.
+			if (Array.isArray(data.backupSettings)) {
+				await tx.backupSettings.deleteMany();
+			}
+			if (Array.isArray(data.vapidKeys)) {
+				await tx.vapidKeys.deleteMany();
+			}
 
-		// System settings are independent of user/instance cascades. Preserve
-		// them for legacy files that predate this payload coverage.
-		if (Array.isArray(data.systemSettings)) {
-			await tx.systemSettings.deleteMany();
-		}
+			// System settings are independent of user/instance cascades. Preserve
+			// them for legacy files that predate this payload coverage.
+			if (Array.isArray(data.systemSettings)) {
+				await tx.systemSettings.deleteMany();
+			}
 
-		// Core tables (existing)
-		await tx.serviceInstanceTag.deleteMany();
-		await tx.serviceTag.deleteMany();
-		await tx.serviceInstance.deleteMany();
-		await tx.webAuthnCredential.deleteMany();
-		await tx.oIDCAccount.deleteMany();
-		// OIDC providers are independent of the user/instance cascades too.
-		// Legacy files may omit them, so do not turn omission into deletion.
-		if (Array.isArray(data.oidcProviders)) {
-			await tx.oIDCProvider.deleteMany();
-		}
-		await tx.session.deleteMany();
-		await tx.user.deleteMany();
+			// Core tables (existing)
+			await tx.serviceInstanceTag.deleteMany();
+			await tx.serviceTag.deleteMany();
+			await tx.serviceInstance.deleteMany();
+			await tx.webAuthnCredential.deleteMany();
+			await tx.oIDCAccount.deleteMany();
+			// OIDC providers are independent of the user/instance cascades too.
+			// Legacy files may omit them, so do not turn omission into deletion.
+			if (Array.isArray(data.oidcProviders)) {
+				await tx.oIDCProvider.deleteMany();
+			}
+			await tx.session.deleteMany();
+			await tx.user.deleteMany();
 
-		// =================================================================
-		// RESTORE data (in order of dependencies)
-		// =================================================================
+			// =================================================================
+			// RESTORE data (in order of dependencies)
+			// =================================================================
 
-		// --- Core authentication (no dependencies) ---
+			// --- Core authentication (no dependencies) ---
 
-		if (data.users.length > 0) {
-			validateRecords(data.users, "user", ["id", "username"]);
-			await tx.user.createMany({
-				data: data.users as Prisma.UserCreateManyInput[],
-			});
-		}
+			if (data.users.length > 0) {
+				await tx.user.createMany({
+					data: data.users as Prisma.UserCreateManyInput[],
+				});
+			}
 
-		if (data.sessions.length > 0) {
-			validateRecords(data.sessions, "session", ["id", "userId", "expiresAt"]);
-			await tx.session.createMany({
-				data: data.sessions as Prisma.SessionCreateManyInput[],
-			});
-		}
+			if (data.sessions.length > 0) {
+				await tx.session.createMany({
+					data: data.sessions as Prisma.SessionCreateManyInput[],
+				});
+			}
 
-		if (data.oidcProviders && data.oidcProviders.length > 0) {
-			validateRecords(data.oidcProviders, "oidcProvider", ["id", "clientId", "issuer"]);
-			const providerData = data.oidcProviders[0] as Prisma.OIDCProviderCreateInput;
-			await tx.oIDCProvider.create({
-				data: { ...providerData, id: 1 },
-			});
-		}
+			if (data.oidcProviders && data.oidcProviders.length > 0) {
+				const providerData = data.oidcProviders[0] as Prisma.OIDCProviderCreateInput;
+				await tx.oIDCProvider.create({
+					data: { ...providerData, id: 1 },
+				});
+			}
 
-		if (data.oidcAccounts.length > 0) {
-			validateRecords(data.oidcAccounts, "oidcAccount", ["id", "userId", "providerUserId"]);
-			await tx.oIDCAccount.createMany({
-				data: data.oidcAccounts as Prisma.OIDCAccountCreateManyInput[],
-			});
-		}
+			if (data.oidcAccounts.length > 0) {
+				await tx.oIDCAccount.createMany({
+					data: data.oidcAccounts as Prisma.OIDCAccountCreateManyInput[],
+				});
+			}
 
-		if (data.webAuthnCredentials.length > 0) {
-			validateRecords(data.webAuthnCredentials, "webAuthnCredential", [
-				"id",
-				"userId",
-				"publicKey",
-			]);
-			await tx.webAuthnCredential.createMany({
-				data: data.webAuthnCredentials as Prisma.WebAuthnCredentialCreateManyInput[],
-			});
-		}
+			if (data.webAuthnCredentials.length > 0) {
+				await tx.webAuthnCredential.createMany({
+					data: data.webAuthnCredentials as Prisma.WebAuthnCredentialCreateManyInput[],
+				});
+			}
 
-		// --- Service instances & tags ---
+			// --- Service instances & tags ---
 
-		if (data.serviceInstances.length > 0) {
-			validateRecords(data.serviceInstances, "serviceInstance", ["id", "service", "baseUrl"]);
-			await tx.serviceInstance.createMany({
-				data: data.serviceInstances as Prisma.ServiceInstanceCreateManyInput[],
-			});
-		}
+			if (data.serviceInstances.length > 0) {
+				await tx.serviceInstance.createMany({
+					data: data.serviceInstances as Prisma.ServiceInstanceCreateManyInput[],
+				});
+			}
 
-		if (data.serviceTags.length > 0) {
-			validateRecords(data.serviceTags, "serviceTag", ["id", "name"]);
-			await tx.serviceTag.createMany({
-				data: data.serviceTags as Prisma.ServiceTagCreateManyInput[],
-			});
-		}
+			if (data.serviceTags.length > 0) {
+				await tx.serviceTag.createMany({
+					data: data.serviceTags as Prisma.ServiceTagCreateManyInput[],
+				});
+			}
 
-		if (data.serviceInstanceTags.length > 0) {
-			validateRecords(data.serviceInstanceTags, "serviceInstanceTag", ["instanceId", "tagId"]);
-			await tx.serviceInstanceTag.createMany({
-				data: data.serviceInstanceTags as Prisma.ServiceInstanceTagCreateManyInput[],
-			});
-		}
+			if (data.serviceInstanceTags.length > 0) {
+				await tx.serviceInstanceTag.createMany({
+					data: data.serviceInstanceTags as Prisma.ServiceInstanceTagCreateManyInput[],
+				});
+			}
 
-		// --- System settings (singleton) ---
+			// --- System settings (singleton) ---
 
-		if (data.systemSettings && data.systemSettings.length > 0) {
-			validateRecords(data.systemSettings, "systemSettings", ["id"]);
-			const settingsData = data.systemSettings[0] as Prisma.SystemSettingsCreateInput;
-			await tx.systemSettings.create({
-				data: { ...settingsData, id: 1 },
-			});
-		}
+			if (data.systemSettings && data.systemSettings.length > 0) {
+				const settingsData = data.systemSettings[0] as Prisma.SystemSettingsCreateInput;
+				await tx.systemSettings.create({
+					data: { ...settingsData, id: 1 },
+				});
+			}
 
-		if (Array.isArray(data.backupSettings) && data.backupSettings.length > 0) {
-			validateRecords(data.backupSettings, "backupSettings", ["id"]);
-			const settings = data.backupSettings[0] as Prisma.BackupSettingsCreateInput;
-			await tx.backupSettings.create({ data: { ...settings, id: 1 } });
-		}
+			if (Array.isArray(data.backupSettings) && data.backupSettings.length > 0) {
+				const settings = data.backupSettings[0] as Prisma.BackupSettingsCreateInput;
+				await tx.backupSettings.create({ data: { ...settings, id: 1 } });
+			}
 
-		if (Array.isArray(data.vapidKeys) && data.vapidKeys.length > 0) {
-			validateRecords(data.vapidKeys, "vapidKeys", ["id", "publicKey"]);
-			const keys = data.vapidKeys[0] as Prisma.VapidKeysCreateInput;
-			await tx.vapidKeys.create({ data: { ...keys, id: 1 } });
-		}
+			if (Array.isArray(data.vapidKeys) && data.vapidKeys.length > 0) {
+				const keys = data.vapidKeys[0] as Prisma.VapidKeysCreateInput;
+				await tx.vapidKeys.create({ data: { ...keys, id: 1 } });
+			}
 
-		// --- TRaSH Guides configuration ---
+			// --- TRaSH Guides configuration ---
 
-		if (data.trashSettings && data.trashSettings.length > 0) {
-			validateRecords(data.trashSettings, "trashSettings", ["id", "userId"]);
-			await tx.trashSettings.createMany({
-				data: data.trashSettings as Prisma.TrashSettingsCreateManyInput[],
-			});
-		}
+			if (data.trashSettings && data.trashSettings.length > 0) {
+				await tx.trashSettings.createMany({
+					data: data.trashSettings as Prisma.TrashSettingsCreateManyInput[],
+				});
+			}
 
-		if (data.trashTemplates && data.trashTemplates.length > 0) {
-			validateRecords(data.trashTemplates, "trashTemplate", ["id", "name", "serviceType"]);
-			await tx.trashTemplate.createMany({
-				data: data.trashTemplates as Prisma.TrashTemplateCreateManyInput[],
-			});
-		}
+			if (data.trashTemplates && data.trashTemplates.length > 0) {
+				await tx.trashTemplate.createMany({
+					data: data.trashTemplates as Prisma.TrashTemplateCreateManyInput[],
+				});
+			}
 
-		if (data.trashSyncSchedules && data.trashSyncSchedules.length > 0) {
-			validateRecords(data.trashSyncSchedules, "trashSyncSchedule", ["id", "userId"]);
-			await tx.trashSyncSchedule.createMany({
-				data: data.trashSyncSchedules as Prisma.TrashSyncScheduleCreateManyInput[],
-			});
-		}
+			if (data.trashSyncSchedules && data.trashSyncSchedules.length > 0) {
+				await tx.trashSyncSchedule.createMany({
+					data: data.trashSyncSchedules as Prisma.TrashSyncScheduleCreateManyInput[],
+				});
+			}
 
-		if (data.trashBackups && data.trashBackups.length > 0) {
-			validateRecords(data.trashBackups, "trashBackup", ["id", "instanceId", "userId"]);
-			await tx.trashBackup.createMany({
-				data: data.trashBackups as Prisma.TrashBackupCreateManyInput[],
-			});
-		}
+			if (data.trashBackups && data.trashBackups.length > 0) {
+				await tx.trashBackup.createMany({
+					data: data.trashBackups as Prisma.TrashBackupCreateManyInput[],
+				});
+			}
 
-		if (data.templateQualityProfileMappings && data.templateQualityProfileMappings.length > 0) {
-			validateRecords(data.templateQualityProfileMappings, "templateQualityProfileMapping", [
-				"id",
-				"templateId",
-				"instanceId",
-			]);
-			await tx.templateQualityProfileMapping.createMany({
-				data: data.templateQualityProfileMappings as Prisma.TemplateQualityProfileMappingCreateManyInput[],
-			});
-		}
+			if (data.templateQualityProfileMappings && data.templateQualityProfileMappings.length > 0) {
+				await tx.templateQualityProfileMapping.createMany({
+					data: data.templateQualityProfileMappings as Prisma.TemplateQualityProfileMappingCreateManyInput[],
+				});
+			}
 
-		if (data.instanceQualityProfileOverrides && data.instanceQualityProfileOverrides.length > 0) {
-			validateRecords(data.instanceQualityProfileOverrides, "instanceQualityProfileOverride", [
-				"id",
-				"instanceId",
-			]);
-			await tx.instanceQualityProfileOverride.createMany({
-				data: data.instanceQualityProfileOverrides as Prisma.InstanceQualityProfileOverrideCreateManyInput[],
-			});
-		}
+			if (data.instanceQualityProfileOverrides && data.instanceQualityProfileOverrides.length > 0) {
+				await tx.instanceQualityProfileOverride.createMany({
+					data: data.instanceQualityProfileOverrides as Prisma.InstanceQualityProfileOverrideCreateManyInput[],
+				});
+			}
 
-		if (data.standaloneCFDeployments && data.standaloneCFDeployments.length > 0) {
-			validateRecords(data.standaloneCFDeployments, "standaloneCFDeployment", [
-				"id",
-				"instanceId",
-				"cfTrashId",
-			]);
-			await tx.standaloneCFDeployment.createMany({
-				data: data.standaloneCFDeployments as Prisma.StandaloneCFDeploymentCreateManyInput[],
-			});
-		}
+			if (data.standaloneCFDeployments && data.standaloneCFDeployments.length > 0) {
+				await tx.standaloneCFDeployment.createMany({
+					data: data.standaloneCFDeployments as Prisma.StandaloneCFDeploymentCreateManyInput[],
+				});
+			}
 
-		if (data.qualitySizeMappings && data.qualitySizeMappings.length > 0) {
-			validateRecords(data.qualitySizeMappings, "qualitySizeMapping", [
-				"id",
-				"instanceId",
-				"userId",
-			]);
-			await tx.qualitySizeMapping.createMany({
-				data: data.qualitySizeMappings as Prisma.QualitySizeMappingCreateManyInput[],
-			});
-		}
+			if (data.qualitySizeMappings && data.qualitySizeMappings.length > 0) {
+				await tx.qualitySizeMapping.createMany({
+					data: data.qualitySizeMappings as Prisma.QualitySizeMappingCreateManyInput[],
+				});
+			}
 
-		// --- TRaSH Guides history/audit ---
+			// --- TRaSH Guides history/audit ---
 
-		if (data.trashSyncHistory && data.trashSyncHistory.length > 0) {
-			validateRecords(data.trashSyncHistory, "trashSyncHistory", ["id", "instanceId", "userId"]);
-			await tx.trashSyncHistory.createMany({
-				data: data.trashSyncHistory as Prisma.TrashSyncHistoryCreateManyInput[],
-			});
-		}
+			if (data.trashSyncHistory && data.trashSyncHistory.length > 0) {
+				await tx.trashSyncHistory.createMany({
+					data: data.trashSyncHistory as Prisma.TrashSyncHistoryCreateManyInput[],
+				});
+			}
 
-		if (data.templateDeploymentHistory && data.templateDeploymentHistory.length > 0) {
-			validateRecords(data.templateDeploymentHistory, "templateDeploymentHistory", [
-				"id",
-				"templateId",
-				"instanceId",
-			]);
-			await tx.templateDeploymentHistory.createMany({
-				data: data.templateDeploymentHistory as Prisma.TemplateDeploymentHistoryCreateManyInput[],
-			});
-		}
+			if (data.templateDeploymentHistory && data.templateDeploymentHistory.length > 0) {
+				await tx.templateDeploymentHistory.createMany({
+					data: data.templateDeploymentHistory as Prisma.TemplateDeploymentHistoryCreateManyInput[],
+				});
+			}
 
-		if (data.namingDeployHistory && data.namingDeployHistory.length > 0) {
-			validateRecords(data.namingDeployHistory, "namingDeployHistory", [
-				"id",
-				"instanceId",
-				"userId",
-				"status",
-			]);
-			await tx.namingDeployHistory.createMany({
-				data: data.namingDeployHistory as Prisma.NamingDeployHistoryCreateManyInput[],
-			});
-		}
+			if (data.namingDeployHistory && data.namingDeployHistory.length > 0) {
+				await tx.namingDeployHistory.createMany({
+					data: data.namingDeployHistory as Prisma.NamingDeployHistoryCreateManyInput[],
+				});
+			}
 
-		// --- Hunting feature ---
+			// --- Hunting feature ---
 
-		if (data.huntConfigs && data.huntConfigs.length > 0) {
-			validateRecords(data.huntConfigs, "huntConfig", ["id", "instanceId"]);
-			await tx.huntConfig.createMany({
-				data: data.huntConfigs as Prisma.HuntConfigCreateManyInput[],
-			});
-		}
+			if (data.huntConfigs && data.huntConfigs.length > 0) {
+				await tx.huntConfig.createMany({
+					data: data.huntConfigs as Prisma.HuntConfigCreateManyInput[],
+				});
+			}
 
-		if (data.huntLogs && data.huntLogs.length > 0) {
-			validateRecords(data.huntLogs, "huntLog", ["id", "instanceId"]);
-			await tx.huntLog.createMany({
-				data: data.huntLogs as Prisma.HuntLogCreateManyInput[],
-			});
-		}
+			if (data.huntLogs && data.huntLogs.length > 0) {
+				await tx.huntLog.createMany({
+					data: data.huntLogs as Prisma.HuntLogCreateManyInput[],
+				});
+			}
 
-		if (data.huntSearchHistory && data.huntSearchHistory.length > 0) {
-			validateRecords(data.huntSearchHistory, "huntSearchHistory", ["id", "configId"]);
-			await tx.huntSearchHistory.createMany({
-				data: data.huntSearchHistory as Prisma.HuntSearchHistoryCreateManyInput[],
-			});
-		}
+			if (data.huntSearchHistory && data.huntSearchHistory.length > 0) {
+				await tx.huntSearchHistory.createMany({
+					data: data.huntSearchHistory as Prisma.HuntSearchHistoryCreateManyInput[],
+				});
+			}
 
-		// Durable configuration (dependency order).
-		if (data.notificationChannel && data.notificationChannel.length > 0) {
-			validateRecords(data.notificationChannel, "notificationChannel", ["id", "userId"]);
-			await tx.notificationChannel.createMany({
-				data: data.notificationChannel as Prisma.NotificationChannelCreateManyInput[],
-			});
-		}
-		if (data.notificationSubscription && data.notificationSubscription.length > 0) {
-			validateRecords(data.notificationSubscription, "notificationSubscription", [
-				"channelId",
-				"eventType",
-			]);
-			await tx.notificationSubscription.createMany({
-				data: data.notificationSubscription as Prisma.NotificationSubscriptionCreateManyInput[],
-			});
-		}
-		if (data.notificationRule && data.notificationRule.length > 0) {
-			validateRecords(data.notificationRule, "notificationRule", ["id", "userId"]);
-			await tx.notificationRule.createMany({
-				data: data.notificationRule as Prisma.NotificationRuleCreateManyInput[],
-			});
-		}
-		if (data.notificationAggregationConfig && data.notificationAggregationConfig.length > 0) {
-			validateRecords(data.notificationAggregationConfig, "notificationAggregationConfig", [
-				"id",
-				"userId",
-			]);
-			await tx.notificationAggregationConfig.createMany({
-				data: data.notificationAggregationConfig as Prisma.NotificationAggregationConfigCreateManyInput[],
-			});
-		}
-		if (data.autoTagRule && data.autoTagRule.length > 0) {
-			validateRecords(data.autoTagRule, "autoTagRule", ["id", "userId"]);
-			await tx.autoTagRule.createMany({
-				data: data.autoTagRule as Prisma.AutoTagRuleCreateManyInput[],
-			});
-		}
-		if (data.labelSyncRule && data.labelSyncRule.length > 0) {
-			validateRecords(data.labelSyncRule, "labelSyncRule", ["id", "userId"]);
-			await tx.labelSyncRule.createMany({
-				data: data.labelSyncRule as Prisma.LabelSyncRuleCreateManyInput[],
-			});
-		}
-		if (data.queueCleanerConfig && data.queueCleanerConfig.length > 0) {
-			validateRecords(data.queueCleanerConfig, "queueCleanerConfig", ["id", "instanceId"]);
-			await tx.queueCleanerConfig.createMany({
-				data: data.queueCleanerConfig as Prisma.QueueCleanerConfigCreateManyInput[],
-			});
-		}
-		if (data.libraryCleanupConfig && data.libraryCleanupConfig.length > 0) {
-			validateRecords(data.libraryCleanupConfig, "libraryCleanupConfig", ["id", "userId"]);
-			await tx.libraryCleanupConfig.createMany({
-				data: data.libraryCleanupConfig as Prisma.LibraryCleanupConfigCreateManyInput[],
-			});
-		}
-		if (data.libraryCleanupRule && data.libraryCleanupRule.length > 0) {
-			validateRecords(data.libraryCleanupRule, "libraryCleanupRule", ["id", "configId"]);
-			await tx.libraryCleanupRule.createMany({
-				data: data.libraryCleanupRule as Prisma.LibraryCleanupRuleCreateManyInput[],
-			});
-		}
-		if (data.libraryCleanupApproval && data.libraryCleanupApproval.length > 0) {
-			validateRecords(data.libraryCleanupApproval, "libraryCleanupApproval", [
-				"id",
-				"configId",
-				"instanceId",
-				"status",
-				"sizeOnDisk",
-				"expiresAt",
-			]);
-			await tx.libraryCleanupApproval.createMany({
-				data: data.libraryCleanupApproval.map((row) => ({
-					...(row as Prisma.LibraryCleanupApprovalCreateManyInput),
-					terminalAuditRecordedAt: null,
-					terminalAuditRecoveryAttemptedAt: null,
-					sizeOnDisk:
-						typeof (row as Record<string, unknown>).sizeOnDisk === "string"
-							? BigInt((row as Record<string, unknown>).sizeOnDisk as string)
-							: (row as Prisma.LibraryCleanupApprovalCreateManyInput).sizeOnDisk,
-				})) as Prisma.LibraryCleanupApprovalCreateManyInput[],
-			});
-		}
-		if (data.libraryCleanupMediaServerScan && data.libraryCleanupMediaServerScan.length > 0) {
-			validateRecords(data.libraryCleanupMediaServerScan, "libraryCleanupMediaServerScan", [
-				"id",
-				"approvalId",
-				"instanceId",
-				"service",
-				"mediaType",
-				"targetKey",
-				"status",
-			]);
-			await tx.libraryCleanupMediaServerScan.createMany({
-				data: data.libraryCleanupMediaServerScan as Prisma.LibraryCleanupMediaServerScanCreateManyInput[],
-			});
-		}
-		if (data.namingConfig && data.namingConfig.length > 0) {
-			validateRecords(data.namingConfig, "namingConfig", ["id", "instanceId", "userId"]);
-			await tx.namingConfig.createMany({
-				data: data.namingConfig as Prisma.NamingConfigCreateManyInput[],
-			});
-		}
-		if (data.userCustomFormat && data.userCustomFormat.length > 0) {
-			validateRecords(data.userCustomFormat, "userCustomFormat", ["id", "userId"]);
-			await tx.userCustomFormat.createMany({
-				data: data.userCustomFormat as Prisma.UserCustomFormatCreateManyInput[],
-			});
-		}
-	});
+			// Durable configuration (dependency order).
+			if (data.notificationChannel && data.notificationChannel.length > 0) {
+				await tx.notificationChannel.createMany({
+					data: data.notificationChannel as Prisma.NotificationChannelCreateManyInput[],
+				});
+			}
+			if (data.notificationSubscription && data.notificationSubscription.length > 0) {
+				await tx.notificationSubscription.createMany({
+					data: data.notificationSubscription as Prisma.NotificationSubscriptionCreateManyInput[],
+				});
+			}
+			if (data.notificationRule && data.notificationRule.length > 0) {
+				await tx.notificationRule.createMany({
+					data: data.notificationRule as Prisma.NotificationRuleCreateManyInput[],
+				});
+			}
+			if (data.notificationAggregationConfig && data.notificationAggregationConfig.length > 0) {
+				await tx.notificationAggregationConfig.createMany({
+					data: data.notificationAggregationConfig as Prisma.NotificationAggregationConfigCreateManyInput[],
+				});
+			}
+			if (data.autoTagRule && data.autoTagRule.length > 0) {
+				await tx.autoTagRule.createMany({
+					data: data.autoTagRule as Prisma.AutoTagRuleCreateManyInput[],
+				});
+			}
+			if (data.labelSyncRule && data.labelSyncRule.length > 0) {
+				await tx.labelSyncRule.createMany({
+					data: data.labelSyncRule as Prisma.LabelSyncRuleCreateManyInput[],
+				});
+			}
+			if (data.queueCleanerConfig && data.queueCleanerConfig.length > 0) {
+				await tx.queueCleanerConfig.createMany({
+					data: data.queueCleanerConfig as Prisma.QueueCleanerConfigCreateManyInput[],
+				});
+			}
+			if (data.libraryCleanupConfig && data.libraryCleanupConfig.length > 0) {
+				await tx.libraryCleanupConfig.createMany({
+					data: data.libraryCleanupConfig as Prisma.LibraryCleanupConfigCreateManyInput[],
+				});
+			}
+			if (data.libraryCleanupRule && data.libraryCleanupRule.length > 0) {
+				await tx.libraryCleanupRule.createMany({
+					data: data.libraryCleanupRule as Prisma.LibraryCleanupRuleCreateManyInput[],
+				});
+			}
+			if (libraryCleanupApprovals.length > 0) {
+				await tx.libraryCleanupApproval.createMany({
+					data: libraryCleanupApprovals,
+				});
+			}
+			if (data.libraryCleanupMediaServerScan && data.libraryCleanupMediaServerScan.length > 0) {
+				await tx.libraryCleanupMediaServerScan.createMany({
+					data: data.libraryCleanupMediaServerScan as Prisma.LibraryCleanupMediaServerScanCreateManyInput[],
+				});
+			}
+			if (data.namingConfig && data.namingConfig.length > 0) {
+				await tx.namingConfig.createMany({
+					data: data.namingConfig as Prisma.NamingConfigCreateManyInput[],
+				});
+			}
+			if (data.userCustomFormat && data.userCustomFormat.length > 0) {
+				await tx.userCustomFormat.createMany({
+					data: data.userCustomFormat as Prisma.UserCustomFormatCreateManyInput[],
+				});
+			}
+		},
+		{ timeout: RESTORE_TRANSACTION_TIMEOUT_MS },
+	);
 }
