@@ -37,6 +37,9 @@ The payload contains all of these arrays:
   `notificationAggregationConfig`, `autoTagRule`, `labelSyncRule`,
   `queueCleanerConfig`, `libraryCleanupConfig`, `libraryCleanupRule`,
   `namingConfig`, and `userCustomFormat`.
+- Library sync configuration: `librarySyncSettings` contains only
+  `instanceId`, `pollingEnabled`, and `pollingIntervalMins`. Volatile sync
+  status is excluded and resets to database defaults.
 - Cleanup coordination: active `libraryCleanupApproval` rows, executed
   approvals still awaiting terminal audit, and active
   `libraryCleanupMediaServerScan` rows are included; an active scan also
@@ -117,7 +120,7 @@ are copied.
 | `InodeIndexCache` | disposable/rebuildable cache | excluded |
 | `LibraryCache` | disposable/rebuildable cache | excluded |
 | `EpisodeFileCache` | disposable/rebuildable cache | excluded |
-| `LibrarySyncStatus` | disposable/rebuildable cache | excluded |
+| `LibrarySyncStatus` | mixed durable config and disposable cache | `pollingEnabled` and `pollingIntervalMins` included as `librarySyncSettings`; sync timestamps, progress, duration, errors, and item counts excluded and reset |
 | `QueueCleanerStrike` | audit/history | excluded |
 | `QueueCleanerLog` | audit/history | excluded |
 | `LibraryCleanupApproval` | coordination | active statuses and executed rows awaiting terminal audit included; terminal-audit markers reset |

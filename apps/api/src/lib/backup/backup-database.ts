@@ -121,6 +121,27 @@ async function targetHasOmittedOidcProvider(
 	return provider?.count ? (await provider.count()) > 0 : false;
 }
 
+async function targetHasOmittedLibrarySyncSettings(
+	prisma: Prisma.TransactionClient | PrismaClient,
+): Promise<boolean> {
+	const model = (
+		prisma as unknown as Record<
+			string,
+			{
+				findMany?: (args: unknown) => Promise<unknown[]>;
+			}
+		>
+	).librarySyncStatus;
+	if (!model?.findMany) return false;
+	const rows = await model.findMany({
+		where: {
+			OR: [{ pollingEnabled: false }, { pollingIntervalMins: { not: 15 } }],
+		},
+		select: { instanceId: true },
+	});
+	return rows.length > 0;
+}
+
 async function targetHasActiveCleanupCoordination(
 	prisma: Prisma.TransactionClient | PrismaClient,
 	missingFields: readonly string[],
@@ -198,6 +219,12 @@ export async function assertRestoreCompatibility(
 		throw new BackupCompatibilityError();
 	}
 	if (!Array.isArray(record.oidcProviders) && (await targetHasOmittedOidcProvider(prisma))) {
+		throw new BackupCompatibilityError();
+	}
+	if (
+		!Array.isArray(record.librarySyncSettings) &&
+		(await targetHasOmittedLibrarySyncSettings(prisma))
+	) {
 		throw new BackupCompatibilityError();
 	}
 	if (
@@ -831,6 +858,13 @@ async function exportDatabaseSnapshot(
 	const queueCleanerConfig = await prisma.queueCleanerConfig.findMany();
 	const libraryCleanupConfig = await prisma.libraryCleanupConfig.findMany();
 	const libraryCleanupRule = await prisma.libraryCleanupRule.findMany();
+	const librarySyncSettings = await prisma.librarySyncStatus.findMany({
+		select: {
+			instanceId: true,
+			pollingEnabled: true,
+			pollingIntervalMins: true,
+		},
+	});
 	const namingConfig = await prisma.namingConfig.findMany();
 	const userCustomFormat = await prisma.userCustomFormat.findMany();
 	const activeCleanupApprovals = await prisma.libraryCleanupApproval.findMany({
@@ -1042,6 +1076,7 @@ async function exportDatabaseSnapshot(
 		queueCleanerConfig,
 		libraryCleanupConfig,
 		libraryCleanupRule,
+		librarySyncSettings,
 		namingConfig,
 		userCustomFormat,
 		libraryCleanupApproval,
@@ -1214,6 +1249,13 @@ function validateRestoreRecords(data: BackupData["data"]): void {
 	if (data.libraryCleanupRule && data.libraryCleanupRule.length > 0) {
 		validateRecords(data.libraryCleanupRule, "libraryCleanupRule", ["id", "configId"]);
 	}
+	if (data.librarySyncSettings && data.librarySyncSettings.length > 0) {
+		validateRecords(data.librarySyncSettings, "librarySyncSettings", [
+			"instanceId",
+			"pollingEnabled",
+			"pollingIntervalMins",
+		]);
+	}
 	if (data.libraryCleanupApproval && data.libraryCleanupApproval.length > 0) {
 		validateRecords(data.libraryCleanupApproval, "libraryCleanupApproval", [
 			"id",
@@ -1258,6 +1300,51 @@ function prepareLibraryCleanupApprovals(
 	}));
 }
 
+function prepareLibrarySyncSettings(
+	data: BackupData["data"],
+): Prisma.LibrarySyncStatusCreateManyInput[] {
+	if (!data.librarySyncSettings) return [];
+	const seenInstanceIds = new Set<string>();
+	return data.librarySyncSettings.map((row, index) => {
+		if (typeof row !== "object" || row === null) {
+			throw new Error(`Invalid librarySyncSettings record at index ${index}: not an object`);
+		}
+		const record = row as Record<string, unknown>;
+		if (typeof record.instanceId !== "string" || record.instanceId.length === 0) {
+			throw new Error(
+				`Invalid librarySyncSettings record at index ${index}: instanceId must be a non-empty string`,
+			);
+		}
+		if (seenInstanceIds.has(record.instanceId)) {
+			throw new Error(
+				`Invalid backup format: duplicate librarySyncSettings instanceId ${record.instanceId}`,
+			);
+		}
+		if (typeof record.pollingEnabled !== "boolean") {
+			throw new Error(
+				`Invalid librarySyncSettings record at index ${index}: pollingEnabled must be a boolean`,
+			);
+		}
+		if (
+			typeof record.pollingIntervalMins !== "number" ||
+			!Number.isInteger(record.pollingIntervalMins) ||
+			record.pollingIntervalMins < 5 ||
+			record.pollingIntervalMins > 1440
+		) {
+			throw new Error(
+				`Invalid librarySyncSettings record at index ${index}: pollingIntervalMins must be an integer from 5 to 1440`,
+			);
+		}
+
+		seenInstanceIds.add(record.instanceId);
+		return {
+			instanceId: record.instanceId,
+			pollingEnabled: record.pollingEnabled,
+			pollingIntervalMins: record.pollingIntervalMins,
+		};
+	});
+}
+
 /**
  * Restore database from backup data
  * Uses bulk inserts for better performance and validates data before restoration
@@ -1270,6 +1357,7 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 	validateSingletonCollections(data);
 	validateRestoreRecords(data);
 	const libraryCleanupApprovals = prepareLibraryCleanupApprovals(data);
+	const librarySyncSettings = prepareLibrarySyncSettings(data);
 	// Use a transaction to ensure atomicity
 	await prisma.$transaction(
 		async (tx) => {
@@ -1403,6 +1491,12 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 			if (data.serviceInstanceTags.length > 0) {
 				await tx.serviceInstanceTag.createMany({
 					data: data.serviceInstanceTags as Prisma.ServiceInstanceTagCreateManyInput[],
+				});
+			}
+
+			if (librarySyncSettings.length > 0) {
+				await tx.librarySyncStatus.createMany({
+					data: librarySyncSettings,
 				});
 			}
 

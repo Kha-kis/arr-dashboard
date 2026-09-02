@@ -223,6 +223,20 @@ async function seedDurableSource(prisma: PrismaClient): Promise<void> {
 		},
 	});
 	await prisma.serviceInstanceTag.create({ data: { instanceId, tagId: "issue815-tag" } });
+	await prisma.librarySyncStatus.create({
+		data: {
+			id: "issue815-library-sync-status",
+			instanceId,
+			pollingEnabled: false,
+			pollingIntervalMins: 90,
+			lastFullSync: coordinationCreatedAt,
+			lastIncrementalSync: coordinationUpdatedAt,
+			syncInProgress: true,
+			lastSyncDurationMs: 815,
+			lastError: "source-era sync error",
+			itemCount: 123,
+		},
+	});
 	await prisma.oIDCProvider.create({
 		data: {
 			id: 1,
@@ -586,11 +600,22 @@ const MODEL_EXPORTS = [
 
 		it("rejects incomplete populated-target restores, then replaces complete and covered legacy state", async () => {
 			const exported = await exportDatabase(source.prisma, { excludeOperationalHistory: true });
+			const exportedLibrarySyncSettings = exported.librarySyncSettings as Array<
+				Record<string, unknown>
+			>;
 			const backup = {
 				version: BACKUP_VERSION,
 				appVersion: "2.24.2",
 				timestamp: new Date().toISOString(),
-				data: exported,
+				data: {
+					...exported,
+					librarySyncSettings: exportedLibrarySyncSettings.map((settings) => ({
+						...settings,
+						syncInProgress: true,
+						lastError: "injected stale state",
+						itemCount: 999,
+					})),
+				},
 				secrets: { encryptionKey: "key", sessionCookieSecret: "session" },
 			};
 			validateBackup(backup);
@@ -640,6 +665,28 @@ const MODEL_EXPORTS = [
 			expect(await target.prisma.notificationLog.count()).toBe(0);
 			expect(await target.prisma.trashCache.count()).toBe(0);
 			expect(await target.prisma.libraryCleanupMediaServerScanLease.count()).toBe(0);
+			expect(exported.librarySyncSettings).toEqual([
+				{
+					instanceId: "issue815-roundtrip-instance",
+					pollingEnabled: false,
+					pollingIntervalMins: 90,
+				},
+			]);
+			expect(
+				await target.prisma.librarySyncStatus.findUnique({
+					where: { instanceId: "issue815-roundtrip-instance" },
+				}),
+			).toMatchObject({
+				instanceId: "issue815-roundtrip-instance",
+				pollingEnabled: false,
+				pollingIntervalMins: 90,
+				lastFullSync: null,
+				lastIncrementalSync: null,
+				syncInProgress: false,
+				lastSyncDurationMs: null,
+				lastError: null,
+				itemCount: 0,
+			});
 
 			for (const [exportKey, modelKey] of MODEL_EXPORTS) {
 				const model = (

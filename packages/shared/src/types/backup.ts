@@ -133,6 +133,7 @@ export interface BackupData {
 		queueCleanerConfig?: unknown[];
 		libraryCleanupConfig?: unknown[];
 		libraryCleanupRule?: unknown[];
+		librarySyncSettings?: unknown[];
 		namingConfig?: unknown[];
 		userCustomFormat?: unknown[];
 		libraryCleanupApproval?: unknown[];

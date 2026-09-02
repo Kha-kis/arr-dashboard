@@ -15,6 +15,7 @@ const DURABLE_CONFIG_KEYS = [
 	"queueCleanerConfig",
 	"libraryCleanupConfig",
 	"libraryCleanupRule",
+	"librarySyncSettings",
 	"namingConfig",
 	"userCustomFormat",
 	"namingDeployHistory",
@@ -103,6 +104,13 @@ describe("backup format 1.2", () => {
 		expect(() => validateBackup(backup)).toThrow(/libraryCleanupApproval/);
 	});
 
+	it("rejects a 1.2 payload when library polling settings are missing", () => {
+		const backup = baseBackup() as { data: Record<string, unknown> };
+		delete backup.data.librarySyncSettings;
+
+		expect(() => validateBackup(backup)).toThrow(/librarySyncSettings/);
+	});
+
 	it("exports every durable configuration collection as an explicit array", async () => {
 		const models = [
 			"user",
@@ -129,7 +137,10 @@ describe("backup format 1.2", () => {
 			"trashBackup",
 			"libraryCleanupApproval",
 			"libraryCleanupMediaServerScan",
-			...DURABLE_CONFIG_KEYS.filter((key) => key !== "backupSettings" && key !== "vapidKeys"),
+			"librarySyncStatus",
+			...DURABLE_CONFIG_KEYS.filter(
+				(key) => key !== "backupSettings" && key !== "vapidKeys" && key !== "librarySyncSettings",
+			),
 			"backupSettings",
 			"vapidKeys",
 		];
@@ -156,6 +167,66 @@ describe("backup format 1.2", () => {
 		}
 		expect(data.libraryCleanupApproval).toEqual([]);
 		expect(data.libraryCleanupMediaServerScan).toEqual([]);
+	});
+
+	it("exports only durable library polling settings", async () => {
+		const status = {
+			id: "status-1",
+			instanceId: "instance-1",
+			pollingEnabled: false,
+			pollingIntervalMins: 90,
+			lastFullSync: new Date("2026-08-31T00:00:00.000Z"),
+			lastIncrementalSync: new Date("2026-08-31T00:01:00.000Z"),
+			syncInProgress: true,
+			lastSyncDurationMs: 123,
+			lastError: "stale failure",
+			itemCount: 42,
+			createdAt: new Date("2026-08-31T00:00:00.000Z"),
+			updatedAt: new Date("2026-08-31T00:01:00.000Z"),
+		};
+		const emptyDelegate = {
+			findMany: vi.fn().mockResolvedValue([]),
+			count: vi.fn().mockResolvedValue(0),
+		};
+		const librarySyncFindMany = vi.fn().mockResolvedValue([
+			{
+				instanceId: status.instanceId,
+				pollingEnabled: status.pollingEnabled,
+				pollingIntervalMins: status.pollingIntervalMins,
+			},
+		]);
+		let prisma!: PrismaClient;
+		prisma = new Proxy(
+			{},
+			{
+				get: (_target, property) => {
+					if (property === "$transaction") {
+						return async (operation: (tx: PrismaClient) => Promise<unknown>) => operation(prisma);
+					}
+					if (property === "librarySyncStatus") {
+						return { findMany: librarySyncFindMany };
+					}
+					return emptyDelegate;
+				},
+			},
+		) as unknown as PrismaClient;
+
+		const data = await exportDatabase(prisma);
+
+		expect(librarySyncFindMany).toHaveBeenCalledWith({
+			select: {
+				instanceId: true,
+				pollingEnabled: true,
+				pollingIntervalMins: true,
+			},
+		});
+		expect(data.librarySyncSettings).toEqual([
+			{
+				instanceId: "instance-1",
+				pollingEnabled: false,
+				pollingIntervalMins: 90,
+			},
+		]);
 	});
 
 	it("exports no-scan approvals awaiting terminal audit and resets nonportable audit markers", async () => {
@@ -248,6 +319,73 @@ describe("backup format 1.2", () => {
 		await expect(assertRestoreCompatibility(prisma, legacyData as never)).rejects.toThrow(
 			"does not contain complete configuration or recovery coverage",
 		);
+	});
+
+	it("rejects legacy omission over non-default library polling settings", async () => {
+		const findMany = vi.fn().mockResolvedValue([{ instanceId: "instance-1" }]);
+		const prisma = {
+			librarySyncStatus: { findMany },
+		} as unknown as PrismaClient;
+		const legacyData = { ...baseBackup().data } as Record<string, unknown>;
+		delete legacyData.librarySyncSettings;
+
+		await expect(assertRestoreCompatibility(prisma, legacyData as never)).rejects.toThrow(
+			"does not contain complete configuration or recovery coverage",
+		);
+		expect(findMany).toHaveBeenCalledWith({
+			where: {
+				OR: [{ pollingEnabled: false }, { pollingIntervalMins: { not: 15 } }],
+			},
+			select: { instanceId: true },
+		});
+	});
+
+	it("allows legacy omission when library polling settings are defaults", async () => {
+		const prisma = {
+			librarySyncStatus: { findMany: vi.fn().mockResolvedValue([]) },
+		} as unknown as PrismaClient;
+		const legacyData = { ...baseBackup().data } as Record<string, unknown>;
+		delete legacyData.librarySyncSettings;
+
+		await expect(assertRestoreCompatibility(prisma, legacyData as never)).resolves.toBeUndefined();
+	});
+
+	it.each([
+		["non-boolean enabled state", { pollingEnabled: "false", pollingIntervalMins: 15 }],
+		["non-integer interval", { pollingEnabled: true, pollingIntervalMins: 15.5 }],
+		["too-short interval", { pollingEnabled: true, pollingIntervalMins: 4 }],
+		["too-long interval", { pollingEnabled: true, pollingIntervalMins: 1441 }],
+	])("rejects %s before opening the restore transaction", async (_label, settings) => {
+		const transaction = vi.fn();
+		const prisma = { $transaction: transaction } as unknown as PrismaClient;
+
+		await expect(
+			restoreDatabase(
+				prisma,
+				baseBackup({
+					librarySyncSettings: [{ instanceId: "instance-1", ...settings }],
+				}).data as never,
+			),
+		).rejects.toThrow(/librarySyncSettings/);
+		expect(transaction).not.toHaveBeenCalled();
+	});
+
+	it("rejects duplicate library polling settings before opening the restore transaction", async () => {
+		const transaction = vi.fn();
+		const prisma = { $transaction: transaction } as unknown as PrismaClient;
+		const settings = {
+			instanceId: "instance-1",
+			pollingEnabled: true,
+			pollingIntervalMins: 15,
+		};
+
+		await expect(
+			restoreDatabase(
+				prisma,
+				baseBackup({ librarySyncSettings: [settings, settings] }).data as never,
+			),
+		).rejects.toThrow(/duplicate.*librarySyncSettings/i);
+		expect(transaction).not.toHaveBeenCalled();
 	});
 
 	it("rejects incomplete legacy coverage over partial stored backup-password state", async () => {

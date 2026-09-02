@@ -31,6 +31,7 @@ export const DURABLE_CONFIG_PAYLOAD_FIELDS = [
 	"queueCleanerConfig",
 	"libraryCleanupConfig",
 	"libraryCleanupRule",
+	"librarySyncSettings",
 	"namingConfig",
 	"userCustomFormat",
 	"namingDeployHistory",

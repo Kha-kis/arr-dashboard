@@ -45,6 +45,7 @@ const TABLE_NAMES = [
 	"queueCleanerConfig",
 	"libraryCleanupConfig",
 	"libraryCleanupRule",
+	"librarySyncStatus",
 	"libraryCleanupApproval",
 	"libraryCleanupMediaServerScan",
 	"namingConfig",
