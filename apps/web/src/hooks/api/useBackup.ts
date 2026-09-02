@@ -1,7 +1,5 @@
 import type {
 	CreateBackupRequest,
-	RestoreBackupFromFileRequest,
-	RestoreBackupRequest,
 	SetBackupPasswordRequest,
 	UpdateBackupSettingsRequest,
 } from "@arr/shared";
@@ -38,32 +36,6 @@ export function useCreateBackup() {
 		onSuccess: () => {
 			// Invalidate backups list to refetch
 			queryClient.invalidateQueries({ queryKey: backupKeys.all });
-		},
-	});
-}
-
-/**
- * Restore application state from an encrypted backup file uploaded by the user.
- *
- * @returns A React Query mutation object whose mutation function accepts a `RestoreBackupRequest` and performs the restore operation
- */
-export function useRestoreBackup() {
-	return useMutation({
-		mutationFn: async (request: RestoreBackupRequest) => {
-			return backupApi.restoreBackup(request);
-		},
-	});
-}
-
-/**
- * Provide a mutation to restore application state from a backup file on the filesystem.
- *
- * @returns A React Query mutation object that accepts a `RestoreBackupFromFileRequest` and restores the application from the specified filesystem backup file.
- */
-export function useRestoreBackupFromFile() {
-	return useMutation({
-		mutationFn: async (request: RestoreBackupFromFileRequest) => {
-			return backupApi.restoreBackupFromFile(request);
 		},
 	});
 }
@@ -116,20 +88,6 @@ export function useUpdateBackupSettings() {
 		onSuccess: () => {
 			// Invalidate settings to refetch
 			queryClient.invalidateQueries({ queryKey: backupKeys.settings });
-		},
-	});
-}
-
-/**
- * Read a backup file and return it as a base64 string.
- * Uses chunked processing to avoid call stack overflow on large files.
- *
- * @returns A React Query mutation that accepts a File and returns a base64 string
- */
-export function useReadBackupFile() {
-	return useMutation({
-		mutationFn: async (file: File) => {
-			return backupApi.readBackupFile(file);
 		},
 	});
 }

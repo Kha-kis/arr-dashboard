@@ -1,7 +1,6 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BackupPasswordConfigurationError } from "../../lib/backup/backup-service.js";
-import { BackupCompatibilityError } from "../../lib/errors.js";
 import {
 	withCleanupMaintenanceGuard,
 	withCleanupOperationGuard,
@@ -23,6 +22,9 @@ vi.mock("../../lib/backup/backup-service.js", async (importOriginal) => {
 				return mockCreateBackup(...args);
 			}
 			restoreBackup(...args: unknown[]) {
+				return mockRestoreBackup(...args);
+			}
+			restoreBackupFromFile(...args: unknown[]) {
 				return mockRestoreBackup(...args);
 			}
 		},
@@ -185,25 +187,26 @@ describe("POST /api/backup/create", () => {
 		expect(mockCreateBackup).not.toHaveBeenCalled();
 	});
 
-	it("returns bounded 409 for an incomplete legacy restore", async () => {
-		mockRestoreBackup.mockRejectedValue(new BackupCompatibilityError());
-
+	it("returns bounded 503 before validating an uploaded restore", async () => {
 		const response = await app.inject({
 			method: "POST",
 			url: "/api/backup/restore",
 			headers: { "x-test-auth": "1" },
-			payload: { backupData: Buffer.from("legacy-backup").toString("base64") },
+			payload: {},
 		});
 
-		expect(response.statusCode).toBe(409);
+		expect(response.statusCode).toBe(503);
 		expect(JSON.parse(response.payload)).toEqual({
-			error:
-				"This backup does not contain complete configuration or recovery coverage and cannot safely replace the current installation. Create a new backup with the current version and retry.",
+			error: "Backup restore is temporarily unavailable",
+			details:
+				"Restore is disabled because this version cannot yet guarantee crash-safe database and secrets recovery. No data was changed.",
 		});
+		expect(mockRestoreBackup).not.toHaveBeenCalled();
 	});
 
-	it("preserves the generic 500 mapping for a restore infrastructure failure", async () => {
-		mockRestoreBackup.mockRejectedValue(new Error("database unavailable"));
+	it("returns bounded 503 when restore is fail-closed", async () => {
+		const { BackupRestoreUnavailableError } = await import("../../lib/backup/backup-service.js");
+		expect(new BackupRestoreUnavailableError().statusCode).toBe(503);
 
 		const response = await app.inject({
 			method: "POST",
@@ -212,7 +215,46 @@ describe("POST /api/backup/create", () => {
 			payload: { backupData: Buffer.from("current-backup").toString("base64") },
 		});
 
-		expect(response.statusCode).toBe(500);
-		expect(JSON.parse(response.payload)).toEqual({ error: "Failed to restore backup" });
+		expect(response.statusCode).toBe(503);
+		expect(JSON.parse(response.payload)).toEqual({
+			error: "Backup restore is temporarily unavailable",
+			details:
+				"Restore is disabled because this version cannot yet guarantee crash-safe database and secrets recovery. No data was changed.",
+		});
+		expect(mockRestoreBackup).not.toHaveBeenCalled();
+	});
+
+	it("returns bounded 503 for stored-file restore containment", async () => {
+		const response = await app.inject({
+			method: "POST",
+			url: "/api/backup/restore-from-file",
+			headers: { "x-test-auth": "1" },
+			payload: { id: "backup-1" },
+		});
+
+		expect(response.statusCode).toBe(503);
+		expect(JSON.parse(response.payload)).toEqual({
+			error: "Backup restore is temporarily unavailable",
+			details:
+				"Restore is disabled because this version cannot yet guarantee crash-safe database and secrets recovery. No data was changed.",
+		});
+		expect(mockRestoreBackup).not.toHaveBeenCalled();
+	});
+
+	it("returns bounded 503 before validating a stored-file restore", async () => {
+		const response = await app.inject({
+			method: "POST",
+			url: "/api/backup/restore-from-file",
+			headers: { "x-test-auth": "1" },
+			payload: {},
+		});
+
+		expect(response.statusCode).toBe(503);
+		expect(JSON.parse(response.payload)).toEqual({
+			error: "Backup restore is temporarily unavailable",
+			details:
+				"Restore is disabled because this version cannot yet guarantee crash-safe database and secrets recovery. No data was changed.",
+		});
+		expect(mockRestoreBackup).not.toHaveBeenCalled();
 	});
 });

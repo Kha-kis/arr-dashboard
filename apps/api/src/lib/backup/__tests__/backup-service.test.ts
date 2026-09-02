@@ -12,13 +12,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Encryptor } from "../../../lib/auth/encryption.js";
 import type { PrismaClient } from "../../../lib/prisma.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
-import {
-	CleanupMaintenanceConflictError,
-	withCleanupOperationGuard,
-} from "../../library-cleanup/cleanup-maintenance-gate.js";
 import { generateBackupId } from "../backup-file-utils.js";
 import {
 	BackupPasswordConfigurationError,
+	BackupRestoreUnavailableError,
 	BackupService,
 	estimateBackupBytes,
 } from "../backup-service.js";
@@ -1023,230 +1020,27 @@ describe("BackupService - backup password status (Unit)", () => {
 	});
 });
 
-describe("BackupService - legacy restore normalization", () => {
-	it("restores a v1.0 snapshotless partial undeploy as snapshot-free uncertain audit history", async () => {
-		const restoreSpy = vi.fn().mockResolvedValue(undefined);
-		vi.doMock("../backup-database.js", () => ({
-			exportDatabase: vi.fn(),
-			restoreDatabase: restoreSpy,
-			assertRestoreCompatibility: vi.fn().mockResolvedValue(undefined),
-		}));
-		vi.resetModules();
-		const { BackupService: IsolatedBackupService } = await import("../backup-service.js");
-		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "legacy-restore-normalize-"));
-		const secretsPath = path.join(tempDir, "secrets.json");
-		await fs.writeFile(
-			secretsPath,
-			JSON.stringify({
-				encryptionKey: "current-encryption-key",
-				sessionCookieSecret: "current-session-secret",
+describe("BackupService - fail-closed restore containment", () => {
+	it("fails closed before parsing, filesystem access, or database access", async () => {
+		const prisma = new Proxy(
+			{},
+			{
+				get() {
+					throw new Error("database access must remain unreachable");
+				},
+			},
+		) as PrismaClient;
+		const backupService = new BackupService(prisma, "/unreachable/secrets.json");
+
+		await expect(backupService.restoreBackup("not-json")).rejects.toEqual(
+			expect.objectContaining({
+				name: "BackupRestoreUnavailableError",
+				statusCode: 503,
 			}),
 		);
-		const legacyBackup = {
-			version: "1.0",
-			appVersion: "2.23.0",
-			timestamp: new Date().toISOString(),
-			data: {
-				users: [],
-				sessions: [],
-				serviceInstances: [{ id: "instance-1", userId: "user-1" }],
-				serviceTags: [],
-				serviceInstanceTags: [],
-				oidcAccounts: [],
-				webAuthnCredentials: [],
-				trashTemplates: [{ id: "template-1", userId: "user-1" }],
-				templateDeploymentHistory: [
-					{
-						id: "legacy-partial-undeploy",
-						instanceId: "instance-1",
-						templateId: "template-1",
-						userId: "user-1",
-						status: "PARTIAL_UNDEPLOY",
-						undeployStatus: "PARTIAL",
-						backupId: "missing-snapshot",
-						canRollback: true,
-					},
-				],
-				trashBackups: [],
-			},
-			secrets: {
-				encryptionKey: "restored-encryption-key",
-				sessionCookieSecret: "restored-session-secret",
-			},
-		};
-
-		try {
-			const service = new IsolatedBackupService({} as PrismaClient, secretsPath);
-			await service.restoreBackup(JSON.stringify(legacyBackup));
-
-			const restoredData = restoreSpy.mock.calls[0]?.[1];
-			expect(restoredData.templateDeploymentHistory).toEqual([
-				expect.objectContaining({
-					id: "legacy-partial-undeploy",
-					status: "UNCERTAIN",
-					undeployStatus: null,
-					backupId: null,
-					canRollback: false,
-				}),
-			]);
-			expect(() =>
-				validateBackup({
-					...legacyBackup,
-					version: "1.1",
-					data: restoredData,
-				}),
-			).not.toThrow();
-		} finally {
-			await fs.rm(tempDir, { recursive: true, force: true });
-			vi.doUnmock("../backup-database.js");
-			vi.resetModules();
-		}
-	});
-});
-
-describe("BackupService - cleanup maintenance exclusion", () => {
-	it("rejects a validated restore before changing secrets or database state", async () => {
-		let releaseCleanup!: () => void;
-		const cleanupBlocked = new Promise<void>((resolve) => {
-			releaseCleanup = resolve;
-		});
-		const cleanup = withCleanupOperationGuard(() => cleanupBlocked);
-		const backupService = new BackupService({} as PrismaClient, "/unused/secrets.json");
-		const backup = {
-			version: "1.0",
-			appVersion: "2.23.0",
-			timestamp: new Date().toISOString(),
-			data: {
-				users: [],
-				sessions: [],
-				serviceInstances: [],
-				serviceTags: [],
-				serviceInstanceTags: [],
-				oidcAccounts: [],
-				webAuthnCredentials: [],
-			},
-			secrets: {
-				encryptionKey: "test-encryption-key-32-bytes-hex",
-				sessionCookieSecret: "test-session-cookie-secret",
-			},
-		};
-
-		await expect(backupService.restoreBackup(JSON.stringify(backup))).rejects.toBeInstanceOf(
-			CleanupMaintenanceConflictError,
+		await expect(backupService.restoreBackupFromFile("missing-backup")).rejects.toBeInstanceOf(
+			BackupRestoreUnavailableError,
 		);
-
-		releaseCleanup();
-		await cleanup;
-	});
-});
-
-describe("BackupService - coordination preflight", () => {
-	const durableArrays = [
-		"oidcProviders",
-		"systemSettings",
-		"trashTemplates",
-		"trashSettings",
-		"trashSyncSchedules",
-		"templateQualityProfileMappings",
-		"instanceQualityProfileOverrides",
-		"standaloneCFDeployments",
-		"qualitySizeMappings",
-		"trashSyncHistory",
-		"templateDeploymentHistory",
-		"trashBackups",
-		"huntConfigs",
-		"huntLogs",
-		"huntSearchHistory",
-		"backupSettings",
-		"vapidKeys",
-		"notificationChannel",
-		"notificationSubscription",
-		"notificationRule",
-		"notificationAggregationConfig",
-		"autoTagRule",
-		"labelSyncRule",
-		"queueCleanerConfig",
-		"libraryCleanupConfig",
-		"libraryCleanupRule",
-		"namingConfig",
-		"userCustomFormat",
-		"namingDeployHistory",
-		"libraryCleanupApproval",
-		"libraryCleanupMediaServerScan",
-	] as const;
-
-	function makeCompleteBackup() {
-		return {
-			version: "1.2",
-			appVersion: "2.24.2",
-			timestamp: new Date().toISOString(),
-			data: {
-				users: [],
-				sessions: [],
-				serviceInstances: [],
-				serviceTags: [],
-				serviceInstanceTags: [],
-				oidcAccounts: [],
-				webAuthnCredentials: [],
-				...Object.fromEntries(durableArrays.map((field) => [field, []])),
-			},
-			secrets: { encryptionKey: "replacement-key", sessionCookieSecret: "replacement-session" },
-		};
-	}
-
-	it("rejects a current coordination mismatch before writing replacement secrets", async () => {
-		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "backup-coordination-preflight-"));
-		const secretsPath = path.join(tempDir, "secrets.json");
-		const prisma = {
-			trashSyncHistory: {
-				findMany: vi
-					.fn()
-					.mockResolvedValue([
-						{ id: "current-sync", status: "RUNNING", instanceId: "i", userId: "u" },
-					]),
-			},
-			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
-			instanceQualityProfileOverride: { findMany: vi.fn().mockResolvedValue([]) },
-			namingDeployHistory: { findMany: vi.fn().mockResolvedValue([]) },
-			trashBackup: { findMany: vi.fn().mockResolvedValue([]) },
-			$transaction: vi.fn(),
-		} as unknown as PrismaClient;
-
-		try {
-			const service = new BackupService(prisma, secretsPath);
-			await expect(service.restoreBackup(JSON.stringify(makeCompleteBackup()))).rejects.toThrow(
-				"cannot safely replace",
-			);
-			expect(await fs.stat(secretsPath).catch(() => null)).toBeNull();
-			expect(prisma.$transaction).not.toHaveBeenCalled();
-		} finally {
-			await fs.rm(tempDir, { recursive: true, force: true });
-		}
-	});
-
-	it("preserves a coordination query failure before writing replacement secrets", async () => {
-		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "backup-coordination-query-"));
-		const secretsPath = path.join(tempDir, "secrets.json");
-		const queryError = new Error("database unavailable during coordination preflight");
-		const prisma = {
-			trashSyncHistory: { findMany: vi.fn().mockRejectedValue(queryError) },
-			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
-			instanceQualityProfileOverride: { findMany: vi.fn().mockResolvedValue([]) },
-			namingDeployHistory: { findMany: vi.fn().mockResolvedValue([]) },
-			trashBackup: { findMany: vi.fn().mockResolvedValue([]) },
-			$transaction: vi.fn(),
-		} as unknown as PrismaClient;
-
-		try {
-			const service = new BackupService(prisma, secretsPath);
-			await expect(service.restoreBackup(JSON.stringify(makeCompleteBackup()))).rejects.toBe(
-				queryError,
-			);
-			expect(await fs.stat(secretsPath).catch(() => null)).toBeNull();
-			expect(prisma.$transaction).not.toHaveBeenCalled();
-		} finally {
-			await fs.rm(tempDir, { recursive: true, force: true });
-		}
 	});
 });
 

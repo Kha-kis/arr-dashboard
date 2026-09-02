@@ -1,5 +1,18 @@
 # Backup inventory
 
+> [!WARNING]
+> Backup creation, scheduling, download, and deletion remain available. Restore
+> is temporarily disabled and returns HTTP 503 before reading the supplied
+> backup or changing filesystem/database state. The current restore design
+> cannot guarantee that database ciphertext and `secrets.json` remain a
+> coherent pair across a process or host crash, and its maintenance barrier is
+> not shared across API processes. Issue #815 remains open for a durable,
+> restart-reconciled recovery protocol and provider-backed exclusive lease.
+
+The inventory below documents the complete export format and the safety
+contract a future restore implementation must satisfy. It does not mean that
+restore is enabled in this version.
+
 Arr Dashboard backup format **1.2** emits complete, explicit coverage for the
 durable configuration and authentication state needed to recreate an
 installation. Every collection is represented as an array, including an empty
@@ -137,18 +150,25 @@ evidence. Excluded notification delivery logs are cleared transactionally
 before notification channels are replaced so post-snapshot history cannot be
 reattached to a restored channel ID.
 
-Backup creation and restore also use the process-wide maintenance lease. Every
+Backup creation uses the process-wide maintenance lease. Every
 HTTP `POST`, `PUT`, `PATCH`, and `DELETE` handler registered under the API root
 holds a shared operation lease for its full handler lifetime, so configuration
-writes cannot overlap the export snapshot or return success while restore
-replaces their rows. Backup create/restore and destructive topology routes are
+writes cannot overlap the export snapshot. Backup creation and destructive topology routes are
 allowed to upgrade their request's sole shared lease to the existing stronger
 maintenance or exclusive topology lease. An upgrade fails closed when any
 other operation is active.
 Background notification dispatch and retry publication participate in the same
 barrier. Read-only routes remain available while a normal mutation is running.
 
+This in-process barrier protects coherent export in the supported single-API
+topology. It is not sufficient authority for restore, which remains disabled
+until a provider-backed cross-process exclusion mechanism is available.
+
 ## Legacy restore behavior
+
+The rules in this section are retained as requirements and lower-level
+validation coverage for a future restore implementation. Production restore
+currently returns HTTP 503 before parsing either current or legacy files.
 
 Versions **1.0** and **1.1** remain readable. Their older optional arrays may
 be absent, and a clean target may restore them. A legacy restore is rejected

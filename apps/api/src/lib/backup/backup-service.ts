@@ -7,7 +7,7 @@
  * Features:
  * - Manual, scheduled, and auto-update backups
  * - Password-based encryption with configurable password
- * - Restore with validation and rollback capability
+ * - Fail-closed restore containment until crash-safe recovery is available
  * - Size limits to prevent memory exhaustion
  *
  * Implementation is decomposed into focused modules:
@@ -31,23 +31,15 @@ import type { PrismaClient } from "../../lib/prisma.js";
 import type { Encryptor } from "../auth/encryption.js";
 import { withCleanupMaintenanceGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
 import { loggers } from "../logger.js";
-import { getErrorMessage } from "../utils/error-message.js";
-import { decryptBackupData, encryptBackupData } from "./backup-crypto.js";
-import { assertRestoreCompatibility, exportDatabase, restoreDatabase } from "./backup-database.js";
+import { encryptBackupData } from "./backup-crypto.js";
+import { exportDatabase } from "./backup-database.js";
 import {
 	ensureBackupsDirectory,
 	generateBackupId,
 	parseTimestampFromFilename,
 	readSecrets,
-	writeSecrets,
 } from "./backup-file-utils.js";
-import {
-	BACKUP_VERSION,
-	isEncryptedBackupEnvelope,
-	isPlaintextBackup,
-	normalizeBackupForRestore,
-	validateBackup,
-} from "./backup-validation.js";
+import { BACKUP_VERSION } from "./backup-validation.js";
 
 const log = loggers.backup;
 
@@ -55,7 +47,6 @@ const log = loggers.backup;
 // These limits help prevent out-of-memory errors during JSON stringification and encryption
 const RECOMMENDED_MAX_BACKUP_SIZE_MB = 100; // 100 MB recommended limit for backup data
 const WARNING_BACKUP_SIZE_MB = 50; // Log warning when backup exceeds this size
-const MAX_RESTORE_SIZE_MB = 200; // Maximum size for restore operations (defense against malicious files)
 
 type BackupType = "manual" | "scheduled" | "update";
 
@@ -79,6 +70,17 @@ export class BackupPasswordConfigurationError extends Error {
 			"The stored backup password is invalid. Reset it in Settings > Backup or set the BACKUP_PASSWORD environment variable.",
 		);
 		this.name = "BackupPasswordConfigurationError";
+	}
+}
+
+export class BackupRestoreUnavailableError extends Error {
+	readonly statusCode = 503;
+
+	constructor() {
+		super(
+			"Restore is disabled because this version cannot yet guarantee crash-safe database and secrets recovery. No data was changed.",
+		);
+		this.name = "BackupRestoreUnavailableError";
 	}
 }
 
@@ -706,146 +708,13 @@ export class BackupService {
 		});
 	}
 
-	/**
-	 * Restore from a backup file on filesystem
-	 * Delegates to restoreBackup which handles both encrypted and plaintext formats
-	 */
-	async restoreBackupFromFile(id: string): Promise<BackupMetadata> {
-		const backup = await this.getBackupByIdInternal(id);
-		if (!backup) {
-			throw new Error(`Backup with ID ${id} not found`);
-		}
-
-		// Optional: Validate file size before reading (defense-in-depth against malicious files)
-		// While createBackup enforces ~100 MB limit, manually created or maliciously large backup files
-		// could cause OOM errors. Allow slightly larger files than creation limit for flexibility.
-		const sizeMB = backup.size / (1024 * 1024);
-		if (sizeMB > MAX_RESTORE_SIZE_MB) {
-			throw new Error(
-				`Backup file too large (${sizeMB.toFixed(1)} MB). Maximum allowed: ${MAX_RESTORE_SIZE_MB} MB`,
-			);
-		}
-
-		// Read backup file
-		const fileContent = await fs.readFile(backup.path, "utf-8");
-
-		// Delegate to restoreBackup which handles both encrypted and plaintext formats
-		return this.restoreBackup(fileContent);
+	/** Refuse stored-file restore before backup lookup or filesystem access. */
+	async restoreBackupFromFile(_id: string): Promise<BackupMetadata> {
+		throw new BackupRestoreUnavailableError();
 	}
 
-	/**
-	 * Restore from a backup (accepts both encrypted envelope or plaintext JSON)
-	 * For uploaded backups, this receives the base64-decoded backup data
-	 */
-	async restoreBackup(backupData: string): Promise<BackupMetadata> {
-		let parsed: unknown;
-
-		try {
-			// Try to parse JSON
-			parsed = JSON.parse(backupData);
-
-			// Strictly validate format with type checks to avoid misclassification
-			if (isEncryptedBackupEnvelope(parsed)) {
-				// It's an encrypted backup - decrypt it
-				const password = await this.getBackupPassword();
-				const decryptedBackupJson = await decryptBackupData(parsed, password);
-				// Re-parse after decryption
-				parsed = JSON.parse(decryptedBackupJson);
-			} else if (isPlaintextBackup(parsed)) {
-				// It's a plaintext backup (legacy format) - parsed already contains the backup data
-				// No need to parse again
-			} else {
-				throw new Error("Invalid backup format: unrecognized structure");
-			}
-		} catch (error) {
-			// Properly extract error message instead of stringifying which becomes "[object Object]"
-			const errorMessage = getErrorMessage(error);
-			throw new Error(`Failed to parse backup data: ${errorMessage}`);
-		}
-
-		// 1. Validate backup structure (parsed now contains the backup object)
-		const backup = parsed as BackupData;
-		validateBackup(backup);
-		const normalizedBackup = normalizeBackupForRestore(backup);
-		// A successful restore replaces credentials and scheduler state that are
-		// only reloaded on process start. Keep cleanup-sensitive mutations
-		// blocked until the required restart; failures release the guard.
-		return await withCleanupMaintenanceGuard(() => this.restoreValidatedBackup(normalizedBackup), {
-			holdAfterSuccess: true,
-		});
-	}
-
-	private async restoreValidatedBackup(backup: BackupData): Promise<BackupMetadata> {
-		// 2. Perform atomic restore with two-phase commit pattern to prevent partial restore
-		const secretsBackupPath = `${this.secretsPath}.restore-backup`;
-		let secretsBackedUp = false;
-
-		try {
-			// Compatibility must be checked before creating the secrets backup or
-			// writing replacement secrets. restoreDatabase repeats this check inside
-			// its transaction immediately before deletes.
-			await assertRestoreCompatibility(this.prisma, backup.data);
-
-			// Phase 1: Backup current secrets before making any changes
-			try {
-				const currentSecrets = await fs.readFile(this.secretsPath, "utf-8");
-				await fs.writeFile(secretsBackupPath, currentSecrets, { encoding: "utf-8", mode: 0o600 });
-				secretsBackedUp = true;
-			} catch (error) {
-				// If secrets file doesn't exist yet, that's okay - no need to back up
-				if (error && typeof error === "object" && "code" in error && error.code !== "ENOENT") {
-					throw new Error(`Failed to backup current secrets: ${error}`);
-				}
-			}
-
-			// Phase 2: Write new secrets
-			await writeSecrets(this.secretsPath, backup.secrets);
-
-			// Phase 3: Restore database (in a transaction for atomicity)
-			// If this fails, we need to restore the backed-up secrets
-			await restoreDatabase(this.prisma, backup.data);
-
-			// Phase 4: Success - clean up backup
-			if (secretsBackedUp) {
-				await fs.unlink(secretsBackupPath).catch((err) => {
-					log.debug(
-						{ err, path: secretsBackupPath },
-						"Failed to clean up secrets backup file (non-critical)",
-					);
-				});
-			}
-
-			// 3. Return metadata
-			return {
-				version: backup.version,
-				appVersion: backup.appVersion,
-				timestamp: backup.timestamp,
-				dataSize: JSON.stringify(backup).length,
-			};
-		} catch (error) {
-			// Rollback: Restore the backed-up secrets if database restore failed
-			if (secretsBackedUp) {
-				try {
-					const backedUpSecrets = await fs.readFile(secretsBackupPath, "utf-8");
-					await fs.writeFile(this.secretsPath, backedUpSecrets, { encoding: "utf-8", mode: 0o600 });
-					await fs.chmod(this.secretsPath, 0o600);
-					await fs.unlink(secretsBackupPath).catch((err) => {
-						log.debug(
-							{ err, path: secretsBackupPath },
-							"Failed to clean up secrets backup during rollback (non-critical)",
-						);
-					});
-				} catch (rollbackError) {
-					// Log rollback failure but throw original error
-					log.error(
-						{ err: rollbackError },
-						"CRITICAL: Failed to rollback secrets after restore failure",
-					);
-				}
-			}
-
-			// Re-throw the original error
-			throw error;
-		}
+	/** Refuse uploaded restore before parsing, decryption, filesystem, or database access. */
+	async restoreBackup(_backupData: string): Promise<BackupMetadata> {
+		throw new BackupRestoreUnavailableError();
 	}
 }

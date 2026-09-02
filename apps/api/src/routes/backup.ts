@@ -11,7 +11,11 @@ import {
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { BackupPasswordConfigurationError, BackupService } from "../lib/backup/backup-service.js";
+import {
+	BackupPasswordConfigurationError,
+	BackupRestoreUnavailableError,
+	BackupService,
+} from "../lib/backup/backup-service.js";
 import { BackupCompatibilityError } from "../lib/errors.js";
 import { CleanupMaintenanceConflictError } from "../lib/library-cleanup/cleanup-maintenance-gate.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
@@ -24,6 +28,10 @@ const idParams = z.object({ id: z.string().min(1) });
 const BACKUP_RATE_LIMIT = { max: 3, timeWindow: "5 minutes" };
 const RESTORE_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };
 const DELETE_RATE_LIMIT = { max: 5, timeWindow: "5 minutes" };
+
+function refuseBackupRestore(): void {
+	throw new BackupRestoreUnavailableError();
+}
 
 const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	// Helper to create backup service instance
@@ -125,9 +133,9 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Restore from a backup (uploaded file)
 	 */
 	app.post("/restore", { config: { rateLimit: RESTORE_RATE_LIMIT } }, async (request, reply) => {
-		const { backupData } = validateRequest(restoreBackupRequestSchema, request.body);
-
 		try {
+			refuseBackupRestore();
+			const { backupData } = validateRequest(restoreBackupRequestSchema, request.body);
 			const backupService = getBackupService();
 			request.log.info("Restoring backup from upload");
 
@@ -160,6 +168,14 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				await app.lifecycle.restart("backup-restore");
 			}
 		} catch (error) {
+			if (error instanceof BackupRestoreUnavailableError) {
+				request.log.warn("Backup restore refused by fail-closed safety containment");
+				return reply.status(error.statusCode).send({
+					error: "Backup restore is temporarily unavailable",
+					details: error.message,
+				});
+			}
+
 			if (error instanceof BackupCompatibilityError) {
 				request.log.warn(
 					{ code: error.code },
@@ -193,9 +209,9 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		"/restore-from-file",
 		{ config: { rateLimit: RESTORE_RATE_LIMIT } },
 		async (request, reply) => {
-			const { id: backupId } = validateRequest(restoreBackupFromFileRequestSchema, request.body);
-
 			try {
+				refuseBackupRestore();
+				const { id: backupId } = validateRequest(restoreBackupFromFileRequestSchema, request.body);
 				const backupService = getBackupService();
 				request.log.info({ backupId }, "Restoring backup from file");
 
@@ -227,6 +243,14 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					await app.lifecycle.restart("backup-restore");
 				}
 			} catch (error) {
+				if (error instanceof BackupRestoreUnavailableError) {
+					request.log.warn("Backup restore from file refused by fail-closed safety containment");
+					return reply.status(error.statusCode).send({
+						error: "Backup restore is temporarily unavailable",
+						details: error.message,
+					});
+				}
+
 				if (error instanceof BackupCompatibilityError) {
 					request.log.warn(
 						{ code: error.code },

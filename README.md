@@ -154,7 +154,7 @@ Now integrates with **[autobrr/qui](https://github.com/autobrr/qui)** as a feder
 - **Zero-Config Security** — Auto-generated encryption keys on first run
 
 ### Management
-- **Backup & Restore** — Automated encrypted backups with configurable retention and scheduling ([backup inventory](docs/BACKUPS.md))
+- **Encrypted Backups** — Automated encrypted export with configurable retention and scheduling; restore is temporarily disabled pending crash-safe recovery ([backup inventory](docs/BACKUPS.md))
 - **Tag Organization** — Organize instances with custom tags and storage groups
 - **Multi-Instance** — Manage unlimited instances across all supported services
 - **System Settings** — Configurable ports, listen address, and application restart from the UI
