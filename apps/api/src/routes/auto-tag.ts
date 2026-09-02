@@ -384,7 +384,7 @@ export async function registerAutoTagRoutes(app: FastifyInstance, _opts: Fastify
 	// lost from the response, only rotation can show it again. This is a small
 	// UX loss for a meaningful security win — a DB dump no longer yields the
 	// auth token.
-	app.get("/webhook-config", async (request, reply) => {
+	app.get("/webhook-config", { config: { backupMutation: true } }, async (request, reply) => {
 		const userId = request.currentUser!.id;
 		const user = await app.prisma.user.findUnique({ where: { id: userId } });
 		if (!user) return reply.status(404).send({ error: "User not found" });

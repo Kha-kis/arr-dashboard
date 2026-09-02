@@ -201,7 +201,7 @@ Follow [`CODE-REVIEW.md`](CODE-REVIEW.md) for the finite review contract.
 - **Docker vs Dev**: Different env vars and paths (`/config/` vs `./`)
 - **Secrets auto-generated**: `ENCRYPTION_KEY` and `SESSION_COOKIE_SECRET` are auto-generated to `secrets.json` if not provided
 - **Error responses**: `{ error: "message" }` with optional `details` for validation. Status codes: 400 (bad input), 401 (auth required), 403 (forbidden), 404 (not found/access denied), 423 (locked)
-- **Backup service**: Decomposed into `backup-crypto.ts`, `backup-validation.ts`, `backup-file-utils.ts`, `backup-database.ts`
+- **Backup service**: Decomposed into `backup-crypto.ts`, `backup-validation.ts`, `backup-file-utils.ts`, `backup-database.ts`; see the [backup inventory](BACKUPS.md) for format 1.2 coverage and legacy restore behavior.
 - **Queue Cleaner**: Has its own `QueueCleanerConfig` model for per-instance auto-cleanup settings
 
 ## Release Checklist

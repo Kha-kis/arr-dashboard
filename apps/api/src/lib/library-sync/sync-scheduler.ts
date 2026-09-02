@@ -7,6 +7,7 @@
 
 import { LIBRARY_SERVICES_UPPER } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
+import { withIndependentCleanupOperationGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
 import { createLogger } from "../logger.js";
 import type { NotificationService } from "../notifications/notification-service.js";
 import {
@@ -368,47 +369,52 @@ export class LibrarySyncScheduler {
 		encryptedApiKey: string;
 		encryptionIv: string;
 	}): Promise<SyncResult> {
-		if (!this.app) {
-			throw new Error("Scheduler not initialized");
-		}
-
-		this.activeSyncs.add(instance.id);
-
-		try {
-			log.info({ instanceId: instance.id, instanceName: instance.label }, "Starting library sync");
-
-			const result = await syncInstance(
-				{
-					prisma: this.app.prisma,
-					arrClientFactory: this.app.arrClientFactory,
-					encryptor: this.app.encryptor,
-					log: this.app.log,
-				},
-				instance as Parameters<typeof syncInstance>[1],
-			);
-
-			log.info(
-				{ instanceId: instance.id, instanceLabel: instance.label, success: result.success },
-				"Library sync completed",
-			);
-
-			// Notify about newly downloaded content detected by the sync executor.
-			if (result.success && result.newDownloads.length > 0) {
-				void sendNewDownloadNotification(this.app.notificationService, result, instance).catch(
-					(err) => {
-						log.warn(
-							{ err, instanceLabel: instance.label },
-							"New content notification dispatch failed",
-						);
-					},
-				);
+		return withIndependentCleanupOperationGuard(async () => {
+			if (!this.app) {
+				throw new Error("Scheduler not initialized");
 			}
 
-			return result;
-		} finally {
-			this.activeSyncs.delete(instance.id);
-			this.activeSyncItemCounts.delete(instance.id);
-		}
+			this.activeSyncs.add(instance.id);
+
+			try {
+				log.info(
+					{ instanceId: instance.id, instanceName: instance.label },
+					"Starting library sync",
+				);
+
+				const result = await syncInstance(
+					{
+						prisma: this.app.prisma,
+						arrClientFactory: this.app.arrClientFactory,
+						encryptor: this.app.encryptor,
+						log: this.app.log,
+					},
+					instance as Parameters<typeof syncInstance>[1],
+				);
+
+				log.info(
+					{ instanceId: instance.id, instanceLabel: instance.label, success: result.success },
+					"Library sync completed",
+				);
+
+				// Notify about newly downloaded content detected by the sync executor.
+				if (result.success && result.newDownloads.length > 0) {
+					await sendNewDownloadNotification(this.app.notificationService, result, instance).catch(
+						(err) => {
+							log.warn(
+								{ err, instanceLabel: instance.label },
+								"New content notification dispatch failed",
+							);
+						},
+					);
+				}
+
+				return result;
+			} finally {
+				this.activeSyncs.delete(instance.id);
+				this.activeSyncItemCounts.delete(instance.id);
+			}
+		});
 	}
 
 	/**

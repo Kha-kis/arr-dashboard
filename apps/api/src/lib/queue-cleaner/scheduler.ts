@@ -1,4 +1,8 @@
 import type { FastifyInstance } from "fastify";
+import {
+	acquireCleanupOperationGuard,
+	withIndependentCleanupOperationGuard,
+} from "../library-cleanup/cleanup-maintenance-gate.js";
 import { loggers } from "../logger.js";
 import {
 	passthroughTickWrapper,
@@ -53,6 +57,9 @@ class QueueCleanerScheduler {
 	private lastCleanTimes: Map<string, Date> = new Map();
 	// Track instances currently being cleaned to prevent race conditions
 	private cleaningInProgress: Set<string> = new Set();
+	// A timeout does not cancel executeQueueCleaner. Retain per-instance
+	// ownership until that raw executor promise actually settles.
+	private activeCleanerExecutions = new Map<string, Promise<CleanerResult>>();
 	// Health tracking
 	private consecutiveTickFailures = 0;
 	private lastTickError: string | null = null;
@@ -73,7 +80,7 @@ class QueueCleanerScheduler {
 		this.app = app;
 
 		// Clean up any stuck logs from previous runs
-		this.cleanupStuckLogs().catch((error) => {
+		withIndependentCleanupOperationGuard(() => this.cleanupStuckLogs()).catch((error) => {
 			log.error({ err: error }, "Failed to cleanup stuck queue cleaner logs on init");
 		});
 	}
@@ -125,8 +132,13 @@ class QueueCleanerScheduler {
 		this.running = true;
 
 		this.intervalId = setInterval(() => {
-			this.trackTick(() => this.tick())
+			let tickStarted = false;
+			this.trackTick(() => {
+				tickStarted = true;
+				return this.tick();
+			})
 				.then(() => {
+					if (!tickStarted) return;
 					// Success - reset failure tracking
 					this.consecutiveTickFailures = 0;
 					this.lastTickError = null;
@@ -229,7 +241,7 @@ class QueueCleanerScheduler {
 	 */
 	async triggerManualClean(instanceId: string): Promise<{ triggered: boolean; message: string }> {
 		// Check if clean is already in progress (prevents race condition)
-		if (this.cleaningInProgress.has(instanceId)) {
+		if (this.cleaningInProgress.has(instanceId) || this.activeCleanerExecutions.has(instanceId)) {
 			return { triggered: false, message: "Clean already in progress for this instance" };
 		}
 
@@ -241,6 +253,7 @@ class QueueCleanerScheduler {
 		if (!this.app) {
 			throw new SchedulerNotInitializedError("manual clean");
 		}
+		const releaseOperationGuard = acquireCleanupOperationGuard();
 
 		// Mark as in-progress BEFORE setting cooldown time (atomic-ish protection)
 		this.cleaningInProgress.add(instanceId);
@@ -248,44 +261,46 @@ class QueueCleanerScheduler {
 
 		// Run the clean asynchronously - runClean creates and manages its own log entry
 		// Errors are captured in the log entry, making failures visible in Activity tab
-		const logIdPromise = this.runClean(instanceId).finally(() => {
-			// Always clear the in-progress flag when done
-			this.cleaningInProgress.delete(instanceId);
-		});
-
-		// Don't await - we want to return immediately
-		// But we do catch to prevent unhandled rejection AND create visible error entry
-		logIdPromise.catch(async (error) => {
-			const message = getErrorMessage(error, "Unknown error");
-			log.error({ err: error, instanceId }, "Manual queue clean failed before log entry creation");
-
-			// Create an error log entry so the failure is visible in Activity tab
-			// This handles cases where runClean fails before creating its own log entry
-			try {
-				if (this.app) {
-					await this.app.prisma.queueCleanerLog.create({
-						data: {
-							instanceId,
-							status: "error",
-							message: `Clean failed to start: ${message}`,
-							completedAt: new Date(),
-							isDryRun: false,
-						},
-					});
-				}
-			} catch (logError) {
-				// Track this failure so it's visible in health status
-				this.failedLogAttempts.push({
-					instanceId,
-					timestamp: new Date(),
-					error: message,
-				});
+		void this.runClean(instanceId)
+			.catch(async (error) => {
+				const message = getErrorMessage(error, "Unknown error");
 				log.error(
-					{ err: logError, instanceId, originalError: message },
-					"Failed to create error log entry for failed manual clean - check health status",
+					{ err: error, instanceId },
+					"Manual queue clean failed before log entry creation",
 				);
-			}
-		});
+
+				// Create an error log entry so the failure is visible in Activity tab
+				// This handles cases where runClean fails before creating its own log entry
+				try {
+					if (this.app) {
+						await this.app.prisma.queueCleanerLog.create({
+							data: {
+								instanceId,
+								status: "error",
+								message: `Clean failed to start: ${message}`,
+								completedAt: new Date(),
+								isDryRun: false,
+							},
+						});
+					}
+				} catch (logError) {
+					// Track this failure so it's visible in health status
+					this.failedLogAttempts.push({
+						instanceId,
+						timestamp: new Date(),
+						error: message,
+					});
+					log.error(
+						{ err: logError, instanceId, originalError: message },
+						"Failed to create error log entry for failed manual clean - check health status",
+					);
+				}
+			})
+			.finally(() => {
+				// The independent lease outlives the queued HTTP response and includes error logging.
+				this.cleaningInProgress.delete(instanceId);
+				releaseOperationGuard();
+			});
 
 		// Message indicates job is queued, not necessarily completed
 		// Check Activity tab for results
@@ -494,7 +509,10 @@ class QueueCleanerScheduler {
 			const lastRun = config.lastRunAt ?? new Date(0);
 			const nextRun = new Date(lastRun.getTime() + config.intervalMins * 60 * 1000);
 			if (now < nextRun) return false;
-			if (this.cleaningInProgress.has(config.instanceId)) {
+			if (
+				this.cleaningInProgress.has(config.instanceId) ||
+				this.activeCleanerExecutions.has(config.instanceId)
+			) {
 				log.debug(
 					{ instanceId: config.instanceId },
 					"Skipping scheduled clean - already in progress",
@@ -572,8 +590,19 @@ class QueueCleanerScheduler {
 		});
 
 		try {
+			const execution = withIndependentCleanupOperationGuard(() =>
+				executeQueueCleaner(this.app!, config.instance, config),
+			);
+			this.activeCleanerExecutions.set(instanceId, execution);
+			void execution
+				.finally(() => {
+					if (this.activeCleanerExecutions.get(instanceId) === execution) {
+						this.activeCleanerExecutions.delete(instanceId);
+					}
+				})
+				.catch(() => undefined);
 			const result = await withTimeout(
-				executeQueueCleaner(this.app, config.instance, config),
+				execution,
 				MAX_CLEAN_DURATION_MS,
 				`Queue clean timed out after ${MAX_CLEAN_DURATION_MS / 1000} seconds`,
 			);
@@ -614,9 +643,9 @@ class QueueCleanerScheduler {
 				});
 			});
 
-			// Fire-and-forget notifications for clean results
+			// Best-effort notifications remain inside the operation lease.
 			if (result.itemsCleaned > 0 && !result.isDryRun) {
-				this.app.notificationService
+				await this.app.notificationService
 					?.notify({
 						eventType: "QUEUE_ITEMS_REMOVED",
 						title: `Queue cleaner removed ${result.itemsCleaned} item(s) on ${config.instance.label}`,
@@ -646,7 +675,7 @@ class QueueCleanerScheduler {
 					});
 			}
 			if (result.itemsWarned > 0) {
-				this.app.notificationService
+				await this.app.notificationService
 					?.notify({
 						eventType: "QUEUE_STRIKES_ISSUED",
 						title: `Queue cleaner issued strikes on ${config.instance.label}`,
@@ -687,8 +716,8 @@ class QueueCleanerScheduler {
 
 			log.error({ err: error, instanceLabel: config.instance.label }, "Queue cleaner error");
 
-			// Fire-and-forget notification for queue cleaner failure
-			this.app?.notificationService
+			// Best-effort failure notification remains inside the operation lease.
+			await this.app?.notificationService
 				?.notify({
 					eventType: "QUEUE_CLEANER_FAILED",
 					title: `Queue cleaner failed on ${config.instance.label}`,

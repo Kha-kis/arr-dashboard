@@ -4,9 +4,6 @@ import type {
 	BackupSettings,
 	CreateBackupRequest,
 	ListBackupsResponse,
-	RestoreBackupFromFileRequest,
-	RestoreBackupRequest,
-	RestoreBackupResponse,
 	SetBackupPasswordRequest,
 	UpdateBackupSettingsRequest,
 } from "@arr/shared";
@@ -25,26 +22,6 @@ export const backupApi = {
 	 */
 	async createBackup(request: CreateBackupRequest): Promise<BackupFileInfo> {
 		return apiRequest<BackupFileInfo>("/api/backup/create", {
-			json: request,
-		});
-	},
-
-	/**
-	 * Restore from an encrypted backup (uploaded file)
-	 */
-	async restoreBackup(request: RestoreBackupRequest): Promise<RestoreBackupResponse> {
-		return apiRequest<RestoreBackupResponse>("/api/backup/restore", {
-			json: request,
-		});
-	},
-
-	/**
-	 * Restore from a backup stored on filesystem
-	 */
-	async restoreBackupFromFile(
-		request: RestoreBackupFromFileRequest,
-	): Promise<RestoreBackupResponse> {
-		return apiRequest<RestoreBackupResponse>("/api/backup/restore-from-file", {
 			json: request,
 		});
 	},
@@ -87,39 +64,6 @@ export const backupApi = {
 			console.error("Failed to download backup:", error);
 			throw error;
 		}
-	},
-
-	/**
-	 * Read backup file as base64 string
-	 * Uses chunked processing to avoid call stack overflow on large files
-	 */
-	async readBackupFile(file: File): Promise<string> {
-		return new Promise((resolve, reject) => {
-			const reader = new FileReader();
-			reader.onload = () => {
-				// FileReader returns ArrayBuffer when using readAsArrayBuffer
-				if (reader.result instanceof ArrayBuffer) {
-					const uint8Array = new Uint8Array(reader.result);
-
-					// Convert to base64 using chunked approach to avoid call stack overflow
-					// Process in 8KB chunks to safely handle large files
-					const CHUNK_SIZE = 8192;
-					let binaryString = "";
-
-					for (let i = 0; i < uint8Array.length; i += CHUNK_SIZE) {
-						const chunk = uint8Array.subarray(i, Math.min(i + CHUNK_SIZE, uint8Array.length));
-						binaryString += String.fromCharCode(...chunk);
-					}
-
-					const base64 = btoa(binaryString);
-					resolve(base64);
-				} else {
-					reject(new Error("Failed to read file as ArrayBuffer"));
-				}
-			};
-			reader.onerror = () => reject(reader.error);
-			reader.readAsArrayBuffer(file);
-		});
 	},
 
 	/**

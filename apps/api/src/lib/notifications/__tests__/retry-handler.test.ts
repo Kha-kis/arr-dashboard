@@ -7,6 +7,10 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { NotificationChannelType } from "@arr/shared";
+import {
+	CleanupMaintenanceConflictError,
+	withCleanupMaintenanceGuard,
+} from "../../library-cleanup/cleanup-maintenance-gate.js";
 import { RetryHandler } from "../retry-handler.js";
 import type { NotificationPayload, SendResult } from "../types.js";
 
@@ -41,6 +45,14 @@ function createPayload(title = "Test") {
 		title,
 		body: "Body text",
 	};
+}
+
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((resolvePromise) => {
+		resolve = resolvePromise;
+	});
+	return { promise, resolve };
 }
 
 describe("RetryHandler", () => {
@@ -83,6 +95,62 @@ describe("RetryHandler", () => {
 		expect(handler.pendingCount).toBe(0);
 	});
 
+	it("holds mutation ownership across retry dispatch and delivery logging", async () => {
+		const sendStarted = deferred<void>();
+		const finishSend = deferred<SendResult>();
+		sendFn.mockImplementation(async () => {
+			sendStarted.resolve();
+			return finishSend.promise;
+		});
+		handler = new RetryHandler(sendFn, logDeliveryFn, mockLogger);
+		handler.enqueue({
+			channelId: "ch-1",
+			channelType: "DISCORD",
+			config: { webhookUrl: "https://example.com" },
+			payload: createPayload(),
+		});
+
+		const advance = vi.advanceTimersByTimeAsync(30_000);
+		await sendStarted.promise;
+		await expect(withCleanupMaintenanceGuard(async () => undefined)).rejects.toBeInstanceOf(
+			CleanupMaintenanceConflictError,
+		);
+
+		finishSend.resolve({ success: true, retryable: false });
+		await advance;
+		expect(logDeliveryFn).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not dispatch a retry while restore owns maintenance", async () => {
+		sendFn.mockResolvedValue({ success: true, retryable: false } satisfies SendResult);
+		handler = new RetryHandler(sendFn, logDeliveryFn, mockLogger);
+		handler.enqueue({
+			channelId: "ch-1",
+			channelType: "DISCORD",
+			config: { webhookUrl: "https://example.com" },
+			payload: createPayload(),
+		});
+		const finishRestore = deferred<void>();
+		const restore = withCleanupMaintenanceGuard(() => finishRestore.promise);
+
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(sendFn).not.toHaveBeenCalled();
+		expect(handler.pendingCount).toBe(1);
+
+		finishRestore.resolve();
+		await restore;
+		await vi.advanceTimersByTimeAsync(120_000);
+		expect(sendFn).toHaveBeenCalledTimes(1);
+		expect(logDeliveryFn).toHaveBeenCalledWith(
+			"ch-1",
+			"DISCORD",
+			expect.objectContaining({ title: "Test" }),
+			"sent",
+			undefined,
+			1,
+		);
+	});
+
 	it("dead-letters after max retries (3) are exhausted", async () => {
 		sendFn.mockResolvedValue({
 			success: false,
@@ -116,6 +184,41 @@ describe("RetryHandler", () => {
 		);
 		expect(deadLetterCall).toBeDefined();
 		expect(deadLetterCall![4]).toContain("Exhausted 3 retries");
+		expect(handler.pendingCount).toBe(0);
+	});
+
+	it("holds mutation ownership until max-retry dead-letter logging settles", async () => {
+		const deadLetterStarted = deferred<void>();
+		const finishDeadLetter = deferred<void>();
+		sendFn.mockResolvedValue({
+			success: false,
+			retryable: true,
+			error: "server error",
+		} satisfies SendResult);
+		logDeliveryFn.mockImplementation(async (_channelId, _channelType, _payload, status) => {
+			if (status === "dead_letter") {
+				deadLetterStarted.resolve();
+				await finishDeadLetter.promise;
+			}
+		});
+		handler = new RetryHandler(sendFn, logDeliveryFn, mockLogger);
+		handler.enqueue({
+			channelId: "ch-1",
+			channelType: "DISCORD",
+			config: { webhookUrl: "https://example.com" },
+			payload: createPayload(),
+		});
+
+		const advance = vi.advanceTimersByTimeAsync(30_000 + 120_000 + 600_000);
+		await deadLetterStarted.promise;
+		await Promise.resolve();
+		await Promise.resolve();
+		await expect(withCleanupMaintenanceGuard(async () => undefined)).rejects.toBeInstanceOf(
+			CleanupMaintenanceConflictError,
+		);
+
+		finishDeadLetter.resolve();
+		await advance;
 		expect(handler.pendingCount).toBe(0);
 	});
 

@@ -31,7 +31,9 @@ export async function warmConnectionsForUser(app: FastifyInstance, userId: strin
 			return;
 		}
 
-		// Warm connections in parallel with short timeout
+		// Warm connections in parallel. Each ARR client owns a bounded request
+		// timeout; do not race these promises with an uncancelling outer timer.
+		// Callers may retain a restore-exclusion lease until every request settles.
 		const warmPromises = instances.map((instance) =>
 			warmSingleConnection(app, instance).catch((error) => {
 				// Log but don't fail - this is best-effort
@@ -42,11 +44,7 @@ export async function warmConnectionsForUser(app: FastifyInstance, userId: strin
 			}),
 		);
 
-		// Wait for all with a reasonable timeout
-		await Promise.race([
-			Promise.all(warmPromises),
-			new Promise((resolve) => setTimeout(resolve, 5000)), // 5s max
-		]);
+		await Promise.all(warmPromises);
 
 		app.log.info({ userId, instanceCount: instances.length }, "Connections pre-warmed for user");
 	} catch (error) {

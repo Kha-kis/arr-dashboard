@@ -21,6 +21,11 @@ function redactSecretFields(config: Record<string, unknown>): Record<string, unk
 	);
 }
 import type { Encryptor } from "../auth/encryption.js";
+import {
+	CleanupMaintenanceConflictError,
+	withCleanupOperationGuard,
+	withIndependentCleanupOperationGuard,
+} from "../library-cleanup/cleanup-maintenance-gate.js";
 import type { PrismaClient } from "../prisma.js";
 import type { AggregationBuffer, AggregationConfig } from "./aggregation-buffer.js";
 import type { DedupGate } from "./dedup-gate.js";
@@ -119,35 +124,48 @@ export class NotificationService {
 	private async flushDeferredNotifications(): Promise<void> {
 		if (this.deferredQueue.length === 0) return;
 
-		const now = Date.now();
-		const ready = this.deferredQueue.filter((item) => item.deliverAt <= now);
-		if (ready.length === 0) return;
+		try {
+			await withCleanupOperationGuard(async () => {
+				const now = Date.now();
+				const ready = this.deferredQueue.filter((item) => item.deliverAt <= now);
+				if (ready.length === 0) return;
 
-		// Remove ready items from queue
-		this.deferredQueue = this.deferredQueue.filter((item) => item.deliverAt > now);
+				// Remove ready items only after notification mutation ownership is established.
+				this.deferredQueue = this.deferredQueue.filter((item) => item.deliverAt > now);
 
-		this.logger.info(
-			{ count: ready.length, remaining: this.deferredQueue.length },
-			"Delivering deferred notifications after quiet hours",
-		);
-
-		// Deliver each deferred notification individually (skipRules prevents re-deferral).
-		// Individual delivery ensures each notification routes to the correct channels
-		// based on its own eventType subscriptions.
-		const deliveryOptions = { skipRules: true };
-		for (const item of ready) {
-			try {
-				await this.notify(item.payload, {
-					...deliveryOptions,
-					userId: item.userId,
-					fallbackEventTypes: item.fallbackEventTypes,
-				});
-			} catch (err: unknown) {
-				this.logger.warn(
-					{ err, eventType: item.payload.eventType },
-					"Failed to deliver deferred notification",
+				this.logger.info(
+					{ count: ready.length, remaining: this.deferredQueue.length },
+					"Delivering deferred notifications after quiet hours",
 				);
+
+				// Deliver each deferred notification individually (skipRules prevents re-deferral).
+				// Individual delivery ensures each notification routes to the correct channels
+				// based on its own eventType subscriptions.
+				const deliveryOptions = { skipRules: true };
+				for (const item of ready) {
+					try {
+						await this.notifyGuarded(item.payload, {
+							...deliveryOptions,
+							userId: item.userId,
+							fallbackEventTypes: item.fallbackEventTypes,
+						});
+					} catch (err: unknown) {
+						this.logger.warn(
+							{ err, eventType: item.payload.eventType },
+							"Failed to deliver deferred notification",
+						);
+					}
+				}
+			});
+		} catch (err: unknown) {
+			if (err instanceof CleanupMaintenanceConflictError) {
+				this.logger.debug(
+					{ queueSize: this.deferredQueue.length },
+					"Deferred notification flush paused during database maintenance",
+				);
+				return;
 			}
+			throw err;
 		}
 	}
 
@@ -156,6 +174,17 @@ export class NotificationService {
 	 * Failures on individual channels are logged but do not throw.
 	 */
 	async notify(
+		payload: NotificationPayload,
+		options?: {
+			skipRules?: boolean;
+			userId?: string;
+			fallbackEventTypes?: NotificationEventType[];
+		},
+	): Promise<void> {
+		return withIndependentCleanupOperationGuard(() => this.notifyGuarded(payload, options));
+	}
+
+	private async notifyGuarded(
 		payload: NotificationPayload,
 		options?: {
 			skipRules?: boolean;
@@ -368,6 +397,10 @@ export class NotificationService {
 	 * Test a specific channel's connectivity by decrypting its config and calling the test method.
 	 */
 	async testChannel(channelId: string, userId: string): Promise<void> {
+		return withCleanupOperationGuard(() => this.testChannelGuarded(channelId, userId));
+	}
+
+	private async testChannelGuarded(channelId: string, userId: string): Promise<void> {
 		const channel = await this.prisma.notificationChannel.findFirst({
 			where: { id: channelId, userId },
 		});
@@ -538,6 +571,19 @@ export class NotificationService {
 	 * Public so that RetryHandler can call it for retry/dead-letter logging.
 	 */
 	async logDelivery(
+		channelId: string,
+		channelType: NotificationChannelType,
+		payload: NotificationPayload,
+		status: "sent" | "failed" | "dead_letter",
+		error?: string,
+		retryCount?: number,
+	): Promise<void> {
+		return withCleanupOperationGuard(() =>
+			this.logDeliveryGuarded(channelId, channelType, payload, status, error, retryCount),
+		);
+	}
+
+	private async logDeliveryGuarded(
 		channelId: string,
 		channelType: NotificationChannelType,
 		payload: NotificationPayload,

@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 /**
  * In-process reader/writer gate around cleanup-sensitive mutations.
  *
@@ -10,6 +12,8 @@
 let activeCleanupOperations = 0;
 let maintenanceActive = false;
 let exclusiveCleanupOperationActive = false;
+type OperationGuardContext = { active: boolean };
+const operationGuardContext = new AsyncLocalStorage<OperationGuardContext>();
 
 export class CleanupMaintenanceConflictError extends Error {
 	readonly statusCode = 409;
@@ -21,19 +25,31 @@ export class CleanupMaintenanceConflictError extends Error {
 }
 
 /** Acquire a shared operation guard that remains active until the returned release is called. */
-export function acquireCleanupOperationGuard(): () => void {
-	if (maintenanceActive || exclusiveCleanupOperationActive) {
+function acquireCleanupOperationGuardState(options: { allowNestedExclusive?: boolean } = {}): {
+	context: OperationGuardContext;
+	release: () => void;
+} {
+	const nestedExclusiveOwner =
+		options.allowNestedExclusive === true && operationGuardContext.getStore()?.active === true;
+	if (maintenanceActive || (exclusiveCleanupOperationActive && !nestedExclusiveOwner)) {
 		throw new CleanupMaintenanceConflictError(
 			"Cleanup-sensitive changes are unavailable during database maintenance or ARR service deletion",
 		);
 	}
 	activeCleanupOperations += 1;
 	let released = false;
-	return () => {
+	const context = { active: true };
+	const release = () => {
 		if (released) return;
 		released = true;
+		context.active = false;
 		activeCleanupOperations -= 1;
 	};
+	return { context, release };
+}
+
+export function acquireCleanupOperationGuard(): () => void {
+	return acquireCleanupOperationGuardState().release;
 }
 
 /**
@@ -43,7 +59,12 @@ export function acquireCleanupOperationGuard(): () => void {
 export async function withExclusiveCleanupOperationGuard<T>(
 	operation: () => Promise<T>,
 ): Promise<T> {
-	if (maintenanceActive || exclusiveCleanupOperationActive || activeCleanupOperations > 0) {
+	const ownedSharedLease = operationGuardContext.getStore()?.active === true ? 1 : 0;
+	if (
+		maintenanceActive ||
+		exclusiveCleanupOperationActive ||
+		activeCleanupOperations > ownedSharedLease
+	) {
 		throw new CleanupMaintenanceConflictError(
 			"This service cannot be deleted while database maintenance, TRaSH, or library cleanup work is active",
 		);
@@ -57,9 +78,29 @@ export async function withExclusiveCleanupOperationGuard<T>(
 }
 
 export async function withCleanupOperationGuard<T>(operation: () => Promise<T>): Promise<T> {
-	const release = acquireCleanupOperationGuard();
-	try {
+	if (operationGuardContext.getStore()?.active === true) {
 		return await operation();
+	}
+	const { context, release } = acquireCleanupOperationGuardState();
+	try {
+		return await operationGuardContext.run(context, operation);
+	} finally {
+		release();
+	}
+}
+
+/**
+ * Give a detached producer its own shared lease, even when it was launched
+ * from a request or scheduler callback that already owns one. The independent
+ * context prevents the parent from releasing the producer's lease when the
+ * parent returns before the producer settles.
+ */
+export async function withIndependentCleanupOperationGuard<T>(
+	operation: () => Promise<T>,
+): Promise<T> {
+	const { context, release } = acquireCleanupOperationGuardState({ allowNestedExclusive: true });
+	try {
+		return await operationGuardContext.run(context, operation);
 	} finally {
 		release();
 	}
@@ -69,7 +110,12 @@ export async function withCleanupMaintenanceGuard<T>(
 	maintenance: () => Promise<T>,
 	options: { holdAfterSuccess?: boolean } = {},
 ): Promise<T> {
-	if (maintenanceActive || exclusiveCleanupOperationActive || activeCleanupOperations > 0) {
+	const ownedSharedLease = operationGuardContext.getStore()?.active === true ? 1 : 0;
+	if (
+		maintenanceActive ||
+		exclusiveCleanupOperationActive ||
+		activeCleanupOperations > ownedSharedLease
+	) {
 		throw new CleanupMaintenanceConflictError();
 	}
 	maintenanceActive = true;

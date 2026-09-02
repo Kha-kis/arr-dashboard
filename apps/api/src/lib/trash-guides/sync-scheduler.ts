@@ -188,7 +188,7 @@ export class TrashSyncScheduler {
 				await this.updateNextRunAt(schedule.id, schedule.frequency);
 
 				if (schedule.notifyUser) {
-					this.notifyFn?.({
+					await this.notifyFn?.({
 						eventType: "TRASH_SYNC_ERROR",
 						title: `Scheduled sync skipped: ${templateName}`,
 						body: `Validation failed for ${templateName} → ${instanceLabel}: ${validation.errors.join("; ")}`,
@@ -246,7 +246,7 @@ export class TrashSyncScheduler {
 				);
 
 				if (schedule.notifyUser) {
-					this.notifyFn?.(
+					await this.notifyFn?.(
 						{
 							eventType: "TRASH_DEPLOY_UNCERTAIN",
 							title: `Scheduled sync needs review: ${templateName}`,
@@ -287,7 +287,7 @@ export class TrashSyncScheduler {
 				);
 
 				if (schedule.notifyUser) {
-					this.notifyFn?.({
+					await this.notifyFn?.({
 						eventType: "TRASH_PROFILE_UPDATED",
 						title: `Scheduled sync completed: ${templateName}`,
 						body: `${templateName} synced to ${instanceLabel} successfully`,
@@ -313,7 +313,7 @@ export class TrashSyncScheduler {
 				);
 
 				if (schedule.notifyUser) {
-					this.notifyFn?.({
+					await this.notifyFn?.({
 						eventType: "TRASH_SYNC_ERROR",
 						title: `Scheduled sync failed: ${templateName}`,
 						body: `${templateName} → ${instanceLabel}: ${errorSummary}`,
@@ -339,7 +339,7 @@ export class TrashSyncScheduler {
 			});
 
 			if (schedule.notifyUser) {
-				this.notifyFn?.({
+				await this.notifyFn?.({
 					eventType: "TRASH_SYNC_ERROR",
 					title: `Scheduled sync error: ${templateName}`,
 					body: getErrorMessage(error),

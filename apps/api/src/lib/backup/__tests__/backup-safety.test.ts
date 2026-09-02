@@ -2,12 +2,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loggers } from "../../logger.js";
-import type { PrismaClient } from "../../prisma.js";
 import {
 	CleanupMaintenanceConflictError,
 	withCleanupOperationGuard,
 } from "../../library-cleanup/cleanup-maintenance-gate.js";
+import { loggers } from "../../logger.js";
+import type { PrismaClient } from "../../prisma.js";
 import { decryptBackupData, type EncryptedBackupEnvelope } from "../backup-crypto.js";
 import { BackupService } from "../backup-service.js";
 
@@ -21,6 +21,8 @@ const TABLE_NAMES = [
 	"oIDCAccount",
 	"webAuthnCredential",
 	"systemSettings",
+	"backupSettings",
+	"vapidKeys",
 	"trashTemplate",
 	"trashSettings",
 	"trashSyncSchedule",
@@ -34,6 +36,21 @@ const TABLE_NAMES = [
 	"huntLog",
 	"huntSearchHistory",
 	"trashBackup",
+	"notificationChannel",
+	"notificationSubscription",
+	"notificationRule",
+	"notificationAggregationConfig",
+	"autoTagRule",
+	"labelSyncRule",
+	"queueCleanerConfig",
+	"libraryCleanupConfig",
+	"libraryCleanupRule",
+	"librarySyncStatus",
+	"libraryCleanupApproval",
+	"libraryCleanupMediaServerScan",
+	"namingConfig",
+	"namingDeployHistory",
+	"userCustomFormat",
 ] as const;
 
 function makePrismaWithCoordinationEvidence(): PrismaClient {
@@ -67,7 +84,13 @@ function makePrismaWithCoordinationEvidence(): PrismaClient {
 			expiresAt: new Date("2020-01-02T00:00:00.000Z"),
 		},
 	]);
-	prisma.backupSettings = { findUnique: vi.fn().mockResolvedValue(null) };
+	prisma.backupSettings = {
+		findMany: vi.fn().mockResolvedValue([]),
+		findUnique: vi.fn().mockResolvedValue(null),
+	};
+	prisma.$transaction = vi.fn(async (operation: (tx: unknown) => Promise<unknown>) =>
+		operation(prisma),
+	);
 
 	return prisma as unknown as PrismaClient;
 }
@@ -147,7 +170,7 @@ describe("BackupService coordination safety", () => {
 			};
 
 			expect(envelope.version).toBe("1.0");
-			expect(payload.version).toBe("1.1");
+			expect(payload.version).toBe("1.2");
 			expect(payload.data.trashSyncHistory).toEqual([
 				expect.objectContaining({ id: "rollback-active" }),
 			]);
@@ -161,9 +184,15 @@ describe("BackupService coordination safety", () => {
 				expect.objectContaining({
 					backupType: "scheduled",
 					skippedTables: ["huntLog", "huntSearchHistory"],
-					preservedTables: ["trashSyncHistory", "templateDeploymentHistory", "trashBackup"],
+					preservedTables: [
+						"trashSyncHistory",
+						"templateDeploymentHistory",
+						"trashBackup",
+						"libraryCleanupApproval",
+						"libraryCleanupMediaServerScan",
+					],
 				}),
-				"Backup excluded disposable operational history while preserving nonterminal TRaSH coordination evidence",
+				"Backup excluded disposable operational history while preserving nonterminal safety coordination evidence",
 			);
 		} finally {
 			await fs.rm(tempDir, { recursive: true, force: true });

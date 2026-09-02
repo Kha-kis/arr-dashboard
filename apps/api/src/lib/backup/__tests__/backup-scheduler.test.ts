@@ -2,12 +2,25 @@ import type { FastifyBaseLogger } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../../../lib/prisma.js";
 import type { Encryptor } from "../../auth/encryption.js";
+import {
+	CleanupMaintenanceConflictError,
+	withCleanupMaintenanceGuard,
+	withCleanupOperationGuard,
+} from "../../library-cleanup/cleanup-maintenance-gate.js";
 import { BackupScheduler } from "../backup-scheduler.js";
 import { BackupPasswordConfigurationError } from "../backup-service.js";
 
 afterEach(() => {
 	vi.unstubAllEnvs();
 });
+
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((resolvePromise) => {
+		resolve = resolvePromise;
+	});
+	return { promise, resolve };
+}
 
 function schedulerPasswordService(
 	settings: { encryptedPassword: string | null; passwordIv: string | null },
@@ -147,5 +160,107 @@ describe("BackupScheduler database password wiring", () => {
 		await expect(backupService.getBackupPassword()).rejects.toBeInstanceOf(
 			BackupPasswordConfigurationError,
 		);
+	});
+});
+
+describe("BackupScheduler restore coordination", () => {
+	it("holds mutation ownership through bookkeeping and the completion notification", async () => {
+		const updateStarted = deferred<void>();
+		const finishUpdate = deferred<void>();
+		const notificationStarted = deferred<void>();
+		const finishNotification = deferred<void>();
+		const prisma = {
+			backupSettings: {
+				findUnique: vi.fn().mockResolvedValue({
+					enabled: true,
+					intervalType: "HOURLY",
+					intervalValue: 1,
+					retentionCount: 3,
+					nextRunAt: new Date(0),
+				}),
+				update: vi.fn().mockImplementation(async () => {
+					updateStarted.resolve();
+					await finishUpdate.promise;
+				}),
+			},
+		} as unknown as PrismaClient;
+		const logger = {
+			error: vi.fn(),
+			info: vi.fn(),
+			warn: vi.fn(),
+			debug: vi.fn(),
+		} as unknown as FastifyBaseLogger;
+		const scheduler = new BackupScheduler(prisma, logger, "/unused/secrets.json", async () =>
+			withCleanupOperationGuard(async () => {
+				notificationStarted.resolve();
+				await finishNotification.promise;
+			}),
+		);
+		vi.spyOn(
+			scheduler as unknown as { runScheduledBackup(retentionCount: number): Promise<void> },
+			"runScheduledBackup",
+		).mockResolvedValue(undefined);
+		const checkAndRunBackup = (
+			scheduler as unknown as { checkAndRunBackup(): Promise<void> }
+		).checkAndRunBackup.bind(scheduler);
+
+		const scheduledTick = checkAndRunBackup();
+		await updateStarted.promise;
+		await expect(withCleanupMaintenanceGuard(async () => undefined)).rejects.toBeInstanceOf(
+			CleanupMaintenanceConflictError,
+		);
+
+		finishUpdate.resolve();
+		await notificationStarted.promise;
+		await Promise.resolve();
+		await Promise.resolve();
+		const maintenanceAttempt = withCleanupMaintenanceGuard(async () => undefined);
+		finishNotification.resolve();
+		await scheduledTick;
+		await expect(maintenanceAttempt).rejects.toBeInstanceOf(CleanupMaintenanceConflictError);
+	});
+
+	it("holds mutation ownership through the failure notification", async () => {
+		const notificationStarted = deferred<void>();
+		const finishNotification = deferred<void>();
+		const prisma = {
+			backupSettings: {
+				findUnique: vi.fn().mockResolvedValue({
+					enabled: true,
+					intervalType: "HOURLY",
+					intervalValue: 1,
+					retentionCount: 3,
+					nextRunAt: new Date(0),
+				}),
+			},
+		} as unknown as PrismaClient;
+		const logger = {
+			error: vi.fn(),
+			info: vi.fn(),
+			warn: vi.fn(),
+			debug: vi.fn(),
+		} as unknown as FastifyBaseLogger;
+		const scheduler = new BackupScheduler(prisma, logger, "/unused/secrets.json", async () =>
+			withCleanupOperationGuard(async () => {
+				notificationStarted.resolve();
+				await finishNotification.promise;
+			}),
+		);
+		vi.spyOn(
+			scheduler as unknown as { runScheduledBackup(retentionCount: number): Promise<void> },
+			"runScheduledBackup",
+		).mockRejectedValue(new Error("synthetic backup failure"));
+		const checkAndRunBackup = (
+			scheduler as unknown as { checkAndRunBackup(): Promise<void> }
+		).checkAndRunBackup.bind(scheduler);
+
+		const scheduledTick = checkAndRunBackup();
+		await notificationStarted.promise;
+		await Promise.resolve();
+		await Promise.resolve();
+		const maintenanceAttempt = withCleanupMaintenanceGuard(async () => undefined);
+		finishNotification.resolve();
+		await scheduledTick;
+		await expect(maintenanceAttempt).rejects.toBeInstanceOf(CleanupMaintenanceConflictError);
 	});
 });

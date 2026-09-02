@@ -63,6 +63,7 @@ import { readdir, stat } from "node:fs/promises";
 import { gunzipSync, gzipSync } from "node:zlib";
 import type { QuiTorrent } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
+import { withIndependentCleanupOperationGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
 import type { PrismaClient, ServiceInstance } from "../prisma.js";
 import type { QuiClient } from "../qui/client-factory.js";
 import { getErrorMessage } from "../utils/error-message.js";
@@ -425,17 +426,23 @@ export async function buildFileIdIndex(
 	const pending = INDEX_PENDING.get(instance.id);
 	if (pending) return pending;
 
-	const buildPromise = (async (): Promise<FileIdIndex> => {
+	const buildAndPublish = async (): Promise<FileIdIndex> => {
 		const built = await doBuildFileIdIndex(client, instance, log);
 		INDEX_CACHE.set(instance.id, { index: built, builtAt: Date.now() });
-		// Persist asynchronously — caller doesn't need to wait on the
-		// DB write, and a failed persist is non-fatal (next rebuild
-		// will retry). Floating Promise is intentional.
+		// Persist before publishing completion so database maintenance cannot
+		// replace topology while a stale cache write remains in flight.
+		// Persistence remains best-effort inside saveFileIdIndexToDb.
 		if (prisma) {
-			void saveFileIdIndexToDb(prisma, instance.id, built, log);
+			await saveFileIdIndexToDb(prisma, instance.id, built, log);
 		}
 		return built;
-	})();
+	};
+	// A panel route stops awaiting this single-flight producer after its
+	// response timeout. When persistence is enabled, give the producer its own
+	// lease so restore remains blocked until the durable publication settles.
+	const buildPromise = prisma
+		? withIndependentCleanupOperationGuard(buildAndPublish)
+		: buildAndPublish();
 	INDEX_PENDING.set(instance.id, buildPromise);
 	try {
 		return await buildPromise;

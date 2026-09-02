@@ -8,10 +8,86 @@
 import type { BackupData } from "@arr/shared";
 import type { EncryptedBackupEnvelope } from "./backup-crypto.js";
 
-export const BACKUP_VERSION = "1.1";
+export const BACKUP_VERSION = "1.2";
 export const LEGACY_BACKUP_VERSION = "1.0";
+export const PRE_CONFIG_BACKUP_VERSION = "1.1";
 
-const SUPPORTED_BACKUP_VERSIONS = new Set([LEGACY_BACKUP_VERSION, BACKUP_VERSION]);
+const SUPPORTED_BACKUP_VERSIONS = new Set([
+	LEGACY_BACKUP_VERSION,
+	PRE_CONFIG_BACKUP_VERSION,
+	BACKUP_VERSION,
+]);
+
+/** Durable configuration collections added to the v1.2 backup contract. */
+export const DURABLE_CONFIG_PAYLOAD_FIELDS = [
+	"backupSettings",
+	"vapidKeys",
+	"notificationChannel",
+	"notificationSubscription",
+	"notificationRule",
+	"notificationAggregationConfig",
+	"autoTagRule",
+	"labelSyncRule",
+	"queueCleanerConfig",
+	"libraryCleanupConfig",
+	"libraryCleanupRule",
+	"librarySyncSettings",
+	"namingConfig",
+	"userCustomFormat",
+	"namingDeployHistory",
+	"libraryCleanupApproval",
+	"libraryCleanupMediaServerScan",
+] as const;
+
+/** Every optional array emitted by exportDatabase and required by v1.2. */
+export const COMPLETE_V1_2_PAYLOAD_FIELDS = [
+	"oidcProviders",
+	"systemSettings",
+	"trashTemplates",
+	"trashSettings",
+	"trashSyncSchedules",
+	"templateQualityProfileMappings",
+	"instanceQualityProfileOverrides",
+	"standaloneCFDeployments",
+	"qualitySizeMappings",
+	"trashSyncHistory",
+	"templateDeploymentHistory",
+	"trashBackups",
+	"huntConfigs",
+	"huntLogs",
+	"huntSearchHistory",
+	...DURABLE_CONFIG_PAYLOAD_FIELDS,
+] as const;
+
+/** Explicit payload-to-Prisma mapping for relational legacy coverage checks. */
+export const LEGACY_RELATIONAL_CONFIG_DELEGATES = [
+	["trashTemplates", "trashTemplate"],
+	["trashSettings", "trashSettings"],
+	["trashSyncSchedules", "trashSyncSchedule"],
+	["templateQualityProfileMappings", "templateQualityProfileMapping"],
+	["instanceQualityProfileOverrides", "instanceQualityProfileOverride"],
+	["standaloneCFDeployments", "standaloneCFDeployment"],
+	["qualitySizeMappings", "qualitySizeMapping"],
+	["huntConfigs", "huntConfig"],
+	["notificationChannel", "notificationChannel"],
+	["notificationSubscription", "notificationSubscription"],
+	["notificationRule", "notificationRule"],
+	["notificationAggregationConfig", "notificationAggregationConfig"],
+	["autoTagRule", "autoTagRule"],
+	["labelSyncRule", "labelSyncRule"],
+	["queueCleanerConfig", "queueCleanerConfig"],
+	["libraryCleanupConfig", "libraryCleanupConfig"],
+	["libraryCleanupRule", "libraryCleanupRule"],
+	["libraryCleanupApproval", "libraryCleanupApproval"],
+	["libraryCleanupMediaServerScan", "libraryCleanupMediaServerScan"],
+	["namingConfig", "namingConfig"],
+	["userCustomFormat", "userCustomFormat"],
+] as const;
+
+/** Relational durable configuration that legacy files cannot safely replace. */
+export const LEGACY_RELATIONAL_CONFIG_FIELDS = LEGACY_RELATIONAL_CONFIG_DELEGATES.map(
+	([payloadField]) => payloadField,
+);
 
 type CoordinationRecord = Record<string, unknown>;
 
@@ -357,6 +433,26 @@ export function validateRecords(
 	}
 }
 
+const SINGLETON_PAYLOAD_FIELDS = [
+	"oidcProviders",
+	"systemSettings",
+	"backupSettings",
+	"vapidKeys",
+] as const;
+
+/** Reject payloads whose singleton selection would otherwise depend on array order. */
+export function validateSingletonCollections(
+	data: BackupData["data"] | Record<string, unknown>,
+): void {
+	const record = data as Record<string, unknown>;
+	for (const field of SINGLETON_PAYLOAD_FIELDS) {
+		const rows = record[field];
+		if (Array.isArray(rows) && rows.length > 1) {
+			throw new Error(`Invalid backup format: ${field} must contain at most one record`);
+		}
+	}
+}
+
 /**
  * Validate backup structure
  */
@@ -425,6 +521,8 @@ export function validateBackup(backup: unknown): asserts backup is BackupData {
 		"huntConfigs",
 		"huntLogs",
 		"huntSearchHistory",
+		// Durable configuration (required in v1.2, optional for legacy files)
+		...DURABLE_CONFIG_PAYLOAD_FIELDS,
 	];
 
 	for (const field of optionalArrayFields) {
@@ -434,6 +532,18 @@ export function validateBackup(backup: unknown): asserts backup is BackupData {
 	}
 
 	if (b.version === BACKUP_VERSION) {
+		for (const field of COMPLETE_V1_2_PAYLOAD_FIELDS) {
+			if (!Array.isArray(dataRecord[field])) {
+				throw new Error(
+					`Invalid backup format: ${field} is required for version ${BACKUP_VERSION}`,
+				);
+			}
+		}
+	}
+
+	validateSingletonCollections(dataRecord);
+
+	if (b.version === BACKUP_VERSION || b.version === PRE_CONFIG_BACKUP_VERSION) {
 		validateCoordinationEvidence(dataRecord);
 	}
 

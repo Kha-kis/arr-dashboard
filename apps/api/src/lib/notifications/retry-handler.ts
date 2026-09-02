@@ -1,4 +1,8 @@
 import type { NotificationChannelType } from "@arr/shared";
+import {
+	CleanupMaintenanceConflictError,
+	withCleanupOperationGuard,
+} from "../library-cleanup/cleanup-maintenance-gate.js";
 import type { NotificationLogger, NotificationPayload, SendResult } from "./types.js";
 
 interface RetryItem {
@@ -65,22 +69,24 @@ export class RetryHandler {
 	private scheduleRetry(
 		key: string,
 		item: Omit<RetryItem, "timer"> & { retryAfterMs?: number },
-	): void {
+	): Promise<void> | void {
 		if (item.attempt >= MAX_RETRIES) {
 			this.logger.warn(
 				{ channelId: item.channelId, eventType: item.payload.eventType, attempts: item.attempt },
 				"Notification dead-lettered after max retries",
 			);
-			this.logDeliveryFn(
-				item.channelId,
-				item.channelType,
-				item.payload,
-				"dead_letter",
-				`Exhausted ${MAX_RETRIES} retries`,
-				item.attempt,
+			const deadLetter = withCleanupOperationGuard(() =>
+				this.logDeliveryFn(
+					item.channelId,
+					item.channelType,
+					item.payload,
+					"dead_letter",
+					`Exhausted ${MAX_RETRIES} retries`,
+					item.attempt,
+				),
 			).catch(() => {});
 			this.queue.delete(key);
-			return;
+			return deadLetter;
 		}
 
 		const backoffMs =
@@ -93,48 +99,58 @@ export class RetryHandler {
 
 		const timer = setTimeout(async () => {
 			try {
-				const result = await this.sendFn(item.channelType, item.config, item.payload);
-				if (result.success) {
-					this.logger.info(
-						{ channelId: item.channelId, attempt: item.attempt + 1 },
-						"Notification retry succeeded",
-					);
-					await this.logDeliveryFn(
-						item.channelId,
-						item.channelType,
-						item.payload,
-						"sent",
-						undefined,
-						item.attempt + 1,
-					).catch(() => {});
-					this.queue.delete(key);
-				} else if (result.retryable) {
-					this.scheduleRetry(key, {
-						...item,
-						attempt: item.attempt + 1,
-						retryAfterMs: result.retryAfterMs,
-					});
-				} else {
-					this.logger.warn(
-						{ channelId: item.channelId, error: result.error },
-						"Notification retry failed with non-retryable error",
-					);
-					await this.logDeliveryFn(
-						item.channelId,
-						item.channelType,
-						item.payload,
-						"dead_letter",
-						result.error,
-						item.attempt + 1,
-					).catch(() => {});
-					this.queue.delete(key);
-				}
+				await withCleanupOperationGuard(async () => {
+					const result = await this.sendFn(item.channelType, item.config, item.payload);
+					if (result.success) {
+						this.logger.info(
+							{ channelId: item.channelId, attempt: item.attempt + 1 },
+							"Notification retry succeeded",
+						);
+						await this.logDeliveryFn(
+							item.channelId,
+							item.channelType,
+							item.payload,
+							"sent",
+							undefined,
+							item.attempt + 1,
+						).catch(() => {});
+						this.queue.delete(key);
+					} else if (result.retryable) {
+						await this.scheduleRetry(key, {
+							...item,
+							attempt: item.attempt + 1,
+							retryAfterMs: result.retryAfterMs,
+						});
+					} else {
+						this.logger.warn(
+							{ channelId: item.channelId, error: result.error },
+							"Notification retry failed with non-retryable error",
+						);
+						await this.logDeliveryFn(
+							item.channelId,
+							item.channelType,
+							item.payload,
+							"dead_letter",
+							result.error,
+							item.attempt + 1,
+						).catch(() => {});
+						this.queue.delete(key);
+					}
+				});
 			} catch (retryErr) {
+				if (retryErr instanceof CleanupMaintenanceConflictError) {
+					this.logger.debug(
+						{ channelId: item.channelId, attempt: item.attempt + 1 },
+						"Notification retry paused during database maintenance",
+					);
+					await this.scheduleRetry(key, { ...item, attempt: item.attempt });
+					return;
+				}
 				this.logger.warn(
 					{ err: retryErr, channelId: item.channelId, attempt: item.attempt + 1 },
 					"Notification retry threw unexpected error, re-queuing",
 				);
-				this.scheduleRetry(key, { ...item, attempt: item.attempt + 1 });
+				await this.scheduleRetry(key, { ...item, attempt: item.attempt + 1 });
 			}
 		}, backoffMs);
 
@@ -148,13 +164,15 @@ export class RetryHandler {
 	flush(): void {
 		for (const [, item] of this.queue) {
 			clearTimeout(item.timer);
-			this.logDeliveryFn(
-				item.channelId,
-				item.channelType,
-				item.payload,
-				"dead_letter",
-				"Server shutdown — retry abandoned",
-				item.attempt,
+			withCleanupOperationGuard(() =>
+				this.logDeliveryFn(
+					item.channelId,
+					item.channelType,
+					item.payload,
+					"dead_letter",
+					"Server shutdown — retry abandoned",
+					item.attempt,
+				),
 			).catch(() => {});
 		}
 		this.queue.clear();
