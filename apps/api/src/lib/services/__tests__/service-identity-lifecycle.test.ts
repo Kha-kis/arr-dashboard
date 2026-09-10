@@ -3,6 +3,7 @@ import {
 	createSanitizedProviderEvidence,
 	serializeExecutableSafetyPlan,
 } from "../../library-cleanup/shared-plex-safety.js";
+import { createPlexTargetLedgerBinding } from "../../plex/plex-generation-target-ledger.js";
 import {
 	createProviderReplacementAuthority,
 	expireApprovalsForProviderReplacement,
@@ -164,6 +165,29 @@ describe("expireApprovalsForProviderReplacement", () => {
 						verifiedAt: "2026-08-15T03:00:00.000Z",
 						statusFingerprint: `${index + 3}`.repeat(64),
 						rowFingerprint: `${index + 5}`.repeat(64),
+						...(source.service === "PLEX"
+							? {
+									generationId: "plex-generation-1",
+									...createPlexTargetLedgerBinding({
+										instanceId: "provider-1",
+										generationId: "plex-generation-1",
+										connectionGeneration: source.connectionGeneration,
+										identityGeneration: source.identityGeneration,
+										targets: [
+											{
+												instanceId: "provider-1",
+												generationId: "plex-generation-1",
+												sectionId: "movies",
+												sectionUuid: "movies-uuid",
+												mediaType: "movie",
+												tmdbId: 42,
+												tvdbId: null,
+												ratingKey: "plex-movie-42",
+											},
+										],
+									}),
+								}
+							: {}),
 					})),
 				),
 			);

@@ -4,6 +4,14 @@
  * Types for Plex integration — watch enrichment, sessions, sections, episodes, collections.
  */
 
+import type {
+	ProviderCoverageReceiptV1,
+	ProviderObservationProgress,
+	ProviderObservationStatus,
+	ProviderObservationStatusEnvelope,
+	ProviderUiCondition,
+} from "./provider-observation";
+
 // ============================================================================
 // Published cache evidence
 // ============================================================================
@@ -41,6 +49,7 @@ export type PlexCoverageReasonCode =
 	| "latest_attempt_future_dated"
 	| "published_generation_stale"
 	| "metadata_invalid"
+	| "receipt_missing"
 	| "mutation_authority_unavailable"
 	| "query_failed"
 	| "parent_generation_unavailable"
@@ -74,6 +83,53 @@ export interface PlexEvidenceSummary {
 		publicationLevel: PlexPublicationLevel;
 		publishedAt: string;
 		itemCount: number;
+	};
+}
+
+/**
+ * Adapts durable Plex evidence to the provider-agnostic UI classifier without
+ * exposing generation details to consumers.
+ */
+export function providerObservationStatusFromPlexEvidence(
+	evidence: PlexEvidenceSummary | undefined,
+): ProviderObservationStatus {
+	if (!evidence) {
+		return {
+			availability: "unavailable",
+			evidence: "unknown",
+			observedAt: null,
+			ageSeconds: null,
+			latestAttempt: "idle",
+			reasonCodes: ["unknown-failure"],
+		};
+	}
+	const running = evidence.attemptState === "in_progress";
+	const failed = evidence.attemptState === "error";
+	const unavailable = evidence.publicationLevel === "unavailable";
+	const bounded =
+		evidence.publicationLevel === "positive-only" || evidence.completeness === "partial";
+	return {
+		availability:
+			running || failed || unavailable
+				? "unavailable"
+				: bounded
+					? "partial"
+					: (evidence.availability ?? "current"),
+		evidence: unavailable ? "unknown" : bounded ? "positive-only" : "complete",
+		observedAt: null,
+		ageSeconds: null,
+		latestAttempt: running ? "running" : failed ? "failed" : "successful",
+		reasonCodes: running
+			? ["refresh-running"]
+			: failed
+				? ["refresh-failed"]
+				: bounded
+					? evidence.publicationLevel === "positive-only"
+						? ["positive-only"]
+						: ["coverage-incomplete"]
+					: unavailable
+						? ["unknown-failure"]
+						: [],
 	};
 }
 
@@ -164,15 +220,65 @@ export interface PlexPositiveGenerationMetadataV4 {
 	partialReasons: readonly PlexPartialReason[];
 }
 
+export interface PlexAuthoritativeGenerationMetadataV5 {
+	version: 5;
+	publicationLevel: "authoritative";
+	completeness: "complete";
+	itemCount: number;
+	canonicalizationVersion: 1;
+	sections: PlexGenerationSectionV3[];
+	roots: PlexGenerationDomainRoot[];
+	targetLedgerVersion: 1;
+	targetCount: number;
+	targetDigest: string;
+	partialReasons: readonly [];
+	coverageReceipt: ProviderCoverageReceiptV1;
+	observedRoots?: never;
+	capabilities?: never;
+}
+
+export interface PlexPositiveGenerationMetadataV5 {
+	version: 5;
+	publicationLevel: "positive-only";
+	completeness: "partial";
+	itemCount: number;
+	canonicalizationVersion: 1;
+	sections: PlexGenerationSectionV3[];
+	observedRoots: PlexGenerationDomainRoot[];
+	capabilities: readonly [
+		{
+			domain: "episode-parents";
+			field: "membership";
+			semantics: "observed-targets-only";
+			operators: readonly [];
+		},
+	];
+	targetLedgerVersion: 1;
+	targetCount: number;
+	targetDigest: string;
+	partialReasons: readonly [PlexPartialReason, ...PlexPartialReason[]];
+	coverageReceipt: ProviderCoverageReceiptV1;
+	roots?: never;
+}
+
+/** Exact V5 publication shapes; the discriminator determines all permitted fields. */
+export type PlexGenerationMetadataV5 =
+	| PlexAuthoritativeGenerationMetadataV5
+	| PlexPositiveGenerationMetadataV5;
+
 // ============================================================================
 // Watch Enrichment (F1)
 // ============================================================================
 
 export interface WatchEnrichmentItem {
 	lastWatchedAt: string | null;
-	watchCount: number;
+	/** A null count is unknown; it is never an implied zero. */
+	watchCount: number | null;
+	/** Whether the visible count is exact, an observed lower bound, or unknown. */
+	watchCountSemantics: "exact" | "lower-bound" | "unknown";
 	watchedByUsers: string[];
-	onDeck: boolean;
+	/** Null means the current provider has not supplied exact on-deck evidence. */
+	onDeck: boolean | null;
 	userRating: number | null;
 	source: "plex" | "tautulli" | "both" | "jellyfin";
 	/** Plex ratingKey for write-back operations (null if not available) */
@@ -190,6 +296,8 @@ export interface WatchEnrichmentItem {
 export interface WatchEnrichmentResponse {
 	items: Record<string, WatchEnrichmentItem>;
 	evidence?: PlexEvidenceSummary;
+	tautulliStatus?: ProviderObservationStatus;
+	providerStatus?: ProviderObservationStatusEnvelope;
 }
 
 // ============================================================================
@@ -370,6 +478,14 @@ export interface PlexAccountsResponse {
 // ============================================================================
 
 export interface CacheHealthItem {
+	/** Sanitized durable work progress. Never includes run/unit identifiers or scopes. */
+	progress?:
+		| ({
+				state: "running" | "failed";
+		  } & ProviderObservationProgress)
+		| null;
+	/** Additive shared UI state; old clients can retain existing result fields. */
+	uiCondition?: ProviderUiCondition;
 	/** Partial positive-only generations expose this bounded observed count, never an exact universe count. */
 	observedItemCount?: number;
 	instanceId: string;
@@ -382,12 +498,13 @@ export interface CacheHealthItem {
 		| "jellyfin_episode"
 		| "emby"
 		| "emby_episode";
-	lastRefreshedAt: string;
+	lastRefreshedAt: string | null;
 	lastResult: "success" | "partial" | "error" | "in_progress";
 	lastErrorMessage: string | null;
 	itemCount: number | null;
 	isStale: boolean;
 	evidence?: PlexEvidenceSummary;
+	providerStatus?: ProviderObservationStatusEnvelope;
 }
 
 export interface CacheHealthResponse {
@@ -407,6 +524,7 @@ export interface SeriesProgressItem {
 export interface SeriesProgressResponse {
 	progress: Record<number, SeriesProgressItem>;
 	evidence?: PlexEvidenceSummary;
+	providerStatus?: ProviderObservationStatusEnvelope;
 }
 
 // ============================================================================
@@ -533,6 +651,7 @@ export interface UserEpisodeCompletion {
 		}>;
 	}>;
 	evidence?: PlexEvidenceSummary;
+	providerStatus?: ProviderObservationStatusEnvelope;
 }
 
 // ============================================================================

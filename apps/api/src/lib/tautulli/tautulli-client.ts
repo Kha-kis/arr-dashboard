@@ -283,8 +283,8 @@ export class TautulliClient {
 	/**
 	 * Get metadata for a specific item, including GUIDs (TMDB, IMDB, etc.).
 	 */
-	async getMetadata(ratingKey: string): Promise<TautulliMetadata> {
-		return this.command("get_metadata", { rating_key: ratingKey }, tautulliMetadataSchema);
+	async getMetadata(ratingKey: string, signal?: AbortSignal): Promise<TautulliMetadata> {
+		return this.command("get_metadata", { rating_key: ratingKey }, tautulliMetadataSchema, signal);
 	}
 
 	/**
@@ -295,6 +295,7 @@ export class TautulliClient {
 		cmd: string,
 		params?: Record<string, unknown>,
 		schema?: z.ZodType<T>,
+		signal?: AbortSignal,
 	): Promise<T> {
 		const url = new URL(`${this.baseUrl}/api/v2`);
 		url.searchParams.set("apikey", this.apiKey);
@@ -317,9 +318,10 @@ export class TautulliClient {
 
 		let response: Response;
 		try {
+			const timeoutSignal = AbortSignal.timeout(this.timeout);
 			response = await fetch(safeUrl, {
 				headers: { Accept: "application/json", ...this.httpAuthHeaders },
-				signal: AbortSignal.timeout(this.timeout),
+				signal: signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal,
 			});
 		} catch (err) {
 			// Sanitize error to avoid leaking API key from URL in error messages

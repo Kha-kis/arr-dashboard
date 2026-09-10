@@ -71,10 +71,16 @@ export const usePulseActionMutation = () => {
 					// namespace. Plex and Tautulli share the Plex cache-health
 					// endpoint, while their downstream widgets use separate
 					// domain roots.
-					if (action.target.cacheType === "jellyfin") {
+					if (
+						action.target.cacheType === "jellyfin" ||
+						action.target.cacheType === "jellyfin_episode"
+					) {
 						queryClient.invalidateQueries({ queryKey: jellyfinKeys.cacheHealth() });
 						queryClient.invalidateQueries({ queryKey: jellyfinKeys.all });
-					} else if (action.target.cacheType === "plex") {
+					} else if (
+						action.target.cacheType === "plex" ||
+						action.target.cacheType === "plex_episode"
+					) {
 						queryClient.invalidateQueries({ queryKey: plexKeys.cacheHealth() });
 						queryClient.invalidateQueries({ queryKey: plexKeys.all });
 					} else {
@@ -118,8 +124,10 @@ function successCopyForAction(action: PulseAction): string {
 		case "cache.refresh": {
 			const copy: Record<PulseCacheType, string> = {
 				plex: "Plex cache refresh triggered",
+				plex_episode: "Plex episode cache refresh triggered",
 				tautulli: "Tautulli cache refresh triggered",
 				jellyfin: "Media cache refresh triggered",
+				jellyfin_episode: "Media episode cache refresh triggered",
 			};
 			return copy[action.target.cacheType];
 		}

@@ -5,6 +5,10 @@ import { createInjectAuthenticated, setupAuthInjection } from "./test-helpers.js
 const mocks = vi.hoisted(() => ({
 	loadUserEvidence: vi.fn(),
 	scanUserPolicyEvidence: vi.fn(),
+	readInsightWatchEvidence: vi.fn(),
+	seerrConstructed: vi.fn(),
+	seerrGetRequests: vi.fn(),
+	legacyJellyfinFindMany: vi.fn(),
 }));
 
 vi.mock("../../lib/plex/plex-evidence-repository.js", async (importOriginal) => ({
@@ -18,6 +22,20 @@ vi.mock("../../lib/plex/plex-authority-service.js", async (importOriginal) => ({
 	PlexAuthorityService: class {
 		async scanUserPolicy(input: unknown) {
 			return await mocks.scanUserPolicyEvidence(undefined, input);
+		}
+	},
+}));
+vi.mock("../../lib/library-insights/watch-evidence.js", () => ({
+	readOwnedJellyfinInsightWatchEvidence: mocks.readInsightWatchEvidence,
+}));
+vi.mock("../../lib/seerr/seerr-client.js", () => ({
+	SeerrClient: class {
+		constructor(...args: unknown[]) {
+			mocks.seerrConstructed(...args);
+		}
+
+		async getRequests(...args: unknown[]) {
+			return await mocks.seerrGetRequests(...args);
 		}
 	},
 }));
@@ -39,6 +57,158 @@ const unavailableEvidence = {
 	},
 } as const;
 
+const authoritativePlexEvidence = [
+	{
+		available: true,
+		instanceId: "plex-1",
+		rows: [],
+		evidence: {
+			availability: "current",
+			authority: "authoritative",
+			attemptState: "idle",
+			publicationLevel: "authoritative",
+			completeness: "complete",
+			reasonCodes: [],
+		},
+	},
+];
+
+const jellyfinInstances = [
+	{ id: "jellyfin-1", label: "Jellyfin One", service: "JELLYFIN" },
+	{ id: "emby-1", label: "Emby One", service: "EMBY" },
+] as const;
+
+const currentStatus = {
+	availability: "current",
+	evidence: "complete",
+	observedAt: "2026-09-03T00:00:00.000Z",
+	ageSeconds: 0,
+	latestAttempt: "successful",
+	reasonCodes: [],
+} as const;
+
+function sourceStatus(instanceId: string, status: Record<string, unknown>) {
+	return {
+		instanceId,
+		service: instanceId.startsWith("emby") ? "emby" : "jellyfin",
+		cacheType: "jellyfin",
+		status,
+	};
+}
+
+function watchEvidence({
+	statuses,
+	rows = [],
+	configured = true,
+	positive = true,
+	negative = false,
+	availability = "partial",
+}: {
+	statuses: ReadonlyArray<{ instanceId: string; status: Record<string, unknown> }>;
+	rows?: ReadonlyArray<Record<string, unknown>>;
+	configured?: boolean;
+	positive?: boolean;
+	negative?: boolean;
+	availability?: string;
+}) {
+	return {
+		configured,
+		rows,
+		providerStatus: configured
+			? {
+					availability,
+					sources: statuses.map(({ instanceId, status }) => sourceStatus(instanceId, status)),
+				}
+			: undefined,
+		hasPositiveEvidence: positive,
+		negativeClaimsAuthoritative: negative,
+	};
+}
+
+const privateWatchRow = {
+	tmdbId: 42,
+	mediaType: "movie",
+	watchCount: 2,
+	lastWatchedAt: new Date("2026-09-02T00:00:00.000Z"),
+	rowId: "private-row-id",
+	providerItemId: "private-provider-item",
+	title: "Private helper title",
+	userList: ["private-user"],
+	libraryName: "Private library",
+	url: "https://private.invalid/item",
+};
+
+const zeroWatchRow = { ...privateWatchRow, watchCount: 0 };
+
+function candidateItem(overrides: Record<string, unknown> = {}) {
+	return {
+		instanceId: "sonarr-1",
+		arrItemId: 42,
+		itemType: "movie",
+		title: "Public candidate",
+		year: 2024,
+		sizeOnDisk: BigInt(2 * 1024 * 1024 * 1024),
+		arrAddedAt: new Date("2026-01-01T00:00:00.000Z"),
+		monitored: true,
+		qualityProfileName: "HD",
+		hasFile: true,
+		status: "ended",
+		data: JSON.stringify({ remoteIds: { tmdbId: 42 } }),
+		...overrides,
+	};
+}
+
+const statusWith = (availability: string, evidence: string) => ({
+	availability,
+	evidence,
+	observedAt: availability === "unavailable" ? null : "2026-09-01T00:00:00.000Z",
+	ageSeconds: availability === "unavailable" ? null : 3600,
+	latestAttempt: "successful",
+	reasonCodes: availability === "unavailable" ? ["unknown-failure"] : [],
+});
+
+const degradedTopologies = [
+	[
+		"complete last-known",
+		[{ instanceId: "jellyfin-1", status: statusWith("last-known", "complete") }],
+		true,
+		"partial",
+	],
+	[
+		"mixed",
+		[
+			{ instanceId: "jellyfin-1", status: statusWith("current", "complete") },
+			{ instanceId: "emby-1", status: statusWith("unavailable", "unknown") },
+		],
+		true,
+		"partial",
+	],
+	[
+		"partial",
+		[{ instanceId: "jellyfin-1", status: statusWith("partial", "partial") }],
+		true,
+		"partial",
+	],
+	[
+		"positive-only",
+		[{ instanceId: "jellyfin-1", status: statusWith("current", "positive-only") }],
+		true,
+		"current",
+	],
+	[
+		"unknown",
+		[{ instanceId: "jellyfin-1", status: statusWith("current", "unknown") }],
+		true,
+		"current",
+	],
+	[
+		"unavailable",
+		[{ instanceId: "jellyfin-1", status: statusWith("unavailable", "unknown") }],
+		false,
+		"unavailable",
+	],
+] as const;
+
 describe("library insight Plex authority contracts", () => {
 	let app: FastifyInstance;
 
@@ -53,6 +223,18 @@ describe("library insight Plex authority contracts", () => {
 		];
 		mocks.loadUserEvidence.mockResolvedValue(evidence);
 		mocks.scanUserPolicyEvidence.mockResolvedValue(evidence);
+		mocks.readInsightWatchEvidence.mockResolvedValue({
+			configured: false,
+			rows: [],
+			providerStatus: undefined,
+			hasPositiveEvidence: false,
+			negativeClaimsAuthoritative: false,
+		});
+		mocks.seerrGetRequests.mockResolvedValue({ results: [] });
+		mocks.legacyJellyfinFindMany.mockReset();
+		mocks.legacyJellyfinFindMany.mockImplementation(() => {
+			throw new Error("direct jellyfin cache access is forbidden");
+		});
 
 		app = Fastify({ logger: false });
 		setupAuthInjection(app);
@@ -75,7 +257,7 @@ describe("library insight Plex authority contracts", () => {
 				})),
 			},
 			libraryCache: { findMany: vi.fn(async () => []) },
-			jellyfinCache: { findMany: vi.fn(async () => []) },
+			jellyfinCache: { findMany: mocks.legacyJellyfinFindMany },
 		} as never);
 		await app.register(registerInsightsRoutes, { prefix: "/api" });
 		await app.ready();
@@ -106,4 +288,509 @@ describe("library insight Plex authority contracts", () => {
 			expect(JSON.stringify(body)).not.toContain("in_progress:");
 		},
 	);
+
+	it("withholds disk-waste conclusions for a degraded owned Jellyfin topology before candidates", async () => {
+		mocks.scanUserPolicyEvidence.mockResolvedValue([]);
+		mocks.readInsightWatchEvidence.mockResolvedValueOnce({
+			configured: true,
+			rows: [],
+			providerStatus: {
+				availability: "partial",
+				sources: [
+					{
+						instanceId: "jellyfin-1",
+						service: "jellyfin",
+						cacheType: "jellyfin",
+						status: {
+							availability: "last-known",
+							evidence: "complete",
+							observedAt: "2026-09-01T00:00:00.000Z",
+							ageSeconds: 3600,
+							latestAttempt: "successful",
+							reasonCodes: [],
+						},
+					},
+				],
+			},
+			hasPositiveEvidence: true,
+			negativeClaimsAuthoritative: false,
+		});
+		const serviceInstanceFindMany = app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>;
+		serviceInstanceFindMany.mockImplementation(
+			async ({ where }: { where: { service?: { in?: string[] } } }) =>
+				where.service?.in?.includes("SONARR")
+					? [{ id: "sonarr-1", label: "Sonarr", service: "SONARR" }]
+					: [{ id: "jellyfin-1", label: "Jellyfin", service: "JELLYFIN" }],
+		);
+		const libraryFindMany = app.prisma.libraryCache.findMany as ReturnType<typeof vi.fn>;
+
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/api/library/insights/disk-waste",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			success: true,
+			data: { items: [], totalWastedBytes: 0, hasPlexData: false, hasWatchData: false },
+			providerStatus: { availability: "partial" },
+		});
+		expect(mocks.readInsightWatchEvidence).toHaveBeenCalledTimes(1);
+		expect(libraryFindMany).not.toHaveBeenCalled();
+		expect(serviceInstanceFindMany).toHaveBeenCalledWith({
+			where: { userId: expect.any(String), enabled: true, service: { in: ["JELLYFIN", "EMBY"] } },
+			select: { id: true, label: true, service: true },
+		});
+	});
+
+	it.each([
+		["disk-waste", "/api/library/insights/disk-waste"],
+		["watched-monitored", "/api/library/insights/watched-monitored"],
+		["requested-unwatched", "/api/library/insights/requested-unwatched"],
+	] as const)("binds the exact owned topology and one helper call for %s", async (_name, url) => {
+		const serviceInstanceFindMany = app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>;
+		serviceInstanceFindMany.mockImplementation(
+			async ({ where }: { where: { service?: { in?: string[] } } }) => {
+				if (where.service?.in?.includes("SONARR")) {
+					return [{ id: "sonarr-1", label: "Sonarr", service: "SONARR" }];
+				}
+				if (where.service?.in?.includes("JELLYFIN")) return [...jellyfinInstances];
+				return [];
+			},
+		);
+		mocks.scanUserPolicyEvidence.mockResolvedValueOnce([]);
+		mocks.readInsightWatchEvidence.mockResolvedValueOnce(
+			watchEvidence({
+				statuses: jellyfinInstances.map(({ id }) => ({ instanceId: id, status: currentStatus })),
+				negative: true,
+			}),
+		);
+
+		const response = await createInjectAuthenticated(app)("GET", url);
+
+		expect(response.statusCode).toBe(200);
+		expect(mocks.readInsightWatchEvidence).toHaveBeenCalledTimes(1);
+		expect(mocks.readInsightWatchEvidence).toHaveBeenCalledWith({
+			prisma: app.prisma,
+			userId: "user-1",
+			instances: [...jellyfinInstances],
+		});
+		expect(
+			serviceInstanceFindMany.mock.calls.filter(([args]) =>
+				args.where?.service?.in?.includes("JELLYFIN"),
+			),
+		).toHaveLength(1);
+		expect(serviceInstanceFindMany).toHaveBeenCalledWith({
+			where: { userId: "user-1", enabled: true, service: { in: ["JELLYFIN", "EMBY"] } },
+			select: { id: true, label: true, service: true },
+		});
+		expect(mocks.legacyJellyfinFindMany).not.toHaveBeenCalled();
+	});
+
+	it.each(degradedTopologies)(
+		"blocks degraded %s disk-waste conclusions before candidates, even with Plex authority",
+		async (_name, statuses, positive, availability) => {
+			const serviceInstanceFindMany = app.prisma.serviceInstance.findMany as ReturnType<
+				typeof vi.fn
+			>;
+			serviceInstanceFindMany.mockImplementation(
+				async ({ where }: { where: { service?: { in?: string[] } } }) =>
+					where.service?.in?.includes("JELLYFIN")
+						? [...jellyfinInstances]
+						: [{ id: "sonarr-1", label: "Sonarr", service: "SONARR" }],
+			);
+			mocks.scanUserPolicyEvidence.mockResolvedValueOnce(authoritativePlexEvidence);
+			mocks.readInsightWatchEvidence.mockResolvedValueOnce(
+				watchEvidence({ statuses, positive, availability, negative: false }),
+			);
+
+			const response = await createInjectAuthenticated(app)(
+				"GET",
+				"/api/library/insights/disk-waste",
+			);
+			const body = response.json();
+
+			expect(response.statusCode).toBe(200);
+			expect(body).toMatchObject({
+				success: true,
+				data: { items: [], totalWastedBytes: 0, hasPlexData: true, hasWatchData: false },
+				providerStatus: { availability },
+			});
+			expect(body).not.toHaveProperty("data.items[0]");
+			expect(app.prisma.libraryCache.findMany).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each(degradedTopologies)(
+		"blocks degraded %s requested-unwatched before Seerr and candidates",
+		async (_name, statuses, positive, availability) => {
+			const serviceInstanceFindMany = app.prisma.serviceInstance.findMany as ReturnType<
+				typeof vi.fn
+			>;
+			serviceInstanceFindMany.mockImplementation(
+				async ({ where }: { where: { service?: { in?: string[] } } }) =>
+					where.service?.in?.includes("JELLYFIN")
+						? [...jellyfinInstances]
+						: [{ id: "sonarr-1", label: "Sonarr", service: "SONARR" }],
+			);
+			mocks.scanUserPolicyEvidence.mockResolvedValueOnce(authoritativePlexEvidence);
+			mocks.readInsightWatchEvidence.mockResolvedValueOnce(
+				watchEvidence({ statuses, positive, availability, negative: false }),
+			);
+
+			const response = await createInjectAuthenticated(app)(
+				"GET",
+				"/api/library/insights/requested-unwatched",
+			);
+			const body = response.json();
+
+			expect(response.statusCode).toBe(200);
+			expect(body).toMatchObject({
+				success: true,
+				data: { items: [], hasSeerrData: false, hasPlexData: true, hasWatchData: false },
+				providerStatus: { availability },
+			});
+			expect(mocks.seerrConstructed).not.toHaveBeenCalled();
+			expect(mocks.seerrGetRequests).not.toHaveBeenCalled();
+			expect(app.prisma.libraryCache.findMany).not.toHaveBeenCalled();
+		},
+	);
+
+	it("preserves the no-provider disk-waste data flags and omits status", async () => {
+		mocks.scanUserPolicyEvidence.mockResolvedValueOnce([]);
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/api/library/insights/disk-waste",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			success: true,
+			data: { items: [], totalWastedBytes: 0, hasPlexData: false, hasWatchData: false },
+		});
+		expect(response.json()).not.toHaveProperty("providerStatus");
+	});
+
+	it.each([
+		["watched-monitored", "/api/library/insights/watched-monitored"],
+		["requested-unwatched", "/api/library/insights/requested-unwatched"],
+	] as const)("keeps the %s no-provider response empty without status", async (_name, url) => {
+		mocks.scanUserPolicyEvidence.mockResolvedValue([]);
+		const response = await createInjectAuthenticated(app)("GET", url);
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			success: true,
+			data: { items: [], hasPlexData: false, hasWatchData: false },
+		});
+		expect(response.json()).not.toHaveProperty("providerStatus");
+		expect(mocks.readInsightWatchEvidence).toHaveBeenCalledTimes(1);
+	});
+
+	it.each([
+		["positive watch row", [privateWatchRow], 0],
+		["verified zero watch row", [zeroWatchRow], 1],
+		["missing watch row", [], 1],
+	] as const)(
+		"evaluates disk-waste candidates with current-complete evidence: %s",
+		async (_name, rows, expectedItems) => {
+			const serviceInstanceFindMany = app.prisma.serviceInstance.findMany as ReturnType<
+				typeof vi.fn
+			>;
+			serviceInstanceFindMany.mockImplementation(
+				async ({ where }: { where: { service?: { in?: string[] } } }) =>
+					where.service?.in?.includes("JELLYFIN")
+						? [{ ...jellyfinInstances[0] }]
+						: [{ id: "sonarr-1", label: "Sonarr", service: "SONARR" }],
+			);
+			mocks.scanUserPolicyEvidence.mockResolvedValueOnce([]);
+			mocks.readInsightWatchEvidence.mockResolvedValueOnce(
+				watchEvidence({
+					statuses: [{ instanceId: "jellyfin-1", status: currentStatus }],
+					rows,
+					negative: true,
+					availability: "current",
+				}),
+			);
+			const libraryFindMany = app.prisma.libraryCache.findMany as ReturnType<typeof vi.fn>;
+			libraryFindMany.mockResolvedValueOnce([candidateItem()]);
+
+			const response = await createInjectAuthenticated(app)(
+				"GET",
+				"/api/library/insights/disk-waste",
+			);
+
+			expect(response.statusCode).toBe(200);
+			expect(response.json().data.items).toHaveLength(expectedItems);
+			expect(libraryFindMany).toHaveBeenCalledWith(expect.objectContaining({ take: 150 }));
+		},
+	);
+
+	it.each([
+		["positive watch row", [privateWatchRow], 0],
+		["verified zero watch row", [zeroWatchRow], 1],
+		["missing watch row", [], 1],
+	] as const)(
+		"evaluates requested-unwatched candidates with current-complete evidence: %s",
+		async (_name, rows, expectedItems) => {
+			const serviceInstanceFindMany = app.prisma.serviceInstance.findMany as ReturnType<
+				typeof vi.fn
+			>;
+			serviceInstanceFindMany.mockImplementation(
+				async ({ where }: { where: { service?: { in?: string[] } } }) =>
+					where.service?.in?.includes("JELLYFIN")
+						? [{ ...jellyfinInstances[0] }]
+						: [{ id: "sonarr-1", label: "Sonarr", service: "SONARR" }],
+			);
+			mocks.scanUserPolicyEvidence.mockResolvedValueOnce([]);
+			mocks.readInsightWatchEvidence.mockResolvedValueOnce(
+				watchEvidence({
+					statuses: [{ instanceId: "jellyfin-1", status: currentStatus }],
+					rows,
+					negative: true,
+					availability: "current",
+				}),
+			);
+			mocks.seerrGetRequests.mockResolvedValueOnce({
+				results: [
+					{
+						media: { tmdbId: 42 },
+						type: "movie",
+						requestedBy: { displayName: "Requester" },
+						createdAt: "2026-01-01T00:00:00.000Z",
+					},
+				],
+			});
+			const libraryFindMany = app.prisma.libraryCache.findMany as ReturnType<typeof vi.fn>;
+			libraryFindMany.mockResolvedValueOnce([candidateItem()]);
+
+			const response = await createInjectAuthenticated(app)(
+				"GET",
+				"/api/library/insights/requested-unwatched",
+			);
+
+			expect(response.statusCode).toBe(200);
+			expect(response.json().data.items).toHaveLength(expectedItems);
+			expect(libraryFindMany).toHaveBeenCalledWith(expect.objectContaining({ take: 125 }));
+			expect(mocks.seerrGetRequests).toHaveBeenCalledWith({
+				take: 50,
+				skip: 0,
+				filter: "available",
+			});
+		},
+	);
+
+	it.each([
+		[
+			"complete last-known",
+			[{ instanceId: "jellyfin-1", status: statusWith("last-known", "complete") }],
+		],
+		[
+			"aggregate-partial usable subset",
+			[
+				{ instanceId: "jellyfin-1", status: statusWith("current", "complete") },
+				{ instanceId: "emby-1", status: statusWith("unavailable", "unknown") },
+			],
+		],
+	] as const)("retains positive watched-monitored evidence from %s", async (_name, statuses) => {
+		const serviceInstanceFindMany = app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>;
+		serviceInstanceFindMany.mockImplementation(
+			async ({ where }: { where: { service?: { in?: string[] } } }) =>
+				where.service?.in?.includes("JELLYFIN")
+					? [...jellyfinInstances]
+					: [{ id: "sonarr-1", label: "Sonarr", service: "SONARR" }],
+		);
+		mocks.scanUserPolicyEvidence.mockResolvedValueOnce([]);
+		mocks.readInsightWatchEvidence.mockResolvedValueOnce(
+			watchEvidence({
+				statuses,
+				rows: [privateWatchRow],
+				positive: true,
+				availability: "partial",
+			}),
+		);
+		const libraryFindMany = app.prisma.libraryCache.findMany as ReturnType<typeof vi.fn>;
+		libraryFindMany.mockResolvedValueOnce([candidateItem()]);
+
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/api/library/insights/watched-monitored",
+		);
+		const body = response.json();
+
+		expect(response.statusCode).toBe(200);
+		expect(body.data.items).toMatchObject([{ watchCount: 2, lastWatchedAt: expect.any(String) }]);
+		expect(body.data.hasWatchData).toBe(true);
+		expect(body.providerStatus).toBeDefined();
+		for (const privateMarker of [
+			"private-row-id",
+			"private-provider-item",
+			"Private helper title",
+			"private-user",
+			"Private library",
+			"https://private.invalid/item",
+		]) {
+			expect(JSON.stringify(body)).not.toContain(privateMarker);
+		}
+		expect(libraryFindMany).toHaveBeenCalledWith(expect.objectContaining({ take: 250 }));
+	});
+
+	it("withholds watched-monitored items when every configured source is unavailable", async () => {
+		const serviceInstanceFindMany = app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>;
+		serviceInstanceFindMany.mockImplementation(
+			async ({ where }: { where: { service?: { in?: string[] } } }) =>
+				where.service?.in?.includes("JELLYFIN")
+					? [{ ...jellyfinInstances[0] }]
+					: [{ id: "sonarr-1", label: "Sonarr", service: "SONARR" }],
+		);
+		mocks.scanUserPolicyEvidence.mockResolvedValueOnce([]);
+		mocks.readInsightWatchEvidence.mockResolvedValueOnce(
+			watchEvidence({
+				statuses: [{ instanceId: "jellyfin-1", status: statusWith("unavailable", "unknown") }],
+				rows: [zeroWatchRow],
+				positive: false,
+				availability: "unavailable",
+			}),
+		);
+
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/api/library/insights/watched-monitored",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			success: true,
+			data: { items: [], hasPlexData: false, hasWatchData: false },
+			providerStatus: { availability: "unavailable" },
+		});
+		expect(app.prisma.libraryCache.findMany).not.toHaveBeenCalled();
+	});
+
+	it("preserves requested empty and fail-soft status after current-complete observation", async () => {
+		const serviceInstanceFindMany = app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>;
+		serviceInstanceFindMany.mockImplementation(
+			async ({ where }: { where: { service?: { in?: string[] } } }) =>
+				where.service?.in?.includes("JELLYFIN")
+					? [{ ...jellyfinInstances[0] }]
+					: [{ id: "sonarr-1", label: "Sonarr", service: "SONARR" }],
+		);
+		mocks.scanUserPolicyEvidence.mockResolvedValue([]);
+		mocks.readInsightWatchEvidence.mockResolvedValue(
+			watchEvidence({
+				statuses: [{ instanceId: "jellyfin-1", status: currentStatus }],
+				rows: [],
+				positive: true,
+				negative: true,
+				availability: "current",
+			}),
+		);
+		mocks.seerrGetRequests.mockResolvedValueOnce({ results: [] });
+
+		const emptyResponse = await createInjectAuthenticated(app)(
+			"GET",
+			"/api/library/insights/requested-unwatched",
+		);
+		expect(emptyResponse.json()).toMatchObject({
+			data: { items: [], hasSeerrData: true, hasPlexData: false, hasWatchData: true },
+			providerStatus: { availability: "current" },
+		});
+
+		mocks.seerrGetRequests.mockRejectedValueOnce(new Error("synthetic Seerr outage"));
+		const failSoftResponse = await createInjectAuthenticated(app)(
+			"GET",
+			"/api/library/insights/requested-unwatched",
+		);
+		expect(failSoftResponse.json()).toMatchObject({
+			data: { items: [], hasSeerrData: false, hasPlexData: false, hasWatchData: true },
+			providerStatus: { availability: "current" },
+		});
+	});
+
+	it("preserves requested status after current-complete observation with no ARR library", async () => {
+		const serviceInstanceFindMany = app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>;
+		serviceInstanceFindMany.mockImplementation(
+			async ({ where }: { where: { service?: { in?: string[] } } }) =>
+				where.service?.in?.includes("JELLYFIN") ? [{ ...jellyfinInstances[0] }] : [],
+		);
+		mocks.scanUserPolicyEvidence.mockResolvedValue([]);
+		mocks.readInsightWatchEvidence.mockResolvedValue(
+			watchEvidence({
+				statuses: [{ instanceId: "jellyfin-1", status: currentStatus }],
+				rows: [],
+				positive: true,
+				negative: true,
+				availability: "current",
+			}),
+		);
+		mocks.seerrGetRequests.mockResolvedValueOnce({
+			results: [
+				{
+					media: { tmdbId: 42 },
+					type: "movie",
+					requestedBy: { displayName: "Requester" },
+					createdAt: "2026-01-01T00:00:00.000Z",
+				},
+			],
+		});
+
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/api/library/insights/requested-unwatched",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			success: true,
+			data: { items: [], hasSeerrData: true, hasPlexData: false, hasWatchData: true },
+			providerStatus: { availability: "current" },
+		});
+		expect(app.prisma.libraryCache.findMany).not.toHaveBeenCalled();
+	});
+
+	it("preserves the Seerr page size and twenty-page bound after watch authority", async () => {
+		const serviceInstanceFindMany = app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>;
+		serviceInstanceFindMany.mockImplementation(
+			async ({ where }: { where: { service?: { in?: string[] } } }) =>
+				where.service?.in?.includes("JELLYFIN")
+					? [{ ...jellyfinInstances[0] }]
+					: [{ id: "sonarr-1", label: "Sonarr", service: "SONARR" }],
+		);
+		mocks.scanUserPolicyEvidence.mockResolvedValue([]);
+		mocks.readInsightWatchEvidence.mockResolvedValue(
+			watchEvidence({
+				statuses: [{ instanceId: "jellyfin-1", status: currentStatus }],
+				rows: [],
+				positive: true,
+				negative: true,
+				availability: "current",
+			}),
+		);
+		mocks.seerrGetRequests.mockResolvedValue({
+			results: Array.from({ length: 50 }, () => ({
+				media: { tmdbId: 42 },
+				type: "movie",
+				requestedBy: { displayName: "Requester" },
+				createdAt: "2026-01-01T00:00:00.000Z",
+			})),
+		});
+
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/api/library/insights/requested-unwatched",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(mocks.seerrGetRequests).toHaveBeenCalledTimes(20);
+		expect(mocks.seerrGetRequests).toHaveBeenNthCalledWith(1, {
+			take: 50,
+			skip: 0,
+			filter: "available",
+		});
+		expect(mocks.seerrGetRequests).toHaveBeenLastCalledWith({
+			take: 50,
+			skip: 950,
+			filter: "available",
+		});
+	});
 });

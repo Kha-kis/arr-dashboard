@@ -1,8 +1,25 @@
 import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readOwnedJellyfinObservation } from "../../jellyfin/jellyfin-evidence-repository.js";
+import type { JellyfinLibraryGenerationMetadataV1 } from "../../jellyfin/jellyfin-generation-metadata.js";
+import {
+	encodeJellyfinEpisodeGenerationMetadata,
+	encodeJellyfinLibraryGenerationMetadata,
+	fingerprintJellyfinEpisodeRows,
+	fingerprintJellyfinLibraryGenerationMetadata,
+	fingerprintJellyfinLibraryRows,
+} from "../../jellyfin/jellyfin-generation-metadata.js";
+import {
+	providerIdentityAuthorityFingerprint,
+	providerInstanceAuthorityFingerprint,
+} from "../../services/service-identity.js";
+import { loadExactProviderCacheRows } from "../provider-cache-evidence.js";
 import {
 	assertCurrentProviderEvidenceAuthority,
+	captureCurrentProviderScanAuthority,
 	createSanitizedProviderEvidence,
+	parseProviderScanAuthority,
+	serializeProviderScanAuthority,
 } from "../shared-plex-safety.js";
 import type { CleanupExecutorDeps } from "../types.js";
 
@@ -108,9 +125,9 @@ vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
 	};
 });
 
-function plexV3Metadata(itemCount = 1) {
+function plexV5Metadata(itemCount = 1, observedAt = new Date()) {
 	return JSON.stringify({
-		version: 3,
+		version: 5,
 		publicationLevel: "authoritative",
 		completeness: "complete",
 		itemCount,
@@ -130,15 +147,36 @@ function plexV3Metadata(itemCount = 1) {
 		targetLedgerVersion: 1,
 		targetCount: itemCount,
 		targetDigest: "c".repeat(64),
+		partialReasons: [],
+		coverageReceipt: {
+			version: 1,
+			provider: "plex",
+			attemptStartedAt: new Date(observedAt.getTime() - 1_000).toISOString(),
+			observedAt: observedAt.toISOString(),
+			evidence: "complete",
+			units: [
+				{
+					scopeKey: "section:1",
+					expectedRawCount: itemCount,
+					pagesAttempted: 1,
+					pagesCompleted: 1,
+					rawObserved: itemCount,
+					sourceBindings: itemCount,
+					canonicalEntities: itemCount,
+					acceptedSkips: [],
+					fatalCount: 0,
+				},
+			],
+		},
 	});
 }
 
-function plexEpisodeV2Metadata(parentGenerationId: string) {
+function plexEpisodeV3Metadata(parentGenerationId: string) {
 	return JSON.stringify({
-		version: 2,
+		version: 3,
 		parentPlexGenerationId: parentGenerationId,
 		parentPublicationLevel: "authoritative",
-		parentMetadataVersion: 3,
+		parentMetadataVersion: 5,
 		canonicalizationVersion: 1,
 		episodeDigest: "b".repeat(64),
 		connectionGeneration: 3,
@@ -205,8 +243,13 @@ function fixture(
 		connectionGeneration: 3,
 		identityGeneration: 7,
 		generationId: "generation-a",
-		generationMetadata: plexV3Metadata(),
 		...statusOverrides,
+		generationMetadata:
+			statusOverrides.generationMetadata ??
+			plexV5Metadata(
+				1,
+				statusOverrides.lastRefreshedAt instanceof Date ? statusOverrides.lastRefreshedAt : now,
+			),
 	};
 	let rows = [
 		{
@@ -475,13 +518,14 @@ function cacheTypeFixture(
 		connectionGeneration: 3,
 		identityGeneration: 7,
 		generationId: "generation-a",
-		generationMetadata:
-			cacheType === "plex"
-				? plexV3Metadata()
-				: cacheType === "plex_episode"
-					? plexEpisodeV2Metadata("parent-generation-a")
-					: "{}",
 		...options.statusOverrides,
+		generationMetadata:
+			options.statusOverrides?.generationMetadata ??
+			(cacheType === "plex"
+				? plexV5Metadata(1, now)
+				: cacheType === "plex_episode"
+					? plexEpisodeV3Metadata("parent-generation-a")
+					: "{}"),
 	};
 	const statusPayload = {
 		instanceId: status.instanceId,
@@ -554,7 +598,7 @@ function cacheTypeFixture(
 								...status,
 								cacheType: "plex",
 								generationId: "parent-generation-a",
-								generationMetadata: plexV3Metadata(),
+								generationMetadata: plexV5Metadata(1, status.lastRefreshedAt),
 							},
 						]
 					: [status],
@@ -587,6 +631,241 @@ function cacheTypeFixture(
 	return { deps, evidence, identityReader };
 }
 
+function jellyfinCleanupFixture(
+	service: "JELLYFIN" | "EMBY",
+	cacheType: "jellyfin" | "jellyfin_episode",
+) {
+	const observedAt = new Date();
+	const provider = service === "EMBY" ? "emby" : "jellyfin";
+	const instance = {
+		id: "jellyfin-1",
+		userId: "user-1",
+		service,
+		name: "Private label",
+		label: "Private label",
+		baseUrl: "http://private.invalid",
+		encryptedApiKey: "encrypted",
+		encryptionIv: "iv",
+		encryptedHttpAuthCredentials: null,
+		httpAuthEncryptionIv: null,
+		enabled: true,
+		expectedIdentity: "server-1",
+		identityKind: `${service}_SERVER_ID`,
+		identityStatus: "VERIFIED",
+		identityVerifiedAt: new Date("2026-08-20T11:00:00.000Z"),
+		connectionGeneration: 1,
+		identityGeneration: 1,
+		createdAt: new Date("2026-08-19T00:00:00.000Z"),
+		updatedAt: new Date("2026-08-20T10:00:00.000Z"),
+	};
+	const libraryRows = [
+		{
+			id: "library-row-1",
+			instanceId: instance.id,
+			tmdbId: 42,
+			mediaType: "movie" as const,
+			libraryId: "library-1",
+			libraryName: "Movies",
+			title: "Movie",
+			jellyfinId: "item-1",
+			lastWatchedAt: observedAt,
+			watchCount: 1,
+			watchedByUsers: '["user-1"]',
+			onDeck: false,
+			userRating: null,
+			collections: "[]",
+			addedAt: observedAt,
+			thumb: null,
+			connectionGeneration: 1,
+			identityGeneration: 1,
+		},
+	];
+	const parentMetadata = encodeJellyfinLibraryGenerationMetadata({
+		version: 1,
+		provider,
+		cacheType: "jellyfin",
+		publicationLevel: "authoritative",
+		completeness: "complete",
+		canonicalizationVersion: 1,
+		itemCount: libraryRows.length,
+		connectionGeneration: 1,
+		identityGeneration: 1,
+		contentFingerprint: fingerprintJellyfinLibraryRows(libraryRows),
+		coverageReceipt: {
+			version: 1,
+			provider,
+			attemptStartedAt: observedAt.toISOString(),
+			observedAt: observedAt.toISOString(),
+			evidence: "complete",
+			units: [
+				{
+					scopeKey: "library",
+					expectedRawCount: 1,
+					pagesAttempted: 1,
+					pagesCompleted: 1,
+					rawObserved: 1,
+					sourceBindings: 1,
+					canonicalEntities: 1,
+					acceptedSkips: [],
+					fatalCount: 0,
+				},
+			],
+			publishedCanonicalEntities: 1,
+		},
+	});
+	const episodeRows = [
+		{
+			id: "episode-row-1",
+			instanceId: instance.id,
+			showTmdbId: 42,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			jellyfinId: "episode-1",
+			title: "Episode",
+			watched: true,
+			watchedByUsers: '["user-1"]',
+			lastWatchedAt: observedAt,
+			connectionGeneration: 1,
+			identityGeneration: 1,
+		},
+	];
+	const metadata =
+		cacheType === "jellyfin"
+			? parentMetadata
+			: encodeJellyfinEpisodeGenerationMetadata({
+					version: 1,
+					provider,
+					cacheType: "jellyfin_episode",
+					publicationLevel: "authoritative",
+					completeness: "complete",
+					canonicalizationVersion: 1,
+					itemCount: episodeRows.length,
+					connectionGeneration: 1,
+					identityGeneration: 1,
+					parentLibraryGenerationId: "jellyfin-generation-1",
+					parentLibraryMetadataFingerprint: fingerprintJellyfinLibraryGenerationMetadata(
+						JSON.parse(parentMetadata),
+					),
+					contentFingerprint: fingerprintJellyfinEpisodeRows(episodeRows),
+					coverageReceipt: {
+						version: 1,
+						provider: `${provider}_episode`,
+						attemptStartedAt: observedAt.toISOString(),
+						observedAt: observedAt.toISOString(),
+						evidence: "complete",
+						units: [
+							{
+								scopeKey: "library",
+								expectedRawCount: 1,
+								pagesAttempted: 1,
+								pagesCompleted: 1,
+								rawObserved: 1,
+								sourceBindings: 1,
+								canonicalEntities: 1,
+								acceptedSkips: [],
+								fatalCount: 0,
+							},
+						],
+						publishedCanonicalEntities: 1,
+					},
+				});
+	const status = (type: "jellyfin" | "jellyfin_episode", generationId: string) => ({
+		instanceId: instance.id,
+		cacheType: type,
+		lastRefreshedAt: observedAt,
+		lastResult: "success",
+		lastErrorMessage: null,
+		itemCount: 1,
+		generationId,
+		generationMetadata: type === "jellyfin" ? parentMetadata : metadata,
+		lastAttemptAt: observedAt,
+		lastAttemptResult: "success",
+		lastAttemptErrorMessage: null,
+		connectionGeneration: 1,
+		identityGeneration: 1,
+	});
+	const statuses = {
+		jellyfin: status("jellyfin", "jellyfin-generation-1"),
+		jellyfin_episode: status("jellyfin_episode", "episode-generation-1"),
+	};
+	const tx = {
+		serviceInstance: {
+			findFirst: vi.fn(async () => instance),
+			findMany: vi.fn(async () => [instance]),
+		},
+		cacheRefreshStatus: {
+			findUnique: vi.fn(
+				async ({ where }: { where: { instanceId_cacheType: { cacheType: string } } }) =>
+					statuses[where.instanceId_cacheType.cacheType as "jellyfin" | "jellyfin_episode"] ?? null,
+			),
+			findMany: vi.fn(async () => []),
+		},
+		jellyfinCache: { findMany: vi.fn(async () => libraryRows) },
+		jellyfinEpisodeCache: { findMany: vi.fn(async () => episodeRows) },
+	};
+	const prisma = {
+		...tx,
+		serviceInstance: tx.serviceInstance,
+		$transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)),
+	};
+	const identityReader = vi.fn(async () => ({
+		service: instance.service,
+		identityKind: service === "EMBY" ? "emby-server-id" : "jellyfin-server-id",
+		rawIdentity: instance.expectedIdentity,
+		confirmationDigest: "safe",
+		fingerprint: "safe",
+	}));
+	return {
+		deps: {
+			prisma,
+			encryptor: { decrypt: vi.fn(() => "decrypted") },
+			providerIdentityReader: identityReader,
+			log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+		} as unknown as CleanupExecutorDeps,
+		prisma,
+		instance,
+		statuses,
+		libraryRows,
+		episodeRows,
+		identityReader,
+	};
+}
+
+async function currentJellyfinEvidence(
+	subject: ReturnType<typeof jellyfinCleanupFixture>,
+	cacheType: "jellyfin" | "jellyfin_episode",
+) {
+	const direct = await readOwnedJellyfinObservation({
+		prisma: subject.prisma as never,
+		userId: "user-1",
+		instanceId: subject.instance.id,
+		cacheType,
+		mode: "mutation",
+		now: new Date(),
+	});
+	if (!direct?.authority) throw new Error("fixture authority missing");
+	return createSanitizedProviderEvidence(
+		[cacheType],
+		[
+			{
+				service: subject.instance.service,
+				instanceFingerprint: providerInstanceAuthorityFingerprint(subject.instance.id),
+				identityKind: subject.instance.identityKind,
+				identityFingerprint: providerIdentityAuthorityFingerprint(subject.instance),
+				connectionGeneration: direct.authority.connectionGeneration,
+				identityGeneration: direct.authority.identityGeneration,
+				cacheType,
+				completedAt: direct.authority.publishedAt.toISOString(),
+				itemCount: direct.authority.itemCount,
+				verifiedAt: subject.instance.identityVerifiedAt.toISOString(),
+				statusFingerprint: direct.authority.statusFingerprint,
+				rowFingerprint: direct.authority.rowFingerprint,
+				generationId: direct.authority.generationId,
+			},
+		],
+	);
+}
+
 describe("provider execution authority", () => {
 	beforeEach(() => {
 		authorityCalls.livePolicy.mockClear();
@@ -595,9 +874,223 @@ describe("provider execution authority", () => {
 		authorityCalls.persistedEpisodes.mockClear();
 	});
 
-	for (const cacheType of Object.keys(cacheCases).filter(
-		(cacheType) => cacheType !== "tautulli",
-	) as Array<Exclude<keyof typeof cacheCases, "tautulli">>) {
+	it.each([
+		["JELLYFIN", "jellyfin"],
+		["EMBY", "jellyfin"],
+		["JELLYFIN", "jellyfin_episode"],
+		["EMBY", "jellyfin_episode"],
+	] as const)("captures sanitized current %s %s authority", async (service, cacheType) => {
+		const subject = jellyfinCleanupFixture(service, cacheType);
+		const direct = await readOwnedJellyfinObservation({
+			prisma: subject.prisma as never,
+			userId: "user-1",
+			instanceId: "jellyfin-1",
+			cacheType,
+			mode: "mutation",
+			now: new Date(),
+		});
+		expect(direct).toMatchObject({ available: true, mutationAvailable: true });
+		const directAuthority = direct?.authority;
+		expect(directAuthority).not.toBeNull();
+		const directEvidence = createSanitizedProviderEvidence(
+			[cacheType],
+			[
+				{
+					service,
+					instanceFingerprint: providerInstanceAuthorityFingerprint(subject.instance.id),
+					identityKind: subject.instance.identityKind,
+					identityFingerprint: providerIdentityAuthorityFingerprint(subject.instance),
+					connectionGeneration: directAuthority!.connectionGeneration,
+					identityGeneration: directAuthority!.identityGeneration,
+					cacheType,
+					completedAt: directAuthority!.publishedAt.toISOString(),
+					itemCount: directAuthority!.itemCount,
+					verifiedAt: subject.instance.identityVerifiedAt.toISOString(),
+					statusFingerprint: directAuthority!.statusFingerprint,
+					rowFingerprint: directAuthority!.rowFingerprint,
+					generationId: directAuthority!.generationId,
+				},
+			],
+		);
+		expect(() =>
+			serializeProviderScanAuthority(
+				{
+					instanceId: "jellyfin-1",
+					service,
+					mediaType: cacheType === "jellyfin_episode" ? "show" : "movie",
+				},
+				directEvidence,
+			),
+		).not.toThrow();
+		expect(JSON.stringify(directEvidence)).not.toMatch(
+			/scopeKey|Movie|"title":"Episode"|user-1|private\.invalid|encrypted|server-1|in_progress|error/i,
+		);
+		expect(directEvidence.sources[0]).toMatchObject({
+			cacheType,
+			generationId: directAuthority!.generationId,
+		});
+		await expect(
+			assertCurrentProviderEvidenceAuthority(subject.deps, "user-1", directEvidence, vi.fn()),
+		).resolves.toBeUndefined();
+		expect(subject.prisma.$transaction).toHaveBeenCalledTimes(3);
+	});
+
+	it("scans Jellyfin authority once per phase without a legacy bulk status read", async () => {
+		const subject = jellyfinCleanupFixture("JELLYFIN", "jellyfin");
+		const target = {
+			instanceId: subject.instance.id,
+			service: "JELLYFIN",
+			mediaType: "movie",
+		} as const;
+		const serialized = await captureCurrentProviderScanAuthority(subject.deps, "user-1", target);
+		const accepted = parseProviderScanAuthority(serialized, target);
+
+		expect(accepted?.sources).toHaveLength(1);
+		expect(accepted?.sources[0]?.cacheType).toBe("jellyfin");
+		expect(subject.prisma.cacheRefreshStatus.findMany).not.toHaveBeenCalled();
+		expect(subject.prisma.jellyfinCache.findMany).toHaveBeenCalledTimes(1);
+
+		await expect(
+			assertCurrentProviderEvidenceAuthority(subject.deps, "user-1", accepted!, vi.fn()),
+		).resolves.toBeUndefined();
+		expect(subject.prisma.jellyfinCache.findMany).toHaveBeenCalledTimes(3);
+		expect(subject.prisma.$transaction).toHaveBeenCalledTimes(3);
+	});
+
+	it.each([
+		["JELLYFIN", "jellyfin"],
+		["EMBY", "jellyfin"],
+		["JELLYFIN", "jellyfin_episode"],
+		["EMBY", "jellyfin_episode"],
+	] as const)("fails closed for reviewed %s %s authority drift", async (service, cacheType) => {
+		const cases: Array<[string, (subject: ReturnType<typeof jellyfinCleanupFixture>) => void]> = [
+			[
+				"owner",
+				(subject) => {
+					subject.prisma.serviceInstance.findFirst.mockImplementation(async () => null as never);
+				},
+			],
+			[
+				"service",
+				(subject) => {
+					subject.instance.service = service === "JELLYFIN" ? "EMBY" : "JELLYFIN";
+				},
+			],
+			[
+				"receipt metadata",
+				(subject) => {
+					subject.statuses[cacheType].generationMetadata = "malformed";
+				},
+			],
+			[
+				"status count",
+				(subject) => {
+					subject.statuses[cacheType].itemCount = 2;
+				},
+			],
+			[
+				"semantic row",
+				(subject) => {
+					if (cacheType === "jellyfin") subject.libraryRows[0]!.tmdbId = 99;
+					else subject.episodeRows[0]!.watched = false;
+				},
+			],
+			[
+				"generation rotation",
+				(subject) => {
+					subject.instance.connectionGeneration = 2;
+				},
+			],
+		];
+		if (cacheType === "jellyfin_episode") {
+			cases.push([
+				"parent binding",
+				(subject) => {
+					subject.statuses.jellyfin.generationId = "parent-generation-2";
+				},
+			]);
+		}
+
+		for (const [_label, mutate] of cases) {
+			const subject = jellyfinCleanupFixture(service, cacheType);
+			const accepted = await currentJellyfinEvidence(subject, cacheType);
+			mutate(subject);
+			await expect(
+				assertCurrentProviderEvidenceAuthority(subject.deps, "user-1", accepted, vi.fn()),
+			).rejects.toThrow("Provider execution authority changed");
+		}
+	});
+
+	it("rejects a newly valid Jellyfin generation rotated after live identity before the final fence", async () => {
+		const subject = jellyfinCleanupFixture("JELLYFIN", "jellyfin");
+		const accepted = await currentJellyfinEvidence(subject, "jellyfin");
+		subject.identityReader.mockImplementationOnce(async () => {
+			subject.instance.connectionGeneration = 2;
+			subject.instance.identityGeneration = 2;
+			subject.libraryRows[0]!.connectionGeneration = 2;
+			subject.libraryRows[0]!.identityGeneration = 2;
+			subject.statuses.jellyfin.connectionGeneration = 2;
+			subject.statuses.jellyfin.identityGeneration = 2;
+			subject.statuses.jellyfin.generationId = "jellyfin-generation-2";
+			const rotatedMetadata = JSON.parse(
+				String(subject.statuses.jellyfin.generationMetadata),
+			) as JellyfinLibraryGenerationMetadataV1;
+			subject.statuses.jellyfin.generationMetadata = encodeJellyfinLibraryGenerationMetadata({
+				...rotatedMetadata,
+				connectionGeneration: 2,
+				identityGeneration: 2,
+				contentFingerprint: fingerprintJellyfinLibraryRows(subject.libraryRows),
+			});
+			return {
+				service: "JELLYFIN",
+				identityKind: "jellyfin-server-id",
+				rawIdentity: subject.instance.expectedIdentity,
+				confirmationDigest: "safe",
+				fingerprint: "safe",
+			};
+		});
+
+		await expect(
+			assertCurrentProviderEvidenceAuthority(subject.deps, "user-1", accepted, vi.fn()),
+		).rejects.toThrow("Provider execution authority changed");
+		expect(subject.identityReader).toHaveBeenCalledOnce();
+		expect(subject.prisma.$transaction).toHaveBeenCalledTimes(3);
+	});
+
+	it.each([
+		["JELLYFIN", "jellyfin"],
+		["EMBY", "jellyfin_episode"],
+	] as const)(
+		"loads exact %s %s rows through the owned repository projection",
+		async (service, cacheType) => {
+			const subject = jellyfinCleanupFixture(service, cacheType);
+			const grouped = await loadExactProviderCacheRows(
+				subject.prisma as never,
+				cacheType,
+				[subject.instance.id],
+				"user-1",
+				[subject.instance] as never,
+			);
+
+			expect(grouped.get(subject.instance.id)).toHaveLength(1);
+			const row = grouped.get(subject.instance.id)?.[0] as Record<string, unknown>;
+			expect(row).toMatchObject({ id: expect.any(String), instanceId: subject.instance.id });
+			expect(row).not.toHaveProperty("title");
+			expect(row).not.toHaveProperty("libraryName");
+			expect(subject.prisma.cacheRefreshStatus.findUnique).toHaveBeenCalled();
+			expect(
+				cacheType === "jellyfin"
+					? subject.prisma.jellyfinCache.findMany
+					: subject.prisma.jellyfinEpisodeCache.findMany,
+			).toHaveBeenCalledWith(
+				expect.objectContaining({
+					where: expect.objectContaining({ instance: { userId: "user-1" } }),
+				}),
+			);
+		},
+	);
+
+	for (const cacheType of ["plex", "plex_episode"] as const) {
 		it(`accepts unchanged real ${cacheType} evidence`, async () => {
 			const subject = cacheTypeFixture(cacheType);
 
@@ -605,10 +1098,6 @@ describe("provider execution authority", () => {
 				assertCurrentProviderEvidenceAuthority(subject.deps, "user-1", subject.evidence, vi.fn()),
 			).resolves.toBeUndefined();
 			expect(subject.identityReader).toHaveBeenCalledOnce();
-			if (cacheType === "plex_episode") {
-				expect(authorityCalls.liveEpisodes).toHaveBeenCalledTimes(1);
-				expect(authorityCalls.persistedEpisodes).toHaveBeenCalledTimes(1);
-			}
 		});
 	}
 
@@ -756,7 +1245,7 @@ describe("provider execution authority", () => {
 
 	it("rejects execution when the exact Plex target-ledger digest changes", async () => {
 		const subject = fixture();
-		subject.status.generationMetadata = subject.status.generationMetadata.replace(
+		subject.status.generationMetadata = String(subject.status.generationMetadata).replace(
 			"c".repeat(64),
 			"d".repeat(64),
 		);

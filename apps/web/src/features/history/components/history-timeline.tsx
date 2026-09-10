@@ -130,10 +130,10 @@ const HistoryTimelineCard = ({
 	if (!firstItem) return null;
 
 	const serviceGradient = getServiceGradient(firstItem.service);
-	const eventType = firstItem.eventType ?? firstItem.status ?? "Unknown";
+	const eventType = firstItem.eventType;
 	const displayTitle = getDisplayTitle(firstItem);
 	const anonymizedTitle = incognitoMode ? getLinuxIsoName(displayTitle) : displayTitle;
-	const quality = (firstItem.quality as { quality?: { name?: string } })?.quality?.name;
+	const quality = firstItem.qualityName;
 	const isGrouped = groupingEnabled && group.items.length > 1;
 	const lifecycleStages = isGrouped ? detectLifecycleStages(group.items) : [];
 
@@ -151,7 +151,7 @@ const HistoryTimelineCard = ({
 	}
 
 	const instance = serviceMap.get(firstItem.instanceId);
-	const externalLink = buildHistoryExternalLink(firstItem, instance);
+	const externalLink = incognitoMode ? null : buildHistoryExternalLink(firstItem, instance);
 	const instanceName = incognitoMode
 		? getLinuxInstanceName(firstItem.instanceName)
 		: firstItem.instanceName;
@@ -194,10 +194,10 @@ const HistoryTimelineCard = ({
 					<Tooltip>
 						<TooltipTrigger asChild>
 							<span className="text-xs text-muted-foreground whitespace-nowrap shrink-0 cursor-default">
-								{formatCompactRelativeTime(firstItem.date)}
+								{formatCompactRelativeTime(firstItem.eventAt)}
 							</span>
 						</TooltipTrigger>
-						<TooltipContent>{formatAbsoluteDateTime(firstItem.date)}</TooltipContent>
+						<TooltipContent>{formatAbsoluteDateTime(firstItem.eventAt)}</TooltipContent>
 					</Tooltip>
 				</div>
 
@@ -299,10 +299,10 @@ interface SubEventRowProps {
 }
 
 const SubEventRow = ({ item, serviceMap, incognitoMode }: SubEventRowProps) => {
-	const eventType = item.eventType ?? item.status ?? "Unknown";
+	const eventType = item.eventType;
 	const displayTitle = getDisplayTitle(item);
 	const anonymizedTitle = incognitoMode ? getLinuxIsoName(displayTitle) : displayTitle;
-	const quality = (item.quality as { quality?: { name?: string } })?.quality?.name;
+	const quality = item.qualityName;
 
 	const rawSourceClient = getSourceClient(item);
 	let sourceClient = rawSourceClient;
@@ -317,7 +317,7 @@ const SubEventRow = ({ item, serviceMap, incognitoMode }: SubEventRowProps) => {
 	}
 
 	const instance = serviceMap.get(item.instanceId);
-	const externalLink = buildHistoryExternalLink(item, instance);
+	const externalLink = incognitoMode ? null : buildHistoryExternalLink(item, instance);
 
 	return (
 		<div className="flex items-center gap-3 px-4 py-2.5 border-b border-border/20 last:border-0 text-xs">
@@ -336,10 +336,10 @@ const SubEventRow = ({ item, serviceMap, incognitoMode }: SubEventRowProps) => {
 			<Tooltip>
 				<TooltipTrigger asChild>
 					<span className="text-muted-foreground whitespace-nowrap shrink-0 cursor-default">
-						{formatCompactRelativeTime(item.date)}
+						{formatCompactRelativeTime(item.eventAt)}
 					</span>
 				</TooltipTrigger>
-				<TooltipContent>{formatAbsoluteDateTime(item.date)}</TooltipContent>
+				<TooltipContent>{formatAbsoluteDateTime(item.eventAt)}</TooltipContent>
 			</Tooltip>
 			{externalLink && (
 				<a

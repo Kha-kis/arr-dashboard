@@ -7,6 +7,7 @@
  * Run with: npx vitest run watch-enrichment.test.ts
  */
 
+import type { ProviderObservationStatus } from "@arr/shared";
 import { describe, expect, it } from "vitest";
 import {
 	aggregateWatchEnrichment,
@@ -14,6 +15,60 @@ import {
 	type PlexCacheEntry,
 	type TautulliCacheEntry,
 } from "../lib/watch-enrichment-helpers.js";
+
+const observedAt = "2026-09-06T12:00:00.000Z";
+const exactStatus = {
+	availability: "current" as const,
+	evidence: "complete" as const,
+	observedAt,
+	ageSeconds: 0,
+	latestAttempt: "successful" as const,
+	reasonCodes: [],
+	domains: [
+		{
+			domain: "watch-count" as const,
+			availability: "current" as const,
+			evidence: "complete" as const,
+			valueSemantics: "exact" as const,
+			observedAt,
+			reasonCodes: [],
+		},
+		{
+			domain: "watch-attribution" as const,
+			availability: "current" as const,
+			evidence: "complete" as const,
+			valueSemantics: "exact" as const,
+			observedAt,
+			reasonCodes: [],
+		},
+		{
+			domain: "on-deck" as const,
+			availability: "current" as const,
+			evidence: "complete" as const,
+			valueSemantics: "exact" as const,
+			observedAt,
+			reasonCodes: [],
+		},
+	],
+};
+const lowerBoundStatus: ProviderObservationStatus = {
+	availability: "partial" as const,
+	evidence: "positive-only" as const,
+	observedAt,
+	ageSeconds: 0,
+	latestAttempt: "successful" as const,
+	reasonCodes: ["positive-only", "coverage-incomplete"],
+	domains: [
+		{
+			domain: "watch-count" as const,
+			availability: "current" as const,
+			evidence: "positive-only" as const,
+			valueSemantics: "lower-bound" as const,
+			observedAt,
+			reasonCodes: ["positive-only", "coverage-incomplete"],
+		},
+	],
+};
 
 const testLogger: ParseLogger = { warn: () => {} };
 
@@ -34,6 +89,7 @@ function plexEntry(overrides: Partial<PlexCacheEntry> = {}): PlexCacheEntry {
 		watchedByUsers: '["alice","bob"]',
 		collections: '["Action"]',
 		labels: '["4K"]',
+		providerStatus: exactStatus,
 		...overrides,
 	};
 }
@@ -46,6 +102,7 @@ function tautulliEntry(overrides: Partial<TautulliCacheEntry> = {}): TautulliCac
 		lastWatchedAt: new Date("2024-06-15"),
 		watchCount: 5,
 		watchedByUsers: '["alice","charlie"]',
+		providerStatus: lowerBoundStatus,
 		...overrides,
 	};
 }
@@ -72,6 +129,7 @@ describe("aggregateWatchEnrichment", () => {
 		const item = result["movie:100"];
 		expect(item).toBeDefined();
 		expect(item!.watchCount).toBe(3);
+		expect(item!.watchCountSemantics).toBe("exact");
 		expect(item!.source).toBe("plex");
 		expect(item!.onDeck).toBe(false);
 		expect(item!.lastWatchedAt).toBe("2024-06-01T00:00:00.000Z");
@@ -88,9 +146,10 @@ describe("aggregateWatchEnrichment", () => {
 		const item = result["movie:100"];
 		expect(item).toBeDefined();
 		expect(item!.watchCount).toBe(5);
+		expect(item!.watchCountSemantics).toBe("lower-bound");
 		expect(item!.source).toBe("tautulli");
-		expect(item!.lastWatchedAt).toBe("2024-06-15T00:00:00.000Z");
-		expect(item!.watchedByUsers).toEqual(expect.arrayContaining(["alice", "charlie"]));
+		expect(item!.lastWatchedAt).toBeNull();
+		expect(item!.watchedByUsers).toEqual([]);
 		// Tautulli entries don't have ratingKey/collections/labels
 		expect(item!.ratingKey).toBeNull();
 		expect(item!.collections).toEqual([]);
@@ -110,10 +169,10 @@ describe("aggregateWatchEnrichment", () => {
 		const item = result["movie:100"]!;
 		expect(item.watchCount).toBe(5); // max(3, 5)
 		expect(item.source).toBe("both");
-		// lastWatchedAt should be the later date (Tautulli: June 15)
-		expect(item.lastWatchedAt).toBe("2024-06-15T00:00:00.000Z");
-		// Users from both sources merged
-		expect(item.watchedByUsers).toEqual(expect.arrayContaining(["alice", "bob", "charlie"]));
+		expect(item.watchCountSemantics).toBe("lower-bound");
+		// Tautulli never supplies timestamps or user attribution to a mixed item.
+		expect(item.lastWatchedAt).toBe("2024-06-01T00:00:00.000Z");
+		expect(item.watchedByUsers).toEqual(["alice", "bob"]);
 	});
 
 	it("aggregates across multiple Plex instances", () => {
@@ -135,9 +194,28 @@ describe("aggregateWatchEnrichment", () => {
 		);
 
 		const item = result["movie:100"]!;
-		// Watch counts are summed across Plex instances
-		expect(item.watchCount).toBe(6);
-		expect(item.watchedByUsers).toEqual(expect.arrayContaining(["alice", "bob"]));
+		// Duplicate provider rows are conservative lower bounds, never a sum.
+		expect(item.watchCount).toBe(4);
+		expect(item.watchCountSemantics).toBe("lower-bound");
+		expect(item.watchedByUsers).toEqual(["alice"]);
+	});
+
+	it("does not turn duplicate exact zero counts into a zero lower bound", () => {
+		const keys = makeKeys(["movie", 100]);
+		const result = aggregateWatchEnrichment(
+			keys,
+			[
+				plexEntry({ instanceId: "plex-1", watchCount: 0 }),
+				plexEntry({ instanceId: "plex-2", watchCount: 0, ratingKey: null }),
+			],
+			[],
+			undefined,
+			testLogger,
+		);
+
+		const item = result["movie:100"]!;
+		expect(item.watchCount).toBeNull();
+		expect(item.watchCountSemantics).toBe("unknown");
 	});
 
 	it("omits keys with no matching entries", () => {
@@ -170,7 +248,7 @@ describe("aggregateWatchEnrichment", () => {
 		expect(item.onDeck).toBe(false);
 	});
 
-	it("zeroes out data when filterUser does not match", () => {
+	it("returns unknown rather than asserting zero when filterUser lacks exact attribution", () => {
 		const keys = makeKeys(["movie", 100]);
 		const result = aggregateWatchEnrichment(
 			keys,
@@ -181,13 +259,35 @@ describe("aggregateWatchEnrichment", () => {
 		);
 
 		const item = result["movie:100"]!;
-		expect(item.watchCount).toBe(0);
+		expect(item.watchCount).toBeNull();
+		expect(item.watchCountSemantics).toBe("unknown");
 		expect(item.lastWatchedAt).toBeNull();
 		expect(item.watchedByUsers).toEqual([]);
-		expect(item.onDeck).toBe(false);
+		expect(item.onDeck).toBe(true);
 		expect(item.userRating).toBeNull();
 		// source should still reflect where data came from
 		expect(item.source).toBe("plex");
+	});
+
+	it("keeps on-deck unknown without a current exact on-deck domain", () => {
+		const keys = makeKeys(["movie", 100]);
+		const result = aggregateWatchEnrichment(
+			keys,
+			[
+				plexEntry({
+					onDeck: true,
+					providerStatus: {
+						...exactStatus,
+						domains: exactStatus.domains.filter((domain) => domain.domain !== "on-deck"),
+					},
+				}),
+			],
+			[],
+			undefined,
+			testLogger,
+		);
+
+		expect(result["movie:100"]!.onDeck).toBeNull();
 	});
 
 	it("gracefully handles malformed JSON in collections/labels/watchedByUsers", () => {
@@ -214,7 +314,7 @@ describe("aggregateWatchEnrichment", () => {
 		expect(item.source).toBe("both");
 	});
 
-	it("takes the highest userRating across Plex instances", () => {
+	it("keeps rating metadata bound to the selected Plex media-server identity", () => {
 		const keys = makeKeys(["movie", 100]);
 		const result = aggregateWatchEnrichment(
 			keys,
@@ -227,6 +327,6 @@ describe("aggregateWatchEnrichment", () => {
 			testLogger,
 		);
 
-		expect(result["movie:100"]!.userRating).toBe(9.5);
+		expect(result["movie:100"]!.userRating).toBe(7.0);
 	});
 });

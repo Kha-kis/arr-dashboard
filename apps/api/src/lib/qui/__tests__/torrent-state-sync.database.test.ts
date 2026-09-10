@@ -58,6 +58,76 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 	return { promise, resolve };
 }
 
+function startReadProbes(probeClient: PrismaClient): {
+	latenciesMs: number[];
+	failures: unknown[];
+	firstRepeat: Promise<void>;
+	repeatCompletedAt: () => number[];
+	stop: () => Promise<void>;
+} {
+	const latenciesMs: number[] = [];
+	const failures: unknown[] = [];
+	let stopped = false;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	let timerDueAt: number | undefined;
+	let timerPromise: Promise<void> | undefined;
+	let inFlight: Promise<void> | undefined;
+	let resolveFirstRepeat!: () => void;
+	const repeatCompletionTimesMs: number[] = [];
+	const firstRepeat = new Promise<void>((resolve) => {
+		resolveFirstRepeat = resolve;
+	});
+
+	const runProbe = async (dueAt: number, isRepeat: boolean): Promise<void> => {
+		try {
+			await probeClient.$queryRaw`SELECT 1`;
+			latenciesMs.push(performance.now() - dueAt);
+		} catch (error) {
+			failures.push(error);
+		} finally {
+			if (isRepeat) {
+				repeatCompletionTimesMs.push(performance.now());
+				resolveFirstRepeat();
+			}
+			inFlight = undefined;
+			schedule();
+		}
+	};
+
+	const schedule = (): void => {
+		if (stopped) return;
+		timerDueAt = performance.now() + 25;
+		timerPromise = new Promise<void>((resolve) => {
+			timer = setTimeout(async () => {
+				const dueAt = timerDueAt ?? performance.now();
+				timer = undefined;
+				timerDueAt = undefined;
+				inFlight = runProbe(dueAt, true);
+				await inFlight;
+				timerPromise = undefined;
+				resolve();
+			}, 25);
+		});
+	};
+	inFlight = runProbe(performance.now(), false);
+
+	return {
+		latenciesMs,
+		failures,
+		firstRepeat,
+		repeatCompletedAt: () => repeatCompletionTimesMs,
+		stop: async () => {
+			stopped = true;
+			if (timer && timerDueAt !== undefined && timerDueAt > performance.now()) {
+				clearTimeout(timer);
+			} else if (timerPromise) {
+				await timerPromise;
+			}
+			await inFlight;
+		},
+	};
+}
+
 const log = {
 	info: vi.fn(),
 	warn: vi.fn(),
@@ -137,21 +207,11 @@ describe("runQuiTorrentStateSync SQLite scale behavior", () => {
 		});
 
 		const stagingStatementDurationsMs: number[] = [];
-		const healthLatenciesMs: number[] = [];
-		let healthProbePromises: Promise<void>[] | undefined;
+		let stagingStartedAt: number | undefined;
+		let stagingCompleteAt: number | undefined;
 		const executeRaw = prisma.$executeRaw.bind(prisma);
 		const timedExecuteRaw = ((...args: Parameters<typeof prisma.$executeRaw>) => {
-			healthProbePromises ??= Array.from({ length: 20 }, (_, index) => {
-				const delayMs = 50 + index * 100;
-				const dueAt = performance.now() + delayMs;
-				return new Promise<void>((resolve) => {
-					setTimeout(async () => {
-						await observer.$queryRaw`SELECT 1`;
-						healthLatenciesMs.push(performance.now() - dueAt);
-						resolve();
-					}, delayMs);
-				});
-			});
+			stagingStartedAt ??= performance.now();
 			const startedAt = performance.now();
 			return executeRaw(...args).then((rowsUpdated) => {
 				stagingStatementDurationsMs.push(performance.now() - startedAt);
@@ -170,14 +230,15 @@ describe("runQuiTorrentStateSync SQLite scale behavior", () => {
 		};
 		const findEpisodeCandidates = episodeFileCache.findMany.bind(episodeFileCache);
 		vi.spyOn(episodeFileCache, "findMany").mockImplementationOnce(async (args) => {
+			stagingCompleteAt = performance.now();
 			stagingPaused.resolve();
 			await releaseStaging.promise;
 			return await findEpisodeCandidates(args);
 		});
 
+		const readProbes = startReadProbes(prisma);
 		const sync = runQuiTorrentStateSync({ prisma, log, dbProvider: "sqlite" } as never);
 		await stagingPaused.promise;
-		await Promise.all(healthProbePromises ?? []);
 		const [healthRows, staged, absentBeforeCleanup, freshLibraryRows, freshEpisodeRows] =
 			await Promise.all([
 				observer.$queryRaw<Array<{ healthy: bigint }>>`SELECT 1 AS healthy`,
@@ -188,6 +249,8 @@ describe("runQuiTorrentStateSync SQLite scale behavior", () => {
 			]);
 		releaseStaging.resolve();
 		const result = await sync;
+		await readProbes.firstRepeat;
+		await readProbes.stop();
 
 		expect(healthRows).toEqual([{ healthy: 1n }]);
 		expect(staged).toMatchObject({
@@ -202,10 +265,18 @@ describe("runQuiTorrentStateSync SQLite scale behavior", () => {
 		});
 		expect(freshLibraryRows).toBe(0);
 		expect(freshEpisodeRows).toBe(0);
-		expect(stagingStatementDurationsMs).toHaveLength(100);
+		expect(stagingStatementDurationsMs.length).toBeGreaterThan(0);
 		expect(Math.max(...stagingStatementDurationsMs)).toBeLessThan(2_000);
-		expect(healthLatenciesMs).toHaveLength(20);
-		expect(Math.max(...healthLatenciesMs)).toBeLessThan(2_000);
+		expect(stagingStartedAt).toBeDefined();
+		expect(stagingCompleteAt).toBeDefined();
+		expect(readProbes.failures).toEqual([]);
+		expect(readProbes.latenciesMs.length).toBeGreaterThan(0);
+		expect(
+			readProbes
+				.repeatCompletedAt()
+				.some((completedAt) => completedAt > stagingStartedAt! && completedAt < stagingCompleteAt!),
+		).toBe(true);
+		expect(Math.max(...readProbes.latenciesMs)).toBeLessThan(2_000);
 		expect(result).toMatchObject({
 			torrentsSeen: 15_000,
 			rowsUpdated: 15_000,

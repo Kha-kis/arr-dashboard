@@ -15,7 +15,11 @@ const RUN_DB_TESTS = process.env.TEST_DB === "true";
 const ROUND_TRIP_HOOK_TIMEOUT_MS = 120_000;
 const execFileAsync = promisify(execFile);
 
-type DatabaseHandle = { prisma: PrismaClient; cleanup: () => Promise<void> };
+type DatabaseHandle = {
+	prisma: PrismaClient;
+	concurrent?: PrismaClient;
+	cleanup: () => Promise<void>;
+};
 
 type InteractiveTransaction = (
 	operation: (tx: Prisma.TransactionClient) => Promise<unknown>,
@@ -48,6 +52,86 @@ function withInteractiveTransactionDefaultTimeout(
 			return typeof value === "function" ? value.bind(target) : value;
 		},
 	}) as PrismaClient;
+}
+
+type Deferred = {
+	promise: Promise<void>;
+	resolve: () => void;
+};
+
+function deferred(): Deferred {
+	let resolve!: () => void;
+	const promise = new Promise<void>((done) => {
+		resolve = done;
+	});
+	return { promise, resolve };
+}
+
+function withRestoreAttemptBarrier(prisma: PrismaClient): {
+	prisma: PrismaClient;
+	rootPreflightComplete: Promise<void>;
+	innerCurrentAttemptRead: Promise<void>;
+	releaseTransaction: () => void;
+} {
+	const rootPreflight = deferred();
+	const innerRead = deferred();
+	const release = deferred();
+	let innerReadSeen = false;
+
+	function wrapClient(client: PrismaClient | Prisma.TransactionClient, isRoot: boolean) {
+		return new Proxy(client, {
+			get(target, property) {
+				if (property !== "labelSyncMutationAttempt") {
+					const value = Reflect.get(target, property, target);
+					return typeof value === "function" ? value.bind(target) : value;
+				}
+				const delegate = Reflect.get(target, property, target);
+				if (!delegate || typeof delegate !== "object") return delegate;
+				return new Proxy(delegate, {
+					get(delegateTarget, delegateProperty) {
+						const value = Reflect.get(delegateTarget, delegateProperty, delegateTarget);
+						if (delegateProperty !== "findMany" || typeof value !== "function") {
+							return typeof value === "function" ? value.bind(delegateTarget) : value;
+						}
+						return async (...args: unknown[]) => {
+							const result = await value.apply(delegateTarget, args);
+							if (!isRoot && !innerReadSeen) {
+								innerReadSeen = true;
+								innerRead.resolve();
+								await release.promise;
+							}
+							return result;
+						};
+					},
+				});
+			},
+		}) as PrismaClient | Prisma.TransactionClient;
+	}
+
+	const rootTransaction = prisma.$transaction.bind(prisma) as InteractiveTransaction;
+	const guardedRoot = new Proxy(prisma, {
+		get(target, property) {
+			if (property === "$transaction") {
+				return (
+					operation: (tx: Prisma.TransactionClient) => Promise<unknown>,
+					options?: Parameters<InteractiveTransaction>[1],
+				) =>
+					rootTransaction(async (tx) => {
+						rootPreflight.resolve();
+						return operation(wrapClient(tx, false) as Prisma.TransactionClient);
+					}, options);
+			}
+			const value = Reflect.get(target, property, target);
+			return value === undefined ? value : Reflect.get(wrapClient(target, true), property, target);
+		},
+	}) as PrismaClient;
+
+	return {
+		prisma: guardedRoot,
+		rootPreflightComplete: rootPreflight.promise,
+		innerCurrentAttemptRead: innerRead.promise,
+		releaseTransaction: release.resolve,
+	};
 }
 
 async function pushSqliteSchema(databasePath: string, apiDir: string): Promise<void> {
@@ -130,6 +214,13 @@ async function createPostgresDatabasePair(
 		}
 		const [sourcePrisma, targetPrisma] = clients;
 		if (!sourcePrisma || !targetPrisma) throw new Error("PostgreSQL test clients were not created");
+		const concurrentPool = new pg.default.Pool({
+			connectionString: withPostgresSchema(connectionString, targetSchema),
+		});
+		pools.push(concurrentPool);
+		const concurrentPrisma = new generatedExports.PrismaClient({
+			adapter: new PrismaPg(concurrentPool as never, { schema: targetSchema }),
+		});
 		return {
 			source: {
 				prisma: sourcePrisma,
@@ -140,9 +231,12 @@ async function createPostgresDatabasePair(
 			},
 			target: {
 				prisma: targetPrisma,
+				concurrent: concurrentPrisma,
 				cleanup: async () => {
 					await targetPrisma.$disconnect();
+					await concurrentPrisma.$disconnect();
 					await pools[1]?.end();
+					await pools[2]?.end();
 					await admin.query(`DROP SCHEMA "${sourceSchema}" CASCADE`);
 					await admin.query(`DROP SCHEMA "${targetSchema}" CASCADE`);
 					await admin.end();
@@ -220,6 +314,18 @@ async function seedDurableSource(prisma: PrismaClient): Promise<void> {
 			encryptionIv: "api-iv",
 			encryptedHttpAuthCredentials: "http-auth-ciphertext",
 			httpAuthEncryptionIv: "http-auth-iv",
+		},
+	});
+	const jellyfinInstanceId = "issue815-jellyfin-instance";
+	await prisma.serviceInstance.create({
+		data: {
+			id: jellyfinInstanceId,
+			userId,
+			service: "JELLYFIN",
+			label: "Issue 815 Jellyfin",
+			baseUrl: "http://jellyfin.example",
+			encryptedApiKey: "jellyfin-api-ciphertext",
+			encryptionIv: "jellyfin-api-iv",
 		},
 	});
 	await prisma.serviceInstanceTag.create({ data: { instanceId, tagId: "issue815-tag" } });
@@ -493,6 +599,47 @@ async function seedDurableSource(prisma: PrismaClient): Promise<void> {
 			destTagName: "destination",
 		},
 	});
+	await prisma.labelSyncRule.create({
+		data: {
+			id: "issue815-jellyfin-label-sync",
+			userId,
+			name: "Issue 815 Jellyfin label sync",
+			sourceService: "radarr",
+			sourceTagName: "source",
+			destService: "jellyfin",
+			destInstanceId: jellyfinInstanceId,
+			destTagName: "destination",
+		},
+	});
+	await prisma.labelSyncMutationAttempt.create({
+		data: {
+			id: "issue815-terminal-attempt",
+			userId,
+			ruleId: "issue815-jellyfin-label-sync",
+			destinationInstanceId: jellyfinInstanceId,
+			provider: "jellyfin",
+			mediaType: "movie",
+			tmdbId: 815,
+			connectionGeneration: 0,
+			identityGeneration: 0,
+			targetItemId: "issue815-terminal-item",
+			libraryId: "issue815-terminal-library",
+			intentFingerprint: "issue815-terminal-intent",
+			ruleFingerprint: "issue815-terminal-rule",
+			destinationTag: "destination",
+			activeOperationKey: null,
+			claimToken: null,
+			sendAttemptCount: 1,
+			reconcileAttemptCount: 0,
+			requestStartedAt: coordinationCreatedAt,
+			lastObservedAt: coordinationUpdatedAt,
+			completedAt: coordinationUpdatedAt,
+			status: "verified",
+			reasonCode: "applied",
+			createdAt: coordinationCreatedAt,
+			updatedAt: coordinationUpdatedAt,
+		},
+	});
 	await prisma.autoTagRule.create({
 		data: {
 			id: "issue815-auto-tag",
@@ -514,6 +661,71 @@ async function seedDurableSource(prisma: PrismaClient): Promise<void> {
 			changedFields: 1,
 			totalFields: 1,
 			deployedAt: coordinationCreatedAt,
+		},
+	});
+	const observationRun = await prisma.providerObservationRun.create({
+		data: {
+			id: "issue815-observation-run",
+			instanceId: jellyfinInstanceId,
+			provider: "jellyfin_episode",
+			cacheType: "jellyfin_episode",
+			authorityKey: "a".repeat(64),
+			activeSlotKey: "c".repeat(64),
+			parentGenerationId: `jellyfin-episode-parent-v3:${"e".repeat(64)}`,
+			targetDigest: "b".repeat(64),
+			targetCount: 1,
+			connectionGeneration: 0,
+			identityGeneration: 0,
+			state: "running",
+			totalUnits: 1,
+			totalWork: 1,
+		},
+	});
+	const observationUnit = await prisma.providerObservationUnit.create({
+		data: {
+			id: "issue815-observation-unit",
+			runId: observationRun.id,
+			ordinal: 0,
+			scopeKey: "issue815-scope",
+			scopePayload: JSON.stringify({
+				userId: "private-catalog-scope-user",
+				libraryId: "private-catalog-scope-library",
+				catalogProvenance: {
+					version: 3,
+					scopes: [
+						{ userId: "private-catalog-scope-user", libraryId: "private-catalog-scope-library" },
+					],
+					bindings: [
+						{
+							libraryId: "private-catalog-scope-library",
+							seriesId: "private-catalog-source-series",
+							tmdbId: 42,
+						},
+					],
+				},
+			}),
+			scopeDigest: "d".repeat(64),
+			phase: "collect",
+			expectedTargets: 1,
+			state: "pending",
+		},
+	});
+	await prisma.jellyfinEpisodeObservationStage.create({
+		data: {
+			id: "issue815-observation-stage",
+			runId: observationRun.id,
+			unitId: observationUnit.id,
+			userKeyDigest: "issue815-user-digest",
+			pass: "head",
+			jellyfinId: "issue815-episode",
+			seriesId: "issue815-series",
+			seasonNumber: 1,
+			episodeNumber: 1,
+			title: "Issue 815 episode",
+			played: true,
+			playCount: 1,
+			lastPlayedAt: coordinationUpdatedAt,
+			userName: "issue815-user",
 		},
 	});
 }
@@ -563,6 +775,7 @@ const MODEL_EXPORTS = [
 	["namingConfig", "namingConfig"],
 	["namingDeployHistory", "namingDeployHistory"],
 	["labelSyncRule", "labelSyncRule"],
+	["labelSyncMutationAttempts", "labelSyncMutationAttempt"],
 	["autoTagRule", "autoTagRule"],
 ] as const;
 
@@ -600,6 +813,13 @@ const MODEL_EXPORTS = [
 
 		it("rejects incomplete populated-target restores, then replaces complete and covered legacy state", async () => {
 			const exported = await exportDatabase(source.prisma, { excludeOperationalHistory: true });
+			expect(JSON.stringify(exported)).not.toContain("private-catalog-scope-user");
+			expect(JSON.stringify(exported)).not.toContain("private-catalog-source-series");
+			expect(JSON.stringify(exported)).not.toContain("catalogProvenance");
+			expect(JSON.stringify(exported)).not.toContain("providerObservationRuns");
+			expect(JSON.stringify(exported)).not.toContain("providerObservationUnits");
+			expect(JSON.stringify(exported)).not.toContain("plexEpisodeObservationStages");
+			expect(JSON.stringify(exported)).not.toContain("jellyfinEpisodeObservationStages");
 			const exportedLibrarySyncSettings = exported.librarySyncSettings as Array<
 				Record<string, unknown>
 			>;
@@ -662,6 +882,10 @@ const MODEL_EXPORTS = [
 			expect(await target.prisma.libraryCleanupMediaServerScanLease.count()).toBe(1);
 
 			await restoreDatabase(target.prisma, backup.data);
+			expect(await target.prisma.providerObservationRun.count()).toBe(0);
+			expect(await target.prisma.providerObservationUnit.count()).toBe(0);
+			expect(await target.prisma.plexEpisodeObservationStage.count()).toBe(0);
+			expect(await target.prisma.jellyfinEpisodeObservationStage.count()).toBe(0);
 			expect(await target.prisma.notificationLog.count()).toBe(0);
 			expect(await target.prisma.trashCache.count()).toBe(0);
 			expect(await target.prisma.libraryCleanupMediaServerScanLease.count()).toBe(0);
@@ -789,5 +1013,57 @@ const MODEL_EXPORTS = [
 			expect(await target.prisma.queueCleanerConfig.count()).toBe(1);
 			expect(await target.prisma.notificationChannel.count()).toBe(1);
 		});
+
+		it.skipIf(!process.env.TEST_DATABASE_URL?.startsWith("postgres"))(
+			"does not erase an attempt created concurrently with destructive restore",
+			async () => {
+				const concurrent = target.concurrent;
+				if (!concurrent)
+					throw new Error("Independent PostgreSQL concurrency client is unavailable");
+				const exported = await exportDatabase(source.prisma, { excludeOperationalHistory: true });
+				const {
+					prisma: barrierTarget,
+					rootPreflightComplete,
+					innerCurrentAttemptRead,
+					releaseTransaction,
+				} = withRestoreAttemptBarrier(target.prisma);
+				const attempt = {
+					id: "issue815-concurrent-attempt",
+					userId: "issue815-roundtrip-user",
+					ruleId: "issue815-jellyfin-label-sync",
+					destinationInstanceId: "issue815-jellyfin-instance",
+					provider: "jellyfin",
+					mediaType: "movie",
+					tmdbId: 815,
+					connectionGeneration: 0,
+					identityGeneration: 0,
+					targetItemId: "concurrent-item",
+					libraryId: "concurrent-library",
+					intentFingerprint: "concurrent-intent",
+					ruleFingerprint: "concurrent-rule",
+					destinationTag: "concurrent-tag",
+					activeOperationKey: "concurrent-operation",
+					claimToken: null,
+					sendAttemptCount: 1,
+					reconcileAttemptCount: 0,
+					requestStartedAt: new Date("2026-09-05T00:00:00.000Z"),
+					lastObservedAt: null,
+					completedAt: null,
+					status: "unknown",
+					reasonCode: "uncertain_send",
+				};
+
+				const restoreResult = restoreDatabase(barrierTarget, exported);
+				await rootPreflightComplete;
+				await innerCurrentAttemptRead;
+				await concurrent.labelSyncMutationAttempt.create({ data: attempt });
+				releaseTransaction();
+				await expect(restoreResult).rejects.toThrow();
+				const persisted = await target.prisma.labelSyncMutationAttempt.findUnique({
+					where: { id: attempt.id },
+				});
+				expect(persisted).not.toBeNull();
+			},
+		);
 	},
 );

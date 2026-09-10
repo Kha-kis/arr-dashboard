@@ -14,6 +14,8 @@ import type {
 	JellyfinNowPlayingResponse,
 	MostConcurrentResponse,
 	PlaysByDateResponse,
+	ProviderObservationAcceptedResponse,
+	ProviderObservationStatusEnvelope,
 	QualityScoreAnalytics,
 	SeriesProgressResponse,
 	TopMediaResponse,
@@ -54,6 +56,7 @@ export interface JellyfinSection {
 
 export interface JellyfinSectionsResponse {
 	sections: JellyfinSection[];
+	providerStatus?: ProviderObservationStatusEnvelope;
 }
 
 export interface JellyfinOnDeckItem {
@@ -69,6 +72,7 @@ export interface JellyfinOnDeckItem {
 
 export interface JellyfinOnDeckResponse {
 	items: JellyfinOnDeckItem[];
+	providerStatus?: ProviderObservationStatusEnvelope;
 }
 
 export interface JellyfinRecentlyAddedItem {
@@ -85,6 +89,7 @@ export interface JellyfinRecentlyAddedItem {
 
 export interface JellyfinRecentlyAddedResponse {
 	items: JellyfinRecentlyAddedItem[];
+	providerStatus?: ProviderObservationStatusEnvelope;
 }
 
 export interface JellyfinEpisodeStatus {
@@ -99,6 +104,7 @@ export interface JellyfinEpisodeStatus {
 export interface JellyfinEpisodeStatusResponse {
 	showTmdbId: number;
 	episodes: JellyfinEpisodeStatus[];
+	providerStatus?: ProviderObservationStatusEnvelope;
 }
 
 export interface JellyfinAccountsResponse {
@@ -201,8 +207,11 @@ export async function fetchJellyfinCacheHealth(): Promise<CacheHealthResponse> {
 /** Trigger a manual cache refresh for a specific Jellyfin instance. */
 export async function triggerJellyfinCacheRefresh(
 	instanceId: string,
-): Promise<{ success: boolean; upserted: number; errors: number }> {
-	return apiRequest(`/api/jellyfin/cache/${instanceId}/refresh`, { method: "POST" });
+): Promise<ProviderObservationAcceptedResponse> {
+	return apiRequest<ProviderObservationAcceptedResponse>(
+		`/api/jellyfin/cache/${instanceId}/refresh`,
+		{ method: "POST" },
+	);
 }
 
 // ============================================================================

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createPlexTargetLedgerBinding } from "../plex-generation-target-ledger.js";
 
 type Ledger = typeof import("../plex-generation-target-ledger.js");
 
@@ -123,5 +124,302 @@ describe("Plex generation target ledger publication boundaries", () => {
 		expect(plexGenerationTarget.findMany).toHaveBeenCalledWith(
 			expect.objectContaining({ where: { instanceId: "plex-1", generationId: "old-generation" } }),
 		);
+	});
+
+	it("rejects invalid receipt metadata before the publication CAS can write", async () => {
+		const { publishAuthoritativePlexCacheGeneration } = await import("../plex-cache-storage.js");
+		const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+		const deleteMany = vi.fn().mockResolvedValue({ count: 0 });
+		const createMany = vi.fn().mockResolvedValue({ count: 1 });
+
+		await expect(
+			publishAuthoritativePlexCacheGeneration(
+				{
+					cacheRefreshStatus: { updateMany },
+					plexCache: { deleteMany, createMany },
+					plexGenerationTarget: { deleteMany, createMany },
+				} as never,
+				{
+					instance: {
+						id: "plex-1",
+						connectionGeneration: 4,
+						identityGeneration: 9,
+					} as never,
+					rows: [],
+					completedAt: new Date("2026-09-02T12:00:01.000Z"),
+					generationId: "generation-1",
+					generationMetadata: JSON.stringify({ version: 5 }),
+					targets: [],
+					attempt: {
+						attemptedAt: new Date("2026-09-02T12:00:00.000Z"),
+						resultMarker: "in_progress:attempt",
+					} as never,
+				},
+			),
+		).rejects.toThrow("Invalid receipt-backed Plex generation publication");
+		expect(updateMany).not.toHaveBeenCalled();
+		expect(deleteMany).not.toHaveBeenCalled();
+		expect(createMany).not.toHaveBeenCalled();
+	});
+
+	it("rejects a positive-only V5 envelope at the authoritative zero-write boundary", async () => {
+		const { publishAuthoritativePlexCacheGeneration } = await import("../plex-cache-storage.js");
+		const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+		const deleteMany = vi.fn().mockResolvedValue({ count: 0 });
+		const createMany = vi.fn().mockResolvedValue({ count: 1 });
+		const attemptStartedAt = new Date("2026-09-02T12:00:00.000Z");
+		const completedAt = new Date("2026-09-02T12:00:01.000Z");
+		const targetLedger = createPlexTargetLedgerBinding({
+			instanceId: "plex-1",
+			generationId: "generation-1",
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			targets: [],
+		});
+
+		await expect(
+			publishAuthoritativePlexCacheGeneration(
+				{
+					cacheRefreshStatus: { updateMany },
+					plexCache: { deleteMany, createMany },
+					plexGenerationTarget: { deleteMany, createMany },
+				} as never,
+				{
+					instance: {
+						id: "plex-1",
+						connectionGeneration: 4,
+						identityGeneration: 9,
+					} as never,
+					rows: [],
+					completedAt,
+					generationId: "generation-1",
+					generationMetadata: JSON.stringify({
+						version: 5,
+						publicationLevel: "positive-only",
+						completeness: "partial",
+						itemCount: 0,
+						canonicalizationVersion: 1,
+						sections: [
+							{
+								key: "shows",
+								uuid: "shows-uuid",
+								title: "Shows",
+								type: "show",
+								refreshing: false,
+								scannedAt: 1,
+								updatedAt: 1,
+							},
+						],
+						observedRoots: [
+							{ sectionKey: "shows", domain: "episode-parents", digest: "a".repeat(64) },
+						],
+						capabilities: [
+							{
+								domain: "episode-parents",
+								field: "membership",
+								semantics: "observed-targets-only",
+								operators: [],
+							},
+						],
+						...targetLedger,
+						partialReasons: [{ code: "onDeckFetchFailures", count: 1 }],
+						coverageReceipt: {
+							version: 1,
+							provider: "plex",
+							attemptStartedAt: attemptStartedAt.toISOString(),
+							observedAt: completedAt.toISOString(),
+							evidence: "positive-only",
+							units: [
+								{
+									scopeKey: "section:shows",
+									expectedRawCount: 0,
+									pagesAttempted: 1,
+									pagesCompleted: 1,
+									rawObserved: 0,
+									sourceBindings: 0,
+									canonicalEntities: 0,
+									acceptedSkips: [],
+									fatalCount: 0,
+								},
+							],
+						},
+					}),
+					targets: [],
+					attempt: { attemptedAt: attemptStartedAt, resultMarker: "in_progress:attempt" } as never,
+				},
+			),
+		).rejects.toThrow("Invalid receipt-backed Plex generation publication");
+		expect(updateMany).not.toHaveBeenCalled();
+		expect(deleteMany).not.toHaveBeenCalled();
+		expect(createMany).not.toHaveBeenCalled();
+	});
+
+	it("rejects a self-consistent V5 ledger whose target is outside its generation catalog", async () => {
+		const { publishAuthoritativePlexCacheGeneration } = await import("../plex-cache-storage.js");
+		const { encodeAuthoritativePlexGenerationMetadata } = await import(
+			"../plex-generation-metadata.js"
+		);
+		const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+		const deleteMany = vi.fn().mockResolvedValue({ count: 0 });
+		const createMany = vi.fn().mockResolvedValue({ count: 1 });
+		const attemptStartedAt = new Date("2026-09-02T12:00:00.000Z");
+		const completedAt = new Date("2026-09-02T12:00:01.000Z");
+		const targets = [
+			{
+				instanceId: "plex-1",
+				generationId: "generation-1",
+				sectionId: "outside",
+				sectionUuid: "outside-uuid",
+				mediaType: "movie" as const,
+				tmdbId: 42,
+				tvdbId: null,
+				ratingKey: "outside-rating",
+			},
+		];
+		const generationMetadata = encodeAuthoritativePlexGenerationMetadata({
+			sections: [
+				{
+					key: "movies",
+					uuid: "movies-uuid",
+					title: "Movies",
+					type: "movie",
+					refreshing: false,
+					scannedAt: 1,
+					updatedAt: 1,
+				},
+			],
+			itemCount: 0,
+			canonicalizationVersion: 1,
+			roots: [{ sectionKey: "movies", domain: "membership", digest: "a".repeat(64) }],
+			targetLedger: createPlexTargetLedgerBinding({
+				instanceId: "plex-1",
+				generationId: "generation-1",
+				connectionGeneration: 4,
+				identityGeneration: 9,
+				targets,
+			}),
+			partialReasons: [],
+			coverageReceipt: {
+				version: 1,
+				provider: "plex",
+				attemptStartedAt: attemptStartedAt.toISOString(),
+				observedAt: completedAt.toISOString(),
+				evidence: "complete",
+				units: [
+					{
+						scopeKey: "section:movies",
+						expectedRawCount: 0,
+						pagesAttempted: 1,
+						pagesCompleted: 1,
+						rawObserved: 0,
+						sourceBindings: 0,
+						canonicalEntities: 0,
+						acceptedSkips: [],
+						fatalCount: 0,
+					},
+				],
+			},
+		});
+		await expect(
+			publishAuthoritativePlexCacheGeneration(
+				{
+					cacheRefreshStatus: { updateMany },
+					plexCache: { deleteMany, createMany },
+					plexGenerationTarget: { deleteMany, createMany },
+				} as never,
+				{
+					instance: { id: "plex-1", connectionGeneration: 4, identityGeneration: 9 } as never,
+					rows: [],
+					completedAt,
+					generationId: "generation-1",
+					generationMetadata,
+					targets,
+					attempt: { attemptedAt: attemptStartedAt, resultMarker: "in_progress:attempt" } as never,
+				},
+			),
+		).rejects.toThrow("Invalid receipt-backed Plex generation publication");
+		expect(updateMany).not.toHaveBeenCalled();
+		expect(deleteMany).not.toHaveBeenCalled();
+		expect(createMany).not.toHaveBeenCalled();
+	});
+
+	it("rejects V5 receipt timestamps that are not bound to the publication attempt", async () => {
+		const { publishAuthoritativePlexCacheGeneration } = await import("../plex-cache-storage.js");
+		const { encodeAuthoritativePlexGenerationMetadata } = await import(
+			"../plex-generation-metadata.js"
+		);
+		const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+		const deleteMany = vi.fn().mockResolvedValue({ count: 0 });
+		const createMany = vi.fn().mockResolvedValue({ count: 1 });
+		const receiptAttemptStartedAt = new Date("2026-09-02T12:00:00.000Z");
+		const receiptObservedAt = new Date("2026-09-02T12:00:01.000Z");
+		const generationMetadata = encodeAuthoritativePlexGenerationMetadata({
+			sections: [
+				{
+					key: "movies",
+					uuid: "movies-uuid",
+					title: "Movies",
+					type: "movie",
+					refreshing: false,
+					scannedAt: 1,
+					updatedAt: 1,
+				},
+			],
+			itemCount: 0,
+			canonicalizationVersion: 1,
+			roots: [{ sectionKey: "movies", domain: "membership", digest: "a".repeat(64) }],
+			targetLedger: createPlexTargetLedgerBinding({
+				instanceId: "plex-1",
+				generationId: "generation-1",
+				connectionGeneration: 4,
+				identityGeneration: 9,
+				targets: [],
+			}),
+			partialReasons: [],
+			coverageReceipt: {
+				version: 1,
+				provider: "plex",
+				attemptStartedAt: receiptAttemptStartedAt.toISOString(),
+				observedAt: receiptObservedAt.toISOString(),
+				evidence: "complete",
+				units: [
+					{
+						scopeKey: "section:movies",
+						expectedRawCount: 0,
+						pagesAttempted: 1,
+						pagesCompleted: 1,
+						rawObserved: 0,
+						sourceBindings: 0,
+						canonicalEntities: 0,
+						acceptedSkips: [],
+						fatalCount: 0,
+					},
+				],
+			},
+		});
+		await expect(
+			publishAuthoritativePlexCacheGeneration(
+				{
+					cacheRefreshStatus: { updateMany },
+					plexCache: { deleteMany, createMany },
+					plexGenerationTarget: { deleteMany, createMany },
+				} as never,
+				{
+					instance: { id: "plex-1", connectionGeneration: 4, identityGeneration: 9 } as never,
+					rows: [],
+					completedAt: receiptObservedAt,
+					generationId: "generation-1",
+					generationMetadata,
+					targets: [],
+					attempt: {
+						attemptedAt: new Date("2026-09-02T12:00:02.000Z"),
+						resultMarker: "in_progress:attempt",
+					} as never,
+				},
+			),
+		).rejects.toThrow("Invalid receipt-backed Plex generation publication");
+		expect(updateMany).not.toHaveBeenCalled();
+		expect(deleteMany).not.toHaveBeenCalled();
+		expect(createMany).not.toHaveBeenCalled();
 	});
 });

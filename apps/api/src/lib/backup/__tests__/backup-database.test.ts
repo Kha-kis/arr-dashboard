@@ -43,6 +43,11 @@ const TABLE_NAMES = [
 	"notificationAggregationConfig",
 	"autoTagRule",
 	"labelSyncRule",
+	"labelSyncMutationAttempt",
+	"providerObservationRun",
+	"providerObservationUnit",
+	"plexEpisodeObservationStage",
+	"jellyfinEpisodeObservationStage",
 	"queueCleanerConfig",
 	"libraryCleanupConfig",
 	"libraryCleanupRule",
@@ -84,6 +89,37 @@ function makeMockPrisma(rows: Partial<Record<TableName, unknown[]>> = {}): {
 }
 
 describe("exportDatabase — operational history exclusion", () => {
+	it("excludes disposable provider observation runs and staging rows", async () => {
+		const { prisma, mock } = makeMockPrisma({
+			providerObservationRun: [{ id: "run-1" }],
+			providerObservationUnit: [{ id: "unit-1" }],
+			plexEpisodeObservationStage: [{ id: "plex-stage-1" }],
+			jellyfinEpisodeObservationStage: [{ id: "jellyfin-stage-1" }],
+		});
+		const result = await exportDatabase(prisma, { excludeOperationalHistory: true });
+		const serialized = JSON.stringify(result);
+
+		expect(serialized).not.toContain("providerObservationRuns");
+		expect(serialized).not.toContain("providerObservationUnits");
+		expect(serialized).not.toContain("plexEpisodeObservationStages");
+		expect(serialized).not.toContain("jellyfinEpisodeObservationStages");
+		expect(mock.providerObservationRun.findMany).not.toHaveBeenCalled();
+		expect(mock.providerObservationUnit.findMany).not.toHaveBeenCalled();
+		expect(mock.plexEpisodeObservationStage.findMany).not.toHaveBeenCalled();
+		expect(mock.jellyfinEpisodeObservationStage.findMany).not.toHaveBeenCalled();
+	});
+
+	it("always exports complete label mutation history, including terminal rows", async () => {
+		const terminal = {
+			id: "attempt-terminal",
+			status: "verified",
+			destinationTag: "private-label",
+		};
+		const { prisma } = makeMockPrisma({ labelSyncMutationAttempt: [terminal] });
+		const result = await exportDatabase(prisma, { excludeOperationalHistory: true });
+		expect(result.labelSyncMutationAttempts).toEqual([terminal]);
+	});
+
 	it("reads the portable snapshot in one Serializable transaction", async () => {
 		const { prisma: transactionClient } = makeMockPrisma();
 		const transaction = vi.fn(
@@ -581,6 +617,7 @@ describe("restoreDatabase — current coordination preservation", () => {
 		currentApprovals?: Array<Record<string, unknown>>;
 		currentScanParentApprovals?: Array<Record<string, unknown>>;
 		currentScans?: Array<Record<string, unknown>>;
+		currentMutationAttempts?: Array<Record<string, unknown>>;
 	}) {
 		const firstDelete = vi.fn().mockResolvedValue({ count: 0 });
 		const tx = {
@@ -619,11 +656,36 @@ describe("restoreDatabase — current coordination preservation", () => {
 				findMany: vi.fn().mockResolvedValue(options.currentScans ?? []),
 				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
 			},
+			labelSyncMutationAttempt: {
+				findMany: vi.fn().mockResolvedValue(options.currentMutationAttempts ?? []),
+				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
 			huntSearchHistory: { deleteMany: firstDelete },
 		};
+		const transactionTx = new Proxy(tx, {
+			get(target, property, receiver) {
+				if (property in target) {
+					const existing = Reflect.get(target, property, receiver);
+					if (typeof existing === "object" && existing !== null && !("createMany" in existing)) {
+						Reflect.set(existing, "createMany", vi.fn().mockResolvedValue({ count: 0 }));
+					}
+					return existing;
+				}
+				if (typeof property !== "string") return undefined;
+				const delegate = {
+					findMany: vi.fn().mockResolvedValue([]),
+					deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+					createMany: vi.fn().mockResolvedValue({ count: 0 }),
+					create: vi.fn().mockResolvedValue({}),
+				};
+				Reflect.set(target, property, delegate, receiver);
+				return delegate;
+			},
+		});
 		const prisma = {
+			...tx,
 			$transaction: vi.fn(async (operation: (transaction: typeof tx) => Promise<void>) =>
-				operation(tx),
+				operation(transactionTx),
 			),
 		} as unknown as PrismaClient;
 
@@ -632,6 +694,37 @@ describe("restoreDatabase — current coordination preservation", () => {
 			compatibilityPrisma: tx as unknown as PrismaClient,
 			firstDelete,
 			transaction: prisma.$transaction,
+		};
+	}
+
+	function validTerminalMutationAttempt(overrides: Record<string, unknown> = {}) {
+		return {
+			id: "attempt-terminal",
+			userId: "user-1",
+			ruleId: "rule-1",
+			destinationInstanceId: "instance-1",
+			provider: "jellyfin",
+			mediaType: "movie",
+			tmdbId: 42,
+			connectionGeneration: 0,
+			identityGeneration: 0,
+			targetItemId: "item-1",
+			libraryId: "library-1",
+			intentFingerprint: "intent",
+			ruleFingerprint: "rule",
+			destinationTag: "tag",
+			activeOperationKey: null,
+			claimToken: null,
+			sendAttemptCount: 1,
+			reconcileAttemptCount: 0,
+			requestStartedAt: new Date("2026-09-05T00:00:00.000Z"),
+			lastObservedAt: new Date("2026-09-05T00:00:00.000Z"),
+			completedAt: new Date("2026-09-05T00:00:00.000Z"),
+			status: "verified",
+			reasonCode: "applied",
+			createdAt: new Date("2026-09-05T00:00:00.000Z"),
+			updatedAt: new Date("2026-09-05T00:00:00.000Z"),
+			...overrides,
 		};
 	}
 
@@ -658,6 +751,281 @@ describe("restoreDatabase — current coordination preservation", () => {
 		await expect(
 			restoreDatabase(prisma, incomingData({ users: [{ id: "missing-required-username" }] })),
 		).rejects.toThrow("Invalid user record at index 0: missing required field 'username'");
+		expect(transaction).not.toHaveBeenCalled();
+	});
+
+	it("rejects restore before deletion when current label mutation is unresolved", async () => {
+		const { prisma, firstDelete } = makeRestorePrisma({
+			currentMutationAttempts: [{ id: "private-attempt", status: "unknown" }],
+		});
+		await expect(restoreDatabase(prisma, incomingData())).rejects.toBeInstanceOf(
+			BackupCompatibilityError,
+		);
+		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		[
+			"claimed",
+			{ status: "claimed", activeOperationKey: "active", claimToken: "claim", completedAt: null },
+		],
+		[
+			"claimed with observed marker",
+			{
+				status: "claimed",
+				activeOperationKey: "active",
+				claimToken: "claim",
+				completedAt: null,
+				lastObservedAt: new Date("2026-09-05T00:00:00.000Z"),
+			},
+		],
+		[
+			"claimed with finite reason",
+			{
+				status: "claimed",
+				activeOperationKey: "active",
+				claimToken: "claim",
+				completedAt: null,
+				reasonCode: "provider_unavailable",
+			},
+		],
+		[
+			"sending",
+			{ status: "sending", activeOperationKey: "active", claimToken: "claim", completedAt: null },
+		],
+		[
+			"sending with observed marker",
+			{
+				status: "sending",
+				activeOperationKey: "active",
+				claimToken: "claim",
+				completedAt: null,
+				requestStartedAt: new Date("2026-09-05T00:00:00.000Z"),
+				sendAttemptCount: 1,
+				lastObservedAt: new Date("2026-09-05T00:00:00.000Z"),
+			},
+		],
+		[
+			"sending with finite reason",
+			{
+				status: "sending",
+				activeOperationKey: "active",
+				claimToken: "claim",
+				completedAt: null,
+				requestStartedAt: new Date("2026-09-05T00:00:00.000Z"),
+				sendAttemptCount: 1,
+				reasonCode: "provider_unavailable",
+			},
+		],
+		[
+			"unknown",
+			{ status: "unknown", activeOperationKey: "active", claimToken: null, completedAt: null },
+		],
+		[
+			"unknown without reason",
+			{
+				status: "unknown",
+				activeOperationKey: "active",
+				claimToken: null,
+				completedAt: null,
+				requestStartedAt: new Date("2026-09-05T00:00:00.000Z"),
+				sendAttemptCount: 1,
+				reasonCode: null,
+			},
+		],
+		[
+			"unknown with terminal reason",
+			{
+				status: "unknown",
+				activeOperationKey: "active",
+				claimToken: null,
+				completedAt: null,
+				requestStartedAt: new Date("2026-09-05T00:00:00.000Z"),
+				sendAttemptCount: 1,
+				reasonCode: "applied",
+			},
+		],
+		[
+			"unknown reconciliation unavailable without attempt",
+			{
+				status: "unknown",
+				activeOperationKey: "active",
+				claimToken: null,
+				completedAt: null,
+				requestStartedAt: new Date("2026-09-05T00:00:00.000Z"),
+				sendAttemptCount: 1,
+				reasonCode: "reconciliation_unavailable",
+				reconcileAttemptCount: 0,
+			},
+		],
+		[
+			"unknown attempt limit without attempt",
+			{
+				status: "unknown",
+				activeOperationKey: "active",
+				claimToken: null,
+				completedAt: null,
+				requestStartedAt: new Date("2026-09-05T00:00:00.000Z"),
+				sendAttemptCount: 1,
+				reasonCode: "attempt_limit",
+				reconcileAttemptCount: 0,
+			},
+		],
+		["future status", { status: "reconciling" }],
+		[
+			"invalid terminal claim shape",
+			{ status: "verified", activeOperationKey: "active", claimToken: null },
+		],
+	] as const)("rejects current %s rows before opening restore transaction", async (_label, row) => {
+		const { prisma, transaction, firstDelete } = makeRestorePrisma({
+			currentMutationAttempts: [validTerminalMutationAttempt(row)],
+		});
+		await expect(restoreDatabase(prisma, incomingData())).rejects.toBeInstanceOf(
+			BackupCompatibilityError,
+		);
+		expect(transaction).not.toHaveBeenCalled();
+		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
+	it("allows a valid terminal current mutation row", async () => {
+		const { compatibilityPrisma } = makeRestorePrisma({
+			currentMutationAttempts: [validTerminalMutationAttempt()],
+		});
+		await expect(
+			assertRestoreCompatibility(compatibilityPrisma, incomingData()),
+		).resolves.toBeUndefined();
+	});
+
+	it("rejects terminal verified success without evidence before destructive restore", async () => {
+		const { prisma, transaction, firstDelete } = makeRestorePrisma({
+			currentMutationAttempts: [
+				validTerminalMutationAttempt({
+					sendAttemptCount: 0,
+					requestStartedAt: null,
+					lastObservedAt: null,
+				}),
+			],
+		});
+		await expect(restoreDatabase(prisma, incomingData())).rejects.toBeInstanceOf(
+			BackupCompatibilityError,
+		);
+		expect(transaction).not.toHaveBeenCalled();
+		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
+	it("clears an incoming unknown reconciliation token before persistence", async () => {
+		const { prisma, compatibilityPrisma } = makeRestorePrisma({});
+		const privateCanary = "private-restore-canary";
+		const attempt = {
+			id: "attempt-unknown-reconciliation",
+			userId: "user-1",
+			ruleId: "rule-1",
+			destinationInstanceId: "instance-1",
+			provider: "jellyfin",
+			mediaType: "movie",
+			tmdbId: 42,
+			connectionGeneration: 0,
+			identityGeneration: 0,
+			targetItemId: privateCanary,
+			libraryId: "private-library-canary",
+			intentFingerprint: "private-intent-canary",
+			ruleFingerprint: "private-rule-canary",
+			destinationTag: "private-tag-canary",
+			activeOperationKey: "active-unknown",
+			claimToken: "reconciliation-token",
+			sendAttemptCount: 1,
+			reconcileAttemptCount: 1,
+			requestStartedAt: new Date("2026-09-05T00:00:00.000Z"),
+			lastObservedAt: null,
+			completedAt: null,
+			status: "unknown",
+			reasonCode: "uncertain_send",
+			createdAt: new Date("2026-09-05T00:00:00.000Z"),
+			updatedAt: new Date("2026-09-05T00:00:00.000Z"),
+		};
+		const createMany = vi.fn().mockResolvedValue({ count: 1 });
+		(
+			compatibilityPrisma.labelSyncMutationAttempt as unknown as { createMany: typeof createMany }
+		).createMany = createMany;
+		await expect(
+			restoreDatabase(
+				prisma,
+				incomingData({
+					users: [{ id: "user-1", username: "user-1" }],
+					serviceInstances: [
+						{ id: "instance-1", userId: "user-1", service: "JELLYFIN", baseUrl: "http://jellyfin" },
+					],
+					labelSyncRule: [
+						{
+							id: "rule-1",
+							userId: "user-1",
+							destInstanceId: "instance-1",
+							destService: "jellyfin",
+						},
+					],
+					labelSyncMutationAttempts: [attempt],
+				}),
+			),
+		).resolves.toBeUndefined();
+		const persisted = createMany.mock.calls[0]?.[0].data[0];
+		expect(persisted).toMatchObject({
+			activeOperationKey: "active-unknown",
+			claimToken: null,
+			sendAttemptCount: 1,
+			reconcileAttemptCount: 1,
+			status: "unknown",
+			reasonCode: "uncertain_send",
+		});
+		expect(JSON.stringify(persisted)).toContain(privateCanary);
+	});
+
+	it("fails closed when the current mutation delegate is unavailable", async () => {
+		const { prisma, transaction, firstDelete } = makeRestorePrisma({});
+		const root = prisma as unknown as Record<string, unknown>;
+		delete root.labelSyncMutationAttempt;
+		await expect(restoreDatabase(prisma, incomingData())).rejects.toBeInstanceOf(
+			BackupCompatibilityError,
+		);
+		expect(transaction).not.toHaveBeenCalled();
+		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
+	it("pins serializable isolation and the bounded restore timeout", async () => {
+		const transaction = vi.fn().mockResolvedValue(undefined);
+		const prisma = {
+			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
+			$transaction: transaction,
+		} as unknown as PrismaClient;
+		await expect(restoreDatabase(prisma, incomingData())).resolves.toBeUndefined();
+		expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
+			isolationLevel: "Serializable",
+			timeout: 5 * 60 * 1000,
+		});
+	});
+
+	it("rejects duplicate incoming mutation attempt IDs before opening restore transaction", async () => {
+		const { prisma, transaction } = makeRestorePrisma({});
+		const attempt = validTerminalMutationAttempt();
+		await expect(
+			restoreDatabase(
+				prisma,
+				incomingData({
+					users: [{ id: "user-1", username: "user-1" }],
+					serviceInstances: [
+						{ id: "instance-1", userId: "user-1", service: "JELLYFIN", baseUrl: "http://jellyfin" },
+					],
+					labelSyncRule: [
+						{
+							id: "rule-1",
+							userId: "user-1",
+							destInstanceId: "instance-1",
+							destService: "jellyfin",
+						},
+					],
+					labelSyncMutationAttempts: [attempt, attempt],
+				}),
+			),
+		).rejects.toThrow("Invalid label sync mutation attempt backup records");
 		expect(transaction).not.toHaveBeenCalled();
 	});
 

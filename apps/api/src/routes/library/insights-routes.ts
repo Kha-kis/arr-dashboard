@@ -12,11 +12,16 @@
 
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
+import type { JellyfinDisplayInstance } from "../../lib/jellyfin/jellyfin-display-evidence.js";
+import {
+	type JellyfinInsightWatchEvidence,
+	readOwnedJellyfinInsightWatchEvidence,
+} from "../../lib/library-insights/watch-evidence.js";
 import {
 	hasAuthoritativePlexEvidence,
+	PlexAuthorityService,
 	summarizePlexEvidence,
 } from "../../lib/plex/plex-authority-service.js";
-import { PlexAuthorityService } from "../../lib/plex/plex-authority-service.js";
 import { SeerrClient } from "../../lib/seerr/seerr-client.js";
 import { safeJsonParse } from "../../lib/utils/json.js";
 import { validateRequest } from "../../lib/utils/validate.js";
@@ -74,6 +79,47 @@ const insightsQuerySchema = z.object({
 	limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
+type WatchData = Map<string, { watchCount: number; lastWatchedAt: Date | null }>;
+
+function mergeWatchRow(
+	watchData: WatchData,
+	mediaType: string,
+	tmdbId: number,
+	watchCount: number,
+	lastWatchedAt: Date | null,
+) {
+	const key = `${mediaType}:${tmdbId}`;
+	const existing = watchData.get(key);
+	if (existing) {
+		existing.watchCount += watchCount;
+		if (lastWatchedAt && (!existing.lastWatchedAt || lastWatchedAt > existing.lastWatchedAt)) {
+			existing.lastWatchedAt = lastWatchedAt;
+		}
+	} else {
+		watchData.set(key, { watchCount, lastWatchedAt });
+	}
+}
+
+function mergeInsightRows(watchData: WatchData, rows: JellyfinInsightWatchEvidence["rows"]) {
+	for (const row of rows) {
+		mergeWatchRow(watchData, row.mediaType, row.tmdbId, row.watchCount, row.lastWatchedAt);
+	}
+}
+
+function mergeInsightCountRows(
+	watchCounts: Map<string, number>,
+	rows: JellyfinInsightWatchEvidence["rows"],
+) {
+	for (const row of rows) {
+		const key = `${row.mediaType}:${row.tmdbId}`;
+		watchCounts.set(key, (watchCounts.get(key) ?? 0) + row.watchCount);
+	}
+}
+
+function providerStatusResponse(evidence: JellyfinInsightWatchEvidence) {
+	return evidence.providerStatus ? { providerStatus: evidence.providerStatus } : {};
+}
+
 // ============================================================================
 // Routes
 // ============================================================================
@@ -102,7 +148,7 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 		}
 
 		// Get user's media server instances to load watch data
-		const watchCounts = new Map<string, number>();
+		const plexWatchCounts = new Map<string, number>();
 		const [plexEvidence, jellyfinInstances] = await Promise.all([
 			new PlexAuthorityService({
 				prisma: app.prisma,
@@ -114,13 +160,13 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 				onBatch: ({ rows }) => {
 					for (const row of rows) {
 						const key = `${row.mediaType}:${row.tmdbId}`;
-						watchCounts.set(key, (watchCounts.get(key) ?? 0) + row.watchCount);
+						plexWatchCounts.set(key, (plexWatchCounts.get(key) ?? 0) + row.watchCount);
 					}
 				},
 			}),
 			app.prisma.serviceInstance.findMany({
-				where: { userId, service: { in: ["JELLYFIN", "EMBY"] } },
-				select: { id: true },
+				where: { userId, enabled: true, service: { in: ["JELLYFIN", "EMBY"] } },
+				select: { id: true, label: true, service: true },
 			}),
 		]);
 		if (plexEvidence.length > 0 && !hasAuthoritativePlexEvidence(plexEvidence)) {
@@ -130,18 +176,42 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 			});
 		}
 
-		// Build watch count map: "movie:tmdbId" | "series:tmdbId" → watchCount
 		const hasPlexAuthority = hasAuthoritativePlexEvidence(plexEvidence);
-		if (jellyfinInstances.length > 0) {
-			const jfRows = await app.prisma.jellyfinCache.findMany({
-				where: { instanceId: { in: jellyfinInstances.map((i) => i.id) } },
-				select: { tmdbId: true, mediaType: true, watchCount: true },
+		const jellyfinWatchEvidence = await readOwnedJellyfinInsightWatchEvidence({
+			prisma: app.prisma,
+			userId,
+			instances: jellyfinInstances as JellyfinDisplayInstance[],
+		});
+		if (!hasPlexAuthority && !jellyfinWatchEvidence.configured) {
+			return reply.send({
+				success: true,
+				data: {
+					items: [],
+					totalWastedBytes: 0,
+					hasPlexData: false,
+					hasWatchData: false,
+				},
 			});
-			for (const row of jfRows) {
-				const key = `${row.mediaType}:${row.tmdbId}`;
-				watchCounts.set(key, (watchCounts.get(key) ?? 0) + row.watchCount);
+		}
+		if (jellyfinWatchEvidence.configured && !jellyfinWatchEvidence.negativeClaimsAuthoritative) {
+			return reply.send({
+				success: true,
+				data: {
+					items: [],
+					totalWastedBytes: 0,
+					hasPlexData: hasPlexAuthority,
+					hasWatchData: false,
+				},
+				...providerStatusResponse(jellyfinWatchEvidence),
+			});
+		}
+		const watchCounts = new Map<string, number>();
+		if (hasPlexAuthority) {
+			for (const [key, count] of plexWatchCounts) {
+				watchCounts.set(key, count);
 			}
 		}
+		mergeInsightCountRows(watchCounts, jellyfinWatchEvidence.rows);
 
 		// Fetch candidate library items: has file, large, old enough
 		const candidates = await app.prisma.libraryCache.findMany({
@@ -174,12 +244,6 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 
 			// Build Plex lookup key — PlexCache stores "movie" | "series"
 			const mediaType = item.itemType === "movie" ? "movie" : "series";
-			if (
-				(!hasPlexAuthority && jellyfinInstances.length === 0) ||
-				(plexEvidence.length > 0 && !hasPlexAuthority)
-			) {
-				continue;
-			}
 			const watchCount = watchCounts.get(`${mediaType}:${tmdbId}`) ?? 0;
 
 			// Only include items with zero watches
@@ -212,8 +276,9 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 				items: results,
 				totalWastedBytes,
 				hasPlexData: hasPlexAuthority,
-				hasWatchData: hasPlexAuthority || jellyfinInstances.length > 0,
+				hasWatchData: hasPlexAuthority || jellyfinWatchEvidence.hasPositiveEvidence,
 			},
+			...providerStatusResponse(jellyfinWatchEvidence),
 		});
 	});
 
@@ -244,18 +309,7 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 		}
 
 		// Get media server instances — Plex + Jellyfin/Emby
-		const watchData = new Map<string, { watchCount: number; lastWatchedAt: Date | null }>();
-		const mergeWatchRow = (key: string, watchCount: number, lastWatchedAt: Date | null) => {
-			const existing = watchData.get(key);
-			if (existing) {
-				existing.watchCount += watchCount;
-				if (lastWatchedAt && (!existing.lastWatchedAt || lastWatchedAt > existing.lastWatchedAt)) {
-					existing.lastWatchedAt = lastWatchedAt;
-				}
-			} else {
-				watchData.set(key, { watchCount, lastWatchedAt });
-			}
-		};
+		const plexWatchData: WatchData = new Map();
 		const [plexEvidence, jellyfinInstances] = await Promise.all([
 			new PlexAuthorityService({
 				prisma: app.prisma,
@@ -266,13 +320,19 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 				domains: ["membership", "watch"],
 				onBatch: ({ rows }) => {
 					for (const row of rows) {
-						mergeWatchRow(`${row.mediaType}:${row.tmdbId}`, row.watchCount, row.lastWatchedAt);
+						mergeWatchRow(
+							plexWatchData,
+							row.mediaType,
+							row.tmdbId,
+							row.watchCount,
+							row.lastWatchedAt,
+						);
 					}
 				},
 			}),
 			app.prisma.serviceInstance.findMany({
-				where: { userId, service: { in: ["JELLYFIN", "EMBY"] } },
-				select: { id: true },
+				where: { userId, enabled: true, service: { in: ["JELLYFIN", "EMBY"] } },
+				select: { id: true, label: true, service: true },
 			}),
 		]);
 		if (plexEvidence.length > 0 && !hasAuthoritativePlexEvidence(plexEvidence)) {
@@ -282,22 +342,24 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 			});
 		}
 
-		if (plexEvidence.length === 0 && jellyfinInstances.length === 0) {
+		const jellyfinWatchEvidence = await readOwnedJellyfinInsightWatchEvidence({
+			prisma: app.prisma,
+			userId,
+			instances: jellyfinInstances as JellyfinDisplayInstance[],
+		});
+		if (plexEvidence.length === 0 && !jellyfinWatchEvidence.hasPositiveEvidence) {
 			return reply.send({
 				success: true,
 				data: { items: [], hasPlexData: false, hasWatchData: false },
+				...providerStatusResponse(jellyfinWatchEvidence),
 			});
 		}
 
-		if (jellyfinInstances.length > 0) {
-			const jfRows = await app.prisma.jellyfinCache.findMany({
-				where: { instanceId: { in: jellyfinInstances.map((i) => i.id) } },
-				select: { tmdbId: true, mediaType: true, watchCount: true, lastWatchedAt: true },
-			});
-			for (const row of jfRows) {
-				mergeWatchRow(`${row.mediaType}:${row.tmdbId}`, row.watchCount, row.lastWatchedAt);
-			}
+		const watchData: WatchData = new Map();
+		if (hasAuthoritativePlexEvidence(plexEvidence)) {
+			for (const [key, value] of plexWatchData) watchData.set(key, value);
 		}
+		mergeInsightRows(watchData, jellyfinWatchEvidence.rows);
 
 		// Fetch monitored library items
 		const candidates = await app.prisma.libraryCache.findMany({
@@ -356,8 +418,10 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 			data: {
 				items: results,
 				hasPlexData: hasAuthoritativePlexEvidence(plexEvidence),
-				hasWatchData: hasAuthoritativePlexEvidence(plexEvidence) || jellyfinInstances.length > 0,
+				hasWatchData:
+					hasAuthoritativePlexEvidence(plexEvidence) || jellyfinWatchEvidence.hasPositiveEvidence,
 			},
+			...providerStatusResponse(jellyfinWatchEvidence),
 		});
 	});
 
@@ -398,7 +462,7 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 		}
 
 		// Get media server watch data — Plex + Jellyfin/Emby
-		const watchCounts = new Map<string, number>();
+		const plexWatchCounts = new Map<string, number>();
 		const [plexEvidence, jellyfinInstances] = await Promise.all([
 			new PlexAuthorityService({
 				prisma: app.prisma,
@@ -410,13 +474,13 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 				onBatch: ({ rows }) => {
 					for (const row of rows) {
 						const key = `${row.mediaType}:${row.tmdbId}`;
-						watchCounts.set(key, (watchCounts.get(key) ?? 0) + row.watchCount);
+						plexWatchCounts.set(key, (plexWatchCounts.get(key) ?? 0) + row.watchCount);
 					}
 				},
 			}),
 			app.prisma.serviceInstance.findMany({
-				where: { userId, service: { in: ["JELLYFIN", "EMBY"] } },
-				select: { id: true },
+				where: { userId, enabled: true, service: { in: ["JELLYFIN", "EMBY"] } },
+				select: { id: true, label: true, service: true },
 			}),
 		]);
 		if (plexEvidence.length > 0 && !hasAuthoritativePlexEvidence(plexEvidence)) {
@@ -427,16 +491,28 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 		}
 
 		const hasPlexAuthority = hasAuthoritativePlexEvidence(plexEvidence);
-		if (jellyfinInstances.length > 0) {
-			const jfRows = await app.prisma.jellyfinCache.findMany({
-				where: { instanceId: { in: jellyfinInstances.map((i) => i.id) } },
-				select: { tmdbId: true, mediaType: true, watchCount: true },
+		const jellyfinWatchEvidence = await readOwnedJellyfinInsightWatchEvidence({
+			prisma: app.prisma,
+			userId,
+			instances: jellyfinInstances as JellyfinDisplayInstance[],
+		});
+		if (jellyfinWatchEvidence.configured && !jellyfinWatchEvidence.negativeClaimsAuthoritative) {
+			return reply.send({
+				success: true,
+				data: {
+					items: [],
+					hasSeerrData: false,
+					hasPlexData: hasPlexAuthority,
+					hasWatchData: false,
+				},
+				...providerStatusResponse(jellyfinWatchEvidence),
 			});
-			for (const row of jfRows) {
-				const key = `${row.mediaType}:${row.tmdbId}`;
-				watchCounts.set(key, (watchCounts.get(key) ?? 0) + row.watchCount);
-			}
 		}
+		const watchCounts = new Map<string, number>();
+		if (hasPlexAuthority) {
+			for (const [key, count] of plexWatchCounts) watchCounts.set(key, count);
+		}
+		mergeInsightCountRows(watchCounts, jellyfinWatchEvidence.rows);
 
 		// Fetch Seerr requests — build map of tmdbId → request info
 		const seerrRequests: Array<{
@@ -475,9 +551,18 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 				data: {
 					items: [],
 					hasSeerrData: false,
-					hasPlexData: hasAuthoritativePlexEvidence(plexEvidence),
-					hasWatchData: hasAuthoritativePlexEvidence(plexEvidence) || jellyfinInstances.length > 0,
+					hasPlexData: hasPlexAuthority,
+					hasWatchData: hasPlexAuthority || jellyfinWatchEvidence.hasPositiveEvidence,
 				},
+				...providerStatusResponse(jellyfinWatchEvidence),
+			});
+		}
+
+		if (!hasPlexAuthority && !jellyfinWatchEvidence.hasPositiveEvidence) {
+			return reply.send({
+				success: true,
+				data: { items: [], hasSeerrData: true, hasPlexData: false, hasWatchData: false },
+				...providerStatusResponse(jellyfinWatchEvidence),
 			});
 		}
 
@@ -487,9 +572,10 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 				data: {
 					items: [],
 					hasSeerrData: true,
-					hasPlexData: hasAuthoritativePlexEvidence(plexEvidence),
-					hasWatchData: hasAuthoritativePlexEvidence(plexEvidence) || jellyfinInstances.length > 0,
+					hasPlexData: hasPlexAuthority,
+					hasWatchData: hasPlexAuthority || jellyfinWatchEvidence.hasPositiveEvidence,
 				},
+				...providerStatusResponse(jellyfinWatchEvidence),
 			});
 		}
 
@@ -516,9 +602,10 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 				data: {
 					items: [],
 					hasSeerrData: true,
-					hasPlexData: hasAuthoritativePlexEvidence(plexEvidence),
-					hasWatchData: hasAuthoritativePlexEvidence(plexEvidence) || jellyfinInstances.length > 0,
+					hasPlexData: hasPlexAuthority,
+					hasWatchData: hasPlexAuthority || jellyfinWatchEvidence.hasPositiveEvidence,
 				},
+				...providerStatusResponse(jellyfinWatchEvidence),
 			});
 		}
 
@@ -554,12 +641,6 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 			if (!seerrInfo) continue; // Not a Seerr-requested item
 
 			const mediaType = item.itemType === "movie" ? "movie" : "series";
-			if (
-				(!hasPlexAuthority && jellyfinInstances.length === 0) ||
-				(plexEvidence.length > 0 && !hasPlexAuthority)
-			) {
-				continue;
-			}
 			const watchCount = watchCounts.get(`${mediaType}:${tmdbId}`) ?? 0;
 			if (watchCount > 0) continue; // Has been watched — not a candidate
 
@@ -588,8 +669,9 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 				items: results,
 				hasSeerrData: true,
 				hasPlexData: hasPlexAuthority,
-				hasWatchData: hasPlexAuthority || jellyfinInstances.length > 0,
+				hasWatchData: hasPlexAuthority || jellyfinWatchEvidence.hasPositiveEvidence,
 			},
+			...providerStatusResponse(jellyfinWatchEvidence),
 		});
 	});
 

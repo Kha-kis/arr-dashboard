@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
 	loadInstanceSelectedEpisodeEvidence: vi.fn(),
 	loadUserEvidence: vi.fn(),
 	loadUserSelectedEvidence: vi.fn(),
+	readPositiveEpisodeDisplayEvidence: vi.fn(),
 	scanInstancePolicyEvidence: vi.fn(),
 	scanUserPolicyEvidence: vi.fn(),
 }));
@@ -47,6 +48,10 @@ vi.mock("../../../lib/plex/plex-authority-service.js", async (importOriginal) =>
 				return mocks.loadUserSelectedEvidence(this.prisma, input);
 			}
 
+			readUserSelectedDisplay(input: unknown) {
+				return mocks.loadUserSelectedEvidence(this.prisma, input);
+			}
+
 			async scanInstancePolicy(input: { onBatch?: (batch: { rows: unknown[] }) => void }) {
 				const evidence = await mocks.scanInstancePolicyEvidence(this.prisma, input);
 				if (evidence.available) input.onBatch?.({ rows: evidence.rows });
@@ -67,6 +72,10 @@ vi.mock("../../../lib/plex/plex-authority-service.js", async (importOriginal) =>
 
 			readInstanceSelectedEpisodes(input: unknown) {
 				return mocks.loadInstanceSelectedEpisodeEvidence(this.prisma, input);
+			}
+
+			readPositiveEpisodeDisplayEvidence(input: unknown) {
+				return mocks.readPositiveEpisodeDisplayEvidence(this.prisma, input);
 			}
 		},
 	};
@@ -122,11 +131,17 @@ const currentEpisodes = {
 };
 
 const unavailable = {
-	available: true,
+	available: false,
 	instanceId: "plex-1",
 	instanceName: "Primary",
 	rows: [],
 	sections: [],
+	evidence: unavailableEvidence,
+};
+
+const unavailablePositiveDisplay = {
+	available: false,
+	instanceId: "plex-1",
 	evidence: unavailableEvidence,
 };
 
@@ -146,6 +161,85 @@ const positiveOnly = {
 	},
 };
 
+const positiveOnlyRows = {
+	...positiveOnly,
+	rows: [
+		{
+			tmdbId: 42,
+			title: "Observed Movie",
+			mediaType: "movie",
+			sectionTitle: "Movies",
+			addedAt: new Date("2026-09-03T12:00:00.000Z"),
+			ratingKey: "rating-42",
+			thumb: null,
+			instanceId: "plex-1",
+			onDeck: true,
+		},
+	],
+};
+
+const positiveOnlyWatchRows = {
+	...positiveOnly,
+	providerStatus: {
+		availability: "partial",
+		evidence: "positive-only",
+		observedAt: "2026-09-06T12:00:00.000Z",
+		ageSeconds: 0,
+		latestAttempt: "successful",
+		reasonCodes: ["positive-only", "coverage-incomplete"],
+		domains: [
+			{
+				domain: "watch-count",
+				availability: "current",
+				evidence: "positive-only",
+				valueSemantics: "lower-bound",
+				observedAt: "2026-09-06T12:00:00.000Z",
+				reasonCodes: ["positive-only", "coverage-incomplete"],
+			},
+		],
+	},
+	rows: [
+		{
+			...positiveOnlyRows.rows[0],
+			lastWatchedAt: new Date("2026-09-03T11:00:00.000Z"),
+			watchCount: 2,
+			userRating: null,
+			watchedByUsers: '["viewer"]',
+			collections: "[]",
+			labels: "[]",
+		},
+	],
+};
+
+const unavailableSelected = {
+	available: false,
+	instanceId: "plex-2",
+	evidence: unavailableEvidence,
+};
+
+const lastKnownRows = {
+	...positiveOnlyRows,
+	instanceId: "plex-2",
+	instanceName: "Secondary",
+	rows: [
+		{
+			...positiveOnlyRows.rows[0],
+			title: "Retained Movie",
+			instanceId: "plex-2",
+		},
+	],
+	evidence: unavailableEvidence,
+};
+
+const lastKnownInProgressRows = {
+	...lastKnownRows,
+	evidence: {
+		...unavailableEvidence,
+		attemptState: "in_progress",
+		reasonCodes: ["latest_attempt_in_progress"],
+	},
+};
+
 describe("Plex value route evidence contracts", () => {
 	let app: FastifyInstance;
 	let plexInstances: Array<{ id: string }>;
@@ -157,6 +251,7 @@ describe("Plex value route evidence contracts", () => {
 		mocks.loadInstanceEvidence.mockResolvedValue(unavailable);
 		mocks.loadInstanceEpisodeEvidence.mockResolvedValue(unavailable);
 		mocks.loadInstanceSelectedEpisodeEvidence.mockResolvedValue(unavailable);
+		mocks.readPositiveEpisodeDisplayEvidence.mockResolvedValue(unavailablePositiveDisplay);
 		mocks.loadUserEvidence.mockResolvedValue([unavailable]);
 		mocks.loadUserSelectedEvidence.mockResolvedValue([unavailable]);
 		mocks.scanInstancePolicyEvidence.mockResolvedValue(unavailable);
@@ -194,15 +289,12 @@ describe("Plex value route evidence contracts", () => {
 	});
 
 	it.each([
-		["on-deck", "/api/plex/on-deck", "items"],
-		["recently added", "/api/plex/recently-added", "items"],
 		["collections", "/api/plex/plex-1/collections", "collections"],
 		["labels", "/api/plex/plex-1/labels", "labels"],
 		["collection statistics", "/api/plex/collection-stats", "collections"],
 		["series progress", "/api/plex/series-progress?tmdbIds=1", "progress"],
 		["episode status", "/api/plex/episodes?instanceId=plex-1&showTmdbId=1", "episodes"],
 		["episode completion", "/api/plex/user-episode-completion?tmdbIds=1", "shows"],
-		["watch enrichment", "/api/plex/watch-enrichment?tmdbIds=1&types=movie", "items"],
 	] as const)("withholds %s values when the latest attempt failed", async (_name, url, field) => {
 		const response = await createInjectAuthenticated(app)("GET", url);
 		const body = response.json();
@@ -217,15 +309,12 @@ describe("Plex value route evidence contracts", () => {
 	});
 
 	it.each([
-		["on-deck", "/api/plex/on-deck", "items"],
-		["recently added", "/api/plex/recently-added", "items"],
 		["collections", "/api/plex/plex-1/collections", "collections"],
 		["labels", "/api/plex/plex-1/labels", "labels"],
 		["collection statistics", "/api/plex/collection-stats", "collections"],
 		["series progress", "/api/plex/series-progress?tmdbIds=1", "progress"],
 		["episode status", "/api/plex/episodes?instanceId=plex-1&showTmdbId=1", "episodes"],
 		["episode completion", "/api/plex/user-episode-completion?tmdbIds=1", "shows"],
-		["watch enrichment", "/api/plex/watch-enrichment?tmdbIds=1&types=movie", "items"],
 	] as const)(
 		"withholds %s exact values from a current V4 generation",
 		async (_name, url, field) => {
@@ -245,6 +334,150 @@ describe("Plex value route evidence contracts", () => {
 			expect(JSON.stringify(body)).not.toContain('"watchCount":0');
 		},
 	);
+
+	it("returns a bounded watch response when Plex evidence is unavailable", async () => {
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/api/plex/watch-enrichment?tmdbIds=42&types=movie",
+		);
+		const body = response.json();
+
+		expect(response.statusCode).toBe(200);
+		expect(body).toMatchObject({
+			items: {},
+			evidence: {
+				availability: "last-known",
+				authority: "unavailable",
+				publicationLevel: "unavailable",
+				completeness: "unknown",
+			},
+		});
+		expect(JSON.stringify(body)).not.toContain('"watchCount":0');
+		expect(JSON.stringify(body)).not.toContain("in_progress:");
+	});
+
+	it("returns an admitted positive-only Plex watch value with degraded evidence", async () => {
+		mocks.loadUserSelectedEvidence.mockResolvedValue([positiveOnlyWatchRows]);
+
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/api/plex/watch-enrichment?tmdbIds=42&types=movie",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			items: {
+				"movie:42": { watchCount: 2, source: "plex" },
+			},
+			evidence: {
+				availability: "current",
+				authority: "positive-only",
+				publicationLevel: "positive-only",
+				completeness: "partial",
+			},
+		});
+	});
+
+	it.each([
+		["on-deck", "/api/plex/on-deck"],
+		["recently added", "/api/plex/recently-added"],
+	] as const)("displays admitted positive rows from %s without settlement", async (_name, url) => {
+		mocks.loadUserSelectedEvidence.mockResolvedValue([positiveOnlyRows]);
+
+		const response = await createInjectAuthenticated(app)("GET", url);
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			items: [expect.objectContaining({ tmdbId: 42, title: "Observed Movie" })],
+			evidence: {
+				availability: "current",
+				authority: "positive-only",
+				publicationLevel: "positive-only",
+				completeness: "partial",
+			},
+		});
+	});
+
+	it.each([
+		["on-deck", "/api/plex/on-deck"],
+		["recently added", "/api/plex/recently-added"],
+	] as const)("keeps admitted %s rows when another source is unavailable", async (_name, url) => {
+		mocks.loadUserSelectedEvidence.mockResolvedValue([positiveOnlyRows, unavailableSelected]);
+
+		const response = await createInjectAuthenticated(app)("GET", url);
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			items: [expect.objectContaining({ tmdbId: 42, title: "Observed Movie" })],
+			evidence: {
+				availability: "unavailable",
+				authority: "positive-only",
+				attemptState: "partial",
+				publicationLevel: "positive-only",
+				completeness: "partial",
+			},
+		});
+	});
+
+	it.each([
+		["on-deck", "/api/plex/on-deck"],
+		["recently added", "/api/plex/recently-added"],
+	] as const)("preserves partial provenance when %s also has retained rows", async (_name, url) => {
+		mocks.loadUserSelectedEvidence.mockResolvedValue([positiveOnlyRows, lastKnownRows]);
+
+		const response = await createInjectAuthenticated(app)("GET", url);
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			items: [
+				expect.objectContaining({ title: "Observed Movie" }),
+				expect.objectContaining({ title: "Retained Movie" }),
+			],
+			evidence: {
+				availability: "last-known",
+				authority: "positive-only",
+				attemptState: "partial",
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				reasonCodes: expect.arrayContaining(["latest_attempt_partial", "latest_attempt_failed"]),
+			},
+		});
+	});
+
+	it.each([
+		["on-deck", "/api/plex/on-deck"],
+		["recently added", "/api/plex/recently-added"],
+	] as const)(
+		"preserves in-progress activity when %s has partial and retained rows",
+		async (_name, url) => {
+			mocks.loadUserSelectedEvidence.mockResolvedValue([positiveOnlyRows, lastKnownInProgressRows]);
+
+			const response = await createInjectAuthenticated(app)("GET", url);
+
+			expect(response.statusCode).toBe(200);
+			expect(response.json()).toMatchObject({
+				evidence: {
+					availability: "last-known",
+					authority: "positive-only",
+					attemptState: "in_progress",
+					publicationLevel: "positive-only",
+					completeness: "partial",
+				},
+			});
+		},
+	);
+
+	it.each([
+		["on-deck", "/api/plex/on-deck"],
+		["recently added", "/api/plex/recently-added"],
+	] as const)("keeps %s bounded when every source is unavailable", async (_name, url) => {
+		mocks.loadUserSelectedEvidence.mockResolvedValue([unavailableSelected]);
+
+		const response = await createInjectAuthenticated(app)("GET", url);
+
+		expect(response.statusCode).toBe(503);
+		expect(response.json()).not.toHaveProperty("items");
+	});
 
 	it.each([
 		["on-deck", "/api/plex/on-deck", { items: [], evidence: authoritativeEvidence }],

@@ -4,9 +4,12 @@ import { arrClientPlugin } from "../plugins/arr-client.js";
 import deploymentExecutorPlugin from "../plugins/deployment-executor.js";
 import heapMonitorPlugin from "../plugins/heap-monitor.js";
 import httpAuthMigrationPlugin from "../plugins/http-auth-migration.js";
+import labelSyncMutationRecoveryPlugin from "../plugins/label-sync-mutation-recovery.js";
 import lifecyclePlugin from "../plugins/lifecycle.js";
 import notificationServicePlugin from "../plugins/notification-service.js";
 import { prismaPlugin } from "../plugins/prisma.js";
+import providerCacheAttemptRecoveryPlugin from "../plugins/provider-cache-attempt-recovery.js";
+import providerObservationRunRecoveryPlugin from "../plugins/provider-observation-run-recovery.js";
 import schedulerRegistryPlugin from "../plugins/scheduler-registry.js";
 import { securityPlugin } from "../plugins/security.js";
 import seerrCachePlugin from "../plugins/seerr-cache.js";
@@ -19,6 +22,7 @@ import seerrCircuitBreakerPlugin from "../plugins/seerr-circuit-breaker.js";
  * plugins and by route handlers. Do not reorder without reviewing decorations.
  *
  *  - prisma            → `app.prisma`
+ *  - labelSyncMutationRecovery → closed-by-default mutation admission latch
  *  - security          → `app.encryptor`, `app.sessionService`
  *  - arrClient         → `createInstanceFetcher` helpers for ARR services
  *  - httpAuthMigration → encrypts legacy URL-embedded proxy credentials
@@ -32,7 +36,10 @@ import seerrCircuitBreakerPlugin from "../plugins/seerr-circuit-breaker.js";
  */
 export function registerInfrastructure(app: FastifyInstance): void {
 	app.register(prismaPlugin);
+	app.register(labelSyncMutationRecoveryPlugin);
+	app.register(providerCacheAttemptRecoveryPlugin);
 	app.register(securityPlugin);
+	app.register(providerObservationRunRecoveryPlugin);
 	app.register(httpAuthMigrationPlugin);
 	app.register(arrClientPlugin);
 	app.register(seerrCircuitBreakerPlugin);

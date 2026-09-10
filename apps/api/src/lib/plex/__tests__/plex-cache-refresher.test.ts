@@ -1,8 +1,10 @@
 /** Plex cache collection and guarded publication tests. */
 
 import type { FastifyBaseLogger } from "fastify";
+import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../../prisma.js";
+import { evaluateProviderCoverageReceipt } from "../../provider-observation/coverage-receipt.js";
 import {
 	canPublishPositivePlexObservation,
 	collectPlexCacheLiveEvidence,
@@ -11,15 +13,132 @@ import {
 } from "../plex-cache-refresher.js";
 import type { PlexClient } from "../plex-client.js";
 
+type ReceiptTestSection = {
+	key: string;
+	title: string;
+	type: "movie" | "show";
+	agent?: string;
+};
+
+type ReceiptTestItem = {
+	ratingKey: string;
+	title: string;
+	type: string;
+	Guid?: Array<{ id: string }>;
+	viewCount?: number;
+	Collection?: Array<{ tag: string }>;
+};
+
+type ReceiptPageResult = {
+	items: ReceiptTestItem[];
+	expectedRawCount: number | null;
+	pagesAttempted: number;
+	pagesCompleted: number;
+	rawObserved: number;
+	reason: "page-failure" | null;
+};
+
+function completeCoverage<T extends { ratingKey: string; title: string; type: string }>(
+	items: T[],
+): {
+	items: T[];
+	expectedRawCount: number;
+	pagesAttempted: number;
+	pagesCompleted: number;
+	rawObserved: number;
+	reason: null;
+} {
+	return {
+		items: items.map((item) => ({
+			...item,
+			viewCount: (item as T & { viewCount?: number }).viewCount ?? 0,
+		})) as T[],
+		expectedRawCount: items.length,
+		pagesAttempted: 1,
+		pagesCompleted: 1,
+		rawObserved: items.length,
+		reason: null,
+	};
+}
+
+type ReceiptCollectionClient = PlexClient & {
+	getLibraryItemsWithCoverage: (sectionId: string) => Promise<ReceiptPageResult>;
+};
+
+function receiptFrom(result: unknown): unknown {
+	return (result as { receipt?: unknown }).receipt;
+}
+
+function receiptCollectionClient(input: {
+	sections: ReceiptTestSection[];
+	itemsBySection: Record<string, ReceiptTestItem[]>;
+	failingSection?: string;
+	settlementSections?: unknown[];
+	coverageResults?: Record<string, ReceiptPageResult>;
+	onCoverage?: () => void;
+	history?: unknown[];
+	onDeck?: unknown[];
+}): ReceiptCollectionClient {
+	const settlementSections =
+		input.settlementSections ??
+		input.sections.map((section) => ({
+			...section,
+			uuid: `${section.key}-uuid`,
+			refreshing: false,
+			scannedAt: 1,
+			updatedAt: 1,
+		}));
+	const withDefaultViewCount = (items: ReceiptTestItem[]) =>
+		items.map((item) => ({ ...item, viewCount: item.viewCount ?? 0 }));
+	return {
+		getActivities: vi.fn().mockResolvedValue([]),
+		getLibrarySettlementSections: vi.fn().mockResolvedValue(settlementSections),
+		getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+		getLibrarySections: vi.fn().mockResolvedValue(input.sections),
+		getLibraryItems: vi.fn().mockImplementation(async (sectionId: string) => {
+			if (sectionId === input.failingSection) throw new Error("section unavailable");
+			return withDefaultViewCount(input.itemsBySection[sectionId] ?? []);
+		}),
+		getLibraryItemsWithCoverage: vi.fn().mockImplementation(async (sectionId: string) => {
+			input.onCoverage?.();
+			return (
+				input.coverageResults?.[sectionId] ?? {
+					items: withDefaultViewCount(input.itemsBySection[sectionId] ?? []),
+					expectedRawCount: (input.itemsBySection[sectionId] ?? []).length,
+					pagesAttempted: 1,
+					pagesCompleted: 1,
+					rawObserved: (input.itemsBySection[sectionId] ?? []).length,
+					reason: null,
+				}
+			);
+		}),
+		getHistory: vi.fn().mockResolvedValue(input.history ?? []),
+		verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+		getOnDeck: vi.fn().mockResolvedValue(input.onDeck ?? []),
+	} as unknown as ReceiptCollectionClient;
+}
+
+const silentLogInfo = vi.fn();
 const silentLog = {
 	warn: vi.fn(),
-	info: vi.fn(),
+	info: silentLogInfo,
 	error: vi.fn(),
 	debug: vi.fn(),
 	trace: vi.fn(),
 	fatal: vi.fn(),
 	child: vi.fn(),
 } as unknown as FastifyBaseLogger;
+
+function pinoCapture(): { log: FastifyBaseLogger; serialized: () => string } {
+	const lines: string[] = [];
+	return {
+		log: pino(
+			{ level: "trace", base: null, timestamp: false },
+			{ write: (line: string) => lines.push(line) },
+		) as unknown as FastifyBaseLogger,
+		serialized: () => lines.join(""),
+	};
+}
 
 async function refreshPlexCache(
 	client: PlexClient,
@@ -42,6 +161,7 @@ describe("collectPlexCacheLiveEvidence", () => {
 			title: string;
 			type: "movie" | "show";
 			Guid: Array<{ id: string }>;
+			viewCount?: number;
 		}>;
 		libraryItemsBySection?: Record<
 			string,
@@ -50,6 +170,7 @@ describe("collectPlexCacheLiveEvidence", () => {
 				title: string;
 				type: "movie" | "show";
 				Guid: Array<{ id: string }>;
+				viewCount?: number;
 			}>
 		>;
 		history?: unknown[];
@@ -79,6 +200,8 @@ describe("collectPlexCacheLiveEvidence", () => {
 				updatedAt: 1,
 			},
 		];
+		const withDefaultViewCount = <T extends { viewCount?: number }>(items: T[]) =>
+			items.map((item) => ({ ...item, viewCount: item.viewCount ?? 0 }));
 		return {
 			getActivities: vi.fn().mockResolvedValue(input.activities ?? []),
 			getLibrarySettlementSections: vi.fn().mockResolvedValue(settlementSections),
@@ -86,6 +209,27 @@ describe("collectPlexCacheLiveEvidence", () => {
 			getLibrarySections: vi.fn().mockResolvedValue(librarySections),
 			getLibraryItems: vi.fn().mockImplementation((sectionId: string) =>
 				Promise.resolve(
+					withDefaultViewCount(
+						input.libraryItemsBySection?.[sectionId] ??
+							input.libraryItems ?? [
+								{
+									ratingKey: "show-1",
+									title: "Mapped Show",
+									type: "show" as const,
+									Guid: [{ id: "tmdb://42" }, { id: "tvdb://42" }],
+								},
+								{
+									ratingKey: "legacy-movie",
+									title: "Legacy Movie",
+									type: "movie" as const,
+									Guid: [],
+								},
+							],
+					),
+				),
+			),
+			getLibraryItemsWithCoverage: vi.fn().mockImplementation(async (sectionId: string) => {
+				const sectionItems = withDefaultViewCount(
 					input.libraryItemsBySection?.[sectionId] ??
 						input.libraryItems ?? [
 							{
@@ -101,8 +245,16 @@ describe("collectPlexCacheLiveEvidence", () => {
 								Guid: [],
 							},
 						],
-				),
-			),
+				);
+				return {
+					items: sectionItems,
+					expectedRawCount: sectionItems.length,
+					pagesAttempted: 1,
+					pagesCompleted: 1,
+					rawObserved: sectionItems.length,
+					reason: null,
+				};
+			}),
 			getHistory: vi.fn().mockResolvedValue(input.history ?? []),
 			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 			getOnDeck:
@@ -150,6 +302,909 @@ describe("collectPlexCacheLiveEvidence", () => {
 			},
 		});
 		expect("snapshot" in result).toBe(false);
+		expect(result.kind).toBe("positive-observation");
+		const positiveReceipt = receiptFrom(result) as {
+			units: Array<{ canonicalEntities: number }>;
+		};
+		expect(positiveReceipt.units.reduce((total, unit) => total + unit.canonicalEntities, 0)).toBe(
+			result.kind === "positive-observation" ? result.observation.rows.length : -1,
+		);
+	});
+
+	it("reproves inventory when on-deck fetch fails and degrades only that domain", async () => {
+		const client = positiveObservationClient({ onDeck: new Error("on-deck unavailable") });
+		const result = await collectSettledPlexCacheLiveEvidence(client, "inst-1", silentLog);
+
+		expect(result.kind).toBe("positive-observation");
+		expect(client.getLibraryItemsWithCoverage).toHaveBeenCalledTimes(4);
+		expect(client.verifyHistorySnapshot).toHaveBeenCalledTimes(4);
+		const receipt = receiptFrom(result) as { domains: Array<Record<string, unknown>> };
+		expect(receipt.domains).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					domain: "on-deck",
+					evidence: "unknown",
+					valueSemantics: "unknown",
+				}),
+			]),
+		);
+	});
+
+	it("serializes an on-deck provider failure without provider bindings", async () => {
+		const canary = "https://private.invalid/Title?token=secret";
+		const client = positiveObservationClient({ onDeck: new Error(canary) });
+		const captured = pinoCapture();
+
+		await collectSettledPlexCacheLiveEvidence(client, "private-instance", captured.log);
+
+		const serialized = captured.serialized();
+		expect(serialized).toContain("plex-cache-on-deck-unavailable");
+		expect(serialized).not.toContain(canary);
+		expect(serialized).not.toContain("private-instance");
+	});
+
+	it.each([
+		{
+			category: "plex-cache-accounts-unavailable",
+			configure: (client: PlexClient, error: Error) =>
+				vi.mocked(client.getAccounts).mockRejectedValue(error),
+		},
+		{
+			category: "plex-cache-no-user-accounts",
+			configure: (client: PlexClient) => vi.mocked(client.getAccounts).mockResolvedValue([]),
+		},
+		{
+			category: "plex-cache-no-media-libraries",
+			configure: (client: PlexClient) => vi.mocked(client.getLibrarySections).mockResolvedValue([]),
+		},
+		{
+			category: "plex-cache-library-section-unobserved",
+			configure: (client: PlexClient, error: Error) =>
+				vi.mocked(client.getLibraryItemsWithCoverage).mockRejectedValue(error),
+		},
+		{
+			category: "plex-cache-history-unavailable",
+			configure: (client: PlexClient, error: Error) =>
+				vi.mocked(client.getHistory).mockRejectedValue(error),
+		},
+		{
+			category: "plex-cache-refresh-failed",
+			configure: (client: PlexClient, error: Error) =>
+				vi.mocked(client.getLibrarySections).mockRejectedValue(error),
+		},
+	])("serializes $category without provider canaries", async ({ category, configure }) => {
+		const canaries = [
+			"https://private.invalid/Private-Title?token=secret",
+			"Private Instance Label",
+			"private-instance-id",
+			"private-section-id",
+		];
+		const client = positiveObservationClient({
+			librarySections: [{ key: canaries[3]!, title: canaries[1]!, type: "show" }],
+			libraryItems: [
+				{
+					ratingKey: canaries[2]!,
+					title: canaries[0]!,
+					type: "show",
+					Guid: [{ id: "tmdb://42" }, { id: "tvdb://42" }],
+				},
+			],
+		});
+		const captured = pinoCapture();
+		configure(client, new Error(canaries.join(" ")));
+
+		await collectPlexCacheLiveEvidence(client, canaries[2]!, captured.log);
+
+		const serialized = captured.serialized();
+		expect(serialized).toContain(category);
+		for (const canary of canaries) expect(serialized).not.toContain(canary);
+	});
+
+	it("serializes incomplete section and eviction boundaries without provider identifiers", async () => {
+		const canaries = [
+			"private-instance-id",
+			"private-section-id",
+			"Private Section Title",
+			"https://private.invalid/Private-Title?token=secret",
+		];
+		const captured = pinoCapture();
+		const client = receiptCollectionClient({
+			sections: [{ key: canaries[1]!, title: canaries[2]!, type: "show" }],
+			itemsBySection: {
+				[canaries[1]!]: [
+					{
+						ratingKey: "private-rating-key",
+						title: canaries[3]!,
+						type: "show",
+					},
+				],
+			},
+			coverageResults: {
+				[canaries[1]!]: {
+					items: [],
+					expectedRawCount: 1,
+					pagesAttempted: 1,
+					pagesCompleted: 0,
+					rawObserved: 0,
+					reason: "page-failure",
+				},
+			},
+		});
+
+		await collectPlexCacheLiveEvidence(client, canaries[0]!, captured.log);
+
+		const serialized = captured.serialized();
+		expect(serialized).toContain("library section coverage incomplete");
+		expect(serialized).toContain("skipping eviction");
+		for (const canary of canaries) expect(serialized).not.toContain(canary);
+	});
+
+	it("serializes completion aggregates without provider canaries", async () => {
+		const canaries = [
+			"https://private.invalid/Private-Title?token=secret",
+			"Private Instance Label",
+			"private-instance-id",
+			"private-section-id",
+		];
+		const captured = pinoCapture();
+		await collectPlexCacheLiveEvidence(
+			positiveObservationClient({
+				librarySections: [{ key: canaries[3]!, title: canaries[1]!, type: "show" }],
+				libraryItems: [
+					{
+						ratingKey: canaries[2]!,
+						title: canaries[0]!,
+						type: "show",
+						Guid: [{ id: "tmdb://42" }, { id: "tvdb://42" }],
+					},
+				],
+			}),
+			canaries[2]!,
+			captured.log,
+		);
+
+		const serialized = captured.serialized();
+		expect(serialized).toContain("Plex cache refresh complete");
+		for (const canary of canaries) expect(serialized).not.toContain(canary);
+	});
+
+	it("publishes mapped movies and series with independent domain evidence", async () => {
+		const result = await collectPlexCacheLiveEvidence(
+			receiptCollectionClient({
+				sections: [
+					{ key: "movies", title: "Movies", type: "movie" },
+					{ key: "shows", title: "Shows", type: "show" },
+				],
+				itemsBySection: {
+					movies: [
+						{
+							ratingKey: "movie-1",
+							title: "Mapped Movie",
+							type: "movie",
+							Guid: [{ id: "tmdb://10" }],
+							viewCount: 2,
+						},
+						{
+							ratingKey: "collection-1",
+							title: "Known Collection",
+							type: "collection",
+							Guid: [],
+						},
+						{
+							ratingKey: "movie-unmapped",
+							title: "Missing Mapping",
+							type: "movie",
+							Guid: [],
+						},
+					],
+					shows: [
+						{
+							ratingKey: "show-1",
+							title: "Mapped Series",
+							type: "show",
+							Guid: [{ id: "tmdb://20" }],
+							viewCount: 1,
+						},
+					],
+				},
+				history: [{ type: "movie", ratingKey: "", accountID: 1, viewedAt: 1_700_000_000 }],
+				onDeck: [
+					{ type: "movie", ratingKey: "movie-1" },
+					{ type: "clip", ratingKey: "clip-1" },
+				],
+			}),
+			"inst-1",
+			silentLog,
+		);
+
+		expect(result.kind).toBe("positive-observation");
+		if (result.kind !== "positive-observation") throw new Error("Expected positive observation");
+		expect(result.observation.rows.map((row) => row.ratingKey).sort()).toEqual([
+			"movie-1",
+			"show-1",
+		]);
+		expect(result.receipt).toMatchObject({ version: 2, provider: "plex" });
+		expect(result.receipt.domains).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ domain: "library-inventory", valueSemantics: "exact" }),
+				expect.objectContaining({ domain: "mapping", valueSemantics: "lower-bound" }),
+				expect.objectContaining({ domain: "watch-count", valueSemantics: "exact" }),
+				expect.objectContaining({ domain: "watch-attribution", valueSemantics: "unknown" }),
+				expect.objectContaining({ domain: "on-deck", valueSemantics: "exact" }),
+			]),
+		);
+	});
+
+	it.each([-1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+		"normalizes an invalid provider view count (%s) and leaves watch-count unknown",
+		async (viewCount) => {
+			const result = await collectPlexCacheLiveEvidence(
+				receiptCollectionClient({
+					sections: [{ key: "movies", title: "Movies", type: "movie" }],
+					itemsBySection: {
+						movies: [
+							{
+								ratingKey: "movie-invalid-count",
+								title: "Invalid Count",
+								type: "movie",
+								Guid: [{ id: "tmdb://99" }],
+								viewCount,
+							},
+						],
+					},
+				}),
+				"inst-1",
+				silentLog,
+			);
+
+			expect(result.kind).toBe("positive-observation");
+			if (result.kind !== "positive-observation") throw new Error("Expected positive observation");
+			expect(result.observation.rows).toEqual([
+				expect.objectContaining({ ratingKey: "movie-invalid-count", watchCount: 0 }),
+			]);
+			expect(result.receipt.domains).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						domain: "watch-count",
+						evidence: "unknown",
+						valueSemantics: "unknown",
+					}),
+				]),
+			);
+		},
+	);
+
+	it.each([
+		["missing to zero", undefined, 0],
+		["zero to missing", 0, undefined],
+	] as const)(
+		"rejects terminal view-count drift (%s)",
+		async (_label, initialCount, terminalCount) => {
+			const initial = {
+				ratingKey: "movie-drift",
+				title: "Drift",
+				type: "movie" as const,
+				Guid: [{ id: "tmdb://99" }],
+				...(initialCount === undefined ? {} : { viewCount: initialCount }),
+			};
+			const terminal = {
+				...initial,
+				...(terminalCount === undefined ? { viewCount: undefined } : { viewCount: terminalCount }),
+			};
+			const client = receiptCollectionClient({
+				sections: [{ key: "movies", title: "Movies", type: "movie" }],
+				itemsBySection: { movies: [initial] },
+			});
+			client.getLibraryItemsWithCoverage = vi
+				.fn()
+				.mockResolvedValueOnce({
+					items: [initial],
+					expectedRawCount: 1,
+					pagesAttempted: 1,
+					pagesCompleted: 1,
+					rawObserved: 1,
+					reason: null,
+				})
+				.mockResolvedValueOnce({
+					items: [terminal],
+					expectedRawCount: 1,
+					pagesAttempted: 1,
+					pagesCompleted: 1,
+					rawObserved: 1,
+					reason: null,
+				});
+
+			const capture = pinoCapture();
+			const result = await collectPlexCacheLiveEvidence(client, "inst-1", capture.log);
+			expect(result.kind).toBe("unpublished");
+			expect(result.errors).toBeGreaterThan(0);
+			const drift = capture
+				.serialized()
+				.split("\n")
+				.filter(Boolean)
+				.map((line) => JSON.parse(line))
+				.find((entry) => entry.category === "plex-inventory-drift");
+			expect(drift).toEqual({
+				level: 40,
+				category: "plex-inventory-drift",
+				domains: ["watch"],
+				msg: "Plex inventory changed during observation",
+			});
+		},
+	);
+
+	it("isolates account lookup failure to watch attribution", async () => {
+		const client = positiveObservationClient({});
+		client.getAccounts = vi.fn().mockRejectedValue(new Error("accounts unavailable"));
+		const result = await collectPlexCacheLiveEvidence(client, "inst-1", silentLog);
+
+		expect(result.kind).toBe("positive-observation");
+		const evaluation = evaluateProviderCoverageReceipt(receiptFrom(result));
+		expect(evaluation.domains?.get("library-inventory")).toMatchObject({
+			availability: "current",
+			valueSemantics: "exact",
+		});
+		expect(evaluation.domains?.get("watch-count")).toMatchObject({
+			availability: "current",
+			valueSemantics: "exact",
+		});
+		expect(evaluation.domains?.get("watch-attribution")).toMatchObject({
+			availability: "unavailable",
+			valueSemantics: "unknown",
+		});
+	});
+
+	it("isolates history lookup failure and does not verify unavailable history", async () => {
+		const client = positiveObservationClient({});
+		client.getHistory = vi.fn().mockRejectedValue(new Error("history unavailable"));
+		const result = await collectPlexCacheLiveEvidence(client, "inst-1", silentLog);
+
+		expect(result.kind).toBe("positive-observation");
+		expect(client.verifyHistorySnapshot).not.toHaveBeenCalled();
+		const evaluation = evaluateProviderCoverageReceipt(receiptFrom(result));
+		expect(evaluation.domains?.get("library-inventory")).toMatchObject({
+			availability: "current",
+			valueSemantics: "exact",
+		});
+		expect(evaluation.domains?.get("on-deck")).toMatchObject({
+			availability: "current",
+			valueSemantics: "exact",
+		});
+		expect(evaluation.domains?.get("watch-attribution")).toMatchObject({
+			availability: "unavailable",
+			valueSemantics: "unknown",
+		});
+	});
+
+	it("keeps mixed resolved and unresolved history as a lower-bound attribution", async () => {
+		const result = await collectPlexCacheLiveEvidence(
+			receiptCollectionClient({
+				sections: [{ key: "movies", title: "Movies", type: "movie" }],
+				itemsBySection: {
+					movies: [
+						{
+							ratingKey: "movie-1",
+							title: "Mapped Movie",
+							type: "movie",
+							Guid: [{ id: "tmdb://1" }],
+							viewCount: 1,
+						},
+					],
+				},
+				history: [
+					{ type: "movie", ratingKey: "movie-1", accountID: 1, viewedAt: 1_700_000_000 },
+					{ type: "movie", ratingKey: "movie-1", accountID: 999, viewedAt: 1_700_000_001 },
+				],
+			}),
+			"inst-1",
+			silentLog,
+		);
+
+		expect(result.kind).toBe("positive-observation");
+		expect(
+			evaluateProviderCoverageReceipt(receiptFrom(result)).domains?.get("watch-attribution"),
+		).toMatchObject({ evidence: "positive-only", valueSemantics: "lower-bound" });
+	});
+
+	it("accounts for duplicate source bindings separately from canonical entities", async () => {
+		const result = await collectPlexCacheLiveEvidence(
+			receiptCollectionClient({
+				sections: [{ key: "1", title: "Movies", type: "movie" }],
+				itemsBySection: {
+					1: [
+						{ ratingKey: "edition-a", title: "A", type: "movie", Guid: [{ id: "tmdb://42" }] },
+						{ ratingKey: "edition-b", title: "B", type: "movie", Guid: [{ id: "tmdb://42" }] },
+						{ ratingKey: "movie-43", title: "C", type: "movie", Guid: [{ id: "tmdb://43" }] },
+						{ ratingKey: "unmapped", title: "D", type: "movie", Guid: [] },
+					],
+				},
+			}),
+			"inst-1",
+			silentLog,
+		);
+
+		const receipt = receiptFrom(result) as { units?: unknown[] } | undefined;
+		expect(receipt).toBeDefined();
+		expect(receipt?.units).toEqual([
+			expect.objectContaining({
+				scopeKey: "section:1",
+				expectedRawCount: 4,
+				rawObserved: 4,
+				sourceBindings: 3,
+				canonicalEntities: 2,
+				acceptedSkips: [{ reason: "missing-supported-mapping", count: 1 }],
+				fatalCount: 0,
+			}),
+		]);
+		expect(evaluateProviderCoverageReceipt(receipt)).toMatchObject({
+			evidence: "positive-only",
+			complete: false,
+		});
+	});
+
+	it("treats an exact Plex collection row as a conserved known container", async () => {
+		const result = await collectPlexCacheLiveEvidence(
+			receiptCollectionClient({
+				sections: [{ key: "1", title: "Movies", type: "movie" }],
+				itemsBySection: {
+					1: [
+						{
+							ratingKey: "movie-42",
+							title: "Mapped Movie",
+							type: "movie",
+							Guid: [{ id: "tmdb://42" }],
+						},
+						{
+							ratingKey: "collection-1",
+							title: "Mapped Movie Collection",
+							type: "collection",
+							Guid: [{ id: "plex://collection/collection-1" }],
+						},
+					],
+				},
+			}),
+			"inst-1",
+			silentLog,
+		);
+
+		expect(result).toMatchObject({ kind: "authoritative-snapshot", complete: true, errors: 0 });
+		if (result.kind !== "authoritative-snapshot")
+			throw new Error("Expected authoritative snapshot");
+		expect(result.snapshot.rows).toEqual([
+			expect.objectContaining({ ratingKey: "movie-42", tmdbId: 42, mediaType: "movie" }),
+		]);
+		expect(result.inventoryTargets).toEqual([
+			{ sectionId: "1", mediaType: "movie", tmdbId: 42, ratingKey: "movie-42" },
+		]);
+
+		const receipt = receiptFrom(result) as { units?: unknown[] } | undefined;
+		expect(receipt?.units).toEqual([
+			expect.objectContaining({
+				scopeKey: "section:1",
+				expectedRawCount: 2,
+				rawObserved: 2,
+				sourceBindings: 1,
+				canonicalEntities: 1,
+				acceptedSkips: [{ reason: "known-container", count: 1 }],
+				fatalCount: 0,
+			}),
+		]);
+		expect(evaluateProviderCoverageReceipt(receipt)).toMatchObject({
+			evidence: "complete",
+			complete: true,
+		});
+	});
+
+	it("keeps unmapped Movies and unknown items incomplete even with a valid GUID", async () => {
+		const result = await collectPlexCacheLiveEvidence(
+			receiptCollectionClient({
+				sections: [{ key: "1", title: "Movies", type: "movie" }],
+				itemsBySection: {
+					1: [
+						{
+							ratingKey: "movie-42",
+							title: "Mapped Movie",
+							type: "movie",
+							Guid: [{ id: "tmdb://42" }],
+						},
+						{ ratingKey: "movie-unmapped", title: "Unmapped Movie", type: "movie", Guid: [] },
+						{
+							ratingKey: "unknown-1",
+							title: "Unknown Item",
+							type: "mystery",
+							Guid: [{ id: "tmdb://84" }],
+						},
+					],
+				},
+			}),
+			"inst-1",
+			silentLog,
+		);
+
+		expect(result).toMatchObject({ kind: "positive-observation", complete: false });
+		expect(result.errorMessages).toContain(
+			"Plex cache incomplete: 1 current library item(s) without TMDB metadata",
+		);
+		if (result.kind !== "positive-observation") throw new Error("Expected positive observation");
+		expect(result.observation.rows).toEqual([
+			expect.objectContaining({ ratingKey: "movie-42", mediaType: "movie" }),
+		]);
+		const receipt = receiptFrom(result) as { units?: unknown[] } | undefined;
+		expect(receipt?.units).toEqual([
+			expect.objectContaining({
+				scopeKey: "section:1",
+				expectedRawCount: 3,
+				rawObserved: 3,
+				sourceBindings: 1,
+				canonicalEntities: 1,
+				acceptedSkips: [
+					{ reason: "missing-supported-mapping", count: 1 },
+					{ reason: "unsupported-provider-object", count: 1 },
+				],
+				fatalCount: 0,
+			}),
+		]);
+		expect(evaluateProviderCoverageReceipt(receipt)).toMatchObject({
+			evidence: "positive-only",
+			complete: false,
+		});
+	});
+
+	it("keeps repeated entities in distinct section source units", async () => {
+		const result = await collectPlexCacheLiveEvidence(
+			receiptCollectionClient({
+				sections: [
+					{ key: "movies", title: "Movies", type: "movie" },
+					{ key: "shows", title: "Shows", type: "show" },
+				],
+				itemsBySection: {
+					movies: [
+						{ ratingKey: "movie-42", title: "Movie", type: "movie", Guid: [{ id: "tmdb://42" }] },
+					],
+					shows: [
+						{ ratingKey: "show-42", title: "Show", type: "show", Guid: [{ id: "tmdb://42" }] },
+					],
+				},
+			}),
+			"inst-1",
+			silentLog,
+		);
+
+		const receipt = receiptFrom(result) as { units?: unknown[] } | undefined;
+		expect(receipt?.units).toEqual([
+			expect.objectContaining({
+				scopeKey: "section:movies",
+				expectedRawCount: 1,
+				rawObserved: 1,
+				sourceBindings: 1,
+				canonicalEntities: 1,
+				acceptedSkips: [],
+				fatalCount: 0,
+			}),
+			expect.objectContaining({
+				scopeKey: "section:shows",
+				expectedRawCount: 1,
+				rawObserved: 1,
+				sourceBindings: 1,
+				canonicalEntities: 1,
+				acceptedSkips: [],
+				fatalCount: 0,
+			}),
+		]);
+	});
+
+	it("accounts for supported rows with missing rating keys", async () => {
+		const result = await collectPlexCacheLiveEvidence(
+			receiptCollectionClient({
+				sections: [{ key: "1", title: "Movies", type: "movie" }],
+				itemsBySection: {
+					1: [
+						{ ratingKey: "", title: "Keyless", type: "movie", Guid: [{ id: "tmdb://42" }] },
+						{ ratingKey: "movie-43", title: "Mapped", type: "movie", Guid: [{ id: "tmdb://43" }] },
+					],
+				},
+			}),
+			"inst-1",
+			silentLog,
+		);
+
+		const receipt = receiptFrom(result) as { units?: unknown[] } | undefined;
+		expect(receipt?.units).toEqual([
+			expect.objectContaining({
+				scopeKey: "section:1",
+				expectedRawCount: 2,
+				rawObserved: 2,
+				sourceBindings: 1,
+				canonicalEntities: 1,
+				acceptedSkips: [{ reason: "missing-stable-key", count: 1 }],
+				fatalCount: 0,
+			}),
+		]);
+	});
+
+	it("accounts for supported rows with missing GUID mappings", async () => {
+		const result = await collectPlexCacheLiveEvidence(
+			receiptCollectionClient({
+				sections: [{ key: "1", title: "Movies", type: "movie" }],
+				itemsBySection: {
+					1: [
+						{ ratingKey: "unmapped", title: "Unmapped", type: "movie", Guid: [] },
+						{ ratingKey: "movie-42", title: "Mapped", type: "movie", Guid: [{ id: "tmdb://42" }] },
+					],
+				},
+			}),
+			"inst-1",
+			silentLog,
+		);
+
+		const receipt = receiptFrom(result) as { units?: unknown[] } | undefined;
+		expect(receipt?.units).toEqual([
+			expect.objectContaining({
+				scopeKey: "section:1",
+				expectedRawCount: 2,
+				rawObserved: 2,
+				sourceBindings: 1,
+				canonicalEntities: 1,
+				acceptedSkips: [{ reason: "missing-supported-mapping", count: 1 }],
+				fatalCount: 0,
+			}),
+		]);
+	});
+
+	it("records Personal Media inventory as an explicit excluded source unit", async () => {
+		const result = await collectPlexCacheLiveEvidence(
+			receiptCollectionClient({
+				sections: [
+					{ key: "movies", title: "Movies", type: "movie" },
+					{ key: "personal", title: "Personal", type: "movie", agent: "com.plexapp.agents.none" },
+				],
+				itemsBySection: {
+					movies: [
+						{ ratingKey: "movie-42", title: "Movie", type: "movie", Guid: [{ id: "tmdb://42" }] },
+					],
+					personal: [{ ratingKey: "personal-1", title: "Personal", type: "movie", Guid: [] }],
+				},
+			}),
+			"inst-1",
+			silentLog,
+		);
+
+		const receipt = receiptFrom(result) as { units?: unknown[] } | undefined;
+		expect(receipt?.units).toEqual([
+			expect.objectContaining({ scopeKey: "section:movies", rawObserved: 1, sourceBindings: 1 }),
+			expect.objectContaining({
+				scopeKey: "section:personal",
+				expectedRawCount: 1,
+				rawObserved: 1,
+				sourceBindings: 0,
+				canonicalEntities: 0,
+				acceptedSkips: [{ reason: "unsupported-personal-media", count: 1 }],
+				fatalCount: 0,
+			}),
+		]);
+	});
+
+	it("marks a failed section page as fatal and incomplete", async () => {
+		const client = receiptCollectionClient({
+			sections: [{ key: "1", title: "Movies", type: "movie" }],
+			itemsBySection: { 1: [] },
+			coverageResults: {
+				1: {
+					items: [],
+					expectedRawCount: 4,
+					pagesAttempted: 2,
+					pagesCompleted: 1,
+					rawObserved: 2,
+					reason: "page-failure",
+				},
+			},
+		});
+		const result = await collectPlexCacheLiveEvidence(client, "inst-1", silentLog);
+
+		const receipt = receiptFrom(result) as { units?: unknown[] } | undefined;
+		expect(client.getLibraryItemsWithCoverage).toHaveBeenCalledWith("1");
+		expect(result.kind).toBe("unpublished");
+		expect(result.block?.reasons).toContain("coverage-incomplete");
+		expect(result).not.toHaveProperty("snapshot");
+		expect(result).not.toHaveProperty("observation");
+		expect(result).not.toHaveProperty("items");
+		expect(result).not.toHaveProperty("title");
+		expect(result).not.toHaveProperty("url");
+		expect(result.errorMessages).toEqual([]);
+		expect(receipt).toBeDefined();
+		expect(receipt?.units).toEqual([
+			expect.objectContaining({
+				scopeKey: "section:1",
+				expectedRawCount: 4,
+				pagesAttempted: 2,
+				pagesCompleted: 1,
+				rawObserved: 2,
+				sourceBindings: 0,
+				acceptedSkips: [],
+				canonicalEntities: 0,
+				fatalCount: 1,
+			}),
+		]);
+		expect(evaluateProviderCoverageReceipt(receipt)).toMatchObject({
+			valid: true,
+			complete: false,
+			rawObserved: 2,
+			sourceBindings: 0,
+			canonicalEntities: 0,
+			fatalCount: 1,
+		});
+	});
+
+	it("withholds a receipt-backed result when section identity changes", async () => {
+		const sections = [{ key: "1", title: "Movies", type: "movie" as const }];
+		const settledSections = [
+			{
+				key: "1",
+				uuid: "section-uuid",
+				title: "Movies",
+				type: "movie" as const,
+				refreshing: false,
+				scannedAt: 1,
+				updatedAt: 1,
+			},
+		];
+		const changedSections = settledSections.map((section) => ({
+			...section,
+			uuid: "changed-uuid",
+		}));
+		const client = receiptCollectionClient({
+			sections,
+			itemsBySection: {
+				1: [{ ratingKey: "movie-42", title: "Movie", type: "movie", Guid: [{ id: "tmdb://42" }] }],
+			},
+			settlementSections: settledSections,
+		});
+		vi.mocked(client.getLibrarySettlementSections)
+			.mockReset()
+			.mockResolvedValueOnce(settledSections)
+			.mockResolvedValueOnce(changedSections);
+
+		const result = await collectSettledPlexCacheLiveEvidence(client, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ kind: "unpublished", complete: false });
+		expect(result.block?.reasons).toContain("settlement-unavailable");
+		const receipt = receiptFrom(result);
+		expect(receipt).toBeDefined();
+		expect(evaluateProviderCoverageReceipt(receipt)).toMatchObject({ complete: false });
+	});
+
+	it("fails closed when the post-collection section observation drifts", async () => {
+		const sections = [{ key: "1", title: "Movies", type: "movie" as const }];
+		const settledSections = [
+			{
+				key: "1",
+				uuid: "section-uuid",
+				title: "Movies",
+				type: "movie" as const,
+				refreshing: false,
+				scannedAt: 1,
+				updatedAt: 1,
+			},
+		];
+		const driftedSections = settledSections.map((section) => ({
+			...section,
+			uuid: "rotated-uuid",
+			scannedAt: 2,
+		}));
+		let rowCollectionCount = 0;
+		const client = receiptCollectionClient({
+			sections,
+			itemsBySection: {
+				1: [{ ratingKey: "movie-42", title: "Movie", type: "movie", Guid: [{ id: "tmdb://42" }] }],
+			},
+			settlementSections: settledSections,
+			onCoverage: () => rowCollectionCount++,
+		});
+		vi.mocked(client.getLibrarySettlementSections)
+			.mockReset()
+			.mockImplementation(async () =>
+				rowCollectionCount >= 3 ? driftedSections : settledSections,
+			);
+
+		const result = await collectSettledPlexCacheLiveEvidence(client, "inst-1", silentLog);
+
+		expect(rowCollectionCount).toBeGreaterThanOrEqual(2);
+		expect(result).toMatchObject({ kind: "unpublished", complete: false });
+		expect(result.block?.reasons).toContain("settlement-unavailable");
+		expect(result.receipt).toMatchObject({ evidence: "unknown", units: [] });
+		expect(result).not.toHaveProperty("targetLedger");
+		expect(result).not.toHaveProperty("snapshot");
+	});
+
+	it("fails closed for positive observations when the post-collection section revision drifts", async () => {
+		const sections = [{ key: "1", title: "Shows", type: "show" as const }];
+		const settledSections = [
+			{
+				key: "1",
+				uuid: "section-uuid",
+				title: "Shows",
+				type: "show" as const,
+				refreshing: false,
+				scannedAt: 1,
+				updatedAt: 1,
+			},
+		];
+		const driftedSections = settledSections.map((section) => ({
+			...section,
+			updatedAt: 2,
+		}));
+		let rowCollectionCount = 0;
+		const client = receiptCollectionClient({
+			sections,
+			itemsBySection: {
+				1: [
+					{ ratingKey: "show-42", title: "Show", type: "show", Guid: [{ id: "tmdb://42" }] },
+					{ ratingKey: "show-unmapped", title: "Unmapped", type: "show", Guid: [] },
+				],
+			},
+			settlementSections: settledSections,
+			onCoverage: () => rowCollectionCount++,
+		});
+		vi.mocked(client.getLibrarySettlementSections)
+			.mockReset()
+			.mockImplementation(async () =>
+				rowCollectionCount >= 2 ? driftedSections : settledSections,
+			);
+
+		const result = await collectSettledPlexCacheLiveEvidence(client, "inst-1", silentLog);
+
+		expect(rowCollectionCount).toBeGreaterThanOrEqual(2);
+		expect(result).toMatchObject({ kind: "unpublished", complete: false });
+		expect(result.block?.reasons).toContain("settlement-unavailable");
+		expect(result.receipt).toMatchObject({ evidence: "unknown", units: [] });
+		expect(result).not.toHaveProperty("observation");
+		expect(result).not.toHaveProperty("targetLedger");
+	});
+
+	it("binds a settled receipt to the attempt start and settled completion", async () => {
+		const attemptStartedAt = new Date("2026-09-02T12:00:00.000Z");
+		const result = await collectSettledPlexCacheLiveEvidence(
+			positiveObservationClient({
+				libraryItems: [
+					{
+						ratingKey: "show-1",
+						title: "Mapped Show",
+						type: "show",
+						Guid: [{ id: "tmdb://42" }, { id: "tvdb://42" }],
+					},
+				],
+			}),
+			"inst-1",
+			silentLog,
+			{ attemptStartedAt },
+		);
+
+		expect(result.completedAt).toBeInstanceOf(Date);
+		expect(result.receipt).toMatchObject({
+			attemptStartedAt: attemptStartedAt.toISOString(),
+			observedAt: result.completedAt?.toISOString(),
+		});
+	});
+
+	it("preserves the bound attempt start when positive verification fails", async () => {
+		const attemptStartedAt = new Date("2026-09-02T12:00:00.000Z");
+		const client = positiveObservationClient({});
+		client.verifyHistorySnapshot = vi.fn().mockRejectedValue(new Error("verification failed"));
+		silentLogInfo.mockClear();
+
+		const result = await collectPlexCacheLiveEvidence(client, "inst-1", silentLog, {
+			attemptStartedAt,
+		});
+
+		expect(result).toMatchObject({ kind: "unpublished", complete: false });
+		expect(result.receipt).toMatchObject({
+			attemptStartedAt: attemptStartedAt.toISOString(),
+			evidence: "unknown",
+		});
+		expect(silentLogInfo).not.toHaveBeenCalledWith(
+			expect.anything(),
+			"Plex cache refresh complete",
+		);
 	});
 
 	it("scopes settled positive evidence to Show parents and assigns its completion time only after settlement", async () => {
@@ -214,8 +1269,9 @@ describe("collectPlexCacheLiveEvidence", () => {
 
 		expect(settled).toMatchObject({ kind: "positive-observation", completedAt: expect.any(Date) });
 		if (settled.kind !== "positive-observation") throw new Error("Expected positive observation");
-		expect(settled.observation.rows.map((row) => row.ratingKey)).toEqual(["show-1"]);
+		expect(settled.observation.rows.map((row) => row.ratingKey)).toEqual(["movie-1", "show-1"]);
 		expect(settled.observation.observedTargets.map((target) => target.ratingKey)).toEqual([
+			"movie-1",
 			"show-1",
 		]);
 		expect(settled.observation.observedRoots.map((root) => root.sectionKey)).toEqual(["shows"]);
@@ -250,7 +1306,9 @@ describe("collectPlexCacheLiveEvidence", () => {
 			"a library snapshot failure",
 			(() => {
 				const client = positiveObservationClient({});
-				vi.mocked(client.getLibraryItems).mockRejectedValue(new Error("section unavailable"));
+				vi.mocked(client.getLibraryItemsWithCoverage).mockRejectedValue(
+					new Error("section unavailable"),
+				);
 				return client;
 			})(),
 		],
@@ -311,6 +1369,7 @@ describe("collectPlexCacheLiveEvidence", () => {
 			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
 			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
 			getLibraryItems: vi.fn().mockResolvedValue(libraryItems),
+			getLibraryItemsWithCoverage: vi.fn().mockResolvedValue(completeCoverage(libraryItems)),
 			getHistory: vi.fn().mockResolvedValue([]),
 			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 			getOnDeck: vi.fn().mockResolvedValue([]),
@@ -333,6 +1392,7 @@ describe("collectPlexCacheLiveEvidence", () => {
 			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
 			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
 			getLibraryItems: vi.fn().mockResolvedValue([]),
+			getLibraryItemsWithCoverage: vi.fn().mockResolvedValue(completeCoverage([])),
 			getHistory: vi.fn().mockResolvedValue([]),
 			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 			getOnDeck: vi.fn().mockResolvedValue([]),
@@ -366,9 +1426,21 @@ describe("collectPlexCacheLiveEvidence", () => {
 					ratingKey: "rk-1",
 					title: "Recent Movie",
 					type: "movie",
+					viewCount: 1,
 					Guid: [{ id: "tmdb://12345" }],
 				},
 			]),
+			getLibraryItemsWithCoverage: vi.fn().mockResolvedValue(
+				completeCoverage([
+					{
+						ratingKey: "rk-1",
+						title: "Recent Movie",
+						type: "movie",
+						viewCount: 1,
+						Guid: [{ id: "tmdb://12345" }],
+					},
+				]),
+			),
 			getHistory: vi
 				.fn()
 				.mockResolvedValue([
@@ -394,6 +1466,12 @@ describe("collectPlexCacheLiveEvidence", () => {
 			}),
 		]);
 		expect(result.snapshot?.sections).toEqual([{ key: "1", title: "Movies", type: "movie" }]);
+		const authoritativeReceipt = receiptFrom(result) as {
+			units: Array<{ canonicalEntities: number }>;
+		};
+		expect(
+			authoritativeReceipt.units.reduce((total, unit) => total + unit.canonicalEntities, 0),
+		).toBe(result.snapshot?.rows.length);
 		expect(transaction).not.toHaveBeenCalled();
 	});
 
@@ -412,6 +1490,18 @@ describe("collectPlexCacheLiveEvidence", () => {
 					lastViewedAt,
 				},
 			]),
+			getLibraryItemsWithCoverage: vi.fn().mockResolvedValue(
+				completeCoverage([
+					{
+						ratingKey: "rk-1",
+						title: "Watched Movie",
+						type: "movie",
+						Guid: [{ id: "tmdb://12345" }],
+						viewCount: 3,
+						lastViewedAt,
+					},
+				]),
+			),
 			getHistory: vi.fn().mockResolvedValue([]),
 			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 			getOnDeck: vi.fn().mockResolvedValue([]),
@@ -446,6 +1536,22 @@ describe("collectPlexCacheLiveEvidence", () => {
 					Guid: [{ id: "tmdb://12345" }],
 				},
 			]),
+			getLibraryItemsWithCoverage: vi.fn().mockResolvedValue(
+				completeCoverage([
+					{
+						ratingKey: "rk-1",
+						title: "First copy",
+						type: "movie",
+						Guid: [{ id: "tmdb://12345" }],
+					},
+					{
+						ratingKey: "rk-2",
+						title: "Second copy",
+						type: "movie",
+						Guid: [{ id: "tmdb://12345" }],
+					},
+				]),
+			),
 			getHistory: vi.fn().mockResolvedValue([]),
 			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 			getOnDeck: vi.fn().mockResolvedValue([]),
@@ -465,6 +1571,7 @@ describe("collectPlexCacheLiveEvidence", () => {
 			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
 			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
 			getLibraryItems: vi.fn().mockResolvedValue([]),
+			getLibraryItemsWithCoverage: vi.fn().mockResolvedValue(completeCoverage([])),
 			getHistory: vi.fn().mockResolvedValue([]),
 			verifyHistorySnapshot,
 			getOnDeck: vi.fn().mockResolvedValue([]),
@@ -503,6 +1610,7 @@ describe("collectPlexCacheLiveEvidence", () => {
 					.fn()
 					.mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
 				getLibraryItems: vi.fn().mockResolvedValue([]),
+				getLibraryItemsWithCoverage: vi.fn().mockResolvedValue(completeCoverage([])),
 				getHistory,
 				getOnDeck: vi.fn().mockResolvedValue([]),
 			} as unknown as PlexClient;
@@ -526,6 +1634,7 @@ describe("collectPlexCacheLiveEvidence", () => {
 			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
 			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
 			getLibraryItems: vi.fn().mockResolvedValue([]),
+			getLibraryItemsWithCoverage: vi.fn().mockResolvedValue(completeCoverage([])),
 			getHistory: vi.fn().mockResolvedValue([]),
 			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 			getOnDeck,
@@ -541,6 +1650,18 @@ describe("collectPlexCacheLiveEvidence", () => {
 	});
 
 	it("marks an on-deck failure incomplete and never evicts from that snapshot", async () => {
+		const getLibraryItemsWithCoverage = vi.fn().mockResolvedValue(
+			completeCoverage([
+				{
+					ratingKey: "rk-1",
+					title: "Movie",
+					type: "movie",
+					Guid: [{ id: "tmdb://42" }],
+					Collection: [],
+					Label: [],
+				},
+			]),
+		);
 		const mockClient = {
 			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
 			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
@@ -554,6 +1675,7 @@ describe("collectPlexCacheLiveEvidence", () => {
 					Label: [],
 				},
 			]),
+			getLibraryItemsWithCoverage,
 			getHistory: vi.fn().mockResolvedValue([]),
 			getOnDeck: vi.fn().mockRejectedValue(new Error("on-deck unavailable")),
 		} as unknown as PlexClient;
@@ -571,6 +1693,12 @@ describe("collectPlexCacheLiveEvidence", () => {
 
 		expect(result.complete).toBe(false);
 		expect(result.errors).toBeGreaterThan(0);
+		expect(getLibraryItemsWithCoverage).toHaveBeenCalledWith("1");
+		expect(await getLibraryItemsWithCoverage.mock.results[0]?.value).toMatchObject({
+			items: [expect.objectContaining({ ratingKey: "rk-1", type: "movie" })],
+			expectedRawCount: 1,
+			rawObserved: 1,
+		});
 		expect(deleteMany).not.toHaveBeenCalled();
 	});
 
@@ -579,6 +1707,7 @@ describe("collectPlexCacheLiveEvidence", () => {
 			getAccounts: vi.fn().mockResolvedValue([]),
 			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
 			getLibraryItems: vi.fn().mockResolvedValue([]),
+			getLibraryItemsWithCoverage: vi.fn().mockResolvedValue(completeCoverage([])),
 			getHistory: vi.fn().mockResolvedValue([]),
 			getOnDeck: vi.fn().mockResolvedValue([]),
 		} as unknown as PlexClient;
@@ -627,6 +1756,16 @@ describe("collectPlexCacheLiveEvidence", () => {
 					Guid: [{ id: "tmdb://42" }],
 				},
 			]),
+			getLibraryItemsWithCoverage: vi.fn().mockResolvedValue(
+				completeCoverage([
+					{
+						ratingKey: "current",
+						title: "Current Movie",
+						type: "movie",
+						Guid: [{ id: "tmdb://42" }],
+					},
+				]),
+			),
 			getHistory: vi.fn().mockResolvedValue([
 				{
 					ratingKey: "stale",
@@ -674,6 +1813,16 @@ describe("collectPlexCacheLiveEvidence", () => {
 					Guid: [{ id: "tmdb://84" }],
 				},
 			]),
+			getLibraryItemsWithCoverage: vi.fn().mockResolvedValue(
+				completeCoverage([
+					{
+						ratingKey: "current-show",
+						title: "Current Show",
+						type: "show",
+						Guid: [{ id: "tmdb://84" }],
+					},
+				]),
+			),
 			getHistory: vi.fn().mockResolvedValue([
 				{
 					ratingKey: "stale-episode",
@@ -726,6 +1875,10 @@ describe("collectPlexCacheLiveEvidence", () => {
 				.fn()
 				.mockResolvedValueOnce([currentMovie])
 				.mockResolvedValueOnce([currentMovie, importedMovie]),
+			getLibraryItemsWithCoverage: vi
+				.fn()
+				.mockResolvedValueOnce(completeCoverage([currentMovie]))
+				.mockResolvedValueOnce(completeCoverage([currentMovie, importedMovie])),
 			getHistory: vi.fn().mockResolvedValue([
 				{
 					ratingKey: "imported",
@@ -772,6 +1925,10 @@ describe("collectPlexCacheLiveEvidence", () => {
 				.fn()
 				.mockResolvedValueOnce([initialMovie])
 				.mockResolvedValueOnce([changedMovie]),
+			getLibraryItemsWithCoverage: vi
+				.fn()
+				.mockResolvedValueOnce(completeCoverage([initialMovie]))
+				.mockResolvedValueOnce(completeCoverage([changedMovie])),
 			getHistory: vi.fn().mockResolvedValue([]),
 			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 			getOnDeck: vi.fn().mockResolvedValue([]),
@@ -815,6 +1972,13 @@ describe("collectPlexCacheLiveEvidence", () => {
 					.mockImplementationOnce(async () => {
 						inventoryVerificationFinished = true;
 						return [currentMovie];
+					}),
+				getLibraryItemsWithCoverage: vi
+					.fn()
+					.mockResolvedValueOnce(completeCoverage([currentMovie]))
+					.mockImplementationOnce(async () => {
+						inventoryVerificationFinished = true;
+						return completeCoverage([currentMovie]);
 					}),
 				getHistory: vi.fn().mockResolvedValue([]),
 				verifyHistorySnapshot: vi.fn(async () => {
@@ -863,6 +2027,7 @@ describe("collectPlexCacheLiveEvidence", () => {
 			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
 			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
 			getLibraryItems: vi.fn().mockResolvedValue(editions),
+			getLibraryItemsWithCoverage: vi.fn().mockResolvedValue(completeCoverage(editions)),
 			getHistory: vi.fn().mockResolvedValue([]),
 			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 			getOnDeck: vi.fn().mockResolvedValue([]),
@@ -892,6 +2057,7 @@ describe("collectPlexCacheLiveEvidence", () => {
 			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
 			getLibrarySections: vi.fn().mockResolvedValue([{ key: "2", title: "Shows", type: "show" }]),
 			getLibraryItems: vi.fn().mockResolvedValue([series]),
+			getLibraryItemsWithCoverage: vi.fn().mockResolvedValue(completeCoverage([series])),
 			getHistory: vi.fn().mockResolvedValue([]),
 			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 			getOnDeck: vi.fn().mockResolvedValue([]),
@@ -920,6 +2086,16 @@ describe("collectPlexCacheLiveEvidence", () => {
 					Guid: [{ id: "tmdb://42" }],
 				},
 			]),
+			getLibraryItemsWithCoverage: vi.fn().mockResolvedValue(
+				completeCoverage([
+					{
+						ratingKey: "current",
+						title: "Current Movie",
+						type: "movie",
+						Guid: [{ id: "tmdb://42" }],
+					},
+				]),
+			),
 			getHistory: vi.fn().mockResolvedValue([
 				{
 					ratingKey: "stale",
@@ -937,8 +2113,8 @@ describe("collectPlexCacheLiveEvidence", () => {
 
 		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
-		expect(result).toMatchObject({ complete: false, upserted: 0 });
-		expect(result.errorMessages).toContain(
+		expect(result).toMatchObject({ complete: true, upserted: 0 });
+		expect(result.errorMessages).not.toContain(
 			"Plex cache incomplete: 1 history item(s) with unknown accounts",
 		);
 		expect(transaction).not.toHaveBeenCalled();
@@ -977,6 +2153,16 @@ describe("collectPlexCacheLiveEvidence", () => {
 						Guid: [{ id: "tmdb://42" }],
 					},
 				]),
+				getLibraryItemsWithCoverage: vi.fn().mockResolvedValue(
+					completeCoverage([
+						{
+							ratingKey: "current",
+							title: "Current Movie",
+							type: "movie",
+							Guid: [{ id: "tmdb://42" }],
+						},
+					]),
+				),
 				getHistory: vi.fn().mockResolvedValue([historyEntry]),
 				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 				getOnDeck: vi.fn().mockResolvedValue([]),
@@ -1001,6 +2187,13 @@ describe("collectPlexCacheLiveEvidence", () => {
 				.mockResolvedValue([
 					{ ratingKey: "", title: "Current Movie", type: "movie", Guid: [{ id: "tmdb://42" }] },
 				]),
+			getLibraryItemsWithCoverage: vi
+				.fn()
+				.mockResolvedValue(
+					completeCoverage([
+						{ ratingKey: "", title: "Current Movie", type: "movie", Guid: [{ id: "tmdb://42" }] },
+					]),
+				),
 			getHistory: vi.fn().mockResolvedValue([]),
 			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 			getOnDeck: vi.fn().mockResolvedValue([]),
@@ -1029,6 +2222,16 @@ describe("collectPlexCacheLiveEvidence", () => {
 					Guid: [],
 				},
 			]),
+			getLibraryItemsWithCoverage: vi.fn().mockResolvedValue(
+				completeCoverage([
+					{
+						ratingKey: "current-without-tmdb",
+						title: "Current Movie Without TMDB",
+						type: "movie",
+						Guid: [],
+					},
+				]),
+			),
 			getHistory: vi.fn().mockResolvedValue([
 				{
 					ratingKey: "current-without-tmdb",
@@ -1038,6 +2241,7 @@ describe("collectPlexCacheLiveEvidence", () => {
 					accountID: 1,
 				},
 			]),
+			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 			getOnDeck: vi.fn().mockResolvedValue([]),
 		} as unknown as PlexClient;
 		const transaction = vi.fn();
@@ -1064,6 +2268,14 @@ describe("collectPlexCacheLiveEvidence", () => {
 			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
 			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
 			getLibraryItems: vi.fn().mockRejectedValue(new Error("pagination stopped early")),
+			getLibraryItemsWithCoverage: vi.fn().mockResolvedValue({
+				items: [],
+				expectedRawCount: 1,
+				pagesAttempted: 1,
+				pagesCompleted: 0,
+				rawObserved: 0,
+				reason: "page-failure",
+			}),
 			getHistory: vi.fn().mockResolvedValue([]),
 			getOnDeck: vi.fn().mockResolvedValue([]),
 		} as unknown as PlexClient;
@@ -1126,6 +2338,15 @@ describe("collectPlexCacheLiveEvidence", () => {
 							? [supportedMovie]
 							: [{ ratingKey: "", title: "Personal", type: "show", Guid: [] }],
 					),
+				getLibraryItemsWithCoverage: vi
+					.fn()
+					.mockImplementation((key: string) =>
+						completeCoverage(
+							key === "1"
+								? [supportedMovie]
+								: [{ ratingKey: "", title: "Personal", type: "show", Guid: [] }],
+						),
+					),
 				getHistory: vi.fn().mockResolvedValue([]),
 				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 				getOnDeck: vi.fn().mockResolvedValue([]),
@@ -1179,6 +2400,27 @@ describe("collectPlexCacheLiveEvidence", () => {
 						];
 					}
 					throw new Error("Unsupported section type entered Movie/Show collection");
+				}),
+				getLibraryItemsWithCoverage: vi.fn().mockImplementation((key: string) => {
+					if (key === "movies") {
+						return completeCoverage([
+							{ ratingKey: "movie-1", title: "Movie", type: "movie", Guid: [{ id: "tmdb://10" }] },
+						]);
+					}
+					if (key === "shows") {
+						return completeCoverage([
+							{
+								ratingKey: "show-1",
+								title: "Show",
+								type: "show",
+								Guid: [{ id: "tmdb://20" }, { id: "tvdb://30" }],
+							},
+						]);
+					}
+					return completeCoverage([
+						{ ratingKey: "personal-1", title: "Personal", type: "movie", Guid: [] },
+						{ ratingKey: "", title: "Keyless Personal", type: "movie", Guid: [] },
+					]);
 				}),
 				getHistory: vi.fn().mockResolvedValue([
 					{
@@ -1239,6 +2481,147 @@ describe("collectPlexCacheLiveEvidence", () => {
 			]);
 		});
 
+		it("ignores deleted history while excluding containers and Personal Media from Movie/Show authority", async () => {
+			const sections = [
+				{ key: "movies", title: "Movies", type: "movie", agent: "tv.plex.agents.movie" },
+				{ key: "shows", title: "Shows", type: "show", agent: "tv.plex.agents.series" },
+				{ key: "personal", title: "Other", type: "movie", agent: "tv.plex.agents.none" },
+			];
+			const itemsBySection = {
+				movies: [
+					{
+						ratingKey: "movie-current",
+						title: "Current Movie",
+						type: "movie",
+						viewCount: 0,
+						Guid: [{ id: "tmdb://10" }],
+					},
+					{
+						ratingKey: "movie-collection",
+						title: "Movie Collection",
+						type: "collection",
+						Guid: [{ id: "plex://collection/movie-collection" }],
+					},
+				],
+				shows: [
+					{
+						ratingKey: "show-current",
+						title: "Current Show",
+						type: "show",
+						viewCount: 0,
+						Guid: [{ id: "tmdb://20" }, { id: "tvdb://30" }],
+					},
+				],
+				personal: [
+					{
+						ratingKey: "personal-current",
+						title: "Personal Video",
+						type: "movie",
+						Guid: [],
+					},
+				],
+			};
+			const mockClient = {
+				getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+				getLibrarySections: vi.fn().mockResolvedValue(sections),
+				getLibraryItems: vi
+					.fn()
+					.mockImplementation((key: keyof typeof itemsBySection) => itemsBySection[key]),
+				getLibraryItemsWithCoverage: vi
+					.fn()
+					.mockImplementation((key: keyof typeof itemsBySection) =>
+						completeCoverage(itemsBySection[key]),
+					),
+				getHistory: vi.fn().mockResolvedValue([
+					{
+						historyKey: "retained-deleted-movie",
+						type: "movie",
+						ratingKey: "movie-deleted",
+						librarySectionID: "movies",
+						accountID: 1,
+						viewedAt: 1_700_000_000,
+					},
+					{
+						historyKey: "excluded-personal-video",
+						type: "movie",
+						ratingKey: "",
+						librarySectionID: "personal",
+						accountID: 1,
+						viewedAt: 1_700_000_001,
+					},
+				]),
+				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+				getOnDeck: vi.fn().mockResolvedValue([]),
+			} as unknown as PlexClient;
+			silentLogInfo.mockClear();
+			const result = await refreshPlexCache(
+				mockClient,
+				{ $transaction: vi.fn() } as never,
+				"inst-1",
+				silentLog,
+			);
+
+			expect(result).toMatchObject({
+				kind: "authoritative-snapshot",
+				complete: true,
+				errors: 0,
+				errorMessages: [],
+			});
+			expect(result.snapshot?.rows.map((row) => row.ratingKey).sort()).toEqual([
+				"movie-current",
+				"show-current",
+			]);
+			expect(result.inventoryTargets).toEqual([
+				{ sectionId: "movies", mediaType: "movie", tmdbId: 10, ratingKey: "movie-current" },
+				{
+					sectionId: "shows",
+					mediaType: "series",
+					tmdbId: 20,
+					tvdbId: 30,
+					ratingKey: "show-current",
+				},
+			]);
+			expect(result.snapshot?.rows.map((row) => row.ratingKey)).not.toContain("movie-deleted");
+			expect(result.inventoryTargets?.map((target) => target.ratingKey)).not.toContain(
+				"personal-current",
+			);
+			const receipt = receiptFrom(result) as { units?: unknown[] } | undefined;
+			expect(receipt?.units).toEqual([
+				expect.objectContaining({
+					scopeKey: "section:movies",
+					expectedRawCount: 2,
+					rawObserved: 2,
+					sourceBindings: 1,
+					canonicalEntities: 1,
+					acceptedSkips: [{ reason: "known-container", count: 1 }],
+				}),
+				expect.objectContaining({
+					scopeKey: "section:shows",
+					expectedRawCount: 1,
+					rawObserved: 1,
+					sourceBindings: 1,
+					canonicalEntities: 1,
+					acceptedSkips: [],
+				}),
+				expect.objectContaining({
+					scopeKey: "section:personal",
+					expectedRawCount: 1,
+					rawObserved: 1,
+					sourceBindings: 0,
+					canonicalEntities: 0,
+					acceptedSkips: [{ reason: "unsupported-personal-media", count: 1 }],
+				}),
+			]);
+			expect(evaluateProviderCoverageReceipt(receipt)).toMatchObject({
+				evidence: "complete",
+				complete: true,
+			});
+			expect(silentLogInfo).toHaveBeenCalledWith(
+				expect.objectContaining({ totalHistory: 2, ignoredHistoricalItems: 1 }),
+				"Plex cache refresh complete",
+			);
+		});
+
 		it("excludes a Personal Media section from the supported-media authority domain", async () => {
 			const mockClient = {
 				getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
@@ -1247,6 +2630,11 @@ describe("collectPlexCacheLiveEvidence", () => {
 					.fn()
 					.mockImplementation((key: string) =>
 						key === "1" ? [supportedMovie] : [personalMediaItem],
+					),
+				getLibraryItemsWithCoverage: vi
+					.fn()
+					.mockImplementation((key: string) =>
+						completeCoverage(key === "1" ? [supportedMovie] : [personalMediaItem]),
 					),
 				getHistory: vi.fn().mockResolvedValue([]),
 				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
@@ -1273,6 +2661,11 @@ describe("collectPlexCacheLiveEvidence", () => {
 					.fn()
 					.mockImplementation((key: string) =>
 						key === "1" ? [supportedMovie] : [personalMediaItem],
+					),
+				getLibraryItemsWithCoverage: vi
+					.fn()
+					.mockImplementation((key: string) =>
+						completeCoverage(key === "1" ? [supportedMovie] : [personalMediaItem]),
 					),
 				getHistory: vi
 					.fn()
@@ -1304,6 +2697,13 @@ describe("collectPlexCacheLiveEvidence", () => {
 					.mockResolvedValue([
 						{ ratingKey: "broken-1", title: "Broken Movie", type: "movie", Guid: [] },
 					]),
+				getLibraryItemsWithCoverage: vi
+					.fn()
+					.mockResolvedValue(
+						completeCoverage([
+							{ ratingKey: "broken-1", title: "Broken Movie", type: "movie", Guid: [] },
+						]),
+					),
 				getHistory: vi.fn().mockResolvedValue([]),
 				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 				getOnDeck: vi.fn().mockResolvedValue([]),
@@ -1331,6 +2731,13 @@ describe("collectPlexCacheLiveEvidence", () => {
 					.mockResolvedValue([
 						{ ratingKey: "broken-1", title: "Broken Movie", type: "movie", Guid: [] },
 					]),
+				getLibraryItemsWithCoverage: vi
+					.fn()
+					.mockResolvedValue(
+						completeCoverage([
+							{ ratingKey: "broken-1", title: "Broken Movie", type: "movie", Guid: [] },
+						]),
+					),
 				getHistory: vi
 					.fn()
 					.mockResolvedValue([
@@ -1362,6 +2769,15 @@ describe("collectPlexCacheLiveEvidence", () => {
 						key === "1"
 							? [supportedMovie]
 							: [{ ratingKey: "custom-1", title: "Custom", type: "movie", Guid: [] }],
+					),
+				getLibraryItemsWithCoverage: vi
+					.fn()
+					.mockImplementation((key: string) =>
+						completeCoverage(
+							key === "1"
+								? [supportedMovie]
+								: [{ ratingKey: "custom-1", title: "Custom", type: "movie", Guid: [] }],
+						),
 					),
 				getHistory: vi.fn().mockResolvedValue([]),
 				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
@@ -1395,6 +2811,7 @@ describe("collectPlexCacheLiveEvidence", () => {
 				getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
 				getLibrarySections: vi.fn().mockResolvedValue(sections),
 				getLibraryItems: vi.fn().mockResolvedValue([supportedMovie]),
+				getLibraryItemsWithCoverage: vi.fn().mockResolvedValue(completeCoverage([supportedMovie])),
 				getHistory: vi.fn().mockResolvedValue(history),
 				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 				getOnDeck: vi.fn().mockResolvedValue([]),

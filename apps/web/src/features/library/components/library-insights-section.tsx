@@ -3,6 +3,10 @@
 import { Lightbulb } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { PlexQueryEvidenceNotice } from "../../../components/presentational/plex-evidence-notice";
+import {
+	ProviderObservationNotice,
+	resolveProviderObservationAvailability,
+} from "../../../components/presentational/provider-observation-notice";
 import { useDiskWasteInsights } from "../../../hooks/api/useDiskWasteInsights";
 import { useRequestedUnwatchedInsights } from "../../../hooks/api/useRequestedUnwatchedInsights";
 import { useWatchedMonitoredInsights } from "../../../hooks/api/useWatchedMonitoredInsights";
@@ -42,13 +46,21 @@ export function LibraryInsightsSection() {
 		diskWaste.isLoading || watchedMonitored.isLoading || requestedUnwatched.isLoading;
 	const evidenceError = diskWaste.error ?? watchedMonitored.error ?? requestedUnwatched.error;
 	const hasEvidenceError = evidenceError != null;
+	const providerStatus = [
+		diskWaste.data?.providerStatus,
+		watchedMonitored.data?.providerStatus,
+		requestedUnwatched.data?.providerStatus,
+	] as const;
+	const providerAvailability = resolveProviderObservationAvailability(providerStatus);
+	const hasNonCurrentProvider =
+		providerAvailability !== undefined && providerAvailability !== "current";
 
 	// Don't render the section if all panels are empty and done loading
 	const hasContent =
 		diskWasteCount > 0 ||
 		(watchedMonitoredCount > 0 && hasWatchData) ||
 		(requestedUnwatchedCount > 0 && hasSeerrData && hasRequestedWatchData);
-	if (!isLoading && !hasContent && !hasEvidenceError) return null;
+	if (!isLoading && !hasContent && !hasEvidenceError && !hasNonCurrentProvider) return null;
 	if (isLoading) return null; // Don't flash the heading before data arrives
 
 	// Effective counts — only count signals where the required services are configured
@@ -80,7 +92,7 @@ export function LibraryInsightsSection() {
 			<div className="flex items-center gap-2 flex-wrap">
 				<Lightbulb className="h-4 w-4" style={{ color: SEMANTIC_COLORS.info.from }} />
 				<h2 className="text-sm font-semibold text-foreground">Library Insights</h2>
-				{!hasEvidenceError && (
+				{!hasEvidenceError && (hasContent || !hasNonCurrentProvider) && (
 					<span className="text-xs text-muted-foreground">
 						{totalCount} item{totalCount !== 1 ? "s" : ""} need attention
 					</span>
@@ -90,6 +102,7 @@ export function LibraryInsightsSection() {
 				)}
 			</div>
 			<PlexQueryEvidenceNotice error={evidenceError} label="Plex-based library insights" />
+			<ProviderObservationNotice providerStatus={providerStatus} label="Library insights" />
 			{priorityCue && (
 				<p className="text-xs text-muted-foreground/70 -mt-1 ml-6 italic">{priorityCue}</p>
 			)}
@@ -97,16 +110,19 @@ export function LibraryInsightsSection() {
 			{/* Panels — ordered by priority: requests > monitoring > storage */}
 			<div className="space-y-2">
 				<RequestedUnwatchedPanel
+					queryData={requestedUnwatched.data}
 					autoExpand={insightParam === "requested-unwatched"}
 					isDismissed={isDismissed}
 					onDismiss={dismiss}
 				/>
 				<WatchedMonitoredPanel
+					queryData={watchedMonitored.data}
 					autoExpand={insightParam === "watched-monitored"}
 					isDismissed={isDismissed}
 					onDismiss={dismiss}
 				/>
 				<DiskWastePanel
+					queryData={diskWaste.data}
 					autoExpand={insightParam === "disk-waste"}
 					isDismissed={isDismissed}
 					onDismiss={dismiss}

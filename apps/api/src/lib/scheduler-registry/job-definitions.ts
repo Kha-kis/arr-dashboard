@@ -39,6 +39,7 @@ export const JOB_ID = {
 	traktListCache: "trakt-list-cache",
 	quiTorrentStateSync: "qui-torrent-state-sync",
 	infoHashBackfill: "infohash-backfill",
+	historyCollection: "history-collection",
 } as const;
 
 export const KNOWN_JOBS: readonly JobDefinition[] = [
@@ -148,9 +149,11 @@ export const KNOWN_JOBS: readonly JobDefinition[] = [
 	},
 	{
 		id: JOB_ID.tautulliCache,
-		label: "Tautulli cache",
-		description: "Refreshes Tautulli history + library caches per instance. Per-instance serial.",
-		concurrency: "per-instance",
+		label: "Tautulli observations",
+		description:
+			"Collects bounded positive-only recent Tautulli observations every 5 minutes. Per-process overlap is guarded locally; durable attempt CAS resolves cross-process publication.",
+		concurrency: "singleton",
+		intervalMs: 5 * 60 * 1000,
 	},
 	{
 		id: JOB_ID.seerrHealth,
@@ -207,5 +210,13 @@ export const KNOWN_JOBS: readonly JobDefinition[] = [
 			"Walks LibraryCache rows missing infoHash for users with qui configured, queries *arr history to populate the hash. Required for qui torrent-state coverage; without it, only items grabbed since PR #416 (2026-05-04) get correlated. Two-phase: a startup catch-up loop drains existing backlogs in batches (capped at 10k rows / ~17min worst-case), then transitions to a 6h steady-state cadence to capture newly-landed items.",
 		concurrency: "singleton",
 		intervalMs: 6 * 60 * 60 * 1000,
+	},
+	{
+		id: JOB_ID.historyCollection,
+		label: "History observations",
+		description:
+			"Collects bounded History observations for distinct enabled owners every five minutes. A process-local whole-tick guard prevents overlap; the collector's durable per-owner lease is the cross-process authority.",
+		concurrency: "serial",
+		intervalMs: 5 * 60 * 1000,
 	},
 ] as const;

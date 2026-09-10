@@ -11,6 +11,24 @@
 import { test, expect } from "@playwright/test";
 import { ROUTES, TIMEOUTS, waitForLoadingComplete } from "./utils/test-helpers";
 
+const unavailableInsightPayload = {
+	error: "Plex cache evidence is unavailable",
+	evidence: {
+		availability: "last-known",
+		authority: "unavailable",
+		attemptState: "error",
+		publicationLevel: "unavailable",
+		completeness: "unknown",
+		reasonCodes: ["latest_attempt_failed"],
+	},
+};
+
+const insightPaths = [
+	"/api/library/insights/disk-waste",
+	"/api/library/insights/watched-monitored",
+	"/api/library/insights/requested-unwatched",
+] as const;
+
 test.describe("Library - Page Load", () => {
 	test("should display library page with heading", async ({ page }) => {
 		await page.goto(ROUTES.library);
@@ -41,6 +59,67 @@ test.describe("Library - Page Load", () => {
 		await page.waitForTimeout(500);
 		const pageContent = page.locator("main, [role='main']");
 		await expect(pageContent).toBeVisible();
+	});
+
+	test("bounds insight requests when Plex evidence is unavailable", async ({ page }) => {
+		const counts = new Map<string, number>();
+		await page.context().addCookies([
+			{
+				name: "arr_session",
+				value: "local-library-request-bounds-session",
+				domain: "localhost",
+				path: "/",
+			},
+		]);
+		await page.route("**/auth/setup-required", (route) =>
+			route.fulfill({ json: { required: false } }),
+		);
+		await page.route("**/auth/me", (route) =>
+			route.fulfill({
+				json: {
+					user: {
+						id: "library-request-bounds-user",
+						username: "library-request-bounds-user",
+						mustChangePassword: false,
+						createdAt: "2026-01-01T00:00:00.000Z",
+					},
+				},
+			}),
+		);
+		await page.route("**/api/services", (route) =>
+			route.fulfill({ json: { services: [] } }),
+		);
+		await page.route("**/api/library/sync/status", (route) =>
+			route.fulfill({ json: { instances: [] } }),
+		);
+		await page.route(/\/api\/library(?:\?.*)?$/, (route) =>
+			route.fulfill({
+				json: {
+					items: [],
+					pagination: { page: 1, limit: 50, totalItems: 0, totalPages: 0 },
+					appliedFilters: {},
+				},
+			}),
+		);
+		await page.route("**/api/plex/identity", (route) =>
+			route.fulfill({ json: { servers: [] } }),
+		);
+		await page.route("**/api/jellyfin/identity", (route) => route.fulfill({ json: [] }));
+		await page.route("**/api/library/insights/**", async (route) => {
+			const path = new URL(route.request().url()).pathname;
+			counts.set(path, (counts.get(path) ?? 0) + 1);
+			await route.fulfill({ status: 503, json: unavailableInsightPayload });
+		});
+
+		await page.goto(ROUTES.library);
+		await expect(page.getByText("Plex values are unavailable")).toBeVisible({
+			timeout: TIMEOUTS.medium,
+		});
+
+		const observedCounts = () => insightPaths.map((path) => counts.get(path) ?? 0);
+		await expect.poll(observedCounts, { timeout: TIMEOUTS.medium }).toEqual([2, 2, 2]);
+		await page.waitForTimeout(1500);
+		expect(observedCounts()).toEqual([2, 2, 2]);
 	});
 });
 

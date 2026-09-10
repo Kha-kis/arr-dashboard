@@ -25,9 +25,11 @@ trap 'rm -rf "$TEMP_DIR"' EXIT HUP INT TERM
 umask 077
 POSTGRES_PASSWORD_FILE="$TEMP_DIR/postgres-password.txt"
 PLEX_CLAIM_FILE="$TEMP_DIR/plex-claim.txt"
+LC_E2E_RUN_TOKEN_FILE="$TEMP_DIR/run-token.txt"
 printf '%s\n' 'teardown-validation-only' >"$POSTGRES_PASSWORD_FILE"
 : >"$PLEX_CLAIM_FILE"
-export POSTGRES_PASSWORD_FILE PLEX_CLAIM_FILE
+printf '%s\n' "$LC_E2E_RUN_TOKEN" >"$LC_E2E_RUN_TOKEN_FILE"
+export POSTGRES_PASSWORD_FILE PLEX_CLAIM_FILE LC_E2E_RUN_TOKEN_FILE
 
 # The live preflight rejects empty, malformed, generic, and production-like
 # names; checks the exact harness service/model contract; validates secrets;

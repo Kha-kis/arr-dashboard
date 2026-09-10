@@ -36,8 +36,10 @@ interface LibraryCardProps {
 	tmdbRating?: number | null;
 	openIssueCount?: number;
 	posterPath?: string | null;
-	watchCount?: number;
-	onDeck?: boolean;
+	watchCount?: number | null;
+	watchCountSemantics?: "exact" | "lower-bound" | "unknown";
+	watchSource?: WatchEnrichmentItem["source"];
+	onDeck?: boolean | null;
 	lastWatchedAt?: string | null;
 	watchedByUsers?: string[];
 	plexUserRating?: number | null;
@@ -369,6 +371,8 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 								openIssueCount={enrichment?.openIssueCount}
 								posterPath={enrichment?.posterPath}
 								watchCount={watchData?.watchCount}
+								watchCountSemantics={watchData?.watchCountSemantics}
+								watchSource={watchData?.source}
 								onDeck={watchData?.onDeck}
 								lastWatchedAt={watchData?.lastWatchedAt}
 								watchedByUsers={watchData?.watchedByUsers}
@@ -408,6 +412,8 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											openIssueCount={enrichment?.openIssueCount}
 											posterPath={enrichment?.posterPath}
 											watchCount={watchData?.watchCount}
+											watchCountSemantics={watchData?.watchCountSemantics}
+											watchSource={watchData?.source}
 											onDeck={watchData?.onDeck}
 											lastWatchedAt={watchData?.lastWatchedAt}
 											watchedByUsers={watchData?.watchedByUsers}
@@ -448,6 +454,8 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											openIssueCount={enrichment?.openIssueCount}
 											posterPath={enrichment?.posterPath}
 											watchCount={watchData?.watchCount}
+											watchCountSemantics={watchData?.watchCountSemantics}
+											watchSource={watchData?.source}
 											onDeck={watchData?.onDeck}
 											lastWatchedAt={watchData?.lastWatchedAt}
 											watchedByUsers={watchData?.watchedByUsers}
@@ -489,6 +497,8 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											openIssueCount={enrichment?.openIssueCount}
 											posterPath={enrichment?.posterPath}
 											watchCount={watchData?.watchCount}
+											watchCountSemantics={watchData?.watchCountSemantics}
+											watchSource={watchData?.source}
 											onDeck={watchData?.onDeck}
 											lastWatchedAt={watchData?.lastWatchedAt}
 											watchedByUsers={watchData?.watchedByUsers}
@@ -530,6 +540,8 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											openIssueCount={enrichment?.openIssueCount}
 											posterPath={enrichment?.posterPath}
 											watchCount={watchData?.watchCount}
+											watchCountSemantics={watchData?.watchCountSemantics}
+											watchSource={watchData?.source}
 											onDeck={watchData?.onDeck}
 											lastWatchedAt={watchData?.lastWatchedAt}
 											watchedByUsers={watchData?.watchedByUsers}

@@ -19,6 +19,8 @@
 
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { encodeJellyfinLibraryGenerationMetadata } from "../../lib/jellyfin/jellyfin-generation-metadata.js";
+import { createPlexTargetLedgerBinding } from "../../lib/plex/plex-generation-target-ledger.js";
 
 vi.mock("../../lib/plex/plex-authority-service.js", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../../lib/plex/plex-authority-service.js")>();
@@ -46,6 +48,7 @@ import { createInjectAuthenticated, setupAuthInjection } from "./test-helpers.js
 const counter = { value: 0 };
 const SONARR_INSTANCE_ID = "sonarr-1";
 const PLEX_INSTANCE_ID = "plex-1";
+const JELLYFIN_INSTANCE_ID = "jellyfin-1";
 
 function makeLibraryRow(id: string, videoCodec: string) {
 	return {
@@ -69,7 +72,7 @@ function makePlexRow(
 		id,
 		instanceId: PLEX_INSTANCE_ID,
 		tmdbId: Number(id.replace(/\D/g, "")) + 1,
-		mediaType: "movie",
+		mediaType: overrides.sectionTitle === "TV Shows" ? "series" : "movie",
 		sectionId: overrides.sectionTitle === "TV Shows" ? "shows" : "movies",
 		sectionTitle: overrides.sectionTitle ?? "Movies",
 		title: `Title ${id}`,
@@ -88,6 +91,101 @@ function makePlexRow(
 	};
 }
 
+function makeJellyfinRow(id = "jf-1") {
+	return {
+		id,
+		instanceId: JELLYFIN_INSTANCE_ID,
+		watchedByUsers: JSON.stringify(["jellyfin-user"]),
+		libraryName: "Jellyfin Movies",
+	};
+}
+
+function makeJellyfinInstance(
+	overrides: Partial<{
+		enabled: boolean;
+		expectedIdentity: string | null;
+		identityStatus: string;
+		connectionGeneration: number;
+		identityGeneration: number;
+	}> = {},
+) {
+	return {
+		id: JELLYFIN_INSTANCE_ID,
+		service: "JELLYFIN",
+		enabled: true,
+		expectedIdentity: "jellyfin-server-1",
+		identityStatus: "VERIFIED",
+		connectionGeneration: 1,
+		identityGeneration: 1,
+		...overrides,
+	};
+}
+
+function makeJellyfinGenerationMetadata(overrides: Record<string, unknown> = {}): string {
+	return encodeJellyfinLibraryGenerationMetadata({
+		version: 1,
+		provider: "jellyfin",
+		cacheType: "jellyfin",
+		publicationLevel: "authoritative",
+		completeness: "complete",
+		canonicalizationVersion: 1,
+		itemCount: 1,
+		connectionGeneration: 1,
+		identityGeneration: 1,
+		contentFingerprint: "a".repeat(64),
+		coverageReceipt: {
+			version: 1,
+			provider: "jellyfin",
+			attemptStartedAt: "2026-09-02T12:00:00.000Z",
+			observedAt: "2026-09-02T12:01:00.000Z",
+			evidence: "complete",
+			units: [
+				{
+					scopeKey: "user:user-1/library:library-1",
+					expectedRawCount: 1,
+					pagesAttempted: 1,
+					pagesCompleted: 1,
+					rawObserved: 1,
+					sourceBindings: 1,
+					canonicalEntities: 1,
+					acceptedSkips: [],
+					fatalCount: 0,
+				},
+			],
+			publishedCanonicalEntities: 1,
+		},
+		...overrides,
+	} as never);
+}
+
+function makeJellyfinStatus(
+	overrides: Partial<{
+		lastResult: string;
+		lastAttemptResult: string | null;
+		generationId: string | null;
+		generationMetadata: string | null;
+		connectionGeneration: number | null;
+		identityGeneration: number | null;
+	}> = {},
+) {
+	return {
+		instanceId: JELLYFIN_INSTANCE_ID,
+		cacheType: "jellyfin",
+		lastResult: "success",
+		lastErrorMessage: null,
+		lastRefreshedAt: new Date("2026-09-02T12:01:00.000Z"),
+		itemCount: 1,
+		lastAttemptAt: new Date("2026-09-02T12:01:00.000Z"),
+		lastAttemptResult: "success",
+		lastAttemptErrorMessage: null,
+		generationId: "jellyfin-generation-1",
+		generationMetadata: makeJellyfinGenerationMetadata(),
+		connectionGeneration: 1,
+		identityGeneration: 1,
+		...overrides,
+	};
+}
+
 let app: FastifyInstance;
 let libraryCacheFindMany: ReturnType<typeof vi.fn>;
 let plexCacheFindMany: ReturnType<typeof vi.fn>;
@@ -95,6 +193,7 @@ let jellyfinCacheFindMany: ReturnType<typeof vi.fn>;
 let tautulliCacheFindMany: ReturnType<typeof vi.fn>;
 let serviceInstanceFindMany: ReturnType<typeof vi.fn>;
 let cacheRefreshStatusFindMany: ReturnType<typeof vi.fn>;
+let plexGenerationTargetFindMany: ReturnType<typeof vi.fn>;
 let currentUserId: string;
 
 beforeEach(async () => {
@@ -109,6 +208,7 @@ beforeEach(async () => {
 	tautulliCacheFindMany = vi.fn().mockResolvedValue([]);
 	serviceInstanceFindMany = vi.fn().mockResolvedValue([]);
 	cacheRefreshStatusFindMany = vi.fn().mockResolvedValue([]);
+	plexGenerationTargetFindMany = vi.fn().mockResolvedValue([]);
 
 	app = Fastify({ logger: false });
 	setupAuthInjection(app, { id: userId, username: "admin" });
@@ -122,6 +222,7 @@ beforeEach(async () => {
 	app.decorate("prisma", {
 		serviceInstance: { findMany: serviceInstanceFindMany },
 		cacheRefreshStatus: { findMany: cacheRefreshStatusFindMany },
+		plexGenerationTarget: { findMany: plexGenerationTargetFindMany },
 		libraryCache: { findMany: libraryCacheFindMany },
 		plexCache: { findMany: plexCacheFindMany },
 		jellyfinCache: { findMany: jellyfinCacheFindMany },
@@ -296,23 +397,44 @@ describe("GET /library-cleanup/field-options — cursor pagination (issue #427)"
 				labels: ["new"],
 			}),
 		];
+		const completedAt = new Date();
+		const generationId = "generation-1";
+		const targetRows = [...plexBatch1, ...plexBatch2].map((row) => ({
+			id: `target-${row.id}`,
+			instanceId: row.instanceId,
+			generationId,
+			sectionId: row.sectionId,
+			sectionUuid: row.sectionId === "movies" ? "movies-uuid" : "shows-uuid",
+			mediaType: row.mediaType as "series" | "movie",
+			tmdbId: row.tmdbId,
+			tvdbId: null,
+			ratingKey: row.ratingKey,
+		}));
+		const targetLedger = createPlexTargetLedgerBinding({
+			instanceId: PLEX_INSTANCE_ID,
+			generationId,
+			connectionGeneration: 1,
+			identityGeneration: 1,
+			targets: targetRows,
+		});
+		plexGenerationTargetFindMany.mockResolvedValue(targetRows);
 		plexCacheFindMany.mockResolvedValueOnce(plexBatch1).mockResolvedValueOnce(plexBatch2);
 		cacheRefreshStatusFindMany.mockResolvedValue([
 			{
 				instanceId: PLEX_INSTANCE_ID,
 				cacheType: "plex",
-				lastRefreshedAt: new Date(),
+				lastRefreshedAt: completedAt,
 				lastResult: "success",
 				lastErrorMessage: null,
-				lastAttemptAt: new Date(),
+				lastAttemptAt: completedAt,
 				lastAttemptResult: "success",
 				lastAttemptErrorMessage: null,
 				itemCount: 501,
 				connectionGeneration: 1,
 				identityGeneration: 1,
-				generationId: "generation-1",
+				generationId,
 				generationMetadata: JSON.stringify({
-					version: 3,
+					version: 5,
 					publicationLevel: "authoritative",
 					completeness: "complete",
 					itemCount: 501,
@@ -341,6 +463,39 @@ describe("GET /library-cleanup/field-options — cursor pagination (issue #427)"
 						{ sectionKey: "movies", domain: "membership", digest: "a".repeat(64) },
 						{ sectionKey: "shows", domain: "membership", digest: "b".repeat(64) },
 					],
+					...targetLedger,
+					partialReasons: [],
+					coverageReceipt: {
+						version: 1,
+						provider: "plex",
+						attemptStartedAt: completedAt.toISOString(),
+						observedAt: completedAt.toISOString(),
+						evidence: "complete",
+						units: [
+							{
+								scopeKey: "section:movies",
+								expectedRawCount: 500,
+								pagesAttempted: 1,
+								pagesCompleted: 1,
+								rawObserved: 500,
+								sourceBindings: 500,
+								canonicalEntities: 500,
+								acceptedSkips: [],
+								fatalCount: 0,
+							},
+							{
+								scopeKey: "section:shows",
+								expectedRawCount: 1,
+								pagesAttempted: 1,
+								pagesCompleted: 1,
+								rawObserved: 1,
+								sourceBindings: 1,
+								canonicalEntities: 1,
+								acceptedSkips: [],
+								fatalCount: 0,
+							},
+						],
+					},
 				}),
 			},
 		]);
@@ -531,5 +686,196 @@ describe("GET /library-cleanup/field-options — cursor pagination (issue #427)"
 			publicationLevel: "unavailable",
 			completeness: "unknown",
 		});
+	});
+
+	it("does not expose Jellyfin values from a positive-only published generation", async () => {
+		serviceInstanceFindMany.mockImplementation(({ where }: { where: { service: unknown } }) => {
+			if (
+				typeof where.service === "object" &&
+				where.service &&
+				"in" in where.service &&
+				(where.service as { in: string[] }).in.includes("JELLYFIN")
+			) {
+				return Promise.resolve([makeJellyfinInstance()]);
+			}
+			return Promise.resolve([]);
+		});
+		const positiveMetadata = JSON.parse(makeJellyfinGenerationMetadata()) as Record<
+			string,
+			unknown
+		>;
+		positiveMetadata.publicationLevel = "positive-only";
+		positiveMetadata.completeness = "partial";
+		(positiveMetadata.coverageReceipt as Record<string, unknown>).evidence = "positive-only";
+		jellyfinCacheFindMany.mockResolvedValue([makeJellyfinRow()]);
+		cacheRefreshStatusFindMany.mockResolvedValue([
+			makeJellyfinStatus({ generationMetadata: JSON.stringify(positiveMetadata) }),
+		]);
+
+		const response = await createInjectAuthenticated(app)("GET", "/library-cleanup/field-options");
+		const body = response.json();
+
+		expect(response.statusCode).toBe(200);
+		expect(body.jellyfinUsers).toEqual([]);
+		expect(body.jellyfinLibraries).toEqual([]);
+		expect(jellyfinCacheFindMany).not.toHaveBeenCalled();
+	});
+
+	it("exposes Jellyfin values only from a current authoritative-complete generation", async () => {
+		serviceInstanceFindMany.mockImplementation(({ where }: { where: { service: unknown } }) => {
+			if (
+				typeof where.service === "object" &&
+				where.service &&
+				"in" in where.service &&
+				(where.service as { in: string[] }).in.includes("JELLYFIN")
+			) {
+				return Promise.resolve([makeJellyfinInstance()]);
+			}
+			return Promise.resolve([]);
+		});
+		jellyfinCacheFindMany.mockResolvedValue([makeJellyfinRow()]);
+		cacheRefreshStatusFindMany.mockResolvedValue([makeJellyfinStatus()]);
+
+		const response = await createInjectAuthenticated(app)("GET", "/library-cleanup/field-options");
+		const body = response.json();
+
+		expect(response.statusCode).toBe(200);
+		expect(body.jellyfinUsers).toEqual(["jellyfin-user"]);
+		expect(body.jellyfinLibraries).toEqual(["Jellyfin Movies"]);
+		expect(jellyfinCacheFindMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: {
+					instance: { userId: currentUserId },
+					OR: [
+						{
+							instanceId: JELLYFIN_INSTANCE_ID,
+							connectionGeneration: 1,
+							identityGeneration: 1,
+						},
+					],
+				},
+			}),
+		);
+
+		const cachedResponse = await createInjectAuthenticated(app)(
+			"GET",
+			"/library-cleanup/field-options",
+		);
+		expect(cachedResponse.statusCode).toBe(200);
+		expect(cachedResponse.json().jellyfinUsers).toEqual(["jellyfin-user"]);
+		expect(jellyfinCacheFindMany).toHaveBeenCalledTimes(1);
+	});
+
+	it("discards candidate values when publication changes during the cursor scan", async () => {
+		serviceInstanceFindMany.mockImplementation(({ where }: { where: { service: unknown } }) => {
+			if (
+				typeof where.service === "object" &&
+				where.service &&
+				"in" in where.service &&
+				(where.service as { in: string[] }).in.includes("JELLYFIN")
+			) {
+				return Promise.resolve([makeJellyfinInstance()]);
+			}
+			return Promise.resolve([]);
+		});
+		const positiveMetadata = JSON.parse(makeJellyfinGenerationMetadata()) as Record<
+			string,
+			unknown
+		>;
+		positiveMetadata.publicationLevel = "positive-only";
+		positiveMetadata.completeness = "partial";
+		(positiveMetadata.coverageReceipt as Record<string, unknown>).evidence = "positive-only";
+		jellyfinCacheFindMany.mockResolvedValueOnce([makeJellyfinRow()]);
+		cacheRefreshStatusFindMany.mockResolvedValueOnce([makeJellyfinStatus()]).mockResolvedValueOnce([
+			makeJellyfinStatus({
+				generationId: "jellyfin-generation-2",
+				generationMetadata: JSON.stringify(positiveMetadata),
+			}),
+		]);
+
+		const inject = createInjectAuthenticated(app);
+		const response = await inject("GET", "/library-cleanup/field-options");
+		const body = response.json();
+
+		expect(response.statusCode).toBe(200);
+		expect(body.jellyfinUsers).toEqual([]);
+		expect(body.jellyfinLibraries).toEqual([]);
+		expect(jellyfinCacheFindMany).toHaveBeenCalledTimes(1);
+
+		const cachedResponse = await inject("GET", "/library-cleanup/field-options");
+		expect(cachedResponse.json().jellyfinUsers).toEqual([]);
+		expect(cachedResponse.json().jellyfinLibraries).toEqual([]);
+	});
+
+	it("does not cache a fallback under a newer authoritative generation fingerprint", async () => {
+		serviceInstanceFindMany.mockImplementation(({ where }: { where: { service: unknown } }) => {
+			if (
+				typeof where.service === "object" &&
+				where.service &&
+				"in" in where.service &&
+				(where.service as { in: string[] }).in.includes("JELLYFIN")
+			) {
+				return Promise.resolve([makeJellyfinInstance()]);
+			}
+			return Promise.resolve([]);
+		});
+		const generationOne = makeJellyfinStatus();
+		const generationTwo = makeJellyfinStatus({ generationId: "jellyfin-generation-2" });
+		cacheRefreshStatusFindMany
+			.mockResolvedValueOnce([generationOne])
+			.mockResolvedValueOnce([generationTwo])
+			.mockResolvedValueOnce([generationTwo])
+			.mockResolvedValueOnce([generationTwo]);
+		jellyfinCacheFindMany
+			.mockResolvedValueOnce([makeJellyfinRow("old-row")])
+			.mockResolvedValueOnce([
+				{
+					...makeJellyfinRow("new-row"),
+					watchedByUsers: JSON.stringify(["current-user"]),
+					libraryName: "Current Library",
+				},
+			]);
+
+		const inject = createInjectAuthenticated(app);
+		const racedResponse = await inject("GET", "/library-cleanup/field-options");
+		expect(racedResponse.json().jellyfinUsers).toEqual([]);
+		expect(racedResponse.json().jellyfinLibraries).toEqual([]);
+
+		const recomputedResponse = await inject("GET", "/library-cleanup/field-options");
+		expect(recomputedResponse.json().jellyfinUsers).toEqual(["current-user"]);
+		expect(recomputedResponse.json().jellyfinLibraries).toEqual(["Current Library"]);
+		expect(jellyfinCacheFindMany).toHaveBeenCalledTimes(2);
+	});
+
+	it("invalidates cached selectors when only provider identity becomes mismatched", async () => {
+		let jellyfinTopologyReads = 0;
+		serviceInstanceFindMany.mockImplementation(({ where }: { where: { service: unknown } }) => {
+			if (
+				typeof where.service === "object" &&
+				where.service &&
+				"in" in where.service &&
+				(where.service as { in: string[] }).in.includes("JELLYFIN")
+			) {
+				jellyfinTopologyReads += 1;
+				return Promise.resolve([
+					makeJellyfinInstance({
+						identityStatus: jellyfinTopologyReads >= 3 ? "MISMATCH" : "VERIFIED",
+					}),
+				]);
+			}
+			return Promise.resolve([]);
+		});
+		cacheRefreshStatusFindMany.mockResolvedValue([makeJellyfinStatus()]);
+		jellyfinCacheFindMany.mockResolvedValue([makeJellyfinRow()]);
+
+		const inject = createInjectAuthenticated(app);
+		const verifiedResponse = await inject("GET", "/library-cleanup/field-options");
+		expect(verifiedResponse.json().jellyfinUsers).toEqual(["jellyfin-user"]);
+		expect(verifiedResponse.json().jellyfinLibraries).toEqual(["Jellyfin Movies"]);
+
+		const mismatchedResponse = await inject("GET", "/library-cleanup/field-options");
+		expect(mismatchedResponse.json().jellyfinUsers).toEqual([]);
+		expect(mismatchedResponse.json().jellyfinLibraries).toEqual([]);
+		expect(jellyfinCacheFindMany).toHaveBeenCalledTimes(1);
 	});
 });

@@ -33,21 +33,30 @@ import {
 	isCurrentAuthoritativePlexEvidence,
 	loadInstanceEpisodeEvidence,
 	loadInstanceEvidence,
+	loadInstanceMutationEvidence,
 	loadInstanceSelectedEpisodeEvidence,
 	loadInstanceSelectedEvidence,
+	loadPositiveEpisodeDisplayEvidence,
 	loadPositiveEpisodeEvidence,
 	loadPositiveEpisodeParentEvidence,
+	loadTargetScopedPlexWatchCountMutationEvidenceBatch,
+	loadUserSelectedEvidence,
 	type PlexEpisodeParentPolicyBatchHandler,
 	type PlexInstanceEvidence,
 	type PlexPolicyBatchHandler,
 	type PlexPolicyScanEvidence,
+	type PositivePlexEpisodeEvidence,
 	type SelectedPlexEpisodeEvidence,
 	type SelectedPlexEvidence,
 	scanInstanceEpisodeParentPolicyEvidence,
 	scanInstancePolicyEvidence,
 	type UnavailablePlexInstanceEvidence,
 } from "./plex-evidence-repository.js";
-import type { DecodedPlexGenerationMetadata } from "./plex-generation-metadata.js";
+import {
+	type DecodedPlexGenerationMetadata,
+	evaluatePlexMutationAuthority,
+	projectPlexProviderObservationStatus,
+} from "./plex-generation-metadata.js";
 import {
 	normalizePlexGenerationTargets,
 	type PlexGenerationTarget,
@@ -79,6 +88,7 @@ export {
 	hasAuthoritativeSelectedPlexEvidence,
 	hasCompleteAuthoritativePlexEvidence,
 	isCurrentAuthoritativePlexEvidence,
+	listDisplayableSelectedPlexEvidence,
 	listPublishedSections,
 	summarizePlexEvidence,
 } from "./plex-evidence-repository.js";
@@ -91,6 +101,9 @@ export type PlexPersistedSelectionObservation = {
 	metadata: DecodedPlexGenerationMetadata;
 	rows: readonly PlexCanonicalObservation[];
 };
+
+/** Domains whose complete evidence fits the bounded full-library policy projection. */
+export type PlexPolicyCanonicalDomain = Exclude<PlexCanonicalDomain, "display" | "episodes">;
 
 export type PlexAuthorityProbe = {
 	activities: readonly PlexLiveActivity[];
@@ -168,6 +181,47 @@ export type PositiveEpisodeAuthority =
 	  }
 	| UnavailablePlexInstanceEvidence;
 
+type PositiveEpisodeProvenance = Extract<
+	PositiveEpisodeAuthority,
+	{ available: true }
+>["provenance"];
+
+export type PositiveEpisodeDisplayAuthority =
+	| {
+			available: true;
+			instanceId: string;
+			generationId: string;
+			connectionGeneration: number;
+			identityGeneration: number;
+			capability: {
+				domain: "episodes";
+				field: "watchCount";
+				semantics: "lower-bound";
+				operator: "greater_than";
+			};
+			partialReasons: ReadonlyArray<{ code: string; count: number }>;
+			provenance: PositiveEpisodeProvenance;
+			rows: Array<{
+				showTmdbId: number;
+				seasonNumber: number;
+				episodeNumber: number;
+				ratingKey: string;
+				title: string;
+				watched: boolean;
+				watchedByUsers: string;
+				lastWatchedAt: Date | null;
+			}>;
+			evidence: PlexEvidenceSummary;
+	  }
+	| UnavailablePlexInstanceEvidence;
+
+type ValidatedPositiveEpisodeSnapshot = {
+	observed: Extract<PositivePlexEpisodeEvidence, { available: true }>;
+	rows: PlexEpisodeRow[];
+	soleParentByShow: ReadonlyMap<number, PlexPositiveEpisodeParentTarget>;
+	parentTargetCount: number;
+};
+
 function sectionCatalogIdentity(
 	sections: ReadonlyArray<{ key: string; uuid: string; type: string; title: string }>,
 ): string {
@@ -193,7 +247,12 @@ function sectionCatalogIdentity(
 }
 
 function persistedSectionCatalogIdentity(metadata: DecodedPlexGenerationMetadata): string | null {
-	if (metadata.version !== 3) return null;
+	if (
+		metadata.version !== 5 ||
+		metadata.publicationLevel !== "authoritative" ||
+		metadata.completeness !== "complete"
+	)
+		return null;
 	return sectionCatalogIdentity(metadata.sections);
 }
 
@@ -297,7 +356,7 @@ export async function settlePlexAuthorityWindow(input: {
 	loadFreshRows: (options: { uncached: boolean }) => Promise<readonly PlexCanonicalObservation[]>;
 	rereadPersisted: () => Promise<PlexPersistedSelectionObservation>;
 }): Promise<PlexAuthorityWindowResult> {
-	if (input.persisted.metadata.version !== 3) {
+	if (persistedSectionCatalogIdentity(input.persisted.metadata) === null) {
 		return { ok: false, reasonCode: "plex_settlement_metadata_missing" };
 	}
 	const expectedSectionIdentity = persistedSectionCatalogIdentity(input.persisted.metadata);
@@ -378,7 +437,11 @@ async function verifyExactGenerationTargets(
 	| { ok: true; expected: { instanceId: string; generationId: string } }
 	| { ok: false; reasonCode: PlexCoverageReasonCode }
 > {
-	if (input.metadata.version !== 3) {
+	if (
+		input.metadata.version !== 5 ||
+		input.metadata.publicationLevel !== "authoritative" ||
+		input.metadata.completeness !== "complete"
+	) {
 		return { ok: false, reasonCode: "target_ledger_binding_missing" };
 	}
 	const binding = requirePlexTargetLedgerBinding(input.metadata);
@@ -402,10 +465,12 @@ function unavailableEvidence(
 	instanceId: string,
 	base: PlexEvidenceSummary,
 	reasonCode: PlexCoverageReasonCode,
+	providerStatus = projectPlexProviderObservationStatus({ status: null }),
 ): UnavailablePlexInstanceEvidence {
 	return {
 		available: false,
 		instanceId,
+		providerStatus,
 		evidence: {
 			availability: "unavailable",
 			authority: "unavailable",
@@ -544,19 +609,27 @@ export class PlexAuthorityService {
 		selection: PlexCacheRowSelection | { kind: "all" };
 		domains: readonly PlexCanonicalDomain[];
 		mutation: boolean;
+		now?: Date;
+		maxAgeMs?: number;
 		reread: () => Promise<PlexInstanceEvidence | SelectedPlexEvidence>;
 		client?: PlexClient;
 	}): Promise<TAvailable | SelectedPlexEvidence> {
+		const strict = evaluatePlexMutationAuthority(input.before.generationStatus, {
+			now: input.now,
+			maxAgeMs: input.maxAgeMs,
+		});
 		if (
-			input.before.metadata.version !== 3 ||
+			!strict.available ||
+			input.before.metadata.version !== 5 ||
 			!isCurrentAuthoritativePlexEvidence(input.before.evidence)
 		) {
 			return unavailableEvidence(
 				input.instanceId,
 				input.before.evidence,
-				input.before.metadata.version === 3
+				input.before.metadata.version === 5
 					? (input.before.evidence.reasonCodes[0] ?? "mutation_authority_unavailable")
 					: "plex_settlement_metadata_missing",
+				input.before.providerStatus,
 			);
 		}
 		const client = input.client ?? this.client(input.instance);
@@ -588,7 +661,12 @@ export class PlexAuthorityService {
 		});
 		return window.ok
 			? input.before
-			: unavailableEvidence(input.instanceId, input.before.evidence, window.reasonCode);
+			: unavailableEvidence(
+					input.instanceId,
+					input.before.evidence,
+					window.reasonCode,
+					input.before.providerStatus,
+				);
 	}
 
 	async readInstanceSelected(input: {
@@ -642,7 +720,7 @@ export class PlexAuthorityService {
 	async readInstance(input: {
 		userId: string;
 		instanceId: string;
-		domains: readonly PlexCanonicalDomain[];
+		domains: readonly PlexPolicyCanonicalDomain[];
 		mutation?: boolean;
 		now?: Date;
 		maxAgeMs?: number;
@@ -674,17 +752,30 @@ export class PlexAuthorityService {
 		})) as PlexInstanceEvidence;
 	}
 
+	/** The sole cleanup-facing entry point for target-scoped persisted watch-count proof. */
+	async readTargetScopedWatchCountMutationEvidence(
+		input: Parameters<typeof loadTargetScopedPlexWatchCountMutationEvidenceBatch>[1],
+	): ReturnType<typeof loadTargetScopedPlexWatchCountMutationEvidenceBatch> {
+		return await loadTargetScopedPlexWatchCountMutationEvidenceBatch(this.deps.prisma, input);
+	}
+
 	/**
-	 * The sole persisted positive-episode reader. Its rows are explicit lower
-	 * bounds, never an exact episode universe: omitted episodes are unknown.
+	 * Validate one persisted positive episode snapshot. All positive readers use
+	 * this fixed row snapshot so display projection cannot race a second cache
+	 * query after the authority and digest checks have passed.
 	 */
-	async readPositiveEpisodeEvidence(input: {
-		userId: string;
-		instanceId: string;
-		now?: Date;
-		maxAgeMs?: number;
-	}): Promise<PositiveEpisodeAuthority> {
-		const observed = await loadPositiveEpisodeEvidence(this.deps.prisma, input);
+	private async readValidatedPositiveEpisodeSnapshot(
+		input: {
+			userId: string;
+			instanceId: string;
+			now?: Date;
+			maxAgeMs?: number;
+		},
+		displayOnly = false,
+	): Promise<ValidatedPositiveEpisodeSnapshot | UnavailablePlexInstanceEvidence> {
+		const observed = displayOnly
+			? await loadPositiveEpisodeDisplayEvidence(this.deps.prisma, input)
+			: await loadPositiveEpisodeEvidence(this.deps.prisma, input);
 		if (!observed.available) return observed;
 		const binding = requirePlexTargetLedgerBinding(observed.parentMetadata);
 		if (!binding.ok) {
@@ -785,6 +876,27 @@ export class PlexAuthorityService {
 			soleParentTargets.map((target) => [target.showTmdbId, target]),
 		);
 		return {
+			observed,
+			rows,
+			soleParentByShow,
+			parentTargetCount: binding.binding.targetCount,
+		};
+	}
+
+	/**
+	 * The sole persisted positive-episode reader. Its rows are explicit lower
+	 * bounds, never an exact episode universe: omitted episodes are unknown.
+	 */
+	async readPositiveEpisodeEvidence(input: {
+		userId: string;
+		instanceId: string;
+		now?: Date;
+		maxAgeMs?: number;
+	}): Promise<PositiveEpisodeAuthority> {
+		const snapshot = await this.readValidatedPositiveEpisodeSnapshot(input);
+		if (!("observed" in snapshot)) return snapshot;
+		const { observed, rows, soleParentByShow, parentTargetCount } = snapshot;
+		return {
 			available: true,
 			instanceId: observed.instanceId,
 			generationId: observed.generationId,
@@ -799,7 +911,7 @@ export class PlexAuthorityService {
 				identityGeneration: observed.identityGeneration,
 				parentPlexGenerationId: observed.parentGenerationId,
 				parentTargetDigest: observed.metadata.parentTargetDigest,
-				parentTargetCount: binding.binding.targetCount,
+				parentTargetCount,
 				episodeGenerationId: observed.generationId,
 				episodeDigest: observed.metadata.episodeDigest,
 				publishedAt: observed.publishedAt.toISOString(),
@@ -825,7 +937,61 @@ export class PlexAuthorityService {
 	}
 
 	/**
-	 * The sole V4 parent-reader. It intentionally returns only observed Show
+	 * Read-only positive episode display projection. Positive rows prove that
+	 * the episode was watched at least once; absent rows remain unknown and are
+	 * intentionally omitted from the display response.
+	 */
+	async readPositiveEpisodeDisplayEvidence(input: {
+		userId: string;
+		instanceId: string;
+		now?: Date;
+		maxAgeMs?: number;
+	}): Promise<PositiveEpisodeDisplayAuthority> {
+		const snapshot = await this.readValidatedPositiveEpisodeSnapshot(input, true);
+		if (!("observed" in snapshot)) return snapshot;
+		const { observed, rows, soleParentByShow, parentTargetCount } = snapshot;
+		return {
+			available: true,
+			instanceId: observed.instanceId,
+			generationId: observed.generationId,
+			connectionGeneration: observed.connectionGeneration,
+			identityGeneration: observed.identityGeneration,
+			capability: observed.metadata.capability,
+			partialReasons: observed.metadata.partialReasons,
+			provenance: {
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				connectionGeneration: observed.connectionGeneration,
+				identityGeneration: observed.identityGeneration,
+				parentPlexGenerationId: observed.parentGenerationId,
+				parentTargetDigest: observed.metadata.parentTargetDigest,
+				parentTargetCount,
+				episodeGenerationId: observed.generationId,
+				episodeDigest: observed.metadata.episodeDigest,
+				publishedAt: observed.publishedAt.toISOString(),
+			},
+			rows: rows.flatMap((row) =>
+				soleParentByShow.has(row.showTmdbId) && row.watched
+					? [
+							{
+								showTmdbId: row.showTmdbId,
+								seasonNumber: row.seasonNumber,
+								episodeNumber: row.episodeNumber,
+								ratingKey: row.ratingKey,
+								title: row.title,
+								watched: true,
+								watchedByUsers: row.watchedByUsers,
+								lastWatchedAt: row.lastWatchedAt,
+							},
+						]
+					: [],
+			),
+			evidence: observed.evidence,
+		};
+	}
+
+	/**
+	 * The V4/V5 parent-reader. It intentionally returns only observed Show
 	 * parents and ledger targets. A requested Show absent from those arrays is
 	 * unknown; this method never produces a negative, zero, or exact-universe
 	 * assertion.
@@ -935,7 +1101,11 @@ export class PlexAuthorityService {
 				semantics: "observed-targets-only",
 				operators: [],
 			},
-			partialReasons: observed.metadata.version === 4 ? observed.metadata.partialReasons : [],
+			partialReasons:
+				observed.metadata.version === 4 ||
+				(observed.metadata.version === 5 && observed.metadata.publicationLevel === "positive-only")
+					? observed.metadata.partialReasons
+					: [],
 			provenance: {
 				publicationLevel: observed.metadata.publicationLevel,
 				completeness: observed.metadata.completeness,
@@ -951,7 +1121,7 @@ export class PlexAuthorityService {
 	async scanInstancePolicy(input: {
 		userId: string;
 		instanceId: string;
-		domains: readonly PlexCanonicalDomain[];
+		domains: readonly PlexPolicyCanonicalDomain[];
 		mutation?: boolean;
 		now?: Date;
 		maxAgeMs?: number;
@@ -970,7 +1140,7 @@ export class PlexAuthorityService {
 	async scanInstanceExactPolicy(input: {
 		userId: string;
 		instanceId: string;
-		domains: readonly PlexCanonicalDomain[];
+		domains: readonly PlexPolicyCanonicalDomain[];
 		mutation?: boolean;
 		now?: Date;
 		maxAgeMs?: number;
@@ -980,12 +1150,22 @@ export class PlexAuthorityService {
 		if (!current.available) return current;
 		const exactTargets = await verifyExactGenerationTargets(this.deps.prisma, current);
 		if (!exactTargets.ok) {
-			return unavailableEvidence(input.instanceId, current.evidence, exactTargets.reasonCode);
+			return unavailableEvidence(
+				input.instanceId,
+				current.evidence,
+				exactTargets.reasonCode,
+				current.providerStatus,
+			);
 		}
 		const scanned = await scanInstancePolicyEvidence(this.deps.prisma, input);
 		if (!scanned.available) return scanned;
 		if (scanned.generationId !== current.generationId) {
-			return unavailableEvidence(input.instanceId, current.evidence, "generation_changed");
+			return unavailableEvidence(
+				input.instanceId,
+				current.evidence,
+				"generation_changed",
+				current.providerStatus,
+			);
 		}
 		return scanned;
 	}
@@ -1006,12 +1186,25 @@ export class PlexAuthorityService {
 		if (!current.available) return current;
 		const exactTargets = await verifyExactGenerationTargets(this.deps.prisma, current);
 		if (!exactTargets.ok) {
-			return unavailableEvidence(input.instanceId, current.evidence, exactTargets.reasonCode);
+			return unavailableEvidence(
+				input.instanceId,
+				current.evidence,
+				exactTargets.reasonCode,
+				current.providerStatus,
+			);
 		}
-		const scanned = await scanInstancePolicyEvidence(this.deps.prisma, input);
+		const scanned = await scanInstancePolicyEvidence(this.deps.prisma, {
+			...input,
+			mutation: true,
+		});
 		if (!scanned.available) return scanned;
 		if (scanned.generationId !== current.generationId) {
-			return unavailableEvidence(input.instanceId, current.evidence, "generation_changed");
+			return unavailableEvidence(
+				input.instanceId,
+				current.evidence,
+				"generation_changed",
+				current.providerStatus,
+			);
 		}
 		return scanned;
 	}
@@ -1019,7 +1212,7 @@ export class PlexAuthorityService {
 	async scanInstanceEpisodeParentPolicy(input: {
 		userId: string;
 		instanceId: string;
-		domains: readonly PlexCanonicalDomain[];
+		domains: readonly PlexPolicyCanonicalDomain[];
 		mutation?: boolean;
 		now?: Date;
 		maxAgeMs?: number;
@@ -1030,7 +1223,12 @@ export class PlexAuthorityService {
 		if (!current.available) return current;
 		const exactTargets = await verifyExactGenerationTargets(this.deps.prisma, current);
 		if (!exactTargets.ok) {
-			return unavailableEvidence(input.instanceId, current.evidence, exactTargets.reasonCode);
+			return unavailableEvidence(
+				input.instanceId,
+				current.evidence,
+				exactTargets.reasonCode,
+				current.providerStatus,
+			);
 		}
 		const selectedShowTmdbIds = new Set<number>();
 		const scanned = await scanInstanceEpisodeParentPolicyEvidence(this.deps.prisma, {
@@ -1046,15 +1244,39 @@ export class PlexAuthorityService {
 		});
 		if (!scanned.available) return scanned;
 		if (scanned.generationId !== current.generationId) {
-			return unavailableEvidence(input.instanceId, current.evidence, "generation_changed");
+			return unavailableEvidence(
+				input.instanceId,
+				current.evidence,
+				"generation_changed",
+				current.providerStatus,
+			);
 		}
-		await input.onTargets?.(
-			await readPlexGenerationTargetsForSelection(
-				this.deps.prisma,
-				exactTargets.expected,
-				[...selectedShowTmdbIds].map((tmdbId) => ({ mediaType: "series" as const, tmdbId })),
-			),
+		const targets = await readPlexGenerationTargetsForSelection(
+			this.deps.prisma,
+			exactTargets.expected,
+			[...selectedShowTmdbIds].map((tmdbId) => ({ mediaType: "series" as const, tmdbId })),
 		);
+		if (input.mutation) {
+			const revalidated = await loadInstanceMutationEvidence(this.deps.prisma, input);
+			if (!revalidated.available || revalidated.generationId !== current.generationId) {
+				return unavailableEvidence(
+					input.instanceId,
+					current.evidence,
+					"generation_changed",
+					revalidated.providerStatus,
+				);
+			}
+			const revalidatedTargets = await verifyExactGenerationTargets(this.deps.prisma, revalidated);
+			if (!revalidatedTargets.ok) {
+				return unavailableEvidence(
+					input.instanceId,
+					revalidated.evidence,
+					revalidatedTargets.reasonCode,
+					revalidated.providerStatus,
+				);
+			}
+		}
+		await input.onTargets?.(targets);
 		return scanned;
 	}
 
@@ -1160,9 +1382,19 @@ export class PlexAuthorityService {
 		return evidence;
 	}
 
+	async readUserSelectedDisplay(input: {
+		userId: string;
+		selection: PlexCacheRowSelection;
+		domains: readonly PlexCanonicalDomain[];
+		now?: Date;
+		maxAgeMs?: number;
+	}): Promise<SelectedPlexEvidence[]> {
+		return await loadUserSelectedEvidence(this.deps.prisma, input);
+	}
+
 	async scanUserPolicy(input: {
 		userId: string;
-		domains: readonly PlexCanonicalDomain[];
+		domains: readonly PlexPolicyCanonicalDomain[];
 		mutation?: boolean;
 		now?: Date;
 		maxAgeMs?: number;

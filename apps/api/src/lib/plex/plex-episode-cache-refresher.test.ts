@@ -143,6 +143,52 @@ function episode(ratingKey = "episode-1", viewCount = 1) {
 	};
 }
 
+function authoritativeV5Metadata(itemCount: number, observedAt: Date) {
+	return JSON.stringify({
+		version: 5,
+		publicationLevel: "authoritative",
+		completeness: "complete",
+		itemCount,
+		canonicalizationVersion: 1,
+		sections: [
+			{
+				key: "shows",
+				uuid: "shows-uuid",
+				title: "Shows",
+				type: "show",
+				refreshing: false,
+				scannedAt: 1_777_000_000,
+				updatedAt: 1_777_000_100,
+			},
+		],
+		roots: [{ sectionKey: "shows", domain: "episode-parents", digest: "a".repeat(64) }],
+		targetLedgerVersion: 1,
+		targetCount: itemCount,
+		targetDigest: "b".repeat(64),
+		partialReasons: [],
+		coverageReceipt: {
+			version: 1,
+			provider: "plex",
+			attemptStartedAt: new Date(observedAt.getTime() - 60_000).toISOString(),
+			observedAt: observedAt.toISOString(),
+			evidence: "complete",
+			units: [
+				{
+					scopeKey: "section:shows",
+					expectedRawCount: itemCount,
+					pagesAttempted: 1,
+					pagesCompleted: 1,
+					rawObserved: itemCount,
+					sourceBindings: itemCount,
+					canonicalEntities: itemCount,
+					acceptedSkips: [],
+					fatalCount: 0,
+				},
+			],
+		},
+	});
+}
+
 function client(overrides: Partial<PlexClient> = {}): PlexClient {
 	return {
 		getHistory: vi.fn().mockResolvedValue([
@@ -215,25 +261,7 @@ function prisma(
 		lastErrorMessage: null,
 		itemCount: shows.length,
 		generationId: "parent-generation-1",
-		generationMetadata: JSON.stringify({
-			version: 3,
-			publicationLevel: "authoritative",
-			completeness: "complete",
-			itemCount: shows.length,
-			canonicalizationVersion: 1,
-			sections: [
-				{
-					key: "shows",
-					uuid: "shows-uuid",
-					title: "Shows",
-					type: "show",
-					refreshing: false,
-					scannedAt: 1_777_000_000,
-					updatedAt: 1_777_000_100,
-				},
-			],
-			roots: [{ sectionKey: "shows", domain: "membership", digest: "a".repeat(64) }],
-		}),
+		generationMetadata: authoritativeV5Metadata(shows.length, publishedAt),
 		lastAttemptAt: attemptedAt,
 		lastAttemptResult: "success",
 		lastAttemptErrorMessage: null,
@@ -394,11 +422,12 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 			fixture.tx.cacheRefreshStatus.updateMany.mock.calls[0]![0].data.generationMetadata,
 		);
 		expect(metadata).toMatchObject({
-			version: 3,
+			version: 4,
 			publicationLevel: "positive-only",
 			completeness: "partial",
-			parentMetadataVersion: 4,
+			parentMetadataVersion: 5,
 			parentTargetDigest: "a".repeat(64),
+			partialReasons: [{ code: "currentItemsWithoutTmdbMetadata", count: 1 }],
 			capability: {
 				domain: "episodes",
 				field: "watchCount",
@@ -640,7 +669,17 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 	});
 
 	it("atomically replaces one instance and binds every row to the published generation", async () => {
-		const fixture = prisma();
+		const template = prisma();
+		const parent = template.parentStatus();
+		const v5Parent = {
+			...parent,
+			generationMetadata: authoritativeV5Metadata(parent.itemCount, parent.lastRefreshedAt),
+		};
+		const fixture = prisma(
+			undefined,
+			undefined,
+			Array.from({ length: 8 }, () => v5Parent),
+		);
 		const result = await refreshPlexEpisodeCache(
 			client(),
 			fixture.db,
@@ -678,10 +717,10 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 			fixture.tx.cacheRefreshStatus.updateMany.mock.calls[0]![0].data.generationMetadata,
 		);
 		expect(metadata).toEqual({
-			version: 2,
+			version: 3,
 			parentPlexGenerationId: "parent-generation-1",
 			parentPublicationLevel: "authoritative",
-			parentMetadataVersion: 3,
+			parentMetadataVersion: 5,
 			canonicalizationVersion: 1,
 			episodeDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
 			connectionGeneration: 7,
@@ -713,6 +752,31 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 		expect(result).toMatchObject({ complete: true, eligibleShows: 1, refreshedShows: 1 });
 		expect(getEpisodes).toHaveBeenCalledTimes(1);
 		expect(getEpisodes).toHaveBeenCalledWith("show-watched");
+	});
+
+	it("retains the legacy whole-refresh guard above 200 eligible parents", async () => {
+		const fixture = prisma(
+			Array.from({ length: 201 }, (_, index) => ({
+				tmdbId: 1_000 + index,
+				ratingKey: `show-${index}`,
+			})),
+		);
+		const getEpisodes = vi.fn();
+		const getHistory = vi.fn();
+
+		const result = await refreshPlexEpisodeCache(
+			client({ getEpisodes, getHistory } as Partial<PlexClient>),
+			fixture.db,
+			"plex-1",
+			log,
+			"fingerprint-1",
+			undefined,
+		);
+
+		expect(result).toMatchObject({ complete: false, capacityDegraded: true, eligibleShows: 201 });
+		expect(getHistory).not.toHaveBeenCalled();
+		expect(getEpisodes).not.toHaveBeenCalled();
+		expect(fixture.published).toEqual([]);
 	});
 
 	it("keeps prior episode rows when the authoritative parent metadata is unavailable", async () => {
@@ -771,10 +835,8 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 		const base = prisma().parentStatus();
 		const changed = { ...base, generationId: "parent-generation-2" };
 		const fixture = prisma([{ tmdbId: 42, ratingKey: "show-1" }], undefined, [
-			base,
-			{ ...base },
-			changed,
-			{ ...changed },
+			...Array.from({ length: 4 }, () => ({ ...base })),
+			...Array.from({ length: 4 }, () => ({ ...changed })),
 		]);
 
 		const result = await refreshPlexEpisodeCache(

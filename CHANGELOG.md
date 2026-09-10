@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Truthful Jellyfin cache display** — Safe positive observations can be
+  displayed as partial evidence while semantic omissions remain visible and
+  mutation authority stays fail-closed.
+- **Durable cache refresh acceptance** — Plex, Jellyfin/Emby, and Tautulli
+  refresh requests now use a prompt `202 Accepted` receipt; observe eventual
+  completion through cache health/status instead of treating request acceptance
+  as refresh completion.
+
 ## [2.24.1] - 2026-08-16 — Recovery and timezone correctness
 
 This patch makes partial Sonarr episode cleanup recover safely, fixes public

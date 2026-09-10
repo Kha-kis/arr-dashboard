@@ -296,7 +296,7 @@ const RULE_CATEGORIES: Array<{
 	label: string;
 	icon: LucideIcon;
 	types: CleanupRuleType[];
-	requires?: "plex" | "tautulli" | "plex+seerr" | "jellyfin";
+	requires?: "plex" | "tautulli" | "plex+seerr" | "jellyfin" | "watch+seerr";
 }> = [
 	{
 		id: "content",
@@ -403,7 +403,7 @@ const RULE_CATEGORIES: Array<{
 		label: "Cross-Service",
 		icon: Target,
 		types: ["seerr_requester_watched", "seerr_requester_not_watched"],
-		requires: "plex+seerr" as const,
+		requires: "watch+seerr" as const,
 	},
 	{
 		id: "lists",
@@ -2139,6 +2139,11 @@ export function CleanupRuleDialog({
 										if (cat.requires === "tautulli" && !fieldOptions?.hasTautulli) return false;
 										if (cat.requires === "jellyfin" && !fieldOptions?.hasJellyfin) return false;
 										if (cat.requires === "plex+seerr" && (!fieldOptions?.hasPlex || !hasSeerr))
+											return false;
+										if (
+											cat.requires === "watch+seerr" &&
+											(!hasSeerr || (!fieldOptions?.hasPlex && !fieldOptions?.hasJellyfin))
+										)
 											return false;
 										return true;
 									}).map((cat) => {

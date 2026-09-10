@@ -448,6 +448,12 @@ function publicationState(authority: OwnedProviderPublicationSnapshot) {
 				return { count: 1 };
 			},
 		},
+		providerObservationRun: {
+			findMany: async () => [],
+		},
+		cacheRefreshStatus: {
+			updateMany: async () => ({ count: 0 }),
+		},
 	};
 	return {
 		row,

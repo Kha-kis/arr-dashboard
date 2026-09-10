@@ -16,6 +16,7 @@ import type {
 	LabelSyncService,
 	LabelSyncSourceService,
 } from "@arr/shared";
+import { getLabelSyncDestinationMutationCapability } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { executeLabelSyncRule } from "../lib/label-sync/execute-rule.js";
@@ -78,6 +79,7 @@ function toDto(row: {
 		destService: row.destService as LabelSyncDestService,
 		destInstanceId: row.destInstanceId,
 		destTagName: row.destTagName,
+		destinationMutationCapability: getLabelSyncDestinationMutationCapability(row.destService),
 		lastRunAt: row.lastRunAt?.toISOString() ?? null,
 		lastRunStatus: (row.lastRunStatus ?? null) as LabelSyncRunStatus | null,
 		lastRunMessage: row.lastRunMessage ?? null,
@@ -161,6 +163,13 @@ export async function registerLabelSyncRoutes(app: FastifyInstance, _opts: Fasti
 
 	app.post("/rules", async (request, reply) => {
 		const body = validateRequest(createRuleBody, request.body);
+		const destinationCapability = getLabelSyncDestinationMutationCapability(body.destService);
+		if (!destinationCapability.supported) {
+			return reply.status(409).send({
+				error: destinationCapability.message,
+				code: destinationCapability.code,
+			});
+		}
 		const userId = request.currentUser!.id;
 		await assertInstanceOwnership(app, userId, {
 			sourceService: body.sourceService,
@@ -208,6 +217,27 @@ export async function registerLabelSyncRoutes(app: FastifyInstance, _opts: Fasti
 			(body.destService as LabelSyncDestService | undefined) ??
 			(existing.destService as LabelSyncDestService);
 		const nextDestInstanceId = body.destInstanceId ?? existing.destInstanceId;
+		const nextDestTagName = body.destTagName ?? existing.destTagName;
+		const existingDestinationCapability = getLabelSyncDestinationMutationCapability(
+			existing.destService,
+		);
+		const nextDestinationCapability = getLabelSyncDestinationMutationCapability(nextDestService);
+		const destinationTupleUnchanged =
+			existing.destService === nextDestService &&
+			existing.destInstanceId === nextDestInstanceId &&
+			existing.destTagName === nextDestTagName;
+		const nextEnabled = body.enabled ?? existing.enabled;
+		if (
+			!nextDestinationCapability.supported &&
+			(existingDestinationCapability.supported ||
+				!destinationTupleUnchanged ||
+				(!existing.enabled && nextEnabled))
+		) {
+			return reply.status(409).send({
+				error: nextDestinationCapability.message,
+				code: nextDestinationCapability.code,
+			});
+		}
 
 		await assertInstanceOwnership(app, userId, {
 			sourceService: nextSourceService,

@@ -1,105 +1,70 @@
-/** Tautulli cache collection and guarded publication tests. */
+/** Owned Tautulli positive-observation publication tests. */
 
 import type { FastifyBaseLogger } from "fastify";
-import { describe, expect, it, vi } from "vitest";
-import type { PrismaClient } from "../../prisma.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Encryptor } from "../../auth/encryption.js";
+import type { PrismaClient, ServiceInstance } from "../../prisma.js";
 import {
-	collectTautulliCacheLiveEvidence,
-	refreshTautulliCache as refreshGuardedTautulliCache,
+	refreshOwnedTautulliCache,
+	type TautulliCacheRefreshResult,
 } from "../tautulli-cache-refresher.js";
 import type { TautulliClient } from "../tautulli-client.js";
+import { decodeTautulliObservationMetadata } from "../tautulli-observation-metadata.js";
 
-const publication = vi.hoisted(() => ({ client: undefined as TautulliClient | undefined }));
-const attemptLifecycle = vi.hoisted(() => ({
-	begin: vi.fn(),
-	finishFailure: vi.fn(),
-}));
+vi.mock("../../utils/delay.js", () => ({ delay: vi.fn(async () => {}) }));
 
-vi.mock("../../services/provider-cache-status.js", async (importOriginal) => ({
-	...(await importOriginal<typeof import("../../services/provider-cache-status.js")>()),
-	beginProviderCacheRefreshAttempt: attemptLifecycle.begin,
-	finishProviderCacheRefreshAttemptFailure: attemptLifecycle.finishFailure,
+const provider = vi.hoisted(() => ({
+	client: undefined as TautulliClient | undefined,
+	events: [] as string[],
+	identityValues: [] as string[],
 }));
+const metadataControl = vi.hoisted(() => ({ encodeFailure: false }));
 
 vi.mock("../tautulli-client.js", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../tautulli-client.js")>();
 	return {
 		...actual,
 		TautulliClient: class {
-			constructor() {
-				if (!publication.client) throw new Error("Tautulli test client was not configured");
-				Object.assign(this, publication.client);
+			constructor(..._args: unknown[]) {
+				provider.events.push("construct");
+				if (!provider.client) throw new Error("Tautulli fixture is not configured");
+				Object.assign(this, provider.client);
 			}
 		},
 	};
 });
 
-vi.mock("../../services/provider-identity-guard.js", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("../../services/provider-identity-guard.js")>();
+vi.mock("../../services/service-identity.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../services/service-identity.js")>();
 	return {
 		...actual,
-		withGuardedProviderPublication: vi.fn(
-			async (
-				prisma: { $transaction: (callback: (tx: unknown) => Promise<unknown>) => Promise<unknown> },
-				_instance: unknown,
-				_log: unknown,
-				collect: () => Promise<unknown>,
-				publish: (tx: unknown, snapshot: unknown) => Promise<unknown>,
-			) => {
-				const snapshot = await collect();
-				if ((snapshot as { complete?: boolean }).complete !== true) return snapshot;
-				return await prisma.$transaction(async (tx) => await publish(tx, snapshot));
+		readProviderIdentity: vi.fn(
+			async (serviceInstance: { service: string; expectedIdentity: string | null }) => {
+				provider.events.push("identity");
+				return {
+					service: serviceInstance.service,
+					identityKind: "tautulli-pms-identifier",
+					rawIdentity: provider.identityValues.shift() ?? serviceInstance.expectedIdentity,
+					confirmationDigest: "digest",
+					fingerprint: "fingerprint",
+				};
 			},
 		),
 	};
 });
 
-async function refreshTautulliCache(
-	client: TautulliClient,
-	prisma: PrismaClient,
-	instanceId: string,
-	log: FastifyBaseLogger,
-	_expectedConnection?: unknown,
-	options?: { publish?: boolean },
-) {
-	if (options?.publish === false || typeof prisma.$transaction !== "function") {
-		return await collectTautulliCacheLiveEvidence(client, instanceId, log);
-	}
-	publication.client = client;
-	return await refreshGuardedTautulliCache({
-		prisma,
-		instance: {
-			id: instanceId,
-			userId: "user-1",
-			service: "TAUTULLI",
-			label: "Tautulli",
-			baseUrl: "https://tautulli.example.com",
-			apiKey: "key",
-			httpAuthHeaders: {},
-			enabled: true,
-			encryptedApiKey: "encrypted-key",
-			encryptionIv: "iv",
-			encryptedHttpAuthCredentials: null,
-			httpAuthEncryptionIv: null,
-			expectedIdentity: "plex-a",
-			identityStatus: "VERIFIED",
-			connectionGeneration: 4,
-			identityGeneration: 2,
-		},
-		log,
-		attempt: {
-			attemptedAt: new Date("2026-08-28T12:00:00.000Z"),
-			resultMarker: "in_progress:test-publication",
-		},
-	});
-}
+vi.mock("../tautulli-observation-metadata.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../tautulli-observation-metadata.js")>();
+	return {
+		...actual,
+		encodeTautulliObservationMetadata: vi.fn((value: unknown) => {
+			if (metadataControl.encodeFailure) throw new Error("metadata must not escape");
+			return actual.encodeTautulliObservationMetadata(value);
+		}),
+	};
+});
 
-// Neutralise the inter-lookup rate-limit delay so the end-to-end test runs fast.
-vi.mock("../../utils/delay.js", () => ({
-	delay: vi.fn(async () => {}),
-}));
-
-const silentLog = {
+const log = {
 	warn: vi.fn(),
 	info: vi.fn(),
 	error: vi.fn(),
@@ -109,987 +74,383 @@ const silentLog = {
 	child: vi.fn(),
 } as unknown as FastifyBaseLogger;
 
-// ---------------------------------------------------------------------------
-// End-to-end: refreshTautulliCache against a realistic "large stale tail" shape
-// ---------------------------------------------------------------------------
+const instance = {
+	id: "tautulli-synthetic",
+	userId: "user-synthetic",
+	service: "TAUTULLI",
+	label: "synthetic-tautulli",
+	baseUrl: "https://tautulli.invalid",
+	enabled: true,
+	encryptedApiKey: "encrypted-api-key",
+	encryptionIv: "api-iv",
+	encryptedHttpAuthCredentials: null,
+	httpAuthEncryptionIv: null,
+	expectedIdentity: "pms-synthetic",
+	identityStatus: "VERIFIED",
+	connectionGeneration: 4,
+	identityGeneration: 9,
+} as unknown as ServiceInstance;
 
-describe("refreshTautulliCache (end-to-end)", () => {
-	it("owns the durable attempt before decrypting credentials and records only a bounded failure", async () => {
-		const events: string[] = [];
-		attemptLifecycle.begin.mockImplementationOnce(async () => {
-			events.push("attempt");
-			return {
-				attemptedAt: new Date("2026-08-28T12:00:00.000Z"),
-				resultMarker: "in_progress:test-attempt",
-			};
-		});
-		attemptLifecycle.finishFailure.mockImplementationOnce(async () => {
-			events.push("failure");
-			return "recorded";
-		});
-		const encryptor = {
-			decrypt: vi.fn(() => {
-				events.push("decrypt");
-				throw new Error("secret token decrypt failure");
-			}),
-		};
-		const module = (await import("../tautulli-cache-refresher.js")) as unknown as {
-			refreshOwnedTautulliCache: (input: Record<string, unknown>) => Promise<unknown>;
-		};
+type State = {
+	rows: unknown[];
+	status: Record<string, unknown>;
+	db: PrismaClient;
+	tx: Record<string, any>;
+};
 
-		await module.refreshOwnedTautulliCache({
-			prisma: {},
-			encryptor,
-			instance: {
-				id: "tautulli-1",
-				userId: "user-1",
-				service: "TAUTULLI",
-				baseUrl: "https://tautulli.invalid",
-				enabled: true,
-				encryptedApiKey: "ciphertext",
-				encryptionIv: "iv",
-				encryptedHttpAuthCredentials: null,
-				httpAuthEncryptionIv: null,
-				expectedIdentity: "tautulli-pms-a",
-				identityStatus: "VERIFIED",
-				connectionGeneration: 4,
-				identityGeneration: 9,
-			},
-			log: silentLog,
-		});
+function createState(): State {
+	const rows: unknown[] = [];
+	const status: Record<string, unknown> = {
+		id: "status-synthetic",
+		instanceId: instance.id,
+		cacheType: "tautulli",
+		lastRefreshedAt: new Date("2026-09-02T10:00:00.000Z"),
+		lastResult: "success",
+		lastErrorMessage: null,
+		itemCount: 1,
+		generationId: null,
+		generationMetadata: "prior-metadata",
+		lastAttemptAt: new Date("2026-09-02T10:00:00.000Z"),
+		lastAttemptResult: "success",
+		lastAttemptErrorMessage: null,
+		connectionGeneration: 4,
+		identityGeneration: 9,
+	};
 
-		expect(events).toEqual(["attempt", "decrypt", "failure"]);
-		expect(attemptLifecycle.finishFailure).toHaveBeenCalledWith(
-			expect.anything(),
-			"tautulli",
-			"credential_unavailable",
-			expect.objectContaining({ id: "tautulli-1" }),
-			expect.objectContaining({ resultMarker: "in_progress:test-attempt" }),
-			silentLog,
-			expect.anything(),
-		);
-		expect(JSON.stringify(attemptLifecycle.finishFailure.mock.calls)).not.toContain("secret token");
-	});
-
-	it("large stale-tail regression: refresh succeeds with only bounded DELETEs", async () => {
-		// Models the real failure mode: a cache that accumulated many rows over
-		// previous refreshes, where one refresh returns a smaller fresh set. The
-		// stale diff is what blows past SQLite's parameter limit, not the upsert
-		// set — so we use a small fresh set and a large pre-existing tail.
-		const FRESH_COUNT = 10;
-		const STALE_TAIL = 2_000;
-
-		// Tautulli history: one entry per fresh item, all movies.
-		const libraries = [
-			{ section_id: "1", section_name: "Movies", section_type: "movie", count: "10" },
-		];
-		const history = Array.from({ length: FRESH_COUNT }, (_, i) => ({
-			row_id: i + 1,
-			rating_key: `rk-${i}`,
-			parent_rating_key: "",
-			grandparent_rating_key: "",
-			title: `Movie ${i}`,
-			grandparent_title: "",
-			media_type: "movie",
-			user: "alice",
-			date: 1_700_000_000 + i,
-			play_count: 1,
-		}));
-
-		const mockClient = {
-			getLibraries: vi.fn().mockResolvedValue(libraries),
-			// First page fills below HISTORY_PAGE_SIZE so the pagination loop
-			// exits after one call. Subsequent pages would return empty.
-			getHistory: vi.fn().mockResolvedValue({
-				data: history,
-				recordsFiltered: FRESH_COUNT,
-				recordsTotal: FRESH_COUNT,
-			}),
-			getMetadata: vi.fn(async (ratingKey: string) => {
-				const i = Number.parseInt(ratingKey.replace("rk-", ""), 10);
-				return {
-					guids: [`tmdb://${20_000 + i}`],
-					media_type: "movie",
-					title: `Movie ${i}`,
-					rating_key: ratingKey,
-				};
-			}),
-		} as unknown as TautulliClient;
-
-		const publishedRows: unknown[] = [];
-		const replacementDelete = vi.fn().mockResolvedValue({ count: STALE_TAIL });
-		const tx = {
-			tautulliCache: {
-				deleteMany: replacementDelete,
-				createMany: vi.fn(async ({ data }: { data: unknown[] }) => {
-					publishedRows.push(...data);
-					return { count: data.length };
-				}),
-			},
-			cacheRefreshStatus: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
-		};
-
-		const mockPrisma = {
-			$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
-				callback(tx),
+	const tx = {
+		libraryCleanupConfig: {
+			upsert: vi.fn(async () => ({ id: "cleanup-config" })),
+			findUnique: vi.fn(async () => ({ runClaimToken: null })),
+		},
+		serviceInstance: {
+			findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
+				where.connectionGeneration === 4 && where.identityGeneration === 9
+					? { id: instance.id }
+					: null,
 			),
-		} as unknown as PrismaClient;
-
-		const result = await refreshTautulliCache(
-			mockClient,
-			mockPrisma,
-			"inst-1",
-			silentLog,
-			undefined,
-		);
-
-		expect(result.errors).toBe(0);
-		expect(result.errorMessages).toEqual([]);
-		expect(result.upserted).toBe(FRESH_COUNT);
-
-		expect(replacementDelete).toHaveBeenCalledWith({ where: { instanceId: "inst-1" } });
-		expect(publishedRows).toHaveLength(FRESH_COUNT);
-		expect(publishedRows[0]).toEqual(
-			expect.objectContaining({ connectionGeneration: 4, identityGeneration: 2 }),
-		);
-		expect(tx.cacheRefreshStatus.updateMany).toHaveBeenCalledWith(
-			expect.objectContaining({
-				where: expect.objectContaining({ connectionGeneration: 4, identityGeneration: 2 }),
-				data: expect.objectContaining({ lastResult: "success", lastAttemptResult: "success" }),
+			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+		},
+		tautulliCache: {
+			deleteMany: vi.fn(async () => {
+				provider.events.push("delete");
+				rows.splice(0, rows.length);
+				return { count: 1 };
 			}),
-		);
-	});
-
-	it("reports incomplete evidence when unique metadata exceeds the lookup cap", async () => {
-		const history = Array.from({ length: 501 }, (_, index) => ({
-			row_id: index + 1,
-			rating_key: `rk-${index}`,
-			parent_rating_key: "",
-			grandparent_rating_key: "",
-			title: `Movie ${index}`,
-			grandparent_title: "",
-			media_type: "movie",
-			user: "alice",
-			date: 1_700_000_000 + index,
-			play_count: 1,
-		}));
-		const mockClient = {
-			getLibraries: vi
-				.fn()
-				.mockResolvedValue([
-					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "501" },
-				]),
-			getHistory: vi.fn(async ({ start, length }: { start: number; length: number }) => ({
-				data: history.slice(start, start + length),
-				recordsFiltered: history.length,
-				recordsTotal: history.length,
-			})),
-			getMetadata: vi.fn(async (ratingKey: string) => ({
-				guids: [`tmdb://${Number.parseInt(ratingKey.replace("rk-", ""), 10) + 1}`],
-				media_type: "movie",
-				title: ratingKey,
-				rating_key: ratingKey,
-			})),
-		} as unknown as TautulliClient;
-		const mockPrisma = {
-			tautulliCache: {
-				upsert: vi.fn(async ({ where }: { where: { instanceId_tmdbId_mediaType: unknown } }) => ({
-					id: JSON.stringify(where.instanceId_tmdbId_mediaType),
-				})),
-				findMany: vi.fn().mockResolvedValue([]),
-				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
-			},
-		} as unknown as PrismaClient;
-
-		const result = await refreshTautulliCache(
-			mockClient,
-			mockPrisma,
-			"inst-1",
-			silentLog,
-			undefined,
-		);
-
-		expect(result.errors).toBe(1);
-		expect(result.errorMessages).toContain("provider_response_invalid");
-		expect(mockClient.getMetadata).toHaveBeenCalledTimes(500);
-		expect(result.upserted).toBe(0);
-	});
-
-	it("evicts stale rows when a discovered library has a complete empty history", async () => {
-		const mockClient = {
-			getLibraries: vi
-				.fn()
-				.mockResolvedValue([
-					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "0" },
-				]),
-			getHistory: vi.fn().mockResolvedValue({
-				data: [],
-				recordsFiltered: 0,
-				recordsTotal: 0,
+			createMany: vi.fn(async ({ data }: { data: unknown[] }) => {
+				provider.events.push(`create:${data.length}`);
+				rows.push(...data);
+				return { count: data.length };
 			}),
-			getMetadata: vi.fn(),
-		} as unknown as TautulliClient;
-		const deleteMany = vi.fn().mockResolvedValue({ count: 2 });
-		const tx = {
-			tautulliCache: { deleteMany, createMany: vi.fn() },
-			cacheRefreshStatus: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
-		};
-		const prisma = {
-			$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
-				callback(tx),
+		},
+		cacheRefreshStatus: {
+			findUnique: vi.fn(async () => structuredClone(status)),
+			upsert: vi.fn(
+				async ({
+					create,
+					update,
+				}: {
+					create?: Record<string, unknown>;
+					update?: Record<string, unknown>;
+				}) => {
+					const data = update ?? create ?? {};
+					provider.events.push(
+						typeof data.lastAttemptResult === "string" &&
+							data.lastAttemptResult.startsWith("in_progress:")
+							? "begin"
+							: "status",
+					);
+					Object.assign(status, data);
+					return status;
+				},
 			),
-		} as unknown as PrismaClient;
-
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
-
-		expect(result).toMatchObject({ errors: 0, complete: true, upserted: 0 });
-		expect(deleteMany).toHaveBeenCalledWith({ where: { instanceId: "inst-1" } });
-		expect(tx.tautulliCache.createMany).not.toHaveBeenCalled();
-	});
-
-	it("collects a verified live snapshot without publishing cache state", async () => {
-		const watchedAt = 1_723_000_000;
-		const mockClient = {
-			getLibraries: vi
-				.fn()
-				.mockResolvedValue([
-					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "1" },
-				]),
-			getHistory: vi.fn().mockResolvedValue({
-				data: [
-					{
-						row_id: 1,
-						rating_key: "rk-1",
-						parent_rating_key: "",
-						grandparent_rating_key: "",
-						title: "Recent Movie",
-						grandparent_title: "",
-						media_type: "movie",
-						user: "alice",
-						date: watchedAt,
-						play_count: 1,
-					},
-				],
-				recordsFiltered: 1,
-				recordsTotal: 1,
+			updateMany: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+				provider.events.push(data.lastAttemptResult === "success" ? "finish-success" : "failure");
+				Object.assign(status, data);
+				return { count: 1 };
 			}),
-			getMetadata: vi.fn().mockResolvedValue({
-				guids: ["tmdb://12345"],
-				media_type: "movie",
-				title: "Recent Movie",
-				rating_key: "rk-1",
-			}),
-		} as unknown as TautulliClient;
-		const transaction = vi.fn();
-		const prisma = { $transaction: transaction } as unknown as PrismaClient;
+		},
+	};
+	const db = {
+		$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) => {
+			const beforeRows = structuredClone(rows);
+			const beforeStatus = structuredClone(status);
+			try {
+				return await callback(tx);
+			} catch (error) {
+				rows.splice(0, rows.length, ...beforeRows);
+				for (const key of Object.keys(status)) delete status[key];
+				Object.assign(status, beforeStatus);
+				throw error;
+			}
+		}),
+	} as unknown as PrismaClient;
+	return { rows, status, db, tx };
+}
 
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined, {
-			publish: false,
-		});
+function encryptor(events = provider.events): Pick<Encryptor, "decrypt"> {
+	return {
+		decrypt: vi.fn(() => {
+			events.push("decrypt");
+			return "decrypted-api-key";
+		}),
+	};
+}
 
-		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 0 });
-		expect(result.snapshot?.rows).toEqual([
-			expect.objectContaining({
-				instanceId: "inst-1",
-				tmdbId: 12345,
-				lastWatchedAt: new Date(watchedAt * 1000),
-				watchCount: 1,
-			}),
-		]);
-		expect(transaction).not.toHaveBeenCalled();
+function historyClient(rows: unknown[]): TautulliClient {
+	return {
+		getLibraries: vi.fn(async () => {
+			provider.events.push("collect");
+			return [{ section_id: "movies", section_type: "movie", section_name: "Movies" }];
+		}),
+		getHistory: vi.fn(async ({ start, length }: { start: number; length: number }) => ({
+			data: rows.slice(start, start + length),
+			recordsFiltered: rows.length,
+			recordsTotal: rows.length,
+		})),
+		getMetadata: vi.fn(async (ratingKey: string) => ({
+			guids: [`tmdb://${1000 + Number(ratingKey.replace("rk-", ""))}`],
+		})),
+	} as unknown as TautulliClient;
+}
+
+function positiveRows(count: number): unknown[] {
+	const date = Math.floor(Date.now() / 1000);
+	return Array.from({ length: count }, (_, index) => ({
+		row_id: count - index,
+		rating_key: `rk-${index}`,
+		parent_rating_key: "",
+		grandparent_rating_key: "",
+		media_type: "movie",
+		user: "synthetic-user",
+		date,
+		play_count: 1,
+		group_count: 1,
+	}));
+}
+
+async function refresh(
+	state: State,
+	client: TautulliClient,
+	ownedEncryptor: Pick<Encryptor, "decrypt"> = encryptor(),
+): Promise<TautulliCacheRefreshResult> {
+	provider.client = client;
+	return await refreshOwnedTautulliCache({
+		prisma: state.db,
+		encryptor: ownedEncryptor,
+		instance,
+		log,
 	});
+}
 
-	it("fails closed when no media libraries can be discovered", async () => {
-		const mockClient = {
-			getLibraries: vi.fn().mockResolvedValue([]),
-			getHistory: vi.fn(),
-			getMetadata: vi.fn(),
-		} as unknown as TautulliClient;
-		const transaction = vi.fn();
-		const prisma = { $transaction: transaction } as unknown as PrismaClient;
-
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
-
-		expect(result.complete).toBe(false);
-		expect(result.errors).toBeGreaterThan(0);
-		expect(transaction).not.toHaveBeenCalled();
-	});
+beforeEach(() => {
+	vi.clearAllMocks();
+	provider.client = undefined;
+	provider.events = [];
+	provider.identityValues = [];
+	metadataControl.encodeFailure = false;
 });
 
-// ---------------------------------------------------------------------------
-// Sparse metadata regression (#497)
-// ---------------------------------------------------------------------------
-//
-// Tautulli's get_metadata can return a "success" envelope with empty/sparse
-// data when the rating_key isn't in its database (e.g., item deleted from
-// Plex but still in watch history). Before the schema fix, the missing
-// rating_key field caused UpstreamValidationError on every such response,
-// flooding Pulse/Dashboard with false-positive warnings. With the schema
-// tolerant of empty data, the refresher silently skips items whose metadata
-// can't be resolved — without logging warnings for the expected "not found"
-// case — while still surfacing real failures.
+describe("refreshOwnedTautulliCache", () => {
+	it("owns the attempt before decrypting, collects a bounded positive window, and commits exact metadata", async () => {
+		const state = createState();
+		const result = await refresh(state, historyClient(positiveRows(205)));
 
-describe("refreshTautulliCache — sparse metadata handling (#497)", () => {
-	it("silently skips items returning sparse metadata, without counting errors", async () => {
-		const libraries = [
-			{ section_id: "1", section_name: "Movies", section_type: "movie", count: "3" },
-		];
-		const history = [
+		expect(result.kind).toBe("positive-observation");
+		expect(result.complete).toBe(false);
+		expect(result.upserted).toBe(205);
+		expect(result.errors).toBe(0);
+		if (result.kind !== "positive-observation") throw new Error("expected publication");
+		expect(result.receipt.evidence).toBe("positive-only");
+		expect(result.receipt.publishedCanonicalEntities).toBe(205);
+		expect(state.rows).toHaveLength(205);
+		expect(state.tx.tautulliCache.createMany).toHaveBeenCalledTimes(3);
+		expect(
+			state.tx.tautulliCache.createMany.mock.calls.map(
+				([arg]: [{ data: unknown[] }]) => arg.data.length,
+			),
+		).toEqual([100, 100, 5]);
+		expect(state.status.generationId).toBeNull();
+		expect(state.status.itemCount).toBe(205);
+		expect(state.status.connectionGeneration).toBe(4);
+		expect(state.status.identityGeneration).toBe(9);
+		const metadata = decodeTautulliObservationMetadata(state.status.generationMetadata);
+		expect(metadata.ok).toBe(true);
+		if (metadata.ok) {
+			expect(metadata.metadata).toMatchObject({
+				version: 1,
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				itemCount: 205,
+			});
+		}
+		expect(provider.events.indexOf("begin")).toBeLessThan(provider.events.indexOf("decrypt"));
+		expect(provider.events.indexOf("decrypt")).toBeLessThan(provider.events.indexOf("collect"));
+		expect(provider.events.indexOf("collect")).toBeLessThan(provider.events.indexOf("delete"));
+		expect(provider.events.indexOf("delete")).toBeLessThan(
+			provider.events.indexOf("finish-success"),
+		);
+	});
+
+	it("publishes a valid empty positive observation without claiming absence or completion", async () => {
+		const state = createState();
+		state.rows.push({ tmdbId: 9 });
+
+		const result = await refresh(state, historyClient([]));
+
+		expect(result).toMatchObject({
+			kind: "positive-observation",
+			complete: false,
+			upserted: 0,
+			errors: 0,
+		});
+		if (result.kind !== "positive-observation") throw new Error("expected publication");
+		expect(result.receipt.publishedCanonicalEntities).toBe(0);
+		expect(state.rows).toEqual([]);
+		expect(state.status.itemCount).toBe(0);
+		expect(state.status.generationId).toBeNull();
+	});
+
+	it("returns unpublished superseded without decrypting or contacting the provider", async () => {
+		const state = createState();
+		state.status.connectionGeneration = 99;
+		const decrypt = vi.fn(() => "must-not-run");
+		const client = historyClient(positiveRows(1));
+
+		const result = await refresh(state, client, { decrypt });
+
+		expect(result).toEqual({
+			kind: "unpublished",
+			complete: false,
+			upserted: 0,
+			errors: 0,
+			errorMessages: ["publication-superseded"],
+			superseded: true,
+		});
+		expect(decrypt).not.toHaveBeenCalled();
+		expect(client.getLibraries).not.toHaveBeenCalled();
+		expect(state.tx.tautulliCache.deleteMany).not.toHaveBeenCalled();
+	});
+
+	it("records a bounded credential failure after beginning and preserves prior publication", async () => {
+		const state = createState();
+		const priorRows = [{ tmdbId: 123, watchedByUsers: '["prior"]' }];
+		state.rows.push(...priorRows);
+		const priorMetadata = state.status.generationMetadata;
+		const priorObservedAt = state.status.lastRefreshedAt;
+		const secret = "credential-secret-must-not-escape";
+		const decrypt = vi.fn(() => {
+			throw new Error(secret);
+		});
+
+		const result = await refresh(state, historyClient(positiveRows(1)), { decrypt });
+
+		expect(result).toEqual({
+			kind: "unpublished",
+			complete: false,
+			upserted: 0,
+			errors: 1,
+			errorMessages: ["provider-unavailable"],
+		});
+		expect(state.rows).toEqual(priorRows);
+		expect(state.status.generationMetadata).toBe(priorMetadata);
+		expect(state.status.lastRefreshedAt).toBe(priorObservedAt);
+		expect(JSON.stringify(result)).not.toContain(secret);
+		const logCalls = Object.values(
+			log as unknown as Record<string, { mock?: { calls: unknown[][] } }>,
+		).flatMap((method) => method.mock?.calls ?? []);
+		expect(JSON.stringify(logCalls)).not.toContain(secret);
+	});
+
+	it("maps provider rejection and malformed rows to bounded reasons without partial publication", async () => {
+		const state = createState();
+		const priorRows = [{ tmdbId: 321 }];
+		state.rows.push(...priorRows);
+		const unavailableClient = historyClient(positiveRows(1));
+		vi.mocked(unavailableClient.getLibraries).mockRejectedValueOnce(new Error("upstream secret"));
+
+		await expect(refresh(state, unavailableClient)).resolves.toMatchObject({
+			kind: "unpublished",
+			errors: 1,
+			errorMessages: ["provider-unavailable"],
+		});
+		expect(state.rows).toEqual(priorRows);
+
+		const malformedClient = historyClient([
 			{
 				row_id: 1,
-				rating_key: "rk-found",
-				parent_rating_key: "",
-				grandparent_rating_key: "",
-				title: "Found Movie",
-				grandparent_title: "",
+				rating_key: "rk-1",
 				media_type: "movie",
-				user: "alice",
-				date: 1_700_000_000,
-				play_count: 1,
+				user: "one",
+				date: Math.floor(Date.now() / 1000),
 			},
 			{
-				row_id: 2,
-				rating_key: "rk-missing",
-				parent_rating_key: "",
-				grandparent_rating_key: "",
-				title: "Deleted Movie",
-				grandparent_title: "",
+				row_id: 1,
+				rating_key: "rk-1",
 				media_type: "movie",
-				user: "alice",
-				date: 1_700_000_001,
-				play_count: 1,
+				user: "two",
+				date: Math.floor(Date.now() / 1000),
 			},
-			{
-				row_id: 3,
-				rating_key: "rk-error",
-				parent_rating_key: "",
-				grandparent_rating_key: "",
-				title: "Network-Failed Movie",
-				grandparent_title: "",
-				media_type: "movie",
-				user: "alice",
-				date: 1_700_000_002,
-				play_count: 1,
-			},
-		];
-
-		const mockClient = {
-			getLibraries: vi.fn().mockResolvedValue(libraries),
-			getHistory: vi.fn().mockResolvedValue({
-				data: history,
-				recordsFiltered: history.length,
-				recordsTotal: history.length,
-			}),
-			getMetadata: vi.fn(async (ratingKey: string) => {
-				if (ratingKey === "rk-found") {
-					return {
-						guids: ["tmdb://12345"],
-						media_type: "movie",
-						title: "Found Movie",
-						rating_key: "rk-found",
-					};
-				}
-				if (ratingKey === "rk-missing") {
-					// Tautulli's "rating_key not in DB" shape: success envelope with
-					// empty data, normalised by the schema's preprocess defaults.
-					return {
-						guids: [],
-						media_type: "unknown",
-						title: "",
-						// rating_key omitted entirely
-					};
-				}
-				// rk-error: real upstream failure path (network, HTTP 500, etc.)
-				throw new Error("ECONNREFUSED");
-			}),
-		} as unknown as TautulliClient;
-
-		const mockPrisma = {
-			tautulliCache: {
-				upsert: vi.fn(async () => ({ id: "fresh-1" })),
-				findMany: vi.fn(async () => [{ id: "fresh-1" }]),
-				deleteMany: vi.fn(async () => ({ count: 0 })),
-			},
-		} as unknown as PrismaClient;
-
-		const log = { warn: vi.fn(), info: vi.fn(), error: vi.fn() } as unknown as FastifyBaseLogger;
-
-		const result = await refreshTautulliCache(mockClient, mockPrisma, "inst-1", log, undefined);
-
-		// The incomplete scan publishes nothing; the previous generation remains intact.
-		expect(result.upserted).toBe(0);
-		expect(result.errors).toBe(1);
-		expect(result.complete).toBe(false);
-		expect(result.errorMessages).toHaveLength(1);
-		expect(result.errorMessages).toEqual(["provider_response_invalid"]);
-
-		// The crucial regression assertion: the empty-metadata item must NOT
-		// produce a "failed to fetch metadata for item" warning. Before the fix,
-		// it would — one warning per missing rating_key, flooding the operator
-		// dashboards. With the schema tolerant of sparse responses, only the
-		// genuine failure logs one bounded warning without the rating key or raw error.
-		const metadataWarnings = (
-			log.warn as unknown as { mock: { calls: unknown[][] } }
-		).mock.calls.filter((call) => {
-			const msg = call[1];
-			return typeof msg === "string" && msg.includes("failed to fetch metadata");
+		]);
+		await expect(refresh(state, malformedClient)).resolves.toMatchObject({
+			kind: "unpublished",
+			errors: 1,
+			errorMessages: ["rows-inconsistent"],
 		});
-		expect(metadataWarnings).toHaveLength(1);
-		expect(JSON.stringify(metadataWarnings)).not.toContain("rk-error");
-		expect(JSON.stringify(metadataWarnings)).not.toContain("ECONNREFUSED");
+		expect(state.rows).toEqual(priorRows);
 	});
-});
 
-describe("refreshTautulliCache — authoritative completeness", () => {
-	it("publishes complete history beyond the legacy 1,000-row page cap", async () => {
-		const history = Array.from({ length: 1_001 }, (_, index) => ({
-			row_id: index + 1,
-			rating_key: "rk-established",
-			parent_rating_key: "",
-			grandparent_rating_key: "",
-			title: "Established Movie",
-			grandparent_title: "",
-			media_type: "movie",
-			user: "alice",
-			date: 1_700_000_000 + index,
-			play_count: 1,
-		}));
-		const getHistory = vi.fn(async ({ start, length }: { start: number; length: number }) => ({
-			data: history.slice(start, start + length),
-			recordsFiltered: history.length,
-			recordsTotal: history.length,
-		}));
-		const mockClient = {
-			getLibraries: vi
-				.fn()
-				.mockResolvedValue([
-					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "1" },
-				]),
-			getHistory,
-			getMetadata: vi.fn().mockResolvedValue({
-				guids: ["tmdb://12345"],
-				media_type: "movie",
-				title: "Established Movie",
-				rating_key: "rk-established",
-			}),
-		} as unknown as TautulliClient;
-		const publishedRows: Array<{ watchCount: number }> = [];
-		const tx = {
-			tautulliCache: {
-				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
-				createMany: vi.fn(async ({ data }: { data: Array<{ watchCount: number }> }) => {
-					publishedRows.push(...data);
-					return { count: data.length };
-				}),
-			},
-			cacheRefreshStatus: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
-		};
-		const prisma = {
-			$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
-				callback(tx),
-			),
-		} as unknown as PrismaClient;
+	it("encodes metadata before replacing rows and preserves the prior publication when encoding fails", async () => {
+		const state = createState();
+		const priorRows = [{ tmdbId: 456 }];
+		state.rows.push(...priorRows);
+		const priorMetadata = state.status.generationMetadata;
+		metadataControl.encodeFailure = true;
 
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
+		const result = await refresh(state, historyClient(positiveRows(1)));
 
-		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
-		expect(getHistory).toHaveBeenCalledTimes(12);
-		expect(getHistory).toHaveBeenCalledWith({
-			section_id: "1",
-			length: 1,
-			start: 1_000,
-			order_column: "row_id",
-			order_dir: "asc",
-			grouping: 0,
-			include_activity: 0,
+		expect(result).toMatchObject({
+			kind: "unpublished",
+			errors: 1,
+			errorMessages: ["provider-unavailable"],
 		});
-		expect(getHistory).toHaveBeenLastCalledWith({
-			section_id: "1",
-			length: 1,
-			start: 1_000,
-			order_column: "row_id",
-			order_dir: "asc",
-			grouping: 0,
-			include_activity: 0,
+		expect(state.tx.tautulliCache.deleteMany).not.toHaveBeenCalled();
+		expect(state.rows).toEqual(priorRows);
+		expect(state.status.generationMetadata).toBe(priorMetadata);
+	});
+
+	it("rolls back row replacement when a transaction write fails", async () => {
+		const state = createState();
+		const priorRows = [{ tmdbId: 789 }];
+		state.rows.push(...priorRows);
+		state.tx.tautulliCache.deleteMany.mockRejectedValueOnce(new Error("database secret"));
+
+		const result = await refresh(state, historyClient(positiveRows(1)));
+
+		expect(result).toMatchObject({
+			kind: "unpublished",
+			errors: 1,
+			errorMessages: ["provider-unavailable"],
 		});
-		expect(publishedRows).toEqual([expect.objectContaining({ watchCount: 1_001 })]);
+		expect(state.rows).toEqual(priorRows);
 	});
 
-	it("fails closed before paging history beyond the production safety bound", async () => {
-		const getHistory = vi.fn().mockResolvedValue({
-			data: [],
-			recordsFiltered: 100_001,
-			recordsTotal: 100_001,
+	it("rolls back rows when the exact success CAS loses to a newer attempt", async () => {
+		const state = createState();
+		const priorRows = [{ tmdbId: 987 }];
+		state.rows.push(...priorRows);
+		state.tx.cacheRefreshStatus.updateMany.mockResolvedValueOnce({ count: 0 });
+
+		const result = await refresh(state, historyClient(positiveRows(1)));
+
+		expect(result).toEqual({
+			kind: "unpublished",
+			complete: false,
+			upserted: 0,
+			errors: 0,
+			errorMessages: ["publication-superseded"],
+			superseded: true,
 		});
-		const mockClient = {
-			getLibraries: vi
-				.fn()
-				.mockResolvedValue([
-					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "1" },
-				]),
-			getHistory,
-			getMetadata: vi.fn(),
-		} as unknown as TautulliClient;
-		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
-
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
-
-		expect(result).toMatchObject({ complete: false, upserted: 0 });
-		expect(result.errorMessages).toEqual(["provider_response_invalid"]);
-		expect(getHistory).toHaveBeenCalledOnce();
-		expect(mockClient.getMetadata).not.toHaveBeenCalled();
-		expect(prisma.$transaction).not.toHaveBeenCalled();
-	});
-
-	it("fails closed when pagination repeats a row across pages", async () => {
-		const rows = Array.from({ length: 200 }, (_, index) => ({
-			row_id: index + 1,
-			rating_key: `rk-${index}`,
-			parent_rating_key: "",
-			grandparent_rating_key: "",
-			title: `Movie ${index}`,
-			grandparent_title: "",
-			media_type: "movie",
-			user: "alice",
-			date: 1_700_000_000 + index,
-			play_count: 1,
-		}));
-		const mockClient = {
-			getLibraries: vi
-				.fn()
-				.mockResolvedValue([
-					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "201" },
-				]),
-			getHistory: vi.fn(async ({ start }: { start: number }) => ({
-				data: start === 0 ? rows : [rows[0]!],
-				recordsFiltered: 201,
-				recordsTotal: 201,
-			})),
-			getMetadata: vi.fn(),
-		} as unknown as TautulliClient;
-		const deleteMany = vi.fn();
-		const prisma = { tautulliCache: { deleteMany } } as unknown as PrismaClient;
-
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
-
-		expect(result.complete).toBe(false);
-		expect(result.errors).toBeGreaterThan(0);
-		expect(mockClient.getMetadata).not.toHaveBeenCalled();
-		expect(deleteMany).not.toHaveBeenCalled();
-	});
-
-	it("applies the history row limit across all libraries before paging or publishing", async () => {
-		const firstRow = {
-			row_id: 1,
-			rating_key: "rk-1",
-			parent_rating_key: "",
-			grandparent_rating_key: "",
-			title: "Movie",
-			grandparent_title: "",
-			media_type: "movie",
-			user: "alice",
-			date: 1_700_000_000,
-			play_count: 1,
-		};
-		const getHistory = vi
-			.fn()
-			.mockResolvedValueOnce({ data: [firstRow], recordsFiltered: 60_000, recordsTotal: 60_000 })
-			.mockResolvedValueOnce({ data: [firstRow], recordsFiltered: 40_001, recordsTotal: 40_001 });
-		const mockClient = {
-			getLibraries: vi.fn().mockResolvedValue([
-				{ section_id: "1", section_name: "Movies", section_type: "movie", count: "1" },
-				{ section_id: "2", section_name: "More Movies", section_type: "movie", count: "1" },
-			]),
-			getHistory,
-			getMetadata: vi.fn(),
-		} as unknown as TautulliClient;
-		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
-
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
-
-		expect(result).toMatchObject({ complete: false, upserted: 0 });
-		expect(result.errorMessages).toEqual(["provider_response_invalid"]);
-		expect(getHistory).toHaveBeenCalledTimes(2);
-		expect(mockClient.getMetadata).not.toHaveBeenCalled();
-		expect(prisma.$transaction).not.toHaveBeenCalled();
-	});
-
-	it("fails closed when new plays append during oldest-first paging", async () => {
-		const history = Array.from({ length: 202 }, (_, index) => ({
-			row_id: index + 1,
-			rating_key: "rk-established",
-			parent_rating_key: "",
-			grandparent_rating_key: "",
-			title: "Established Movie",
-			grandparent_title: "",
-			media_type: "movie",
-			user: "alice",
-			date: 1_700_000_000 + index,
-			play_count: 1,
-		}));
-		const getHistory = vi
-			.fn()
-			.mockResolvedValueOnce({
-				data: history.slice(0, 200),
-				recordsFiltered: 201,
-				recordsTotal: 201,
-			})
-			.mockResolvedValueOnce({
-				data: history.slice(200, 201),
-				recordsFiltered: 202,
-				recordsTotal: 202,
-			})
-			.mockResolvedValueOnce({
-				data: history.slice(1, 201),
-				recordsFiltered: 202,
-				recordsTotal: 202,
-			});
-		const mockClient = {
-			getLibraries: vi
-				.fn()
-				.mockResolvedValue([
-					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "1" },
-				]),
-			getHistory,
-			getMetadata: vi.fn().mockResolvedValue({
-				guids: ["tmdb://12345"],
-				media_type: "movie",
-				title: "Established Movie",
-				rating_key: "rk-established",
-			}),
-		} as unknown as TautulliClient;
-		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
-
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
-
-		expect(result).toMatchObject({ complete: false, upserted: 0 });
-		expect(result.errorMessages).toEqual(["provider_response_invalid"]);
-		expect(prisma.$transaction).not.toHaveBeenCalled();
-		expect(getHistory).toHaveBeenNthCalledWith(1, expect.objectContaining({ order_dir: "asc" }));
-		expect(getHistory).toHaveBeenNthCalledWith(2, {
-			section_id: "1",
-			length: 1,
-			start: 200,
-			order_column: "row_id",
-			order_dir: "asc",
-			grouping: 0,
-			include_activity: 0,
-		});
-	});
-
-	it("fails closed when the first play appears after an empty-library probe", async () => {
-		const firstPlay = {
-			row_id: 1,
-			rating_key: "rk-new",
-			parent_rating_key: "",
-			grandparent_rating_key: "",
-			title: "Newly Watched",
-			grandparent_title: "",
-			media_type: "movie",
-			user: "alice",
-			date: 1_700_000_000,
-			play_count: 1,
-		};
-		const getHistory = vi
-			.fn()
-			.mockResolvedValueOnce({ data: [], recordsFiltered: 0, recordsTotal: 0 })
-			.mockResolvedValueOnce({ data: [firstPlay], recordsFiltered: 1, recordsTotal: 1 });
-		const mockClient = {
-			getLibraries: vi
-				.fn()
-				.mockResolvedValue([
-					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "1" },
-				]),
-			getHistory,
-			getMetadata: vi.fn(),
-		} as unknown as TautulliClient;
-		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
-
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
-
-		expect(result).toMatchObject({ complete: false, upserted: 0 });
-		expect(result.errorMessages).toEqual(["provider_response_invalid"]);
-		expect(getHistory).toHaveBeenCalledTimes(2);
-		expect(prisma.$transaction).not.toHaveBeenCalled();
-	});
-
-	it("fails closed when history changes during metadata enrichment", async () => {
-		const firstPlay = {
-			row_id: 1,
-			rating_key: "rk-established",
-			parent_rating_key: "",
-			grandparent_rating_key: "",
-			title: "Established Movie",
-			grandparent_title: "",
-			media_type: "movie",
-			user: "alice",
-			date: 1_700_000_000,
-			play_count: 1,
-		};
-		const secondPlay = { ...firstPlay, row_id: 2, date: 1_700_000_001 };
-		const getHistory = vi
-			.fn()
-			.mockResolvedValueOnce({ data: [firstPlay], recordsFiltered: 1, recordsTotal: 1 })
-			.mockResolvedValueOnce({
-				data: [firstPlay, secondPlay],
-				recordsFiltered: 2,
-				recordsTotal: 2,
-			});
-		const mockClient = {
-			getLibraries: vi
-				.fn()
-				.mockResolvedValue([
-					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "1" },
-				]),
-			getHistory,
-			getMetadata: vi.fn().mockResolvedValue({
-				guids: ["tmdb://12345"],
-				media_type: "movie",
-				title: "Established Movie",
-			}),
-		} as unknown as TautulliClient;
-		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
-
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
-
-		expect(result).toMatchObject({ complete: false, upserted: 0 });
-		expect(result.errorMessages).toEqual(["provider_response_invalid"]);
-		expect(getHistory).toHaveBeenCalledTimes(2);
-		expect(prisma.$transaction).not.toHaveBeenCalled();
-	});
-
-	it("counts distinct same-second plays by stable row identity and disables grouping", async () => {
-		const history = [
-			{
-				row_id: 10,
-				rating_key: "rk-established",
-				parent_rating_key: "",
-				grandparent_rating_key: "",
-				title: "Established Movie",
-				grandparent_title: "",
-				media_type: "movie",
-				user: "alice",
-				date: 1_700_000_000,
-				play_count: 1,
-			},
-			{
-				row_id: 11,
-				rating_key: "rk-established",
-				parent_rating_key: "",
-				grandparent_rating_key: "",
-				title: "Established Movie",
-				grandparent_title: "",
-				media_type: "movie",
-				user: "alice",
-				date: 1_700_000_000,
-				play_count: 1,
-			},
-		];
-		const getHistory = vi
-			.fn()
-			.mockResolvedValueOnce({ data: history, recordsFiltered: 2, recordsTotal: 2 })
-			.mockResolvedValueOnce({
-				data: history,
-				recordsFiltered: 2,
-				recordsTotal: 2,
-			});
-		const mockClient = {
-			getLibraries: vi
-				.fn()
-				.mockResolvedValue([
-					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "1" },
-				]),
-			getHistory,
-			getMetadata: vi.fn().mockResolvedValue({
-				guids: ["tmdb://12345"],
-				media_type: "movie",
-				title: "Established Movie",
-			}),
-		} as unknown as TautulliClient;
-		const publishedRows: Array<{ watchCount: number }> = [];
-		const tx = {
-			tautulliCache: {
-				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
-				createMany: vi.fn(async ({ data }: { data: Array<{ watchCount: number }> }) => {
-					publishedRows.push(...data);
-					return { count: data.length };
-				}),
-			},
-			cacheRefreshStatus: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
-		};
-		const prisma = {
-			$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
-				callback(tx),
-			),
-		} as unknown as PrismaClient;
-
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
-
-		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
-		expect(publishedRows).toEqual([expect.objectContaining({ watchCount: 2 })]);
-		expect(getHistory).toHaveBeenCalledWith(
-			expect.objectContaining({ grouping: 0, include_activity: 0 }),
-		);
-	});
-
-	it("fails closed when play_count reports aggregation even with group_count one", async () => {
-		const mockClient = {
-			getLibraries: vi
-				.fn()
-				.mockResolvedValue([
-					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "1" },
-				]),
-			getHistory: vi.fn().mockResolvedValue({
-				data: [
-					{
-						row_id: 10,
-						rating_key: "rk-established",
-						parent_rating_key: "",
-						grandparent_rating_key: "",
-						title: "Established Movie",
-						grandparent_title: "",
-						media_type: "movie",
-						user: "alice",
-						date: 1_700_000_000,
-						play_count: 2,
-						group_count: 1,
-					},
-				],
-				recordsFiltered: 1,
-				recordsTotal: 1,
-			}),
-			getMetadata: vi.fn(),
-		} as unknown as TautulliClient;
-		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
-
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
-
-		expect(result).toMatchObject({ complete: false, upserted: 0 });
-		expect(result.errorMessages).toEqual(["provider_response_invalid"]);
-		expect(prisma.$transaction).not.toHaveBeenCalled();
-	});
-
-	it("fails closed when Tautulli does not honor row_id ordering", async () => {
-		const history = [2, 1].map((rowId) => ({
-			row_id: rowId,
-			rating_key: "rk-established",
-			parent_rating_key: "",
-			grandparent_rating_key: "",
-			title: "Established Movie",
-			grandparent_title: "",
-			media_type: "movie",
-			user: "alice",
-			date: 1_700_000_000 + rowId,
-			play_count: 1,
-		}));
-		const mockClient = {
-			getLibraries: vi
-				.fn()
-				.mockResolvedValue([
-					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "1" },
-				]),
-			getHistory: vi.fn().mockResolvedValue({
-				data: history,
-				recordsFiltered: history.length,
-				recordsTotal: history.length,
-			}),
-			getMetadata: vi.fn(),
-		} as unknown as TautulliClient;
-		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
-
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
-
-		expect(result).toMatchObject({ complete: false, upserted: 0 });
-		expect(result.errorMessages).toEqual(["provider_response_invalid"]);
-		expect(prisma.$transaction).not.toHaveBeenCalled();
-	});
-
-	it("fails closed on equal-count churn in a middle page", async () => {
-		const history = Array.from({ length: 401 }, (_, index) => ({
-			row_id: index + 1,
-			rating_key: "rk-established",
-			parent_rating_key: "",
-			grandparent_rating_key: "",
-			title: "Established Movie",
-			grandparent_title: "",
-			media_type: "movie",
-			user: "alice",
-			date: 1_700_000_000 + index,
-			play_count: 1,
-		}));
-		let requestCount = 0;
-		const getHistory = vi.fn(async ({ start, length }: { start: number; length: number }) => {
-			requestCount++;
-			const data = history.slice(start, start + length).map((item) => ({ ...item }));
-			if (requestCount === 5) data[50] = { ...data[50]!, user: "bob" };
-			return { data, recordsFiltered: history.length, recordsTotal: history.length };
-		});
-		const mockClient = {
-			getLibraries: vi
-				.fn()
-				.mockResolvedValue([
-					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "1" },
-				]),
-			getHistory,
-			getMetadata: vi.fn().mockResolvedValue({
-				guids: ["tmdb://12345"],
-				media_type: "movie",
-				title: "Established Movie",
-			}),
-		} as unknown as TautulliClient;
-		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
-
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
-
-		expect(result).toMatchObject({ complete: false, upserted: 0 });
-		expect(result.errorMessages).toEqual(["provider_response_invalid"]);
-		expect(getHistory).toHaveBeenCalledTimes(6);
-		expect(prisma.$transaction).not.toHaveBeenCalled();
-	});
-
-	it("fails closed without evicting when relevant history metadata has no TMDb mapping", async () => {
-		const mockClient = {
-			getLibraries: vi
-				.fn()
-				.mockResolvedValue([
-					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "1" },
-				]),
-			getHistory: vi.fn().mockResolvedValue({
-				data: [
-					{
-						row_id: 1,
-						rating_key: "rk-missing",
-						parent_rating_key: "",
-						grandparent_rating_key: "",
-						title: "Missing Movie",
-						grandparent_title: "",
-						media_type: "movie",
-						user: "alice",
-						date: 1_700_000_000,
-						play_count: 1,
-					},
-				],
-				recordsFiltered: 1,
-				recordsTotal: 1,
-			}),
-			getMetadata: vi.fn().mockResolvedValue({
-				guids: [],
-				media_type: "unknown",
-				title: "",
-			}),
-		} as unknown as TautulliClient;
-		const deleteMany = vi.fn();
-		const prisma = {
-			tautulliCache: {
-				upsert: vi.fn(),
-				findMany: vi.fn(),
-				deleteMany,
-			},
-		} as unknown as PrismaClient;
-
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
-
-		expect(result).toMatchObject({ complete: false, errors: 0, upserted: 0 });
-		expect(deleteMany).not.toHaveBeenCalled();
+		expect(state.rows).toEqual(priorRows);
+		expect(state.status.generationMetadata).toBe("prior-metadata");
 	});
 });

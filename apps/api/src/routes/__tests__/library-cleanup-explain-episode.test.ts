@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createPlexTargetLedgerBinding } from "../../lib/plex/plex-generation-target-ledger.js";
 import { plexConnectionFingerprint } from "../../lib/plex/service-instance-fingerprint.js";
 import { registerLibraryCleanupRoutes } from "../library-cleanup.js";
 import { createInjectAuthenticated, setupAuthInjection } from "./test-helpers.js";
@@ -7,6 +8,29 @@ import { createInjectAuthenticated, setupAuthInjection } from "./test-helpers.js
 const authorityMock = vi.hoisted(() => ({
 	positiveEpisodeEvidence: new Map<string, unknown>(),
 }));
+
+const cleanupExecutorOverrides = vi.hoisted(() => ({
+	buildEvalContextWithHealth: undefined as ((...args: unknown[]) => Promise<unknown>) | undefined,
+	loadTargetScopedPlexWatchCountFacts: undefined as
+		| ((...args: unknown[]) => Promise<unknown>)
+		| undefined,
+}));
+
+vi.mock("../../lib/library-cleanup/cleanup-executor.js", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("../../lib/library-cleanup/cleanup-executor.js")>();
+	return {
+		...actual,
+		buildEvalContextWithHealth: (...args: Parameters<typeof actual.buildEvalContextWithHealth>) =>
+			cleanupExecutorOverrides.buildEvalContextWithHealth?.(...args) ??
+			actual.buildEvalContextWithHealth(...args),
+		loadTargetScopedPlexWatchCountFacts: (
+			...args: Parameters<typeof actual.loadTargetScopedPlexWatchCountFacts>
+		) =>
+			cleanupExecutorOverrides.loadTargetScopedPlexWatchCountFacts?.(...args) ??
+			actual.loadTargetScopedPlexWatchCountFacts(...args),
+	};
+});
 
 vi.mock("../../lib/plex/plex-authority-service.js", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../../lib/plex/plex-authority-service.js")>();
@@ -174,6 +198,27 @@ beforeEach(async () => {
 			identityGeneration: 9,
 		},
 	]);
+	const parentGenerationId = "plex-parent-generation-1";
+	const parentTargets = [
+		{
+			id: "plex-target-1",
+			instanceId: PLEX_INSTANCE_ID,
+			generationId: parentGenerationId,
+			sectionId: "1",
+			sectionUuid: "shows-uuid",
+			mediaType: "series" as const,
+			tmdbId: 12345,
+			tvdbId: null,
+			ratingKey: "plex-show-12345",
+		},
+	];
+	const parentTargetLedger = createPlexTargetLedgerBinding({
+		instanceId: PLEX_INSTANCE_ID,
+		generationId: parentGenerationId,
+		connectionGeneration: 4,
+		identityGeneration: 9,
+		targets: parentTargets,
+	});
 	libraryCleanupConfigFindUnique = vi.fn().mockResolvedValue({
 		id: "cleanup-config",
 		rules: [episodeRule()],
@@ -209,7 +254,6 @@ beforeEach(async () => {
 		},
 		cacheRefreshStatus: {
 			findMany: vi.fn(({ where }: { where: { cacheType: string } }) => {
-				const parentGenerationId = "plex-parent-generation-1";
 				const common = {
 					instanceId: PLEX_INSTANCE_ID,
 					lastRefreshedAt: NOW,
@@ -229,7 +273,7 @@ beforeEach(async () => {
 								cacheType: "plex",
 								generationId: parentGenerationId,
 								generationMetadata: JSON.stringify({
-									version: 3,
+									version: 5,
 									publicationLevel: "authoritative",
 									completeness: "complete",
 									itemCount: 1,
@@ -246,9 +290,28 @@ beforeEach(async () => {
 										},
 									],
 									roots: [{ sectionKey: "1", domain: "membership", digest: "a".repeat(64) }],
-									targetLedgerVersion: 1,
-									targetCount: 1,
-									targetDigest: "c".repeat(64),
+									...parentTargetLedger,
+									partialReasons: [],
+									coverageReceipt: {
+										version: 1,
+										provider: "plex",
+										attemptStartedAt: NOW.toISOString(),
+										observedAt: NOW.toISOString(),
+										evidence: "complete",
+										units: [
+											{
+												scopeKey: "section:1",
+												expectedRawCount: 1,
+												pagesAttempted: 1,
+												pagesCompleted: 1,
+												rawObserved: 1,
+												sourceBindings: 1,
+												canonicalEntities: 1,
+												acceptedSkips: [],
+												fatalCount: 0,
+											},
+										],
+									},
 								}),
 							}
 						: {
@@ -256,10 +319,10 @@ beforeEach(async () => {
 								cacheType: "plex_episode",
 								generationId: "plex-episode-generation-1",
 								generationMetadata: JSON.stringify({
-									version: 2,
+									version: 3,
 									parentPlexGenerationId: parentGenerationId,
 									parentPublicationLevel: "authoritative",
-									parentMetadataVersion: 3,
+									parentMetadataVersion: 5,
 									canonicalizationVersion: 1,
 									episodeDigest: "b".repeat(64),
 									connectionGeneration: 4,
@@ -273,6 +336,9 @@ beforeEach(async () => {
 		plexEpisodeCache: {
 			findMany: plexEpisodeCacheFindMany,
 			count: vi.fn().mockResolvedValue(1),
+		},
+		plexGenerationTarget: {
+			findMany: vi.fn().mockResolvedValue(parentTargets),
 		},
 	} as never);
 	app.decorate("arrClientFactory", {
@@ -296,10 +362,126 @@ beforeEach(async () => {
 
 afterEach(async () => {
 	authorityMock.positiveEpisodeEvidence.clear();
+	cleanupExecutorOverrides.buildEvalContextWithHealth = undefined;
+	cleanupExecutorOverrides.loadTargetScopedPlexWatchCountFacts = undefined;
 	await app?.close();
 });
 
 describe("POST /library-cleanup/explain episode scope", () => {
+	it("preserves same-key Jellyfin and target-scoped Plex facts in a series explanation", async () => {
+		const exactStatus = {
+			availability: "current",
+			evidence: "complete",
+			reasonCodes: [],
+			domains: [
+				{
+					domain: "watch-count",
+					availability: "current",
+					evidence: "complete",
+					valueSemantics: "exact",
+					reasonCodes: [],
+				},
+			],
+		} as const;
+		libraryCleanupConfigFindUnique.mockResolvedValue({
+			id: "cleanup-config",
+			rules: [
+				{ ...episodeRule(0), id: "plex-series-rule", targetScope: "series" },
+				{
+					...episodeRule(0),
+					id: "jellyfin-series-rule",
+					name: "Jellyfin watched",
+					ruleType: "jellyfin_watch_count",
+					targetScope: "series",
+				},
+			],
+		});
+		cleanupExecutorOverrides.buildEvalContextWithHealth = async () =>
+			({
+				ctx: {
+					now: NOW,
+					providerWatchCountFacts: new Map([
+						[
+							"series:12345",
+							[
+								{
+									userId: USER_ID,
+									provider: "JELLYFIN",
+									cacheType: "jellyfin",
+									instanceId: "jellyfin-1",
+									generationId: "jellyfin-generation-1",
+									targetKey: "series:12345",
+									coordinate: "jellyfin-series-12345",
+									observedValue: 2,
+									status: exactStatus,
+								},
+							],
+						],
+					]),
+				},
+				failedSources: new Set(),
+				providerEvidence: { dependencies: [], sources: [] },
+			}) as never;
+		cleanupExecutorOverrides.loadTargetScopedPlexWatchCountFacts = async () =>
+			new Map([
+				[
+					"series:12345",
+					[
+						{
+							userId: USER_ID,
+							provider: "PLEX",
+							cacheType: "plex",
+							instanceId: PLEX_INSTANCE_ID,
+							generationId: "plex-v6-generation-1",
+							targetKey: "series:12345",
+							coordinate: "1:plex-show-12345",
+							sectionTitle: "TV",
+							observedValue: 2,
+							status: exactStatus,
+							targetScoped: true,
+						},
+					],
+				],
+			]) as never;
+
+		const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/explain", {
+			body: { instanceId: SONARR_INSTANCE_ID, arrItemId: 101 },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(JSON.parse(response.payload)).toMatchObject({
+			results: [
+				{ ruleId: "plex-series-rule", matched: true, filteredBy: null },
+				{ ruleId: "jellyfin-series-rule", matched: true, filteredBy: null },
+			],
+		});
+	});
+
+	it("does not read a target-scoped Plex ledger for an unrelated age explanation", async () => {
+		libraryCleanupConfigFindUnique.mockResolvedValue({
+			id: "cleanup-config",
+			rules: [
+				{
+					...episodeRule(0),
+					id: "age-rule",
+					name: "Old item",
+					ruleType: "age",
+					parameters: JSON.stringify({ operator: "older_than", days: 1 }),
+					targetScope: "series",
+				},
+			],
+		});
+		const readTargetScopedFacts = vi.fn(async () => new Map());
+		cleanupExecutorOverrides.loadTargetScopedPlexWatchCountFacts = readTargetScopedFacts;
+
+		const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/explain", {
+			body: { instanceId: SONARR_INSTANCE_ID, arrItemId: 101 },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(readTargetScopedFacts).not.toHaveBeenCalled();
+	});
+
 	it("evaluates the selected episode instead of the parent series aggregate", async () => {
 		const inject = createInjectAuthenticated(app);
 		const response = await inject("POST", "/library-cleanup/explain", {
@@ -414,6 +596,69 @@ describe("POST /library-cleanup/explain episode scope", () => {
 			});
 		},
 	);
+
+	it("matches the exact positively observed episode for the reporter delete rule", async () => {
+		libraryCleanupConfigFindUnique.mockResolvedValue({
+			id: "cleanup-config",
+			dryRunMode: true,
+			requireApproval: true,
+			rejectionMemoryDays: 0,
+			rules: [episodeRule(0)],
+		});
+		authorityMock.positiveEpisodeEvidence.set(PLEX_INSTANCE_ID, {
+			available: true,
+			instanceId: PLEX_INSTANCE_ID,
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			provenance: {
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				parentPlexGenerationId: "parent-generation",
+				parentTargetDigest: "parent-target-digest",
+				episodeGenerationId: "episode-generation",
+				episodeDigest: "episode-digest",
+				publishedAt: NOW.toISOString(),
+			},
+			rows: [
+				{
+					showTmdbId: 12345,
+					seasonNumber: 1,
+					episodeNumber: 2,
+					ratingKey: "plex-episode-202",
+					lowerBound: 1,
+					sourceFingerprint: plexConnectionFingerprint(plexInstance),
+					soleParentTarget: { ratingKey: "plex-show-12345" },
+				},
+			],
+		});
+
+		const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/explain", {
+			body: { instanceId: SONARR_INSTANCE_ID, arrItemId: 101, arrEpisodeId: 202 },
+		});
+		const payload = JSON.parse(response.payload) as {
+			item: { arrEpisodeId: number; seasonNumber: number; episodeNumber: number };
+			results: Array<{ matched: boolean; reason: string | null }>;
+		};
+
+		expect(response.statusCode).toBe(200);
+		expect(payload.item).toMatchObject({
+			itemType: "episode",
+			targetScope: "episode",
+			arrEpisodeId: 202,
+			seasonNumber: 1,
+			episodeNumber: 2,
+		});
+		expect(payload.results).toEqual([
+			expect.objectContaining({
+				ruleId: "episode-rule",
+				matched: true,
+				reason: "Plex watch count 1 > 0",
+				filteredBy: null,
+			}),
+		]);
+		expect(JSON.stringify(payload)).not.toContain("http://");
+		expect(JSON.stringify(payload)).not.toContain("parent-target-digest");
+	});
 
 	it("reports an authoritative exact zero as false instead of unavailable", async () => {
 		libraryCleanupConfigFindUnique.mockResolvedValue({

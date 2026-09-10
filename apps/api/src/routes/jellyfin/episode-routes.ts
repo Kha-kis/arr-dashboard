@@ -1,11 +1,16 @@
 /**
  * Jellyfin Episode Watch Status Routes
  *
- * Returns per-episode watch status from JellyfinEpisodeCache.
+ * Returns per-episode watch status from owned Jellyfin observations.
  */
 
+import type { PlexEpisodeStatus, ProviderObservationStatusEnvelope } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import {
+	type JellyfinDisplayInstance,
+	readOwnedJellyfinEpisodeDisplaySources,
+} from "../../lib/jellyfin/jellyfin-display-evidence.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 const episodeQuery = z.object({
@@ -21,11 +26,17 @@ const episodeQuery = z.object({
 		.pipe(z.number().positive()),
 });
 
+type JellyfinEpisodeStatusResponse = {
+	showTmdbId: number;
+	episodes: PlexEpisodeStatus[];
+	providerStatus?: ProviderObservationStatusEnvelope;
+};
+
 export async function registerEpisodeRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	/**
 	 * GET /api/jellyfin/episodes?instanceId=X&showTmdbId=123
 	 *
-	 * Returns episode watch status from JellyfinEpisodeCache.
+	 * Returns episode watch status from an owned Jellyfin observation.
 	 */
 	app.get("/", async (request, reply) => {
 		const { instanceId, showTmdbId } = validateRequest(episodeQuery, request.query);
@@ -34,25 +45,43 @@ export async function registerEpisodeRoutes(app: FastifyInstance, _opts: Fastify
 		// Verify instance ownership
 		const instance = await app.prisma.serviceInstance.findFirst({
 			where: { id: instanceId, userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true },
+			select: { id: true, label: true, service: true },
 		});
 
 		if (!instance) {
 			return reply.status(404).send({ error: "Instance not found or access denied" });
 		}
 
-		const episodes = await app.prisma.jellyfinEpisodeCache.findMany({
-			where: {
-				instanceId,
-				showTmdbId,
-			},
-			orderBy: [{ seasonNumber: "asc" }, { episodeNumber: "asc" }],
+		if (instance.service !== "JELLYFIN" && instance.service !== "EMBY") {
+			return reply.status(404).send({ error: "Instance not found or access denied" });
+		}
+		const displayInstance: JellyfinDisplayInstance = {
+			id: instance.id,
+			label: instance.label,
+			service: instance.service,
+		};
+		const displayEvidence = await readOwnedJellyfinEpisodeDisplaySources({
+			prisma: app.prisma,
+			userId,
+			instances: [displayInstance],
 		});
+		const episodes = displayEvidence.sources
+			.flatMap((source) => source.rows)
+			.filter((episode) => episode.showTmdbId === showTmdbId)
+			.sort(
+				(left, right) =>
+					left.seasonNumber - right.seasonNumber ||
+					left.episodeNumber - right.episodeNumber ||
+					left.id.localeCompare(right.id),
+			);
 
-		const items = episodes.map((e) => {
+		const items: PlexEpisodeStatus[] = episodes.map((e) => {
 			let watchedByUsers: string[] = [];
 			try {
-				watchedByUsers = JSON.parse(e.watchedByUsers) as string[];
+				const parsed: unknown = JSON.parse(e.watchedByUsers);
+				if (Array.isArray(parsed) && parsed.every((entry) => typeof entry === "string")) {
+					watchedByUsers = parsed;
+				}
 			} catch {
 				// Skip malformed JSON
 			}
@@ -67,6 +96,11 @@ export async function registerEpisodeRoutes(app: FastifyInstance, _opts: Fastify
 			};
 		});
 
-		return reply.send({ showTmdbId, episodes: items });
+		const response: JellyfinEpisodeStatusResponse = {
+			showTmdbId,
+			episodes: items,
+			providerStatus: displayEvidence.providerStatus,
+		};
+		return reply.send(response);
 	});
 }

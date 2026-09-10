@@ -12,6 +12,38 @@ import {
 
 export type TimeRangePreset = "24h" | "7d" | "30d" | "all";
 
+/** Convert a native date input into a canonical UTC instant using local-day semantics. */
+export const canonicalizeDateInput = (value: string, boundary: "start" | "end"): string | null => {
+	if (value === "") return "";
+	const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+	if (!match) return null;
+	const year = Number(match[1]);
+	const month = Number(match[2]);
+	const day = Number(match[3]);
+	const date = new Date(
+		year,
+		month - 1,
+		day,
+		boundary === "start" ? 0 : 23,
+		boundary === "start" ? 0 : 59,
+		boundary === "start" ? 0 : 59,
+		boundary === "start" ? 0 : 999,
+	);
+	if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+		return null;
+	}
+	return date.toISOString();
+};
+
+export const localDateInputValue = (canonical: string): string => {
+	const date = new Date(canonical);
+	if (Number.isNaN(date.getTime())) return "";
+	return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+};
+
+export const validateDateRange = (startDate: string, endDate: string): boolean =>
+	!startDate || !endDate || startDate <= endDate;
+
 /**
  * Returns an ISO date string for the start of the given time range preset.
  * Returns undefined for "all" (no date filter).
@@ -90,7 +122,7 @@ export interface DayGroup<T> {
 
 /**
  * Groups items by day based on a date accessor.
- * Items without a valid date are placed in an "Unknown" group.
+ * Items without a valid canonical date are omitted; v2 payloads require eventAt.
  * Groups are returned in descending order (most recent first).
  */
 export const groupByDay = <T>(
@@ -101,26 +133,10 @@ export const groupByDay = <T>(
 
 	for (const item of items) {
 		const dateStr = getDate(item);
-		if (!dateStr) {
-			const existing = groups.get("unknown");
-			if (existing) {
-				existing.items.push(item);
-			} else {
-				groups.set("unknown", { date: new Date(0), items: [item] });
-			}
-			continue;
-		}
+		if (!dateStr) continue;
 
 		const date = new Date(dateStr);
-		if (Number.isNaN(date.getTime())) {
-			const existing = groups.get("unknown");
-			if (existing) {
-				existing.items.push(item);
-			} else {
-				groups.set("unknown", { date: new Date(0), items: [item] });
-			}
-			continue;
-		}
+		if (Number.isNaN(date.getTime())) continue;
 
 		const dayKey = format(startOfDay(date), "yyyy-MM-dd");
 		const existing = groups.get(dayKey);
@@ -132,14 +148,10 @@ export const groupByDay = <T>(
 	}
 
 	return Array.from(groups.entries())
-		.sort(([a], [b]) => {
-			if (a === "unknown") return 1;
-			if (b === "unknown") return -1;
-			return b.localeCompare(a);
-		})
+		.sort(([a], [b]) => b.localeCompare(a))
 		.map(([key, { date, items: dayItems }]) => ({
 			date: key,
-			label: key === "unknown" ? "Unknown Date" : getDaySeparatorLabel(date),
+			label: getDaySeparatorLabel(date),
 			items: dayItems,
 		}));
 };

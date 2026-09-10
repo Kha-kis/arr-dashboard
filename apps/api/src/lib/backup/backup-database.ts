@@ -7,6 +7,10 @@
 
 import type { BackupData } from "@arr/shared";
 import { BackupCompatibilityError } from "../errors.js";
+import {
+	isLabelSyncMutationUnresolved,
+	parseLabelSyncMutationAttempt,
+} from "../label-sync/jellyfin-mutation-state.js";
 import { loggers } from "../logger.js";
 import type { Prisma, PrismaClient, TrashBackup } from "../prisma.js";
 import {
@@ -15,6 +19,7 @@ import {
 	LEGACY_RELATIONAL_CONFIG_DELEGATES,
 	LEGACY_RELATIONAL_CONFIG_FIELDS,
 	validateCoordinationEvidence,
+	validateLabelSyncMutationAttempts,
 	validateRecords,
 	validateSingletonCollections,
 } from "./backup-validation.js";
@@ -25,6 +30,33 @@ const log = loggers.backup;
 // transaction bounded while allowing a supported populated restore to exceed
 // Prisma's five-second interactive-transaction default on slower storage.
 const RESTORE_TRANSACTION_TIMEOUT_MS = 5 * 60 * 1000;
+const LABEL_SYNC_MUTATION_ATTEMPT_FIELDS = {
+	id: true,
+	userId: true,
+	ruleId: true,
+	destinationInstanceId: true,
+	provider: true,
+	mediaType: true,
+	tmdbId: true,
+	connectionGeneration: true,
+	identityGeneration: true,
+	targetItemId: true,
+	libraryId: true,
+	intentFingerprint: true,
+	ruleFingerprint: true,
+	destinationTag: true,
+	activeOperationKey: true,
+	claimToken: true,
+	sendAttemptCount: true,
+	reconcileAttemptCount: true,
+	requestStartedAt: true,
+	lastObservedAt: true,
+	completedAt: true,
+	status: true,
+	reasonCode: true,
+	createdAt: true,
+	updatedAt: true,
+} as const;
 
 export interface ExportDatabaseOptions {
 	/** Include TRaSH ARR config snapshots (can be large) */
@@ -61,6 +93,37 @@ async function targetHasDurableConfig(
 		if (accessor?.count && (await accessor.count()) > 0) return true;
 	}
 	return false;
+}
+
+/** Restore must never delete a row whose provider outcome is uncertain. */
+async function targetHasUnresolvedLabelSyncMutation(
+	prisma: Prisma.TransactionClient | PrismaClient,
+): Promise<boolean> {
+	const model = (
+		prisma as unknown as Record<string, { findMany?: (args: unknown) => Promise<unknown[]> }>
+	).labelSyncMutationAttempt;
+	if (!model?.findMany) throw new BackupCompatibilityError();
+	let rows: unknown[];
+	try {
+		const result = await model.findMany({ select: LABEL_SYNC_MUTATION_ATTEMPT_FIELDS });
+		if (!Array.isArray(result)) throw new Error("Invalid label sync mutation attempt rows");
+		rows = result;
+	} catch {
+		throw new BackupCompatibilityError();
+	}
+	let hasUnresolved = false;
+	for (const row of rows) {
+		let parsed: ReturnType<typeof parseLabelSyncMutationAttempt>;
+		try {
+			parsed = parseLabelSyncMutationAttempt(row);
+		} catch {
+			throw new BackupCompatibilityError();
+		}
+		if (isLabelSyncMutationUnresolved(parsed.status)) {
+			hasUnresolved = true;
+		}
+	}
+	return hasUnresolved;
 }
 
 const ACTIVE_APPROVAL_STATUSES = [
@@ -208,6 +271,9 @@ export async function assertRestoreCompatibility(
 	prisma: Prisma.TransactionClient | PrismaClient,
 	data: BackupData["data"],
 ): Promise<void> {
+	if (await targetHasUnresolvedLabelSyncMutation(prisma)) {
+		throw new BackupCompatibilityError();
+	}
 	const record = data as Record<string, unknown>;
 	const missingFields = LEGACY_RELATIONAL_CONFIG_FIELDS.filter(
 		(field) => !Array.isArray(record[field]),
@@ -855,6 +921,10 @@ async function exportDatabaseSnapshot(
 	const notificationAggregationConfig = await prisma.notificationAggregationConfig.findMany();
 	const autoTagRule = await prisma.autoTagRule.findMany();
 	const labelSyncRule = await prisma.labelSyncRule.findMany();
+	// Active observation runs are disposable and restart from current authority after restore.
+	// Durable mutation history is always exported in full, including terminal
+	// rows, even when disposable operational history is excluded.
+	const labelSyncMutationAttempts = await prisma.labelSyncMutationAttempt.findMany();
 	const queueCleanerConfig = await prisma.queueCleanerConfig.findMany();
 	const libraryCleanupConfig = await prisma.libraryCleanupConfig.findMany();
 	const libraryCleanupRule = await prisma.libraryCleanupRule.findMany();
@@ -1073,6 +1143,7 @@ async function exportDatabaseSnapshot(
 		notificationAggregationConfig,
 		autoTagRule,
 		labelSyncRule,
+		labelSyncMutationAttempts,
 		queueCleanerConfig,
 		libraryCleanupConfig,
 		libraryCleanupRule,
@@ -1240,6 +1311,14 @@ function validateRestoreRecords(data: BackupData["data"]): void {
 	if (data.labelSyncRule && data.labelSyncRule.length > 0) {
 		validateRecords(data.labelSyncRule, "labelSyncRule", ["id", "userId"]);
 	}
+	if (data.labelSyncMutationAttempts !== undefined) {
+		validateLabelSyncMutationAttempts(
+			data.labelSyncMutationAttempts,
+			data.users,
+			data.labelSyncRule,
+			data.serviceInstances,
+		);
+	}
 	if (data.queueCleanerConfig && data.queueCleanerConfig.length > 0) {
 		validateRecords(data.queueCleanerConfig, "queueCleanerConfig", ["id", "instanceId"]);
 	}
@@ -1358,6 +1437,20 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 	validateRestoreRecords(data);
 	const libraryCleanupApprovals = prepareLibraryCleanupApprovals(data);
 	const librarySyncSettings = prepareLibrarySyncSettings(data);
+	const labelSyncMutationAttempts = data.labelSyncMutationAttempts
+		? validateLabelSyncMutationAttempts(
+				data.labelSyncMutationAttempts,
+				data.users,
+				data.labelSyncRule,
+				data.serviceInstances,
+			).map((attempt) =>
+				attempt.status === "unknown" ? { ...attempt, claimToken: null } : attempt,
+			)
+		: [];
+	// Preflight on the root client so malformed/future current ledger rows fail
+	// before opening the destructive transaction. Repeat inside the transaction
+	// below to close the race between this read and the first delete.
+	await assertRestoreCompatibility(prisma, data);
 	// Use a transaction to ensure atomicity
 	await prisma.$transaction(
 		async (tx) => {
@@ -1402,6 +1495,7 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 			await tx.notificationRule.deleteMany();
 			await tx.notificationAggregationConfig.deleteMany();
 			await tx.autoTagRule.deleteMany();
+			await tx.labelSyncMutationAttempt.deleteMany();
 			await tx.labelSyncRule.deleteMany();
 			await tx.queueCleanerConfig.deleteMany();
 			await tx.libraryCleanupConfig.deleteMany();
@@ -1640,6 +1734,11 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 					data: data.labelSyncRule as Prisma.LabelSyncRuleCreateManyInput[],
 				});
 			}
+			if (labelSyncMutationAttempts.length > 0) {
+				await tx.labelSyncMutationAttempt.createMany({
+					data: labelSyncMutationAttempts,
+				});
+			}
 			if (data.queueCleanerConfig && data.queueCleanerConfig.length > 0) {
 				await tx.queueCleanerConfig.createMany({
 					data: data.queueCleanerConfig as Prisma.QueueCleanerConfigCreateManyInput[],
@@ -1676,6 +1775,9 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 				});
 			}
 		},
-		{ timeout: RESTORE_TRANSACTION_TIMEOUT_MS },
+		{
+			isolationLevel: "Serializable",
+			timeout: RESTORE_TRANSACTION_TIMEOUT_MS,
+		},
 	);
 }

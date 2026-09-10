@@ -12,6 +12,7 @@ export * from "./notifications";
 export * from "./oidc-provider";
 export * from "./password";
 export * from "./plex";
+export * from "./provider-observation";
 export * from "./pulse";
 export * from "./queue-cleaner";
 export * from "./qui";

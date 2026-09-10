@@ -19,49 +19,56 @@ export async function registerActivityRoutes(app: FastifyInstance, _opts: Fastif
 	app.get("/", async (request, reply) => {
 		const userId = request.currentUser!.id;
 
+		const result = await executeOnTautulliInstances(app, userId, async (client, instance) => {
+			const activity = await client.getActivity();
+
+			return {
+				streamCount: Number(activity.stream_count) || 0,
+				totalBandwidth: activity.total_bandwidth || 0,
+				lanBandwidth: activity.lan_bandwidth || 0,
+				wanBandwidth: activity.wan_bandwidth || 0,
+				sessions: activity.sessions.map(
+					(s): TautulliSession => ({
+						sessionKey: s.session_key,
+						ratingKey: s.rating_key,
+						title: s.title,
+						grandparentTitle: s.grandparent_title,
+						mediaType: s.media_type,
+						user: s.friendly_name || s.user,
+						player: s.player,
+						platform: s.platform,
+						product: s.product,
+						state: s.state as "playing" | "paused" | "buffering",
+						progressPercent: Number(s.progress_percent) || 0,
+						transcodeDecision: s.transcode_decision,
+						videoDecision: s.stream_video_decision || s.transcode_decision,
+						audioDecision: s.stream_audio_decision || "direct play",
+						videoResolution: s.video_resolution,
+						audioCodec: s.audio_codec,
+						videoCodec: s.video_codec || "",
+						bandwidth: Number(s.bandwidth) || 0,
+						location: s.location as "lan" | "wan",
+						thumb: s.thumb,
+						instanceId: instance.id,
+						instanceName: instance.label,
+					}),
+				),
+			};
+		});
+
+		const sessions: TautulliSession[] = [];
 		let totalStreamCount = 0;
 		let totalBandwidth = 0;
 		let lanBandwidth = 0;
 		let wanBandwidth = 0;
-
-		const result = await executeOnTautulliInstances(app, userId, async (client, instance) => {
-			const activity = await client.getActivity();
-
-			totalStreamCount += Number(activity.stream_count) || 0;
-			totalBandwidth += activity.total_bandwidth || 0;
-			lanBandwidth += activity.lan_bandwidth || 0;
-			wanBandwidth += activity.wan_bandwidth || 0;
-
-			return activity.sessions.map(
-				(s): TautulliSession => ({
-					sessionKey: s.session_key,
-					ratingKey: s.rating_key,
-					title: s.title,
-					grandparentTitle: s.grandparent_title,
-					mediaType: s.media_type,
-					user: s.friendly_name || s.user,
-					player: s.player,
-					platform: s.platform,
-					product: s.product,
-					state: s.state as "playing" | "paused" | "buffering",
-					progressPercent: Number(s.progress_percent) || 0,
-					transcodeDecision: s.transcode_decision,
-					videoDecision: s.stream_video_decision || s.transcode_decision,
-					audioDecision: s.stream_audio_decision || "direct play",
-					videoResolution: s.video_resolution,
-					audioCodec: s.audio_codec,
-					videoCodec: s.video_codec || "",
-					bandwidth: Number(s.bandwidth) || 0,
-					location: s.location as "lan" | "wan",
-					thumb: s.thumb,
-					instanceId: instance.id,
-					instanceName: instance.label,
-				}),
-			);
-		});
-
-		// aggregated is flattened by executeOnTautulliInstances (uses flatMap)
-		const sessions = result.aggregated as unknown as TautulliSession[];
+		for (const instanceResult of result.instances) {
+			if (!instanceResult.success) continue;
+			sessions.push(...instanceResult.data.sessions);
+			totalStreamCount += instanceResult.data.streamCount;
+			totalBandwidth += instanceResult.data.totalBandwidth;
+			lanBandwidth += instanceResult.data.lanBandwidth;
+			wanBandwidth += instanceResult.data.wanBandwidth;
+		}
 
 		const response: TautulliActivityResponse = {
 			sessions,

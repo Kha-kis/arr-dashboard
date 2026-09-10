@@ -2,11 +2,13 @@
 
 import type {
 	DashboardStatisticsResponse,
+	HistoryResponseV2,
 	MultiInstanceCalendarResponse,
-	MultiInstanceHistoryResponse,
 	MultiInstanceQueueResponse,
 } from "@arr/shared";
-import { useQuery } from "@tanstack/react-query";
+import type { InfiniteData } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import type { HistoryRequest } from "../../lib/api-client/dashboard";
 import {
 	fetchDashboardStatistics,
 	fetchMultiInstanceCalendar,
@@ -25,15 +27,29 @@ export const useMultiInstanceQueueQuery = () =>
 		refetchInterval: POLLING_ACTIVE,
 	});
 
-export const useMultiInstanceHistoryQuery = (params?: {
-	startDate?: string;
-	endDate?: string;
-	page?: number;
-	pageSize?: number;
-}) =>
-	useQuery<MultiInstanceHistoryResponse>({
-		queryKey: dashboardKeys.history(params ?? {}),
-		queryFn: () => fetchMultiInstanceHistory(params),
+export const useMultiInstanceHistoryQuery = (params: HistoryRequest & { chainRevision: number }) =>
+	useInfiniteQuery<
+		HistoryResponseV2,
+		Error,
+		InfiniteData<HistoryResponseV2>,
+		ReturnType<typeof dashboardKeys.history>,
+		string | null
+	>({
+		queryKey: dashboardKeys.history(
+			(({ cursor: _cursor, ...keyParams }) => keyParams)(params) as unknown as Record<
+				string,
+				unknown
+			>,
+		),
+		initialPageParam: null,
+		queryFn: ({ pageParam }) => {
+			const { chainRevision: _chainRevision, cursor: _cursor, ...request } = params;
+			return fetchMultiInstanceHistory({ ...request, cursor: pageParam });
+		},
+		getNextPageParam: (lastPage) =>
+			lastPage.pageInfo.hasNextPage && lastPage.pageInfo.nextCursor
+				? lastPage.pageInfo.nextCursor
+				: undefined,
 		staleTime: 60 * 1000,
 		gcTime: 2 * 60 * 1000, // 2 minutes - cleanup old param combinations
 		retry: false,

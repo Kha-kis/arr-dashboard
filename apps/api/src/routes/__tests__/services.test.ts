@@ -192,6 +192,9 @@ function createMockPrisma() {
 		plexEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		tautulliCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		cacheRefreshStatus: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		historyCollectionLease: { update: vi.fn(), delete: vi.fn(), deleteMany: vi.fn() },
+		historyObservation: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		historySourceStatus: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		instanceQualityProfileOverride: {
 			findMany: vi.fn().mockResolvedValue([]),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -562,6 +565,303 @@ describe("PUT /services/:id", () => {
 				([args]) => args.data.connectionGeneration?.increment === 1,
 			),
 		).toBe(true);
+	});
+
+	it.each(["SONARR", "RADARR", "PROWLARR", "LIDARR", "READARR"] as const)(
+		"rotates %s once and clears only its History state for a normalized-distinct URL",
+		async (service) => {
+			mockRequireInstance.mockResolvedValue(
+				makeInstance({ service, baseUrl: `http://${service.toLowerCase()}.test:8989` }),
+			);
+			mockBuildUpdateData.mockReturnValue({ baseUrl: `http://${service.toLowerCase()}.test:9999` });
+			mockPrisma.serviceInstance.findFirst.mockResolvedValue(
+				makeInstance({ service, baseUrl: `http://${service.toLowerCase()}.test:9999` }),
+			);
+
+			const res = await injectAuthenticated("PUT", "/services/inst-1", {
+				body: { baseUrl: `http://${service.toLowerCase()}.test:9999` },
+			});
+
+			expect(res.statusCode).toBe(200);
+			expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
+			expect(mockPrisma.historyObservation.deleteMany).toHaveBeenCalledWith({
+				where: { instanceId: "inst-1", instance: { userId: "user-1" } },
+			});
+			expect(mockPrisma.historySourceStatus.deleteMany).toHaveBeenCalledWith({
+				where: { instanceId: "inst-1", instance: { userId: "user-1" } },
+			});
+			const connectionUpdates = mockPrisma.serviceInstance.updateMany.mock.calls.filter(
+				([args]) => args.data.connectionGeneration !== undefined,
+			);
+			expect(connectionUpdates).toHaveLength(1);
+			expect(connectionUpdates[0]?.[0].data.connectionGeneration).toEqual({ increment: 1 });
+			expect(mockPrisma.historyCollectionLease.update).not.toHaveBeenCalled();
+			expect(mockPrisma.historyCollectionLease.delete).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each(["SONARR", "RADARR", "PROWLARR", "LIDARR", "READARR"] as const)(
+		"rotates and clears History when %s enabled state changes",
+		async (service) => {
+			const enabled = false;
+			mockRequireInstance.mockResolvedValue(makeInstance({ service, enabled: true }));
+			mockBuildUpdateData.mockReturnValue({ enabled });
+			mockPrisma.serviceInstance.findFirst.mockResolvedValue(makeInstance({ service, enabled }));
+
+			const res = await injectAuthenticated("PUT", "/services/inst-1", { body: { enabled } });
+
+			expect(res.statusCode).toBe(200);
+			expect(mockPrisma.historyObservation.deleteMany).toHaveBeenCalledOnce();
+			expect(mockPrisma.historySourceStatus.deleteMany).toHaveBeenCalledOnce();
+			expect(
+				mockPrisma.serviceInstance.updateMany.mock.calls.filter(
+					([args]) => args.data.connectionGeneration !== undefined,
+				),
+			).toHaveLength(1);
+		},
+	);
+
+	it("blocks an ARR enabled-state generation change while active deployment ownership exists", async () => {
+		const existing = makeInstance({ service: "RADARR", enabled: true });
+		mockRequireInstance.mockResolvedValue(existing);
+		mockBuildUpdateData.mockReturnValue({ enabled: false });
+		mockPrisma.serviceInstance.findMany.mockResolvedValue([existing]);
+		mockPrisma.templateDeploymentHistory.findMany.mockResolvedValue([
+			{ status: "SUCCESS", backupId: "backup-active", backup: makeAppliedDeploymentBackup() },
+		]);
+
+		const res = await injectAuthenticated("PUT", "/services/inst-1", {
+			body: { enabled: false },
+		});
+
+		expect(res.statusCode).toBe(409);
+		expect(JSON.parse(res.payload).message).toContain("active deployment ownership");
+		expect(mockPrisma.serviceInstance.updateMany).not.toHaveBeenCalled();
+	});
+
+	it("blocks an ARR enabled-state generation change while unresolved score intent exists", async () => {
+		const existing = makeInstance({ service: "SONARR", enabled: true });
+		mockRequireInstance.mockResolvedValue(existing);
+		mockBuildUpdateData.mockReturnValue({ enabled: false });
+		mockPrisma.serviceInstance.findMany.mockResolvedValue([existing]);
+		mockPrisma.instanceQualityProfileOverride.findMany.mockResolvedValue([
+			{ id: "pending-intent", instanceId: existing.id, userId: "user-1", status: "PENDING" },
+		]);
+
+		const res = await injectAuthenticated("PUT", "/services/inst-1", {
+			body: { enabled: false },
+		});
+
+		expect(res.statusCode).toBe(409);
+		expect(JSON.parse(res.payload).message).toContain("unresolved score intent");
+		expect(mockPrisma.serviceInstance.updateMany).not.toHaveBeenCalled();
+	});
+
+	it.each(["SONARR", "RADARR", "PROWLARR", "LIDARR", "READARR"] as const)(
+		"does not rotate or clear %s for a normalized-equivalent URL",
+		async (service) => {
+			mockRequireInstance.mockResolvedValue(
+				makeInstance({ service, baseUrl: `http://${service.toLowerCase()}.test:8989` }),
+			);
+			mockBuildUpdateData.mockReturnValue({
+				baseUrl: `http://${service.toLowerCase()}.test:8989/`,
+			});
+			mockPrisma.serviceInstance.findFirst.mockResolvedValue(
+				makeInstance({ service, baseUrl: `http://${service.toLowerCase()}.test:8989/` }),
+			);
+
+			const res = await injectAuthenticated("PUT", "/services/inst-1", {
+				body: { baseUrl: `http://${service.toLowerCase()}.test:8989/` },
+			});
+
+			expect(res.statusCode).toBe(200);
+			expect(mockPrisma.historyObservation.deleteMany).not.toHaveBeenCalled();
+			expect(mockPrisma.historySourceStatus.deleteMany).not.toHaveBeenCalled();
+			expect(
+				mockPrisma.serviceInstance.updateMany.mock.calls.some(
+					([args]) => args.data.connectionGeneration !== undefined,
+				),
+			).toBe(false);
+		},
+	);
+
+	it.each([
+		["SONARR", "RADARR"],
+		["SONARR", "PLEX"],
+		["PLEX", "SONARR"],
+	] as const)(
+		"clears outgoing History state for %s to %s transitions",
+		async (existingService, targetService) => {
+			mockRequireInstance.mockResolvedValue(makeInstance({ service: existingService }));
+			mockBuildUpdateData.mockReturnValue({ service: targetService });
+			mockPrisma.serviceInstance.findFirst.mockResolvedValue(
+				makeInstance({ service: targetService }),
+			);
+
+			const res = await injectAuthenticated("PUT", "/services/inst-1", {
+				body: { service: targetService.toLowerCase() },
+			});
+
+			expect(res.statusCode).toBe(200);
+			expect(mockPrisma.historyObservation.deleteMany).toHaveBeenCalledOnce();
+			expect(mockPrisma.historySourceStatus.deleteMany).toHaveBeenCalledOnce();
+			expect(
+				mockPrisma.serviceInstance.updateMany.mock.calls.filter(
+					([args]) => args.data.connectionGeneration !== undefined,
+				),
+			).toHaveLength(1);
+		},
+	);
+
+	it("does not broaden provider-cache cleanup for a History-only URL change", async () => {
+		mockRequireInstance.mockResolvedValue(
+			makeInstance({ service: "SONARR", baseUrl: "http://sonarr.test:8989" }),
+		);
+		mockBuildUpdateData.mockReturnValue({ baseUrl: "http://sonarr.test:9999" });
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue(
+			makeInstance({ service: "SONARR", baseUrl: "http://sonarr.test:9999" }),
+		);
+
+		const res = await injectAuthenticated("PUT", "/services/inst-1", {
+			body: { baseUrl: "http://sonarr.test:9999" },
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(mockPrisma.historyObservation.deleteMany).toHaveBeenCalledOnce();
+		expect(mockPrisma.plexCache.deleteMany).not.toHaveBeenCalled();
+		expect(mockPrisma.tautulliCache.deleteMany).not.toHaveBeenCalled();
+		expect(mockPrisma.jellyfinCache.deleteMany).not.toHaveBeenCalled();
+	});
+
+	it("does not use History credential identity comparison for a provider update", async () => {
+		mockRequireInstance.mockResolvedValue(makeInstance({ service: "PLEX" }));
+		mockBuildUpdateData.mockReturnValue({
+			encryptedApiKey: "provider-ciphertext",
+			encryptionIv: "provider-iv",
+		});
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue(makeInstance({ service: "PLEX" }));
+		const credentialIdentity = vi.mocked(
+			(app as any).arrClientFactory.createConnectionCredentialIdentity,
+		);
+
+		const res = await injectAuthenticated("PUT", "/services/inst-1", {
+			body: { apiKey: "synthetic-provider-key" },
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(credentialIdentity).not.toHaveBeenCalled();
+		expect(mockPrisma.historyObservation.deleteMany).not.toHaveBeenCalled();
+	});
+
+	it("keeps encrypted fields untouched when a resubmitted History credential has the same identity", async () => {
+		mockRequireInstance.mockResolvedValue(makeInstance({ service: "PROWLARR" }));
+		mockBuildUpdateData.mockReturnValue({
+			encryptedApiKey: "fresh-ciphertext",
+			encryptionIv: "fresh-iv",
+			encryptedHttpAuthCredentials: "fresh-auth-ciphertext",
+			httpAuthEncryptionIv: "fresh-auth-iv",
+		});
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue(makeInstance({ service: "PROWLARR" }));
+		vi.mocked((app as any).arrClientFactory.createConnectionCredentialIdentity).mockReturnValue(
+			"same-credential-identity",
+		);
+
+		const res = await injectAuthenticated("PUT", "/services/inst-1", {
+			body: {
+				apiKey: "synthetic-api-key",
+				httpAuth: { username: "synthetic-user", password: "synthetic-password" },
+			},
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(mockPrisma.historyObservation.deleteMany).not.toHaveBeenCalled();
+		expect(mockPrisma.historySourceStatus.deleteMany).not.toHaveBeenCalled();
+		const update = mockPrisma.serviceInstance.updateMany.mock.calls.find(
+			([args]) => args.where.id === "inst-1",
+		)?.[0];
+		expect(update?.data).not.toHaveProperty("encryptedApiKey");
+		expect(update?.data).not.toHaveProperty("encryptionIv");
+		expect(update?.data).not.toHaveProperty("encryptedHttpAuthCredentials");
+		expect(update?.data).not.toHaveProperty("httpAuthEncryptionIv");
+	});
+
+	it.each([
+		["SONARR", "apiKey"],
+		["RADARR", "apiKey"],
+		["PROWLARR", "apiKey"],
+		["LIDARR", "apiKey"],
+		["READARR", "apiKey"],
+		["SONARR", "httpAuth"],
+		["RADARR", "httpAuth"],
+		["PROWLARR", "httpAuth"],
+		["LIDARR", "httpAuth"],
+		["READARR", "httpAuth"],
+	] as const)(
+		"rotates %s once when the submitted %s identity changes",
+		async (service, credential) => {
+			mockRequireInstance.mockResolvedValue(
+				makeInstance({
+					service,
+					encryptedApiKey: "old-api-key-ciphertext",
+					encryptedHttpAuthCredentials: "old-http-auth-ciphertext",
+				}),
+			);
+			mockBuildUpdateData.mockReturnValue(
+				credential === "apiKey"
+					? { encryptedApiKey: "new-api-key-ciphertext", encryptionIv: "new-api-key-iv" }
+					: {
+							encryptedHttpAuthCredentials: "new-http-auth-ciphertext",
+							httpAuthEncryptionIv: "new-http-auth-iv",
+						},
+			);
+			mockPrisma.serviceInstance.findFirst.mockResolvedValue(makeInstance({ service }));
+			vi.mocked(
+				(app as any).arrClientFactory.createConnectionCredentialIdentity,
+			).mockImplementation(
+				(candidate: { encryptedApiKey?: string; encryptedHttpAuthCredentials?: string | null }) =>
+					`${candidate.encryptedApiKey ?? "none"}:${candidate.encryptedHttpAuthCredentials ?? "none"}`,
+			);
+
+			const res = await injectAuthenticated("PUT", "/services/inst-1", {
+				body:
+					credential === "apiKey"
+						? { apiKey: "synthetic-new-api-key" }
+						: { httpAuth: { username: "synthetic-user", password: "synthetic-new-password" } },
+			});
+
+			expect(res.statusCode).toBe(200);
+			expect(mockPrisma.historyObservation.deleteMany).toHaveBeenCalledOnce();
+			expect(mockPrisma.historySourceStatus.deleteMany).toHaveBeenCalledOnce();
+			expect(
+				mockPrisma.serviceInstance.updateMany.mock.calls.filter(
+					([args]) => args.data.connectionGeneration !== undefined,
+				),
+			).toHaveLength(1);
+		},
+	);
+
+	it("does not rotate or clear History for a cosmetic-only edit", async () => {
+		mockRequireInstance.mockResolvedValue(makeInstance({ service: "READARR" }));
+		mockBuildUpdateData.mockReturnValue({
+			label: "Renamed Readarr",
+			externalUrl: "http://display.test",
+		});
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue(
+			makeInstance({ service: "READARR", label: "Renamed Readarr" }),
+		);
+
+		const res = await injectAuthenticated("PUT", "/services/inst-1", {
+			body: { label: "Renamed Readarr", externalUrl: "http://display.test" },
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(mockPrisma.historyObservation.deleteMany).not.toHaveBeenCalled();
+		expect(mockPrisma.historySourceStatus.deleteMany).not.toHaveBeenCalled();
+		expect(
+			mockPrisma.serviceInstance.updateMany.mock.calls.some(
+				([args]) => args.data.connectionGeneration !== undefined,
+			),
+		).toBe(false);
 	});
 
 	it("blocks a real ARR credential change while an equivalent alias has unresolved intent", async () => {

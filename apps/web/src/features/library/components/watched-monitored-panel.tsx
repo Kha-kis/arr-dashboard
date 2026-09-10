@@ -8,7 +8,7 @@ import { ServiceBadge, StatusBadge } from "../../../components/layout";
 import { useLibraryMonitorMutation } from "../../../hooks/api/useLibrary";
 import {
 	type WatchedMonitoredItem,
-	useWatchedMonitoredInsights,
+	type WatchedMonitoredResponse,
 } from "../../../hooks/api/useWatchedMonitoredInsights";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { getLinuxInstanceName, getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
@@ -23,10 +23,12 @@ import { cn } from "../../../lib/utils";
  * Collapsed by default.
  */
 export function WatchedMonitoredPanel({
+	queryData,
 	autoExpand = false,
 	isDismissed,
 	onDismiss,
 }: {
+	queryData: WatchedMonitoredResponse | undefined;
 	autoExpand?: boolean;
 	isDismissed?: (instanceId: string, arrItemId: number) => boolean;
 	onDismiss?: (instanceId: string, arrItemId: number) => void;
@@ -43,8 +45,6 @@ export function WatchedMonitoredPanel({
 	}, [autoExpand]);
 	const monitorMutation = useLibraryMonitorMutation();
 	const [pendingId, setPendingId] = useState<string | null>(null);
-
-	const { data, isLoading } = useWatchedMonitoredInsights({ limit: 25 });
 
 	const handleUnmonitor = async (item: WatchedMonitoredItem) => {
 		const key = `${item.instanceId}:${item.arrItemId}`;
@@ -64,13 +64,13 @@ export function WatchedMonitoredPanel({
 		}
 	};
 
-	const allItems = data?.data?.items ?? [];
+	const allItems = queryData?.data?.items ?? [];
 	const items = isDismissed
 		? allItems.filter((i) => !isDismissed(i.instanceId, i.arrItemId))
 		: allItems;
-	const hasWatchData = data?.data?.hasWatchData ?? data?.data?.hasPlexData ?? false;
+	const hasWatchData = queryData?.data?.hasWatchData ?? queryData?.data?.hasPlexData ?? false;
 
-	if (isLoading || items.length === 0 || !hasWatchData) return null;
+	if (items.length === 0 || !hasWatchData) return null;
 
 	return (
 		<div

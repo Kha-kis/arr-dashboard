@@ -15,6 +15,7 @@ import type {
 	LibraryItem,
 	MostConcurrentResponse,
 	PlaysByDateResponse,
+	ProviderObservationAcceptedResponse,
 	QualityScoreAnalytics,
 	SeriesProgressResponse,
 	TopMediaResponse,
@@ -194,11 +195,7 @@ export const useJellyfinCacheHealth = (enabled = true) => {
 
 export const useJellyfinCacheRefreshMutation = () => {
 	const queryClient = useQueryClient();
-	return useMutation<
-		{ success: boolean; upserted: number; errors: number },
-		Error,
-		{ instanceId: string }
-	>({
+	return useMutation<ProviderObservationAcceptedResponse, Error, { instanceId: string }>({
 		mutationFn: ({ instanceId }) => triggerJellyfinCacheRefresh(instanceId),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: jellyfinKeys.cacheHealth() });

@@ -1,9 +1,10 @@
 "use client";
 
-import type { LibraryItem } from "@arr/shared";
+import type { LibraryItem, ProviderObservationDomain, WatchEnrichmentItem } from "@arr/shared";
 import { useSearchParams } from "next/navigation";
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PlexQueryEvidenceNotice } from "../../../components/presentational/plex-evidence-notice";
+import { ProviderObservationNotice } from "../../../components/presentational/provider-observation-notice";
 import { toast } from "../../../components/ui";
 import {
 	useJellyfinIdentity,
@@ -28,6 +29,75 @@ import { LibraryInsightsSection } from "./library-insights-section";
 const EnrichedDetailModal = React.lazy(() =>
 	import("./enriched-detail-modal").then((m) => ({ default: m.EnrichedDetailModal })),
 );
+
+const JELLYFIN_LIBRARY_REQUIRED_DOMAINS = [
+	"library-inventory",
+	"mapping",
+	"watch-count",
+	"watch-attribution",
+	"on-deck",
+] as const satisfies readonly ProviderObservationDomain[];
+const TAUTULLI_REQUIRED_DOMAINS = [
+	"watch-count",
+] as const satisfies readonly ProviderObservationDomain[];
+
+type LibraryWatchItem = WatchEnrichmentItem & { episodeProvider: "plex" | "jellyfin" };
+
+function mergeWatchItems(left: LibraryWatchItem, right: LibraryWatchItem): LibraryWatchItem {
+	const countContributors = [left, right].filter(
+		(candidate) => candidate.watchCount !== null && candidate.watchCountSemantics !== "unknown",
+	);
+	const preferredMedia =
+		[left, right].find((candidate) => Boolean(candidate.ratingKey && candidate.instanceId)) ??
+		[left, right].find((candidate) => Boolean(candidate.jellyfinId && candidate.instanceId)) ??
+		left;
+	const count = countContributors.reduce(
+		(maximum, candidate) => Math.max(maximum, candidate.watchCount ?? 0),
+		0,
+	);
+	const watchCountSemantics =
+		countContributors.length === 0
+			? "unknown"
+			: countContributors.length === 1 && countContributors[0]?.watchCountSemantics === "exact"
+				? "exact"
+				: "lower-bound";
+	const zeroLowerBound = watchCountSemantics === "lower-bound" && count === 0;
+	return {
+		episodeProvider: preferredMedia.episodeProvider,
+		lastWatchedAt: preferredMedia.lastWatchedAt,
+		watchCount: countContributors.length === 0 || zeroLowerBound ? null : count,
+		watchCountSemantics: zeroLowerBound ? "unknown" : watchCountSemantics,
+		watchedByUsers: preferredMedia.watchedByUsers,
+		onDeck: preferredMedia.onDeck,
+		userRating: preferredMedia.userRating,
+		source: left.source === right.source ? left.source : "both",
+		ratingKey: preferredMedia.ratingKey,
+		jellyfinId: preferredMedia.jellyfinId ?? null,
+		instanceId: preferredMedia.instanceId,
+		collections: preferredMedia.collections,
+		labels: preferredMedia.labels,
+	};
+}
+
+function mergeWatchEnrichmentMaps(
+	plexItems: Record<string, WatchEnrichmentItem> | undefined,
+	jellyfinItems: Record<string, WatchEnrichmentItem> | undefined,
+): Record<string, LibraryWatchItem> | null {
+	if (!plexItems && !jellyfinItems) return null;
+	const merged = new Map<string, LibraryWatchItem>();
+	for (const [items, episodeProvider] of [
+		[jellyfinItems, "jellyfin"],
+		[plexItems, "plex"],
+	] as const) {
+		if (!items) continue;
+		for (const [key, item] of Object.entries(items)) {
+			const current = merged.get(key);
+			const selected = { ...item, episodeProvider };
+			merged.set(key, current ? mergeWatchItems(current, selected) : selected);
+		}
+	}
+	return Object.fromEntries(merged);
+}
 
 /**
  * Main library client component
@@ -95,9 +165,7 @@ export const LibraryClient: React.FC = () => {
 	const watchEnrichmentMap = useMemo(() => {
 		const plexItems = plexWatchQuery.data?.items;
 		const jfItems = jellyfinWatchQuery.data?.items;
-		if (!plexItems && !jfItems) return null;
-		// Jellyfin first, Plex on top — Plex wins on conflicts (has ratingKey + labels)
-		return { ...jfItems, ...plexItems };
+		return mergeWatchEnrichmentMaps(plexItems, jfItems);
 	}, [plexWatchQuery.data, jellyfinWatchQuery.data]);
 
 	// Plex identity — needed to build "Watch in Plex" deep links
@@ -308,6 +376,22 @@ export const LibraryClient: React.FC = () => {
 				evidence={plexWatchQuery.data?.evidence ?? plexProgressQuery.data?.evidence}
 				label="Library watch and progress values"
 			/>
+			<ProviderObservationNotice
+				providerStatus={[
+					jellyfinWatchQuery.data?.providerStatus,
+					jellyfinProgressQuery.data?.providerStatus,
+					plexWatchQuery.data?.tautulliStatus,
+					jellyfinWatchQuery.data?.tautulliStatus,
+				]}
+				requiredDomains={[
+					JELLYFIN_LIBRARY_REQUIRED_DOMAINS,
+					JELLYFIN_LIBRARY_REQUIRED_DOMAINS,
+					TAUTULLI_REQUIRED_DOMAINS,
+					TAUTULLI_REQUIRED_DOMAINS,
+				]}
+				isError={jellyfinWatchQuery.isError || jellyfinProgressQuery.isError}
+				label="Library watch and progress values"
+			/>
 
 			<LibraryInsightsSection />
 
@@ -388,6 +472,15 @@ export const LibraryClient: React.FC = () => {
 										]?.userRating
 									: undefined
 							}
+							episodeProvider={(() => {
+								const tmdbId = itemDetail.remoteIds?.tmdbId;
+								const selected = tmdbId
+									? watchEnrichmentMap?.[
+											`${itemDetail.type === "movie" ? "movie" : "series"}:${tmdbId}`
+										]
+									: undefined;
+								return selected?.episodeProvider ?? "plex";
+							})()}
 							plexUrl={modalMediaServerUrl}
 							mediaServerLabel={(() => {
 								if (!itemDetail?.remoteIds?.tmdbId || !watchEnrichmentMap) return undefined;

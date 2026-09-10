@@ -1,3 +1,4 @@
+import type { ProviderObservationStatusEnvelope } from "@arr/shared";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../../lib/api-client/base";
 
@@ -14,8 +15,9 @@ export interface WatchedMonitoredItem {
 	qualityProfileName: string | null;
 }
 
-interface WatchedMonitoredResponse {
+export interface WatchedMonitoredResponse {
 	success: boolean;
+	providerStatus?: ProviderObservationStatusEnvelope;
 	data: {
 		items: WatchedMonitoredItem[];
 		hasPlexData: boolean;

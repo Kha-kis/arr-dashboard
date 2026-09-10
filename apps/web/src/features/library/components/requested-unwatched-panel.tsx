@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { ServiceBadge, StatusBadge } from "../../../components/layout";
 import {
 	type RequestedUnwatchedItem,
-	useRequestedUnwatchedInsights,
+	type RequestedUnwatchedResponse,
 } from "../../../hooks/api/useRequestedUnwatchedInsights";
 import {
 	getLinuxInstanceName,
@@ -23,10 +23,12 @@ import { cn } from "../../../lib/utils";
  * but have never been watched in Plex. Advisory only.
  */
 export function RequestedUnwatchedPanel({
+	queryData,
 	autoExpand = false,
 	isDismissed,
 	onDismiss,
 }: {
+	queryData: RequestedUnwatchedResponse | undefined;
 	autoExpand?: boolean;
 	isDismissed?: (instanceId: string, arrItemId: number) => boolean;
 	onDismiss?: (instanceId: string, arrItemId: number) => void;
@@ -42,19 +44,14 @@ export function RequestedUnwatchedPanel({
 		}
 	}, [autoExpand]);
 
-	const { data, isLoading } = useRequestedUnwatchedInsights({
-		minAgeDays: 7,
-		limit: 25,
-	});
-
-	const allItems = data?.data?.items ?? [];
+	const allItems = queryData?.data?.items ?? [];
 	const items = isDismissed
 		? allItems.filter((i) => !isDismissed(i.instanceId, i.arrItemId))
 		: allItems;
-	const hasSeerrData = data?.data?.hasSeerrData ?? false;
-	const hasWatchData = data?.data?.hasWatchData ?? data?.data?.hasPlexData ?? false;
+	const hasSeerrData = queryData?.data?.hasSeerrData ?? false;
+	const hasWatchData = queryData?.data?.hasWatchData ?? queryData?.data?.hasPlexData ?? false;
 
-	if (isLoading || items.length === 0 || !hasSeerrData || !hasWatchData) return null;
+	if (items.length === 0 || !hasSeerrData || !hasWatchData) return null;
 
 	return (
 		<div

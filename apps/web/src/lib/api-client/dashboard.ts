@@ -1,15 +1,41 @@
 ﻿import type {
 	DashboardStatisticsResponse,
+	HistoryResponseV2,
+	HistoryService,
 	ManualImportCandidate,
 	ManualImportSubmission,
 	MultiInstanceCalendarResponse,
-	MultiInstanceHistoryResponse,
 	MultiInstanceQueueResponse,
 	QueueActionRequest,
 	QueueBulkActionRequest,
 } from "@arr/shared";
+import { historyResponseV2Schema } from "@arr/shared";
 import { buildQueryUrl } from "../build-query-url";
-import { apiRequest, UnauthorizedError } from "./base";
+import { ApiError, apiRequest, UnauthorizedError } from "./base";
+
+export interface HistoryRequest {
+	limit: number;
+	cursor: string | null;
+	startDate: string | null;
+	endDate: string | null;
+	search: string | null;
+	service: HistoryService | null;
+	instanceId: string | null;
+	eventType: string | null;
+	hideProwlarrRss: boolean;
+}
+
+const DEFAULT_HISTORY_REQUEST: HistoryRequest = {
+	limit: 25,
+	cursor: null,
+	startDate: null,
+	endDate: null,
+	search: null,
+	service: null,
+	instanceId: null,
+	eventType: null,
+	hideProwlarrRss: true,
+};
 
 export async function fetchMultiInstanceQueue(): Promise<MultiInstanceQueueResponse> {
 	try {
@@ -22,24 +48,34 @@ export async function fetchMultiInstanceQueue(): Promise<MultiInstanceQueueRespo
 	}
 }
 
-export async function fetchMultiInstanceHistory(options?: {
-	startDate?: string;
-	endDate?: string;
-	page?: number;
-	pageSize?: number;
-}): Promise<MultiInstanceHistoryResponse> {
+export async function fetchMultiInstanceHistory(
+	options: Partial<HistoryRequest> = DEFAULT_HISTORY_REQUEST,
+): Promise<HistoryResponseV2> {
+	const request = { ...DEFAULT_HISTORY_REQUEST, ...options };
+	if (!Number.isInteger(request.limit) || request.limit < 1 || request.limit > 100) {
+		throw new Error("History request is invalid");
+	}
 	const path = buildQueryUrl("/api/dashboard/history", {
-		startDate: options?.startDate,
-		endDate: options?.endDate,
-		page: options?.page,
-		pageSize: options?.pageSize,
+		limit: request.limit,
+		cursor: request.cursor,
+		startDate: request.startDate,
+		endDate: request.endDate,
+		search: request.search,
+		service: request.service,
+		instanceId: request.instanceId,
+		eventType: request.eventType,
+		hideProwlarrRss: request.hideProwlarrRss,
 	});
 
 	try {
-		return await apiRequest<MultiInstanceHistoryResponse>(path);
+		const result = await apiRequest<unknown>(path);
+		const parsed = historyResponseV2Schema.safeParse(result);
+		if (!parsed.success) throw new Error("History response was invalid");
+		return parsed.data;
 	} catch (error) {
-		if (error instanceof UnauthorizedError) {
-			return { instances: [], aggregated: [], totalCount: 0 };
+		if (error instanceof UnauthorizedError) throw error;
+		if (error instanceof ApiError && error.status >= 500) {
+			throw new ApiError("History request failed", error.status);
 		}
 		throw error;
 	}

@@ -54,4 +54,48 @@ describe("TautulliClient authoritative history completeness", () => {
 		expect(requestedUrl.searchParams.get("grouping")).toBe("0");
 		expect(requestedUrl.searchParams.get("include_activity")).toBe("0");
 	});
+
+	it("propagates caller cancellation to an in-flight metadata request", async () => {
+		let requestSignal: AbortSignal | undefined;
+		const fetchMock = vi.fn((_url: string, init: RequestInit) => {
+			requestSignal = init.signal ?? undefined;
+			return new Promise<Response>((_resolve, reject) => {
+				init.signal?.addEventListener("abort", () => reject(new Error("request aborted")), {
+					once: true,
+				});
+			});
+		});
+		vi.stubGlobal("fetch", fetchMock);
+		const caller = new AbortController();
+		const pending = new TautulliClient("http://tautulli.test", "api-key", log).getMetadata(
+			"rating-key",
+			caller.signal,
+		);
+		caller.abort();
+
+		await expect(pending).rejects.toThrow("Tautulli API connection error for cmd=get_metadata");
+		expect(requestSignal?.aborted).toBe(true);
+	});
+
+	it("retains the client timeout when the caller signal stays live", async () => {
+		let requestSignal: AbortSignal | undefined;
+		const fetchMock = vi.fn((_url: string, init: RequestInit) => {
+			requestSignal = init.signal ?? undefined;
+			return new Promise<Response>((_resolve, reject) => {
+				init.signal?.addEventListener("abort", () => reject(new Error("request aborted")), {
+					once: true,
+				});
+			});
+		});
+		vi.stubGlobal("fetch", fetchMock);
+		const caller = new AbortController();
+		const pending = new TautulliClient("http://tautulli.test", "api-key", log, 5).getMetadata(
+			"rating-key",
+			caller.signal,
+		);
+
+		await expect(pending).rejects.toThrow("Tautulli API connection error for cmd=get_metadata");
+		expect(caller.signal.aborted).toBe(false);
+		expect(requestSignal?.aborted).toBe(true);
+	});
 });

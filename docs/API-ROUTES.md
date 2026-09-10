@@ -140,9 +140,37 @@ Per-row sleep is 100ms regardless of phase — that's the politeness budget agai
 | Route | Purpose | Refresh |
 |-------|---------|---------|
 | `/dashboard/queue` | Download queue | 30s |
-| `/dashboard/history` | Temporarily returns 503 while request-wide History pagination is restored safely | Disabled |
+| `/dashboard/history` | Authenticated durable History v2 read: retained local observations with server-side filters and opaque cursor pagination | Stable |
 | `/dashboard/calendar` | Upcoming releases | 60s |
 | `/dashboard/statistics` | Aggregate stats | 120s |
+
+### Dashboard History contract
+
+`GET /api/dashboard/history` is protected and reads only the durable local
+observation publication. Query keys are `limit` (integer 1–100), `cursor`,
+`startDate`, `endDate`, `search`, `service`, `instanceId`, `eventType`, and
+`hideProwlarrRss`. The response is strict History v2: retained observations,
+positive-only per-source status, and page metadata whose
+`matchingObservedCount` is the exact local retained match count, not a provider
+total. The cursor is opaque and expires after 30 minutes; clients restart
+pagination when it is stale. Invalid queries/cursors return generic 400,
+stale cursors return generic 409, and unavailable reads return generic 503.
+
+### Media-server cache refresh contract
+
+Manual cache refresh requests use durable acceptance. Each protected endpoint
+returns HTTP `202` with the strict response shape
+`{ status: "accepted", cacheType: "plex" | "jellyfin" | "tautulli" }`
+after the refresh attempt is durably admitted. The receipt does not mean the
+provider refresh has completed and contains no completion counters, timestamps,
+markers, or provider error details. Observe completion and the resulting
+truthful cache evidence through the corresponding health/status GET endpoints.
+
+| Method | Route | Purpose |
+|--------|-------|---------|
+| POST | `/plex/cache/:instanceId/refresh` | Durably accept a Plex cache refresh request |
+| POST | `/jellyfin/cache/:instanceId/refresh` | Durably accept a Jellyfin/Emby cache refresh request |
+| POST | `/tautulli/cache/:instanceId/refresh` | Durably accept a Tautulli cache refresh request |
 
 ## Library (`/api/library`)
 

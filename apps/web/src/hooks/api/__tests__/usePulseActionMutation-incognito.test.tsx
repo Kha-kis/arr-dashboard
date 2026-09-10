@@ -207,4 +207,49 @@ describe("usePulseActionMutation — Jellyfin cache refresh", () => {
 		expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: plexKeys.cacheHealth() });
 		expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: tautulliKeys.all });
 	});
+
+	it.each([
+		[
+			"plex episode",
+			"plex_episode" as const,
+			plexKeys.cacheHealth(),
+			plexKeys.all,
+			"Plex episode cache refresh triggered",
+		],
+		[
+			"Jellyfin episode",
+			"jellyfin_episode" as const,
+			jellyfinKeys.cacheHealth(),
+			jellyfinKeys.all,
+			"Media episode cache refresh triggered",
+		],
+	] as const)(
+		"invalidates the matching cache domain and uses episode-specific copy for %s refresh",
+		async (_label, cacheType, cacheHealthKey, providerKey, expectedToast) => {
+			mockDispatchPulseAction.mockResolvedValue({ status: "ok" });
+			const queryClient = new QueryClient({
+				defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+			});
+			const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+			const { result } = renderHook(() => usePulseActionMutation(), {
+				wrapper: wrapperWithClient(queryClient),
+			});
+
+			await act(async () => {
+				result.current.mutate({
+					signalId: `cache-error-${cacheType}`,
+					action: {
+						kind: "cache.refresh",
+						target: { instanceId: "episode-instance", cacheType },
+						label: "Retry refresh",
+						destructive: false,
+					},
+				});
+			});
+			await waitFor(() => expect(toastSuccessCalls).toEqual([expectedToast]));
+
+			expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: cacheHealthKey });
+			expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: providerKey });
+		},
+	);
 });

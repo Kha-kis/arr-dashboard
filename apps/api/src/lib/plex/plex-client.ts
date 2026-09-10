@@ -12,8 +12,8 @@ import type { Encryptor } from "../auth/encryption.js";
 import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import { parseUpstreamOrThrow } from "../validation/parse-upstream.js";
 import {
-	plexActivitiesResponseSchema,
 	plexAccountsResponseSchema,
+	plexActivitiesResponseSchema,
 	plexAllLeavesResponseSchema,
 	plexEpisodeMediaItemsResponseSchema,
 	plexEpisodesResponseSchema,
@@ -25,9 +25,9 @@ import {
 	plexMetadataTagsResponseSchema,
 	plexOnDeckResponseSchema,
 	plexSectionsResponseSchema,
-	plexSettlementSectionsResponseSchema,
 	plexServerInfoResponseSchema,
 	plexSessionsResponseSchema,
+	plexSettlementSectionsResponseSchema,
 } from "./plex-schemas.js";
 
 // ============================================================================
@@ -77,6 +77,19 @@ export interface PlexLibraryItem {
 	Guid?: PlexGuid[];
 	Collection?: Array<{ tag: string }>;
 	Label?: Array<{ tag: string }>;
+}
+
+export interface PlexCompletePageResult<T> {
+	items: T[];
+	expectedRawCount: number | null;
+	pagesAttempted: number;
+	pagesCompleted: number;
+	rawObserved: number;
+	reason: "page-failure" | null;
+}
+
+interface PlexCompletePageResultInternal<T> extends PlexCompletePageResult<T> {
+	failureMessage?: string;
 }
 
 export interface PlexMovieMediaPart {
@@ -170,6 +183,10 @@ export interface PlexEpisodeItem {
 
 const DEFAULT_TIMEOUT = 15_000;
 const SAFETY_PAGE_SIZE = 200;
+// Metadata identifiers are encoded into the URL path rather than paged through
+// query parameters. Keep this transport budget independent from result paging
+// so large libraries remain verifiable behind bounded URI/proxy limits.
+const METADATA_TAG_BATCH_SIZE = 50;
 const SAFETY_MAX_ITEMS = 100_000;
 const HISTORY_SORT = "viewedAt:desc";
 
@@ -314,27 +331,71 @@ export class PlexClient {
 	 * Get all items from a library section.
 	 */
 	async getLibraryItems(sectionId: string): Promise<PlexLibraryItem[]> {
-		const items = await this.getCompleteSafetyMetadata(
+		const result = await this.getLibraryItemsWithCoverage(sectionId);
+		if (result.reason !== null) {
+			throw new Error("Plex safety pagination stopped before the declared total");
+		}
+		return result.items;
+	}
+
+	/**
+	 * Get a complete library section with bounded coverage accounting. A page
+	 * failure never exposes the rows observed before the failure.
+	 */
+	async getLibraryItemsWithCoverage(
+		sectionId: string,
+	): Promise<PlexCompletePageResult<PlexLibraryItem>> {
+		const pageResult = await this.getCompleteSafetyMetadataWithCoverage(
 			`/library/sections/${sectionId}/all?includeGuids=1&includeCollections=1&includeLabels=1`,
 			plexLibraryItemsResponseSchema,
 			(item) => item.ratingKey,
 		);
-		const tags = await this.getAuthoritativeMetadataTags(items.map((item) => item.ratingKey));
+		if (pageResult.reason !== null) {
+			return {
+				items: [],
+				expectedRawCount: pageResult.expectedRawCount,
+				pagesAttempted: pageResult.pagesAttempted,
+				pagesCompleted: pageResult.pagesCompleted,
+				rawObserved: pageResult.rawObserved,
+				reason: pageResult.reason,
+			};
+		}
+		const items = pageResult.items;
+		let tags: Awaited<ReturnType<PlexClient["getAuthoritativeMetadataTags"]>>;
+		try {
+			tags = await this.getAuthoritativeMetadataTags(items.map((item) => item.ratingKey));
+		} catch {
+			return {
+				items: [],
+				expectedRawCount: pageResult.expectedRawCount,
+				pagesAttempted: pageResult.pagesAttempted,
+				pagesCompleted: pageResult.pagesCompleted,
+				rawObserved: pageResult.rawObserved,
+				reason: "page-failure",
+			};
+		}
 
-		return items.map((m) => ({
-			ratingKey: m.ratingKey,
-			title: m.title,
-			type: m.type,
-			year: m.year,
-			userRating: m.userRating,
-			addedAt: m.addedAt,
-			viewCount: m.viewCount,
-			lastViewedAt: m.lastViewedAt,
-			thumb: m.thumb,
-			Guid: m.Guid?.map((g) => ({ id: g.id })),
-			Collection: tags.get(m.ratingKey)?.Collection?.map((c) => ({ tag: c.tag })),
-			Label: tags.get(m.ratingKey)?.Label?.map((l) => ({ tag: l.tag })),
-		}));
+		return {
+			items: items.map((m) => ({
+				ratingKey: m.ratingKey,
+				title: m.title,
+				type: m.type,
+				year: m.year,
+				userRating: m.userRating,
+				addedAt: m.addedAt,
+				viewCount: m.viewCount,
+				lastViewedAt: m.lastViewedAt,
+				thumb: m.thumb,
+				Guid: m.Guid?.map((g) => ({ id: g.id })),
+				Collection: tags.get(m.ratingKey)?.Collection?.map((c) => ({ tag: c.tag })),
+				Label: tags.get(m.ratingKey)?.Label?.map((l) => ({ tag: l.tag })),
+			})),
+			expectedRawCount: pageResult.expectedRawCount,
+			pagesAttempted: pageResult.pagesAttempted,
+			pagesCompleted: pageResult.pagesCompleted,
+			rawObserved: pageResult.rawObserved,
+			reason: null,
+		};
 	}
 
 	private async getAuthoritativeMetadataTags(ratingKeys: readonly string[]) {
@@ -342,8 +403,8 @@ export class PlexClient {
 			string,
 			{ Collection?: Array<{ tag: string }>; Label?: Array<{ tag: string }> }
 		>();
-		for (let offset = 0; offset < ratingKeys.length; offset += SAFETY_PAGE_SIZE) {
-			const chunk = ratingKeys.slice(offset, offset + SAFETY_PAGE_SIZE);
+		for (let offset = 0; offset < ratingKeys.length; offset += METADATA_TAG_BATCH_SIZE) {
+			const chunk = ratingKeys.slice(offset, offset + METADATA_TAG_BATCH_SIZE);
 			const path = `/library/metadata/${chunk.map(encodeURIComponent).join(",")}?includeCollections=1&includeLabels=1`;
 			const data = await this.request(path, { schema: plexMetadataTagsResponseSchema });
 			const metadata = data.MediaContainer.Metadata ?? [];
@@ -379,52 +440,118 @@ export class PlexClient {
 		}>,
 		keyOf: (item: T) => string,
 	): Promise<T[]> {
+		const result = await this.getCompleteSafetyMetadataWithCoverage(path, schema, keyOf);
+		if (result.reason !== null) {
+			throw new Error(result.failureMessage ?? "Plex safety pagination failed");
+		}
+		return result.items;
+	}
+
+	private async getCompleteSafetyMetadataWithCoverage<T>(
+		path: string,
+		schema: z.ZodType<{
+			MediaContainer: {
+				offset: number;
+				size: number;
+				totalSize: number;
+				Metadata?: T[];
+			};
+		}>,
+		keyOf: (item: T) => string,
+	): Promise<PlexCompletePageResultInternal<T>> {
 		const allItems: T[] = [];
 		const seenKeys = new Set<string>();
-		let expectedTotal: number | undefined;
+		let expectedTotal: number | null = null;
 		let offset = 0;
+		let pagesAttempted = 0;
+		let pagesCompleted = 0;
+		let failureMessage: string | undefined;
 
-		while (expectedTotal === undefined || offset < expectedTotal) {
+		while (expectedTotal === null || offset < expectedTotal) {
+			pagesAttempted++;
 			const pageUrl = new URL(path, "http://plex.invalid");
 			pageUrl.searchParams.set("X-Plex-Container-Start", String(offset));
 			pageUrl.searchParams.set("X-Plex-Container-Size", String(SAFETY_PAGE_SIZE));
-			const page = await this.request(`${pageUrl.pathname}${pageUrl.search}`, { schema });
+			let page: {
+				MediaContainer: {
+					offset: number;
+					size: number;
+					totalSize: number;
+					Metadata?: T[];
+				};
+			};
+			try {
+				page = (await this.request(`${pageUrl.pathname}${pageUrl.search}`, {
+					schema,
+				})) as typeof page;
+			} catch {
+				failureMessage = "Plex safety pagination page request failed";
+				break;
+			}
 			const container = page.MediaContainer;
 			const items = container.Metadata ?? [];
 
 			if (container.offset !== offset || container.size !== items.length) {
-				throw new Error("Plex safety pagination metadata did not match the returned page");
+				failureMessage = "Plex safety pagination metadata did not match the returned page";
+				break;
 			}
-			if (expectedTotal === undefined) {
+			if (expectedTotal === null) {
 				expectedTotal = container.totalSize;
 				if (expectedTotal > SAFETY_MAX_ITEMS) {
-					throw new Error("Plex safety result set is too large to verify completely");
+					failureMessage = "Plex safety result set is too large to verify completely";
+					break;
 				}
 			} else if (container.totalSize !== expectedTotal) {
-				throw new Error("Plex safety result set changed while it was being paged");
+				failureMessage = "Plex safety result set changed while it was being paged";
+				break;
 			}
+			if (expectedTotal === null) break;
 			if (offset + items.length > expectedTotal) {
-				throw new Error("Plex safety pagination exceeded its declared total");
+				failureMessage = "Plex safety pagination exceeded its declared total";
+				break;
 			}
 			if (items.length === 0 && offset < expectedTotal) {
-				throw new Error("Plex safety pagination stopped before the declared total");
+				failureMessage = "Plex safety pagination stopped before the declared total";
+				break;
 			}
 
+			let duplicate = false;
 			for (const item of items) {
 				const key = keyOf(item);
 				if (seenKeys.has(key)) {
-					throw new Error("Plex safety pagination returned a duplicate item");
+					duplicate = true;
+					break;
 				}
 				seenKeys.add(key);
 				allItems.push(item);
 			}
+			if (duplicate) {
+				failureMessage = "Plex safety pagination returned a duplicate item";
+				break;
+			}
+			pagesCompleted++;
 			offset += items.length;
 		}
 
-		if (expectedTotal === undefined || allItems.length !== expectedTotal) {
-			throw new Error("Plex safety result set could not be verified as complete");
+		if (failureMessage || expectedTotal === null || allItems.length !== expectedTotal) {
+			return {
+				items: [],
+				expectedRawCount: expectedTotal,
+				pagesAttempted,
+				pagesCompleted,
+				rawObserved: allItems.length,
+				reason: "page-failure",
+				...(failureMessage ? { failureMessage } : {}),
+			};
 		}
-		return allItems;
+		return {
+			items: allItems,
+			expectedRawCount: expectedTotal,
+			pagesAttempted,
+			pagesCompleted,
+			rawObserved: allItems.length,
+			reason: null,
+		};
 	}
 
 	/**

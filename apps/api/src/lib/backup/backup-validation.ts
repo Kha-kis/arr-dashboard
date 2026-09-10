@@ -6,6 +6,10 @@
  */
 
 import type { BackupData } from "@arr/shared";
+import {
+	type LabelSyncMutationAttemptRecord,
+	parseLabelSyncMutationAttempt,
+} from "../label-sync/jellyfin-mutation-state.js";
 import type { EncryptedBackupEnvelope } from "./backup-crypto.js";
 
 export const BACKUP_VERSION = "1.2";
@@ -58,6 +62,87 @@ export const COMPLETE_V1_2_PAYLOAD_FIELDS = [
 	"huntSearchHistory",
 	...DURABLE_CONFIG_PAYLOAD_FIELDS,
 ] as const;
+
+/** Validate the additive mutation ledger without exposing any row contents. */
+export function validateLabelSyncMutationAttempts(
+	value: unknown,
+	users: unknown,
+	rules: unknown,
+	instances: unknown,
+): LabelSyncMutationAttemptRecord[] {
+	if (!Array.isArray(value)) throw new Error("Invalid label sync mutation attempt backup records");
+	const userIds = new Set(
+		Array.isArray(users)
+			? users
+					.filter(isRecord)
+					.map((row) => row.id)
+					.filter((id): id is string => typeof id === "string" && id.length > 0)
+			: [],
+	);
+	const rulesById = new Map<string, CoordinationRecord>();
+	if (Array.isArray(rules)) {
+		for (const row of rules) {
+			if (
+				!isRecord(row) ||
+				typeof row.id !== "string" ||
+				row.id.length === 0 ||
+				rulesById.has(row.id)
+			) {
+				throw new Error("Invalid label sync mutation attempt backup references");
+			}
+			rulesById.set(row.id, row);
+		}
+	}
+	const instancesById = new Map<string, CoordinationRecord>();
+	if (Array.isArray(instances)) {
+		for (const row of instances) {
+			if (
+				!isRecord(row) ||
+				typeof row.id !== "string" ||
+				row.id.length === 0 ||
+				instancesById.has(row.id)
+			) {
+				throw new Error("Invalid label sync mutation attempt backup references");
+			}
+			instancesById.set(row.id, row);
+		}
+	}
+	const activeKeys = new Set<string>();
+	const attemptIds = new Set<string>();
+	return value.map((row) => {
+		let parsed: LabelSyncMutationAttemptRecord;
+		try {
+			parsed = parseLabelSyncMutationAttempt(row);
+		} catch {
+			throw new Error("Invalid label sync mutation attempt backup record");
+		}
+		if (attemptIds.has(parsed.id)) {
+			throw new Error("Invalid label sync mutation attempt backup records");
+		}
+		attemptIds.add(parsed.id);
+		const rule = rulesById.get(parsed.ruleId);
+		const instance = instancesById.get(parsed.destinationInstanceId);
+		if (
+			!userIds.has(parsed.userId) ||
+			!rule ||
+			!instance ||
+			rule.userId !== parsed.userId ||
+			instance.userId !== parsed.userId ||
+			rule.destInstanceId !== parsed.destinationInstanceId ||
+			rule.destService !== parsed.provider ||
+			instance.service !== parsed.provider.toUpperCase()
+		) {
+			throw new Error("Invalid label sync mutation attempt backup references");
+		}
+		if (parsed.activeOperationKey !== null) {
+			if (activeKeys.has(parsed.activeOperationKey)) {
+				throw new Error("Invalid label sync mutation attempt backup active operation keys");
+			}
+			activeKeys.add(parsed.activeOperationKey);
+		}
+		return parsed;
+	});
+}
 
 /** Explicit payload-to-Prisma mapping for relational legacy coverage checks. */
 export const LEGACY_RELATIONAL_CONFIG_DELEGATES = [
@@ -493,6 +578,8 @@ export function validateBackup(backup: unknown): asserts backup is BackupData {
 	];
 
 	const dataRecord = b.data as Record<string, unknown>;
+	// Provider observation runs and staging rows are disposable operational state;
+	// they intentionally have no backup payload or restore validation contract.
 	for (const field of requiredFields) {
 		if (!Array.isArray(dataRecord[field])) {
 			throw new Error(`Invalid backup format: missing or invalid data.${field}`);
@@ -529,6 +616,15 @@ export function validateBackup(backup: unknown): asserts backup is BackupData {
 		if (dataRecord[field] !== undefined && !Array.isArray(dataRecord[field])) {
 			throw new Error(`Invalid backup format: ${field} must be an array`);
 		}
+	}
+
+	if (dataRecord.labelSyncMutationAttempts !== undefined) {
+		validateLabelSyncMutationAttempts(
+			dataRecord.labelSyncMutationAttempts,
+			dataRecord.users,
+			dataRecord.labelSyncRule,
+			dataRecord.serviceInstances,
+		);
 	}
 
 	if (b.version === BACKUP_VERSION) {

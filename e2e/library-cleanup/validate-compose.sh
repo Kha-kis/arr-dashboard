@@ -53,6 +53,11 @@ if [ ! -f "$SCRIPT_DIR/.env" ]; then
     : >"$PLEX_CLAIM_FILE"
     export PLEX_CLAIM_FILE
   fi
+  if [ -z "${LC_E2E_RUN_TOKEN_FILE:-}" ]; then
+    LC_E2E_RUN_TOKEN_FILE="$TEMP_DIR/run-token.txt"
+    printf '%s\n' "${LC_E2E_RUN_TOKEN:-0000000000000000000000000000000000000000000000000000000000000000}" >"$LC_E2E_RUN_TOKEN_FILE"
+    export LC_E2E_RUN_TOKEN_FILE
+  fi
 fi
 
 cd "$SCRIPT_DIR"

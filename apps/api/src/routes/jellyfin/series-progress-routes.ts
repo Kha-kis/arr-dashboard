@@ -1,13 +1,18 @@
 /**
  * Jellyfin Series Progress Routes
  *
- * Aggregates JellyfinEpisodeCache watch data into per-series progress percentages.
+ * Aggregates owned Jellyfin episode observations into per-series progress percentages.
  * Reuses the same helper as Plex since the data shape is identical.
  */
 
 import type { SeriesProgressResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import {
+	isArithmeticAuthoritativeProviderObservationStatus,
+	type JellyfinDisplayInstance,
+	readOwnedJellyfinEpisodeDisplaySources,
+} from "../../lib/jellyfin/jellyfin-display-evidence.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { aggregateSeriesProgress } from "../plex/lib/series-progress-helpers.js";
 
@@ -40,7 +45,7 @@ export async function registerSeriesProgressRoutes(
 
 		const jellyfinInstances = await app.prisma.serviceInstance.findMany({
 			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true },
+			select: { id: true, label: true, service: true },
 		});
 
 		if (jellyfinInstances.length === 0) {
@@ -48,22 +53,38 @@ export async function registerSeriesProgressRoutes(
 			return reply.send(response);
 		}
 
-		const instanceIds = jellyfinInstances.map((i) => i.id);
-
-		const episodes = await app.prisma.jellyfinEpisodeCache.findMany({
-			where: {
-				instanceId: { in: instanceIds },
-				showTmdbId: { in: tmdbIds },
-			},
-			select: {
-				showTmdbId: true,
-				watched: true,
-			},
+		const displayInstances: JellyfinDisplayInstance[] = jellyfinInstances.flatMap((instance) =>
+			instance.service === "JELLYFIN" || instance.service === "EMBY"
+				? [{ id: instance.id, label: instance.label, service: instance.service }]
+				: [],
+		);
+		const displayEvidence = await readOwnedJellyfinEpisodeDisplaySources({
+			prisma: app.prisma,
+			userId,
+			instances: displayInstances,
 		});
+		const progressMap = isArithmeticAuthoritativeProviderObservationStatus(
+			displayEvidence.providerStatus,
+		)
+			? aggregateSeriesProgress(
+					displayEvidence.sources
+						.flatMap((source) => source.rows)
+						.filter((episode) => tmdbIds.includes(episode.showTmdbId))
+						.sort(
+							(left, right) =>
+								left.showTmdbId - right.showTmdbId ||
+								left.instanceId.localeCompare(right.instanceId) ||
+								left.seasonNumber - right.seasonNumber ||
+								left.episodeNumber - right.episodeNumber ||
+								left.id.localeCompare(right.id),
+						),
+				)
+			: {};
 
-		const progressMap = aggregateSeriesProgress(episodes);
-
-		const response: SeriesProgressResponse = { progress: progressMap };
+		const response: SeriesProgressResponse = {
+			progress: progressMap,
+			providerStatus: displayEvidence.providerStatus,
+		};
 		return reply.send(response);
 	});
 }

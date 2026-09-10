@@ -40,6 +40,7 @@ export const LabelSyncClient = () => {
 	};
 
 	const handleRun = async (rule: LabelSyncRule) => {
+		if (!rule.destinationMutationCapability.supported) return;
 		if (!rule.enabled) {
 			alert("Rule is disabled. Enable it before running.");
 			return;
@@ -78,10 +79,9 @@ export const LabelSyncClient = () => {
 							</span>
 						</h1>
 						<p className="text-muted-foreground max-w-xl">
-							Auto-apply tags and labels across — or within — services. Pick any source service
-							(Sonarr, Radarr, Plex, Jellyfin, Emby) and any destination service. When a rule runs,
-							every source item carrying the configured tag gets the destination label applied to
-							its matching item.
+							Auto-apply tags and labels across supported services. Sources: Sonarr, Radarr, Plex,
+							Jellyfin, Emby. Destinations: Sonarr, Radarr, or Plex; Jellyfin and Emby are
+							temporarily unavailable.
 						</p>
 					</div>
 					<Button onClick={openCreate} className="shrink-0">
@@ -128,9 +128,8 @@ const EmptyState = ({ onCreateClick }: { onCreateClick: () => void }) => (
 		</div>
 		<h3 className="text-base font-semibold">No label-sync rules yet</h3>
 		<p className="text-sm text-muted-foreground max-w-sm">
-			Create a rule to mirror a tag across services — e.g., a Sonarr/Radarr tag to a Plex label, or
-			a Plex label to a Jellyfin tag. Useful for kid-safe collections, user-specific labels, or
-			surfacing requested content.
+			Create a rule to mirror a tag to a Sonarr, Radarr, or Plex destination. Jellyfin and Emby can
+			remain sources while destination mutations are temporarily unavailable.
 		</p>
 		<Button onClick={onCreateClick} variant="secondary" className="mt-2">
 			<Plus className="h-4 w-4 mr-2" /> Create your first rule
@@ -194,7 +193,14 @@ const RuleTable = ({
 							<span>{rule.destTagName}</span>
 						</td>
 						<td className="px-4 py-3">
-							{rule.lastRunStatus ? (
+							{!rule.destinationMutationCapability.supported ? (
+								<span
+									className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500"
+									title={rule.destinationMutationCapability.message}
+								>
+									Mutation unavailable
+								</span>
+							) : rule.lastRunStatus ? (
 								<span className={statusClass(rule.lastRunStatus)}>{rule.lastRunStatus}</span>
 							) : (
 								<span className="text-muted-foreground/50 text-xs">never run</span>
@@ -208,9 +214,24 @@ const RuleTable = ({
 								<button
 									type="button"
 									onClick={() => onRun(rule)}
-									disabled={runningId === rule.id || !rule.enabled}
+									disabled={
+										runningId === rule.id ||
+										!rule.enabled ||
+										!rule.destinationMutationCapability.supported
+									}
 									className="p-1.5 rounded-md hover:bg-muted/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-									title={rule.enabled ? "Run rule now" : "Enable the rule to run it"}
+									aria-label={
+										!rule.destinationMutationCapability.supported
+											? "Run rule unavailable"
+											: "Run rule now"
+									}
+									title={
+										!rule.destinationMutationCapability.supported
+											? rule.destinationMutationCapability.message
+											: rule.enabled
+												? "Run rule now"
+												: "Enable the rule to run it"
+									}
 								>
 									<Play
 										className={`h-3.5 w-3.5 text-muted-foreground ${runningId === rule.id ? "animate-pulse" : ""}`}

@@ -351,7 +351,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 					{/* Service Toggle + Search Row */}
 					<div className="flex flex-wrap items-center gap-4">
 						{/* Service Toggle Pills */}
-						<div className="inline-flex max-w-full shrink overflow-x-auto rounded-xl bg-background/50 border border-border/50 p-1">
+						<div className="inline-flex max-w-full flex-wrap gap-1 rounded-xl bg-background/50 border border-border/50 p-1">
 							{SERVICE_OPTIONS.map((option) => {
 								const Icon = option.icon;
 								const isActive = serviceFilter === option.value;

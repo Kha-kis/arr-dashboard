@@ -10,9 +10,10 @@
 import type { PlexEvidenceSummary } from "@arr/shared";
 import { describe, expect, it } from "vitest";
 import {
-	sanitizeErrorMessage,
 	buildCacheHealthItems,
 	type CacheRefreshStatusRow,
+	isSafeSanitizedEpisodeProgress,
+	sanitizeErrorMessage,
 } from "../lib/cache-health-helpers.js";
 
 describe("sanitizeErrorMessage", () => {
@@ -39,6 +40,50 @@ describe("sanitizeErrorMessage", () => {
 
 	it("passes through clean messages unchanged", () => {
 		expect(sanitizeErrorMessage("Connection refused")).toBe("Connection refused");
+	});
+});
+
+describe("isSafeSanitizedEpisodeProgress", () => {
+	it("rejects progress whose completed counters exceed its public totals", () => {
+		expect(
+			isSafeSanitizedEpisodeProgress({
+				completedUnits: 2,
+				totalUnits: 1,
+				completedWork: 50,
+				totalWork: 49,
+			}),
+		).toBe(false);
+	});
+
+	it("accepts valid public counters from a persisted run shape without exposing its metadata", () => {
+		expect(
+			isSafeSanitizedEpisodeProgress({
+				instanceId: "private-instance",
+				state: "running",
+				completedUnits: 7,
+				totalUnits: 13,
+				completedWork: 7,
+				totalWork: 13,
+			} as never),
+		).toBe(true);
+	});
+
+	it.each([
+		["negative", { completedUnits: -1, totalUnits: 1, completedWork: 0, totalWork: 1 }],
+		["fractional", { completedUnits: 0.5, totalUnits: 1, completedWork: 0, totalWork: 1 }],
+		[
+			"unsafe",
+			{
+				completedUnits: Number.MAX_SAFE_INTEGER + 1,
+				totalUnits: Number.MAX_SAFE_INTEGER + 1,
+				completedWork: 0,
+				totalWork: 1,
+			},
+		],
+		["zero denominator", { completedUnits: 0, totalUnits: 0, completedWork: 0, totalWork: 1 }],
+		["missing denominator", { completedUnits: 0, totalUnits: 1, completedWork: 0 }],
+	] as const)("fails closed for %s progress", (_name, progress) => {
+		expect(isSafeSanitizedEpisodeProgress(progress as never)).toBe(false);
 	});
 });
 
@@ -161,7 +206,27 @@ describe("buildCacheHealthItems", () => {
 			new Map([["inst-1:plex", evidence]]),
 		);
 
-		expect(items[0]).toMatchObject({ lastResult: "partial", evidence });
+		expect(items[0]).toMatchObject({
+			lastResult: "partial",
+			uiCondition: "informational-gap",
+			evidence,
+		});
+	});
+
+	it("projects accepted partial Plex coverage as informational", () => {
+		const evidence = {
+			publicationLevel: "authoritative",
+			completeness: "partial",
+			reasonCodes: [],
+		} satisfies PlexEvidenceSummary;
+		const [item] = buildCacheHealthItems(
+			[makeRow()],
+			instanceNameMap,
+			baseDateMs,
+			new Map([["inst-1:plex", evidence]]),
+		);
+
+		expect(item).toMatchObject({ lastResult: "partial", uiCondition: "informational-gap" });
 	});
 
 	it("names a V4 partial row count as observedItemCount, never an exact denominator", () => {
@@ -263,5 +328,58 @@ describe("buildCacheHealthItems", () => {
 			evidence,
 		});
 		expect(JSON.stringify(items[0])).not.toContain(token);
+	});
+
+	it("projects a bounded active episode run as collecting without leaking work identity", () => {
+		const [item] = buildCacheHealthItems(
+			[makeRow({ cacheType: "plex_episode", lastAttemptResult: "in_progress" })],
+			instanceNameMap,
+			baseDateMs,
+			undefined,
+			new Map([
+				[
+					"inst-1:plex_episode",
+					{
+						state: "running",
+						completedUnits: 7,
+						totalUnits: 13,
+						completedWork: 7,
+						totalWork: 13,
+					},
+				],
+			]),
+		);
+
+		expect(item).toMatchObject({
+			lastResult: "in_progress",
+			uiCondition: "collecting",
+			progress: { completedUnits: 7, totalUnits: 13 },
+		});
+		expect(JSON.stringify(item?.progress)).not.toMatch(
+			/run-|scope|provider-|title|label|user|https?:|error/i,
+		);
+	});
+
+	it("keeps compatibility fields failed when persisted episode work failed", () => {
+		const [item] = buildCacheHealthItems(
+			[makeRow({ cacheType: "plex_episode" })],
+			instanceNameMap,
+			baseDateMs,
+			undefined,
+			new Map([
+				[
+					"inst-1:plex_episode",
+					{
+						state: "failed",
+						completedUnits: 7,
+						totalUnits: 13,
+						completedWork: 7,
+						totalWork: 13,
+					},
+				],
+			]),
+		);
+
+		expect(item).toMatchObject({ lastResult: "error", uiCondition: "retryable-failure" });
 	});
 });

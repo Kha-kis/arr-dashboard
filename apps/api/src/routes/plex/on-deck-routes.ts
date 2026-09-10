@@ -8,10 +8,10 @@
 import type { PlexOnDeckResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import {
-	hasAuthoritativeSelectedPlexEvidence,
+	listDisplayableSelectedPlexEvidence,
+	PlexAuthorityService,
 	summarizePlexEvidence,
 } from "../../lib/plex/plex-authority-service.js";
-import { PlexAuthorityService } from "../../lib/plex/plex-authority-service.js";
 import { mapToOnDeckItems } from "./lib/on-deck-helpers.js";
 
 export async function registerOnDeckRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
@@ -27,24 +27,23 @@ export async function registerOnDeckRoutes(app: FastifyInstance, _opts: FastifyP
 			prisma: app.prisma,
 			encryptor: app.encryptor,
 			log: request.log,
-		}).readUserSelected({
+		}).readUserSelectedDisplay({
 			userId,
 			selection: { kind: "on-deck", limit: 50 },
 			domains: ["membership", "display", "on-deck"],
 		});
 		const summary = summarizePlexEvidence(evidence);
-		if (!hasAuthoritativeSelectedPlexEvidence(evidence)) {
+		const displayableEvidence = listDisplayableSelectedPlexEvidence(evidence);
+		if (displayableEvidence.length === 0) {
 			return reply.status(503).send({
 				error: "Plex cache evidence is unavailable",
 				evidence: summary,
 			});
 		}
 		const instanceMap = new Map(
-			evidence.flatMap((entry) =>
-				entry.available ? [[entry.instanceId, entry.instanceName] as const] : [],
-			),
+			displayableEvidence.map((entry) => [entry.instanceId, entry.instanceName] as const),
 		);
-		const cacheEntries = evidence.flatMap((entry) => entry.rows).slice(0, 50);
+		const cacheEntries = displayableEvidence.flatMap((entry) => entry.rows).slice(0, 50);
 
 		const items = mapToOnDeckItems(cacheEntries, instanceMap);
 

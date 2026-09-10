@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../../prisma.js";
 import { assertRestoreCompatibility, exportDatabase, restoreDatabase } from "../backup-database.js";
-import { validateBackup } from "../backup-validation.js";
+import { validateBackup, validateLabelSyncMutationAttempts } from "../backup-validation.js";
 
 const DURABLE_CONFIG_KEYS = [
 	"backupSettings",
@@ -68,6 +68,95 @@ function baseBackup(data: Record<string, unknown> = {}) {
 describe("backup format 1.2", () => {
 	it("accepts explicit durable configuration arrays, including empty arrays", () => {
 		expect(() => validateBackup(baseBackup())).not.toThrow();
+	});
+
+	it("keeps the additive mutation table optional for legacy-shaped payloads", () => {
+		const backup = baseBackup() as { data: Record<string, unknown> };
+		delete backup.data.labelSyncMutationAttempts;
+		expect(() => validateBackup(backup)).not.toThrow();
+	});
+
+	it("strictly validates mutation rows with owner and destination references", () => {
+		const backup = baseBackup({
+			users: [{ id: "user-1", username: "user" }],
+			serviceInstances: [{ id: "instance-1", userId: "user-1", service: "JELLYFIN" }],
+			labelSyncRule: [
+				{ id: "rule-1", userId: "user-1", destService: "jellyfin", destInstanceId: "instance-1" },
+			],
+			labelSyncMutationAttempts: [
+				{
+					id: "attempt-1",
+					userId: "user-1",
+					ruleId: "rule-1",
+					destinationInstanceId: "instance-1",
+					provider: "jellyfin",
+					mediaType: "movie",
+					tmdbId: 42,
+					connectionGeneration: 0,
+					identityGeneration: 0,
+					targetItemId: "item-1",
+					libraryId: "library-1",
+					intentFingerprint: "intent",
+					ruleFingerprint: "rule",
+					destinationTag: "tag",
+					activeOperationKey: "active",
+					claimToken: "claim",
+					sendAttemptCount: 0,
+					reconcileAttemptCount: 0,
+					requestStartedAt: null,
+					lastObservedAt: null,
+					completedAt: null,
+					status: "claimed",
+					reasonCode: null,
+					createdAt: "2026-09-05T00:00:00.000Z",
+					updatedAt: "2026-09-05T00:00:00.000Z",
+				},
+			],
+		});
+		expect(() => validateBackup(backup)).not.toThrow();
+		const withCanary = baseBackup({
+			labelSyncMutationAttempts: [{ provider: "jellyfin", targetItemId: "private-canary" }],
+		});
+		expect(() => validateBackup(withCanary)).toThrow();
+		expect(() => validateBackup(withCanary)).toThrowError(/Invalid label sync mutation attempt/);
+	});
+
+	it("rejects duplicate mutation attempt IDs before restore", () => {
+		const row = {
+			id: "attempt-duplicate",
+			userId: "user-1",
+			ruleId: "rule-1",
+			destinationInstanceId: "instance-1",
+			provider: "jellyfin",
+			mediaType: "movie",
+			tmdbId: 42,
+			connectionGeneration: 0,
+			identityGeneration: 0,
+			targetItemId: "item-1",
+			libraryId: "library-1",
+			intentFingerprint: "intent",
+			ruleFingerprint: "rule",
+			destinationTag: "tag",
+			activeOperationKey: null,
+			claimToken: null,
+			sendAttemptCount: 1,
+			reconcileAttemptCount: 0,
+			requestStartedAt: "2026-09-05T00:00:00.000Z",
+			lastObservedAt: "2026-09-05T00:00:00.000Z",
+			completedAt: "2026-09-05T00:00:00.000Z",
+			status: "verified",
+			reasonCode: "applied",
+			createdAt: "2026-09-05T00:00:00.000Z",
+			updatedAt: "2026-09-05T00:00:00.000Z",
+		};
+		expect(() =>
+			validateLabelSyncMutationAttempts(
+				[row, row],
+				[{ id: "user-1" }],
+				[{ id: "rule-1", userId: "user-1", destInstanceId: "instance-1", destService: "jellyfin" }],
+				[{ id: "instance-1", userId: "user-1", service: "JELLYFIN" }],
+			),
+		).toThrow("Invalid label sync mutation attempt backup records");
 	});
 
 	it.each(["oidcProviders", "systemSettings", "backupSettings", "vapidKeys"])(
@@ -138,6 +227,7 @@ describe("backup format 1.2", () => {
 			"libraryCleanupApproval",
 			"libraryCleanupMediaServerScan",
 			"librarySyncStatus",
+			"labelSyncMutationAttempt",
 			...DURABLE_CONFIG_KEYS.filter(
 				(key) => key !== "backupSettings" && key !== "vapidKeys" && key !== "librarySyncSettings",
 			),
@@ -299,6 +389,7 @@ describe("backup format 1.2", () => {
 
 	it("rejects legacy omission of an older relational config collection", async () => {
 		const prisma = {
+			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			trashTemplate: { count: vi.fn().mockResolvedValue(1) },
 		} as unknown as PrismaClient;
 		const legacyData = { ...baseBackup().data } as Record<string, unknown>;
@@ -311,6 +402,7 @@ describe("backup format 1.2", () => {
 
 	it("rejects an incomplete legacy payload over a populated durable-config target", async () => {
 		const prisma = {
+			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			notificationChannel: { count: vi.fn().mockResolvedValue(1) },
 		} as unknown as PrismaClient;
 		const legacyData = { ...baseBackup().data } as Record<string, unknown>;
@@ -324,6 +416,7 @@ describe("backup format 1.2", () => {
 	it("rejects legacy omission over non-default library polling settings", async () => {
 		const findMany = vi.fn().mockResolvedValue([{ instanceId: "instance-1" }]);
 		const prisma = {
+			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			librarySyncStatus: { findMany },
 		} as unknown as PrismaClient;
 		const legacyData = { ...baseBackup().data } as Record<string, unknown>;
@@ -342,6 +435,7 @@ describe("backup format 1.2", () => {
 
 	it("allows legacy omission when library polling settings are defaults", async () => {
 		const prisma = {
+			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			librarySyncStatus: { findMany: vi.fn().mockResolvedValue([]) },
 		} as unknown as PrismaClient;
 		const legacyData = { ...baseBackup().data } as Record<string, unknown>;
@@ -357,7 +451,10 @@ describe("backup format 1.2", () => {
 		["too-long interval", { pollingEnabled: true, pollingIntervalMins: 1441 }],
 	])("rejects %s before opening the restore transaction", async (_label, settings) => {
 		const transaction = vi.fn();
-		const prisma = { $transaction: transaction } as unknown as PrismaClient;
+		const prisma = {
+			$transaction: transaction,
+			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
+		} as unknown as PrismaClient;
 
 		await expect(
 			restoreDatabase(
@@ -390,6 +487,7 @@ describe("backup format 1.2", () => {
 
 	it("rejects incomplete legacy coverage over partial stored backup-password state", async () => {
 		const prisma = {
+			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			backupSettings: {
 				findFirst: vi.fn().mockResolvedValue({
 					encryptedPassword: "ciphertext-without-iv",
@@ -408,6 +506,7 @@ describe("backup format 1.2", () => {
 
 	it("rejects incomplete legacy coverage over stored VAPID private-key state", async () => {
 		const prisma = {
+			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			backupSettings: {
 				findFirst: vi.fn().mockResolvedValue({ encryptedPassword: null, passwordIv: null }),
 			},
@@ -428,6 +527,7 @@ describe("backup format 1.2", () => {
 
 	it("allows incomplete legacy coverage over default non-secret backup settings", async () => {
 		const prisma = {
+			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			notificationChannel: { count: vi.fn().mockResolvedValue(0) },
 			backupSettings: {
 				findFirst: vi.fn().mockResolvedValue({ encryptedPassword: null, passwordIv: null }),
@@ -450,6 +550,7 @@ describe("backup format 1.2", () => {
 			privateKeyIv: "target-vapid-iv",
 		});
 		const prisma = {
+			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			notificationChannel: { count: vi.fn().mockResolvedValue(0) },
 			backupSettings: { findFirst: backupSettingsFindFirst },
 			vapidKeys: { findFirst: vapidKeysFindFirst },
@@ -464,6 +565,7 @@ describe("backup format 1.2", () => {
 
 	it("rejects legacy omission of current OIDC provider state", async () => {
 		const prisma = {
+			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			oIDCProvider: { count: vi.fn().mockResolvedValue(1) },
 		} as unknown as PrismaClient;
 		const legacyData = { ...baseBackup().data } as Record<string, unknown>;
@@ -476,6 +578,7 @@ describe("backup format 1.2", () => {
 
 	it("allows legacy omission when the only naming history is terminal audit", async () => {
 		const prisma = {
+			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			namingDeployHistory: {
 				count: vi.fn().mockResolvedValue(1),
 				findMany: vi.fn().mockResolvedValue([]),
@@ -489,6 +592,7 @@ describe("backup format 1.2", () => {
 
 	it("allows legacy omission when the only naming history is rolled back", async () => {
 		const prisma = {
+			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			namingDeployHistory: {
 				count: vi.fn().mockResolvedValue(1),
 				findMany: vi.fn().mockResolvedValue([]),
@@ -502,6 +606,7 @@ describe("backup format 1.2", () => {
 
 	it("rejects legacy omission when active naming recovery is populated", async () => {
 		const prisma = {
+			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			namingDeployHistory: {
 				count: vi.fn().mockResolvedValue(1),
 				findMany: vi
@@ -520,10 +625,12 @@ describe("backup format 1.2", () => {
 	it("rechecks compatibility inside the transaction before the first delete", async () => {
 		const firstDelete = vi.fn();
 		const tx = {
+			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			notificationChannel: { count: vi.fn().mockResolvedValue(1) },
 			huntSearchHistory: { deleteMany: firstDelete },
 		};
 		const prisma = {
+			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			$transaction: vi.fn(async (operation: (value: unknown) => Promise<void>) => operation(tx)),
 		} as unknown as PrismaClient;
 		const legacyData = { ...baseBackup().data } as Record<string, unknown>;

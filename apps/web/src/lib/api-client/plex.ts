@@ -27,6 +27,7 @@ import type {
 	PlexSectionsResponse,
 	PlexTagsResponse,
 	PlexTagUpdateRequest,
+	ProviderObservationAcceptedResponse,
 	QualityScoreAnalytics,
 	SeriesProgressResponse,
 	TopMediaResponse,
@@ -40,7 +41,7 @@ import type {
 import { apiRequest } from "./base";
 
 /**
- * Fetch watch enrichment data for library items from PlexCache + TautulliCache.
+ * Fetch native Plex watch enrichment; optional analytics are not a dependency.
  */
 export async function fetchWatchEnrichment(
 	tmdbIds: number[],
@@ -164,8 +165,10 @@ export async function fetchCacheHealth(): Promise<CacheHealthResponse> {
 /** Trigger a manual cache refresh for a specific Plex instance. */
 export async function triggerCacheRefresh(
 	instanceId: string,
-): Promise<{ success: boolean; upserted: number; errors: number }> {
-	return apiRequest(`/api/plex/cache/${instanceId}/refresh`, { method: "POST" });
+): Promise<ProviderObservationAcceptedResponse> {
+	return apiRequest<ProviderObservationAcceptedResponse>(`/api/plex/cache/${instanceId}/refresh`, {
+		method: "POST",
+	});
 }
 
 // ============================================================================

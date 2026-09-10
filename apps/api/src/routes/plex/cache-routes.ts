@@ -5,7 +5,7 @@
  * Enables users to see when data was last synced and trigger a refresh.
  */
 
-import type { CacheHealthResponse } from "@arr/shared";
+import type { CacheHealthResponse, ProviderObservationAcceptedResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { requireEnabledInstance } from "../../lib/arr/instance-helpers.js";
@@ -19,9 +19,15 @@ import {
 	getPublishedEpisodeGenerationObservation,
 	loadUserGenerationObservations,
 } from "../../lib/plex/plex-persisted-observation-repository.js";
-import { refreshOwnedPlexCache } from "../../lib/plex/plex-refresh-orchestration.js";
+import { refreshOwnedPlexCacheWithAttempt } from "../../lib/plex/plex-refresh-orchestration.js";
+import { startProviderCacheRefreshInBackground } from "../../lib/provider-observation/background-cache-refresh.js";
+import { claimProviderCacheRefreshAttempt } from "../../lib/services/provider-cache-status.js";
+import { createProviderPublicationAuthority } from "../../lib/services/provider-identity-guard.js";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { buildCacheHealthItems } from "./lib/cache-health-helpers.js";
+import {
+	buildCacheHealthItems,
+	isSafeSanitizedEpisodeProgress,
+} from "./lib/cache-health-helpers.js";
 
 const instanceParams = z.object({
 	instanceId: z.string().min(1),
@@ -49,7 +55,7 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 		}).readInstance({
 			userId,
 			instanceId,
-			domains: ["membership", "display", "labels", "collections", "watch", "on-deck"],
+			domains: ["membership", "labels", "collections", "watch", "on-deck"],
 		});
 		if (!evidence.available || !isCurrentAuthoritativePlexEvidence(evidence.evidence)) {
 			return reply.status(503).send({
@@ -78,48 +84,28 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 		async (request, reply) => {
 			const { instanceId } = validateRequest(instanceParams, request.params);
 			const userId = request.currentUser!.id;
+			const log = request.log;
 
 			const instance = await requireEnabledInstance(app, userId, instanceId);
 			if (instance.service !== "PLEX") {
 				throw new AppValidationError("Instance is not a Plex service");
 			}
-			const result = await refreshOwnedPlexCache({
-				prisma: app.prisma,
-				encryptor: app.encryptor,
-				instance,
-				log: request.log,
+			const authority = createProviderPublicationAuthority(instance);
+			await startProviderCacheRefreshInBackground({
+				cacheType: "plex",
+				claim: () => claimProviderCacheRefreshAttempt(app.prisma, "plex", authority),
+				produce: (attempt) =>
+					refreshOwnedPlexCacheWithAttempt(
+						{ prisma: app.prisma, encryptor: app.encryptor, instance, log },
+						attempt,
+					),
+				log,
 			});
-
-			const positiveObservation =
-				result.kind === "positive-observation" && result.completedAt && result.observation
-					? result.observation
-					: null;
-			if (!positiveObservation && (!result.complete || !result.completedAt)) {
-				return reply.status(503).send({
-					success: false,
-					upserted: result.upserted,
-					errors: result.errors,
-					error: result.errorMessages[0] ?? "Plex cache refresh did not publish a generation",
-				});
-			}
-			if (positiveObservation) {
-				return reply.send({
-					success: true,
-					publicationLevel: "positive-only",
-					completeness: "partial",
-					complete: false,
-					observedItemCount: result.upserted,
-					partialReasons: positiveObservation.partialReasons,
-					upserted: result.upserted,
-					errors: result.errors,
-				});
-			}
-
-			return reply.send({
-				success: true,
-				upserted: result.upserted,
-				errors: result.errors,
-			});
+			const response: ProviderObservationAcceptedResponse = {
+				status: "accepted",
+				cacheType: "plex",
+			};
+			return reply.status(202).send(response);
 		},
 	);
 
@@ -169,8 +155,44 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 			});
 			plexEvidenceByStatus.set(`${instance.id}:plex_episode`, evidence.evidence);
 		}
+		const progressByStatus = new Map<
+			string,
+			NonNullable<CacheHealthResponse["items"][number]["progress"]>
+		>();
+		for (const run of await app.prisma.providerObservationRun.findMany({
+			where: {
+				instanceId: { in: instanceIds },
+				provider: "plex_episode",
+				cacheType: "plex_episode",
+				state: { in: ["running", "failed"] },
+			},
+			select: {
+				instanceId: true,
+				state: true,
+				completedUnits: true,
+				totalUnits: true,
+				completedWork: true,
+				totalWork: true,
+			},
+		})) {
+			if (isSafeSanitizedEpisodeProgress(run)) {
+				progressByStatus.set(`${run.instanceId}:plex_episode`, {
+					state: run.state === "running" ? "running" : "failed",
+					completedUnits: run.completedUnits,
+					totalUnits: run.totalUnits,
+					completedWork: run.completedWork,
+					totalWork: run.totalWork,
+				});
+			}
+		}
 
-		const items = buildCacheHealthItems(statuses, instanceMap, undefined, plexEvidenceByStatus);
+		const items = buildCacheHealthItems(
+			statuses,
+			instanceMap,
+			undefined,
+			plexEvidenceByStatus,
+			progressByStatus,
+		);
 		const response: CacheHealthResponse = { items };
 		return reply.send(response);
 	});

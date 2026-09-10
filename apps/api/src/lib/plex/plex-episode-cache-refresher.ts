@@ -54,6 +54,10 @@ export interface PlexEpisodeRefreshResult {
 	superseded?: boolean;
 	publicationLevel?: "authoritative" | "positive-only";
 	partialReasons?: readonly PlexPositiveEpisodePartialReason[];
+	retryCategory?:
+		| "identity-unavailable"
+		| "parent-refresh-in-progress"
+		| "parent-refresh-unavailable";
 }
 
 type CollectedPlexEpisodeRefresh = PlexEpisodeRefreshResult & {
@@ -462,7 +466,7 @@ async function publishPlexEpisodeCache(
 	}));
 	if (collected.kind === "positive-observation") {
 		const generationMetadata = encodePlexPositiveEpisodeGenerationMetadata({
-			version: 3,
+			version: 4,
 			publicationLevel: "positive-only",
 			completeness: "partial",
 			itemCount: rows.length,
@@ -474,7 +478,7 @@ async function publishPlexEpisodeCache(
 				operator: "greater_than",
 			},
 			parentPlexGenerationId: collected.parentAuthority.generationId,
-			parentMetadataVersion: 4,
+			parentMetadataVersion: 5,
 			parentPublicationLevel: "positive-only",
 			parentTargetDigest: collected.parentAuthority.parentTargetDigest,
 			episodeDigest: collected.episodeDigest,
@@ -518,10 +522,10 @@ async function publishPlexEpisodeCache(
 		domains: ["episodes"],
 	}).domains.episodes!;
 	const generationMetadata = JSON.stringify({
-		version: 2,
+		version: 3,
 		parentPlexGenerationId: collected.parentAuthority.generationId,
 		parentPublicationLevel: collected.parentAuthority.publicationLevel,
-		parentMetadataVersion: 3,
+		parentMetadataVersion: 5,
 		canonicalizationVersion: 1,
 		episodeDigest,
 		connectionGeneration: collected.parentAuthority.connectionGeneration,

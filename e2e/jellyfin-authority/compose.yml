@@ -1,0 +1,133 @@
+name: ${COMPOSE_PROJECT_NAME:?Set a unique jf-authority-* project name}
+
+x-run-labels: &run-labels
+  io.arr-dashboard.jellyfin-authority.project: ${COMPOSE_PROJECT_NAME}
+  io.arr-dashboard.jellyfin-authority.run-token: ${JF_AUTHORITY_RUN_TOKEN:?Set a random JF_AUTHORITY_RUN_TOKEN}
+
+x-run-owned-service: &run-owned-service
+  labels: *run-labels
+
+services:
+  jellyfin:
+    <<: *run-owned-service
+    image: ${JELLYFIN_IMAGE:-jellyfin/jellyfin@sha256:0b901391a662862eddb5dc55d244d7883cbb6236ef5b9a6ea82abc78a89819f0}
+    volumes:
+      - jellyfin-config:/config
+      - jellyfin-cache:/cache
+      - ./media:/media:ro
+    ports:
+      - target: 8096
+        published: ${JELLYFIN_PORT:-38096}
+        host_ip: 127.0.0.1
+        protocol: tcp
+    networks:
+      - authority-internal
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8096/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 10s
+
+  jellyfin-proxy:
+    <<: *run-owned-service
+    image: ${CANDIDATE_DASHBOARD_IMAGE:?Set the immutable candidate dashboard image}
+    entrypoint: ["node", "/fixture/proxy-server.mjs"]
+    environment:
+      JELLYFIN_UPSTREAM: http://jellyfin:8096
+      JELLYFIN_PROXY_PORT: "18096"
+    volumes:
+      - ./proxy-policy.mjs:/fixture/proxy-policy.mjs:ro
+      - ./proxy-server.mjs:/fixture/proxy-server.mjs:ro
+    ports:
+      - target: 18096
+        published: ${JELLYFIN_PROXY_PORT:-38097}
+        host_ip: 127.0.0.1
+        protocol: tcp
+    networks:
+      authority-internal:
+        aliases:
+          - jellyfin-proxy-rotated
+    depends_on:
+      jellyfin:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:18096/__fixture/health').then(r=>{if(r.status!==204)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  dashboard:
+    <<: *run-owned-service
+    image: ${CANDIDATE_DASHBOARD_IMAGE:?Set the immutable candidate dashboard image}
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-Etc/UTC}
+      PORT: "3000"
+      API_PORT: "3001"
+      DATABASE_URL: file:/config/prod.db
+      API_RATE_LIMIT_MAX: "10000"
+    volumes:
+      - dashboard-config:/config
+    ports:
+      - target: 3000
+        published: ${DASHBOARD_PORT:-33040}
+        host_ip: 127.0.0.1
+        protocol: tcp
+    networks:
+      - authority-internal
+    depends_on:
+      jellyfin-proxy:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 30s
+
+  matrix-runner:
+    <<: *run-owned-service
+    profiles: ["tools"]
+    image: ${CANDIDATE_DASHBOARD_IMAGE:?Set the immutable candidate dashboard image}
+    entrypoint: ["node", "/fixture/live-matrix.mjs"]
+    environment:
+      DASHBOARD_API_BASE: http://dashboard:3001
+      DASHBOARD_DB_PATH: /dashboard-config/prod.db
+      JELLYFIN_BASE: http://jellyfin:8096
+      JELLYFIN_PROXY_BASE: http://jellyfin-proxy:18096
+      JF_AUTHORITY_RUN_TOKEN: ${JF_AUTHORITY_RUN_TOKEN:?Set a random JF_AUTHORITY_RUN_TOKEN}
+      JF_AUTHORITY_STATE_PATH: /fixture-state/state.json
+    volumes:
+      - dashboard-config:/dashboard-config:ro
+      - fixture-state:/fixture-state
+      - ./live-matrix-lib.mjs:/fixture/live-matrix-lib.mjs:ro
+      - ./live-matrix.mjs:/fixture/live-matrix.mjs:ro
+    networks:
+      - authority-internal
+    depends_on:
+      dashboard:
+        condition: service_healthy
+
+volumes:
+  dashboard-config:
+    labels: *run-labels
+  fixture-state:
+    labels: *run-labels
+  jellyfin-cache:
+    labels: *run-labels
+  jellyfin-config:
+    labels: *run-labels
+
+networks:
+  authority-internal:
+    internal: true
+    labels: *run-labels

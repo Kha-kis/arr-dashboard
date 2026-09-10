@@ -42,6 +42,11 @@ const TABLE_NAMES = [
 	"notificationAggregationConfig",
 	"autoTagRule",
 	"labelSyncRule",
+	"labelSyncMutationAttempt",
+	"providerObservationRun",
+	"providerObservationUnit",
+	"plexEpisodeObservationStage",
+	"jellyfinEpisodeObservationStage",
 	"queueCleanerConfig",
 	"libraryCleanupConfig",
 	"libraryCleanupRule",
@@ -180,6 +185,11 @@ describe("BackupService coordination safety", () => {
 					backupData: "required-rollback-evidence",
 				}),
 			]);
+			const serialized = JSON.stringify(payload.data);
+			expect(serialized).not.toContain("providerObservationRuns");
+			expect(serialized).not.toContain("providerObservationUnits");
+			expect(serialized).not.toContain("plexEpisodeObservationStages");
+			expect(serialized).not.toContain("jellyfinEpisodeObservationStages");
 			expect(infoSpy).toHaveBeenCalledWith(
 				expect.objectContaining({
 					backupType: "scheduled",

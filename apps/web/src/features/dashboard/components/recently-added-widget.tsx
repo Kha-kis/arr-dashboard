@@ -1,21 +1,29 @@
 "use client";
 
+import {
+	type ProviderObservationDomain,
+	providerObservationStatusFromPlexEvidence,
+} from "@arr/shared";
 import { ChevronLeft, ChevronRight, Film, Plus, Tv } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PlexEvidenceNotice } from "../../../components/presentational/plex-evidence-notice";
+import {
+	ProviderObservationNotice,
+	resolveProviderObservationUiCondition,
+} from "../../../components/presentational/provider-observation-notice";
 import { useJellyfinRecentlyAdded } from "../../../hooks/api/useJellyfin";
 import { useRecentlyAdded } from "../../../hooks/api/usePlex";
 import { getLinuxIsoName, getLinuxSectionName, useIncognitoMode } from "../../../lib/incognito";
-import {
-	getPlexEvidenceFromError,
-	isCurrentAuthoritativePlexEvidence,
-} from "../../../lib/plex-evidence";
+import { getPlexEvidenceFromError } from "../../../lib/plex-evidence";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
 const mediaGradient = SERVICE_GRADIENTS.plex;
 const MAX_DISPLAY = 12;
+const JELLYFIN_RECENTLY_ADDED_REQUIRED_DOMAINS = [
+	"library-inventory",
+	"mapping",
+] as const satisfies readonly ProviderObservationDomain[];
 
 function timeAgo(dateString: string): string {
 	const diff = Date.now() - new Date(dateString).getTime();
@@ -99,10 +107,21 @@ export const RecentlyAddedWidget = ({
 
 	const isLoading = plexQuery.isLoading || jellyfinQuery.isLoading;
 	const plexEvidence = plexQuery.data?.evidence ?? getPlexEvidenceFromError(plexQuery.error);
-	const plexUnavailable =
-		hasPlexInstances &&
-		(plexQuery.isError ||
-			(plexEvidence !== undefined && !isCurrentAuthoritativePlexEvidence(plexEvidence)));
+	const plexProviderStatus = providerObservationStatusFromPlexEvidence(plexEvidence);
+	const plexTransportError = plexQuery.isError && plexEvidence === undefined;
+	const providerStatus = [
+		hasPlexInstances ? plexProviderStatus : undefined,
+		hasJellyfinInstances ? jellyfinQuery.data?.providerStatus : undefined,
+	];
+	const requiredDomains = [undefined, JELLYFIN_RECENTLY_ADDED_REQUIRED_DOMAINS] as const;
+	const providerTransportError =
+		plexTransportError || (hasJellyfinInstances && jellyfinQuery.isError);
+	const providerNoticeNeeded =
+		resolveProviderObservationUiCondition(
+			providerStatus,
+			providerTransportError,
+			requiredDomains,
+		) !== "current";
 	const [failedThumbs, setFailedThumbs] = useState<Set<string>>(new Set());
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -115,6 +134,7 @@ export const RecentlyAddedWidget = ({
 		setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
 	}, []);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: Recalculate scroll controls when results change.
 	useEffect(() => {
 		updateScrollState();
 		const el = scrollRef.current;
@@ -131,8 +151,8 @@ export const RecentlyAddedWidget = ({
 	}, []);
 
 	if (!enabled || isLoading) return null;
-	if (items.length === 0 && !plexUnavailable) return null;
-	if (items.length === 0 && plexUnavailable) {
+	if (items.length === 0 && !providerNoticeNeeded) return null;
+	if (items.length === 0 && providerNoticeNeeded) {
 		return (
 			<div
 				className="animate-in fade-in slide-in-from-bottom-4 duration-500"
@@ -142,7 +162,13 @@ export const RecentlyAddedWidget = ({
 					<div className="px-6 py-4">
 						<h3 className="text-sm font-semibold text-foreground">Recently Added</h3>
 					</div>
-					<PlexEvidenceNotice evidence={plexEvidence} />
+					{providerNoticeNeeded && (
+						<ProviderObservationNotice
+							providerStatus={providerStatus}
+							requiredDomains={requiredDomains}
+							isError={providerTransportError}
+						/>
+					)}
 				</div>
 			</div>
 		);
@@ -175,10 +201,20 @@ export const RecentlyAddedWidget = ({
 					</div>
 					<div>
 						<h3 className="text-sm font-semibold text-foreground">Recently Added</h3>
-						<p className="text-xs text-muted-foreground">Latest additions to your media library</p>
+						<p className="text-xs text-muted-foreground">
+							{providerNoticeNeeded
+								? "Showing available items; provider coverage is bounded"
+								: "Latest additions to your media library"}
+						</p>
 					</div>
 				</div>
-				{plexUnavailable && <PlexEvidenceNotice evidence={plexEvidence} />}
+				{providerNoticeNeeded && (
+					<ProviderObservationNotice
+						providerStatus={providerStatus}
+						requiredDomains={requiredDomains}
+						isError={providerTransportError}
+					/>
+				)}
 
 				<div className="relative group/scroll">
 					<div

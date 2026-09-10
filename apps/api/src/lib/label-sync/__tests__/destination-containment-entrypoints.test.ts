@@ -33,8 +33,8 @@ const PRIVATE = {
 const encryptor = new Encryptor("0123456789abcdef0123456789abcdef");
 const encrypted = encryptor.encrypt(PRIVATE.token);
 
-type DestService = "jellyfin" | "emby";
-type PrismaDestService = "JELLYFIN" | "EMBY";
+type DestService = "sonarr" | "radarr" | "plex" | "jellyfin" | "emby";
+type PrismaDestService = "SONARR" | "RADARR" | "PLEX" | "JELLYFIN" | "EMBY";
 
 function makeRule(destService: DestService) {
 	return {
@@ -150,14 +150,25 @@ function makeArrClientFactory() {
 	};
 }
 
-function makePrisma(destService: DestService, prismaDestService: PrismaDestService) {
-	const rule = makeRule(destService);
+function makePrisma(
+	destService: DestService,
+	prismaDestService: PrismaDestService,
+	options: {
+		rule?: Partial<ReturnType<typeof makeRule>>;
+		destinationInstanceService?: PrismaDestService;
+	} = {},
+) {
+	const rule = { ...makeRule(destService), ...options.rule };
 	const sourceInstance = makeInstance(
 		PRIVATE.sourceInstanceId,
 		"SONARR",
 		"http://synthetic-sonarr.invalid",
 	);
-	const destInstance = makeInstance(PRIVATE.destInstanceId, prismaDestService, PRIVATE.baseUrl);
+	const destInstance = makeInstance(
+		PRIVATE.destInstanceId,
+		options.destinationInstanceService ?? prismaDestService,
+		PRIVATE.baseUrl,
+	);
 	const update = vi.fn().mockImplementation(({ data }) => {
 		const persistedData = Object.fromEntries(
 			Object.entries(data).filter(([, value]) => value !== undefined),
@@ -251,7 +262,7 @@ describe.each([
 				payload: { name: "Updated contained rule" },
 			});
 			const listedBody = JSON.parse(listed.payload) as {
-				rules: Array<{ id: string; destService: string }>;
+				rules: Array<{ id: string; destService: string; destinationMutationCapability: unknown }>;
 			};
 			const updatedBody = JSON.parse(updated.payload) as {
 				rule: { name: string; destService: string; destInstanceId: string };
@@ -269,6 +280,11 @@ describe.each([
 					destInstanceId: PRIVATE.destInstanceId,
 				}),
 			);
+			expect(listedBody.rules[0]?.destinationMutationCapability).toEqual({
+				supported: false,
+				code: "destination_mutation_authority_unavailable",
+				message: UNAVAILABLE_MESSAGE,
+			});
 			expect(prisma.labelSyncRule.update).toHaveBeenCalledWith({
 				where: { id: PRIVATE.ruleId },
 				data: expect.objectContaining({
@@ -284,7 +300,7 @@ describe.each([
 		}
 	});
 
-	it("keeps new rule storage backward compatible while execution remains authoritative", async () => {
+	it("rejects new blocked destinations before ownership lookup or storage", async () => {
 		const requests: Array<{ path: string; method: string }> = [];
 		installUnsafeProviderCapture(requests);
 		const prisma = makePrisma(destService, prismaDestService);
@@ -305,10 +321,13 @@ describe.each([
 				},
 			});
 
-			expect(response.statusCode).toBe(201);
-			expect(prisma.labelSyncRule.create).toHaveBeenCalledWith({
-				data: expect.objectContaining({ destService, destInstanceId: PRIVATE.destInstanceId }),
+			expect(response.statusCode).toBe(409);
+			expect(JSON.parse(response.payload)).toEqual({
+				error: UNAVAILABLE_MESSAGE,
+				code: "destination_mutation_authority_unavailable",
 			});
+			expect(prisma.serviceInstance.findFirst).not.toHaveBeenCalled();
+			expect(prisma.labelSyncRule.create).not.toHaveBeenCalled();
 			expect(requests).toEqual([]);
 		} finally {
 			await app.close();
@@ -413,5 +432,116 @@ describe.each([
 		});
 		expectNoSensitiveCanary(result.results[0]?.outcome.message ?? "");
 		expectNoSensitiveCanary(capture.serialized());
+	});
+});
+
+describe("destination capability PATCH compatibility", () => {
+	it("allows an enabled blocked rule's full-payload no-op edit", async () => {
+		const prisma = makePrisma("jellyfin", "JELLYFIN");
+		const app = await buildManualApp(prisma, makeArrClientFactory(), createPinoCapture().log);
+		try {
+			const response = await app.inject({
+				method: "PATCH",
+				url: `/api/label-sync/rules/${PRIVATE.ruleId}`,
+				payload: {
+					name: PRIVATE.ruleName,
+					enabled: true,
+					sourceService: "sonarr",
+					sourceInstanceId: PRIVATE.sourceInstanceId,
+					sourceTagName: PRIVATE.sourceTag,
+					destService: "jellyfin",
+					destInstanceId: PRIVATE.destInstanceId,
+					destTagName: PRIVATE.destTag,
+				},
+			});
+			expect(response.statusCode).toBe(200);
+			expect(prisma.labelSyncRule.update).toHaveBeenCalledTimes(1);
+		} finally {
+			await app.close();
+		}
+	});
+
+	it("allows disabling an existing blocked rule", async () => {
+		const prisma = makePrisma("jellyfin", "JELLYFIN");
+		const app = await buildManualApp(prisma, makeArrClientFactory(), createPinoCapture().log);
+		try {
+			const response = await app.inject({
+				method: "PATCH",
+				url: `/api/label-sync/rules/${PRIVATE.ruleId}`,
+				payload: { enabled: false },
+			});
+			const body = JSON.parse(response.payload) as { rule: { enabled: boolean } };
+			expect(response.statusCode).toBe(200);
+			expect(body.rule.enabled).toBe(false);
+			expect(prisma.labelSyncRule.update).toHaveBeenCalledTimes(1);
+		} finally {
+			await app.close();
+		}
+	});
+
+	it.each([
+		["a material blocked-destination tuple change", { destTagName: "changed" }],
+		["re-enabling a disabled blocked rule", { enabled: true }],
+	] as const)("rejects %s before update", async (_caseName, payload) => {
+		const prisma = makePrisma("jellyfin", "JELLYFIN", {
+			rule: "enabled" in payload ? { enabled: false } : undefined,
+		});
+		const app = await buildManualApp(prisma, makeArrClientFactory(), createPinoCapture().log);
+		try {
+			const response = await app.inject({
+				method: "PATCH",
+				url: `/api/label-sync/rules/${PRIVATE.ruleId}`,
+				payload,
+			});
+			expect(response.statusCode).toBe(409);
+			expect(JSON.parse(response.payload)).toEqual({
+				error: UNAVAILABLE_MESSAGE,
+				code: "destination_mutation_authority_unavailable",
+			});
+			expect(prisma.labelSyncRule.update).not.toHaveBeenCalled();
+		} finally {
+			await app.close();
+		}
+	});
+
+	it("rejects a supported-to-blocked destination transition", async () => {
+		const prisma = makePrisma("plex", "PLEX", {
+			rule: { destService: "plex" },
+			destinationInstanceService: "JELLYFIN",
+		});
+		const app = await buildManualApp(prisma, makeArrClientFactory(), createPinoCapture().log);
+		try {
+			const response = await app.inject({
+				method: "PATCH",
+				url: `/api/label-sync/rules/${PRIVATE.ruleId}`,
+				payload: { destService: "jellyfin" },
+			});
+			expect(response.statusCode).toBe(409);
+			expect(prisma.labelSyncRule.update).not.toHaveBeenCalled();
+		} finally {
+			await app.close();
+		}
+	});
+
+	it("allows an existing blocked rule to move to a supported destination", async () => {
+		const prisma = makePrisma("jellyfin", "JELLYFIN", {
+			destinationInstanceService: "PLEX",
+		});
+		const app = await buildManualApp(prisma, makeArrClientFactory(), createPinoCapture().log);
+		try {
+			const response = await app.inject({
+				method: "PATCH",
+				url: `/api/label-sync/rules/${PRIVATE.ruleId}`,
+				payload: { destService: "plex" },
+			});
+			const body = JSON.parse(response.payload) as {
+				rule: { destinationMutationCapability: { supported: boolean } };
+			};
+			expect(response.statusCode).toBe(200);
+			expect(body.rule.destinationMutationCapability).toEqual({ supported: true });
+			expect(prisma.labelSyncRule.update).toHaveBeenCalledTimes(1);
+		} finally {
+			await app.close();
+		}
 	});
 });

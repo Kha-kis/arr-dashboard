@@ -12,9 +12,13 @@ import type { Encryptor } from "../auth/encryption.js";
 import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import { parseUpstreamOrThrow } from "../validation/parse-upstream.js";
 import {
+	jellyfinEpisodeItemsPageSchema,
 	jellyfinItemDetailSchema,
 	jellyfinItemsResponseSchema,
 	jellyfinLibrariesResponseSchema,
+	jellyfinMutationAncestorsSchema,
+	jellyfinMutationItemSchema,
+	jellyfinMutationServerInfoSchema,
 	jellyfinPublicInfoSchema,
 	jellyfinServerInfoSchema,
 	jellyfinSessionsResponseSchema,
@@ -97,12 +101,80 @@ const CLIENT_NAME = "Arr Control Center";
 const COMPLETE_ITEMS_PAGE_SIZE = 1000;
 const COMPLETE_ITEMS_MAX = 100_000;
 
+export interface JellyfinCompleteItemsResult {
+	items: JellyfinItem[];
+	expectedRawCount: number | null;
+	pagesAttempted: number;
+	pagesCompleted: number;
+	rawObserved: number;
+	reason: "page-failure" | null;
+}
+
+export interface JellyfinEpisodeCoverageResult extends JellyfinCompleteItemsResult {
+	failureMessage?: string;
+}
+
+export interface JellyfinEpisodeObservationItem {
+	id: string;
+	name: string;
+	type: "Episode";
+	seriesId: string;
+	episodeNumber: number;
+	seasonNumber: number;
+	played: boolean;
+	playCount: number | null;
+	lastPlayedDate: string | null;
+}
+
+export interface JellyfinEpisodeItemsPage {
+	items: JellyfinEpisodeObservationItem[];
+	startIndex: number;
+	totalRecordCount: number;
+}
+
+export interface JellyfinMutationTargetSnapshot {
+	readonly serverId: string;
+	readonly itemId: string;
+	readonly mediaType: "movie" | "series";
+	readonly tmdbId: number;
+	readonly tags: readonly string[];
+	readonly ancestorIds: readonly string[];
+}
+
+type JellyfinMutationItemDto = z.infer<typeof jellyfinMutationItemSchema>;
+
+interface StoredMutationTarget {
+	dto: JellyfinMutationItemDto;
+	serverId: string;
+	itemId: string;
+	mediaType: "movie" | "series";
+	tmdbId: number;
+	tags: readonly string[];
+	ancestorIds: readonly string[];
+}
+
+type JellyfinRawItem = z.infer<typeof jellyfinItemsResponseSchema>["Items"][number];
+
+interface JellyfinRawItemsResult {
+	items: JellyfinRawItem[];
+	expectedRawCount: number | null;
+	pagesAttempted: number;
+	pagesCompleted: number;
+	rawObserved: number;
+	reason: "page-failure" | null;
+	failureMessage?: string;
+}
+
 export class JellyfinClient {
 	private readonly baseUrl: string;
 	private readonly apiKey: string;
 	private readonly log: FastifyBaseLogger;
 	private readonly timeout: number;
 	private readonly httpAuthHeaders: Record<string, string>;
+	private readonly mutationTargets = new WeakMap<
+		JellyfinMutationTargetSnapshot,
+		StoredMutationTarget
+	>();
 
 	constructor(
 		baseUrl: string,
@@ -184,6 +256,40 @@ export class JellyfinClient {
 		libraryId: string,
 		options?: { includeItemTypes?: string },
 	): Promise<JellyfinItem[]> {
+		const result = await this.getLibraryItemsWithRawCoverage(userId, libraryId, options);
+		if (result.reason !== null) {
+			throw new Error(
+				result.failureMessage ?? "Jellyfin item inventory could not be verified as complete",
+			);
+		}
+		return result.items.map(mapItem);
+	}
+
+	/**
+	 * Get all items in a library with bounded pagination accounting. A page
+	 * failure never exposes rows observed before that failure.
+	 */
+	async getLibraryItemsWithCoverage(
+		userId: string,
+		libraryId: string,
+		options?: { includeItemTypes?: string },
+	): Promise<JellyfinCompleteItemsResult> {
+		const result = await this.getLibraryItemsWithRawCoverage(userId, libraryId, options);
+		return {
+			items: result.reason === null ? result.items.map(mapItem) : [],
+			expectedRawCount: result.expectedRawCount,
+			pagesAttempted: result.pagesAttempted,
+			pagesCompleted: result.pagesCompleted,
+			rawObserved: result.rawObserved,
+			reason: result.reason,
+		};
+	}
+
+	private async getLibraryItemsWithRawCoverage(
+		userId: string,
+		libraryId: string,
+		options?: { includeItemTypes?: string },
+	): Promise<JellyfinRawItemsResult> {
 		const params = new URLSearchParams({
 			ParentId: libraryId,
 			Fields: "ProviderIds,DateCreated,ImageTags",
@@ -194,10 +300,9 @@ export class JellyfinClient {
 			params.set("IncludeItemTypes", options.includeItemTypes);
 		}
 
-		const items = await this.getCompleteItems(
+		return await this.getCompleteItemsWithCoverage(
 			`/Users/${encodeURIComponent(userId)}/Items?${params.toString()}`,
 		);
-		return items.map(mapItem);
 	}
 
 	/**
@@ -261,10 +366,130 @@ export class JellyfinClient {
 	 * Get episodes for a series with watch status.
 	 */
 	async getEpisodes(userId: string, seriesId: string): Promise<JellyfinItem[]> {
-		const items = await this.getCompleteItems(
+		const result = await this.getEpisodesWithCoverage(userId, seriesId);
+		if (result.reason !== null) {
+			throw new Error(
+				result.failureMessage ?? "Jellyfin episode inventory could not be verified as complete",
+			);
+		}
+		return result.items;
+	}
+
+	/**
+	 * Get episodes with bounded pagination accounting. A page failure never
+	 * exposes rows observed before that failure.
+	 */
+	async getEpisodesWithCoverage(
+		userId: string,
+		seriesId: string,
+	): Promise<JellyfinEpisodeCoverageResult> {
+		const result = await this.getCompleteItemsWithCoverage(
 			`/Shows/${encodeURIComponent(seriesId)}/Episodes?userId=${encodeURIComponent(userId)}&Fields=ProviderIds`,
 		);
-		return items.map(mapItem);
+		return {
+			items: result.reason === null ? result.items.map(mapItem) : [],
+			expectedRawCount: result.expectedRawCount,
+			pagesAttempted: result.pagesAttempted,
+			pagesCompleted: result.pagesCompleted,
+			rawObserved: result.rawObserved,
+			reason: result.reason,
+			...(result.failureMessage ? { failureMessage: result.failureMessage } : {}),
+		};
+	}
+
+	/**
+	 * Read one immutable-size page for the durable episode collector. This is
+	 * intentionally separate from the compatibility series fan-out helpers: a
+	 * caller must persist and re-prove the cursor/total before asking for the
+	 * next page.
+	 */
+	async getEpisodeItemsPageWithCoverage(
+		userId: string,
+		libraryId: string,
+		startIndex: number,
+		limit = COMPLETE_ITEMS_PAGE_SIZE,
+	): Promise<JellyfinEpisodeItemsPage> {
+		if (!Number.isSafeInteger(startIndex) || startIndex < 0) {
+			throw new Error("Jellyfin episode page start index is invalid");
+		}
+		if (!Number.isSafeInteger(limit) || limit < 1 || limit > COMPLETE_ITEMS_PAGE_SIZE) {
+			throw new Error("Jellyfin episode page limit is invalid");
+		}
+		const params = new URLSearchParams({
+			ParentId: libraryId,
+			IncludeItemTypes: "Episode",
+			Recursive: "true",
+			EnableUserData: "true",
+			Fields: "ProviderIds,UserData",
+			StartIndex: String(startIndex),
+			Limit: String(limit),
+		});
+		const response = await this.request(
+			`/Users/${encodeURIComponent(userId)}/Items?${params.toString()}`,
+			{ schema: jellyfinEpisodeItemsPageSchema },
+		);
+		if (
+			!Number.isSafeInteger(response.StartIndex) ||
+			response.StartIndex < 0 ||
+			!Number.isSafeInteger(response.TotalRecordCount) ||
+			response.TotalRecordCount < 0 ||
+			response.StartIndex !== startIndex
+		) {
+			throw new Error("Jellyfin episode page coverage is inconsistent");
+		}
+		if (response.TotalRecordCount > COMPLETE_ITEMS_MAX) {
+			throw new Error("Jellyfin episode page exceeds the safe 100000-row limit");
+		}
+		const ids = new Set<string>();
+		for (const item of response.Items) {
+			if (
+				item.Type !== "Episode" ||
+				item.Id.trim().length === 0 ||
+				!item.SeriesId ||
+				item.SeriesId.trim().length === 0 ||
+				!Number.isSafeInteger(item.ParentIndexNumber) ||
+				item.ParentIndexNumber === undefined ||
+				item.ParentIndexNumber === null ||
+				item.ParentIndexNumber < 0 ||
+				!Number.isSafeInteger(item.IndexNumber) ||
+				item.IndexNumber === undefined ||
+				item.IndexNumber === null ||
+				item.IndexNumber < 0 ||
+				!item.UserData ||
+				typeof item.UserData.Played !== "boolean" ||
+				(item.UserData.PlayCount !== undefined &&
+					item.UserData.PlayCount !== null &&
+					(!Number.isSafeInteger(item.UserData.PlayCount) || item.UserData.PlayCount < 0)) ||
+				(item.UserData.LastPlayedDate !== undefined &&
+					item.UserData.LastPlayedDate !== null &&
+					!Number.isFinite(Date.parse(item.UserData.LastPlayedDate))) ||
+				ids.has(item.Id)
+			) {
+				throw new Error("Jellyfin episode page rows are inconsistent");
+			}
+			ids.add(item.Id);
+		}
+		if (
+			response.Items.length > limit ||
+			startIndex + response.Items.length > response.TotalRecordCount
+		) {
+			throw new Error("Jellyfin episode page coverage is inconsistent");
+		}
+		return {
+			items: response.Items.map((item) => ({
+				id: item.Id,
+				name: item.Name,
+				type: "Episode" as const,
+				seriesId: item.SeriesId!,
+				episodeNumber: item.IndexNumber!,
+				seasonNumber: item.ParentIndexNumber!,
+				played: item.UserData!.Played!,
+				playCount: item.UserData!.PlayCount ?? null,
+				lastPlayedDate: item.UserData!.LastPlayedDate ?? null,
+			})),
+			startIndex: response.StartIndex,
+			totalRecordCount: response.TotalRecordCount,
+		};
 	}
 
 	/**
@@ -326,6 +551,91 @@ export class JellyfinClient {
 	}
 
 	/**
+	 * Read the exact, system-scoped identity required for a future tag update.
+	 * The returned handle is intentionally smaller than the validated item DTO;
+	 * the latter remains private to this client for the one-shot update.
+	 */
+	async readMutationTarget(itemId: string): Promise<JellyfinMutationTargetSnapshot> {
+		if (!isMutationIdentifier(itemId)) {
+			throw new Error("Jellyfin mutation target read failed");
+		}
+		try {
+			const server = await this.mutationRequest("/System/Info", {
+				schema: jellyfinMutationServerInfoSchema,
+			});
+			const encodedItemId = encodeURIComponent(itemId);
+			const item = await this.mutationRequest(`/Items/${encodedItemId}`, {
+				schema: jellyfinMutationItemSchema,
+			});
+			if (item.Id !== itemId) throw new Error("item identity mismatch");
+			const tmdbId = getCanonicalMutationTmdbId(item.ProviderIds);
+
+			const ancestors = await this.mutationRequest(`/Items/${encodedItemId}/Ancestors`, {
+				schema: jellyfinMutationAncestorsSchema,
+			});
+			const ancestorIds = ancestors.map((ancestor) => ancestor.Id);
+			if (new Set(ancestorIds).size !== ancestorIds.length) {
+				throw new Error("duplicate ancestor identity");
+			}
+
+			const mediaType = item.Type === "Movie" ? "movie" : "series";
+			const tags = [...item.Tags];
+			const snapshot: JellyfinMutationTargetSnapshot = Object.freeze({
+				serverId: server.Id,
+				itemId: item.Id,
+				mediaType,
+				tmdbId,
+				tags: Object.freeze(tags),
+				ancestorIds: Object.freeze([...ancestorIds]),
+			});
+			this.mutationTargets.set(snapshot, {
+				dto: item,
+				serverId: snapshot.serverId,
+				itemId: snapshot.itemId,
+				mediaType: snapshot.mediaType,
+				tmdbId: snapshot.tmdbId,
+				tags: snapshot.tags,
+				ancestorIds: snapshot.ancestorIds,
+			});
+			return snapshot;
+		} catch {
+			throw new Error("Jellyfin mutation target read failed");
+		}
+	}
+
+	/**
+	 * Consume a target handle and replace its full validated DTO with a tag
+	 * union. Handles are client-local and one-shot, including the no-op path.
+	 */
+	async addMutationTargetTag(
+		target: JellyfinMutationTargetSnapshot,
+		tag: string,
+	): Promise<"sent" | "noop"> {
+		if (!isMutationTag(tag)) {
+			throw new Error("Jellyfin mutation tag is invalid");
+		}
+		if (typeof target !== "object" || target === null) {
+			throw new Error("Jellyfin mutation target handle is invalid");
+		}
+		const stored = this.mutationTargets.get(target);
+		if (!stored || !isStoredMutationTargetIntact(target, stored)) {
+			throw new Error("Jellyfin mutation target handle is invalid");
+		}
+		this.mutationTargets.delete(target);
+
+		if (stored.tags.includes(tag)) return "noop";
+
+		const updatedDetail: JellyfinMutationItemDto = {
+			...stored.dto,
+			Tags: [...stored.tags, tag],
+		};
+		return await this.sendMutationTargetUpdate(
+			`/Items/${encodeURIComponent(stored.itemId)}`,
+			updatedDetail,
+		);
+	}
+
+	/**
 	 * Get image URL for an item (for proxying).
 	 */
 	getImageUrl(itemId: string, imageType = "Primary", maxWidth = 300): string {
@@ -351,53 +661,107 @@ export class JellyfinClient {
 	// Internal helpers
 	// ========================================================================
 
-	private async getCompleteItems(
-		path: string,
-	): Promise<Array<z.infer<typeof jellyfinItemsResponseSchema>["Items"][number]>> {
-		const items: Array<z.infer<typeof jellyfinItemsResponseSchema>["Items"][number]> = [];
-		const seenIds = new Set<string>();
-		let expectedTotal: number | undefined;
-		let startIndex = 0;
+	private async getCompleteItems(path: string): Promise<JellyfinRawItem[]> {
+		const result = await this.getCompleteItemsWithCoverage(path);
+		if (result.reason !== null) {
+			throw new Error(
+				result.failureMessage ?? "Jellyfin item inventory could not be verified as complete",
+			);
+		}
+		return result.items;
+	}
 
-		while (expectedTotal === undefined || startIndex < expectedTotal) {
+	private async getCompleteItemsWithCoverage(path: string): Promise<JellyfinRawItemsResult> {
+		const items: JellyfinRawItem[] = [];
+		const seenIds = new Set<string>();
+		let expectedTotal: number | null = null;
+		let startIndex = 0;
+		let pagesAttempted = 0;
+		let pagesCompleted = 0;
+		let failureMessage: string | undefined;
+
+		while (expectedTotal === null || startIndex < expectedTotal) {
+			pagesAttempted++;
 			const pageUrl = new URL(path, "http://jellyfin.invalid");
 			pageUrl.searchParams.set("StartIndex", String(startIndex));
 			pageUrl.searchParams.set("Limit", String(COMPLETE_ITEMS_PAGE_SIZE));
-			const data = await this.request(`${pageUrl.pathname}${pageUrl.search}`, {
-				schema: jellyfinItemsResponseSchema,
-			});
-
-			if (expectedTotal === undefined) {
-				expectedTotal = data.TotalRecordCount;
-				if (expectedTotal > COMPLETE_ITEMS_MAX) {
-					throw new Error(
-						`Jellyfin item inventory contains ${expectedTotal} rows, exceeding the safe ${COMPLETE_ITEMS_MAX}-row limit`,
-					);
-				}
-			} else if (data.TotalRecordCount !== expectedTotal) {
-				throw new Error("Jellyfin item inventory changed while it was being paged");
+			let data: z.infer<typeof jellyfinItemsResponseSchema>;
+			try {
+				data = await this.request(`${pageUrl.pathname}${pageUrl.search}`, {
+					schema: jellyfinItemsResponseSchema,
+				});
+			} catch {
+				failureMessage = "Jellyfin item page request failed";
+				break;
 			}
-			if (startIndex + data.Items.length > expectedTotal) {
-				throw new Error("Jellyfin item pagination exceeded its declared total");
+
+			if (expectedTotal === null) {
+				expectedTotal = data.TotalRecordCount;
+			}
+			if (
+				!Number.isSafeInteger(data.TotalRecordCount) ||
+				data.TotalRecordCount < 0 ||
+				data.TotalRecordCount > COMPLETE_ITEMS_MAX
+			) {
+				failureMessage = `Jellyfin item inventory contains ${data.TotalRecordCount} rows, exceeding the safe ${COMPLETE_ITEMS_MAX}-row limit`;
+				break;
+			}
+			if (data.TotalRecordCount !== expectedTotal) {
+				failureMessage = "Jellyfin item inventory changed while it was being paged";
+				break;
+			}
+			if (
+				data.Items.length > COMPLETE_ITEMS_PAGE_SIZE ||
+				startIndex + data.Items.length > expectedTotal
+			) {
+				failureMessage = "Jellyfin item pagination exceeded its declared total";
+				break;
 			}
 			if (data.Items.length === 0 && startIndex < expectedTotal) {
-				throw new Error("Jellyfin item pagination stopped before the declared total");
+				failureMessage = "Jellyfin item pagination stopped before the declared total";
+				break;
 			}
 
+			const pageIds = new Set<string>();
+			let invalidIdentity = false;
 			for (const item of data.Items) {
-				if (seenIds.has(item.Id)) {
-					throw new Error("Jellyfin item pagination returned a duplicate item");
+				if (!item.Id.trim() || seenIds.has(item.Id) || pageIds.has(item.Id)) {
+					invalidIdentity = true;
+					break;
 				}
+				pageIds.add(item.Id);
+			}
+			if (invalidIdentity) {
+				failureMessage = "Jellyfin item pagination returned a duplicate item";
+				break;
+			}
+			for (const item of data.Items) {
 				seenIds.add(item.Id);
 				items.push(item);
 			}
+			pagesCompleted++;
 			startIndex += data.Items.length;
 		}
 
-		if (expectedTotal === undefined || items.length !== expectedTotal) {
-			throw new Error("Jellyfin item inventory could not be verified as complete");
+		if (failureMessage || expectedTotal === null || items.length !== expectedTotal) {
+			return {
+				items: [],
+				expectedRawCount: expectedTotal,
+				pagesAttempted,
+				pagesCompleted,
+				rawObserved: items.length,
+				reason: "page-failure",
+				...(failureMessage ? { failureMessage } : {}),
+			};
 		}
-		return items;
+		return {
+			items,
+			expectedRawCount: expectedTotal,
+			pagesAttempted,
+			pagesCompleted,
+			rawObserved: items.length,
+			reason: null,
+		};
 	}
 
 	private authHeaders(): Record<string, string> {
@@ -444,8 +808,8 @@ export class JellyfinClient {
 		const response = await fetch(url, fetchOptions);
 
 		if (!response.ok) {
-			this.log.warn({ status: response.status, path }, "Jellyfin API non-OK response");
-			throw new Error(`Jellyfin API error: HTTP ${response.status} ${response.statusText}`);
+			this.log.warn({ status: response.status }, "Jellyfin API request failed");
+			throw new Error(`Jellyfin API request failed: HTTP ${response.status}`);
 		}
 
 		const contentType = response.headers.get("content-type") ?? "";
@@ -454,24 +818,79 @@ export class JellyfinClient {
 			try {
 				raw = await response.json();
 			} catch {
-				throw new Error(
-					`Jellyfin API: invalid JSON response (path: ${path}, status: ${response.status})`,
-				);
+				throw new Error("Jellyfin API returned invalid JSON");
 			}
 			if (!options?.schema) {
-				throw new Error(`Jellyfin API: schema required for JSON responses (path: ${path})`);
+				throw new Error("Jellyfin API response schema is unavailable");
 			}
-			const category = path.split("?")[0] ?? path;
-			return parseUpstreamOrThrow(raw, options.schema, { integration: "jellyfin", category });
+			return parseUpstreamOrThrow(raw, options.schema, {
+				integration: "jellyfin",
+				category: "provider-response",
+			});
 		}
 
 		// Non-JSON responses (e.g., from POST /Library/Refresh)
 		if (options?.schema) {
-			throw new Error(
-				`Jellyfin API: expected JSON response but got ${contentType} (path: ${path})`,
-			);
+			throw new Error("Jellyfin API returned an unexpected response type");
 		}
 		return undefined as T;
+	}
+
+	private async mutationRequest<T>(
+		path: string,
+		options: {
+			method?: string;
+			body?: Record<string, unknown>;
+			schema: z.ZodType<T>;
+		},
+	): Promise<T> {
+		try {
+			const headers = this.authHeaders();
+			const fetchOptions: RequestInit = {
+				method: options.method ?? "GET",
+				headers,
+				signal: AbortSignal.timeout(this.timeout),
+			};
+			if (options.body) {
+				headers["Content-Type"] = "application/json";
+				fetchOptions.body = JSON.stringify(options.body);
+			}
+			const response = await fetch(`${this.baseUrl}${path}`, fetchOptions);
+			if (
+				!response.ok ||
+				!(response.headers.get("content-type") ?? "").includes("application/json")
+			) {
+				throw new Error("provider response unavailable");
+			}
+			const raw: unknown = await response.json();
+			const parsed = options.schema.safeParse(raw);
+			if (!parsed.success) throw new Error("provider response invalid");
+			return parsed.data;
+		} catch {
+			throw new Error("Jellyfin mutation provider request failed");
+		}
+	}
+
+	private async sendMutationTargetUpdate(
+		path: string,
+		body: Record<string, unknown>,
+	): Promise<"sent"> {
+		try {
+			const headers = this.authHeaders();
+			headers["Content-Type"] = "application/json";
+			const response = await fetch(`${this.baseUrl}${path}`, {
+				method: "POST",
+				headers,
+				body: JSON.stringify(body),
+				signal: AbortSignal.timeout(this.timeout),
+			});
+			if (response.status < 200 || response.status >= 300) {
+				throw new Error("provider update failed");
+			}
+			return "sent";
+		} catch {
+			throw new Error("Jellyfin mutation target update failed");
+		}
 	}
 }
 
@@ -546,4 +965,42 @@ function mapItem(item: {
 		dateCreated: item.DateCreated,
 		imageTags: item.ImageTags,
 	};
+}
+
+function getCanonicalMutationTmdbId(providerIds: Record<string, string>): number {
+	const tmdbEntries = Object.entries(providerIds).filter(([key]) => key.toLowerCase() === "tmdb");
+	if (tmdbEntries.length !== 1) throw new Error("TMDb identity is ambiguous");
+	const value = tmdbEntries[0]?.[1];
+	if (!value || !/^[1-9]\d*$/.test(value)) throw new Error("TMDb identity is invalid");
+	const tmdbId = Number(value);
+	if (!Number.isSafeInteger(tmdbId) || String(tmdbId) !== value) {
+		throw new Error("TMDb identity is invalid");
+	}
+	return tmdbId;
+}
+
+function isMutationTag(value: string): boolean {
+	return (
+		typeof value === "string" && value.length > 0 && value.length <= 256 && value.trim().length > 0
+	);
+}
+
+function isMutationIdentifier(value: string): boolean {
+	return (
+		typeof value === "string" && value.length > 0 && value.length <= 256 && value.trim().length > 0
+	);
+}
+
+function isStoredMutationTargetIntact(
+	target: JellyfinMutationTargetSnapshot,
+	stored: StoredMutationTarget,
+): boolean {
+	return (
+		target.serverId === stored.serverId &&
+		target.itemId === stored.itemId &&
+		target.mediaType === stored.mediaType &&
+		target.tmdbId === stored.tmdbId &&
+		target.tags === stored.tags &&
+		target.ancestorIds === stored.ancestorIds
+	);
 }

@@ -46,12 +46,6 @@ vi.mock("../../lib/services/service-identity.js", async (importOriginal) => ({
 }));
 
 import {
-	createDeploymentConnectionBinding,
-	createDeploymentConnectionStateToken,
-	createDeploymentEndpointKey,
-	isCurrentDeploymentConnectionMapping,
-} from "../../lib/trash-guides/deployment-target.js";
-import {
 	createSanitizedProviderEvidence,
 	serializeExecutableSafetyPlan,
 } from "../../lib/library-cleanup/shared-plex-safety.js";
@@ -59,6 +53,12 @@ import {
 	providerIdentityAuthorityFingerprint,
 	providerInstanceAuthorityFingerprint,
 } from "../../lib/services/service-identity.js";
+import {
+	createDeploymentConnectionBinding,
+	createDeploymentConnectionStateToken,
+	createDeploymentEndpointKey,
+	isCurrentDeploymentConnectionMapping,
+} from "../../lib/trash-guides/deployment-target.js";
 import { registerServiceRoutes } from "../services.js";
 import {
 	createInjectAuthenticated,
@@ -102,6 +102,14 @@ function providerSafetySnapshot(source: {
 					verifiedAt: "2026-08-15T03:00:00.000Z",
 					statusFingerprint: "c".repeat(64),
 					rowFingerprint: "d".repeat(64),
+					...(source.service === "PLEX"
+						? {
+								generationId: "fixture-generation",
+								targetLedgerVersion: 1 as const,
+								targetCount: 1,
+								targetDigest: "e".repeat(64),
+							}
+						: {}),
 				},
 			],
 		),
@@ -120,6 +128,9 @@ function createPrismaStub() {
 	const mappings = new Map<string, any>();
 	const overrides = new Map<string, any>();
 	const approvals = new Map<string, any>();
+	const historyObservations = new Map<string, any>();
+	const historySourceStatuses = new Map<string, any>();
+	const historyCollectionLeases = new Map<string, any>();
 	let nextId = 1;
 
 	const serviceInstance = {
@@ -189,7 +200,36 @@ function createPrismaStub() {
 				throw err;
 			}
 			instances.delete(where.id);
+			for (const [key, row] of historyObservations) {
+				if (row.instanceId === where.id) historyObservations.delete(key);
+			}
+			historySourceStatuses.delete(where.id);
 			return row;
+		}),
+	};
+
+	const historyObservation = {
+		deleteMany: vi.fn(async ({ where }: any) => {
+			let count = 0;
+			for (const [key, row] of historyObservations) {
+				if (row.instanceId !== where.instanceId) continue;
+				const instance = instances.get(row.instanceId);
+				if (where.instance?.userId && instance?.userId !== where.instance.userId) continue;
+				historyObservations.delete(key);
+				count++;
+			}
+			return { count };
+		}),
+	};
+	const historySourceStatus = {
+		deleteMany: vi.fn(async ({ where }: any) => {
+			const row = historySourceStatuses.get(where.instanceId);
+			const instance = instances.get(where.instanceId);
+			if (!row || (where.instance?.userId && instance?.userId !== where.instance.userId)) {
+				return { count: 0 };
+			}
+			historySourceStatuses.delete(where.instanceId);
+			return { count: 1 };
 		}),
 	};
 
@@ -198,12 +238,22 @@ function createPrismaStub() {
 		_mappings: mappings,
 		_overrides: overrides,
 		_approvals: approvals,
+		_historyObservations: historyObservations,
+		_historySourceStatuses: historySourceStatuses,
+		_historyCollectionLeases: historyCollectionLeases,
 		plexCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		plexEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		tautulliCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		cacheRefreshStatus: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		historyObservation,
+		historySourceStatus,
+		historyCollectionLease: {
+			update: vi.fn(),
+			delete: vi.fn(),
+			deleteMany: vi.fn(),
+		},
 		libraryCleanupConfig: {
 			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -296,15 +346,27 @@ function createPrismaStub() {
 	};
 	return Object.assign(prisma, {
 		$transaction: vi.fn(async (callback: (tx: typeof prisma) => Promise<unknown>) => {
-			const snapshots = [instances, mappings, overrides, approvals].map(
-				(map) => new Map([...map.entries()].map(([key, value]) => [key, { ...value }])),
-			);
+			const snapshots = [
+				instances,
+				mappings,
+				overrides,
+				approvals,
+				historyObservations,
+				historySourceStatuses,
+				historyCollectionLeases,
+			].map((map) => new Map([...map.entries()].map(([key, value]) => [key, { ...value }])));
 			try {
 				return await callback(prisma);
 			} catch (error) {
-				for (const [map, snapshot] of [instances, mappings, overrides, approvals].map(
-					(map, index) => [map, snapshots[index]!] as const,
-				)) {
+				for (const [map, snapshot] of [
+					instances,
+					mappings,
+					overrides,
+					approvals,
+					historyObservations,
+					historySourceStatuses,
+					historyCollectionLeases,
+				].map((map, index) => [map, snapshots[index]!] as const)) {
 					map.clear();
 					for (const [key, value] of snapshot) map.set(key, value);
 				}
@@ -1609,6 +1671,102 @@ describe("Service instance lifecycle", () => {
 		expect(res.statusCode).toBe(404);
 		// requireInstance must have short-circuited before the raw delete call.
 		expect(prisma.serviceInstance.delete).not.toHaveBeenCalled();
+	});
+
+	it("resets only the updated source History rows and preserves other owners and sources", async () => {
+		const sourceResponse = await inject("POST", "/services", {
+			body: {
+				label: "Prowlarr source",
+				baseUrl: "http://prowlarr-source.test",
+				apiKey: PLAINTEXT_KEY_V1,
+				service: "prowlarr",
+			},
+		});
+		const otherResponse = await inject("POST", "/services", {
+			body: {
+				label: "Prowlarr other",
+				baseUrl: "http://prowlarr-other.test",
+				apiKey: PLAINTEXT_KEY_V1,
+				service: "prowlarr",
+			},
+		});
+		const sourceId = JSON.parse(sourceResponse.payload).service.id;
+		const otherId = JSON.parse(otherResponse.payload).service.id;
+		prisma._instances.set("other-owner", {
+			...prisma._instances.get(otherId),
+			id: "other-owner",
+			userId: "user-2",
+		});
+		prisma._historyObservations.set("source-row", { instanceId: sourceId });
+		prisma._historyObservations.set("other-row", { instanceId: otherId });
+		prisma._historyObservations.set("owner-row", { instanceId: "other-owner" });
+		prisma._historySourceStatuses.set(sourceId, { instanceId: sourceId });
+		prisma._historySourceStatuses.set(otherId, { instanceId: otherId });
+		prisma._historySourceStatuses.set("other-owner", { instanceId: "other-owner" });
+
+		const response = await inject("PUT", `/services/${sourceId}`, {
+			body: { baseUrl: "http://prowlarr-source-new.test" },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(prisma._historyObservations.has("source-row")).toBe(false);
+		expect(prisma._historySourceStatuses.has(sourceId)).toBe(false);
+		expect(prisma._historyObservations.has("other-row")).toBe(true);
+		expect(prisma._historySourceStatuses.has(otherId)).toBe(true);
+		expect(prisma._historyObservations.has("owner-row")).toBe(true);
+		expect(prisma._historySourceStatuses.has("other-owner")).toBe(true);
+	});
+
+	it("rolls back the generation and both History child sets when status reset fails", async () => {
+		const created = await inject("POST", "/services", {
+			body: {
+				label: "Lidarr rollback",
+				baseUrl: "http://lidarr-old.test",
+				apiKey: PLAINTEXT_KEY_V1,
+				service: "lidarr",
+			},
+		});
+		const id = JSON.parse(created.payload).service.id;
+		prisma._historyObservations.set("rollback-row", { instanceId: id });
+		prisma._historySourceStatuses.set(id, { instanceId: id });
+		const before = { ...prisma._instances.get(id) };
+		prisma.historySourceStatus.deleteMany.mockRejectedValueOnce(
+			new Error("injected status failure"),
+		);
+
+		const response = await inject("PUT", `/services/${id}`, {
+			body: { baseUrl: "http://lidarr-new.test" },
+		});
+
+		expect(response.statusCode).toBe(500);
+		expect(prisma._instances.get(id)).toEqual(before);
+		expect(prisma._historyObservations.has("rollback-row")).toBe(true);
+		expect(prisma._historySourceStatuses.has(id)).toBe(true);
+	});
+
+	it("cascades History children on source deletion while preserving the owner-global lease", async () => {
+		const created = await inject("POST", "/services", {
+			body: {
+				label: "Readarr deletion",
+				baseUrl: "http://readarr.test",
+				apiKey: PLAINTEXT_KEY_V1,
+				service: "readarr",
+			},
+		});
+		const id = JSON.parse(created.payload).service.id;
+		prisma._historyObservations.set("delete-row", { instanceId: id });
+		prisma._historySourceStatuses.set(id, { instanceId: id });
+		prisma._historyCollectionLeases.set(USER_ID, { userId: USER_ID, claimToken: "lease-token" });
+
+		const response = await inject("DELETE", `/services/${id}`);
+
+		expect(response.statusCode).toBe(204);
+		expect(prisma._historyObservations.has("delete-row")).toBe(false);
+		expect(prisma._historySourceStatuses.has(id)).toBe(false);
+		expect(prisma._historyCollectionLeases.get(USER_ID)).toEqual({
+			userId: USER_ID,
+			claimToken: "lease-token",
+		});
 	});
 
 	it.each(["mapping", "override"] as const)(

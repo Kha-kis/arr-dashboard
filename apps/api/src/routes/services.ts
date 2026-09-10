@@ -3,6 +3,8 @@ import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { requireInstance } from "../lib/arr/instance-helpers.js";
 import { AppValidationError, ConflictError } from "../lib/errors.js";
+import { clearDurableHistoryObservationState } from "../lib/history/history-observation-lifecycle.js";
+import { isHistoryServiceType } from "../lib/history/history-source-contract.js";
 import {
 	withCleanupTopologyMutationLease,
 	withExclusiveCleanupTopologyMutationLease,
@@ -690,21 +692,14 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			const arrConnectionInvolved = isArrService(existing.service) || isArrService(targetService);
 			const arrCredentialFieldsSubmitted =
 				payload.apiKey !== undefined || payload.httpAuth !== undefined;
-			const arrCredentialsChanged =
-				arrConnectionInvolved &&
+			const historyConnectionInvolved =
+				isHistoryServiceType(existing.service) || isHistoryServiceType(targetService);
+			const credentialIdentityChanged =
+				historyConnectionInvolved &&
 				arrCredentialFieldsSubmitted &&
 				app.arrClientFactory.createConnectionCredentialIdentity(existing) !==
 					app.arrClientFactory.createConnectionCredentialIdentity(targetConnection);
-			if (arrConnectionInvolved && arrCredentialFieldsSubmitted && !arrCredentialsChanged) {
-				if (payload.apiKey !== undefined) {
-					delete updateData.encryptedApiKey;
-					delete updateData.encryptionIv;
-				}
-				if (payload.httpAuth !== undefined) {
-					delete updateData.encryptedHttpAuthCredentials;
-					delete updateData.httpAuthEncryptionIv;
-				}
-			}
+			const arrCredentialsChanged = arrConnectionInvolved && credentialIdentityChanged;
 			const arrConnectionFieldsSubmitted =
 				serviceTypeChanged || payload.baseUrl !== undefined || arrCredentialFieldsSubmitted;
 			const arrConnectionChanged =
@@ -714,7 +709,27 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 					normalizeDeploymentBaseUrl(existing.baseUrl) !==
 						normalizeDeploymentBaseUrl(targetConnection.baseUrl) ||
 					arrCredentialsChanged);
-			if (arrConnectionChanged && isArrService(existing.service)) {
+			const historyCredentialsChanged = credentialIdentityChanged;
+			if (historyConnectionInvolved && arrCredentialFieldsSubmitted && !historyCredentialsChanged) {
+				if (payload.apiKey !== undefined) {
+					delete updateData.encryptedApiKey;
+					delete updateData.encryptionIv;
+				}
+				if (payload.httpAuth !== undefined) {
+					delete updateData.encryptedHttpAuthCredentials;
+					delete updateData.httpAuthEncryptionIv;
+				}
+			}
+			const historyConnectionChanged =
+				historyConnectionInvolved &&
+				(serviceTypeChanged ||
+					(payload.enabled !== undefined && payload.enabled !== existing.enabled) ||
+					normalizeDeploymentBaseUrl(existing.baseUrl) !==
+						normalizeDeploymentBaseUrl(targetConnection.baseUrl) ||
+					historyCredentialsChanged);
+			const arrAuthorityConnectionChanged =
+				isArrService(existing.service) && (arrConnectionChanged || historyConnectionChanged);
+			if (arrAuthorityConnectionChanged) {
 				const aliases = await app.prisma.serviceInstance.findMany({
 					where: { userId, service: existing.service },
 				});
@@ -742,13 +757,14 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				}
 				await assertNoActiveDeploymentOwnership(app.prisma, userId, equivalentInstanceIds);
 			}
-			const serviceUpdateData =
-				arrConnectionChanged || providerConnectionChanged
-					? {
-							...updateData,
-							connectionGeneration: { increment: 1 },
-						}
-					: updateData;
+			const connectionChanged =
+				arrConnectionChanged || providerConnectionChanged || historyConnectionChanged;
+			const serviceUpdateData = connectionChanged
+				? {
+						...updateData,
+						connectionGeneration: { increment: 1 },
+					}
+				: updateData;
 			const updateDataWithResetProviderIdentity = leavesProviderIdentityFamily
 				? {
 						...serviceUpdateData,
@@ -774,6 +790,9 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 						if (serviceTypeChanged || providerConnectionChanged) {
 							await clearDurableProviderCacheState(tx, id);
 						}
+						if (historyConnectionChanged) {
+							await clearDurableHistoryObservationState(tx, id, userId);
+						}
 						await clearDurableQuiObservations(tx, userId);
 					});
 					// Keep process-local evidence in the same guarded topology
@@ -782,7 +801,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 					invalidateTorrentListCache(id);
 					clearFileIdIndexCache(id);
 				});
-			} else if (providerConnectionChanged || serviceTypeChanged) {
+			} else if (providerConnectionChanged || serviceTypeChanged || historyConnectionChanged) {
 				await app.prisma.$transaction(async (tx) => {
 					await resetOtherDefaults(tx);
 					await tx.serviceInstance.updateMany({
@@ -792,7 +811,12 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 					if (payload.tags !== undefined) {
 						await updateInstanceTags(tx, id, payload.tags);
 					}
-					await clearDurableProviderCacheState(tx, id);
+					if (serviceTypeChanged || providerConnectionChanged) {
+						await clearDurableProviderCacheState(tx, id);
+					}
+					if (historyConnectionChanged) {
+						await clearDurableHistoryObservationState(tx, id, userId);
+					}
 				});
 			} else {
 				await resetOtherDefaults(app.prisma);

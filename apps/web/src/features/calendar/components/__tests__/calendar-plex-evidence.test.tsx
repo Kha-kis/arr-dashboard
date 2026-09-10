@@ -86,7 +86,10 @@ describe("CalendarClient Plex evidence", () => {
 	it("renders unavailable link coverage instead of silently treating the link as absent", () => {
 		render(<CalendarClient />);
 
-		expect(screen.getByText(/Plex values are unavailable/i)).toBeInTheDocument();
+		expect(screen.getByText(/Showing last-known Plex values/i)).toBeInTheDocument();
+		expect(
+			screen.getByText(/No Plex rows are being shown; absence remains unknown/i),
+		).toBeInTheDocument();
 		expect(screen.getByText(/Calendar Plex links/i)).toBeInTheDocument();
 		expect(screen.queryByText(/no Plex link|none|0 links/i)).not.toBeInTheDocument();
 	});

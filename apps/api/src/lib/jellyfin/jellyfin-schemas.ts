@@ -141,6 +141,43 @@ export const jellyfinEpisodesResponseSchema = z.object({
 	TotalRecordCount: z.number(),
 });
 
+/**
+ * Evidence-only BaseItemDto projection for the durable episode collector.
+ *
+ * Jellyfin legitimately serializes many unrelated BaseItemDto properties as
+ * null. Those display fields must not reject watch evidence that does not use
+ * them, so this schema validates only the fields consumed by publication.
+ * Nullable authority fields remain nullable here and are rejected explicitly
+ * by the client when they cannot prove an episode coordinate or Played state.
+ */
+const jellyfinEpisodePageItemSchema = z.looseObject({
+	Id: z.string(),
+	Name: z
+		.string()
+		.nullable()
+		.optional()
+		.transform((value) => value ?? ""),
+	Type: z.string(),
+	SeriesId: z.string().nullable().optional(),
+	IndexNumber: z.number().nullable().optional(),
+	ParentIndexNumber: z.number().nullable().optional(),
+	UserData: z
+		.looseObject({
+			Played: z.boolean().nullable().optional(),
+			PlayCount: z.number().nullable().optional(),
+			LastPlayedDate: z.string().nullable().optional(),
+		})
+		.nullable()
+		.optional(),
+});
+
+/** Strict single-page envelope used only by the durable episode collector. */
+export const jellyfinEpisodeItemsPageSchema = z.object({
+	Items: z.array(jellyfinEpisodePageItemSchema),
+	StartIndex: z.number(),
+	TotalRecordCount: z.number(),
+});
+
 // ============================================================================
 // Item detail (for label-sync read-modify-write tag updates)
 //
@@ -156,3 +193,51 @@ export const jellyfinItemDetailSchema = z
 		Tags: z.array(z.string()).optional(),
 	})
 	.passthrough();
+
+// ============================================================================
+// Mutation adapter responses
+// ============================================================================
+
+/**
+ * These schemas are intentionally separate from the display/source schemas.
+ * The mutation adapter must retain a complete replacement DTO, while only
+ * exposing a small, immutable identity snapshot to its caller.
+ */
+const MUTATION_STRING_MAX = 256;
+const mutationBoundedStringSchema = z
+	.string()
+	.min(1)
+	.max(MUTATION_STRING_MAX)
+	.refine((value) => value.trim().length > 0);
+
+const mutationProviderIdsSchema = z.record(
+	z.string().max(MUTATION_STRING_MAX),
+	mutationBoundedStringSchema,
+);
+const mutationTagsSchema = z
+	.array(mutationBoundedStringSchema)
+	.max(10_000)
+	.refine((tags) => new Set(tags).size === tags.length);
+
+export const jellyfinMutationServerInfoSchema = z.object({
+	Id: mutationBoundedStringSchema,
+});
+
+export const jellyfinMutationItemSchema = z
+	.object({
+		Id: mutationBoundedStringSchema,
+		Type: z.enum(["Movie", "Series"]),
+		ProviderIds: mutationProviderIdsSchema,
+		Tags: mutationTagsSchema,
+	})
+	.passthrough();
+
+export const jellyfinMutationAncestorsSchema = z
+	.array(
+		z
+			.object({
+				Id: mutationBoundedStringSchema,
+			})
+			.passthrough(),
+	)
+	.max(10_000);

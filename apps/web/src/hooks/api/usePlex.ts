@@ -23,6 +23,7 @@ import type {
 	PlexScanResponse,
 	PlexSectionsResponse,
 	PlexTagUpdateRequest,
+	ProviderObservationAcceptedResponse,
 	QualityScoreAnalytics,
 	SeriesProgressResponse,
 	TopMediaResponse,
@@ -247,11 +248,7 @@ export const useCacheHealth = (enabled = true) => {
 
 export const useCacheRefreshMutation = () => {
 	const queryClient = useQueryClient();
-	return useMutation<
-		{ success: boolean; upserted: number; errors: number },
-		Error,
-		{ instanceId: string }
-	>({
+	return useMutation<ProviderObservationAcceptedResponse, Error, { instanceId: string }>({
 		mutationFn: ({ instanceId }) => triggerCacheRefresh(instanceId),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: plexKeys.cacheHealth() });

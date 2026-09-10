@@ -62,6 +62,21 @@ export type ServiceTag = Prisma.ServiceTagModel
  */
 export type ServiceInstance = Prisma.ServiceInstanceModel
 /**
+ * Model HistoryObservation
+ * 
+ */
+export type HistoryObservation = Prisma.HistoryObservationModel
+/**
+ * Model HistorySourceStatus
+ * 
+ */
+export type HistorySourceStatus = Prisma.HistorySourceStatusModel
+/**
+ * Model HistoryCollectionLease
+ * 
+ */
+export type HistoryCollectionLease = Prisma.HistoryCollectionLeaseModel
+/**
  * Model InodeIndexCache
  * 
  */
@@ -324,6 +339,26 @@ export type TautulliCache = Prisma.TautulliCacheModel
  */
 export type CacheRefreshStatus = Prisma.CacheRefreshStatusModel
 /**
+ * Model ProviderObservationRun
+ * 
+ */
+export type ProviderObservationRun = Prisma.ProviderObservationRunModel
+/**
+ * Model ProviderObservationUnit
+ * 
+ */
+export type ProviderObservationUnit = Prisma.ProviderObservationUnitModel
+/**
+ * Model PlexEpisodeObservationStage
+ * 
+ */
+export type PlexEpisodeObservationStage = Prisma.PlexEpisodeObservationStageModel
+/**
+ * Model JellyfinEpisodeObservationStage
+ * 
+ */
+export type JellyfinEpisodeObservationStage = Prisma.JellyfinEpisodeObservationStageModel
+/**
  * Model SessionSnapshot
  * 
  */
@@ -354,6 +389,12 @@ export type SeerrActionLog = Prisma.SeerrActionLogModel
  * is applied. See lib/plex-label-sync/execute-rule.ts for the engine.
  */
 export type LabelSyncRule = Prisma.LabelSyncRuleModel
+/**
+ * Model LabelSyncMutationAttempt
+ * Durable, inert desired-state mutation ledger for Jellyfin and Emby label
+ * synchronization. Provider execution is intentionally owned by later tasks.
+ */
+export type LabelSyncMutationAttempt = Prisma.LabelSyncMutationAttemptModel
 /**
  * Model AutoTagRule
  * Auto-tagger rule — applies a tag to LibraryCache items matching the criteria DSL.

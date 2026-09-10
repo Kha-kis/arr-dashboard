@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInjectAuthenticated, setupAuthInjection } from "../../__tests__/test-helpers.js";
 
 const mocks = vi.hoisted(() => ({
-	refresh: vi.fn(),
+	refreshWithAttempt: vi.fn(),
+	claim: vi.fn(),
+	start: vi.fn(),
 	requireClient: vi.fn(),
 	recordFailure: vi.fn(),
 	getPublishedGenerationObservation: vi.fn(),
@@ -12,15 +14,17 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../../../lib/plex/plex-refresh-orchestration.js", () => ({
-	refreshOwnedPlexCache: mocks.refresh,
+	refreshOwnedPlexCacheWithAttempt: mocks.refreshWithAttempt,
+}));
+vi.mock("../../../lib/provider-observation/background-cache-refresh.js", () => ({
+	startProviderCacheRefreshInBackground: mocks.start,
+}));
+vi.mock("../../../lib/services/provider-cache-status.js", () => ({
+	claimProviderCacheRefreshAttempt: mocks.claim,
 }));
 vi.mock("../../../lib/plex/plex-helpers.js", () => ({
 	requirePlexClient: mocks.requireClient,
 }));
-vi.mock("../../../lib/services/provider-cache-status.js", () => ({
-	recordPlexCacheRefreshFailure: mocks.recordFailure,
-}));
-
 vi.mock("../../../lib/plex/plex-evidence-repository.js", async (importOriginal) => ({
 	...(await importOriginal<typeof import("../../../lib/plex/plex-evidence-repository.js")>()),
 	getPublishedGenerationObservation: mocks.getPublishedGenerationObservation,
@@ -48,13 +52,42 @@ describe("POST /api/plex/cache/:instanceId/refresh publication authority", () =>
 	const instance = { id: "plex-1", service: "PLEX", connectionGeneration: 4 };
 
 	beforeEach(async () => {
-		mocks.refresh.mockReset().mockResolvedValue({
+		mocks.refreshWithAttempt.mockReset().mockResolvedValue({
 			complete: true,
 			completedAt: new Date(),
 			upserted: 1,
 			errors: 0,
 			errorMessages: [],
 		});
+		mocks.claim.mockReset().mockResolvedValue({
+			status: "acquired",
+			attempt: {
+				attemptedAt: new Date("2026-09-05T00:00:00.000Z"),
+				resultMarker: "in_progress:123e4567-e89b-42d3-a456-426614174000",
+			},
+		});
+		mocks.start
+			.mockReset()
+			.mockImplementation(
+				async (options: {
+					claim: () => Promise<unknown>;
+					produce: (attempt: unknown) => Promise<unknown>;
+				}) => {
+					const claim = await options.claim();
+					const backgroundTask = Promise.resolve().then(() => {
+						if (
+							typeof claim === "object" &&
+							claim !== null &&
+							"status" in claim &&
+							claim.status === "acquired" &&
+							"attempt" in claim
+						) {
+							return options.produce((claim as { attempt: unknown }).attempt);
+						}
+					});
+					return { accepted: true, backgroundTask };
+				},
+			);
 		mocks.requireClient.mockReset().mockResolvedValue({
 			client: { server: "caller-controlled" },
 			instance,
@@ -79,66 +112,77 @@ describe("POST /api/plex/cache/:instanceId/refresh publication authority", () =>
 		await app.close();
 	});
 
-	it("uses the pre-decryption refresh boundary without forwarding a caller client", async () => {
+	it("returns exact durable acceptance and passes the claim to the adapter", async () => {
 		const response = await createInjectAuthenticated(app)("POST", "/api/plex/cache/plex-1/refresh");
 
-		expect(response.statusCode).toBe(200);
-		expect(mocks.refresh).toHaveBeenCalledWith({
-			prisma: app.prisma,
-			encryptor: app.encryptor,
-			instance,
-			log: expect.anything(),
-		});
+		expect(response.statusCode).toBe(202);
+		expect(response.json()).toEqual({ status: "accepted", cacheType: "plex" });
+		expect(mocks.claim).toHaveBeenCalledWith(
+			app.prisma,
+			"plex",
+			expect.objectContaining({ id: instance.id }),
+		);
+		expect(mocks.refreshWithAttempt).toHaveBeenCalledWith(
+			{
+				prisma: app.prisma,
+				encryptor: app.encryptor,
+				instance,
+				log: expect.anything(),
+			},
+			expect.objectContaining({ resultMarker: expect.stringMatching(/^in_progress:/) }),
+		);
 		expect(mocks.requireClient).not.toHaveBeenCalled();
-		expect(mocks.refresh.mock.calls[0]).not.toContainEqual({ server: "caller-controlled" });
+		expect(mocks.refreshWithAttempt.mock.calls[0]).not.toContainEqual({
+			server: "caller-controlled",
+		});
 	});
 
-	it("reports a committed positive-only generation as a successful partial refresh", async () => {
-		mocks.refresh.mockResolvedValue({
-			kind: "positive-observation",
-			complete: false,
-			completedAt: new Date("2026-08-24T12:00:00.000Z"),
-			upserted: 1,
-			errors: 0,
-			errorMessages: [],
-			observation: {
-				partialReasons: [{ code: "currentItemsWithoutTmdbMetadata", count: 1 }],
+	it("returns before a deferred producer settles", async () => {
+		let resolveProducer!: () => void;
+		mocks.refreshWithAttempt.mockReturnValue(
+			new Promise<void>((resolve) => {
+				resolveProducer = resolve;
+			}),
+		);
+		const response = await createInjectAuthenticated(app)("POST", "/api/plex/cache/plex-1/refresh");
+		expect(response.statusCode).toBe(202);
+		expect(mocks.refreshWithAttempt).toHaveBeenCalledTimes(1);
+		resolveProducer();
+	});
+
+	it("does not accept an already-running claim as a new producer", async () => {
+		mocks.claim.mockResolvedValueOnce({
+			status: "already-running",
+			attempt: {
+				attemptedAt: new Date(),
+				resultMarker: "in_progress:123e4567-e89b-42d3-a456-426614174000",
 			},
 		});
-
 		const response = await createInjectAuthenticated(app)("POST", "/api/plex/cache/plex-1/refresh");
-
-		expect(response.statusCode).toBe(200);
-		expect(response.json()).toEqual({
-			success: true,
-			publicationLevel: "positive-only",
-			completeness: "partial",
-			complete: false,
-			observedItemCount: 1,
-			partialReasons: [{ code: "currentItemsWithoutTmdbMetadata", count: 1 }],
-			upserted: 1,
-			errors: 0,
-		});
+		expect(response.statusCode).toBe(202);
+		expect(response.json()).toEqual({ status: "accepted", cacheType: "plex" });
+		expect(mocks.refreshWithAttempt).not.toHaveBeenCalled();
 	});
 
-	it("returns an actionable sanitized response when preparation cannot publish", async () => {
-		mocks.refresh.mockResolvedValue({
-			complete: false,
-			upserted: 0,
-			errors: 1,
-			errorMessages: ["Plex refresh preparation failed before publication"],
-		});
+	it("rejects a missing instance before claim or background admission", async () => {
+		const findFirst = app.prisma.serviceInstance.findFirst as ReturnType<typeof vi.fn>;
+		findFirst.mockResolvedValueOnce(null);
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/api/plex/cache/missing/refresh",
+		);
+		expect(response.statusCode).toBe(404);
+		expect(mocks.claim).not.toHaveBeenCalled();
+		expect(mocks.start).not.toHaveBeenCalled();
+	});
 
+	it("rejects a wrong-service instance before claim or background admission", async () => {
+		const findFirst = app.prisma.serviceInstance.findFirst as ReturnType<typeof vi.fn>;
+		findFirst.mockResolvedValueOnce({ ...instance, service: "JELLYFIN" });
 		const response = await createInjectAuthenticated(app)("POST", "/api/plex/cache/plex-1/refresh");
-
-		expect(response.statusCode).toBe(503);
-		expect(response.json()).toEqual({
-			success: false,
-			upserted: 0,
-			errors: 1,
-			error: "Plex refresh preparation failed before publication",
-		});
-		expect(JSON.stringify(response.json())).not.toContain("caller-controlled");
+		expect(response.statusCode).toBe(400);
+		expect(mocks.claim).not.toHaveBeenCalled();
+		expect(mocks.start).not.toHaveBeenCalled();
 	});
 
 	it.each([0, 42])(

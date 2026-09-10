@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ServiceBadge } from "../../../components/layout";
 import { useLibraryMonitorMutation } from "../../../hooks/api/useLibrary";
-import { type DiskWasteItem, useDiskWasteInsights } from "../../../hooks/api/useDiskWasteInsights";
+import type { DiskWasteItem, DiskWasteResponse } from "../../../hooks/api/useDiskWasteInsights";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { getLinuxInstanceName, getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
@@ -24,10 +24,12 @@ function formatSize(bytes: number): string {
  * Collapsed by default — expands to show the list.
  */
 export function DiskWastePanel({
+	queryData,
 	autoExpand = false,
 	isDismissed,
 	onDismiss,
 }: {
+	queryData: DiskWasteResponse | undefined;
 	autoExpand?: boolean;
 	isDismissed?: (instanceId: string, arrItemId: number) => boolean;
 	onDismiss?: (instanceId: string, arrItemId: number) => void;
@@ -45,18 +47,12 @@ export function DiskWastePanel({
 	const monitorMutation = useLibraryMonitorMutation();
 	const [pendingId, setPendingId] = useState<string | null>(null);
 
-	const { data, isLoading } = useDiskWasteInsights({
-		minSizeGb: 1,
-		minAgeDays: 30,
-		limit: 25,
-	});
-
-	const allItems = data?.data?.items ?? [];
+	const allItems = queryData?.data?.items ?? [];
 	const items = isDismissed
 		? allItems.filter((i) => !isDismissed(i.instanceId, i.arrItemId))
 		: allItems;
 	const totalWasted = items.reduce((sum, r) => sum + r.sizeOnDisk, 0);
-	const hasWatchData = data?.data?.hasWatchData ?? data?.data?.hasPlexData ?? false;
+	const hasWatchData = queryData?.data?.hasWatchData ?? queryData?.data?.hasPlexData ?? false;
 
 	const handleUnmonitor = async (item: DiskWasteItem) => {
 		if (!item.monitored) return;
@@ -77,8 +73,8 @@ export function DiskWastePanel({
 		}
 	};
 
-	// Don't render if no items, still loading, or no watch server connected
-	if (isLoading || items.length === 0 || !hasWatchData) return null;
+	// The section owns loading/error state; this panel renders only settled usable data.
+	if (items.length === 0 || !hasWatchData) return null;
 
 	return (
 		<div

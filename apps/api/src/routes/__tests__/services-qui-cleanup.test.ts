@@ -164,7 +164,12 @@ function createMockPrisma() {
 		tautulliCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		historyObservation: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		historySourceStatus: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		cacheRefreshStatus: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		instanceQualityProfileOverride: {
+			findMany: vi.fn().mockResolvedValue([]),
+		},
 		serviceTag: {
 			findMany: vi.fn().mockResolvedValue([]),
 			upsert: vi.fn(),
@@ -492,7 +497,13 @@ describe("PUT /services/:id — qUI topology cleanup", () => {
 		});
 
 		expect(res.statusCode).toBe(200);
-		expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+		expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
+		expect(mockPrisma.historyObservation.deleteMany).toHaveBeenCalledWith({
+			where: { instanceId: "sonarr-instance-1", instance: { userId: "user-1" } },
+		});
+		expect(mockPrisma.historySourceStatus.deleteMany).toHaveBeenCalledWith({
+			where: { instanceId: "sonarr-instance-1", instance: { userId: "user-1" } },
+		});
 		expect(mockPrisma.libraryCache.updateMany).not.toHaveBeenCalled();
 		expect(mockPrisma.episodeFileCache.updateMany).not.toHaveBeenCalled();
 		expect(mockInvalidateTorrentListCache).not.toHaveBeenCalled();

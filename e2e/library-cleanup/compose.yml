@@ -140,52 +140,12 @@ services:
   plex-loopback-proxy:
     <<: *run-owned-service
     image: ${CANDIDATE_DASHBOARD_IMAGE:-arr-dashboard-library-cleanup:local}
-    entrypoint: ["node", "-e"]
-    command:
-      - |
-        const http = require("node:http");
-        const server = http.createServer((request, response) => {
-          const requestUrl = new URL(request.url, "http://plex.invalid");
-          if (requestUrl.pathname === "/status/sessions/history/all") {
-            const offset = Number(requestUrl.searchParams.get("X-Plex-Container-Start") ?? "0");
-            const metadata = offset === 0 ? [{
-              ratingKey: "17",
-              historyKey: "lc-e2e-plex-history-pilot-17",
-              parentRatingKey: "16",
-              grandparentRatingKey: "15",
-              title: "Pilot",
-              grandparentTitle: "Breaking Bad",
-              type: "episode",
-              viewedAt: 1785876613,
-              accountID: 1,
-            }] : [];
-            const body = JSON.stringify({
-              MediaContainer: { size: metadata.length, totalSize: 1, offset, Metadata: metadata },
-            });
-            response.writeHead(200, { "content-type": "application/json", "content-length": Buffer.byteLength(body) });
-            response.end(body);
-            return;
-          }
-          const { "x-plex-token": _discardedToken, ...forwardedHeaders } = request.headers;
-          requestUrl.searchParams.delete("X-Plex-Token");
-          const upstreamPath = requestUrl.pathname + requestUrl.search;
-          const upstream = http.request({
-            host: "127.0.0.1",
-            port: 32400,
-            method: request.method,
-            path: upstreamPath,
-            headers: { ...forwardedHeaders, host: "127.0.0.1:32400" },
-          }, (upstreamResponse) => {
-            response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
-            upstreamResponse.pipe(response);
-          });
-          upstream.on("error", () => {
-            if (!response.headersSent) response.writeHead(502);
-            response.end();
-          });
-          request.pipe(upstream);
-        });
-        server.listen(33240, "0.0.0.0");
+    entrypoint: ["node", "/plex-loopback-proxy.mjs"]
+    configs:
+      - source: plex_loopback_proxy
+        target: /plex-loopback-proxy.mjs
+    secrets:
+      - run_token
     network_mode: service:plex
     depends_on:
       plex:
@@ -455,6 +415,12 @@ secrets:
     file: ${POSTGRES_PASSWORD_FILE:?Set POSTGRES_PASSWORD_FILE to an ignored local file}
   plex_claim:
     file: ${PLEX_CLAIM_FILE:?Set PLEX_CLAIM_FILE to an ignored local file (it may be empty)}
+  run_token:
+    file: ${LC_E2E_RUN_TOKEN_FILE:?Set LC_E2E_RUN_TOKEN_FILE to an ignored local file}
+
+configs:
+  plex_loopback_proxy:
+    file: ./plex-loopback-proxy.mjs
 
 volumes:
   shared-media:

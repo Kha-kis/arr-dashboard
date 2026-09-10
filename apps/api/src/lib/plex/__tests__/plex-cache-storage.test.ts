@@ -28,7 +28,87 @@ type SelectedRowsReader = (
 	selection: { kind: "on-deck" | "recently-added"; limit: number },
 ) => Promise<Array<{ id: string }>>;
 
+type ParentGenerationVerificationRowsReader = (
+	prisma: unknown,
+	instanceId: string,
+	connectionGeneration: number,
+	identityGeneration: number,
+) => Promise<
+	Array<{
+		id: string;
+		tmdbId: number;
+		mediaType: "movie" | "series";
+		sectionId: string;
+		ratingKey: string | null;
+	}>
+>;
+
 describe("Plex policy cache storage", () => {
+	it("reads parent-generation verification rows in generation-bound cursor pages", async () => {
+		const storage = (await import("../plex-cache-storage.js")) as Record<string, unknown>;
+		const readRows = storage.listPlexParentGenerationVerificationRows as
+			| ParentGenerationVerificationRowsReader
+			| undefined;
+		expect(readRows).toBeTypeOf("function");
+
+		const firstBatch = Array.from({ length: 500 }, (_, index) => ({
+			id: `row-${index}`,
+			tmdbId: index + 1,
+			mediaType: "series" as const,
+			sectionId: "shows",
+			ratingKey: `rating-${index + 1}`,
+		}));
+		const secondBatch = [
+			{
+				id: "row-500",
+				tmdbId: 501,
+				mediaType: "movie" as const,
+				sectionId: "movies",
+				ratingKey: "rating-501",
+			},
+		];
+		const findMany = vi.fn().mockResolvedValueOnce(firstBatch).mockResolvedValueOnce(secondBatch);
+
+		await expect(readRows!({ plexCache: { findMany } }, "plex-1", 4, 9)).resolves.toEqual([
+			...firstBatch,
+			...secondBatch,
+		]);
+		expect(findMany).toHaveBeenNthCalledWith(1, {
+			where: {
+				instanceId: "plex-1",
+				connectionGeneration: 4,
+				identityGeneration: 9,
+			},
+			select: {
+				id: true,
+				tmdbId: true,
+				mediaType: true,
+				sectionId: true,
+				ratingKey: true,
+			},
+			take: 500,
+			orderBy: { id: "asc" },
+		});
+		expect(findMany).toHaveBeenNthCalledWith(2, {
+			where: {
+				instanceId: "plex-1",
+				connectionGeneration: 4,
+				identityGeneration: 9,
+			},
+			select: {
+				id: true,
+				tmdbId: true,
+				mediaType: true,
+				sectionId: true,
+				ratingKey: true,
+			},
+			take: 500,
+			skip: 1,
+			cursor: { id: "row-499" },
+			orderBy: { id: "asc" },
+		});
+	});
+
 	it("streams the fixed policy projection in id-cursor batches", async () => {
 		const storage = (await import("../plex-cache-storage.js")) as Record<string, unknown>;
 		const scanRows = storage.scanPlexPolicyCacheRows as PolicyBatchScanner | undefined;

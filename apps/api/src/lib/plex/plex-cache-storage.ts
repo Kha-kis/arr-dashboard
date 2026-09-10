@@ -8,9 +8,11 @@ import type {
 import type { PlexCacheRefreshAttempt } from "../services/provider-cache-status.js";
 import type { OwnedProviderPublicationSnapshot } from "../services/provider-identity-guard.js";
 import { selectPlexBoundedValueRows } from "./plex-canonical-projection.js";
+import { decodePlexGenerationMetadata } from "./plex-generation-metadata.js";
 import {
 	type PlexGenerationTarget,
 	replacePlexGenerationTargets,
+	verifyPlexGenerationTargetIntegrity,
 } from "./plex-generation-target-ledger.js";
 
 export const PLEX_CACHE_READ_PAGE_SIZE = 500;
@@ -22,6 +24,45 @@ export class PlexRefreshAttemptSupersededError extends Error {
 		super("Plex cache refresh attempt was superseded");
 		this.name = "PlexRefreshAttemptSupersededError";
 	}
+}
+
+function assertReceiptBackedPlexPublication(
+	input: {
+		instance: OwnedProviderPublicationSnapshot;
+		rows: readonly Prisma.PlexCacheCreateManyInput[];
+		completedAt: Date;
+		generationId: string;
+		generationMetadata: string;
+		targets: readonly PlexGenerationTarget[];
+		attempt: PlexCacheRefreshAttempt;
+	},
+	expectedPublicationLevel: "authoritative" | "positive-only",
+): void {
+	const decoded = decodePlexGenerationMetadata(input.generationMetadata);
+	if (
+		!decoded.ok ||
+		(decoded.metadata.version !== 5 && decoded.metadata.version !== 6) ||
+		decoded.metadata.publicationLevel !== expectedPublicationLevel ||
+		decoded.metadata.itemCount !== input.rows.length ||
+		decoded.metadata.coverageReceipt.attemptStartedAt !== input.attempt.attemptedAt.toISOString() ||
+		decoded.metadata.coverageReceipt.observedAt !== input.completedAt.toISOString()
+	) {
+		throw new Error("Invalid receipt-backed Plex generation publication");
+	}
+	const integrity = verifyPlexGenerationTargetIntegrity({
+		targets: input.targets,
+		expected: {
+			instanceId: input.instance.id,
+			generationId: input.generationId,
+			connectionGeneration: input.instance.connectionGeneration,
+			identityGeneration: input.instance.identityGeneration,
+			targetLedgerVersion: decoded.metadata.targetLedgerVersion,
+			targetCount: decoded.metadata.targetCount,
+			targetDigest: decoded.metadata.targetDigest,
+		},
+		sections: decoded.metadata.sections,
+	});
+	if (!integrity.ok) throw new Error("Invalid receipt-backed Plex generation publication");
 }
 
 type PlexCacheReader = Pick<PrismaClientInstance, "cacheRefreshStatus" | "plexCache">;
@@ -81,6 +122,19 @@ export type PlexEpisodeParentPolicyRow = Prisma.PlexCacheGetPayload<{
 export type PlexEpisodeParentPolicyBatchHandler = (
 	rows: readonly PlexEpisodeParentPolicyRow[],
 ) => void | Promise<void>;
+
+const PLEX_PARENT_GENERATION_VERIFICATION_ROW_SELECT = {
+	id: true,
+	tmdbId: true,
+	mediaType: true,
+	sectionId: true,
+	ratingKey: true,
+} as const;
+
+/** `id` is retained solely as the deterministic cursor for this bounded storage scan. */
+export type PlexParentGenerationVerificationRow = Prisma.PlexCacheGetPayload<{
+	select: typeof PLEX_PARENT_GENERATION_VERIFICATION_ROW_SELECT;
+}>;
 
 const PLEX_SELECTED_CACHE_ROW_SELECT = {
 	id: true,
@@ -191,6 +245,35 @@ export async function scanPlexEpisodeParentPolicyRows(
 		await onBatch(batch);
 		cursor = batch[batch.length - 1]!.id;
 		if (batch.length < PLEX_CACHE_READ_PAGE_SIZE) return;
+	}
+}
+
+/**
+ * Reads the current parent generation in fixed pages for episode-finalization
+ * identity/ledger verification. Callers receive no mutable cache delegate.
+ */
+export async function listPlexParentGenerationVerificationRows(
+	prisma: Pick<PrismaClientInstance, "plexCache">,
+	instanceId: string,
+	connectionGeneration: number,
+	identityGeneration: number,
+): Promise<PlexParentGenerationVerificationRow[]> {
+	const rows: PlexParentGenerationVerificationRow[] = [];
+	let cursor: string | undefined;
+	while (true) {
+		const batch = await prisma.plexCache.findMany({
+			where: { instanceId, connectionGeneration, identityGeneration },
+			select: PLEX_PARENT_GENERATION_VERIFICATION_ROW_SELECT,
+			take: PLEX_CACHE_READ_PAGE_SIZE,
+			...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+			orderBy: { id: "asc" },
+		});
+		if (batch.length > PLEX_CACHE_READ_PAGE_SIZE) {
+			throw new Error("Plex parent generation verification read exceeded its page size");
+		}
+		rows.push(...batch);
+		if (batch.length < PLEX_CACHE_READ_PAGE_SIZE) return rows;
+		cursor = batch[batch.length - 1]!.id;
 	}
 }
 
@@ -405,6 +488,7 @@ export async function publishAuthoritativePlexCacheGeneration(
 		attempt: PlexCacheRefreshAttempt;
 	},
 ): Promise<void> {
+	assertReceiptBackedPlexPublication(input, "authoritative");
 	const published = await tx.cacheRefreshStatus.updateMany({
 		where: {
 			instanceId: input.instance.id,
@@ -454,6 +538,7 @@ export async function publishPositivePlexCacheGeneration(
 		attempt: PlexCacheRefreshAttempt;
 	},
 ): Promise<void> {
+	assertReceiptBackedPlexPublication(input, "positive-only");
 	const published = await tx.cacheRefreshStatus.updateMany({
 		where: {
 			instanceId: input.instance.id,

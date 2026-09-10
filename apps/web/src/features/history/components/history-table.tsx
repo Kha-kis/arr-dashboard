@@ -1,6 +1,6 @@
 "use client";
 
-import type { HistoryItem, ServiceInstanceSummary } from "@arr/shared";
+import type { HistoryItemV2, ServiceInstanceSummary } from "@arr/shared";
 import { ArrowRight, ExternalLink, History } from "lucide-react";
 import {
 	PremiumEmptyState,
@@ -39,7 +39,7 @@ import {
 interface HistoryGroup {
 	downloadId?: string;
 	groupType?: string;
-	items: HistoryItem[];
+	items: HistoryItemV2[];
 }
 
 interface HistoryTableProps {
@@ -118,9 +118,10 @@ export const HistoryTable = ({
 													const instance = firstItem
 														? serviceMap.get(firstItem.instanceId)
 														: undefined;
-													const externalLink = firstItem
-														? buildHistoryExternalLink(firstItem, instance)
-														: null;
+													const externalLink =
+														!incognitoMode && firstItem
+															? buildHistoryExternalLink(firstItem, instance)
+															: null;
 													const displayName = firstItem?.instanceName
 														? incognitoMode
 															? getLinuxInstanceName(firstItem.instanceName)
@@ -163,10 +164,12 @@ export const HistoryTable = ({
 											<Tooltip>
 												<TooltipTrigger asChild>
 													<span className="cursor-default">
-														{formatCompactRelativeTime(firstItem?.date)}
+														{formatCompactRelativeTime(firstItem?.eventAt)}
 													</span>
 												</TooltipTrigger>
-												<TooltipContent>{formatAbsoluteDateTime(firstItem?.date)}</TooltipContent>
+												<TooltipContent>
+													{formatAbsoluteDateTime(firstItem?.eventAt)}
+												</TooltipContent>
 											</Tooltip>
 										</td>
 									</PremiumTableRow>
@@ -175,7 +178,7 @@ export const HistoryTable = ({
 
 							return group.items.map((item, itemIndex) => {
 								const key = `${item.service}:${item.instanceId}:${String(item.id)}`;
-								const eventType = item.eventType ?? item.status ?? "Unknown";
+								const eventType = item.eventType;
 								const displayTitle = getDisplayTitle(item);
 								const anonymizedTitle = incognitoMode
 									? getLinuxIsoName(displayTitle)
@@ -236,7 +239,9 @@ export const HistoryTable = ({
 												)}
 												{(() => {
 													const instance = serviceMap.get(item.instanceId);
-													const externalLink = buildHistoryExternalLink(item, instance);
+													const externalLink = incognitoMode
+														? null
+														: buildHistoryExternalLink(item, instance);
 													const displayName = incognitoMode
 														? getLinuxInstanceName(item.instanceName)
 														: item.instanceName;
@@ -287,9 +292,7 @@ export const HistoryTable = ({
 												</div>
 											)}
 										</td>
-										<td className="px-4 py-3 text-muted-foreground">
-											{(item.quality as { quality?: { name?: string } })?.quality?.name ?? "-"}
-										</td>
+										<td className="px-4 py-3 text-muted-foreground">{item.qualityName ?? "-"}</td>
 										<td className="px-4 py-3 text-muted-foreground">{sourceClient}</td>
 										<td className="px-4 py-3 text-right text-muted-foreground">
 											{formatBytes(item.size)}
@@ -298,10 +301,10 @@ export const HistoryTable = ({
 											<Tooltip>
 												<TooltipTrigger asChild>
 													<span className="cursor-default">
-														{formatCompactRelativeTime(item.date)}
+														{formatCompactRelativeTime(item.eventAt)}
 													</span>
 												</TooltipTrigger>
-												<TooltipContent>{formatAbsoluteDateTime(item.date)}</TooltipContent>
+												<TooltipContent>{formatAbsoluteDateTime(item.eventAt)}</TooltipContent>
 											</Tooltip>
 										</td>
 									</PremiumTableRow>

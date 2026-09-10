@@ -269,6 +269,7 @@ export type LabelSyncRuleWhereInput = {
   createdAt?: Prisma.DateTimeFilter<"LabelSyncRule"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"LabelSyncRule"> | Date | string
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
+  mutationAttempts?: Prisma.LabelSyncMutationAttemptListRelationFilter
 }
 
 export type LabelSyncRuleOrderByWithRelationInput = {
@@ -288,6 +289,7 @@ export type LabelSyncRuleOrderByWithRelationInput = {
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   user?: Prisma.UserOrderByWithRelationInput
+  mutationAttempts?: Prisma.LabelSyncMutationAttemptOrderByRelationAggregateInput
 }
 
 export type LabelSyncRuleWhereUniqueInput = Prisma.AtLeast<{
@@ -310,6 +312,7 @@ export type LabelSyncRuleWhereUniqueInput = Prisma.AtLeast<{
   createdAt?: Prisma.DateTimeFilter<"LabelSyncRule"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"LabelSyncRule"> | Date | string
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
+  mutationAttempts?: Prisma.LabelSyncMutationAttemptListRelationFilter
 }, "id">
 
 export type LabelSyncRuleOrderByWithAggregationInput = {
@@ -370,6 +373,7 @@ export type LabelSyncRuleCreateInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   user: Prisma.UserCreateNestedOneWithoutLabelSyncRulesInput
+  mutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutRuleInput
 }
 
 export type LabelSyncRuleUncheckedCreateInput = {
@@ -388,6 +392,7 @@ export type LabelSyncRuleUncheckedCreateInput = {
   lastRunMessage?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  mutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutRuleInput
 }
 
 export type LabelSyncRuleUpdateInput = {
@@ -406,6 +411,7 @@ export type LabelSyncRuleUpdateInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   user?: Prisma.UserUpdateOneRequiredWithoutLabelSyncRulesNestedInput
+  mutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutRuleNestedInput
 }
 
 export type LabelSyncRuleUncheckedUpdateInput = {
@@ -424,6 +430,7 @@ export type LabelSyncRuleUncheckedUpdateInput = {
   lastRunMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  mutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutRuleNestedInput
 }
 
 export type LabelSyncRuleCreateManyInput = {
@@ -543,6 +550,11 @@ export type LabelSyncRuleMinOrderByAggregateInput = {
   updatedAt?: Prisma.SortOrder
 }
 
+export type LabelSyncRuleScalarRelationFilter = {
+  is?: Prisma.LabelSyncRuleWhereInput
+  isNot?: Prisma.LabelSyncRuleWhereInput
+}
+
 export type LabelSyncRuleCreateNestedManyWithoutUserInput = {
   create?: Prisma.XOR<Prisma.LabelSyncRuleCreateWithoutUserInput, Prisma.LabelSyncRuleUncheckedCreateWithoutUserInput> | Prisma.LabelSyncRuleCreateWithoutUserInput[] | Prisma.LabelSyncRuleUncheckedCreateWithoutUserInput[]
   connectOrCreate?: Prisma.LabelSyncRuleCreateOrConnectWithoutUserInput | Prisma.LabelSyncRuleCreateOrConnectWithoutUserInput[]
@@ -585,6 +597,20 @@ export type LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput = {
   deleteMany?: Prisma.LabelSyncRuleScalarWhereInput | Prisma.LabelSyncRuleScalarWhereInput[]
 }
 
+export type LabelSyncRuleCreateNestedOneWithoutMutationAttemptsInput = {
+  create?: Prisma.XOR<Prisma.LabelSyncRuleCreateWithoutMutationAttemptsInput, Prisma.LabelSyncRuleUncheckedCreateWithoutMutationAttemptsInput>
+  connectOrCreate?: Prisma.LabelSyncRuleCreateOrConnectWithoutMutationAttemptsInput
+  connect?: Prisma.LabelSyncRuleWhereUniqueInput
+}
+
+export type LabelSyncRuleUpdateOneRequiredWithoutMutationAttemptsNestedInput = {
+  create?: Prisma.XOR<Prisma.LabelSyncRuleCreateWithoutMutationAttemptsInput, Prisma.LabelSyncRuleUncheckedCreateWithoutMutationAttemptsInput>
+  connectOrCreate?: Prisma.LabelSyncRuleCreateOrConnectWithoutMutationAttemptsInput
+  upsert?: Prisma.LabelSyncRuleUpsertWithoutMutationAttemptsInput
+  connect?: Prisma.LabelSyncRuleWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.LabelSyncRuleUpdateToOneWithWhereWithoutMutationAttemptsInput, Prisma.LabelSyncRuleUpdateWithoutMutationAttemptsInput>, Prisma.LabelSyncRuleUncheckedUpdateWithoutMutationAttemptsInput>
+}
+
 export type LabelSyncRuleCreateWithoutUserInput = {
   id?: string
   name: string
@@ -600,6 +626,7 @@ export type LabelSyncRuleCreateWithoutUserInput = {
   lastRunMessage?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  mutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutRuleInput
 }
 
 export type LabelSyncRuleUncheckedCreateWithoutUserInput = {
@@ -617,6 +644,7 @@ export type LabelSyncRuleUncheckedCreateWithoutUserInput = {
   lastRunMessage?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  mutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutRuleInput
 }
 
 export type LabelSyncRuleCreateOrConnectWithoutUserInput = {
@@ -665,6 +693,94 @@ export type LabelSyncRuleScalarWhereInput = {
   updatedAt?: Prisma.DateTimeFilter<"LabelSyncRule"> | Date | string
 }
 
+export type LabelSyncRuleCreateWithoutMutationAttemptsInput = {
+  id?: string
+  name: string
+  enabled?: boolean
+  sourceService: string
+  sourceInstanceId?: string | null
+  sourceTagName: string
+  destService?: string
+  destInstanceId: string
+  destTagName: string
+  lastRunAt?: Date | string | null
+  lastRunStatus?: string | null
+  lastRunMessage?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  user: Prisma.UserCreateNestedOneWithoutLabelSyncRulesInput
+}
+
+export type LabelSyncRuleUncheckedCreateWithoutMutationAttemptsInput = {
+  id?: string
+  userId: string
+  name: string
+  enabled?: boolean
+  sourceService: string
+  sourceInstanceId?: string | null
+  sourceTagName: string
+  destService?: string
+  destInstanceId: string
+  destTagName: string
+  lastRunAt?: Date | string | null
+  lastRunStatus?: string | null
+  lastRunMessage?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+}
+
+export type LabelSyncRuleCreateOrConnectWithoutMutationAttemptsInput = {
+  where: Prisma.LabelSyncRuleWhereUniqueInput
+  create: Prisma.XOR<Prisma.LabelSyncRuleCreateWithoutMutationAttemptsInput, Prisma.LabelSyncRuleUncheckedCreateWithoutMutationAttemptsInput>
+}
+
+export type LabelSyncRuleUpsertWithoutMutationAttemptsInput = {
+  update: Prisma.XOR<Prisma.LabelSyncRuleUpdateWithoutMutationAttemptsInput, Prisma.LabelSyncRuleUncheckedUpdateWithoutMutationAttemptsInput>
+  create: Prisma.XOR<Prisma.LabelSyncRuleCreateWithoutMutationAttemptsInput, Prisma.LabelSyncRuleUncheckedCreateWithoutMutationAttemptsInput>
+  where?: Prisma.LabelSyncRuleWhereInput
+}
+
+export type LabelSyncRuleUpdateToOneWithWhereWithoutMutationAttemptsInput = {
+  where?: Prisma.LabelSyncRuleWhereInput
+  data: Prisma.XOR<Prisma.LabelSyncRuleUpdateWithoutMutationAttemptsInput, Prisma.LabelSyncRuleUncheckedUpdateWithoutMutationAttemptsInput>
+}
+
+export type LabelSyncRuleUpdateWithoutMutationAttemptsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  sourceService?: Prisma.StringFieldUpdateOperationsInput | string
+  sourceInstanceId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sourceTagName?: Prisma.StringFieldUpdateOperationsInput | string
+  destService?: Prisma.StringFieldUpdateOperationsInput | string
+  destInstanceId?: Prisma.StringFieldUpdateOperationsInput | string
+  destTagName?: Prisma.StringFieldUpdateOperationsInput | string
+  lastRunAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastRunStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastRunMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  user?: Prisma.UserUpdateOneRequiredWithoutLabelSyncRulesNestedInput
+}
+
+export type LabelSyncRuleUncheckedUpdateWithoutMutationAttemptsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  sourceService?: Prisma.StringFieldUpdateOperationsInput | string
+  sourceInstanceId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sourceTagName?: Prisma.StringFieldUpdateOperationsInput | string
+  destService?: Prisma.StringFieldUpdateOperationsInput | string
+  destInstanceId?: Prisma.StringFieldUpdateOperationsInput | string
+  destTagName?: Prisma.StringFieldUpdateOperationsInput | string
+  lastRunAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastRunStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastRunMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
 export type LabelSyncRuleCreateManyUserInput = {
   id?: string
   name: string
@@ -697,6 +813,7 @@ export type LabelSyncRuleUpdateWithoutUserInput = {
   lastRunMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  mutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutRuleNestedInput
 }
 
 export type LabelSyncRuleUncheckedUpdateWithoutUserInput = {
@@ -714,6 +831,7 @@ export type LabelSyncRuleUncheckedUpdateWithoutUserInput = {
   lastRunMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  mutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutRuleNestedInput
 }
 
 export type LabelSyncRuleUncheckedUpdateManyWithoutUserInput = {
@@ -734,6 +852,35 @@ export type LabelSyncRuleUncheckedUpdateManyWithoutUserInput = {
 }
 
 
+/**
+ * Count Type LabelSyncRuleCountOutputType
+ */
+
+export type LabelSyncRuleCountOutputType = {
+  mutationAttempts: number
+}
+
+export type LabelSyncRuleCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  mutationAttempts?: boolean | LabelSyncRuleCountOutputTypeCountMutationAttemptsArgs
+}
+
+/**
+ * LabelSyncRuleCountOutputType without action
+ */
+export type LabelSyncRuleCountOutputTypeDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the LabelSyncRuleCountOutputType
+   */
+  select?: Prisma.LabelSyncRuleCountOutputTypeSelect<ExtArgs> | null
+}
+
+/**
+ * LabelSyncRuleCountOutputType without action
+ */
+export type LabelSyncRuleCountOutputTypeCountMutationAttemptsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.LabelSyncMutationAttemptWhereInput
+}
+
 
 export type LabelSyncRuleSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -752,6 +899,8 @@ export type LabelSyncRuleSelect<ExtArgs extends runtime.Types.Extensions.Interna
   createdAt?: boolean
   updatedAt?: boolean
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
+  mutationAttempts?: boolean | Prisma.LabelSyncRule$mutationAttemptsArgs<ExtArgs>
+  _count?: boolean | Prisma.LabelSyncRuleCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["labelSyncRule"]>
 
 export type LabelSyncRuleSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -813,6 +962,8 @@ export type LabelSyncRuleSelectScalar = {
 export type LabelSyncRuleOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "name" | "enabled" | "sourceService" | "sourceInstanceId" | "sourceTagName" | "destService" | "destInstanceId" | "destTagName" | "lastRunAt" | "lastRunStatus" | "lastRunMessage" | "createdAt" | "updatedAt", ExtArgs["result"]["labelSyncRule"]>
 export type LabelSyncRuleInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
+  mutationAttempts?: boolean | Prisma.LabelSyncRule$mutationAttemptsArgs<ExtArgs>
+  _count?: boolean | Prisma.LabelSyncRuleCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type LabelSyncRuleIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
@@ -825,6 +976,7 @@ export type $LabelSyncRulePayload<ExtArgs extends runtime.Types.Extensions.Inter
   name: "LabelSyncRule"
   objects: {
     user: Prisma.$UserPayload<ExtArgs>
+    mutationAttempts: Prisma.$LabelSyncMutationAttemptPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1237,6 +1389,7 @@ readonly fields: LabelSyncRuleFieldRefs;
 export interface Prisma__LabelSyncRuleClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
   user<T extends Prisma.UserDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.UserDefaultArgs<ExtArgs>>): Prisma.Prisma__UserClient<runtime.Types.Result.GetResult<Prisma.$UserPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
+  mutationAttempts<T extends Prisma.LabelSyncRule$mutationAttemptsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.LabelSyncRule$mutationAttemptsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LabelSyncMutationAttemptPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1677,6 +1830,30 @@ export type LabelSyncRuleDeleteManyArgs<ExtArgs extends runtime.Types.Extensions
    * Limit how many LabelSyncRules to delete.
    */
   limit?: number
+}
+
+/**
+ * LabelSyncRule.mutationAttempts
+ */
+export type LabelSyncRule$mutationAttemptsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the LabelSyncMutationAttempt
+   */
+  select?: Prisma.LabelSyncMutationAttemptSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the LabelSyncMutationAttempt
+   */
+  omit?: Prisma.LabelSyncMutationAttemptOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.LabelSyncMutationAttemptInclude<ExtArgs> | null
+  where?: Prisma.LabelSyncMutationAttemptWhereInput
+  orderBy?: Prisma.LabelSyncMutationAttemptOrderByWithRelationInput | Prisma.LabelSyncMutationAttemptOrderByWithRelationInput[]
+  cursor?: Prisma.LabelSyncMutationAttemptWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.LabelSyncMutationAttemptScalarFieldEnum | Prisma.LabelSyncMutationAttemptScalarFieldEnum[]
 }
 
 /**

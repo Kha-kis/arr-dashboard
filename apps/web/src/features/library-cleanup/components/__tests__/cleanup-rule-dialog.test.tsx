@@ -58,7 +58,7 @@ const mockFieldOptions: CleanupFieldOptionsResponse = {
 };
 
 const mockServicesQueryState: {
-	data: Array<{ id: string; service: "sonarr" | "radarr"; enabled: boolean }> | undefined;
+	data: Array<{ id: string; service: "sonarr" | "radarr" | "seerr"; enabled: boolean }> | undefined;
 	isLoading: boolean;
 	isFetching: boolean;
 	isError: boolean;
@@ -181,6 +181,7 @@ describe("CleanupRuleDialog", () => {
 		mockServicesQueryState.isFetching = false;
 		mockServicesQueryState.isError = false;
 		mockFieldOptions.hasPlex = false;
+		mockFieldOptions.hasJellyfin = false;
 		mockFieldOptions.plexEvidence = undefined;
 	});
 
@@ -189,6 +190,23 @@ describe("CleanupRuleDialog", () => {
 	// ================================================================
 
 	describe("create mode", () => {
+		it("shows Cross-Service with Seerr and Jellyfin but without Plex", () => {
+			mockFieldOptions.hasJellyfin = true;
+			mockServicesQueryState.data = [{ id: "seerr-1", service: "seerr", enabled: true }];
+
+			renderDialog();
+
+			expect(screen.getByRole("button", { name: "Cross-Service" })).toBeInTheDocument();
+		});
+
+		it("hides Cross-Service when Seerr has no configured watch provider", () => {
+			mockServicesQueryState.data = [{ id: "seerr-1", service: "seerr", enabled: true }];
+
+			renderDialog();
+
+			expect(screen.queryByRole("button", { name: "Cross-Service" })).not.toBeInTheDocument();
+		});
+
 		it("shows unavailable Plex selector evidence without claiming empty current values", () => {
 			mockFieldOptions.hasPlex = true;
 			mockFieldOptions.plexEvidence = {
@@ -202,7 +220,10 @@ describe("CleanupRuleDialog", () => {
 
 			renderDialog();
 
-			expect(screen.getByText(/Plex values are unavailable/i)).toBeInTheDocument();
+			expect(screen.getByText(/Showing last-known Plex values/i)).toBeInTheDocument();
+			expect(
+				screen.getByText(/No Plex rows are being shown; absence remains unknown/i),
+			).toBeInTheDocument();
 			expect(
 				screen.queryByText(/no Plex libraries|0 libraries|none available/i),
 			).not.toBeInTheDocument();

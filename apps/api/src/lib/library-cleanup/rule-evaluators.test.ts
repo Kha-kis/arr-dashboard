@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 import type { LibraryCleanupRule } from "../prisma.js";
 import {
+	decideProviderWatchCountFact,
 	evaluateItemAgainstRules,
 	evaluateItemPolicyState,
 	evaluateRule,
@@ -19,10 +20,11 @@ import {
 	extractRating,
 } from "./rule-evaluators.js";
 import {
-	listMembershipKey,
 	type CacheItemForEval,
 	type EvalContext,
+	listMembershipKey,
 	type PlexWatchInfo,
+	type ProviderWatchCountFact,
 	type SeerrRequestInfo,
 } from "./types.js";
 
@@ -136,6 +138,226 @@ function makeRule(overrides: Partial<TestRule> = {}): TestRule {
 function baseCtx(overrides: Partial<EvalContext> = {}): EvalContext {
 	return { now: NOW, ...overrides };
 }
+
+function targetScopedPlexWatchCountFact(overrides: Partial<ProviderWatchCountFact> = {}) {
+	return {
+		userId: "user-1",
+		provider: "PLEX" as const,
+		cacheType: "plex" as const,
+		instanceId: "plex-1",
+		generationId: "generation-1",
+		targetKey: "movie:12345",
+		coordinate: "movies:movie-12345",
+		sectionTitle: "Movies",
+		observedValue: 0,
+		status: {
+			availability: "current",
+			evidence: "complete",
+			reasonCodes: [],
+			domains: [
+				{
+					domain: "watch-count",
+					availability: "current",
+					evidence: "complete",
+					valueSemantics: "exact",
+					reasonCodes: [],
+				},
+			],
+		} as never,
+		targetScoped: true as const,
+		...overrides,
+	};
+}
+
+describe("target-scoped Plex watch-count facts", () => {
+	it.each([
+		["exact zero", 0, 0],
+		["positive below threshold", 1, 2],
+	] as const)(
+		"keeps $0 greater-than facts known false without minting a grant",
+		(_label, observedValue, count) => {
+			const item = makeCacheItem();
+			const facts = new Map([["movie:12345", [targetScopedPlexWatchCountFact({ observedValue })]]]);
+			const rule = makeRule({
+				ruleType: "plex_watch_count",
+				parameters: JSON.stringify({ operator: "greater_than", count }),
+			});
+			const ctx = baseCtx({ providerWatchCountFacts: facts });
+
+			expect(
+				decideProviderWatchCountFact(item, { operator: "greater_than", count }, ctx, "PLEX"),
+			).toMatchObject({ kind: "known", matched: false });
+			expect(evaluateRuleState(item, rule as LibraryCleanupRule, "RADARR", ctx).state).toBe(
+				"false",
+			);
+		},
+	);
+
+	it.each(["less_than", "equals"] as const)(
+		"keeps target-scoped Plex %s predicates UNKNOWN",
+		(operator) => {
+			const item = makeCacheItem();
+			const ctx = baseCtx({
+				providerWatchCountFacts: new Map([
+					["movie:12345", [targetScopedPlexWatchCountFact({ observedValue: 2 })]],
+				]),
+			});
+			expect(decideProviderWatchCountFact(item, { operator, count: 2 }, ctx, "PLEX")).toEqual({
+				kind: "unknown",
+			});
+		},
+	);
+
+	it.each([
+		["absent filter", null, "Movies", "true"],
+		["empty filter", JSON.stringify([]), "Movies", "true"],
+		["included canonical section", JSON.stringify(["Movies"]), "Movies", "true"],
+		["excluded canonical section", JSON.stringify(["Shows"]), "Movies", "unknown"],
+		["unresolved canonical section", JSON.stringify(["Movies"]), undefined, "unknown"],
+		["malformed selector", JSON.stringify("Movies"), "Movies", "unknown"],
+	] as const)(
+		"applies Plex library filters consistently for $0",
+		(_label, plexLibraryFilter, sectionTitle, expected) => {
+			const item = makeCacheItem();
+			const facts = new Map([
+				["movie:12345", [targetScopedPlexWatchCountFact({ observedValue: 2, sectionTitle })]],
+			]);
+			const rule = makeRule({
+				ruleType: "plex_watch_count",
+				parameters: JSON.stringify({ operator: "greater_than", count: 0 }),
+				plexLibraryFilter,
+			});
+			if (expected === "true") {
+				expect(
+					decideProviderWatchCountFact(
+						item,
+						{ operator: "greater_than", count: 0 },
+						baseCtx({ providerWatchCountFacts: facts }),
+						"PLEX",
+						["Movies"],
+					),
+				).toMatchObject({ kind: "known", matched: true });
+			}
+
+			expect(
+				evaluateRuleState(
+					item,
+					rule as LibraryCleanupRule,
+					"RADARR",
+					baseCtx({ providerWatchCountFacts: facts }),
+				).state,
+			).toBe(expected);
+		},
+	);
+
+	it("keeps multiple eligible target-scoped Plex facts UNKNOWN", () => {
+		const item = makeCacheItem();
+		const ctx = baseCtx({
+			providerWatchCountFacts: new Map([
+				[
+					"movie:12345",
+					[
+						targetScopedPlexWatchCountFact({ observedValue: 2 }),
+						targetScopedPlexWatchCountFact({
+							instanceId: "plex-2",
+							coordinate: "movies:movie-12345-copy",
+							observedValue: 2,
+						}),
+					],
+				],
+			]),
+		});
+		expect(
+			decideProviderWatchCountFact(item, { operator: "greater_than", count: 0 }, ctx, "PLEX"),
+		).toEqual({ kind: "unknown" });
+	});
+
+	it("prefers one scoped Plex fact when its merged generic fact has identical authority", () => {
+		const item = makeCacheItem();
+		const scoped = targetScopedPlexWatchCountFact({ observedValue: 2 });
+		expect(
+			decideProviderWatchCountFact(
+				item,
+				{ operator: "greater_than", count: 0 },
+				baseCtx({
+					providerWatchCountFacts: new Map([
+						["movie:12345", [{ ...scoped, targetScoped: undefined }, scoped]],
+					]),
+				}),
+				"PLEX",
+			),
+		).toMatchObject({ kind: "known", matched: true, grant: { instanceId: "plex-1" } });
+	});
+
+	it("keeps a scoped Plex fact and a cross-instance generic fact UNKNOWN", () => {
+		const item = makeCacheItem();
+		const scoped = targetScopedPlexWatchCountFact({ observedValue: 2 });
+		expect(
+			decideProviderWatchCountFact(
+				item,
+				{ operator: "greater_than", count: 0 },
+				baseCtx({
+					providerWatchCountFacts: new Map([
+						["movie:12345", [scoped, { ...scoped, targetScoped: undefined, instanceId: "plex-2" }]],
+					]),
+				}),
+				"PLEX",
+			),
+		).toEqual({ kind: "unknown" });
+	});
+
+	it.each([
+		["PLEX", "plex"],
+		["JELLYFIN", "jellyfin"],
+	] as const)(
+		"keeps one exact generic %s fact false without minting a grant",
+		(provider, cacheType) => {
+			const item = makeCacheItem();
+			const fact = targetScopedPlexWatchCountFact({
+				provider,
+				cacheType,
+				targetScoped: undefined,
+				observedValue: 2,
+			});
+			const decision = decideProviderWatchCountFact(
+				item,
+				{ operator: "greater_than", count: 2 },
+				baseCtx({ providerWatchCountFacts: new Map([["movie:12345", [fact]]]) }),
+				provider,
+			);
+
+			expect(decision).toEqual({ kind: "known", matched: false });
+		},
+	);
+
+	it.each([
+		["PLEX", "plex"],
+		["JELLYFIN", "jellyfin"],
+	] as const)(
+		"keeps multiple generic %s facts from distinct instances UNKNOWN",
+		(provider, cacheType) => {
+			const item = makeCacheItem();
+			const fact = targetScopedPlexWatchCountFact({
+				provider,
+				cacheType,
+				targetScoped: undefined,
+				observedValue: 3,
+			});
+			expect(
+				decideProviderWatchCountFact(
+					item,
+					{ operator: "greater_than", count: 0 },
+					baseCtx({
+						providerWatchCountFacts: new Map([
+							["movie:12345", [fact, { ...fact, instanceId: `${provider.toLowerCase()}-2` }]],
+						]),
+					}),
+					provider,
+				),
+			).toEqual({ kind: "unknown" });
+		},
+	);
+});
 
 // ---------------------------------------------------------------------------
 // 1. Age rule

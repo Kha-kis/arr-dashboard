@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import autoTagSchedulerPlugin from "../plugins/auto-tag-scheduler.js";
 import backupSchedulerPlugin from "../plugins/backup-scheduler.js";
+import historyCollectionSchedulerPlugin from "../plugins/history-collection-scheduler.js";
 import huntingSchedulerPlugin from "../plugins/hunting-scheduler.js";
 import infoHashBackfillSchedulerPlugin from "../plugins/infohash-backfill-scheduler.js";
 import insightsDigestSchedulerPlugin from "../plugins/insights-digest-scheduler.js";
@@ -47,6 +48,7 @@ export function registerSchedulers(app: FastifyInstance): void {
 	app.register(tmdbListCacheSchedulerPlugin);
 	app.register(traktListCacheSchedulerPlugin);
 	app.register(insightsDigestSchedulerPlugin);
+	app.register(historyCollectionSchedulerPlugin);
 
 	// TRaSH Guides sync + cleanup
 	app.register(trashBackupCleanupPlugin);

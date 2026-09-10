@@ -293,6 +293,7 @@ export type UserWhereInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialListRelationFilter
   trashSettings?: Prisma.XOR<Prisma.TrashSettingsNullableScalarRelationFilter, Prisma.TrashSettingsWhereInput> | null
   serviceInstances?: Prisma.ServiceInstanceListRelationFilter
+  historyCollectionLease?: Prisma.XOR<Prisma.HistoryCollectionLeaseNullableScalarRelationFilter, Prisma.HistoryCollectionLeaseWhereInput> | null
   userCustomFormats?: Prisma.UserCustomFormatListRelationFilter
   qualitySizeMappings?: Prisma.QualitySizeMappingListRelationFilter
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigListRelationFilter
@@ -302,6 +303,7 @@ export type UserWhereInput = {
   notificationRules?: Prisma.NotificationRuleListRelationFilter
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigListRelationFilter
   labelSyncRules?: Prisma.LabelSyncRuleListRelationFilter
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptListRelationFilter
   autoTagRules?: Prisma.AutoTagRuleListRelationFilter
   tmdbListCacheRows?: Prisma.TmdbListCacheListRelationFilter
   traktListCacheRows?: Prisma.TraktListCacheListRelationFilter
@@ -331,6 +333,7 @@ export type UserOrderByWithRelationInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialOrderByRelationAggregateInput
   trashSettings?: Prisma.TrashSettingsOrderByWithRelationInput
   serviceInstances?: Prisma.ServiceInstanceOrderByRelationAggregateInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseOrderByWithRelationInput
   userCustomFormats?: Prisma.UserCustomFormatOrderByRelationAggregateInput
   qualitySizeMappings?: Prisma.QualitySizeMappingOrderByRelationAggregateInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigOrderByRelationAggregateInput
@@ -340,6 +343,7 @@ export type UserOrderByWithRelationInput = {
   notificationRules?: Prisma.NotificationRuleOrderByRelationAggregateInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigOrderByRelationAggregateInput
   labelSyncRules?: Prisma.LabelSyncRuleOrderByRelationAggregateInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptOrderByRelationAggregateInput
   autoTagRules?: Prisma.AutoTagRuleOrderByRelationAggregateInput
   tmdbListCacheRows?: Prisma.TmdbListCacheOrderByRelationAggregateInput
   traktListCacheRows?: Prisma.TraktListCacheOrderByRelationAggregateInput
@@ -372,6 +376,7 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   webauthnCredentials?: Prisma.WebAuthnCredentialListRelationFilter
   trashSettings?: Prisma.XOR<Prisma.TrashSettingsNullableScalarRelationFilter, Prisma.TrashSettingsWhereInput> | null
   serviceInstances?: Prisma.ServiceInstanceListRelationFilter
+  historyCollectionLease?: Prisma.XOR<Prisma.HistoryCollectionLeaseNullableScalarRelationFilter, Prisma.HistoryCollectionLeaseWhereInput> | null
   userCustomFormats?: Prisma.UserCustomFormatListRelationFilter
   qualitySizeMappings?: Prisma.QualitySizeMappingListRelationFilter
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigListRelationFilter
@@ -381,6 +386,7 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   notificationRules?: Prisma.NotificationRuleListRelationFilter
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigListRelationFilter
   labelSyncRules?: Prisma.LabelSyncRuleListRelationFilter
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptListRelationFilter
   autoTagRules?: Prisma.AutoTagRuleListRelationFilter
   tmdbListCacheRows?: Prisma.TmdbListCacheListRelationFilter
   traktListCacheRows?: Prisma.TraktListCacheListRelationFilter
@@ -452,6 +458,7 @@ export type UserCreateInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
@@ -461,6 +468,7 @@ export type UserCreateInput = {
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
@@ -490,6 +498,7 @@ export type UserUncheckedCreateInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
@@ -499,6 +508,7 @@ export type UserUncheckedCreateInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
@@ -528,6 +538,7 @@ export type UserUpdateInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
@@ -537,6 +548,7 @@ export type UserUpdateInput = {
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
@@ -566,6 +578,7 @@ export type UserUncheckedUpdateInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
@@ -575,6 +588,7 @@ export type UserUncheckedUpdateInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
@@ -755,6 +769,20 @@ export type UserUpdateOneRequiredWithoutServiceInstancesNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutServiceInstancesInput, Prisma.UserUpdateWithoutServiceInstancesInput>, Prisma.UserUncheckedUpdateWithoutServiceInstancesInput>
 }
 
+export type UserCreateNestedOneWithoutHistoryCollectionLeaseInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutHistoryCollectionLeaseInput, Prisma.UserUncheckedCreateWithoutHistoryCollectionLeaseInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutHistoryCollectionLeaseInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutHistoryCollectionLeaseNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutHistoryCollectionLeaseInput, Prisma.UserUncheckedCreateWithoutHistoryCollectionLeaseInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutHistoryCollectionLeaseInput
+  upsert?: Prisma.UserUpsertWithoutHistoryCollectionLeaseInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutHistoryCollectionLeaseInput, Prisma.UserUpdateWithoutHistoryCollectionLeaseInput>, Prisma.UserUncheckedUpdateWithoutHistoryCollectionLeaseInput>
+}
+
 export type UserCreateNestedOneWithoutOidcAccountsInput = {
   create?: Prisma.XOR<Prisma.UserCreateWithoutOidcAccountsInput, Prisma.UserUncheckedCreateWithoutOidcAccountsInput>
   connectOrCreate?: Prisma.UserCreateOrConnectWithoutOidcAccountsInput
@@ -923,6 +951,20 @@ export type UserUpdateOneRequiredWithoutLabelSyncRulesNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutLabelSyncRulesInput, Prisma.UserUpdateWithoutLabelSyncRulesInput>, Prisma.UserUncheckedUpdateWithoutLabelSyncRulesInput>
 }
 
+export type UserCreateNestedOneWithoutLabelSyncMutationAttemptsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutLabelSyncMutationAttemptsInput, Prisma.UserUncheckedCreateWithoutLabelSyncMutationAttemptsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutLabelSyncMutationAttemptsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutLabelSyncMutationAttemptsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutLabelSyncMutationAttemptsInput, Prisma.UserUncheckedCreateWithoutLabelSyncMutationAttemptsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutLabelSyncMutationAttemptsInput
+  upsert?: Prisma.UserUpsertWithoutLabelSyncMutationAttemptsInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutLabelSyncMutationAttemptsInput, Prisma.UserUpdateWithoutLabelSyncMutationAttemptsInput>, Prisma.UserUncheckedUpdateWithoutLabelSyncMutationAttemptsInput>
+}
+
 export type UserCreateNestedOneWithoutAutoTagRulesInput = {
   create?: Prisma.XOR<Prisma.UserCreateWithoutAutoTagRulesInput, Prisma.UserUncheckedCreateWithoutAutoTagRulesInput>
   connectOrCreate?: Prisma.UserCreateOrConnectWithoutAutoTagRulesInput
@@ -1040,6 +1082,7 @@ export type UserCreateWithoutSessionsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
@@ -1049,6 +1092,7 @@ export type UserCreateWithoutSessionsInput = {
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
@@ -1077,6 +1121,7 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
@@ -1086,6 +1131,7 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
@@ -1130,6 +1176,7 @@ export type UserUpdateWithoutSessionsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
@@ -1139,6 +1186,7 @@ export type UserUpdateWithoutSessionsInput = {
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
@@ -1167,6 +1215,7 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
@@ -1176,6 +1225,7 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
@@ -1204,6 +1254,7 @@ export type UserCreateWithoutServiceInstancesInput = {
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
@@ -1213,6 +1264,7 @@ export type UserCreateWithoutServiceInstancesInput = {
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
@@ -1241,6 +1293,7 @@ export type UserUncheckedCreateWithoutServiceInstancesInput = {
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
@@ -1250,6 +1303,7 @@ export type UserUncheckedCreateWithoutServiceInstancesInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
@@ -1294,6 +1348,7 @@ export type UserUpdateWithoutServiceInstancesInput = {
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
@@ -1303,6 +1358,7 @@ export type UserUpdateWithoutServiceInstancesInput = {
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
@@ -1331,6 +1387,7 @@ export type UserUncheckedUpdateWithoutServiceInstancesInput = {
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
@@ -1340,6 +1397,179 @@ export type UserUncheckedUpdateWithoutServiceInstancesInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutHistoryCollectionLeaseInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
+  autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutHistoryCollectionLeaseInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutHistoryCollectionLeaseInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutHistoryCollectionLeaseInput, Prisma.UserUncheckedCreateWithoutHistoryCollectionLeaseInput>
+}
+
+export type UserUpsertWithoutHistoryCollectionLeaseInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutHistoryCollectionLeaseInput, Prisma.UserUncheckedUpdateWithoutHistoryCollectionLeaseInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutHistoryCollectionLeaseInput, Prisma.UserUncheckedCreateWithoutHistoryCollectionLeaseInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutHistoryCollectionLeaseInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutHistoryCollectionLeaseInput, Prisma.UserUncheckedUpdateWithoutHistoryCollectionLeaseInput>
+}
+
+export type UserUpdateWithoutHistoryCollectionLeaseInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutHistoryCollectionLeaseInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
@@ -1368,6 +1598,7 @@ export type UserCreateWithoutOidcAccountsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
@@ -1377,6 +1608,7 @@ export type UserCreateWithoutOidcAccountsInput = {
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
@@ -1405,6 +1637,7 @@ export type UserUncheckedCreateWithoutOidcAccountsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
@@ -1414,6 +1647,7 @@ export type UserUncheckedCreateWithoutOidcAccountsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
@@ -1458,6 +1692,7 @@ export type UserUpdateWithoutOidcAccountsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
@@ -1467,6 +1702,7 @@ export type UserUpdateWithoutOidcAccountsInput = {
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
@@ -1495,6 +1731,7 @@ export type UserUncheckedUpdateWithoutOidcAccountsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
@@ -1504,6 +1741,7 @@ export type UserUncheckedUpdateWithoutOidcAccountsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
@@ -1532,6 +1770,7 @@ export type UserCreateWithoutWebauthnCredentialsInput = {
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
@@ -1541,6 +1780,7 @@ export type UserCreateWithoutWebauthnCredentialsInput = {
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
@@ -1569,6 +1809,7 @@ export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
@@ -1578,6 +1819,7 @@ export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
@@ -1622,6 +1864,7 @@ export type UserUpdateWithoutWebauthnCredentialsInput = {
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
@@ -1631,6 +1874,7 @@ export type UserUpdateWithoutWebauthnCredentialsInput = {
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
@@ -1659,6 +1903,7 @@ export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
@@ -1668,6 +1913,7 @@ export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
@@ -1696,6 +1942,7 @@ export type UserCreateWithoutTrashSettingsInput = {
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
@@ -1705,6 +1952,7 @@ export type UserCreateWithoutTrashSettingsInput = {
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
@@ -1733,6 +1981,7 @@ export type UserUncheckedCreateWithoutTrashSettingsInput = {
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
@@ -1742,6 +1991,7 @@ export type UserUncheckedCreateWithoutTrashSettingsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
@@ -1786,6 +2036,7 @@ export type UserUpdateWithoutTrashSettingsInput = {
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
@@ -1795,6 +2046,7 @@ export type UserUpdateWithoutTrashSettingsInput = {
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
@@ -1823,6 +2075,7 @@ export type UserUncheckedUpdateWithoutTrashSettingsInput = {
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
@@ -1832,6 +2085,7 @@ export type UserUncheckedUpdateWithoutTrashSettingsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
@@ -1861,6 +2115,7 @@ export type UserCreateWithoutQualitySizeMappingsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
@@ -1869,6 +2124,7 @@ export type UserCreateWithoutQualitySizeMappingsInput = {
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
@@ -1898,6 +2154,7 @@ export type UserUncheckedCreateWithoutQualitySizeMappingsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
@@ -1906,6 +2163,7 @@ export type UserUncheckedCreateWithoutQualitySizeMappingsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
@@ -1951,6 +2209,7 @@ export type UserUpdateWithoutQualitySizeMappingsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
@@ -1959,6 +2218,7 @@ export type UserUpdateWithoutQualitySizeMappingsInput = {
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
@@ -1988,6 +2248,7 @@ export type UserUncheckedUpdateWithoutQualitySizeMappingsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
@@ -1996,6 +2257,7 @@ export type UserUncheckedUpdateWithoutQualitySizeMappingsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
@@ -2025,6 +2287,7 @@ export type UserCreateWithoutUserCustomFormatsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
@@ -2033,6 +2296,7 @@ export type UserCreateWithoutUserCustomFormatsInput = {
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
@@ -2062,6 +2326,7 @@ export type UserUncheckedCreateWithoutUserCustomFormatsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
@@ -2070,6 +2335,7 @@ export type UserUncheckedCreateWithoutUserCustomFormatsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
@@ -2115,6 +2381,7 @@ export type UserUpdateWithoutUserCustomFormatsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
@@ -2123,6 +2390,7 @@ export type UserUpdateWithoutUserCustomFormatsInput = {
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
@@ -2152,6 +2420,7 @@ export type UserUncheckedUpdateWithoutUserCustomFormatsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
@@ -2160,6 +2429,7 @@ export type UserUncheckedUpdateWithoutUserCustomFormatsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
@@ -2189,6 +2459,7 @@ export type UserCreateWithoutLibraryCleanupConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
@@ -2197,6 +2468,7 @@ export type UserCreateWithoutLibraryCleanupConfigsInput = {
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
@@ -2226,6 +2498,7 @@ export type UserUncheckedCreateWithoutLibraryCleanupConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
@@ -2234,6 +2507,7 @@ export type UserUncheckedCreateWithoutLibraryCleanupConfigsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
@@ -2279,6 +2553,7 @@ export type UserUpdateWithoutLibraryCleanupConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
@@ -2287,6 +2562,7 @@ export type UserUpdateWithoutLibraryCleanupConfigsInput = {
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
@@ -2316,6 +2592,7 @@ export type UserUncheckedUpdateWithoutLibraryCleanupConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
@@ -2324,6 +2601,7 @@ export type UserUncheckedUpdateWithoutLibraryCleanupConfigsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
@@ -2353,6 +2631,7 @@ export type UserCreateWithoutNotificationChannelsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
@@ -2361,6 +2640,7 @@ export type UserCreateWithoutNotificationChannelsInput = {
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
@@ -2390,6 +2670,7 @@ export type UserUncheckedCreateWithoutNotificationChannelsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
@@ -2398,6 +2679,7 @@ export type UserUncheckedCreateWithoutNotificationChannelsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
@@ -2443,6 +2725,7 @@ export type UserUpdateWithoutNotificationChannelsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
@@ -2451,6 +2734,7 @@ export type UserUpdateWithoutNotificationChannelsInput = {
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
@@ -2480,6 +2764,7 @@ export type UserUncheckedUpdateWithoutNotificationChannelsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
@@ -2488,6 +2773,7 @@ export type UserUncheckedUpdateWithoutNotificationChannelsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
@@ -2517,6 +2803,7 @@ export type UserCreateWithoutNotificationRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
@@ -2525,6 +2812,7 @@ export type UserCreateWithoutNotificationRulesInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
@@ -2554,6 +2842,7 @@ export type UserUncheckedCreateWithoutNotificationRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
@@ -2562,6 +2851,7 @@ export type UserUncheckedCreateWithoutNotificationRulesInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
@@ -2607,6 +2897,7 @@ export type UserUpdateWithoutNotificationRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
@@ -2615,6 +2906,7 @@ export type UserUpdateWithoutNotificationRulesInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
@@ -2644,6 +2936,7 @@ export type UserUncheckedUpdateWithoutNotificationRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
@@ -2652,6 +2945,7 @@ export type UserUncheckedUpdateWithoutNotificationRulesInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
@@ -2681,6 +2975,7 @@ export type UserCreateWithoutNotificationAggregationConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
@@ -2689,6 +2984,7 @@ export type UserCreateWithoutNotificationAggregationConfigsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
@@ -2718,6 +3014,7 @@ export type UserUncheckedCreateWithoutNotificationAggregationConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
@@ -2726,6 +3023,7 @@ export type UserUncheckedCreateWithoutNotificationAggregationConfigsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
@@ -2771,6 +3069,7 @@ export type UserUpdateWithoutNotificationAggregationConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
@@ -2779,6 +3078,7 @@ export type UserUpdateWithoutNotificationAggregationConfigsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
@@ -2808,6 +3108,7 @@ export type UserUncheckedUpdateWithoutNotificationAggregationConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
@@ -2816,6 +3117,7 @@ export type UserUncheckedUpdateWithoutNotificationAggregationConfigsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
@@ -2845,6 +3147,7 @@ export type UserCreateWithoutNamingConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
@@ -2853,6 +3156,7 @@ export type UserCreateWithoutNamingConfigsInput = {
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
@@ -2882,6 +3186,7 @@ export type UserUncheckedCreateWithoutNamingConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
@@ -2890,6 +3195,7 @@ export type UserUncheckedCreateWithoutNamingConfigsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
@@ -2935,6 +3241,7 @@ export type UserUpdateWithoutNamingConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
@@ -2943,6 +3250,7 @@ export type UserUpdateWithoutNamingConfigsInput = {
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
@@ -2972,6 +3280,7 @@ export type UserUncheckedUpdateWithoutNamingConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
@@ -2980,6 +3289,7 @@ export type UserUncheckedUpdateWithoutNamingConfigsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
@@ -3009,6 +3319,7 @@ export type UserCreateWithoutNamingDeployHistoryInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
@@ -3017,6 +3328,7 @@ export type UserCreateWithoutNamingDeployHistoryInput = {
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
@@ -3046,6 +3358,7 @@ export type UserUncheckedCreateWithoutNamingDeployHistoryInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
@@ -3054,6 +3367,7 @@ export type UserUncheckedCreateWithoutNamingDeployHistoryInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
@@ -3099,6 +3413,7 @@ export type UserUpdateWithoutNamingDeployHistoryInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
@@ -3107,6 +3422,7 @@ export type UserUpdateWithoutNamingDeployHistoryInput = {
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
@@ -3136,6 +3452,7 @@ export type UserUncheckedUpdateWithoutNamingDeployHistoryInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
@@ -3144,6 +3461,7 @@ export type UserUncheckedUpdateWithoutNamingDeployHistoryInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
@@ -3173,6 +3491,7 @@ export type UserCreateWithoutLabelSyncRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
@@ -3181,6 +3500,7 @@ export type UserCreateWithoutLabelSyncRulesInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
@@ -3210,6 +3530,7 @@ export type UserUncheckedCreateWithoutLabelSyncRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
@@ -3218,6 +3539,7 @@ export type UserUncheckedCreateWithoutLabelSyncRulesInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
@@ -3263,6 +3585,7 @@ export type UserUpdateWithoutLabelSyncRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
@@ -3271,6 +3594,7 @@ export type UserUpdateWithoutLabelSyncRulesInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
@@ -3300,6 +3624,7 @@ export type UserUncheckedUpdateWithoutLabelSyncRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
@@ -3308,6 +3633,179 @@ export type UserUncheckedUpdateWithoutLabelSyncRulesInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutLabelSyncMutationAttemptsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutLabelSyncMutationAttemptsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutLabelSyncMutationAttemptsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutLabelSyncMutationAttemptsInput, Prisma.UserUncheckedCreateWithoutLabelSyncMutationAttemptsInput>
+}
+
+export type UserUpsertWithoutLabelSyncMutationAttemptsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutLabelSyncMutationAttemptsInput, Prisma.UserUncheckedUpdateWithoutLabelSyncMutationAttemptsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutLabelSyncMutationAttemptsInput, Prisma.UserUncheckedCreateWithoutLabelSyncMutationAttemptsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutLabelSyncMutationAttemptsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutLabelSyncMutationAttemptsInput, Prisma.UserUncheckedUpdateWithoutLabelSyncMutationAttemptsInput>
+}
+
+export type UserUpdateWithoutLabelSyncMutationAttemptsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutLabelSyncMutationAttemptsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
@@ -3337,6 +3835,7 @@ export type UserCreateWithoutAutoTagRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
@@ -3346,6 +3845,7 @@ export type UserCreateWithoutAutoTagRulesInput = {
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
@@ -3374,6 +3874,7 @@ export type UserUncheckedCreateWithoutAutoTagRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
@@ -3383,6 +3884,7 @@ export type UserUncheckedCreateWithoutAutoTagRulesInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
@@ -3427,6 +3929,7 @@ export type UserUpdateWithoutAutoTagRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
@@ -3436,6 +3939,7 @@ export type UserUpdateWithoutAutoTagRulesInput = {
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
@@ -3464,6 +3968,7 @@ export type UserUncheckedUpdateWithoutAutoTagRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
@@ -3473,6 +3978,7 @@ export type UserUncheckedUpdateWithoutAutoTagRulesInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
@@ -3501,6 +4007,7 @@ export type UserCreateWithoutTmdbListCacheRowsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
@@ -3510,6 +4017,7 @@ export type UserCreateWithoutTmdbListCacheRowsInput = {
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
@@ -3538,6 +4046,7 @@ export type UserUncheckedCreateWithoutTmdbListCacheRowsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
@@ -3547,6 +4056,7 @@ export type UserUncheckedCreateWithoutTmdbListCacheRowsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
@@ -3591,6 +4101,7 @@ export type UserUpdateWithoutTmdbListCacheRowsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
@@ -3600,6 +4111,7 @@ export type UserUpdateWithoutTmdbListCacheRowsInput = {
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
@@ -3628,6 +4140,7 @@ export type UserUncheckedUpdateWithoutTmdbListCacheRowsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
@@ -3637,6 +4150,7 @@ export type UserUncheckedUpdateWithoutTmdbListCacheRowsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
@@ -3665,6 +4179,7 @@ export type UserCreateWithoutTraktListCacheRowsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
@@ -3674,6 +4189,7 @@ export type UserCreateWithoutTraktListCacheRowsInput = {
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
@@ -3702,6 +4218,7 @@ export type UserUncheckedCreateWithoutTraktListCacheRowsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
@@ -3711,6 +4228,7 @@ export type UserUncheckedCreateWithoutTraktListCacheRowsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
@@ -3755,6 +4273,7 @@ export type UserUpdateWithoutTraktListCacheRowsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
@@ -3764,6 +4283,7 @@ export type UserUpdateWithoutTraktListCacheRowsInput = {
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
@@ -3792,6 +4312,7 @@ export type UserUncheckedUpdateWithoutTraktListCacheRowsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
@@ -3801,6 +4322,7 @@ export type UserUncheckedUpdateWithoutTraktListCacheRowsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
@@ -3829,6 +4351,7 @@ export type UserCreateWithoutListCacheRefreshStatusesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
@@ -3838,6 +4361,7 @@ export type UserCreateWithoutListCacheRefreshStatusesInput = {
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
@@ -3866,6 +4390,7 @@ export type UserUncheckedCreateWithoutListCacheRefreshStatusesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
@@ -3875,6 +4400,7 @@ export type UserUncheckedCreateWithoutListCacheRefreshStatusesInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
@@ -3919,6 +4445,7 @@ export type UserUpdateWithoutListCacheRefreshStatusesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
@@ -3928,6 +4455,7 @@ export type UserUpdateWithoutListCacheRefreshStatusesInput = {
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
@@ -3956,6 +4484,7 @@ export type UserUncheckedUpdateWithoutListCacheRefreshStatusesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
@@ -3965,6 +4494,7 @@ export type UserUncheckedUpdateWithoutListCacheRefreshStatusesInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
@@ -3993,6 +4523,7 @@ export type UserCreateWithoutQuiActivityLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
@@ -4002,6 +4533,7 @@ export type UserCreateWithoutQuiActivityLogsInput = {
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
@@ -4030,6 +4562,7 @@ export type UserUncheckedCreateWithoutQuiActivityLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
@@ -4039,6 +4572,7 @@ export type UserUncheckedCreateWithoutQuiActivityLogsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
@@ -4083,6 +4617,7 @@ export type UserUpdateWithoutQuiActivityLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
@@ -4092,6 +4627,7 @@ export type UserUpdateWithoutQuiActivityLogsInput = {
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
@@ -4120,6 +4656,7 @@ export type UserUncheckedUpdateWithoutQuiActivityLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
@@ -4129,6 +4666,7 @@ export type UserUncheckedUpdateWithoutQuiActivityLogsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
@@ -4157,6 +4695,7 @@ export type UserCreateWithoutQuiActionLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
@@ -4166,6 +4705,7 @@ export type UserCreateWithoutQuiActionLogsInput = {
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
@@ -4194,6 +4734,7 @@ export type UserUncheckedCreateWithoutQuiActionLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
@@ -4203,6 +4744,7 @@ export type UserUncheckedCreateWithoutQuiActionLogsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
@@ -4247,6 +4789,7 @@ export type UserUpdateWithoutQuiActionLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
@@ -4256,6 +4799,7 @@ export type UserUpdateWithoutQuiActionLogsInput = {
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
@@ -4284,6 +4828,7 @@ export type UserUncheckedUpdateWithoutQuiActionLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
@@ -4293,6 +4838,7 @@ export type UserUncheckedUpdateWithoutQuiActionLogsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
@@ -4321,6 +4867,7 @@ export type UserCreateWithoutQuiEventLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
@@ -4330,6 +4877,7 @@ export type UserCreateWithoutQuiEventLogsInput = {
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
@@ -4358,6 +4906,7 @@ export type UserUncheckedCreateWithoutQuiEventLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
@@ -4367,6 +4916,7 @@ export type UserUncheckedCreateWithoutQuiEventLogsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
@@ -4411,6 +4961,7 @@ export type UserUpdateWithoutQuiEventLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
@@ -4420,6 +4971,7 @@ export type UserUpdateWithoutQuiEventLogsInput = {
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
@@ -4448,6 +5000,7 @@ export type UserUncheckedUpdateWithoutQuiEventLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
@@ -4457,6 +5010,7 @@ export type UserUncheckedUpdateWithoutQuiEventLogsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
@@ -4484,6 +5038,7 @@ export type UserCountOutputType = {
   notificationRules: number
   notificationAggregationConfigs: number
   labelSyncRules: number
+  labelSyncMutationAttempts: number
   autoTagRules: number
   tmdbListCacheRows: number
   traktListCacheRows: number
@@ -4507,6 +5062,7 @@ export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.I
   notificationRules?: boolean | UserCountOutputTypeCountNotificationRulesArgs
   notificationAggregationConfigs?: boolean | UserCountOutputTypeCountNotificationAggregationConfigsArgs
   labelSyncRules?: boolean | UserCountOutputTypeCountLabelSyncRulesArgs
+  labelSyncMutationAttempts?: boolean | UserCountOutputTypeCountLabelSyncMutationAttemptsArgs
   autoTagRules?: boolean | UserCountOutputTypeCountAutoTagRulesArgs
   tmdbListCacheRows?: boolean | UserCountOutputTypeCountTmdbListCacheRowsArgs
   traktListCacheRows?: boolean | UserCountOutputTypeCountTraktListCacheRowsArgs
@@ -4620,6 +5176,13 @@ export type UserCountOutputTypeCountLabelSyncRulesArgs<ExtArgs extends runtime.T
 /**
  * UserCountOutputType without action
  */
+export type UserCountOutputTypeCountLabelSyncMutationAttemptsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.LabelSyncMutationAttemptWhereInput
+}
+
+/**
+ * UserCountOutputType without action
+ */
 export type UserCountOutputTypeCountAutoTagRulesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   where?: Prisma.AutoTagRuleWhereInput
 }
@@ -4687,6 +5250,7 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   webauthnCredentials?: boolean | Prisma.User$webauthnCredentialsArgs<ExtArgs>
   trashSettings?: boolean | Prisma.User$trashSettingsArgs<ExtArgs>
   serviceInstances?: boolean | Prisma.User$serviceInstancesArgs<ExtArgs>
+  historyCollectionLease?: boolean | Prisma.User$historyCollectionLeaseArgs<ExtArgs>
   userCustomFormats?: boolean | Prisma.User$userCustomFormatsArgs<ExtArgs>
   qualitySizeMappings?: boolean | Prisma.User$qualitySizeMappingsArgs<ExtArgs>
   libraryCleanupConfigs?: boolean | Prisma.User$libraryCleanupConfigsArgs<ExtArgs>
@@ -4696,6 +5260,7 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   notificationRules?: boolean | Prisma.User$notificationRulesArgs<ExtArgs>
   notificationAggregationConfigs?: boolean | Prisma.User$notificationAggregationConfigsArgs<ExtArgs>
   labelSyncRules?: boolean | Prisma.User$labelSyncRulesArgs<ExtArgs>
+  labelSyncMutationAttempts?: boolean | Prisma.User$labelSyncMutationAttemptsArgs<ExtArgs>
   autoTagRules?: boolean | Prisma.User$autoTagRulesArgs<ExtArgs>
   tmdbListCacheRows?: boolean | Prisma.User$tmdbListCacheRowsArgs<ExtArgs>
   traktListCacheRows?: boolean | Prisma.User$traktListCacheRowsArgs<ExtArgs>
@@ -4764,6 +5329,7 @@ export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   webauthnCredentials?: boolean | Prisma.User$webauthnCredentialsArgs<ExtArgs>
   trashSettings?: boolean | Prisma.User$trashSettingsArgs<ExtArgs>
   serviceInstances?: boolean | Prisma.User$serviceInstancesArgs<ExtArgs>
+  historyCollectionLease?: boolean | Prisma.User$historyCollectionLeaseArgs<ExtArgs>
   userCustomFormats?: boolean | Prisma.User$userCustomFormatsArgs<ExtArgs>
   qualitySizeMappings?: boolean | Prisma.User$qualitySizeMappingsArgs<ExtArgs>
   libraryCleanupConfigs?: boolean | Prisma.User$libraryCleanupConfigsArgs<ExtArgs>
@@ -4773,6 +5339,7 @@ export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   notificationRules?: boolean | Prisma.User$notificationRulesArgs<ExtArgs>
   notificationAggregationConfigs?: boolean | Prisma.User$notificationAggregationConfigsArgs<ExtArgs>
   labelSyncRules?: boolean | Prisma.User$labelSyncRulesArgs<ExtArgs>
+  labelSyncMutationAttempts?: boolean | Prisma.User$labelSyncMutationAttemptsArgs<ExtArgs>
   autoTagRules?: boolean | Prisma.User$autoTagRulesArgs<ExtArgs>
   tmdbListCacheRows?: boolean | Prisma.User$tmdbListCacheRowsArgs<ExtArgs>
   traktListCacheRows?: boolean | Prisma.User$traktListCacheRowsArgs<ExtArgs>
@@ -4793,6 +5360,7 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     webauthnCredentials: Prisma.$WebAuthnCredentialPayload<ExtArgs>[]
     trashSettings: Prisma.$TrashSettingsPayload<ExtArgs> | null
     serviceInstances: Prisma.$ServiceInstancePayload<ExtArgs>[]
+    historyCollectionLease: Prisma.$HistoryCollectionLeasePayload<ExtArgs> | null
     userCustomFormats: Prisma.$UserCustomFormatPayload<ExtArgs>[]
     qualitySizeMappings: Prisma.$QualitySizeMappingPayload<ExtArgs>[]
     libraryCleanupConfigs: Prisma.$LibraryCleanupConfigPayload<ExtArgs>[]
@@ -4802,6 +5370,7 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     notificationRules: Prisma.$NotificationRulePayload<ExtArgs>[]
     notificationAggregationConfigs: Prisma.$NotificationAggregationConfigPayload<ExtArgs>[]
     labelSyncRules: Prisma.$LabelSyncRulePayload<ExtArgs>[]
+    labelSyncMutationAttempts: Prisma.$LabelSyncMutationAttemptPayload<ExtArgs>[]
     autoTagRules: Prisma.$AutoTagRulePayload<ExtArgs>[]
     tmdbListCacheRows: Prisma.$TmdbListCachePayload<ExtArgs>[]
     traktListCacheRows: Prisma.$TraktListCachePayload<ExtArgs>[]
@@ -5243,6 +5812,7 @@ export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Typ
   webauthnCredentials<T extends Prisma.User$webauthnCredentialsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$webauthnCredentialsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$WebAuthnCredentialPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   trashSettings<T extends Prisma.User$trashSettingsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$trashSettingsArgs<ExtArgs>>): Prisma.Prisma__TrashSettingsClient<runtime.Types.Result.GetResult<Prisma.$TrashSettingsPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   serviceInstances<T extends Prisma.User$serviceInstancesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$serviceInstancesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ServiceInstancePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  historyCollectionLease<T extends Prisma.User$historyCollectionLeaseArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$historyCollectionLeaseArgs<ExtArgs>>): Prisma.Prisma__HistoryCollectionLeaseClient<runtime.Types.Result.GetResult<Prisma.$HistoryCollectionLeasePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   userCustomFormats<T extends Prisma.User$userCustomFormatsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$userCustomFormatsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$UserCustomFormatPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   qualitySizeMappings<T extends Prisma.User$qualitySizeMappingsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$qualitySizeMappingsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QualitySizeMappingPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   libraryCleanupConfigs<T extends Prisma.User$libraryCleanupConfigsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$libraryCleanupConfigsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LibraryCleanupConfigPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
@@ -5252,6 +5822,7 @@ export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Typ
   notificationRules<T extends Prisma.User$notificationRulesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$notificationRulesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$NotificationRulePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   notificationAggregationConfigs<T extends Prisma.User$notificationAggregationConfigsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$notificationAggregationConfigsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$NotificationAggregationConfigPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   labelSyncRules<T extends Prisma.User$labelSyncRulesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$labelSyncRulesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LabelSyncRulePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  labelSyncMutationAttempts<T extends Prisma.User$labelSyncMutationAttemptsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$labelSyncMutationAttemptsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LabelSyncMutationAttemptPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   autoTagRules<T extends Prisma.User$autoTagRulesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$autoTagRulesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$AutoTagRulePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   tmdbListCacheRows<T extends Prisma.User$tmdbListCacheRowsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$tmdbListCacheRowsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$TmdbListCachePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   traktListCacheRows<T extends Prisma.User$traktListCacheRowsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$traktListCacheRowsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$TraktListCachePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
@@ -5808,6 +6379,25 @@ export type User$serviceInstancesArgs<ExtArgs extends runtime.Types.Extensions.I
 }
 
 /**
+ * User.historyCollectionLease
+ */
+export type User$historyCollectionLeaseArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the HistoryCollectionLease
+   */
+  select?: Prisma.HistoryCollectionLeaseSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the HistoryCollectionLease
+   */
+  omit?: Prisma.HistoryCollectionLeaseOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.HistoryCollectionLeaseInclude<ExtArgs> | null
+  where?: Prisma.HistoryCollectionLeaseWhereInput
+}
+
+/**
  * User.userCustomFormats
  */
 export type User$userCustomFormatsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -6021,6 +6611,30 @@ export type User$labelSyncRulesArgs<ExtArgs extends runtime.Types.Extensions.Int
   take?: number
   skip?: number
   distinct?: Prisma.LabelSyncRuleScalarFieldEnum | Prisma.LabelSyncRuleScalarFieldEnum[]
+}
+
+/**
+ * User.labelSyncMutationAttempts
+ */
+export type User$labelSyncMutationAttemptsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the LabelSyncMutationAttempt
+   */
+  select?: Prisma.LabelSyncMutationAttemptSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the LabelSyncMutationAttempt
+   */
+  omit?: Prisma.LabelSyncMutationAttemptOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.LabelSyncMutationAttemptInclude<ExtArgs> | null
+  where?: Prisma.LabelSyncMutationAttemptWhereInput
+  orderBy?: Prisma.LabelSyncMutationAttemptOrderByWithRelationInput | Prisma.LabelSyncMutationAttemptOrderByWithRelationInput[]
+  cursor?: Prisma.LabelSyncMutationAttemptWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.LabelSyncMutationAttemptScalarFieldEnum | Prisma.LabelSyncMutationAttemptScalarFieldEnum[]
 }
 
 /**

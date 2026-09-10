@@ -927,6 +927,7 @@ function ConfigTab({
 			{/* Rule Templates */}
 			<CleanupRuleTemplates
 				hasPlex={fieldOptions?.hasPlex ?? false}
+				hasJellyfin={fieldOptions?.hasJellyfin ?? false}
 				hasSeerr={hasSeerr}
 				hasTautulli={fieldOptions?.hasTautulli ?? false}
 				onSelectTemplate={handleSelectTemplate}

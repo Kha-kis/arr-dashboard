@@ -1,7 +1,14 @@
 import { createHash } from "node:crypto";
+import type { ProviderObservationReasonCode } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import { getErrorMessage } from "../utils/error-message.js";
 import type { PlexClient, PlexEpisodeItem } from "./plex-client.js";
+import {
+	digestPlexEpisodeUnit,
+	PLEX_EPISODE_PARENT_COPIES_PER_UNIT,
+	type PlannedPlexEpisodeUnit,
+	planPlexEpisodeRefresh,
+} from "./plex-episode-refresh-plan.js";
 
 const MAX_SHOWS_PER_REFRESH = 50;
 const REFRESHES_PER_FRESHNESS_WINDOW = 4;
@@ -47,6 +54,27 @@ export type PlexPositiveEpisodeParentTarget = {
 	ratingKey: string;
 };
 
+export interface PlexEpisodeCollectionContext {
+	instanceId: string;
+	generationId: string;
+	connectionGeneration: number;
+	identityGeneration: number;
+	sourceFingerprint: string;
+}
+
+export interface StagedPlexEpisodeRow extends PlexEpisodeRow {
+	parentRatingKey: string;
+}
+
+export type CollectedPlexEpisodeUnit =
+	| { complete: true; refreshedTargets: number; rows: readonly StagedPlexEpisodeRow[] }
+	| {
+			complete: false;
+			refreshedTargets: number;
+			rows: readonly [];
+			reasonCode: ProviderObservationReasonCode;
+	  };
+
 export type CollectedPositivePlexEpisodeRefresh = Omit<CollectedPlexEpisodeRefresh, "kind"> & {
 	kind: "positive-observation";
 	partialReasons: ReadonlyArray<{ code: "ambiguous_episode_parent_targets"; count: number }>;
@@ -59,6 +87,128 @@ export type CollectedPositivePlexEpisodeRefresh = Omit<CollectedPlexEpisodeRefre
 export type PositivePlexEpisodeCollectionResult =
 	| CollectedPositivePlexEpisodeRefresh
 	| (CollectedPlexEpisodeRefresh & { kind?: undefined });
+
+function failedEpisodeUnit(
+	reasonCode: ProviderObservationReasonCode,
+	refreshedTargets = 0,
+): CollectedPlexEpisodeUnit {
+	return { complete: false, refreshedTargets, rows: [], reasonCode };
+}
+
+function validUnitContext(context: PlexEpisodeCollectionContext): boolean {
+	if (!context || typeof context !== "object") return false;
+	return (
+		typeof context.instanceId === "string" &&
+		context.instanceId.trim() !== "" &&
+		typeof context.generationId === "string" &&
+		context.generationId.trim() !== "" &&
+		typeof context.sourceFingerprint === "string" &&
+		context.sourceFingerprint.trim() !== "" &&
+		Number.isSafeInteger(context.connectionGeneration) &&
+		context.connectionGeneration >= 0 &&
+		Number.isSafeInteger(context.identityGeneration) &&
+		context.identityGeneration >= 0
+	);
+}
+
+function validEpisode(episode: unknown): episode is PlexEpisodeItem {
+	if (!episode || typeof episode !== "object") return false;
+	const candidate = episode as Partial<PlexEpisodeItem>;
+	return (
+		typeof candidate.ratingKey === "string" &&
+		candidate.ratingKey.trim() !== "" &&
+		typeof candidate.title === "string" &&
+		Number.isSafeInteger(candidate.seasonNumber) &&
+		candidate.seasonNumber! >= 0 &&
+		Number.isSafeInteger(candidate.episodeNumber) &&
+		candidate.episodeNumber! >= 0 &&
+		Number.isSafeInteger(candidate.viewCount) &&
+		candidate.viewCount! >= 0 &&
+		(candidate.lastViewedAt === undefined ||
+			(Number.isSafeInteger(candidate.lastViewedAt) && candidate.lastViewedAt! >= 0))
+	);
+}
+
+/**
+ * Collect one planned Plex episode unit. This intentionally reads only the
+ * bounded episode inventory: history and account attribution are a separate
+ * domain and are never consulted here.
+ */
+export async function collectPlexEpisodeUnit(
+	client: PlexClient,
+	unit: PlannedPlexEpisodeUnit,
+	context: PlexEpisodeCollectionContext,
+): Promise<CollectedPlexEpisodeUnit> {
+	if (!validUnitContext(context)) return failedEpisodeUnit("identity-changed");
+	if (
+		!unit ||
+		typeof unit !== "object" ||
+		!Array.isArray(unit.targets) ||
+		unit.targets.length === 0
+	) {
+		return failedEpisodeUnit("coverage-incomplete");
+	}
+	if (unit.targets.length > PLEX_EPISODE_PARENT_COPIES_PER_UNIT) {
+		return failedEpisodeUnit("coverage-incomplete");
+	}
+	for (const target of unit.targets) {
+		if (!target || typeof target !== "object") return failedEpisodeUnit("rows-inconsistent");
+		if (target.instanceId !== context.instanceId || target.generationId !== context.generationId) {
+			return failedEpisodeUnit("identity-changed");
+		}
+	}
+
+	try {
+		planPlexEpisodeRefresh(unit.targets);
+	} catch {
+		return failedEpisodeUnit("rows-inconsistent");
+	}
+	if (
+		!Number.isSafeInteger(unit.ordinal) ||
+		unit.ordinal < 0 ||
+		unit.scopeKey !== `plex-episode-unit:${unit.ordinal}` ||
+		unit.scopeDigest !== digestPlexEpisodeUnit(unit.ordinal, unit.targets)
+	) {
+		return failedEpisodeUnit("coverage-incomplete");
+	}
+
+	const rows: StagedPlexEpisodeRow[] = [];
+	const refreshedAt = new Date();
+	for (let index = 0; index < unit.targets.length; index++) {
+		const target = unit.targets[index]!;
+		let episodes: PlexEpisodeItem[];
+		try {
+			episodes = await client.getEpisodes(target.ratingKey);
+		} catch {
+			return failedEpisodeUnit("provider-unavailable", index);
+		}
+		if (!Array.isArray(episodes)) return failedEpisodeUnit("rows-inconsistent", index);
+		const coordinates = new Set<string>();
+		for (const episode of episodes) {
+			if (!validEpisode(episode)) return failedEpisodeUnit("rows-inconsistent", index);
+			const coordinate = `${episode.seasonNumber}:${episode.episodeNumber}`;
+			if (coordinates.has(coordinate)) return failedEpisodeUnit("rows-inconsistent", index);
+			coordinates.add(coordinate);
+			if (episode.viewCount <= 0) continue;
+			rows.push({
+				instanceId: target.instanceId,
+				showTmdbId: target.showTmdbId,
+				seasonNumber: episode.seasonNumber,
+				episodeNumber: episode.episodeNumber,
+				ratingKey: episode.ratingKey,
+				title: episode.title,
+				watched: true,
+				watchedByUsers: "[]",
+				lastWatchedAt: null,
+				watchCount: episode.viewCount,
+				refreshedAt,
+				sourceFingerprint: context.sourceFingerprint,
+				parentRatingKey: target.ratingKey,
+			});
+		}
+	}
+	return { complete: true, refreshedTargets: unit.targets.length, rows };
+}
 
 function failedResult(
 	errorMessages: string[],

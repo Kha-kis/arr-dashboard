@@ -11,9 +11,11 @@ import fastifyPlugin from "fastify-plugin";
 import { getPublishedEpisodeGenerationObservation } from "../lib/plex/plex-persisted-observation-repository.js";
 import { refreshOwnedPlexEpisodeCache } from "../lib/plex/plex-refresh-orchestration.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
+import { ensureEpisodeRefreshScheduler } from "../lib/services/episode-refresh-scheduler-bridge.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const STARTUP_DELAY_MS = 5 * 60_000; // 5 minutes — staggered well after plex-cache (30s) + tautulli (2min) to avoid overlapping memory peaks
+const DEPENDENCY_RETRY_DELAYS_MS = [30_000, 2 * 60_000, 10 * 60_000] as const;
 
 export function plexEpisodeRefreshResultStatus(result: {
 	errors: number;
@@ -32,8 +34,106 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 		let intervalHandle: ReturnType<typeof setInterval> | null = null;
 		let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
 		let isRunning = false;
+		let closed = false;
+		const runningInstances = new Set<string>();
+		const pendingInstanceIds = new Set<string>();
+		const continuationHandles = new Set<ReturnType<typeof setTimeout>>();
+		const admittedPageTasks = new Set<Promise<void>>();
 
-		async function refreshAllEpisodeCaches() {
+		async function refreshInstance(
+			instance: Awaited<ReturnType<typeof app.prisma.serviceInstance.findMany>>[number],
+			resumeFailed: boolean,
+			dependencyRetry = 0,
+		) {
+			if (closed || runningInstances.has(instance.id) || pendingInstanceIds.has(instance.id))
+				return;
+			runningInstances.add(instance.id);
+			try {
+				const result = await refreshOwnedPlexEpisodeCache({
+					prisma: app.prisma,
+					encryptor: app.encryptor,
+					instance,
+					log: app.log,
+					resumeFailed,
+				});
+				if (closed) return;
+				app.log.info(
+					{
+						category: "plex-episode-cache-refresh-completed",
+						upserted: result.upserted,
+						errors: result.errors,
+						refreshedShows: result.refreshedShows,
+						complete: result.complete,
+					},
+					"Plex episode cache refresh completed",
+				);
+				if (result.superseded) return;
+				if (result.retryCategory) {
+					const dependencyRetryDelay = DEPENDENCY_RETRY_DELAYS_MS[dependencyRetry];
+					if (dependencyRetryDelay !== undefined) {
+						scheduleContinuation(instance, dependencyRetryDelay, dependencyRetry + 1);
+					}
+					return;
+				}
+				const failedRun =
+					result.errors > 0
+						? await app.prisma.providerObservationRun.findFirst({
+								where: {
+									instanceId: instance.id,
+									provider: "plex_episode",
+									cacheType: "plex_episode",
+									state: "failed",
+								},
+								select: { nextAttemptAt: true },
+							})
+						: null;
+				const delay = failedRun?.nextAttemptAt
+					? Math.max(0, failedRun.nextAttemptAt.getTime() - Date.now())
+					: 30_000;
+				if (closed) return;
+				if (!result.complete && (result.errors === 0 || failedRun?.nextAttemptAt)) {
+					scheduleContinuation(instance, delay);
+				}
+			} catch {
+				app.log.error(
+					{ category: "plex-episode-cache-refresh-failed" },
+					"Plex episode cache refresh failed",
+				);
+			} finally {
+				runningInstances.delete(instance.id);
+			}
+		}
+
+		function scheduleContinuation(
+			instance: Awaited<ReturnType<typeof app.prisma.serviceInstance.findMany>>[number],
+			delay: number,
+			dependencyRetry = 0,
+		) {
+			if (closed || pendingInstanceIds.has(instance.id)) return;
+			pendingInstanceIds.add(instance.id);
+			const handle = setTimeout(() => {
+				continuationHandles.delete(handle);
+				pendingInstanceIds.delete(instance.id);
+				void admitRefreshInstance(instance, false, dependencyRetry);
+			}, delay);
+			continuationHandles.add(handle);
+		}
+
+		function admitRefreshInstance(
+			instance: Awaited<ReturnType<typeof app.prisma.serviceInstance.findMany>>[number],
+			resumeFailed: boolean,
+			dependencyRetry = 0,
+		): Promise<void> {
+			const pageTask = refreshInstance(instance, resumeFailed, dependencyRetry).then(
+				() => undefined,
+			);
+			admittedPageTasks.add(pageTask);
+			void pageTask.finally(() => admittedPageTasks.delete(pageTask)).catch(() => undefined);
+			return pageTask;
+		}
+
+		async function refreshAllEpisodeCaches(resumeFailed: boolean) {
+			if (closed) return;
 			if (isRunning) {
 				app.log.warn("Plex episode cache refresh already running, skipping");
 				return;
@@ -55,25 +155,10 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 						"Starting Plex episode cache refresh for all instances",
 					);
 
-					for (const instance of instances) {
-						try {
-							const result = await refreshOwnedPlexEpisodeCache({
-								prisma: app.prisma,
-								encryptor: app.encryptor,
-								instance,
-								log: app.log,
-							});
-							app.log.info(
-								{ instanceId: instance.id, label: instance.label, ...result },
-								"Plex episode cache refresh completed for instance",
-							);
-						} catch (err) {
-							app.log.error(
-								{ err, instanceId: instance.id, label: instance.label },
-								"Plex episode cache refresh failed for instance",
-							);
-						}
-					}
+					await Promise.all(
+						instances.map(async (instance) => await admitRefreshInstance(instance, resumeFailed)),
+					);
+					if (closed) return;
 
 					// Check for stale caches (>12h since last successful refresh)
 					const staleThreshold = new Date(Date.now() - 12 * 60 * 60 * 1000);
@@ -123,17 +208,39 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			}
 		}
 
+		const schedulerBridge = ensureEpisodeRefreshScheduler(app);
+		const unregisterRetry = schedulerBridge.episodeRefreshScheduler.register(
+			"plex_episode",
+			async ({ userId, instanceId }) => {
+				if (closed) return { status: "unavailable" };
+				try {
+					const instance = await app.prisma.serviceInstance.findFirst({
+						where: { id: instanceId, userId, service: "PLEX", enabled: true },
+					});
+					if (!instance) return { status: "ineligible" };
+					if (closed) return { status: "unavailable" };
+					if (runningInstances.has(instance.id) || pendingInstanceIds.has(instance.id)) {
+						return { status: "accepted" };
+					}
+					const backgroundTask = admitRefreshInstance(instance, true);
+					return { status: "accepted", backgroundTask };
+				} catch {
+					return { status: "unavailable" };
+				}
+			},
+		);
+
 		app.addHook("onReady", async () => {
 			app.log.info("Plex episode cache scheduler initialized (6h interval, 5min startup delay)");
 
 			// Initial refresh after startup delay
 			timeoutHandle = setTimeout(() => {
-				refreshAllEpisodeCaches().catch((err) => {
+				refreshAllEpisodeCaches(true).catch((err) => {
 					app.log.error({ err }, "Failed during initial Plex episode cache refresh");
 				});
 				// Recurring refresh
 				intervalHandle = setInterval(() => {
-					refreshAllEpisodeCaches().catch((err) => {
+					refreshAllEpisodeCaches(false).catch((err) => {
 						app.log.error({ err }, "Failed during scheduled Plex episode cache refresh");
 					});
 				}, INTERVAL_MS);
@@ -141,8 +248,14 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 		});
 
 		app.addHook("onClose", async () => {
+			closed = true;
+			unregisterRetry();
 			if (timeoutHandle) clearTimeout(timeoutHandle);
 			if (intervalHandle) clearInterval(intervalHandle);
+			for (const handle of continuationHandles) clearTimeout(handle);
+			continuationHandles.clear();
+			pendingInstanceIds.clear();
+			await Promise.allSettled([...admittedPageTasks]);
 			app.log.info("Plex episode cache scheduler stopped");
 		});
 	},

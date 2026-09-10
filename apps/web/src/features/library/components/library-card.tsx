@@ -92,9 +92,11 @@ interface LibraryCardProps {
 	/** TMDB poster path from Seerr enrichment (e.g. "/xyz123.jpg") */
 	posterPath?: string | null;
 	/** Plex watch count (number of play events) */
-	watchCount?: number;
+	watchCount?: number | null;
+	watchCountSemantics?: "exact" | "lower-bound" | "unknown";
+	watchSource?: "plex" | "tautulli" | "both" | "jellyfin";
 	/** Whether the item is currently on a Plex user's On Deck list */
-	onDeck?: boolean;
+	onDeck?: boolean | null;
 	/** Last time any user watched this item (ISO 8601) */
 	lastWatchedAt?: string | null;
 	/** Plex users who have watched this item */
@@ -179,6 +181,8 @@ export const LibraryCard = memo(function LibraryCard({
 	openIssueCount,
 	posterPath,
 	watchCount,
+	watchCountSemantics,
+	watchSource,
 	onDeck,
 	lastWatchedAt,
 	watchedByUsers,
@@ -649,24 +653,32 @@ export const LibraryCard = memo(function LibraryCard({
 									{openIssueCount}
 								</span>
 							)}
-							{typeof watchCount === "number" && watchCount > 0 && (
-								<span
-									className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold"
-									style={{
-										backgroundColor: SEMANTIC_COLORS.info.bg,
-										border: `1px solid ${SEMANTIC_COLORS.info.border}`,
-										color: SEMANTIC_COLORS.info.text,
-									}}
-									title={
-										!incognitoMode && watchedByUsers?.length
-											? `Watched by: ${watchedByUsers.join(", ")}`
-											: undefined
-									}
-								>
-									<Eye className="h-3 w-3" />
-									{watchCount}
-								</span>
-							)}
+							{typeof watchCount === "number" &&
+								watchCountSemantics !== "unknown" &&
+								watchCountSemantics !== undefined &&
+								(watchCountSemantics !== "lower-bound" || watchCount > 0) && (
+									<span
+										className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold"
+										style={{
+											backgroundColor: SEMANTIC_COLORS.info.bg,
+											border: `1px solid ${SEMANTIC_COLORS.info.border}`,
+											color: SEMANTIC_COLORS.info.text,
+										}}
+										title={
+											watchCountSemantics === "lower-bound"
+												? "Observed watch count (lower bound)"
+												: !incognitoMode && watchedByUsers?.length
+													? `Watched by: ${watchedByUsers.join(", ")}`
+													: undefined
+										}
+									>
+										<Eye className="h-3 w-3" />
+										{watchCountSemantics === "lower-bound" && (
+											<span className="sr-only">Observed watch count lower bound</span>
+										)}
+										{watchCountSemantics === "lower-bound" ? `${watchCount}+` : watchCount}
+									</span>
+								)}
 							{onDeck && (
 								<span
 									className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold"
@@ -680,7 +692,7 @@ export const LibraryCard = memo(function LibraryCard({
 									On Deck
 								</span>
 							)}
-							{lastWatchedAt && (
+							{lastWatchedAt && watchSource !== "tautulli" && (
 								<span
 									className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs text-muted-foreground"
 									style={{
