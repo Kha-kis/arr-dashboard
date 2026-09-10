@@ -1,13 +1,17 @@
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 
 const apiRoot = resolve(process.cwd());
 const schemaPath = resolve(apiRoot, "prisma/schema.prisma");
-const PRE_HISTORY_SCHEMA_SHA = "7a6a81d6ebf78b751d49f0c14bd5e6fc59798a06";
+// Exact schema from stable base e405d5e7d0f3653e428dae1c2a2dd4ff958adea3.
+const preHistorySchemaPath = resolve(
+	apiRoot,
+	"src/lib/history/__tests__/fixtures/pre-history-schema.prisma",
+);
 const temporaryDirectories: string[] = [];
 
 const historyUserRelations = ["historyCollectionLease HistoryCollectionLease?"];
@@ -568,7 +572,7 @@ describe("durable History schema", () => {
 		timeout: 30_000,
 	}, () => {
 		const databasePath = emptyDatabasePath("history-schedule-upgrade-");
-		const oldSchemaPath = join(temporaryDirectories.at(-1) ?? tmpdir(), "old-schema.prisma");
+		const oldSchemaPath = join(dirname(databasePath), "old-schema.prisma");
 		writeFileSync(oldSchemaPath, removeSchedulingSchemaFields(readFileSync(schemaPath, "utf8")));
 		syncSchema(oldSchemaPath, databasePath);
 		const oldDatabase = new Database(databasePath);
@@ -633,7 +637,7 @@ describe("durable History schema", () => {
 		timeout: 30_000,
 	}, () => {
 		const databasePath = emptyDatabasePath("history-publication-revision-upgrade-");
-		const oldSchemaPath = join(temporaryDirectories.at(-1) ?? tmpdir(), "old-schema.prisma");
+		const oldSchemaPath = join(dirname(databasePath), "old-schema.prisma");
 		writeFileSync(
 			oldSchemaPath,
 			removePublicationRevisionSchemaField(readFileSync(schemaPath, "utf8")),
@@ -900,11 +904,7 @@ function materializePreHistorySchema(): string {
 		temporaryDirectories.at(-1) ?? mkdtempSync(join(tmpdir(), "history-schema-ledger-"));
 	if (!temporaryDirectories.includes(directory)) temporaryDirectories.push(directory);
 	const oldSchemaPath = join(directory, "pre-history-schema.prisma");
-	const schema = execFileSync(
-		"git",
-		["show", `${PRE_HISTORY_SCHEMA_SHA}:apps/api/prisma/schema.prisma`],
-		{ cwd: apiRoot, encoding: "utf8" },
-	);
+	const schema = readFileSync(preHistorySchemaPath, "utf8");
 	writeFileSync(oldSchemaPath, schema, { mode: 0o600 });
 	return resolve(oldSchemaPath);
 }
