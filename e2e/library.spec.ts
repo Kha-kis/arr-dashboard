@@ -63,14 +63,6 @@ test.describe("Library - Page Load", () => {
 
 	test("bounds insight requests when Plex evidence is unavailable", async ({ page }) => {
 		const counts = new Map<string, number>();
-		await page.context().addCookies([
-			{
-				name: "arr_session",
-				value: "local-library-request-bounds-session",
-				domain: "localhost",
-				path: "/",
-			},
-		]);
 		await page.route("**/auth/setup-required", (route) =>
 			route.fulfill({ json: { required: false } }),
 		);
@@ -112,7 +104,7 @@ test.describe("Library - Page Load", () => {
 		});
 
 		await page.goto(ROUTES.library);
-		await expect(page.getByText("Plex values are unavailable")).toBeVisible({
+		await expect(page.getByText("Showing last-known Plex values")).toBeVisible({
 			timeout: TIMEOUTS.medium,
 		});
 

@@ -233,6 +233,12 @@ async function installPopulatedFixtures(
 		}),
 	);
 	await page.route("**/api/jellyfin/identity", (route) => route.fulfill({ json: [] }));
+	await page.route("**/api/jellyfin/watch-enrichment?**", (route) =>
+		route.fulfill({ json: { items: {} } }),
+	);
+	await page.route("**/api/jellyfin/series-progress?**", (route) =>
+		route.fulfill({ json: { progress: {} } }),
+	);
 }
 
 async function assertNoHorizontalOverflow(
@@ -311,7 +317,7 @@ async function assertNoHorizontalOverflow(
 	if (path === "/library") {
 		const statusRegions = page
 			.getByRole("status")
-			.filter({ hasText: /Plex values are unavailable|Media-server data is unavailable/i });
+			.filter({ hasText: "Showing last-known Plex values" });
 		await expect(statusRegions.first()).toBeVisible();
 		const statusCount = await statusRegions.count();
 		expect(statusCount).toBeGreaterThan(0);
