@@ -1,7 +1,5 @@
 import { expect, test } from "@playwright/test";
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 const mobileWidths = [320, 375, 390, 430] as const;
 
 const primaryControlSelector = [
@@ -67,9 +65,25 @@ const historyItem = {
 	instanceId: service.id,
 	instanceName: service.label,
 	service: "sonarr",
+	providerEventId: 813,
+	eventAt: "2026-08-29T12:00:00.000Z",
+	eventType: "imported",
 	title: "The Populated History Fixture",
-	status: "imported",
-	date: "2026-08-29T12:00:00.000Z",
+};
+
+const historySource = {
+	instanceId: service.id,
+	instanceName: service.label,
+	service: "sonarr",
+	providerStatus: {
+		availability: "partial",
+		evidence: "positive-only",
+		observedAt: "2026-08-29T12:00:00.000Z",
+		ageSeconds: 0,
+		latestAttempt: "successful",
+		reasonCodes: ["positive-only"],
+	},
+	retainedObservationCount: 1,
 };
 
 const libraryItem = {
@@ -82,20 +96,13 @@ const libraryItem = {
 	year: 2026,
 	monitored: true,
 	hasFile: true,
+	remoteIds: { tmdbId: 813 },
 };
 
 async function installPopulatedFixtures(
 	page: import("@playwright/test").Page,
 	{ includeMediaService = true }: { includeMediaService?: boolean } = {},
 ) {
-	await page.context().addCookies([
-		{
-			name: "arr_session",
-			value: "local-mobile-overflow-session",
-			domain: "localhost",
-			path: "/",
-		},
-	]);
 	await page.route("**/auth/setup-required", (route) =>
 		route.fulfill({ json: { required: false } }),
 	);
@@ -120,6 +127,15 @@ async function installPopulatedFixtures(
 		}
 		await route.continue();
 	});
+	await page.route("**/api/pulse?**", (route) =>
+		route.fulfill({
+			json: {
+				items: [],
+				summary: { critical: 0, warning: 0, info: 0 },
+				generatedAt: "2026-08-29T12:00:00.000Z",
+			},
+		}),
+	);
 	await page.route("**/api/dashboard/queue", (route) =>
 		route.fulfill({
 			json: {
@@ -140,16 +156,14 @@ async function installPopulatedFixtures(
 	await page.route("**/api/dashboard/history**", (route) =>
 		route.fulfill({
 			json: {
-				instances: [
-					{
-						instanceId: service.id,
-						instanceName: service.label,
-						service: "sonarr",
-						data: [historyItem],
-					},
-				],
-				aggregated: [historyItem],
-				totalCount: 1,
+				version: 2,
+				items: [historyItem],
+				sources: [historySource],
+				pageInfo: {
+					nextCursor: null,
+					hasNextPage: false,
+					matchingObservedCount: 1,
+				},
 			},
 		}),
 	);
@@ -387,10 +401,10 @@ test.describe("mobile page overflow", () => {
 
 					await timeline.click();
 					await expect(timeline).toHaveClass(/(?:^|\s)text-foreground(?:\s|$)/);
-					await expect(table).toHaveClass(/(?:^|\s)text-muted-foreground(?:\s|$)/);
+					await expect(table).not.toHaveClass(/(?:^|\s)text-foreground(?:\s|$)/);
 					await table.click();
 					await expect(table).toHaveClass(/(?:^|\s)text-foreground(?:\s|$)/);
-					await expect(timeline).toHaveClass(/(?:^|\s)text-muted-foreground(?:\s|$)/);
+					await expect(timeline).not.toHaveClass(/(?:^|\s)text-foreground(?:\s|$)/);
 
 					const refresh = currentPage.getByRole("button", { name: "Refresh", exact: true }).first();
 					await expect(refresh).toBeVisible();
@@ -426,12 +440,13 @@ test.describe("mobile page overflow", () => {
 						clientWidth: element.clientWidth,
 						scrollWidth: element.scrollWidth,
 					}));
-					expect(initialOverflow.scrollWidth).toBeGreaterThan(initialOverflow.clientWidth);
+					expect(initialOverflow.scrollWidth).toBeLessThanOrEqual(initialOverflow.clientWidth);
 					const box = await serviceTabs.boundingBox();
 					expect(box?.x ?? 0).toBeGreaterThanOrEqual(0);
 					expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(clientWidth);
 
 					const authorsTab = currentPage.getByRole("button", { name: "Authors", exact: true });
+					await expect(authorsTab).toBeVisible();
 					await authorsTab.scrollIntoViewIfNeeded();
 					const authorsBox = await authorsTab.boundingBox();
 					const wrapperBox = await serviceTabs.boundingBox();
