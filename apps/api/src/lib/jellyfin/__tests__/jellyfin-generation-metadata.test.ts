@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { evaluateProviderDomainCoverageMap } from "../../provider-observation/coverage-receipt.js";
 import type {
 	JellyfinEpisodeGenerationMetadataV1,
 	JellyfinEpisodeGenerationMetadataV3,
@@ -250,6 +251,48 @@ function episodeMetadataV3(
 	} as JellyfinEpisodeGenerationMetadataV3;
 }
 
+function withDuplicateSourceObservationSkip(
+	metadata: Record<string, unknown>,
+	location: "aggregate" | "domain" = "aggregate",
+) {
+	const receipt = metadata.coverageReceipt as Record<string, unknown> & {
+		version: 1 | 2;
+		units: Array<Record<string, unknown>>;
+		domains?: Array<Record<string, unknown> & { units: Array<Record<string, unknown>> }>;
+	};
+	const duplicateUnit = (unit: Record<string, unknown>) => ({
+		...unit,
+		expectedRawCount: 3,
+		rawObserved: 3,
+		sourceBindings: 2,
+		acceptedSkips: [{ reason: "duplicate-source-observation", count: 1 }],
+	});
+	return {
+		...metadata,
+		publicationLevel: "positive-only",
+		completeness: "partial",
+		coverageReceipt: {
+			...receipt,
+			evidence: "positive-only",
+			units: location === "aggregate" ? receipt.units.map(duplicateUnit) : receipt.units,
+			...(receipt.version === 2
+				? {
+						domains: receipt.domains!.map((domain) => ({
+							...domain,
+							...(location === "domain"
+								? {
+										evidence: "positive-only",
+										valueSemantics: "lower-bound",
+										units: domain.units.map(duplicateUnit),
+									}
+								: {}),
+						})),
+					}
+				: {}),
+		},
+	};
+}
+
 describe("Jellyfin and Emby generation metadata", () => {
 	function episodeRow(overrides: Record<string, unknown> = {}) {
 		return {
@@ -424,6 +467,17 @@ describe("Jellyfin and Emby generation metadata", () => {
 		const encoded = encodeJellyfinLibraryGenerationMetadata(input);
 
 		expect(decodeJellyfinLibraryGenerationMetadata(encoded)).toEqual({ ok: true, metadata: input });
+	});
+
+	it.each([
+		null,
+		{},
+		{ domain: "episode-inventory", units: [null] },
+		{ domain: "episode-inventory", units: [{ acceptedSkips: [null] }] },
+	])("rejects malformed legacy episode domains without throwing: %p", (domain) => {
+		const input = episodeMetadataV2();
+		input.coverageReceipt.domains = [domain] as never;
+		expect(decodeJellyfinEpisodeGenerationMetadata(JSON.stringify(input))).toEqual({ ok: false });
 	});
 
 	it("rejects duplicate raw V2 domains instead of collapsing them", () => {
@@ -624,6 +678,65 @@ describe("Jellyfin and Emby generation metadata", () => {
 		}
 
 		expect(decodeJellyfinEpisodeGenerationMetadata(JSON.stringify(input))).toEqual({ ok: false });
+	});
+
+	it("accepts duplicate source observations only in a V3 aggregate and domain receipt", () => {
+		const input = withDuplicateSourceObservationSkip(
+			episodeMetadataV3() as unknown as Record<string, unknown>,
+			"aggregate",
+		);
+		const withDomainSkip = withDuplicateSourceObservationSkip(input, "domain");
+
+		expect(decodeJellyfinEpisodeGenerationMetadata(JSON.stringify(withDomainSkip))).toMatchObject({
+			ok: true,
+		});
+	});
+
+	it("marks a corrupt duplicate source observation count as an invalid V3 domain", () => {
+		const input = withDuplicateSourceObservationSkip(
+			episodeMetadataV3() as unknown as Record<string, unknown>,
+			"domain",
+		);
+		const receipt = input.coverageReceipt as {
+			domains: Array<{ units: Array<Record<string, unknown>> }>;
+		};
+		receipt.domains[0]!.units[0]!.sourceBindings = 1;
+		const domain = evaluateProviderDomainCoverageMap(receipt).get("episode-inventory");
+		expect(domain).toMatchObject({
+			availability: "unavailable",
+			reasonCodes: ["receipt-invalid"],
+		});
+	});
+
+	it.each([
+		["V1", episodeMetadata("jellyfin")],
+		["V2", episodeMetadataV2("jellyfin")],
+	] as const)(
+		"rejects duplicate source observations in legacy %s aggregate metadata",
+		(_label, input) => {
+			expect(
+				decodeJellyfinEpisodeGenerationMetadata(
+					JSON.stringify(
+						withDuplicateSourceObservationSkip(input as unknown as Record<string, unknown>),
+					),
+				),
+			).toEqual({ ok: false });
+		},
+	);
+
+	it("rejects duplicate source observations in a legacy V2 domain", () => {
+		const input = withDuplicateSourceObservationSkip(
+			episodeMetadataV2("jellyfin") as unknown as Record<string, unknown>,
+			"domain",
+		);
+		expect(decodeJellyfinEpisodeGenerationMetadata(JSON.stringify(input))).toEqual({ ok: false });
+	});
+
+	it("rejects duplicate source observations in a legacy V1 library", () => {
+		const input = withDuplicateSourceObservationSkip(
+			positiveLibraryMetadata("jellyfin") as unknown as Record<string, unknown>,
+		);
+		expect(decodeJellyfinLibraryGenerationMetadata(JSON.stringify(input))).toEqual({ ok: false });
 	});
 
 	it("round-trips a positive-only episode envelope as an episode receipt", () => {

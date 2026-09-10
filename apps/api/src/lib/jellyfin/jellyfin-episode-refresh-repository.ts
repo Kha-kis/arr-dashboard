@@ -1167,6 +1167,8 @@ export async function finalizeJellyfinEpisodeRun(
 			isV3Run || [...coverageByUnit.values()].some((coverage) => coverage.missingMappings > 0);
 		const coverageUnits = run.units.map((unit) => {
 			const coverage = coverageByUnit.get(unit.id)!;
+			const stageCount = stagesByUnit.get(unit.id)?.length ?? 0;
+			const duplicateSourceObservations = isV3Run ? unit.observedRawCount - stageCount : 0;
 			const pages = Math.max(1, Math.ceil(unit.expectedRawCount! / 1_000));
 			// Raw/source counts still describe the complete observed pass. V3's
 			// canonical count describes only coordinates admitted to publication.
@@ -1185,10 +1187,19 @@ export async function finalizeJellyfinEpisodeRun(
 				rawObserved: unit.observedRawCount,
 				sourceBindings: coverage.sourceBindings,
 				canonicalEntities: isV3Run ? admittedCoordinates.size : coverage.canonicalEntities,
-				acceptedSkips:
-					coverage.missingMappings > 0
+				acceptedSkips: [
+					...(coverage.missingMappings > 0
 						? [{ reason: "missing-supported-mapping" as const, count: coverage.missingMappings }]
-						: [],
+						: []),
+					...(duplicateSourceObservations > 0
+						? [
+								{
+									reason: "duplicate-source-observation" as const,
+									count: duplicateSourceObservations,
+								},
+							]
+						: []),
+				],
 				fatalCount: 0,
 			};
 		});

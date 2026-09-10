@@ -141,6 +141,7 @@ export type ProviderSkipReasonCode =
 	| "unsupported-personal-media"
 	| "missing-stable-key"
 	| "missing-supported-mapping"
+	| "duplicate-source-observation"
 	| "bounded-window-truncation";
 
 export interface ProviderCoverageUnitV1 {
@@ -188,6 +189,7 @@ const providerSkipReasonSchema = z.enum([
 	"unsupported-personal-media",
 	"missing-stable-key",
 	"missing-supported-mapping",
+	"duplicate-source-observation",
 	"bounded-window-truncation",
 ]);
 

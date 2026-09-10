@@ -47,6 +47,7 @@ const providerSkipReasonSchema = z.enum([
 	"unsupported-personal-media",
 	"missing-stable-key",
 	"missing-supported-mapping",
+	"duplicate-source-observation",
 	"bounded-window-truncation",
 ]);
 

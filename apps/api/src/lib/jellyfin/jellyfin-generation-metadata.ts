@@ -307,11 +307,13 @@ function decodeReceipt(
 	episode: boolean,
 	itemCount: number,
 	requireComplete: boolean,
+	allowDuplicateSourceObservation: boolean,
 ): ProviderCoverageReceipt | null {
 	const evaluation = evaluateProviderCoverageReceipt(value);
 	const receipt = value as ProviderCoverageReceipt;
 	if (
 		!evaluation.valid ||
+		(!allowDuplicateSourceObservation && hasDuplicateSourceObservationSkip(receipt)) ||
 		evaluation.provider !== expectedReceiptProvider(provider, episode) ||
 		evaluation.publishedCanonicalEntities !== itemCount
 	) {
@@ -395,6 +397,23 @@ function hasConservedSources(receipt: ProviderCoverageReceiptV1): boolean {
 	});
 }
 
+function hasDuplicateSourceObservationSkip(receipt: ProviderCoverageReceipt): boolean {
+	const units =
+		receipt.version === 2
+			? [
+					...receipt.units,
+					...receipt.domains.flatMap((domain) =>
+						Array.isArray(domain?.units) ? domain.units : [],
+					),
+				]
+			: receipt.units;
+	return units.some(
+		(unit) =>
+			Array.isArray(unit?.acceptedSkips) &&
+			unit.acceptedSkips.some((skip) => skip?.reason === "duplicate-source-observation"),
+	);
+}
+
 function decodeBase(
 	value: Record<string, unknown>,
 	episode: boolean,
@@ -472,6 +491,7 @@ export function decodeJellyfinLibraryGenerationMetadata(
 		false,
 		base.itemCount,
 		base.publicationLevel === "authoritative",
+		false,
 	);
 	if (!coverageReceipt) return { ok: false };
 	return {
@@ -493,6 +513,7 @@ export function decodeJellyfinEpisodeGenerationMetadata(
 		true,
 		base.itemCount,
 		base.publicationLevel === "authoritative",
+		base.version === 3,
 	);
 	if (!coverageReceipt) return { ok: false };
 	if (base.version === 3) {

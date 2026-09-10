@@ -15,7 +15,10 @@ vi.mock("../../services/service-identity.js", async (importOriginal) => ({
 }));
 
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
-import { evaluateProviderCoverageReceipt } from "../../provider-observation/coverage-receipt.js";
+import {
+	evaluateProviderCoverageReceipt,
+	evaluateProviderDomainCoverageMap,
+} from "../../provider-observation/coverage-receipt.js";
 import {
 	claimObservationUnit,
 	createOrLoadObservationRun,
@@ -2635,7 +2638,25 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 					sourceBindings: 2,
 					canonicalEntities: 2,
 				});
+				expect(unit.acceptedSkips).toEqual(
+					overlap ? [{ reason: "duplicate-source-observation", count: 1 }] : [],
+				);
 			}
+			const receiptEvaluation = evaluateProviderCoverageReceipt(decoded.metadata.coverageReceipt);
+			expect(receiptEvaluation).toMatchObject({ valid: true, evidence: "positive-only" });
+			const inventory = evaluateProviderDomainCoverageMap(decoded.metadata.coverageReceipt).get(
+				"episode-inventory",
+			);
+			expect(inventory?.reasonCodes).toEqual([
+				"positive-only",
+				...(overlap ? ["accepted-skips" as const] : []),
+				"coverage-incomplete",
+			]);
+			expect(inventory).toMatchObject({
+				availability: "current",
+				evidence: "positive-only",
+				valueSemantics: "lower-bound",
+			});
 			const readInput = {
 				prisma,
 				userId: "user-1",
@@ -3390,6 +3411,52 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 				]),
 			);
 		}
+	});
+
+	it("accounts for mapped and unmapped rows in an overlapping V3 page", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await bindV3Fixture(prisma, seed.run.id);
+		await addStagePair(prisma, seed.run.id, {
+			jellyfinId: "episode-unmapped",
+			seriesId: "unmapped-series",
+			episodeNumber: 2,
+		});
+		await prisma.providerObservationUnit.updateMany({
+			where: { runId: seed.run.id },
+			data: { cursor: 3, expectedRawCount: 3, observedRawCount: 3 },
+		});
+
+		await expect(
+			finalizeJellyfinEpisodeRun({
+				prisma,
+				userId: "user-1",
+				instance: { id: "jellyfin-1" },
+				runId: seed.run.id,
+				scopes: seed.scopes,
+				attempt: seed.attempt,
+				now: seed.attempt.attemptedAt,
+			}),
+		).resolves.toEqual({ published: true, itemCount: 1 });
+
+		const status = await prisma.cacheRefreshStatus.findUniqueOrThrow({
+			where: { instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin_episode" } },
+		});
+		const decoded = decodeJellyfinEpisodeGenerationMetadata(status.generationMetadata);
+		expect(decoded.ok).toBe(true);
+		if (!decoded.ok) throw new Error("expected V3 episode metadata");
+		for (const unit of decoded.metadata.coverageReceipt.units) {
+			expect(unit).toMatchObject({ rawObserved: 3, sourceBindings: 1, canonicalEntities: 1 });
+			expect(unit.acceptedSkips).toEqual([
+				{ reason: "missing-supported-mapping", count: 1 },
+				{ reason: "duplicate-source-observation", count: 1 },
+			]);
+		}
+		const evaluation = evaluateProviderCoverageReceipt(decoded.metadata.coverageReceipt);
+		expect(evaluation).toMatchObject({ valid: true, evidence: "positive-only" });
+		expect(
+			evaluateProviderDomainCoverageMap(decoded.metadata.coverageReceipt).get("episode-inventory"),
+		).toMatchObject({ availability: "current", valueSemantics: "lower-bound" });
 	});
 
 	it("accepts a mixed-domain parent when inventory and mapping remain exact", async () => {
