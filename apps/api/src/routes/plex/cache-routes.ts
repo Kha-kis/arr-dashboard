@@ -137,7 +137,7 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 		const instanceMap = new Map(instances.map((i) => [i.id, i.label]));
 
 		const statuses = await app.prisma.cacheRefreshStatus.findMany({
-			where: { instanceId: { in: instanceIds } },
+			where: { instanceId: { in: instanceIds }, instance: { userId } },
 		});
 		const plexEvidenceByStatus = new Map();
 		for (const entry of await loadUserGenerationObservations(app.prisma, { userId })) {
@@ -162,6 +162,7 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 		for (const run of await app.prisma.providerObservationRun.findMany({
 			where: {
 				instanceId: { in: instanceIds },
+				instance: { userId },
 				provider: "plex_episode",
 				cacheType: "plex_episode",
 				state: { in: ["running", "failed"] },

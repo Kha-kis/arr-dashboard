@@ -101,7 +101,12 @@ describe("POST /api/plex/cache/:instanceId/refresh publication authority", () =>
 		setupAuthInjection(app);
 		app.decorate("prisma", {
 			plexCache: { count: vi.fn() },
-			serviceInstance: { findFirst: vi.fn().mockResolvedValue(instance) },
+			serviceInstance: {
+				findFirst: vi.fn().mockResolvedValue(instance),
+				findMany: vi.fn().mockResolvedValue([{ id: instance.id, label: "Plex" }]),
+			},
+			cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue([]) },
+			providerObservationRun: { findMany: vi.fn().mockResolvedValue([]) },
 		} as never);
 		app.decorate("encryptor", { decrypt: vi.fn() } as never);
 		await app.register(registerCacheRoutes, { prefix: "/api/plex" });
@@ -110,6 +115,24 @@ describe("POST /api/plex/cache/:instanceId/refresh publication authority", () =>
 
 	afterEach(async () => {
 		await app.close();
+	});
+
+	it("fences health status and progress reads by the authenticated owner", async () => {
+		const response = await createInjectAuthenticated(app)("GET", "/api/plex/cache/health");
+		expect(response.statusCode).toBe(200);
+		for (const query of [
+			app.prisma.cacheRefreshStatus.findMany,
+			app.prisma.providerObservationRun.findMany,
+		]) {
+			expect(query).toHaveBeenCalledWith(
+				expect.objectContaining({
+					where: expect.objectContaining({
+						instanceId: { in: [instance.id] },
+						instance: { userId: "user-1" },
+					}),
+				}),
+			);
+		}
 	});
 
 	it("returns exact durable acceptance and passes the claim to the adapter", async () => {
