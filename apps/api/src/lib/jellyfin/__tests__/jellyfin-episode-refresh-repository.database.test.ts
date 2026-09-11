@@ -44,6 +44,7 @@ import {
 	buildJellyfinEpisodeScopePlan,
 	finalizeJellyfinEpisodeRun,
 	invalidateJellyfinEpisodeRun,
+	type JellyfinEpisodePageRejectionReason,
 	stageJellyfinEpisodePage,
 	validateJellyfinEpisodeSavedV2Plan,
 	validateJellyfinEpisodeSavedV3Plan,
@@ -3812,8 +3813,16 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 	});
 
 	it.each([
-		["an early empty page", { startIndex: 0, totalRecordCount: 1, items: [] }],
-		["a changed frozen total", { startIndex: 1, totalRecordCount: 3, items: [] }],
+		[
+			"an early empty page",
+			{ startIndex: 0, totalRecordCount: 1, items: [] },
+			"invalid-page-envelope-or-row",
+		],
+		[
+			"a changed frozen total",
+			{ startIndex: 1, totalRecordCount: 3, items: [] },
+			"invalid-page-envelope-or-row",
+		],
 		[
 			"a blank item identity",
 			{
@@ -3833,6 +3842,7 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 					},
 				],
 			},
+			"invalid-page-envelope-or-row",
 		],
 		[
 			"a duplicate item identity",
@@ -3851,6 +3861,7 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 					lastPlayedDate: null,
 				})),
 			},
+			"invalid-page-envelope-or-row",
 		],
 		[
 			"an invalid episode coordinate",
@@ -3871,10 +3882,11 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 					},
 				],
 			},
+			"invalid-page-envelope-or-row",
 		],
-	] satisfies Array<[string, JellyfinEpisodeItemsPage]>)(
+	] satisfies Array<[string, JellyfinEpisodeItemsPage, JellyfinEpisodePageRejectionReason]>)(
 		"rejects %s before opening a staging transaction",
-		async (_name, page) => {
+		async (_name, page, expectedReason) => {
 			const transaction = vi.fn();
 			const scope = { userId: "user-1", userName: "private", libraryId: "library-1" };
 			const unit = buildJellyfinEpisodeScopePlan([scope]).units[0]!;
@@ -3891,10 +3903,22 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 				observedRawCount: page.startIndex,
 			};
 
+			const reasons: JellyfinEpisodePageRejectionReason[] = [];
 			await expect(
-				stageJellyfinEpisodePage({ $transaction: transaction } as never, claim, scope, page),
+				stageJellyfinEpisodePage(
+					{ $transaction: transaction } as never,
+					claim,
+					scope,
+					page,
+					new Date(),
+					(reason) => {
+						reasons.push(reason);
+						throw new Error("diagnostic reporter failed");
+					},
+				),
 			).resolves.toBe(false);
 			expect(transaction).not.toHaveBeenCalled();
+			expect(reasons).toEqual([expectedReason]);
 		},
 	);
 
@@ -3941,25 +3965,34 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 			observedRawCount: 0,
 		};
 
+		const reasons: JellyfinEpisodePageRejectionReason[] = [];
 		await expect(
-			stageJellyfinEpisodePage(prisma as never, claim, scope, {
-				startIndex: 0,
-				totalRecordCount: 1,
-				items: [
-					{
-						id: "episode-1",
-						name: "Episode",
-						type: "Episode",
-						seriesId: "series-1",
-						seasonNumber: 1,
-						episodeNumber: 1,
-						played: true,
-						playCount: 1,
-						lastPlayedDate: null,
-					},
-				],
-			}),
+			stageJellyfinEpisodePage(
+				prisma as never,
+				claim,
+				scope,
+				{
+					startIndex: 0,
+					totalRecordCount: 1,
+					items: [
+						{
+							id: "episode-1",
+							name: "Episode",
+							type: "Episode",
+							seriesId: "series-1",
+							seasonNumber: 1,
+							episodeNumber: 1,
+							played: true,
+							playCount: 1,
+							lastPlayedDate: null,
+						},
+					],
+				},
+				new Date(),
+				(reason) => reasons.push(reason),
+			),
 		).resolves.toBe(false);
+		expect(reasons).toEqual(["claim-mismatch"]);
 		expect(createMany).not.toHaveBeenCalled();
 		expect(unitUpdate).not.toHaveBeenCalled();
 	});
@@ -4131,18 +4164,21 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 				expectedRawCount: version === 3 ? 3 : 4,
 				observedRawCount: 2,
 			});
-			const result = stageJellyfinEpisodePage(
-				prisma,
-				secondClaim!,
-				scope,
-				{
-					startIndex: 2,
-					totalRecordCount: 4,
-					items: [item("episode-2", 2, "Changed duplicate", false), item("episode-3", 3, "Third")],
-				},
-				new Date(firstNow.getTime() + 12_000),
-			);
 			if (version === 2) {
+				const result = stageJellyfinEpisodePage(
+					prisma,
+					secondClaim!,
+					scope,
+					{
+						startIndex: 2,
+						totalRecordCount: 4,
+						items: [
+							item("episode-2", 2, "Changed duplicate", false),
+							item("episode-3", 3, "Third"),
+						],
+					},
+					new Date(firstNow.getTime() + 12_000),
+				);
 				await expect(result).rejects.toMatchObject({ code: "P2002" });
 				expect(
 					await prisma.jellyfinEpisodeObservationStage.count({ where: { runId: seed.run.id } }),
@@ -4154,6 +4190,29 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 				).toMatchObject({ state: "running", cursor: 2, observedRawCount: 2 });
 				return;
 			}
+			const decreasedReasons: JellyfinEpisodePageRejectionReason[] = [];
+			await expect(
+				stageJellyfinEpisodePage(
+					prisma,
+					secondClaim!,
+					scope,
+					{ startIndex: 2, totalRecordCount: 2, items: [] },
+					new Date(firstNow.getTime() + 12_000),
+					(reason) => decreasedReasons.push(reason),
+				),
+			).resolves.toBe(false);
+			expect(decreasedReasons).toEqual(["total-count-decreased"]);
+			const result = stageJellyfinEpisodePage(
+				prisma,
+				secondClaim!,
+				scope,
+				{
+					startIndex: 2,
+					totalRecordCount: 4,
+					items: [item("episode-2", 2, "Changed duplicate", false), item("episode-3", 3, "Third")],
+				},
+				new Date(firstNow.getTime() + 12_000),
+			);
 			await expect(result).resolves.toBe(true);
 			const staged = await prisma.jellyfinEpisodeObservationStage.findMany({
 				where: { runId: seed.run.id, unitId: firstClaim!.unitId, pass: "collect" },

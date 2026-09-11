@@ -51,6 +51,21 @@ export interface JellyfinEpisodePlanProvenance extends JellyfinEpisodeParentProv
 	catalogProvenance?: JellyfinEpisodeCatalogProvenance;
 }
 
+export type JellyfinEpisodePageRejectionReason =
+	| "invalid-scope-or-phase"
+	| "total-count-decreased"
+	| "invalid-page-envelope-or-row"
+	| "run-unavailable"
+	| "catalog-authority-mismatch"
+	| "instance-authority-mismatch"
+	| "claim-mismatch"
+	| "cursor-accounting-mismatch"
+	| "source-coordinate-conflict";
+
+export type JellyfinEpisodePageRejectionReporter = (
+	reason: JellyfinEpisodePageRejectionReason,
+) => void;
+
 function validParentProvenance(value: unknown): value is JellyfinEpisodeParentProvenance {
 	if (typeof value !== "object" || value === null) return false;
 	const candidate = value as Partial<JellyfinEpisodeParentProvenance>;
@@ -450,24 +465,27 @@ function parseScope(value: string | null) {
 	}
 }
 
-function validPage(
+function pageRejectionReason(
 	page: JellyfinEpisodeItemsPage,
 	cursor: number,
 	expected: number | null,
 	allowGrowth = false,
-) {
+): JellyfinEpisodePageRejectionReason | null {
 	if (
 		!Number.isSafeInteger(page.startIndex) ||
 		page.startIndex !== cursor ||
 		!Number.isSafeInteger(page.totalRecordCount) ||
 		page.totalRecordCount < 0 ||
 		(expected !== null &&
-			(allowGrowth ? page.totalRecordCount < expected : page.totalRecordCount !== expected)) ||
-		page.items.length > 1_000
+			(allowGrowth ? page.totalRecordCount < expected : page.totalRecordCount !== expected))
 	)
-		return false;
-	if (page.items.length === 0 && cursor < page.totalRecordCount) return false;
-	if (cursor + page.items.length > page.totalRecordCount) return false;
+		return allowGrowth && expected !== null && page.totalRecordCount < expected
+			? "total-count-decreased"
+			: "invalid-page-envelope-or-row";
+	if (page.items.length > 1_000) return "invalid-page-envelope-or-row";
+	if (page.items.length === 0 && cursor < page.totalRecordCount)
+		return "invalid-page-envelope-or-row";
+	if (cursor + page.items.length > page.totalRecordCount) return "invalid-page-envelope-or-row";
 	const ids = new Set<string>();
 	for (const item of page.items) {
 		if (
@@ -481,18 +499,30 @@ function validPage(
 			(item.seasonNumber as number) < 0 ||
 			!Number.isSafeInteger(item.episodeNumber) ||
 			(item.episodeNumber as number) < 0 ||
-			typeof item.played !== "boolean" ||
 			(item.playCount !== undefined &&
 				item.playCount !== null &&
 				(!Number.isSafeInteger(item.playCount) || item.playCount < 0)) ||
+			typeof item.played !== "boolean" ||
 			(item.lastPlayedDate !== null &&
 				(typeof item.lastPlayedDate !== "string" ||
 					!Number.isFinite(Date.parse(item.lastPlayedDate))))
 		)
-			return false;
+			return "invalid-page-envelope-or-row";
 		ids.add(item.id);
 	}
-	return true;
+	return null;
+}
+
+function reportPageRejection(
+	onRejected: JellyfinEpisodePageRejectionReporter | undefined,
+	reason: JellyfinEpisodePageRejectionReason,
+): false {
+	try {
+		onRejected?.(reason);
+	} catch {
+		// Diagnostics must never change the durable page result.
+	}
+	return false;
 }
 
 /**
@@ -506,6 +536,7 @@ export async function stageJellyfinEpisodePage(
 	scope: JellyfinEpisodeScope,
 	page: JellyfinEpisodeItemsPage,
 	now = new Date(),
+	onRejected?: JellyfinEpisodePageRejectionReporter,
 ): Promise<boolean> {
 	const persistedScope = parseScope(claim.scopePayload);
 	let catalogKey: string | null = null;
@@ -526,10 +557,16 @@ export async function stageJellyfinEpisodePage(
 		!persistedScope ||
 		persistedScope.userId !== scope.userId ||
 		persistedScope.libraryId !== scope.libraryId ||
-		(claim.phase !== "collect" && claim.phase !== "verify") ||
-		!validPage(page, claim.cursor, claim.expectedRawCount, allowCatalogGrowth)
+		(claim.phase !== "collect" && claim.phase !== "verify")
 	)
-		return false;
+		return reportPageRejection(onRejected, "invalid-scope-or-phase");
+	const pageReason = pageRejectionReason(
+		page,
+		claim.cursor,
+		claim.expectedRawCount,
+		allowCatalogGrowth,
+	);
+	if (pageReason) return reportPageRejection(onRejected, pageReason);
 	const userKeyDigest = digest(["jellyfin-user", scope.userId]);
 	return await prisma.$transaction(async (tx) => {
 		const run = await tx.providerObservationRun.findFirst({
@@ -543,15 +580,16 @@ export async function stageJellyfinEpisodePage(
 			},
 			include: { instance: true },
 		});
-		if (!run) return false;
-		if (catalogKey !== null && catalogKey !== run.parentGenerationId) return false;
+		if (!run) return reportPageRejection(onRejected, "run-unavailable");
+		if (catalogKey !== null && catalogKey !== run.parentGenerationId)
+			return reportPageRejection(onRejected, "catalog-authority-mismatch");
 		if (
 			!run.instance.enabled ||
 			(run.instance.service !== "JELLYFIN" && run.instance.service !== "EMBY") ||
 			run.instance.connectionGeneration !== run.connectionGeneration ||
 			run.instance.identityGeneration !== run.identityGeneration
 		)
-			return false;
+			return reportPageRejection(onRejected, "instance-authority-mismatch");
 		const unit = await tx.providerObservationUnit.findFirst({
 			where: {
 				id: claim.unitId,
@@ -569,11 +607,12 @@ export async function stageJellyfinEpisodePage(
 			unit.observedRawCount !== claim.observedRawCount ||
 			unit.scopeDigest !== scopeDigest(claim.phase, persistedScope)
 		)
-			return false;
+			return reportPageRejection(onRejected, "claim-mismatch");
 		const nextCursor = page.startIndex + page.items.length;
 		const observedRawCount = unit.observedRawCount + page.items.length;
 		const expectedRawCount = page.totalRecordCount;
-		if (nextCursor !== observedRawCount || nextCursor > expectedRawCount) return false;
+		if (nextCursor !== observedRawCount || nextCursor > expectedRawCount)
+			return reportPageRejection(onRejected, "cursor-accounting-mismatch");
 		if (page.items.length) {
 			let newItems = page.items;
 			if (allowCatalogGrowth) {
@@ -604,7 +643,7 @@ export async function stageJellyfinEpisodePage(
 						prior.seasonNumber !== item.seasonNumber ||
 						prior.episodeNumber !== item.episodeNumber
 					)
-						return false;
+						return reportPageRejection(onRejected, "source-coordinate-conflict");
 				}
 				newItems = page.items.filter((item) => !existingByItemId.has(item.id));
 			}

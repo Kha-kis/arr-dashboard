@@ -744,7 +744,10 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 	it("treats a superseded page-stage claim as a no-op", async () => {
 		const state = ownedFixture("JELLYFIN");
 		configureDurableRun(state);
-		durable.stage.mockResolvedValueOnce(false);
+		durable.stage.mockImplementationOnce(async (...args: unknown[]) => {
+			(args[5] as ((reason: string) => void) | undefined)?.("claim-mismatch");
+			return false;
+		});
 		durable.failUnit.mockResolvedValueOnce(false);
 		(log.warn as unknown as ReturnType<typeof vi.fn>).mockClear();
 		const context = {
@@ -767,7 +770,7 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			resetProgress: true,
 		});
 		expect(log.warn).toHaveBeenCalledWith(
-			{ category: "episode-page-rejected" },
+			{ category: "episode-page-rejected", reason: "claim-mismatch" },
 			"Jellyfin episode page unavailable",
 		);
 		expect(durable.finishFailure).not.toHaveBeenCalled();

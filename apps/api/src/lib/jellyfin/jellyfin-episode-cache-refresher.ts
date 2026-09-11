@@ -49,6 +49,7 @@ import {
 	finalizeJellyfinEpisodeRun,
 	invalidateJellyfinEpisodeRun,
 	JELLYFIN_EPISODE_PARENT_MUTATION_AUTHORITY_MAX_AGE_MS,
+	type JellyfinEpisodePageRejectionReason,
 	stageJellyfinEpisodePage,
 	validateJellyfinEpisodeSavedV2Plan,
 	validateJellyfinEpisodeSavedV3Plan,
@@ -670,14 +671,21 @@ export function createJellyfinEpisodeWorkItemRunner(
 				guardOptions,
 			);
 			stagingPage = true;
-			const progressed = await stageJellyfinEpisodePage(context.prisma, claim, scope, page, now);
-			if (!progressed) {
-				if (typeof context.log.warn === "function") {
+			const progressed = await stageJellyfinEpisodePage(
+				context.prisma,
+				claim,
+				scope,
+				page,
+				now,
+				(reason: JellyfinEpisodePageRejectionReason) => {
+					if (typeof context.log.warn !== "function") return;
 					context.log.warn(
-						{ category: "episode-page-rejected" },
+						{ category: "episode-page-rejected", reason },
 						"Jellyfin episode page unavailable",
 					);
-				}
+				},
+			);
+			if (!progressed) {
 				const failed = await failObservationUnit(context.prisma, {
 					claim,
 					reasonCode: "coverage-incomplete",
