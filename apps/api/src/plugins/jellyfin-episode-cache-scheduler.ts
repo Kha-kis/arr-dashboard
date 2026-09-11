@@ -11,6 +11,7 @@ import { runJellyfinCacheRefreshSingleFlight } from "../lib/jellyfin/jellyfin-ca
 import { refreshOwnedJellyfinEpisodeCache } from "../lib/jellyfin/jellyfin-episode-cache-refresher.js";
 import { JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS } from "../lib/jellyfin/jellyfin-episode-refresh-policy.js";
 import type { ServiceInstance } from "../lib/prisma.js";
+import type { AutomaticObservationRenewalMode } from "../lib/provider-observation/observation-run-repository.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { ensureEpisodeRefreshScheduler } from "../lib/services/episode-refresh-scheduler-bridge.js";
 import { createProviderPublicationAuthority } from "../lib/services/provider-identity-guard.js";
@@ -24,6 +25,7 @@ export async function refreshScheduledJellyfinEpisodeCacheInstance(
 	app: Pick<FastifyInstance, "encryptor" | "prisma" | "log">,
 	instance: ServiceInstance,
 	resumeFailed = true,
+	automaticRenewal: AutomaticObservationRenewalMode | "none" = "none",
 ): Promise<Awaited<ReturnType<typeof refreshOwnedJellyfinEpisodeCache>> | null> {
 	try {
 		const authority = createProviderPublicationAuthority(instance);
@@ -37,6 +39,7 @@ export async function refreshScheduledJellyfinEpisodeCacheInstance(
 					instance,
 					log: app.log,
 					resumeFailed,
+					...(automaticRenewal !== "none" ? { automaticRenewal } : {}),
 				}),
 		);
 		app.log.info(
@@ -74,6 +77,7 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			resumeFailed: boolean,
 			transientIdentityRetry = 0,
 			catalogReplans = 0,
+			automaticRenewal: AutomaticObservationRenewalMode | "none" = "none",
 		) {
 			if (closing || runningInstances.has(instance.id) || pendingInstanceIds.has(instance.id))
 				return;
@@ -83,8 +87,10 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 					app,
 					instance,
 					resumeFailed,
+					automaticRenewal,
 				);
-				if (closing || !result || result.complete || result.superseded) return;
+				if (closing || !result || result.complete || result.superseded || result.renewalDeferred)
+					return;
 				const activeRun =
 					result.errors > 0
 						? await app.prisma.providerObservationRun.findFirst({
@@ -154,19 +160,24 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			resumeFailed: boolean,
 			transientIdentityRetry = 0,
 			catalogReplans = 0,
+			automaticRenewal: AutomaticObservationRenewalMode | "none" = "none",
 		): Promise<void> {
 			const pageTask = refreshInstance(
 				instance,
 				resumeFailed,
 				transientIdentityRetry,
 				catalogReplans,
+				automaticRenewal,
 			).then(() => undefined);
 			admittedPageTasks.add(pageTask);
 			void pageTask.finally(() => admittedPageTasks.delete(pageTask)).catch(() => undefined);
 			return pageTask;
 		}
 
-		async function refreshAllEpisodeCaches(resumeFailed: boolean) {
+		async function refreshAllEpisodeCaches(
+			resumeFailed: boolean,
+			automaticRenewal: AutomaticObservationRenewalMode | "none" = "none",
+		) {
 			if (closing) return;
 			if (isRunning) {
 				app.log.warn("Jellyfin episode cache refresh already running, skipping");
@@ -182,7 +193,10 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 					if (instances.length === 0) return;
 
 					await Promise.all(
-						instances.map(async (instance) => await admitRefreshInstance(instance, resumeFailed)),
+						instances.map(
+							async (instance) =>
+								await admitRefreshInstance(instance, resumeFailed, 0, 0, automaticRenewal),
+						),
 					);
 				});
 			} finally {
@@ -227,7 +241,7 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 					),
 				);
 				intervalHandle = setInterval(() => {
-					refreshAllEpisodeCaches(false).catch(() =>
+					refreshAllEpisodeCaches(false, "provider-unavailable-cooldown").catch(() =>
 						app.log.error(
 							{ category: "scheduled-refresh-failed" },
 							"Jellyfin episode cache scheduled refresh failed",

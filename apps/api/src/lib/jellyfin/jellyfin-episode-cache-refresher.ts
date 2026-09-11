@@ -4,11 +4,14 @@ import type { FastifyBaseLogger } from "fastify";
 import type { Encryptor } from "../auth/encryption.js";
 import { Prisma, type PrismaClient, type ServiceInstance } from "../prisma.js";
 import { evaluateProviderCoverageReceipt } from "../provider-observation/coverage-receipt.js";
+import type { AutomaticObservationRenewalMode } from "../provider-observation/observation-run-repository.js";
 import {
+	canSettleAutomaticObservationRenewalDeferred,
 	claimObservationUnit,
 	createOrLoadObservationRun,
 	failObservationUnit,
 	hasExhaustedObservationRunRetries,
+	renewExhaustedObservationRun,
 } from "../provider-observation/observation-run-repository.js";
 import type { ObservationRunProgress } from "../provider-observation/observation-run-types.js";
 import {
@@ -74,6 +77,8 @@ export type JellyfinEpisodeRefreshResult = {
 	superseded?: boolean;
 	/** The exact invalid plan and its attempt were settled; fresh discovery is needed. */
 	replanRequired?: true;
+	/** Automatic renewal deferred and must not enter a continuation chain. */
+	renewalDeferred?: true;
 };
 
 export type JellyfinEpisodePublicationContext = {
@@ -83,6 +88,7 @@ export type JellyfinEpisodePublicationContext = {
 	log: FastifyBaseLogger;
 	cleanupRunClaimToken?: string;
 	resumeFailed?: boolean;
+	automaticRenewal?: AutomaticObservationRenewalMode;
 	now?: Date;
 };
 
@@ -113,6 +119,7 @@ type JellyfinEpisodeWorkProgress = ObservationRunProgress & {
 	retryableDependencyFailure?: true;
 	replanRequired?: true;
 	superseded?: true;
+	renewalDeferred?: true;
 };
 
 type JellyfinEpisodePageFailureCategory =
@@ -235,6 +242,7 @@ export async function refreshOwnedJellyfinEpisodeCache(
 		errorMessages: [],
 		...(progress.replanRequired ? { replanRequired: true as const } : {}),
 		...(progress.superseded ? { superseded: true } : {}),
+		...(progress.renewalDeferred ? { renewalDeferred: true as const } : {}),
 		...(complete ? { completedAt: context.now ?? new Date() } : {}),
 	};
 }
@@ -461,6 +469,53 @@ export function createJellyfinEpisodeWorkItemRunner(
 			plan = savedPlan.plan;
 			scopes = savedPlan.scopes;
 			run = savedPlan.run;
+			if (context.automaticRenewal === "provider-unavailable-cooldown" && run.state === "failed") {
+				if (!canFinishAttempt) {
+					return { ...(await runProgress(context.prisma, run.id)), renewalDeferred: true };
+				}
+				const renewed = await renewExhaustedObservationRun(context.prisma, {
+					mode: context.automaticRenewal,
+					runId: run.id,
+					instanceId: current.id,
+					userId: current.userId,
+					authorityKey: run.authorityKey,
+					parentGenerationId: run.parentGenerationId!,
+					targetDigest: plan.targetDigest,
+					connectionGeneration: authority.connectionGeneration,
+					identityGeneration: authority.identityGeneration,
+					now,
+				});
+				if (renewed === "deferred") {
+					await finishProviderCacheRefreshAttemptFailure(
+						context.prisma,
+						"jellyfin_episode",
+						"collection-deferred",
+						authority,
+						attempt,
+						context.log,
+						guardOptions,
+						async (tx) =>
+							await canSettleAutomaticObservationRenewalDeferred(tx, {
+								runId: run.id,
+								instanceId: current.id,
+								authorityKey: run.authorityKey,
+								parentGenerationId: run.parentGenerationId!,
+								targetDigest: plan.targetDigest,
+								connectionGeneration: authority.connectionGeneration,
+								identityGeneration: authority.identityGeneration,
+								now,
+							}),
+					);
+					return {
+						...(await runProgress(context.prisma, run.id)),
+						progressed: false,
+						renewalDeferred: true,
+					};
+				}
+				run = await context.prisma.providerObservationRun.findUniqueOrThrow({
+					where: { id: run.id },
+				});
+			}
 			// Explicit startup/scheduled refresh may renew an exhausted retry epoch,
 			// but must use the saved catalog authority rather than today's expanded key.
 			if (context.resumeFailed && run.state === "failed") {

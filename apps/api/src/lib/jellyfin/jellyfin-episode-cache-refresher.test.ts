@@ -43,6 +43,7 @@ const durable = vi.hoisted(() => ({
 	claimUnit: vi.fn(),
 	failUnit: vi.fn(),
 	exhausted: vi.fn(),
+	renew: vi.fn(),
 	guard: vi.fn(),
 	finishFailure: vi.fn(),
 	recordedFailureCount: 0,
@@ -96,6 +97,7 @@ vi.mock("../provider-observation/observation-run-repository.js", () => ({
 	claimObservationUnit: durable.claimUnit,
 	failObservationUnit: durable.failUnit,
 	hasExhaustedObservationRunRetries: durable.exhausted,
+	renewExhaustedObservationRun: durable.renew,
 }));
 
 vi.mock("./jellyfin-episode-refresh-repository.js", async (importOriginal) => {
@@ -150,7 +152,7 @@ const log = {
 
 function ownedFixture(
 	service: "JELLYFIN" | "EMBY",
-	options: { parentMediaType?: "movie" | "series" } = {},
+	options: { parentMediaType?: "movie" | "series"; v3?: boolean } = {},
 ) {
 	const parentRow = {
 		id: "library-row-1",
@@ -172,27 +174,62 @@ function ownedFixture(
 		connectionGeneration: 7,
 		identityGeneration: 2,
 	};
-	const parentReceipt = {
-		version: 1 as const,
-		provider: service === "EMBY" ? ("emby" as const) : ("jellyfin" as const),
-		attemptStartedAt: "2026-01-01T00:00:00.000Z",
-		observedAt: "2026-01-02T00:00:00.000Z",
-		evidence: "complete" as const,
-		units: [
-			{
-				scopeKey: "library:library-1/user:user-1",
-				expectedRawCount: 1,
-				pagesAttempted: 1,
-				pagesCompleted: 1,
-				rawObserved: 1,
-				sourceBindings: 1,
-				canonicalEntities: 1,
-				acceptedSkips: [],
-				fatalCount: 0,
-			},
-		],
-		publishedCanonicalEntities: 1,
+	const receiptUnit = {
+		scopeKey: "library:library-1",
+		expectedRawCount: 1,
+		pagesAttempted: 1,
+		pagesCompleted: 1,
+		rawObserved: 1,
+		sourceBindings: 1,
+		canonicalEntities: 1,
+		acceptedSkips: [],
+		fatalCount: 0,
 	};
+	const parentReceipt = options.v3
+		? {
+				version: 2 as const,
+				provider: service === "EMBY" ? ("emby" as const) : ("jellyfin" as const),
+				attemptStartedAt: "2026-01-01T00:00:00.000Z",
+				observedAt: "2026-01-02T00:00:00.000Z",
+				evidence: "complete" as const,
+				units: [receiptUnit],
+				publishedCanonicalEntities: 1,
+				domains: [
+					"library-inventory",
+					"mapping",
+					"watch-count",
+					"watch-attribution",
+					"on-deck",
+				].map((domain) => ({
+					domain: domain as
+						| "library-inventory"
+						| "mapping"
+						| "watch-count"
+						| "watch-attribution"
+						| "on-deck",
+					evidence: "complete" as const,
+					valueSemantics: "exact" as const,
+					units: [
+						{
+							...receiptUnit,
+							scopeKey:
+								domain === "library-inventory"
+									? "user:user-1/library:library-1/inventory"
+									: `${domain}:library-1`,
+						},
+					],
+					publishedCanonicalEntities: 1,
+				})),
+			}
+		: {
+				version: 1 as const,
+				provider: service === "EMBY" ? ("emby" as const) : ("jellyfin" as const),
+				attemptStartedAt: "2026-01-01T00:00:00.000Z",
+				observedAt: "2026-01-02T00:00:00.000Z",
+				evidence: "complete" as const,
+				units: [receiptUnit],
+				publishedCanonicalEntities: 1,
+			};
 	const parentPublishedAt = new Date(Date.now() - 1_000);
 	const parentStatus = {
 		lastResult: "success",
@@ -343,6 +380,8 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		durable.recordedFailureCount = 0;
 		durable.exhausted.mockReset();
 		durable.exhausted.mockResolvedValue(false);
+		durable.renew.mockReset();
+		durable.renew.mockResolvedValue("deferred");
 		durable.finishFailure.mockImplementation(async (...args: unknown[]) => {
 			const precondition = args[7];
 			if (typeof precondition === "function" && !(await precondition({ transaction: true }))) {
@@ -437,6 +476,102 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		expect(finished).toMatchObject({ complete: true, errors: 0, upserted: 1, progressed: false });
 		expect(durable.finalize).toHaveBeenCalledOnce();
 		expect((client as { getEpisodes?: unknown }).getEpisodes).toBeUndefined();
+	});
+
+	it("does not settle a foreign outer marker when automatic renewal is deferred", async () => {
+		const state = ownedFixture("JELLYFIN", { v3: true });
+		const client = configureDurableRun(state, 2);
+		const context = {
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+			automaticRenewal: "provider-unavailable-cooldown" as const,
+			now: new Date(),
+		};
+
+		await refreshOwnedJellyfinEpisodeCache({
+			...context,
+			automaticRenewal: undefined,
+		});
+		if (
+			typeof durable.run?.parentGenerationId !== "string" ||
+			!durable.run.parentGenerationId.startsWith("jellyfin-episode-parent-v3:")
+		)
+			throw new Error("expected the durable fixture to create a V3 run");
+		const failedUnit = durable.units[0]!;
+		failedUnit.state = "failed";
+		failedUnit.attemptCount = 4;
+		failedUnit.nextAttemptAt = null;
+		failedUnit.claimToken = null;
+		durable.run.state = "failed";
+		durable.run.lastReasonCode = "provider-unavailable";
+		durable.outer = {
+			status: "already-running",
+			attempt: {
+				attemptedAt: new Date("2026-09-10T12:00:00.000Z"),
+				resultMarker: "in_progress:foreign",
+			},
+		};
+		durable.renew.mockResolvedValue("deferred");
+		const pageCalls = client.getEpisodeItemsPageWithCoverage.mock.calls.length;
+
+		const result = await refreshOwnedJellyfinEpisodeCache(context);
+
+		expect(result).toMatchObject({ errors: 1, complete: false, renewalDeferred: true });
+		expect(durable.finishFailure).not.toHaveBeenCalled();
+		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledTimes(pageCalls);
+	});
+
+	it("settles an owned deferred renewal as collection-deferred without a provider page", async () => {
+		const state = ownedFixture("JELLYFIN", { v3: true });
+		const client = configureDurableRun(state, 2);
+		const context = {
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+			automaticRenewal: "provider-unavailable-cooldown" as const,
+			now: new Date(),
+		};
+		await refreshOwnedJellyfinEpisodeCache({ ...context, automaticRenewal: undefined });
+		if (
+			typeof durable.run?.parentGenerationId !== "string" ||
+			!durable.run.parentGenerationId.startsWith("jellyfin-episode-parent-v3:")
+		)
+			throw new Error("expected the durable fixture to create a V3 run");
+		const failedUnit = durable.units[0]!;
+		failedUnit.state = "failed";
+		failedUnit.attemptCount = 4;
+		failedUnit.nextAttemptAt = null;
+		failedUnit.claimToken = null;
+		durable.run.state = "failed";
+		durable.run.lastReasonCode = "provider-unavailable";
+		durable.outer = {
+			status: "acquired",
+			attempt: {
+				attemptedAt: new Date("2026-09-10T12:00:00.000Z"),
+				resultMarker: "in_progress:owned",
+			},
+		};
+		durable.renew.mockResolvedValue("deferred");
+		durable.finishFailure.mockResolvedValue("recorded");
+		const pageCalls = client.getEpisodeItemsPageWithCoverage.mock.calls.length;
+
+		const result = await refreshOwnedJellyfinEpisodeCache(context);
+
+		expect(result).toMatchObject({ errors: 1, complete: false, renewalDeferred: true });
+		expect(durable.finishFailure).toHaveBeenCalledWith(
+			state.prisma,
+			"jellyfin_episode",
+			"collection-deferred",
+			expect.anything(),
+			expect.anything(),
+			log,
+			expect.anything(),
+			expect.any(Function),
+		);
+		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledTimes(pageCalls);
 	});
 
 	it("uses current libraries even when the authoritative parent contains no series", async () => {

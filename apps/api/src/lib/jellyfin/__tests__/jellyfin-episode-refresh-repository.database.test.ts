@@ -2681,6 +2681,181 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 		},
 	);
 
+	it.each([
+		["eligible", new Date("2026-09-07T12:00:00.000Z")],
+		["deferred", new Date("2026-09-07T10:00:00.000Z")],
+	])("runs an exhausted V3 outage through the real caller path: %s", async (mode, now) => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await bindV2Fixture(prisma, seed.run.id, seed.scopes);
+		await bindV3Fixture(prisma, seed.run.id);
+		const instance = await prisma.serviceInstance.update({
+			where: { id: "jellyfin-1" },
+			data: { expectedIdentity: "verified-provider", identityStatus: "VERIFIED" },
+		});
+		const runBefore = await prisma.providerObservationRun.findUniqueOrThrow({
+			where: { id: seed.run.id },
+			include: { units: { orderBy: { ordinal: "asc" } } },
+		});
+		const failedUnit = runBefore.units.find((unit) => unit.phase === "collect");
+		if (!failedUnit) throw new Error("V3 fixture collect unit is missing");
+		await prisma.providerObservationUnit.update({
+			where: { id: failedUnit.id },
+			data: {
+				state: "failed",
+				cursor: 1,
+				expectedRawCount: 2,
+				observedRawCount: 1,
+				attemptCount: 4,
+				nextAttemptAt: null,
+				claimToken: null,
+				lastReasonCode: "provider-unavailable",
+			},
+		});
+		await prisma.providerObservationUnit.updateMany({
+			where: { runId: seed.run.id, id: { not: failedUnit.id } },
+			data: { state: "pending", claimToken: null, nextAttemptAt: null },
+		});
+		await prisma.providerObservationRun.update({
+			where: { id: seed.run.id },
+			data: {
+				state: "failed",
+				completedUnits: 0,
+				completedWork: 0,
+				nextAttemptAt: null,
+				lastReasonCode: "provider-unavailable",
+			},
+		});
+		const old = new Date("2026-09-07T05:00:00.000Z");
+		await prisma.$executeRaw`UPDATE "provider_observation_runs" SET "updatedAt" = ${old} WHERE "id" = ${seed.run.id}`;
+		await prisma.$executeRaw`UPDATE "provider_observation_units" SET "updatedAt" = ${old} WHERE "id" = ${failedUnit.id}`;
+		await prisma.cacheRefreshStatus.update({
+			where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "jellyfin_episode" } },
+			data: {
+				lastAttemptAt: old,
+				lastAttemptResult: "success",
+				lastAttemptErrorMessage: null,
+			},
+		});
+		identityModuleMocks.readProviderIdentity.mockResolvedValue({
+			service: "JELLYFIN",
+			identityKind: "jellyfin-server-id",
+			rawIdentity: "verified-provider",
+			confirmationDigest: "a".repeat(64),
+			fingerprint: "a".repeat(12),
+		});
+		const before = await finalizerState(prisma, seed.run.id);
+		const page = vi.fn(async (_user: string, _library: string, cursor: number) => ({
+			startIndex: cursor,
+			totalRecordCount: 2,
+			items: [
+				{
+					type: "Episode" as const,
+					id: "episode-2",
+					seriesId: "series-1",
+					name: "Episode 2",
+					seasonNumber: 1,
+					episodeNumber: 2,
+					played: true,
+					playCount: 1,
+					lastPlayedDate: null,
+				},
+			],
+		}));
+		const runner = createJellyfinEpisodeWorkItemRunner({
+			createClient: () =>
+				({
+					getUsers: async () => [{ id: "user-1", name: "Current User" }],
+					getLibraries: async () => [{ id: "library-1" }],
+					getEpisodeItemsPageWithCoverage: page,
+				}) as never,
+		});
+		const result = await runner({
+			prisma,
+			encryptor: { decrypt: () => "plaintext" },
+			instance,
+			log: { warn: () => undefined, error: () => undefined } as never,
+			automaticRenewal: "provider-unavailable-cooldown",
+			now,
+		});
+		if (mode === "deferred") {
+			expect(result).toMatchObject({ state: "failed", renewalDeferred: true, progressed: false });
+			expect(page).not.toHaveBeenCalled();
+			const after = await finalizerState(prisma, seed.run.id);
+			expect(after.rows).toEqual(before.rows);
+			expect(after.stages).toEqual(before.stages);
+			expect(after.run).toMatchObject({ state: "failed", lastReasonCode: "provider-unavailable" });
+			expect(after.status).toMatchObject({
+				lastAttemptResult: "error",
+				lastAttemptErrorMessage: "collection-deferred",
+			});
+		} else {
+			expect(result).toMatchObject({ state: "running", progressed: true });
+			expect(page).toHaveBeenCalledOnce();
+			expect(page.mock.calls[0]?.[2]).toBe(1);
+			expect(
+				await prisma.providerObservationUnit.findUnique({ where: { id: failedUnit.id } }),
+			).toMatchObject({ state: "complete", cursor: 2, attemptCount: 0 });
+		}
+	});
+
+	it("keeps normal periodic creation available when no saved failed run exists", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await prisma.providerObservationRun.delete({ where: { id: seed.run.id } });
+		const instance = await prisma.serviceInstance.update({
+			where: { id: "jellyfin-1" },
+			data: { expectedIdentity: "verified-provider", identityStatus: "VERIFIED" },
+		});
+		await prisma.cacheRefreshStatus.update({
+			where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "jellyfin_episode" } },
+			data: { lastAttemptResult: "success", lastAttemptErrorMessage: null },
+		});
+		identityModuleMocks.readProviderIdentity.mockResolvedValue({
+			service: "JELLYFIN",
+			identityKind: "jellyfin-server-id",
+			rawIdentity: "verified-provider",
+			confirmationDigest: "a".repeat(64),
+			fingerprint: "a".repeat(12),
+		});
+		const page = vi.fn(async () => ({
+			startIndex: 0,
+			totalRecordCount: 1,
+			items: [
+				{
+					type: "Episode" as const,
+					id: "episode-fresh",
+					seriesId: "series-1",
+					name: "Fresh Episode",
+					seasonNumber: 1,
+					episodeNumber: 1,
+					played: true,
+					playCount: 1,
+					lastPlayedDate: null,
+				},
+			],
+		}));
+		const runner = createJellyfinEpisodeWorkItemRunner({
+			createClient: () =>
+				({
+					getUsers: async () => [{ id: "user-1", name: "Current User" }],
+					getLibraries: async () => [{ id: "library-1" }],
+					getEpisodeItemsPageWithCoverage: page,
+				}) as never,
+		});
+		const result = await runner({
+			prisma,
+			encryptor: { decrypt: () => "plaintext" },
+			instance,
+			log: { warn: () => undefined, error: () => undefined } as never,
+			automaticRenewal: "provider-unavailable-cooldown",
+			now: new Date("2026-09-07T12:00:00.000Z"),
+		});
+		expect(result).toMatchObject({ state: "running", progressed: true });
+		expect(page).toHaveBeenCalledOnce();
+		expect(await prisma.providerObservationRun.count()).toBe(1);
+	});
+
 	it("settles an inherited V2 attempt after an added series and admits a fresh plan without restart", async () => {
 		const prisma = await database();
 		const seed = await completeFinalizerFixture(prisma);

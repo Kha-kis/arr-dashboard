@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import {
 	advanceObservationUnit,
+	canSettleAutomaticObservationRenewalDeferred,
 	claimObservationUnit,
 	completeObservationUnit,
 	createOrLoadObservationRun,
@@ -13,8 +14,14 @@ import {
 	hasExhaustedObservationRunRetries,
 	invalidateObservationRuns,
 	recoverAbandonedObservationRuns,
+	renewExhaustedObservationRun,
 } from "../observation-run-repository.js";
-import type { ObservationRunAuthority, ObservationRunUnitSeed } from "../observation-run-types.js";
+import {
+	buildObservationActiveSlotKey,
+	buildObservationAuthorityKey,
+	type ObservationRunAuthority,
+	type ObservationRunUnitSeed,
+} from "../observation-run-types.js";
 
 const databases: Array<{ directory: string; prisma: ReturnType<typeof createTestPrismaClient> }> =
 	[];
@@ -41,6 +48,41 @@ const units: ObservationRunUnitSeed[] = [
 		scopeDigest: "c".repeat(64),
 		phase: "collect",
 		expectedTargets: 1,
+	},
+];
+const renewalAuthority: ObservationRunAuthority = {
+	provider: "jellyfin_episode",
+	cacheType: "jellyfin_episode",
+	instanceId: "instance-1",
+	parentGenerationId: `jellyfin-episode-parent-v3:${"d".repeat(64)}`,
+	targetDigest: "e".repeat(64),
+	connectionGeneration: 2,
+	identityGeneration: 3,
+};
+const renewalUnits: ObservationRunUnitSeed[] = [
+	{
+		ordinal: 0,
+		scopeKey: "library:one",
+		scopeDigest: "f".repeat(64),
+		scopePayload: JSON.stringify({ catalogProvenance: { version: 3 } }),
+		phase: "collect",
+		expectedTargets: 2,
+	},
+	{
+		ordinal: 1,
+		scopeKey: "library:two",
+		scopeDigest: "1".repeat(64),
+		scopePayload: JSON.stringify({ catalogProvenance: { version: 3 } }),
+		phase: "collect",
+		expectedTargets: 1,
+	},
+	{
+		ordinal: 2,
+		scopeKey: "library:three",
+		scopeDigest: "2".repeat(64),
+		scopePayload: JSON.stringify({ catalogProvenance: { version: 3 } }),
+		phase: "collect",
+		expectedTargets: 3,
 	},
 ];
 
@@ -73,6 +115,56 @@ async function database() {
 	return prisma;
 }
 
+async function renewalDatabase() {
+	const prisma = await database();
+	await prisma.serviceInstance.update({
+		where: { id: renewalAuthority.instanceId },
+		data: { service: "JELLYFIN", identityStatus: "VERIFIED" },
+	});
+	return prisma;
+}
+
+async function exhaustedRenewalRun(prisma: Awaited<ReturnType<typeof renewalDatabase>>) {
+	const run = await createOrLoadObservationRun(prisma, {
+		authority: renewalAuthority,
+		units: renewalUnits,
+	});
+	const old = new Date("2026-09-10T05:00:00.000Z");
+	const unit = await prisma.providerObservationUnit.findFirstOrThrow({ where: { runId: run.id } });
+	const completedUnit = await prisma.providerObservationUnit.findFirstOrThrow({
+		where: { runId: run.id, ordinal: 1 },
+	});
+	await prisma.providerObservationUnit.update({
+		where: { id: completedUnit.id },
+		data: { state: "complete" },
+	});
+	await prisma.providerObservationUnit.update({
+		where: { id: unit.id },
+		data: {
+			cursor: 17,
+			expectedRawCount: 20,
+			observedRawCount: 18,
+			state: "failed",
+			attemptCount: 4,
+			nextAttemptAt: null,
+			lastReasonCode: "provider-unavailable",
+		},
+	});
+	await prisma.providerObservationRun.update({
+		where: { id: run.id },
+		data: {
+			state: "failed",
+			completedUnits: 1,
+			completedWork: 1,
+			nextAttemptAt: null,
+			lastReasonCode: "provider-unavailable",
+		},
+	});
+	await prisma.$executeRaw`UPDATE "provider_observation_runs" SET "updatedAt" = ${old} WHERE "id" = ${run.id}`;
+	await prisma.$executeRaw`UPDATE "provider_observation_units" SET "updatedAt" = ${old} WHERE "id" = ${unit.id}`;
+	return { run, unit, old };
+}
+
 afterEach(async () => {
 	for (const entry of databases.splice(0)) {
 		await entry.prisma.$disconnect();
@@ -81,6 +173,180 @@ afterEach(async () => {
 });
 
 describe("provider observation run repository SQLite lifecycle", { timeout: 30_000 }, () => {
+	it.each([
+		["exactly at cutoff", "2026-09-10T11:00:00.000Z"],
+		["after cutoff", "2026-09-10T12:00:00.000Z"],
+	])("renews an exhausted V3 provider outage %s", async (_label, nowValue) => {
+		const prisma = await renewalDatabase();
+		const { run, unit } = await exhaustedRenewalRun(prisma);
+		const result = await renewExhaustedObservationRun(prisma, {
+			mode: "provider-unavailable-cooldown",
+			runId: run.id,
+			instanceId: renewalAuthority.instanceId,
+			userId: "user-1",
+			authorityKey: buildObservationAuthorityKey(renewalAuthority),
+			parentGenerationId: renewalAuthority.parentGenerationId!,
+			targetDigest: renewalAuthority.targetDigest,
+			connectionGeneration: renewalAuthority.connectionGeneration,
+			identityGeneration: renewalAuthority.identityGeneration,
+			now: new Date(nowValue),
+		});
+		expect(result).toBe("renewed");
+		expect(await prisma.providerObservationRun.findUnique({ where: { id: run.id } })).toMatchObject(
+			{
+				state: "running",
+				activeSlotKey: buildObservationActiveSlotKey(renewalAuthority),
+				completedUnits: 1,
+				completedWork: 1,
+			},
+		);
+		expect(
+			await prisma.providerObservationUnit.findUnique({ where: { id: unit.id } }),
+		).toMatchObject({
+			state: "pending",
+			attemptCount: 0,
+			cursor: 17,
+			expectedRawCount: 20,
+			observedRawCount: 18,
+			claimToken: null,
+		});
+	});
+
+	it("proves deferred marker ownership only for the unchanged exhausted V3 run", async () => {
+		const prisma = await renewalDatabase();
+		const { run } = await exhaustedRenewalRun(prisma);
+		const input = {
+			runId: run.id,
+			instanceId: renewalAuthority.instanceId,
+			authorityKey: buildObservationAuthorityKey(renewalAuthority),
+			parentGenerationId: renewalAuthority.parentGenerationId!,
+			targetDigest: renewalAuthority.targetDigest,
+			connectionGeneration: renewalAuthority.connectionGeneration,
+			identityGeneration: renewalAuthority.identityGeneration,
+			now: new Date("2026-09-10T12:00:00.000Z"),
+		};
+		expect(await canSettleAutomaticObservationRenewalDeferred(prisma, input)).toBe(true);
+		await prisma.providerObservationRun.update({
+			where: { id: run.id },
+			data: { state: "running" },
+		});
+		expect(await canSettleAutomaticObservationRenewalDeferred(prisma, input)).toBe(false);
+	});
+
+	it.each([
+		"fresh run",
+		"future timestamp",
+		"mixed reason",
+		"null reason",
+		"active claim",
+		"wrong authority",
+		"wrong authority key",
+		"wrong owner",
+		"disabled instance",
+		"unverified identity",
+		"wrong service",
+		"legacy parent",
+	])("defers renewal for %s", async (caseName) => {
+		const prisma = await renewalDatabase();
+		const { run, unit } = await exhaustedRenewalRun(prisma);
+		if (caseName === "fresh run") {
+			await prisma.$executeRaw`UPDATE "provider_observation_runs" SET "updatedAt" = ${new Date("2026-09-10T11:00:00.000Z")} WHERE "id" = ${run.id}`;
+		}
+		if (caseName === "future timestamp") {
+			await prisma.$executeRaw`UPDATE "provider_observation_runs" SET "updatedAt" = ${new Date("2026-09-10T13:00:00.000Z")} WHERE "id" = ${run.id}`;
+		}
+		if (caseName === "mixed reason") {
+			await prisma.providerObservationUnit.update({
+				where: { id: unit.id },
+				data: { lastReasonCode: "coverage-incomplete" },
+			});
+			await prisma.$executeRaw`UPDATE "provider_observation_units" SET "updatedAt" = ${new Date("2026-09-10T05:00:00.000Z")} WHERE "id" = ${unit.id}`;
+		}
+		if (caseName === "null reason") {
+			await prisma.providerObservationUnit.update({
+				where: { id: unit.id },
+				data: { lastReasonCode: null },
+			});
+			await prisma.$executeRaw`UPDATE "provider_observation_units" SET "updatedAt" = ${new Date("2026-09-10T05:00:00.000Z")} WHERE "id" = ${unit.id}`;
+		}
+		if (caseName === "active claim") {
+			await prisma.providerObservationUnit.update({
+				where: { id: unit.id },
+				data: { state: "running", claimToken: "claim-token" },
+			});
+			await prisma.$executeRaw`UPDATE "provider_observation_units" SET "updatedAt" = ${new Date("2026-09-10T05:00:00.000Z")} WHERE "id" = ${unit.id}`;
+		}
+		if (caseName === "wrong owner") {
+			await prisma.user.create({ data: { id: "user-2", username: "other-owner" } });
+			await prisma.serviceInstance.update({
+				where: { id: renewalAuthority.instanceId },
+				data: { userId: "user-2" },
+			});
+		}
+		if (caseName === "disabled instance") {
+			await prisma.serviceInstance.update({
+				where: { id: renewalAuthority.instanceId },
+				data: { enabled: false },
+			});
+		}
+		if (caseName === "unverified identity") {
+			await prisma.serviceInstance.update({
+				where: { id: renewalAuthority.instanceId },
+				data: { identityStatus: "UNVERIFIED" },
+			});
+		}
+		if (caseName === "wrong service") {
+			await prisma.serviceInstance.update({
+				where: { id: renewalAuthority.instanceId },
+				data: { service: "PLEX" },
+			});
+		}
+		const input = {
+			mode: "provider-unavailable-cooldown" as const,
+			runId: run.id,
+			instanceId: renewalAuthority.instanceId,
+			userId: "user-1",
+			authorityKey: buildObservationAuthorityKey(renewalAuthority),
+			parentGenerationId: renewalAuthority.parentGenerationId!,
+			targetDigest: renewalAuthority.targetDigest,
+			connectionGeneration: renewalAuthority.connectionGeneration,
+			identityGeneration: renewalAuthority.identityGeneration,
+			now: new Date("2026-09-10T12:00:00.000Z"),
+		};
+		if (caseName === "wrong authority") input.connectionGeneration += 1;
+		if (caseName === "wrong authority key") input.authorityKey = "wrong-authority-key";
+		if (caseName === "legacy parent")
+			input.parentGenerationId = "jellyfin-episode-parent-v2:legacy";
+		expect(await renewExhaustedObservationRun(prisma, input)).toBe("deferred");
+		expect(await prisma.providerObservationRun.findUnique({ where: { id: run.id } })).toMatchObject(
+			{
+				state: "failed",
+			},
+		);
+	});
+
+	it("allows only one concurrent automatic renewal", async () => {
+		const prisma = await renewalDatabase();
+		const { run } = await exhaustedRenewalRun(prisma);
+		const input = {
+			mode: "provider-unavailable-cooldown" as const,
+			runId: run.id,
+			instanceId: renewalAuthority.instanceId,
+			userId: "user-1",
+			authorityKey: buildObservationAuthorityKey(renewalAuthority),
+			parentGenerationId: renewalAuthority.parentGenerationId!,
+			targetDigest: renewalAuthority.targetDigest,
+			connectionGeneration: renewalAuthority.connectionGeneration,
+			identityGeneration: renewalAuthority.identityGeneration,
+			now: new Date("2026-09-10T12:00:00.000Z"),
+		};
+		const results = await Promise.all([
+			renewExhaustedObservationRun(prisma, input),
+			renewExhaustedObservationRun(prisma, input),
+		]);
+		expect(results.sort()).toEqual(["deferred", "renewed"]);
+	});
+
 	it("allows one concurrent claim and rejects stale-token writes", async () => {
 		const prisma = await database();
 		const run = await createOrLoadObservationRun(prisma, { authority, units: [units[0]!] });

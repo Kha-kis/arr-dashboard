@@ -283,6 +283,23 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 		expect(mocks.refresh).toHaveBeenCalledTimes(4);
 	});
 
+	it("stops after an explicit deferred renewal even when the run rereads as running", async () => {
+		findInstances.mockResolvedValue([instance("JELLYFIN")]);
+		mocks.refresh.mockResolvedValue({
+			complete: false,
+			errors: 0,
+			progressed: false,
+			renewalDeferred: true,
+		});
+		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+		await app.ready();
+
+		await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(1);
+	});
+
 	it.each([0, 1])(
 		"does not continue when a refresh settles after close (errors=%i)",
 		async (errors) => {
@@ -356,6 +373,8 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 		await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000);
 
 		expect(mocks.refresh.mock.calls.map(([input]) => input.resumeFailed)).toEqual([true, false]);
+		expect(mocks.refresh.mock.calls[0]![0].automaticRenewal).toBeUndefined();
+		expect(mocks.refresh.mock.calls[1]![0].automaticRenewal).toBe("provider-unavailable-cooldown");
 	});
 
 	it("starts separate instances independently instead of serializing provider work", async () => {

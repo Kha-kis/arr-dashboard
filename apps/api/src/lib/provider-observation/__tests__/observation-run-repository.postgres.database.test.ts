@@ -15,7 +15,9 @@ import {
 	failObservationUnit,
 	invalidateObservationRuns,
 	recoverAbandonedObservationRuns,
+	renewExhaustedObservationRun,
 } from "../observation-run-repository.js";
+import { buildObservationAuthorityKey } from "../observation-run-types.js";
 
 const configuredUrl = process.env.TEST_DATABASE_URL;
 const integrationEnabled = process.env.INTEGRATION_TESTS === "true";
@@ -181,6 +183,109 @@ pgDescribe("provider observation PostgreSQL CAS parity", () => {
 		expect(
 			await completeObservationUnit(first, { claim, expectedRawCount: 1, observedRawCount: 1 }),
 		).toBe(false);
+	});
+
+	it("renews one exhausted V3 outage transaction and preserves its cursor under PostgreSQL contention", async () => {
+		if (!schemaUrl) return;
+		const makeClient = () => {
+			const pool = new Pool({ connectionString: schemaUrl });
+			pools.push(pool);
+			const client = new PrismaClientConstructor({ adapter: new PrismaPg(pool) });
+			clients.push(client);
+			return client;
+		};
+		const first = makeClient();
+		const second = makeClient();
+		const suffix = `${Date.now()}_renewal`;
+		const userId = `pg-user-${suffix}`;
+		const instanceId = `pg-jellyfin-${suffix}`;
+		await first.user.create({ data: { id: userId, username: `pg-${suffix}` } });
+		await first.serviceInstance.create({
+			data: {
+				id: instanceId,
+				userId,
+				service: "JELLYFIN",
+				label: "pg-jellyfin",
+				baseUrl: "http://127.0.0.1:8096",
+				encryptedApiKey: "encrypted",
+				encryptionIv: "iv",
+				identityStatus: "VERIFIED",
+				connectionGeneration: 7,
+				identityGeneration: 9,
+			},
+		});
+		const authority = {
+			provider: "jellyfin_episode" as const,
+			cacheType: "jellyfin_episode" as const,
+			instanceId,
+			parentGenerationId: `jellyfin-episode-parent-v3:${"d".repeat(64)}`,
+			targetDigest: "e".repeat(64),
+			connectionGeneration: 7,
+			identityGeneration: 9,
+		};
+		const run = await createOrLoadObservationRun(first, {
+			authority,
+			units: [
+				{
+					ordinal: 0,
+					scopeKey: "pg-library",
+					scopeDigest: "f".repeat(64),
+					scopePayload: JSON.stringify({ catalogProvenance: { version: 3 } }),
+					phase: "collect",
+					expectedTargets: 2,
+				},
+			],
+		});
+		const unit = await first.providerObservationUnit.findFirstOrThrow({ where: { runId: run.id } });
+		const old = new Date("2026-09-10T05:00:00.000Z");
+		await first.providerObservationUnit.update({
+			where: { id: unit.id },
+			data: {
+				cursor: 17,
+				expectedRawCount: 20,
+				observedRawCount: 18,
+				state: "failed",
+				attemptCount: 4,
+				nextAttemptAt: null,
+				lastReasonCode: "provider-unavailable",
+			},
+		});
+		await first.providerObservationRun.update({
+			where: { id: run.id },
+			data: { state: "failed", nextAttemptAt: null, lastReasonCode: "provider-unavailable" },
+		});
+		await first.$executeRaw`UPDATE "provider_observation_runs" SET "updatedAt" = ${old} WHERE "id" = ${run.id}`;
+		await first.$executeRaw`UPDATE "provider_observation_units" SET "updatedAt" = ${old} WHERE "id" = ${unit.id}`;
+		const input = {
+			mode: "provider-unavailable-cooldown" as const,
+			runId: run.id,
+			instanceId,
+			userId,
+			authorityKey: buildObservationAuthorityKey(authority),
+			parentGenerationId: authority.parentGenerationId,
+			targetDigest: authority.targetDigest,
+			connectionGeneration: authority.connectionGeneration,
+			identityGeneration: authority.identityGeneration,
+			now: new Date("2026-09-10T12:00:00.000Z"),
+		};
+		const results = await Promise.all([
+			renewExhaustedObservationRun(first, input),
+			renewExhaustedObservationRun(second, input),
+		]);
+		expect(results.sort()).toEqual(["deferred", "renewed"]);
+		expect(await first.providerObservationRun.findUnique({ where: { id: run.id } })).toMatchObject({
+			state: "running",
+			completedUnits: 0,
+		});
+		expect(
+			await first.providerObservationUnit.findUnique({ where: { id: unit.id } }),
+		).toMatchObject({
+			state: "pending",
+			attemptCount: 0,
+			cursor: 17,
+			expectedRawCount: 20,
+			observedRawCount: 18,
+		});
 	});
 
 	it("enforces one live unit, whole-run retry gates, lease renewal, and exact counters", async () => {
