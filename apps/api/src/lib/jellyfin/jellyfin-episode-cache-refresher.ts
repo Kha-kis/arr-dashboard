@@ -10,6 +10,7 @@ import {
 	claimObservationUnit,
 	createOrLoadObservationRun,
 	failObservationUnit,
+	getAutomaticObservationRenewalDeadline,
 	hasExhaustedObservationRunRetries,
 	renewExhaustedObservationRun,
 } from "../provider-observation/observation-run-repository.js";
@@ -77,8 +78,10 @@ export type JellyfinEpisodeRefreshResult = {
 	superseded?: boolean;
 	/** The exact invalid plan and its attempt were settled; fresh discovery is needed. */
 	replanRequired?: true;
-	/** Automatic renewal deferred and must not enter a continuation chain. */
+	/** Automatic renewal stopped; only a validated future deadline may schedule recovery. */
 	renewalDeferred?: true;
+	renewalDeadline?: Date;
+	retryablePreRenewalFailure?: true;
 };
 
 export type JellyfinEpisodePublicationContext = {
@@ -120,6 +123,8 @@ type JellyfinEpisodeWorkProgress = ObservationRunProgress & {
 	replanRequired?: true;
 	superseded?: true;
 	renewalDeferred?: true;
+	renewalDeadline?: Date;
+	retryablePreRenewalFailure?: true;
 };
 
 type JellyfinEpisodePageFailureCategory =
@@ -243,6 +248,8 @@ export async function refreshOwnedJellyfinEpisodeCache(
 		...(progress.replanRequired ? { replanRequired: true as const } : {}),
 		...(progress.superseded ? { superseded: true } : {}),
 		...(progress.renewalDeferred ? { renewalDeferred: true as const } : {}),
+		...(progress.renewalDeadline ? { renewalDeadline: progress.renewalDeadline } : {}),
+		...(progress.retryablePreRenewalFailure ? { retryablePreRenewalFailure: true as const } : {}),
 		...(complete ? { completedAt: context.now ?? new Date() } : {}),
 	};
 }
@@ -296,8 +303,10 @@ function claimScope(payload: string | null) {
 export function createJellyfinEpisodeWorkItemRunner(
 	deps: JellyfinEpisodeWorkItemRunnerDependencies = defaultJellyfinEpisodeWorkItemRunnerDependencies,
 ) {
-	return async function runNextJellyfinEpisodeWorkItemCore(
+	async function runNextJellyfinEpisodeWorkItemCore(
 		context: JellyfinEpisodePublicationContext,
+		markAdmissionStarted: () => void,
+		preRenewal: { settle: () => Promise<boolean> },
 	): Promise<JellyfinEpisodeWorkProgress> {
 		const now = context.now ?? new Date();
 		const guardOptions = {
@@ -320,13 +329,31 @@ export function createJellyfinEpisodeWorkItemRunner(
 				authority,
 				guardOptions,
 			);
-		} catch {
+		} catch (error) {
+			if (isTransientEpisodeDatabaseFailure(error)) throw error;
 			logJellyfinEpisodePrePageFailure(context.log, "current-authority-failed");
 			return emptyEpisodeProgress();
 		}
 		if (outer.status === "superseded") return emptyEpisodeProgress();
 		const attempt = outer.attempt;
 		const canFinishAttempt = outer.status === "acquired";
+		preRenewal.settle = async () =>
+			canFinishAttempt &&
+			(await finishProviderCacheRefreshAttemptFailure(
+				context.prisma,
+				"jellyfin_episode",
+				"collection-deferred",
+				authority,
+				attempt,
+				context.log,
+				guardOptions,
+			)) === "recorded";
+		const retryPreRenewal = async (): Promise<JellyfinEpisodeWorkProgress> => ({
+			...emptyEpisodeProgress(),
+			...((await preRenewal.settle()) && context.automaticRenewal
+				? { retryablePreRenewalFailure: true as const }
+				: {}),
+		});
 		const failAttempt = async (
 			reasonCode: "coverage-incomplete" | "provider-unavailable",
 			runId?: string,
@@ -368,13 +395,14 @@ export function createJellyfinEpisodeWorkItemRunner(
 		);
 		if (candidateV2State === null) {
 			logJellyfinEpisodePrePageFailure(context.log, "run-admission-failed");
-			return await failAttempt("provider-unavailable");
+			return await retryPreRenewal();
 		}
 		const parent = await readAuthoritativeLibraryParent(
 			context.prisma,
 			current as unknown as OwnedProviderPublicationSnapshot,
 			now,
 			candidateV2State !== false,
+			context.automaticRenewal !== undefined,
 		);
 		if (!parent) {
 			logJellyfinEpisodePrePageFailure(context.log, "parent-admission-failed");
@@ -441,9 +469,10 @@ export function createJellyfinEpisodeWorkItemRunner(
 		);
 		if (savedPlan?.kind === "unavailable") {
 			logJellyfinEpisodePrePageFailure(context.log, "run-admission-failed");
-			return await failAttempt("provider-unavailable");
+			return await retryPreRenewal();
 		}
 		if (savedPlan?.kind === "invalid") {
+			markAdmissionStarted();
 			logJellyfinEpisodePrePageFailure(context.log, "scope-plan-failed");
 			const settlement = await invalidateJellyfinEpisodeAttempt({
 				prisma: context.prisma,
@@ -469,10 +498,15 @@ export function createJellyfinEpisodeWorkItemRunner(
 			plan = savedPlan.plan;
 			scopes = savedPlan.scopes;
 			run = savedPlan.run;
-			if (context.automaticRenewal === "provider-unavailable-cooldown" && run.state === "failed") {
+			if (
+				context.automaticRenewal === "provider-unavailable-cooldown" &&
+				run.state === "failed" &&
+				run.parentGenerationId?.startsWith(JELLYFIN_EPISODE_PARENT_V3_KEY_PREFIX)
+			) {
 				if (!canFinishAttempt) {
 					return { ...(await runProgress(context.prisma, run.id)), renewalDeferred: true };
 				}
+				markAdmissionStarted();
 				const renewed = await renewExhaustedObservationRun(context.prisma, {
 					mode: context.automaticRenewal,
 					runId: run.id,
@@ -486,7 +520,18 @@ export function createJellyfinEpisodeWorkItemRunner(
 					now,
 				});
 				if (renewed === "deferred") {
-					await finishProviderCacheRefreshAttemptFailure(
+					const renewalDeadline = await getAutomaticObservationRenewalDeadline(context.prisma, {
+						runId: run.id,
+						instanceId: current.id,
+						userId: current.userId,
+						authorityKey: run.authorityKey,
+						parentGenerationId: run.parentGenerationId!,
+						targetDigest: plan.targetDigest,
+						connectionGeneration: authority.connectionGeneration,
+						identityGeneration: authority.identityGeneration,
+						now,
+					});
+					const settlement = await finishProviderCacheRefreshAttemptFailure(
 						context.prisma,
 						"jellyfin_episode",
 						"collection-deferred",
@@ -510,14 +555,20 @@ export function createJellyfinEpisodeWorkItemRunner(
 						...(await runProgress(context.prisma, run.id)),
 						progressed: false,
 						renewalDeferred: true,
+						...(settlement === "recorded" &&
+						renewalDeadline &&
+						renewalDeadline.getTime() > now.getTime()
+							? { renewalDeadline }
+							: {}),
 					};
 				}
 				run = await context.prisma.providerObservationRun.findUniqueOrThrow({
 					where: { id: run.id },
 				});
 			}
-			// Explicit startup/scheduled refresh may renew an exhausted retry epoch,
+			// Explicit user Retry may renew an exhausted retry epoch,
 			// but must use the saved catalog authority rather than today's expanded key.
+			markAdmissionStarted();
 			if (context.resumeFailed && run.state === "failed") {
 				try {
 					run = await createOrLoadObservationRun(context.prisma, {
@@ -539,6 +590,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 				}
 			}
 		} else {
+			markAdmissionStarted();
 			// A disappearing candidate cannot turn last-good continuation authority
 			// into permission to create a new plan.
 			if (parent.temporaryUnavailable) return await failAttempt("provider-unavailable");
@@ -606,6 +658,20 @@ export function createJellyfinEpisodeWorkItemRunner(
 			run.targetDigest === plan.targetDigest &&
 			run.connectionGeneration === authority.connectionGeneration &&
 			run.identityGeneration === authority.identityGeneration;
+		const automaticRenewalDeadline = async () => {
+			if (!runOwnsAttempt) return null;
+			return await getAutomaticObservationRenewalDeadline(context.prisma, {
+				runId: run.id,
+				instanceId: current.id,
+				userId: current.userId,
+				authorityKey: run.authorityKey,
+				parentGenerationId: run.parentGenerationId!,
+				targetDigest: plan.targetDigest,
+				connectionGeneration: authority.connectionGeneration,
+				identityGeneration: authority.identityGeneration,
+				now: context.now ?? new Date(),
+			});
+		};
 		const finishAttemptIfExhausted = async () =>
 			await finishProviderCacheRefreshAttemptFailure(
 				context.prisma,
@@ -625,10 +691,14 @@ export function createJellyfinEpisodeWorkItemRunner(
 		if (!claim) {
 			const progress = await runProgress(context.prisma, run.id);
 			if (progress.completedUnits !== progress.totalUnits) {
-				if (runOwnsAttempt && progress.state === "failed") {
-					await finishAttemptIfExhausted();
-				}
-				return { ...progress, progressed: false };
+				const settlement =
+					runOwnsAttempt && progress.state === "failed" ? await finishAttemptIfExhausted() : null;
+				const renewalDeadline = settlement === "recorded" ? await automaticRenewalDeadline() : null;
+				return {
+					...progress,
+					progressed: false,
+					...(renewalDeadline ? { renewalDeadline } : {}),
+				};
 			}
 			if (parent.temporaryUnavailable) {
 				return { ...progress, retryableDependencyFailure: true, progressed: false };
@@ -770,10 +840,52 @@ export function createJellyfinEpisodeWorkItemRunner(
 				reasonCode: "provider-unavailable",
 				now,
 			});
-			if (failed && runOwnsAttempt) await finishAttemptIfExhausted();
-			return { ...(await runProgress(context.prisma, run.id)), progressed: false };
+			const settlement = failed && runOwnsAttempt ? await finishAttemptIfExhausted() : null;
+			const progress = await runProgress(context.prisma, run.id);
+			const renewalDeadline = settlement === "recorded" ? await automaticRenewalDeadline() : null;
+			return {
+				...progress,
+				progressed: false,
+				...(renewalDeadline ? { renewalDeadline } : {}),
+			};
+		}
+	}
+	return async (
+		context: JellyfinEpisodePublicationContext,
+	): Promise<JellyfinEpisodeWorkProgress> => {
+		let admissionStarted = false;
+		const preRenewal = { settle: async () => true };
+		try {
+			return await runNextJellyfinEpisodeWorkItemCore(
+				context,
+				() => {
+					admissionStarted = true;
+				},
+				preRenewal,
+			);
+		} catch (error) {
+			if (
+				context.automaticRenewal &&
+				!admissionStarted &&
+				isTransientEpisodeDatabaseFailure(error)
+			) {
+				logJellyfinEpisodePrePageFailure(context.log, "run-admission-failed");
+				const settled = await preRenewal.settle().catch(() => false);
+				return {
+					...emptyEpisodeProgress(),
+					...(settled ? { retryablePreRenewalFailure: true as const } : {}),
+				};
+			}
+			throw error;
 		}
 	};
+}
+
+function isTransientEpisodeDatabaseFailure(error: unknown): boolean {
+	return (
+		error instanceof Prisma.PrismaClientKnownRequestError &&
+		["P1001", "P1002", "P1008", "P1017", "P2024", "P2028", "P2034"].includes(error.code)
+	);
 }
 
 /** Scheduler-compatible production runner composed from the default dependencies. */
@@ -955,6 +1067,7 @@ async function readAuthoritativeLibraryParent(
 	>,
 	now = new Date(),
 	allowCompatibleLastGoodForV2 = false,
+	throwTransientAdmissionFailure = false,
 ): Promise<LibraryParent | null> {
 	try {
 		const [status, rawRows] = await Promise.all([
@@ -1117,7 +1230,8 @@ async function readAuthoritativeLibraryParent(
 			...(catalogProvenance ? { catalogProvenance } : {}),
 			...(compatibleTemporaryFailure ? { temporaryUnavailable: true as const } : {}),
 		};
-	} catch {
+	} catch (error) {
+		if (throwTransientAdmissionFailure && isTransientEpisodeDatabaseFailure(error)) throw error;
 		return null;
 	}
 }

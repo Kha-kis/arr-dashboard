@@ -500,7 +500,7 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 		).toHaveLength(continuationTimerCount);
 	});
 
-	it("resumes failed work only at startup and preserves exhaustion on recurring ticks", async () => {
+	it("uses cooldown admission at startup and on recurring ticks", async () => {
 		findInstances.mockResolvedValue([instance("JELLYFIN")]);
 		mocks.refresh.mockResolvedValue({ complete: true, upserted: 1, errors: 0 });
 		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
@@ -510,7 +510,7 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 		await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000);
 
 		expect(mocks.refresh.mock.calls.map(([input]) => input.resumeFailed)).toEqual([true, false]);
-		expect(mocks.refresh.mock.calls[0]![0].automaticRenewal).toBeUndefined();
+		expect(mocks.refresh.mock.calls[0]![0].automaticRenewal).toBe("provider-unavailable-cooldown");
 		expect(mocks.refresh.mock.calls[1]![0].automaticRenewal).toBe("provider-unavailable-cooldown");
 	});
 
@@ -560,6 +560,155 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 		expect(mocks.refresh).toHaveBeenCalledTimes(4);
 		await vi.advanceTimersByTimeAsync(600_000);
 		expect(mocks.refresh).toHaveBeenCalledTimes(4);
+	});
+
+	it("schedules one provider recovery callback at the trusted renewal deadline", async () => {
+		findInstances.mockResolvedValue([instance("JELLYFIN")]);
+		const deadline = new Date(Date.now() + 36 * 60 * 1000);
+		mocks.refresh
+			.mockResolvedValueOnce({
+				complete: false,
+				errors: 1,
+				progressed: false,
+				renewalDeadline: deadline,
+			})
+			.mockResolvedValue({ complete: true, errors: 0, progressed: false });
+		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+		await app.ready();
+
+		await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
+		expect(mocks.refresh).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(30 * 60 * 1000 - 1);
+		expect(mocks.refresh).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(1);
+		expect(mocks.refresh).toHaveBeenCalledTimes(2);
+		expect(mocks.refresh.mock.calls[1]![0]).toMatchObject({
+			resumeFailed: false,
+			automaticRenewal: "provider-unavailable-cooldown",
+		});
+	});
+
+	it("retains recovery mode for a bounded pre-renewal failure at the deadline", async () => {
+		findInstances.mockResolvedValue([instance("JELLYFIN")]);
+		mocks.refresh
+			.mockResolvedValueOnce({
+				complete: false,
+				errors: 1,
+				progressed: false,
+				renewalDeadline: new Date(Date.now() + 36 * 60_000),
+			})
+			.mockResolvedValueOnce({
+				complete: false,
+				errors: 1,
+				progressed: false,
+				retryablePreRenewalFailure: true,
+			})
+			.mockResolvedValue({ complete: true, errors: 0, progressed: false });
+		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(36 * 60_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(2);
+		await vi.advanceTimersByTimeAsync(29_999);
+		expect(mocks.refresh).toHaveBeenCalledTimes(2);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(mocks.refresh).toHaveBeenCalledTimes(3);
+		expect(mocks.refresh.mock.calls[2]![0]).toMatchObject({
+			resumeFailed: false,
+			automaticRenewal: "provider-unavailable-cooldown",
+		});
+	});
+
+	it("bounds pre-renewal retries and never carries renewal mode after an unclassified rejection", async () => {
+		findInstances.mockResolvedValue([instance("JELLYFIN")]);
+		mocks.refresh.mockResolvedValue({
+			complete: false,
+			errors: 1,
+			progressed: false,
+			retryablePreRenewalFailure: true,
+		});
+		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(6 * 60_000 + 30_000 + 120_000 + 600_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(4);
+		await vi.advanceTimersByTimeAsync(600_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(4);
+		mocks.refresh
+			.mockRejectedValueOnce(new Error("unclassified"))
+			.mockResolvedValue({ complete: true, errors: 0 });
+		await vi.advanceTimersByTimeAsync(6 * 60 * 60_000);
+		expect(mocks.refresh.mock.calls.at(-1)![0].automaticRenewal).toBeUndefined();
+	});
+
+	it("recovers after a 46-minute outage without restarting or manual retry", async () => {
+		findInstances.mockResolvedValue([instance("JELLYFIN")]);
+		const started = Date.now();
+		mocks.refresh.mockImplementation(async () =>
+			Date.now() < started + 46 * 60_000
+				? {
+						complete: false,
+						errors: 1,
+						progressed: false,
+						renewalDeferred: true,
+						renewalDeadline: new Date(Date.now() + 30 * 60_000),
+					}
+				: { complete: true, errors: 0, progressed: true },
+		);
+		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(46 * 60_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(2);
+		await vi.advanceTimersByTimeAsync(20 * 60_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(3);
+		for (const [input] of mocks.refresh.mock.calls.slice(1)) {
+			expect(input).toMatchObject({
+				resumeFailed: false,
+				automaticRenewal: "provider-unavailable-cooldown",
+			});
+		}
+		await vi.advanceTimersByTimeAsync(30 * 60_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(3);
+	});
+
+	it("cancels a pending provider recovery when the scheduler closes", async () => {
+		findInstances.mockResolvedValue([instance("JELLYFIN")]);
+		mocks.refresh.mockResolvedValue({
+			complete: false,
+			errors: 1,
+			progressed: false,
+			renewalDeadline: new Date(Date.now() + 36 * 60_000),
+		});
+		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(6 * 60_000);
+		await app.close();
+		await vi.advanceTimersByTimeAsync(40 * 60_000);
+		expect(mocks.refresh).toHaveBeenCalledOnce();
+	});
+
+	it("manual recovery cancels the old provider recovery deadline", async () => {
+		const stored = instance("JELLYFIN");
+		findInstances.mockResolvedValue([stored]);
+		findRetryInstance.mockResolvedValue(stored);
+		mocks.refresh
+			.mockResolvedValueOnce({
+				complete: false,
+				errors: 1,
+				progressed: false,
+				renewalDeadline: new Date(Date.now() + 36 * 60_000),
+			})
+			.mockResolvedValue({ complete: true, errors: 0, progressed: false });
+		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(6 * 60_000);
+		const result = await (app as FastifyWithEpisodeRefreshScheduler).episodeRefreshScheduler.retry(
+			"jellyfin_episode",
+			{ userId: stored.userId, instanceId: stored.id },
+		);
+		expect(result.status).toBe("accepted");
+		await vi.advanceTimersByTimeAsync(0);
+		expect(mocks.refresh).toHaveBeenCalledTimes(2);
+		await vi.advanceTimersByTimeAsync(31 * 60_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(2);
 	});
 
 	it("replans once without an active run and retains the replan budget across successful pages", async () => {

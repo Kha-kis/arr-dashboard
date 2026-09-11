@@ -11,6 +11,7 @@ import {
 	completeObservationUnit,
 	createOrLoadObservationRun,
 	failObservationUnit,
+	getAutomaticObservationRenewalDeadline,
 	hasExhaustedObservationRunRetries,
 	invalidateObservationRuns,
 	recoverAbandonedObservationRuns,
@@ -174,8 +175,8 @@ afterEach(async () => {
 
 describe("provider observation run repository SQLite lifecycle", { timeout: 30_000 }, () => {
 	it.each([
-		["exactly at cutoff", "2026-09-10T11:00:00.000Z"],
-		["after cutoff", "2026-09-10T12:00:00.000Z"],
+		["exactly at cutoff", "2026-09-10T05:30:00.000Z"],
+		["after cutoff", "2026-09-10T05:30:00.001Z"],
 	])("renews an exhausted V3 provider outage %s", async (_label, nowValue) => {
 		const prisma = await renewalDatabase();
 		const { run, unit } = await exhaustedRenewalRun(prisma);
@@ -210,6 +211,39 @@ describe("provider observation run repository SQLite lifecycle", { timeout: 30_0
 			observedRawCount: 18,
 			claimToken: null,
 		});
+	});
+
+	it("returns the latest exhausted provider timestamp plus the recovery cooldown", async () => {
+		const prisma = await renewalDatabase();
+		const { run, unit } = await exhaustedRenewalRun(prisma);
+		const now = new Date("2026-09-10T05:20:00.000Z");
+		const deadline = await getAutomaticObservationRenewalDeadline(prisma, {
+			runId: run.id,
+			instanceId: renewalAuthority.instanceId,
+			userId: "user-1",
+			authorityKey: buildObservationAuthorityKey(renewalAuthority),
+			parentGenerationId: renewalAuthority.parentGenerationId!,
+			targetDigest: renewalAuthority.targetDigest,
+			connectionGeneration: renewalAuthority.connectionGeneration,
+			identityGeneration: renewalAuthority.identityGeneration,
+			now,
+		});
+		expect(deadline).toEqual(new Date("2026-09-10T05:30:00.000Z"));
+		await prisma.$executeRaw`UPDATE "provider_observation_units" SET "updatedAt" = ${new Date("2026-09-10T05:15:00.000Z")} WHERE "id" = ${unit.id}`;
+		await prisma.$executeRaw`UPDATE "provider_observation_runs" SET "updatedAt" = ${new Date("2026-09-10T05:15:00.000Z")} WHERE "id" = ${run.id}`;
+		expect(
+			await getAutomaticObservationRenewalDeadline(prisma, {
+				runId: run.id,
+				instanceId: renewalAuthority.instanceId,
+				userId: "user-1",
+				authorityKey: buildObservationAuthorityKey(renewalAuthority),
+				parentGenerationId: renewalAuthority.parentGenerationId!,
+				targetDigest: renewalAuthority.targetDigest,
+				connectionGeneration: renewalAuthority.connectionGeneration,
+				identityGeneration: renewalAuthority.identityGeneration,
+				now,
+			}),
+		).toEqual(new Date("2026-09-10T05:45:00.000Z"));
 	});
 
 	it("proves deferred marker ownership only for the unchanged exhausted V3 run", async () => {
@@ -250,7 +284,7 @@ describe("provider observation run repository SQLite lifecycle", { timeout: 30_0
 		const prisma = await renewalDatabase();
 		const { run, unit } = await exhaustedRenewalRun(prisma);
 		if (caseName === "fresh run") {
-			await prisma.$executeRaw`UPDATE "provider_observation_runs" SET "updatedAt" = ${new Date("2026-09-10T11:00:00.000Z")} WHERE "id" = ${run.id}`;
+			await prisma.$executeRaw`UPDATE "provider_observation_runs" SET "updatedAt" = ${new Date("2026-09-10T11:45:00.000Z")} WHERE "id" = ${run.id}`;
 		}
 		if (caseName === "future timestamp") {
 			await prisma.$executeRaw`UPDATE "provider_observation_runs" SET "updatedAt" = ${new Date("2026-09-10T13:00:00.000Z")} WHERE "id" = ${run.id}`;
@@ -318,6 +352,10 @@ describe("provider observation run repository SQLite lifecycle", { timeout: 30_0
 		if (caseName === "legacy parent")
 			input.parentGenerationId = "jellyfin-episode-parent-v2:legacy";
 		expect(await renewExhaustedObservationRun(prisma, input)).toBe("deferred");
+		const deadline = await getAutomaticObservationRenewalDeadline(prisma, input);
+		expect(deadline).toEqual(
+			caseName === "fresh run" ? new Date("2026-09-10T12:15:00.000Z") : null,
+		);
 		expect(await prisma.providerObservationRun.findUnique({ where: { id: run.id } })).toMatchObject(
 			{
 				state: "failed",

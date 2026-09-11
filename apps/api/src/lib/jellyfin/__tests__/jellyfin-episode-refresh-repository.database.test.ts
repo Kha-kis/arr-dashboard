@@ -2682,13 +2682,16 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 	);
 
 	it.each([
-		["eligible", new Date("2026-09-07T12:00:00.000Z")],
-		["deferred", new Date("2026-09-07T10:00:00.000Z")],
+		["eligible", new Date("2026-09-07T05:30:00.000Z")],
+		["legacy-startup", new Date("2026-09-07T05:29:59.999Z")],
+		["deferred", new Date("2026-09-07T05:29:59.999Z")],
+		["invalid-reason", new Date("2026-09-07T05:30:00.000Z")],
+		["mixed-reasons", new Date("2026-09-07T05:30:00.000Z")],
 	])("runs an exhausted V3 outage through the real caller path: %s", async (mode, now) => {
 		const prisma = await database();
 		const seed = await completeFinalizerFixture(prisma);
 		await bindV2Fixture(prisma, seed.run.id, seed.scopes);
-		await bindV3Fixture(prisma, seed.run.id);
+		if (mode !== "legacy-startup") await bindV3Fixture(prisma, seed.run.id);
 		const instance = await prisma.serviceInstance.update({
 			where: { id: "jellyfin-1" },
 			data: { expectedIdentity: "verified-provider", identityStatus: "VERIFIED" },
@@ -2726,9 +2729,25 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 				lastReasonCode: "provider-unavailable",
 			},
 		});
+		if (mode === "invalid-reason") {
+			await prisma.providerObservationRun.update({
+				where: { id: seed.run.id },
+				data: { lastReasonCode: "coverage-incomplete" },
+			});
+			await prisma.providerObservationUnit.update({
+				where: { id: failedUnit.id },
+				data: { lastReasonCode: "coverage-incomplete" },
+			});
+		}
+		if (mode === "mixed-reasons") {
+			await prisma.providerObservationUnit.updateMany({
+				where: { runId: seed.run.id, id: { not: failedUnit.id } },
+				data: { state: "failed", attemptCount: 4, lastReasonCode: "coverage-incomplete" },
+			});
+		}
 		const old = new Date("2026-09-07T05:00:00.000Z");
 		await prisma.$executeRaw`UPDATE "provider_observation_runs" SET "updatedAt" = ${old} WHERE "id" = ${seed.run.id}`;
-		await prisma.$executeRaw`UPDATE "provider_observation_units" SET "updatedAt" = ${old} WHERE "id" = ${failedUnit.id}`;
+		await prisma.$executeRaw`UPDATE "provider_observation_units" SET "updatedAt" = ${old} WHERE "runId" = ${seed.run.id}`;
 		await prisma.cacheRefreshStatus.update({
 			where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "jellyfin_episode" } },
 			data: {
@@ -2776,15 +2795,23 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 			instance,
 			log: { warn: () => undefined, error: () => undefined } as never,
 			automaticRenewal: "provider-unavailable-cooldown",
+			resumeFailed: true,
 			now,
 		});
-		if (mode === "deferred") {
-			expect(result).toMatchObject({ state: "failed", renewalDeferred: true, progressed: false });
+		if (mode !== "eligible" && mode !== "legacy-startup") {
+			expect(result).toMatchObject({
+				state: "failed",
+				renewalDeferred: true,
+				progressed: false,
+			});
+			expect(result.renewalDeadline).toEqual(
+				mode === "deferred" ? new Date("2026-09-07T05:30:00.000Z") : undefined,
+			);
 			expect(page).not.toHaveBeenCalled();
 			const after = await finalizerState(prisma, seed.run.id);
 			expect(after.rows).toEqual(before.rows);
 			expect(after.stages).toEqual(before.stages);
-			expect(after.run).toMatchObject({ state: "failed", lastReasonCode: "provider-unavailable" });
+			expect(after.run).toEqual(before.run);
 			expect(after.status).toMatchObject({
 				lastAttemptResult: "error",
 				lastAttemptErrorMessage: "collection-deferred",
@@ -2792,6 +2819,11 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 		} else {
 			expect(result).toMatchObject({ state: "running", progressed: true });
 			expect(page).toHaveBeenCalledOnce();
+			if (mode === "legacy-startup") {
+				expect(page.mock.calls[0]?.[2]).toBe(0);
+				expect((await finalizerState(prisma, seed.run.id)).rows).toEqual(before.rows);
+				return;
+			}
 			expect(page.mock.calls[0]?.[2]).toBe(1);
 			expect(
 				await prisma.providerObservationUnit.findUnique({ where: { id: failedUnit.id } }),

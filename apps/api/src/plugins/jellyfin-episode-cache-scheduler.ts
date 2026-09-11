@@ -70,6 +70,10 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 		const runningInstances = new Set<string>();
 		const pendingInstanceIds = new Set<string>();
 		const continuationHandles = new Set<ReturnType<typeof setTimeout>>();
+		const recoveryHandles = new Map<
+			string,
+			{ handle: ReturnType<typeof setTimeout>; deadline: number }
+		>();
 		const admittedPageTasks = new Set<Promise<void>>();
 
 		async function refreshInstance(
@@ -81,6 +85,11 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 		) {
 			if (closing || runningInstances.has(instance.id) || pendingInstanceIds.has(instance.id))
 				return;
+			const recovery = recoveryHandles.get(instance.id);
+			if (recovery) {
+				clearTimeout(recovery.handle);
+				recoveryHandles.delete(instance.id);
+			}
 			runningInstances.add(instance.id);
 			let effectiveTransientIdentityRetry = transientIdentityRetry;
 			try {
@@ -102,7 +111,24 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 					);
 					return;
 				}
-				if (result.complete || result.superseded || result.renewalDeferred) return;
+				if (result.complete || result.superseded) return;
+				if (result.retryablePreRenewalFailure && automaticRenewal !== "none") {
+					const delay = TRANSIENT_IDENTITY_RETRY_DELAYS_MS[transientIdentityRetry];
+					if (delay !== undefined)
+						scheduleContinuation(
+							instance,
+							delay,
+							transientIdentityRetry + 1,
+							catalogReplans,
+							automaticRenewal,
+						);
+					return;
+				}
+				if (result.renewalDeadline) {
+					scheduleProviderRecovery(instance, result.renewalDeadline);
+					return;
+				}
+				if (result.renewalDeferred) return;
 				if (result.progressed) effectiveTransientIdentityRetry = 0;
 				const activeRun =
 					result.errors > 0
@@ -162,18 +188,43 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			}
 		}
 
+		function scheduleProviderRecovery(instance: ServiceInstance, deadline: Date) {
+			if (closing) return;
+			const dueAt = deadline.getTime();
+			if (!Number.isFinite(dueAt) || dueAt <= Date.now()) return;
+			const existing = recoveryHandles.get(instance.id);
+			if (existing && existing.deadline <= dueAt) return;
+			if (existing) clearTimeout(existing.handle);
+			const handle = setTimeout(
+				() => {
+					recoveryHandles.delete(instance.id);
+					if (closing) return;
+					void admitRefreshInstance(instance, false, 0, 0, "provider-unavailable-cooldown");
+				},
+				Math.max(0, dueAt - Date.now()),
+			);
+			recoveryHandles.set(instance.id, { handle, deadline: dueAt });
+		}
+
 		function scheduleContinuation(
 			instance: ServiceInstance,
 			delay: number,
 			transientIdentityRetry: number,
 			catalogReplans: number,
+			automaticRenewal: AutomaticObservationRenewalMode | "none" = "none",
 		) {
 			if (closing || pendingInstanceIds.has(instance.id)) return;
 			pendingInstanceIds.add(instance.id);
 			const handle = setTimeout(() => {
 				continuationHandles.delete(handle);
 				pendingInstanceIds.delete(instance.id);
-				void admitRefreshInstance(instance, false, transientIdentityRetry, catalogReplans);
+				void admitRefreshInstance(
+					instance,
+					false,
+					transientIdentityRetry,
+					catalogReplans,
+					automaticRenewal,
+				);
 			}, delay);
 			continuationHandles.add(handle);
 		}
@@ -257,7 +308,7 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 		app.addHook("onReady", async () => {
 			timeoutHandle = setTimeout(() => {
 				if (closing) return;
-				refreshAllEpisodeCaches(true).catch(() =>
+				refreshAllEpisodeCaches(true, "provider-unavailable-cooldown").catch(() =>
 					app.log.error(
 						{ category: "initial-refresh-failed" },
 						"Jellyfin episode cache initial refresh failed",
@@ -281,6 +332,8 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			if (intervalHandle) clearInterval(intervalHandle);
 			for (const handle of continuationHandles) clearTimeout(handle);
 			continuationHandles.clear();
+			for (const { handle } of recoveryHandles.values()) clearTimeout(handle);
+			recoveryHandles.clear();
 			pendingInstanceIds.clear();
 			await Promise.allSettled([...admittedPageTasks]);
 		});

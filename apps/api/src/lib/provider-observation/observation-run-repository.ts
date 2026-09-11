@@ -440,6 +440,18 @@ export type AutomaticObservationRenewalMode = "provider-unavailable-cooldown";
 
 export type AutomaticObservationRenewalResult = "renewed" | "deferred";
 
+export type AutomaticObservationRenewalInput = {
+	runId: string;
+	instanceId: string;
+	userId: string;
+	authorityKey: string;
+	parentGenerationId: string;
+	targetDigest: string;
+	connectionGeneration: number;
+	identityGeneration: number;
+	now: Date;
+};
+
 type AutomaticObservationRenewalProofInput = {
 	runId: string;
 	instanceId: string;
@@ -451,38 +463,41 @@ type AutomaticObservationRenewalProofInput = {
 	now: Date;
 };
 
-const PROVIDER_UNAVAILABLE_RENEWAL_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+export const PROVIDER_UNAVAILABLE_RENEWAL_COOLDOWN_MS = 30 * 60 * 1000;
 const JELLYFIN_EPISODE_V3_PARENT_PATTERN = /^jellyfin-episode-parent-v3:[a-f0-9]{64}$/;
+const OBSERVATION_DIGEST_PATTERN = /^[a-f0-9]{64}$/;
 
 /**
- * Reopens one exhausted Jellyfin V3 run for a periodic provider-outage retry.
- * The caller must have already validated the saved V3 plan and current parent;
- * this transaction repeats the durable run and authority fences before changing
- * any retry state.
+ * Reads the same fully validated exhausted V3 outage proof used by mutation
+ * admission. A caller may use the returned deadline as a scheduling hint, but
+ * must still run renewExhaustedObservationRun before changing retry state.
  */
-export async function renewExhaustedObservationRun(
+export async function getAutomaticObservationRenewalDeadline(
 	prisma: Db,
-	input: {
-		mode: AutomaticObservationRenewalMode;
-		runId: string;
-		instanceId: string;
-		userId: string;
-		authorityKey: string;
-		parentGenerationId: string;
-		targetDigest: string;
-		connectionGeneration: number;
-		identityGeneration: number;
-		now: Date;
-	},
-): Promise<AutomaticObservationRenewalResult> {
+	input: AutomaticObservationRenewalInput,
+): Promise<Date | null> {
+	if (!Number.isFinite(input.now.getTime())) return null;
+	return await prisma.$transaction(async (tx) => {
+		const candidate = await readAutomaticRenewalCandidate(tx, input);
+		return candidate?.deadline ?? null;
+	});
+}
+
+async function readAutomaticRenewalCandidate(
+	prisma: Pick<Tx, "serviceInstance" | "providerObservationRun">,
+	input: AutomaticObservationRenewalInput,
+): Promise<{
+	run: ProviderObservationRun & { units: ProviderObservationUnit[] };
+	deadline: Date;
+} | null> {
 	if (
-		input.mode !== "provider-unavailable-cooldown" ||
 		!Number.isFinite(input.now.getTime()) ||
-		!JELLYFIN_EPISODE_V3_PARENT_PATTERN.test(input.parentGenerationId)
+		!Number.isSafeInteger(input.connectionGeneration) ||
+		!Number.isSafeInteger(input.identityGeneration) ||
+		!JELLYFIN_EPISODE_V3_PARENT_PATTERN.test(input.parentGenerationId) ||
+		!OBSERVATION_DIGEST_PATTERN.test(input.targetDigest)
 	)
-		return "deferred";
-	const cutoff = new Date(input.now.getTime() - PROVIDER_UNAVAILABLE_RENEWAL_COOLDOWN_MS);
-	if (!Number.isFinite(cutoff.getTime())) return "deferred";
+		return null;
 	const expectedAuthorityKey = buildObservationAuthorityKey({
 		provider: "jellyfin_episode",
 		cacheType: "jellyfin_episode",
@@ -492,7 +507,110 @@ export async function renewExhaustedObservationRun(
 		connectionGeneration: input.connectionGeneration,
 		identityGeneration: input.identityGeneration,
 	});
-	if (input.authorityKey !== expectedAuthorityKey) return "deferred";
+	if (input.authorityKey !== expectedAuthorityKey) return null;
+	const instance = await prisma.serviceInstance.findUnique({
+		where: { id: input.instanceId },
+		select: {
+			userId: true,
+			service: true,
+			enabled: true,
+			identityStatus: true,
+			connectionGeneration: true,
+			identityGeneration: true,
+		},
+	});
+	if (
+		!instance ||
+		instance.userId !== input.userId ||
+		!instance.enabled ||
+		!(instance.service === "JELLYFIN" || instance.service === "EMBY") ||
+		instance.identityStatus !== "VERIFIED" ||
+		instance.connectionGeneration !== input.connectionGeneration ||
+		instance.identityGeneration !== input.identityGeneration
+	)
+		return null;
+	const run = await prisma.providerObservationRun.findUnique({
+		where: { id: input.runId },
+		include: { units: true },
+	});
+	if (!run || run.instanceId !== input.instanceId) return null;
+	const deadline = automaticRenewalDeadlineForRun(run, input);
+	return deadline === null ? null : { run, deadline };
+}
+
+function automaticRenewalDeadlineForRun(
+	run: ProviderObservationRun & { units: ProviderObservationUnit[] },
+	input: Pick<
+		AutomaticObservationRenewalInput,
+		| "instanceId"
+		| "authorityKey"
+		| "parentGenerationId"
+		| "targetDigest"
+		| "connectionGeneration"
+		| "identityGeneration"
+		| "now"
+	>,
+): Date | null {
+	if (
+		run.provider !== "jellyfin_episode" ||
+		run.cacheType !== "jellyfin_episode" ||
+		run.authorityKey !== input.authorityKey ||
+		run.parentGenerationId !== input.parentGenerationId ||
+		run.targetDigest !== input.targetDigest ||
+		run.connectionGeneration !== input.connectionGeneration ||
+		run.identityGeneration !== input.identityGeneration ||
+		run.activeSlotKey !==
+			buildObservationActiveSlotKey({
+				instanceId: input.instanceId,
+				cacheType: "jellyfin_episode",
+			}) ||
+		run.state !== "failed" ||
+		run.nextAttemptAt !== null ||
+		run.lastReasonCode !== "provider-unavailable" ||
+		!observationLedgerIsConsistent(run, run.units)
+	)
+		return null;
+	const failedUnits = run.units.filter((unit) => unit.state === "failed");
+	if (failedUnits.length === 0) return null;
+	for (const unit of run.units) {
+		if (unit.state === "complete") continue;
+		if (unit.state === "pending") {
+			if (unit.claimToken !== null || unit.nextAttemptAt !== null) return null;
+			continue;
+		}
+		if (
+			unit.state !== "failed" ||
+			unit.attemptCount <= AUTOMATIC_ATTEMPT_LIMIT ||
+			unit.nextAttemptAt !== null ||
+			unit.claimToken !== null ||
+			unit.lastReasonCode !== "provider-unavailable"
+		)
+			return null;
+	}
+	const relevantTimestamps = [run.updatedAt, ...failedUnits.map((unit) => unit.updatedAt)];
+	if (
+		relevantTimestamps.some(
+			(value) => !isValidObservationDate(value) || value.getTime() > input.now.getTime(),
+		)
+	)
+		return null;
+	const latest = Math.max(...relevantTimestamps.map((value) => value.getTime()));
+	const deadline = new Date(latest + PROVIDER_UNAVAILABLE_RENEWAL_COOLDOWN_MS);
+	return isValidObservationDate(deadline) ? deadline : null;
+}
+
+/**
+ * Reopens one exhausted Jellyfin V3 run for a periodic provider-outage retry.
+ * The caller must have already validated the saved V3 plan and current parent;
+ * this transaction repeats the durable run and authority fences before changing
+ * any retry state.
+ */
+export async function renewExhaustedObservationRun(
+	prisma: Db,
+	input: AutomaticObservationRenewalInput & { mode: AutomaticObservationRenewalMode },
+): Promise<AutomaticObservationRenewalResult> {
+	if (input.mode !== "provider-unavailable-cooldown" || !Number.isFinite(input.now.getTime()))
+		return "deferred";
 
 	const casLost = Symbol("automatic observation renewal CAS lost");
 	try {
@@ -506,73 +624,10 @@ export async function renewExhaustedObservationRun(
 				))
 			)
 				return "deferred";
-			const instance = await tx.serviceInstance.findUnique({
-				where: { id: input.instanceId },
-				select: {
-					userId: true,
-					service: true,
-					enabled: true,
-					identityStatus: true,
-					connectionGeneration: true,
-					identityGeneration: true,
-				},
-			});
-			if (
-				!instance ||
-				instance.userId !== input.userId ||
-				!instance.enabled ||
-				!(instance.service === "JELLYFIN" || instance.service === "EMBY") ||
-				instance.identityStatus !== "VERIFIED" ||
-				instance.connectionGeneration !== input.connectionGeneration ||
-				instance.identityGeneration !== input.identityGeneration
-			)
-				return "deferred";
-
-			const run = await tx.providerObservationRun.findUnique({
-				where: { id: input.runId },
-				include: { units: true },
-			});
-			if (
-				!run ||
-				run.instanceId !== input.instanceId ||
-				run.provider !== "jellyfin_episode" ||
-				run.cacheType !== "jellyfin_episode" ||
-				run.authorityKey !== expectedAuthorityKey ||
-				run.parentGenerationId !== input.parentGenerationId ||
-				run.targetDigest !== input.targetDigest ||
-				run.connectionGeneration !== input.connectionGeneration ||
-				run.identityGeneration !== input.identityGeneration ||
-				run.activeSlotKey !==
-					buildObservationActiveSlotKey({
-						instanceId: input.instanceId,
-						cacheType: "jellyfin_episode",
-					}) ||
-				run.state !== "failed" ||
-				run.nextAttemptAt !== null ||
-				run.lastReasonCode !== "provider-unavailable" ||
-				!isRenewalCutoffDate(run.updatedAt, cutoff, input.now) ||
-				!observationLedgerIsConsistent(run, run.units)
-			)
-				return "deferred";
-
+			const candidate = await readAutomaticRenewalCandidate(tx, input);
+			if (!candidate || candidate.deadline.getTime() > input.now.getTime()) return "deferred";
+			const { run } = candidate;
 			const failedUnits = run.units.filter((unit) => unit.state === "failed");
-			if (
-				failedUnits.length === 0 ||
-				run.units.some(
-					(unit) =>
-						(unit.state === "pending" &&
-							(unit.claimToken !== null || unit.nextAttemptAt !== null)) ||
-						(unit.state !== "complete" &&
-							unit.state !== "pending" &&
-							(unit.state !== "failed" ||
-								unit.attemptCount <= AUTOMATIC_ATTEMPT_LIMIT ||
-								unit.nextAttemptAt !== null ||
-								unit.claimToken !== null ||
-								unit.lastReasonCode !== "provider-unavailable" ||
-								!isRenewalCutoffDate(unit.updatedAt, cutoff, input.now))),
-				)
-			)
-				return "deferred";
 
 			const updatedRun = await tx.providerObservationRun.updateMany({
 				where: {
