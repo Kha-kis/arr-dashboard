@@ -271,6 +271,143 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 		]);
 	});
 
+	it("retries one unexpected refresh rejection through the bounded continuation chain", async () => {
+		findInstances.mockResolvedValue([instance("JELLYFIN")]);
+		mocks.runSingleFlight
+			.mockRejectedValueOnce(new Error("private refresh failure"))
+			.mockImplementation(
+				async (_authority: unknown, _cacheType: unknown, refresh: () => Promise<unknown>) =>
+					await refresh(),
+			);
+		mocks.refresh.mockResolvedValue({ complete: false, upserted: 0, errors: 0, progressed: true });
+		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+		await app.ready();
+
+		await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
+		expect(mocks.runSingleFlight).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(mocks.runSingleFlight).toHaveBeenCalledTimes(2);
+		expect(mocks.refresh).toHaveBeenCalledOnce();
+		expect(mocks.refresh.mock.calls[0]![0].resumeFailed).toBe(false);
+		expect(mocks.refresh.mock.calls[0]![0].automaticRenewal).toBeUndefined();
+	});
+
+	it("stops unexpected refresh rejections after the finite transient budget", async () => {
+		findInstances.mockResolvedValue([instance("JELLYFIN")]);
+		mocks.runSingleFlight.mockRejectedValue(new Error("private refresh failure"));
+		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+		await app.ready();
+
+		await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
+		expect(mocks.runSingleFlight).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(mocks.runSingleFlight).toHaveBeenCalledTimes(2);
+		await vi.advanceTimersByTimeAsync(120_000);
+		expect(mocks.runSingleFlight).toHaveBeenCalledTimes(3);
+		await vi.advanceTimersByTimeAsync(600_000);
+		expect(mocks.runSingleFlight).toHaveBeenCalledTimes(4);
+		await vi.advanceTimersByTimeAsync(600_000);
+		expect(mocks.runSingleFlight).toHaveBeenCalledTimes(4);
+	});
+
+	it("preserves the transient budget across no-progress and query failures", async () => {
+		findInstances.mockResolvedValue([instance("JELLYFIN")]);
+		findFailedRun.mockRejectedValue(new Error("private state failure"));
+		mocks.runSingleFlight
+			.mockRejectedValueOnce(new Error("private refresh failure"))
+			.mockImplementationOnce(
+				async (_authority: unknown, _cacheType: unknown, refresh: () => Promise<unknown>) =>
+					await refresh(),
+			)
+			.mockRejectedValueOnce(new Error("private refresh failure"))
+			.mockImplementationOnce(
+				async (_authority: unknown, _cacheType: unknown, refresh: () => Promise<unknown>) =>
+					await refresh(),
+			)
+			.mockRejectedValue(new Error("private refresh failure"));
+		mocks.refresh
+			.mockResolvedValueOnce({ complete: false, upserted: 0, errors: 0, progressed: false })
+			.mockResolvedValue({ complete: false, upserted: 0, errors: 1, progressed: false });
+		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+		await app.ready();
+
+		await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
+		expect(mocks.runSingleFlight).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(mocks.runSingleFlight).toHaveBeenCalledTimes(2);
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(mocks.runSingleFlight).toHaveBeenCalledTimes(3);
+		await vi.advanceTimersByTimeAsync(120_000);
+		expect(mocks.runSingleFlight).toHaveBeenCalledTimes(4);
+		await vi.advanceTimersByTimeAsync(600_000);
+		expect(mocks.runSingleFlight).toHaveBeenCalledTimes(5);
+		await vi.advanceTimersByTimeAsync(600_000);
+		expect(mocks.runSingleFlight).toHaveBeenCalledTimes(5);
+	});
+
+	it("resets the transient budget only after durable progress", async () => {
+		findInstances.mockResolvedValue([instance("JELLYFIN")]);
+		findFailedRun.mockResolvedValue({ state: "running", nextAttemptAt: null });
+		mocks.runSingleFlight
+			.mockImplementationOnce(
+				async (_authority: unknown, _cacheType: unknown, refresh: () => Promise<unknown>) =>
+					await refresh(),
+			)
+			.mockImplementationOnce(
+				async (_authority: unknown, _cacheType: unknown, refresh: () => Promise<unknown>) =>
+					await refresh(),
+			)
+			.mockRejectedValueOnce(new Error("private refresh failure"))
+			.mockImplementation(
+				async (_authority: unknown, _cacheType: unknown, refresh: () => Promise<unknown>) =>
+					await refresh(),
+			);
+		mocks.refresh
+			.mockResolvedValueOnce({ complete: false, upserted: 0, errors: 1, progressed: false })
+			.mockResolvedValueOnce({ complete: false, upserted: 0, errors: 0, progressed: true })
+			.mockResolvedValue({ complete: true, upserted: 0, errors: 0, progressed: false });
+		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+		await app.ready();
+
+		await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
+		expect(mocks.runSingleFlight).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(mocks.runSingleFlight).toHaveBeenCalledTimes(2);
+		await vi.advanceTimersByTimeAsync(JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS);
+		expect(mocks.runSingleFlight).toHaveBeenCalledTimes(3);
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(mocks.runSingleFlight).toHaveBeenCalledTimes(4);
+	});
+
+	it("uses a fresh retry budget when progressed work meets a state-query failure", async () => {
+		findInstances.mockResolvedValue([instance("JELLYFIN")]);
+		findFailedRun
+			.mockResolvedValueOnce({ state: "running", nextAttemptAt: null })
+			.mockResolvedValueOnce({ state: "running", nextAttemptAt: null })
+			.mockResolvedValueOnce({ state: "running", nextAttemptAt: null })
+			.mockRejectedValueOnce(new Error("private state failure"));
+		mocks.refresh
+			.mockResolvedValueOnce({ complete: false, upserted: 0, errors: 1, progressed: false })
+			.mockResolvedValueOnce({ complete: false, upserted: 0, errors: 1, progressed: false })
+			.mockResolvedValueOnce({ complete: false, upserted: 0, errors: 1, progressed: false })
+			.mockResolvedValueOnce({ complete: false, upserted: 0, errors: 1, progressed: true })
+			.mockResolvedValue({ complete: true, upserted: 0, errors: 0, progressed: false });
+		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+		await app.ready();
+
+		await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
+		expect(mocks.runSingleFlight).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(30_000);
+		await vi.advanceTimersByTimeAsync(120_000);
+		await vi.advanceTimersByTimeAsync(600_000);
+		expect(mocks.runSingleFlight).toHaveBeenCalledTimes(4);
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(mocks.runSingleFlight).toHaveBeenCalledTimes(5);
+		expect(mocks.refresh.mock.calls[4]![0].resumeFailed).toBe(false);
+		await vi.advanceTimersByTimeAsync(600_000);
+		expect(mocks.runSingleFlight).toHaveBeenCalledTimes(5);
+	});
+
 	it("continues a successfully progressed instance after the shared ten-second delay", async () => {
 		mocks.refresh.mockResolvedValue({ complete: false, upserted: 0, errors: 0, progressed: true });
 		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
@@ -502,7 +639,7 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 		expect(mocks.refresh).toHaveBeenCalledTimes(4);
 	});
 
-	it("contains a continuation-state query failure without an unhandled rejection", async () => {
+	it("bounds a continuation-state query failure without an unhandled rejection", async () => {
 		findInstances.mockResolvedValue([instance("JELLYFIN")]);
 		mocks.refresh.mockResolvedValue({ complete: false, upserted: 0, errors: 1 });
 		findFailedRun.mockRejectedValue(new Error("private database diagnostic"));
@@ -516,8 +653,14 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 			{ category: "episode-continuation-state-failed" },
 			"Jellyfin episode cache continuation state unavailable",
 		);
-		await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
-		expect(mocks.refresh).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(2);
+		await vi.advanceTimersByTimeAsync(120_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(3);
+		await vi.advanceTimersByTimeAsync(600_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(4);
+		await vi.advanceTimersByTimeAsync(600_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(4);
 	});
 
 	it("cancels every pending continuation during shutdown", async () => {

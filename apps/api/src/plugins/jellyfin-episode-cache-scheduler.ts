@@ -82,6 +82,7 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			if (closing || runningInstances.has(instance.id) || pendingInstanceIds.has(instance.id))
 				return;
 			runningInstances.add(instance.id);
+			let effectiveTransientIdentityRetry = transientIdentityRetry;
 			try {
 				const result = await refreshScheduledJellyfinEpisodeCacheInstance(
 					app,
@@ -89,8 +90,20 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 					resumeFailed,
 					automaticRenewal,
 				);
-				if (closing || !result || result.complete || result.superseded || result.renewalDeferred)
+				if (closing) return;
+				if (!result) {
+					const transientDelay = TRANSIENT_IDENTITY_RETRY_DELAYS_MS[transientIdentityRetry];
+					if (transientDelay === undefined) return;
+					scheduleContinuation(
+						instance,
+						transientDelay,
+						transientIdentityRetry + 1,
+						catalogReplans,
+					);
 					return;
+				}
+				if (result.complete || result.superseded || result.renewalDeferred) return;
+				if (result.progressed) effectiveTransientIdentityRetry = 0;
 				const activeRun =
 					result.errors > 0
 						? await app.prisma.providerObservationRun.findFirst({
@@ -105,7 +118,7 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 							})
 						: null;
 				if (closing) return;
-				let nextTransientIdentityRetry = 0;
+				let nextTransientIdentityRetry = effectiveTransientIdentityRetry;
 				let nextCatalogReplans = catalogReplans;
 				let delay = result.progressed
 					? JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS
@@ -122,10 +135,11 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 						if (!activeRun.nextAttemptAt) return;
 						delay = Math.max(0, activeRun.nextAttemptAt.getTime() - Date.now());
 					} else {
-						const transientDelay = TRANSIENT_IDENTITY_RETRY_DELAYS_MS[transientIdentityRetry];
+						const retryCount = effectiveTransientIdentityRetry;
+						const transientDelay = TRANSIENT_IDENTITY_RETRY_DELAYS_MS[retryCount];
 						if (transientDelay === undefined) return;
 						delay = transientDelay;
-						nextTransientIdentityRetry = transientIdentityRetry + 1;
+						nextTransientIdentityRetry = retryCount + 1;
 					}
 				}
 				scheduleContinuation(instance, delay, nextTransientIdentityRetry, nextCatalogReplans);
@@ -134,6 +148,15 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 					{ category: "episode-continuation-state-failed" },
 					"Jellyfin episode cache continuation state unavailable",
 				);
+				const transientDelay = TRANSIENT_IDENTITY_RETRY_DELAYS_MS[effectiveTransientIdentityRetry];
+				if (transientDelay !== undefined) {
+					scheduleContinuation(
+						instance,
+						transientDelay,
+						effectiveTransientIdentityRetry + 1,
+						catalogReplans,
+					);
+				}
 			} finally {
 				runningInstances.delete(instance.id);
 			}
