@@ -469,19 +469,16 @@ function pageRejectionReason(
 	page: JellyfinEpisodeItemsPage,
 	cursor: number,
 	expected: number | null,
-	allowGrowth = false,
+	allowTotalDrift = false,
 ): JellyfinEpisodePageRejectionReason | null {
 	if (
 		!Number.isSafeInteger(page.startIndex) ||
 		page.startIndex !== cursor ||
 		!Number.isSafeInteger(page.totalRecordCount) ||
 		page.totalRecordCount < 0 ||
-		(expected !== null &&
-			(allowGrowth ? page.totalRecordCount < expected : page.totalRecordCount !== expected))
+		(expected !== null && !allowTotalDrift && page.totalRecordCount !== expected)
 	)
-		return allowGrowth && expected !== null && page.totalRecordCount < expected
-			? "total-count-decreased"
-			: "invalid-page-envelope-or-row";
+		return "invalid-page-envelope-or-row";
 	if (page.items.length > 1_000) return "invalid-page-envelope-or-row";
 	if (page.items.length === 0 && cursor < page.totalRecordCount)
 		return "invalid-page-envelope-or-row";
@@ -552,7 +549,7 @@ export async function stageJellyfinEpisodePage(
 	} catch {
 		catalogKey = null;
 	}
-	const allowCatalogGrowth = catalogKey !== null;
+	const allowV3TotalDrift = catalogKey !== null;
 	if (
 		!persistedScope ||
 		persistedScope.userId !== scope.userId ||
@@ -564,7 +561,7 @@ export async function stageJellyfinEpisodePage(
 		page,
 		claim.cursor,
 		claim.expectedRawCount,
-		allowCatalogGrowth,
+		allowV3TotalDrift,
 	);
 	if (pageReason) return reportPageRejection(onRejected, pageReason);
 	const userKeyDigest = digest(["jellyfin-user", scope.userId]);
@@ -615,7 +612,7 @@ export async function stageJellyfinEpisodePage(
 			return reportPageRejection(onRejected, "cursor-accounting-mismatch");
 		if (page.items.length) {
 			let newItems = page.items;
-			if (allowCatalogGrowth) {
+			if (allowV3TotalDrift) {
 				// Offset shifts may repeat an identity; retain its first observation only
 				// when the same scan unit still proves the exact source coordinate.
 				const existing = await tx.jellyfinEpisodeObservationStage.findMany({

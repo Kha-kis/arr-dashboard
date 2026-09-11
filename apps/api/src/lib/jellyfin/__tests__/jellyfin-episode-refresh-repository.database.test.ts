@@ -4273,12 +4273,17 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 	});
 
 	it.each([2, 3])(
-		"keeps version %i overlap staging within its evidence contract",
+		"keeps version %i total-count drift within its pagination evidence contract",
 		async (version) => {
 			const prisma = await database();
 			const seed = await completeFinalizerFixture(prisma);
 			if (version === 3) await bindV3Fixture(prisma, seed.run.id);
 			else await bindV2Fixture(prisma, seed.run.id, seed.scopes);
+			if (version === 3)
+				await prisma.serviceInstance.update({
+					where: { id: "jellyfin-1" },
+					data: { expectedIdentity: "verified-provider", identityStatus: "VERIFIED" },
+				});
 			await prisma.jellyfinEpisodeObservationStage.deleteMany({ where: { runId: seed.run.id } });
 			await prisma.providerObservationUnit.updateMany({
 				where: { runId: seed.run.id },
@@ -4322,8 +4327,8 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 					scope,
 					{
 						startIndex: 0,
-						totalRecordCount: version === 3 ? 3 : 4,
-						items: [item("episode-1", 1, "Pilot"), item("episode-2", 2, "Second")],
+						totalRecordCount: 4,
+						items: [item("episode-1", 1, "Pilot"), item("episode-2", 2, "Second", false)],
 					},
 					firstNow,
 				),
@@ -4336,7 +4341,7 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 			expect(secondClaim).toMatchObject({
 				unitId: firstClaim!.unitId,
 				cursor: 2,
-				expectedRawCount: version === 3 ? 3 : 4,
+				expectedRawCount: 4,
 				observedRawCount: 2,
 			});
 			if (version === 2) {
@@ -4365,26 +4370,31 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 				).toMatchObject({ state: "running", cursor: 2, observedRawCount: 2 });
 				return;
 			}
-			const decreasedReasons: JellyfinEpisodePageRejectionReason[] = [];
+			const invalidDecreaseReasons: JellyfinEpisodePageRejectionReason[] = [];
 			await expect(
 				stageJellyfinEpisodePage(
 					prisma,
 					secondClaim!,
 					scope,
-					{ startIndex: 2, totalRecordCount: 2, items: [] },
+					{ startIndex: 2, totalRecordCount: 1, items: [] },
 					new Date(firstNow.getTime() + 12_000),
-					(reason) => decreasedReasons.push(reason),
+					(reason) => invalidDecreaseReasons.push(reason),
 				),
 			).resolves.toBe(false);
-			expect(decreasedReasons).toEqual(["total-count-decreased"]);
+			expect(invalidDecreaseReasons).toEqual(["invalid-page-envelope-or-row"]);
+			expect(
+				await prisma.providerObservationUnit.findUniqueOrThrow({
+					where: { id: secondClaim!.unitId },
+				}),
+			).toMatchObject({ state: "running", cursor: 2, expectedRawCount: 4, observedRawCount: 2 });
 			const result = stageJellyfinEpisodePage(
 				prisma,
 				secondClaim!,
 				scope,
 				{
 					startIndex: 2,
-					totalRecordCount: 4,
-					items: [item("episode-2", 2, "Changed duplicate", false), item("episode-3", 3, "Third")],
+					totalRecordCount: 3,
+					items: [item("episode-4", 4, "Fourth", false)],
 				},
 				new Date(firstNow.getTime() + 12_000),
 			);
@@ -4393,16 +4403,93 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 				where: { runId: seed.run.id, unitId: firstClaim!.unitId, pass: "collect" },
 				orderBy: { jellyfinId: "asc" },
 			});
-			expect(staged.map((row) => row.jellyfinId)).toEqual(["episode-1", "episode-2", "episode-3"]);
+			expect(staged.map((row) => row.jellyfinId)).toEqual(["episode-1", "episode-2", "episode-4"]);
 			expect(staged.find((row) => row.jellyfinId === "episode-2")).toMatchObject({
 				title: "Second",
-				played: true,
+				played: false,
 			});
 			expect(
 				await prisma.providerObservationUnit.findUniqueOrThrow({
 					where: { id: firstClaim!.unitId },
 				}),
-			).toMatchObject({ state: "complete", cursor: 4, expectedRawCount: 4, observedRawCount: 4 });
+			).toMatchObject({ state: "complete", cursor: 3, expectedRawCount: 3, observedRawCount: 3 });
+			const verifyFirstClaim = await claimObservationUnit(prisma, {
+				runId: seed.run.id,
+				now: new Date(firstNow.getTime() + 20_000),
+				claimToken: "overlap-verify-first",
+			});
+			expect(verifyFirstClaim?.phase).toBe("verify");
+			await expect(
+				stageJellyfinEpisodePage(
+					prisma,
+					verifyFirstClaim!,
+					scope,
+					{
+						startIndex: 0,
+						totalRecordCount: 4,
+						items: [item("episode-1", 1, "Pilot"), item("episode-3", 3, "Third", false)],
+					},
+					new Date(firstNow.getTime() + 20_000),
+				),
+			).resolves.toBe(true);
+			const verifySecondClaim = await claimObservationUnit(prisma, {
+				runId: seed.run.id,
+				now: new Date(firstNow.getTime() + 31_000),
+				claimToken: "overlap-verify-second",
+			});
+			expect(verifySecondClaim).toMatchObject({
+				cursor: 2,
+				expectedRawCount: 4,
+				observedRawCount: 2,
+			});
+			await expect(
+				stageJellyfinEpisodePage(
+					prisma,
+					verifySecondClaim!,
+					scope,
+					{ startIndex: 2, totalRecordCount: 3, items: [item("episode-4", 4, "Fourth", false)] },
+					new Date(firstNow.getTime() + 31_000),
+				),
+			).resolves.toBe(true);
+			const verified = await prisma.jellyfinEpisodeObservationStage.findMany({
+				where: { runId: seed.run.id, unitId: verifyFirstClaim!.unitId, pass: "verify" },
+				orderBy: { jellyfinId: "asc" },
+			});
+			expect(verified.map((row) => row.jellyfinId)).toEqual([
+				"episode-1",
+				"episode-3",
+				"episode-4",
+			]);
+			const published = await finalizeJellyfinEpisodeRun({
+				prisma,
+				userId: "user-1",
+				instance: { id: "jellyfin-1" },
+				runId: seed.run.id,
+				scopes: seed.scopes,
+				attempt: seed.attempt,
+				now: new Date(firstNow.getTime() + 32_000),
+			});
+			expect(published).toEqual({ published: true, itemCount: 1 });
+			const state = await finalizerState(prisma, seed.run.id);
+			expect(state.rows).toEqual([
+				expect.objectContaining({ jellyfinId: "episode-1", watched: true, episodeNumber: 1 }),
+			]);
+			expect(JSON.parse(state.status.generationMetadata!)).toMatchObject({
+				version: 3,
+				itemCount: 1,
+				publicationLevel: "positive-only",
+				completeness: "partial",
+			});
+			const display = await readOwnedJellyfinObservation({
+				prisma,
+				userId: "user-1",
+				instanceId: "jellyfin-1",
+				cacheType: "jellyfin_episode",
+				mode: "display",
+				now: new Date(firstNow.getTime() + 32_000),
+			});
+			expect(display).toMatchObject({ available: true, mutationAvailable: false });
+			expect(display?.rows).toHaveLength(1);
 		},
 	);
 
