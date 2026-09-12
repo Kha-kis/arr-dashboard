@@ -1890,6 +1890,7 @@ model ProviderObservationUnit {
   run                 ProviderObservationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
   plexEpisodeRows     PlexEpisodeObservationStage[]
   jellyfinEpisodeRows JellyfinEpisodeObservationStage[]
+  jellyfinEpisodeExclusions JellyfinEpisodeObservationExclusion[]
 
   @@unique([runId, ordinal])
   @@unique([runId, scopeKey])
@@ -1942,6 +1943,21 @@ model JellyfinEpisodeObservationStage {
   @@index([runId, unitId])
   @@index([runId, seriesId])
   @@map("jellyfin_episode_observation_stage")
+}
+
+model JellyfinEpisodeObservationExclusion {
+  id            String   @id @default(cuid())
+  runId         String
+  unitId        String
+  userKeyDigest String
+  pass          String
+  jellyfinId    String
+  reason        String
+  unit          ProviderObservationUnit @relation(fields: [runId, unitId], references: [runId, id], onDelete: Cascade)
+
+  @@unique([runId, pass, userKeyDigest, jellyfinId])
+  @@index([runId, unitId])
+  @@map("jellyfin_episode_observation_exclusions")
 }
 
 // ============================================================================

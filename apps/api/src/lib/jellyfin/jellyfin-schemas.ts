@@ -147,8 +147,8 @@ export const jellyfinEpisodesResponseSchema = z.object({
  * Jellyfin legitimately serializes many unrelated BaseItemDto properties as
  * null. Those display fields must not reject watch evidence that does not use
  * them, so this schema validates only the fields consumed by publication.
- * Nullable authority fields remain nullable here and are rejected explicitly
- * by the client when they cannot prove an episode coordinate or Played state.
+ * Missing episode coordinates become explicit exclusions; missing Played state
+ * and malformed supplied authority values still reject the page.
  */
 const jellyfinEpisodePageItemSchema = z.looseObject({
 	Id: z.string(),

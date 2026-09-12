@@ -259,9 +259,6 @@ describe("JellyfinClient authoritative inventory completeness", () => {
 	it.each([
 		["blank item id", { Id: "" }],
 		["whitespace item id", { Id: "   " }],
-		["blank series id", { SeriesId: "" }],
-		["whitespace series id", { SeriesId: "   " }],
-		["missing season coordinate", { ParentIndexNumber: undefined }],
 		["negative season coordinate", { ParentIndexNumber: -1 }],
 		["fractional episode coordinate", { IndexNumber: 1.5 }],
 		["unsafe episode coordinate", { IndexNumber: Number.MAX_SAFE_INTEGER + 1 }],
@@ -287,6 +284,35 @@ describe("JellyfinClient authoritative inventory completeness", () => {
 			/inconsistent/i,
 		);
 	});
+
+	it.each([
+		{ SeriesId: undefined, ParentIndexNumber: undefined, IndexNumber: undefined },
+		{ SeriesId: null },
+		{ SeriesId: "   " },
+		{ ParentIndexNumber: null },
+		{ IndexNumber: undefined },
+	])(
+		"retains raw pagination and explicitly excludes missing episode metadata: %j",
+		async (missing) => {
+			vi.stubGlobal(
+				"fetch",
+				vi.fn().mockResolvedValue(
+					response({
+						Items: [strictEpisode(), strictEpisode({ Id: "unmapped", ...missing })],
+						StartIndex: 86000,
+						TotalRecordCount: 86002,
+					}),
+				),
+			);
+			const client = new JellyfinClient("http://jellyfin.test", "api-key", log);
+			const result = await client.getEpisodeItemsPageWithCoverage("user-1", "library-1", 86000);
+			expect(result).toMatchObject({ startIndex: 86000, totalRecordCount: 86002 });
+			expect(result.items).toEqual([
+				expect.objectContaining({ id: "episode-1", seriesId: "series-1", played: true }),
+				{ id: "unmapped", type: "Episode", excludedReason: "missing-episode-metadata" },
+			]);
+		},
+	);
 
 	it.each([
 		["a response cursor mismatch", { StartIndex: 1, TotalRecordCount: 1 }],

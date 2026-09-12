@@ -33,6 +33,7 @@ const providerObservationModels = [
 	"ProviderObservationUnit",
 	"PlexEpisodeObservationStage",
 	"JellyfinEpisodeObservationStage",
+	"JellyfinEpisodeObservationExclusion",
 ] as const;
 
 afterEach(() => {

@@ -728,6 +728,17 @@ async function seedDurableSource(prisma: PrismaClient): Promise<void> {
 			userName: "issue815-user",
 		},
 	});
+	await prisma.jellyfinEpisodeObservationExclusion.create({
+		data: {
+			id: "issue815-observation-exclusion",
+			runId: observationRun.id,
+			unitId: observationUnit.id,
+			userKeyDigest: "issue815-user-digest",
+			pass: "head",
+			jellyfinId: "issue815-excluded-episode",
+			reason: "missing-episode-metadata",
+		},
+	});
 }
 
 function normalizedRows(rows: unknown[]): string[] {
@@ -886,6 +897,7 @@ const MODEL_EXPORTS = [
 			expect(await target.prisma.providerObservationUnit.count()).toBe(0);
 			expect(await target.prisma.plexEpisodeObservationStage.count()).toBe(0);
 			expect(await target.prisma.jellyfinEpisodeObservationStage.count()).toBe(0);
+			expect(await target.prisma.jellyfinEpisodeObservationExclusion.count()).toBe(0);
 			expect(await target.prisma.notificationLog.count()).toBe(0);
 			expect(await target.prisma.trashCache.count()).toBe(0);
 			expect(await target.prisma.libraryCleanupMediaServerScanLease.count()).toBe(0);

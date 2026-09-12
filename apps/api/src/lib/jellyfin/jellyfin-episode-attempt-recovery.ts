@@ -162,12 +162,21 @@ export async function invalidateJellyfinEpisodeAttempt(
 			const stagedCount = await tx.jellyfinEpisodeObservationStage.count({
 				where: { runId: run.id },
 			});
+			const exclusionCount = await tx.jellyfinEpisodeObservationExclusion.count({
+				where: { runId: run.id },
+			});
 			await input.testHooks?.afterStageCount?.(tx);
 			const deletedStages = await tx.jellyfinEpisodeObservationStage.deleteMany({
 				where: { runId: run.id },
 			});
+			const deletedExclusions = await tx.jellyfinEpisodeObservationExclusion.deleteMany({
+				where: { runId: run.id },
+			});
 			if (deletedStages.count !== stagedCount) {
 				throw new Error("Jellyfin episode attempt staging invalidation count changed");
+			}
+			if (deletedExclusions.count !== exclusionCount) {
+				throw new Error("Jellyfin episode attempt exclusion invalidation count changed");
 			}
 
 			const invalidatableUnits = await tx.providerObservationUnit.count({

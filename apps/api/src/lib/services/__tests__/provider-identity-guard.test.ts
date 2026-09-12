@@ -95,6 +95,9 @@ function prismaFor(
 		jellyfinEpisodeObservationStage: {
 			deleteMany: vi.fn(async () => ({ count: 1 })),
 		},
+		jellyfinEpisodeObservationExclusion: {
+			deleteMany: vi.fn(async () => ({ count: 1 })),
+		},
 		cacheRefreshStatus: {
 			updateMany: vi.fn(async () => ({ count: 1 })),
 		},
@@ -336,6 +339,9 @@ describe("withGuardedProviderPublication", () => {
 			where: { runId: "active-run" },
 		});
 		expect(prisma.jellyfinEpisodeObservationStage.deleteMany).toHaveBeenCalledWith({
+			where: { runId: "active-run" },
+		});
+		expect(prisma.jellyfinEpisodeObservationExclusion.deleteMany).toHaveBeenCalledWith({
 			where: { runId: "active-run" },
 		});
 		expect(prisma.providerObservationRun.update).toHaveBeenCalledWith({

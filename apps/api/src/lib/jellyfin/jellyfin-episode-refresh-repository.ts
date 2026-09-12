@@ -488,8 +488,20 @@ function pageRejectionReason(
 		if (
 			item.type !== "Episode" ||
 			typeof item.id !== "string" ||
+			!item.id.trim() ||
+			ids.has(item.id)
+		)
+			return "invalid-page-envelope-or-row";
+		ids.add(item.id);
+		if (item.excludedReason !== undefined) {
+			if (!allowTotalDrift || item.excludedReason !== "missing-episode-metadata")
+				return "invalid-page-envelope-or-row";
+			continue;
+		}
+		if (
+			item.type !== "Episode" ||
+			typeof item.id !== "string" ||
 			item.id.length === 0 ||
-			ids.has(item.id) ||
 			typeof item.seriesId !== "string" ||
 			item.seriesId.length === 0 ||
 			!Number.isSafeInteger(item.seasonNumber) ||
@@ -505,7 +517,6 @@ function pageRejectionReason(
 					!Number.isFinite(Date.parse(item.lastPlayedDate))))
 		)
 			return "invalid-page-envelope-or-row";
-		ids.add(item.id);
 	}
 	return null;
 }
@@ -611,7 +622,9 @@ export async function stageJellyfinEpisodePage(
 		if (nextCursor !== observedRawCount || nextCursor > expectedRawCount)
 			return reportPageRejection(onRejected, "cursor-accounting-mismatch");
 		if (page.items.length) {
-			let newItems = page.items;
+			const admittedItems = page.items.filter((item) => item.excludedReason === undefined);
+			const excludedItems = page.items.filter((item) => item.excludedReason !== undefined);
+			let newItems = admittedItems;
 			if (allowV3TotalDrift) {
 				// Offset shifts may repeat an identity; retain its first observation only
 				// when the same scan unit still proves the exact source coordinate.
@@ -631,7 +644,7 @@ export async function stageJellyfinEpisodePage(
 					},
 				});
 				const existingByItemId = new Map(existing.map((row) => [row.jellyfinId, row]));
-				for (const item of page.items) {
+				for (const item of admittedItems) {
 					const prior = existingByItemId.get(item.id);
 					if (!prior) continue;
 					if (
@@ -642,7 +655,34 @@ export async function stageJellyfinEpisodePage(
 					)
 						return reportPageRejection(onRejected, "source-coordinate-conflict");
 				}
-				newItems = page.items.filter((item) => !existingByItemId.has(item.id));
+				newItems = admittedItems.filter((item) => !existingByItemId.has(item.id));
+				const priorExclusions = await tx.jellyfinEpisodeObservationExclusion.findMany({
+					where: {
+						runId: run.id,
+						pass: claim.phase,
+						userKeyDigest,
+						jellyfinId: { in: page.items.map((item) => item.id) },
+					},
+				});
+				if (
+					priorExclusions.some(
+						(row) => row.unitId !== unit.id || row.reason !== "missing-episode-metadata",
+					)
+				)
+					return reportPageRejection(onRejected, "source-coordinate-conflict");
+				const priorExcludedIds = new Set(priorExclusions.map((row) => row.jellyfinId));
+				const newExclusions = excludedItems.filter((item) => !priorExcludedIds.has(item.id));
+				if (newExclusions.length)
+					await tx.jellyfinEpisodeObservationExclusion.createMany({
+						data: newExclusions.map((item) => ({
+							runId: run.id,
+							unitId: unit.id,
+							pass: claim.phase,
+							userKeyDigest,
+							jellyfinId: item.id,
+							reason: item.excludedReason,
+						})),
+					});
 			}
 			if (newItems.length) {
 				await tx.jellyfinEpisodeObservationStage.createMany({
@@ -725,6 +765,7 @@ export async function invalidateJellyfinEpisodeRun(
 			select: { id: true },
 		});
 		if (!run) return false;
+		await tx.jellyfinEpisodeObservationExclusion.deleteMany({ where: { runId } });
 		await tx.jellyfinEpisodeObservationStage.deleteMany({ where: { runId } });
 		await tx.providerObservationUnit.updateMany({
 			where: { runId, state: { not: "invalidated" } },
@@ -827,6 +868,7 @@ export async function finalizeJellyfinEpisodeRun(
 		// never be allowed to invalidate another owner's unpublished work.
 		if (!instance || !run) return { published: false, itemCount: 0 };
 		const invalidate = async () => {
+			await tx.jellyfinEpisodeObservationExclusion.deleteMany({ where: { runId: input.runId } });
 			await tx.jellyfinEpisodeObservationStage.deleteMany({ where: { runId: input.runId } });
 			await tx.providerObservationUnit.updateMany({
 				where: { runId: input.runId, state: { notIn: ["complete", "invalidated"] } },
@@ -944,6 +986,34 @@ export async function finalizeJellyfinEpisodeRun(
 		const collect = stages.filter((stage) => stage.pass === "collect");
 		const verify = stages.filter((stage) => stage.pass === "verify");
 		const unitsById = new Map(run.units.map((unit) => [unit.id, unit]));
+		const exclusions = await tx.jellyfinEpisodeObservationExclusion.findMany({
+			where: { runId: run.id },
+		});
+		if (
+			(!isV3Run && exclusions.length > 0) ||
+			exclusions.some((row) => {
+				const unit = unitsById.get(row.unitId);
+				const scope = unit && parseScope(unit.scopePayload);
+				return (
+					!unit ||
+					!scope ||
+					row.pass !== unit.phase ||
+					row.userKeyDigest !== digest(["jellyfin-user", scope.userId]) ||
+					!row.jellyfinId.trim() ||
+					row.reason !== "missing-episode-metadata"
+				);
+			})
+		)
+			return await invalidate();
+		// An unavailable mapping in either pass/user cannot corroborate a positive
+		// observation for that identity. Other independently verified IDs remain usable.
+		const excludedIds = new Set(exclusions.map((row) => row.jellyfinId));
+		const exclusionsByUnit = new Map<string, Set<string>>();
+		for (const row of exclusions) {
+			const ids = exclusionsByUnit.get(row.unitId) ?? new Set<string>();
+			ids.add(row.jellyfinId);
+			exclusionsByUnit.set(row.unitId, ids);
+		}
 		const stagesByUnit = new Map<string, typeof stages>();
 		for (const stage of stages) {
 			const rows = stagesByUnit.get(stage.unitId) ?? [];
@@ -953,10 +1023,13 @@ export async function finalizeJellyfinEpisodeRun(
 		// V3 publishes partial observations: raw page positions can exceed unique
 		// staged identities after overlap. Neither count grants absence authority.
 		const invalidStageCardinality = run.units.some((unit) => {
-			const stageCount = stagesByUnit.get(unit.id)?.length ?? 0;
+			const stageCount = new Set([
+				...(stagesByUnit.get(unit.id) ?? []).map((row) => row.jellyfinId),
+				...(exclusionsByUnit.get(unit.id) ?? []),
+			]).size;
 			return isV3Run
 				? stageCount > unit.observedRawCount || (unit.observedRawCount > 0 && stageCount === 0)
-				: stageCount !== unit.observedRawCount;
+				: (stagesByUnit.get(unit.id)?.length ?? 0) !== unit.observedRawCount;
 		});
 		if (
 			stages.some((stage) => {
@@ -969,7 +1042,9 @@ export async function finalizeJellyfinEpisodeRun(
 		// V3 cannot publish unwatched rows. Their omission or duplicate coordinates
 		// must not turn unrelated, verified positive observations into an outage.
 		// Retain every staged row for raw coverage accounting below.
-		const publicationCandidates = isV3Run ? collect.filter((row) => row.played) : collect;
+		const publicationCandidates = isV3Run
+			? collect.filter((row) => row.played && !excludedIds.has(row.jellyfinId))
+			: collect;
 		const itemIds = new Set<string>();
 		const coordinates = new Set<string>();
 		const sourceCoordinateByItemId = new Map<string, string>();
@@ -1099,13 +1174,16 @@ export async function finalizeJellyfinEpisodeRun(
 		>();
 		for (const unit of run.units) {
 			const canonicalCoordinates = new Set<string>();
-			let missingMappings = 0;
+			const stagedIds = new Set((stagesByUnit.get(unit.id) ?? []).map((row) => row.jellyfinId));
+			let missingMappings = [...(exclusionsByUnit.get(unit.id) ?? [])].filter(
+				(id) => !stagedIds.has(id),
+			).length;
 			let sourceBindings = 0;
 			for (const row of stagesByUnit.get(unit.id) ?? []) {
 				const showTmdbId = mapped.get(
 					isV3Run ? `${unitLibraryById.get(unit.id) ?? ""}\u0000${row.seriesId}` : row.seriesId,
 				);
-				if (showTmdbId === undefined || showTmdbId === null) {
+				if (excludedIds.has(row.jellyfinId) || showTmdbId === undefined || showTmdbId === null) {
 					missingMappings += 1;
 					continue;
 				}
@@ -1203,7 +1281,10 @@ export async function finalizeJellyfinEpisodeRun(
 			isV3Run || [...coverageByUnit.values()].some((coverage) => coverage.missingMappings > 0);
 		const coverageUnits = run.units.map((unit) => {
 			const coverage = coverageByUnit.get(unit.id)!;
-			const stageCount = stagesByUnit.get(unit.id)?.length ?? 0;
+			const stageCount = new Set([
+				...(stagesByUnit.get(unit.id) ?? []).map((row) => row.jellyfinId),
+				...(exclusionsByUnit.get(unit.id) ?? []),
+			]).size;
 			const duplicateSourceObservations = isV3Run ? unit.observedRawCount - stageCount : 0;
 			const pages = Math.max(1, Math.ceil(unit.expectedRawCount! / 1_000));
 			// Raw/source counts still describe the complete observed pass. V3's
@@ -1211,6 +1292,7 @@ export async function finalizeJellyfinEpisodeRun(
 			const admittedCoordinates = new Set<string>();
 			if (isV3Run)
 				for (const row of stagesByUnit.get(unit.id) ?? []) {
+					if (excludedIds.has(row.jellyfinId)) continue;
 					const tmdbId = mapped.get(`${unitLibraryById.get(unit.id) ?? ""}\0${row.seriesId}`);
 					const coordinate = `${tmdbId}\0${row.seasonNumber}\0${row.episodeNumber}`;
 					if (publishedCoordinates.has(coordinate)) admittedCoordinates.add(coordinate);
@@ -1360,6 +1442,7 @@ export async function finalizeJellyfinEpisodeRun(
 			data: { state: "complete", activeSlotKey: null, completedAt: now, nextAttemptAt: null },
 		});
 		if (completed.count !== 1) throw new Error("Jellyfin episode finalization was superseded");
+		await tx.jellyfinEpisodeObservationExclusion.deleteMany({ where: { runId: run.id } });
 		await tx.jellyfinEpisodeObservationStage.deleteMany({ where: { runId: run.id } });
 		return { published: true, itemCount: publishedRows.length };
 	};

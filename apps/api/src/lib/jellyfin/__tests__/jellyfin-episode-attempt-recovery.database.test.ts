@@ -128,6 +128,16 @@ async function database() {
 			userName: "",
 		},
 	});
+	await prisma.jellyfinEpisodeObservationExclusion.create({
+		data: {
+			runId: run.id,
+			unitId: collectUnit.id,
+			userKeyDigest: "d".repeat(64),
+			pass: "collect",
+			jellyfinId: "excluded-episode",
+			reason: "missing-episode-metadata",
+		},
+	});
 	return { prisma, authority, attempt, run, runAuthority };
 }
 
@@ -155,6 +165,10 @@ describe("Jellyfin episode attempt recovery", { timeout: 30_000 }, () => {
 				orderBy: { ordinal: "asc" },
 			}),
 			stages: await prisma.jellyfinEpisodeObservationStage.findMany({
+				where: { runId },
+				orderBy: { id: "asc" },
+			}),
+			exclusions: await prisma.jellyfinEpisodeObservationExclusion.findMany({
 				where: { runId },
 				orderBy: { id: "asc" },
 			}),
@@ -202,6 +216,9 @@ describe("Jellyfin episode attempt recovery", { timeout: 30_000 }, () => {
 		expect(await prisma.jellyfinEpisodeObservationStage.count({ where: { runId: run.id } })).toBe(
 			0,
 		);
+		expect(
+			await prisma.jellyfinEpisodeObservationExclusion.count({ where: { runId: run.id } }),
+		).toBe(0);
 		expect(
 			await prisma.jellyfinEpisodeCache.findMany({ where: { instanceId: authority.id } }),
 		).toEqual([

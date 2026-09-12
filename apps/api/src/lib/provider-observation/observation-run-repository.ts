@@ -260,6 +260,7 @@ function isUniqueOrSerializationConflict(error: unknown): boolean {
 async function invalidateRun(tx: Tx, runId: string): Promise<void> {
 	await tx.plexEpisodeObservationStage.deleteMany({ where: { runId } });
 	await tx.jellyfinEpisodeObservationStage.deleteMany({ where: { runId } });
+	await tx.jellyfinEpisodeObservationExclusion.deleteMany({ where: { runId } });
 	await tx.providerObservationUnit.updateMany({
 		where: { runId, state: { notIn: ["complete", "invalidated"] } },
 		data: { state: "invalidated", claimToken: null, nextAttemptAt: null },
@@ -1129,6 +1130,9 @@ export async function failObservationUnit(
 				where: { runId: input.claim.runId, unitId: input.claim.unitId },
 			});
 			await tx.jellyfinEpisodeObservationStage.deleteMany({
+				where: { runId: input.claim.runId, unitId: input.claim.unitId },
+			});
+			await tx.jellyfinEpisodeObservationExclusion.deleteMany({
 				where: { runId: input.claim.runId, unitId: input.claim.unitId },
 			});
 		}

@@ -456,6 +456,7 @@ export const ModelName = {
   ProviderObservationUnit: 'ProviderObservationUnit',
   PlexEpisodeObservationStage: 'PlexEpisodeObservationStage',
   JellyfinEpisodeObservationStage: 'JellyfinEpisodeObservationStage',
+  JellyfinEpisodeObservationExclusion: 'JellyfinEpisodeObservationExclusion',
   SessionSnapshot: 'SessionSnapshot',
   NamingConfig: 'NamingConfig',
   NamingDeployHistory: 'NamingDeployHistory',
@@ -484,7 +485,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "historyObservation" | "historySourceStatus" | "historyCollectionLease" | "inodeIndexCache" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "episodeFileCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupMediaServerScan" | "libraryCleanupMediaServerScanLease" | "libraryCleanupLog" | "libraryCleanupAuditEvent" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexGenerationTarget" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "providerObservationRun" | "providerObservationUnit" | "plexEpisodeObservationStage" | "jellyfinEpisodeObservationStage" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "labelSyncMutationAttempt" | "autoTagRule" | "tmdbListCache" | "traktListCache" | "listCacheRefreshStatus" | "quiActivityLog" | "quiActionLog" | "quiEventLog"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "historyObservation" | "historySourceStatus" | "historyCollectionLease" | "inodeIndexCache" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "episodeFileCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupMediaServerScan" | "libraryCleanupMediaServerScanLease" | "libraryCleanupLog" | "libraryCleanupAuditEvent" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexGenerationTarget" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "providerObservationRun" | "providerObservationUnit" | "plexEpisodeObservationStage" | "jellyfinEpisodeObservationStage" | "jellyfinEpisodeObservationExclusion" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "labelSyncMutationAttempt" | "autoTagRule" | "tmdbListCache" | "traktListCache" | "listCacheRefreshStatus" | "quiActivityLog" | "quiActionLog" | "quiEventLog"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -4854,6 +4855,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    JellyfinEpisodeObservationExclusion: {
+      payload: Prisma.$JellyfinEpisodeObservationExclusionPayload<ExtArgs>
+      fields: Prisma.JellyfinEpisodeObservationExclusionFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.JellyfinEpisodeObservationExclusionFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationExclusionPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.JellyfinEpisodeObservationExclusionFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationExclusionPayload>
+        }
+        findFirst: {
+          args: Prisma.JellyfinEpisodeObservationExclusionFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationExclusionPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.JellyfinEpisodeObservationExclusionFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationExclusionPayload>
+        }
+        findMany: {
+          args: Prisma.JellyfinEpisodeObservationExclusionFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationExclusionPayload>[]
+        }
+        create: {
+          args: Prisma.JellyfinEpisodeObservationExclusionCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationExclusionPayload>
+        }
+        createMany: {
+          args: Prisma.JellyfinEpisodeObservationExclusionCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.JellyfinEpisodeObservationExclusionCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationExclusionPayload>[]
+        }
+        delete: {
+          args: Prisma.JellyfinEpisodeObservationExclusionDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationExclusionPayload>
+        }
+        update: {
+          args: Prisma.JellyfinEpisodeObservationExclusionUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationExclusionPayload>
+        }
+        deleteMany: {
+          args: Prisma.JellyfinEpisodeObservationExclusionDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.JellyfinEpisodeObservationExclusionUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.JellyfinEpisodeObservationExclusionUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationExclusionPayload>[]
+        }
+        upsert: {
+          args: Prisma.JellyfinEpisodeObservationExclusionUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationExclusionPayload>
+        }
+        aggregate: {
+          args: Prisma.JellyfinEpisodeObservationExclusionAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateJellyfinEpisodeObservationExclusion>
+        }
+        groupBy: {
+          args: Prisma.JellyfinEpisodeObservationExclusionGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.JellyfinEpisodeObservationExclusionGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.JellyfinEpisodeObservationExclusionCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.JellyfinEpisodeObservationExclusionCountAggregateOutputType> | number
+        }
+      }
+    }
     SessionSnapshot: {
       payload: Prisma.$SessionSnapshotPayload<ExtArgs>
       fields: Prisma.SessionSnapshotFieldRefs
@@ -7047,6 +7122,19 @@ export const JellyfinEpisodeObservationStageScalarFieldEnum = {
 export type JellyfinEpisodeObservationStageScalarFieldEnum = (typeof JellyfinEpisodeObservationStageScalarFieldEnum)[keyof typeof JellyfinEpisodeObservationStageScalarFieldEnum]
 
 
+export const JellyfinEpisodeObservationExclusionScalarFieldEnum = {
+  id: 'id',
+  runId: 'runId',
+  unitId: 'unitId',
+  userKeyDigest: 'userKeyDigest',
+  pass: 'pass',
+  jellyfinId: 'jellyfinId',
+  reason: 'reason'
+} as const
+
+export type JellyfinEpisodeObservationExclusionScalarFieldEnum = (typeof JellyfinEpisodeObservationExclusionScalarFieldEnum)[keyof typeof JellyfinEpisodeObservationExclusionScalarFieldEnum]
+
+
 export const SessionSnapshotScalarFieldEnum = {
   id: 'id',
   instanceId: 'instanceId',
@@ -7597,6 +7685,7 @@ export type GlobalOmitConfig = {
   providerObservationUnit?: Prisma.ProviderObservationUnitOmit
   plexEpisodeObservationStage?: Prisma.PlexEpisodeObservationStageOmit
   jellyfinEpisodeObservationStage?: Prisma.JellyfinEpisodeObservationStageOmit
+  jellyfinEpisodeObservationExclusion?: Prisma.JellyfinEpisodeObservationExclusionOmit
   sessionSnapshot?: Prisma.SessionSnapshotOmit
   namingConfig?: Prisma.NamingConfigOmit
   namingDeployHistory?: Prisma.NamingDeployHistoryOmit

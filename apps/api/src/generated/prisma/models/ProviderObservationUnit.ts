@@ -351,6 +351,7 @@ export type ProviderObservationUnitWhereInput = {
   run?: Prisma.XOR<Prisma.ProviderObservationRunScalarRelationFilter, Prisma.ProviderObservationRunWhereInput>
   plexEpisodeRows?: Prisma.PlexEpisodeObservationStageListRelationFilter
   jellyfinEpisodeRows?: Prisma.JellyfinEpisodeObservationStageListRelationFilter
+  jellyfinEpisodeExclusions?: Prisma.JellyfinEpisodeObservationExclusionListRelationFilter
 }
 
 export type ProviderObservationUnitOrderByWithRelationInput = {
@@ -376,6 +377,7 @@ export type ProviderObservationUnitOrderByWithRelationInput = {
   run?: Prisma.ProviderObservationRunOrderByWithRelationInput
   plexEpisodeRows?: Prisma.PlexEpisodeObservationStageOrderByRelationAggregateInput
   jellyfinEpisodeRows?: Prisma.JellyfinEpisodeObservationStageOrderByRelationAggregateInput
+  jellyfinEpisodeExclusions?: Prisma.JellyfinEpisodeObservationExclusionOrderByRelationAggregateInput
 }
 
 export type ProviderObservationUnitWhereUniqueInput = Prisma.AtLeast<{
@@ -407,6 +409,7 @@ export type ProviderObservationUnitWhereUniqueInput = Prisma.AtLeast<{
   run?: Prisma.XOR<Prisma.ProviderObservationRunScalarRelationFilter, Prisma.ProviderObservationRunWhereInput>
   plexEpisodeRows?: Prisma.PlexEpisodeObservationStageListRelationFilter
   jellyfinEpisodeRows?: Prisma.JellyfinEpisodeObservationStageListRelationFilter
+  jellyfinEpisodeExclusions?: Prisma.JellyfinEpisodeObservationExclusionListRelationFilter
 }, "id" | "runId_ordinal" | "runId_scopeKey" | "runId_id">
 
 export type ProviderObservationUnitOrderByWithAggregationInput = {
@@ -483,6 +486,7 @@ export type ProviderObservationUnitCreateInput = {
   run: Prisma.ProviderObservationRunCreateNestedOneWithoutUnitsInput
   plexEpisodeRows?: Prisma.PlexEpisodeObservationStageCreateNestedManyWithoutUnitInput
   jellyfinEpisodeRows?: Prisma.JellyfinEpisodeObservationStageCreateNestedManyWithoutUnitInput
+  jellyfinEpisodeExclusions?: Prisma.JellyfinEpisodeObservationExclusionCreateNestedManyWithoutUnitInput
 }
 
 export type ProviderObservationUnitUncheckedCreateInput = {
@@ -507,6 +511,7 @@ export type ProviderObservationUnitUncheckedCreateInput = {
   completedAt?: Date | string | null
   plexEpisodeRows?: Prisma.PlexEpisodeObservationStageUncheckedCreateNestedManyWithoutUnitInput
   jellyfinEpisodeRows?: Prisma.JellyfinEpisodeObservationStageUncheckedCreateNestedManyWithoutUnitInput
+  jellyfinEpisodeExclusions?: Prisma.JellyfinEpisodeObservationExclusionUncheckedCreateNestedManyWithoutUnitInput
 }
 
 export type ProviderObservationUnitUpdateInput = {
@@ -531,6 +536,7 @@ export type ProviderObservationUnitUpdateInput = {
   run?: Prisma.ProviderObservationRunUpdateOneRequiredWithoutUnitsNestedInput
   plexEpisodeRows?: Prisma.PlexEpisodeObservationStageUpdateManyWithoutUnitNestedInput
   jellyfinEpisodeRows?: Prisma.JellyfinEpisodeObservationStageUpdateManyWithoutUnitNestedInput
+  jellyfinEpisodeExclusions?: Prisma.JellyfinEpisodeObservationExclusionUpdateManyWithoutUnitNestedInput
 }
 
 export type ProviderObservationUnitUncheckedUpdateInput = {
@@ -555,6 +561,7 @@ export type ProviderObservationUnitUncheckedUpdateInput = {
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   plexEpisodeRows?: Prisma.PlexEpisodeObservationStageUncheckedUpdateManyWithoutUnitNestedInput
   jellyfinEpisodeRows?: Prisma.JellyfinEpisodeObservationStageUncheckedUpdateManyWithoutUnitNestedInput
+  jellyfinEpisodeExclusions?: Prisma.JellyfinEpisodeObservationExclusionUncheckedUpdateManyWithoutUnitNestedInput
 }
 
 export type ProviderObservationUnitCreateManyInput = {
@@ -806,6 +813,20 @@ export type ProviderObservationUnitUpdateOneRequiredWithoutJellyfinEpisodeRowsNe
   update?: Prisma.XOR<Prisma.XOR<Prisma.ProviderObservationUnitUpdateToOneWithWhereWithoutJellyfinEpisodeRowsInput, Prisma.ProviderObservationUnitUpdateWithoutJellyfinEpisodeRowsInput>, Prisma.ProviderObservationUnitUncheckedUpdateWithoutJellyfinEpisodeRowsInput>
 }
 
+export type ProviderObservationUnitCreateNestedOneWithoutJellyfinEpisodeExclusionsInput = {
+  create?: Prisma.XOR<Prisma.ProviderObservationUnitCreateWithoutJellyfinEpisodeExclusionsInput, Prisma.ProviderObservationUnitUncheckedCreateWithoutJellyfinEpisodeExclusionsInput>
+  connectOrCreate?: Prisma.ProviderObservationUnitCreateOrConnectWithoutJellyfinEpisodeExclusionsInput
+  connect?: Prisma.ProviderObservationUnitWhereUniqueInput
+}
+
+export type ProviderObservationUnitUpdateOneRequiredWithoutJellyfinEpisodeExclusionsNestedInput = {
+  create?: Prisma.XOR<Prisma.ProviderObservationUnitCreateWithoutJellyfinEpisodeExclusionsInput, Prisma.ProviderObservationUnitUncheckedCreateWithoutJellyfinEpisodeExclusionsInput>
+  connectOrCreate?: Prisma.ProviderObservationUnitCreateOrConnectWithoutJellyfinEpisodeExclusionsInput
+  upsert?: Prisma.ProviderObservationUnitUpsertWithoutJellyfinEpisodeExclusionsInput
+  connect?: Prisma.ProviderObservationUnitWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ProviderObservationUnitUpdateToOneWithWhereWithoutJellyfinEpisodeExclusionsInput, Prisma.ProviderObservationUnitUpdateWithoutJellyfinEpisodeExclusionsInput>, Prisma.ProviderObservationUnitUncheckedUpdateWithoutJellyfinEpisodeExclusionsInput>
+}
+
 export type ProviderObservationUnitCreateWithoutRunInput = {
   id?: string
   ordinal: number
@@ -827,6 +848,7 @@ export type ProviderObservationUnitCreateWithoutRunInput = {
   completedAt?: Date | string | null
   plexEpisodeRows?: Prisma.PlexEpisodeObservationStageCreateNestedManyWithoutUnitInput
   jellyfinEpisodeRows?: Prisma.JellyfinEpisodeObservationStageCreateNestedManyWithoutUnitInput
+  jellyfinEpisodeExclusions?: Prisma.JellyfinEpisodeObservationExclusionCreateNestedManyWithoutUnitInput
 }
 
 export type ProviderObservationUnitUncheckedCreateWithoutRunInput = {
@@ -850,6 +872,7 @@ export type ProviderObservationUnitUncheckedCreateWithoutRunInput = {
   completedAt?: Date | string | null
   plexEpisodeRows?: Prisma.PlexEpisodeObservationStageUncheckedCreateNestedManyWithoutUnitInput
   jellyfinEpisodeRows?: Prisma.JellyfinEpisodeObservationStageUncheckedCreateNestedManyWithoutUnitInput
+  jellyfinEpisodeExclusions?: Prisma.JellyfinEpisodeObservationExclusionUncheckedCreateNestedManyWithoutUnitInput
 }
 
 export type ProviderObservationUnitCreateOrConnectWithoutRunInput = {
@@ -923,6 +946,7 @@ export type ProviderObservationUnitCreateWithoutPlexEpisodeRowsInput = {
   completedAt?: Date | string | null
   run: Prisma.ProviderObservationRunCreateNestedOneWithoutUnitsInput
   jellyfinEpisodeRows?: Prisma.JellyfinEpisodeObservationStageCreateNestedManyWithoutUnitInput
+  jellyfinEpisodeExclusions?: Prisma.JellyfinEpisodeObservationExclusionCreateNestedManyWithoutUnitInput
 }
 
 export type ProviderObservationUnitUncheckedCreateWithoutPlexEpisodeRowsInput = {
@@ -946,6 +970,7 @@ export type ProviderObservationUnitUncheckedCreateWithoutPlexEpisodeRowsInput = 
   updatedAt?: Date | string
   completedAt?: Date | string | null
   jellyfinEpisodeRows?: Prisma.JellyfinEpisodeObservationStageUncheckedCreateNestedManyWithoutUnitInput
+  jellyfinEpisodeExclusions?: Prisma.JellyfinEpisodeObservationExclusionUncheckedCreateNestedManyWithoutUnitInput
 }
 
 export type ProviderObservationUnitCreateOrConnectWithoutPlexEpisodeRowsInput = {
@@ -985,6 +1010,7 @@ export type ProviderObservationUnitUpdateWithoutPlexEpisodeRowsInput = {
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   run?: Prisma.ProviderObservationRunUpdateOneRequiredWithoutUnitsNestedInput
   jellyfinEpisodeRows?: Prisma.JellyfinEpisodeObservationStageUpdateManyWithoutUnitNestedInput
+  jellyfinEpisodeExclusions?: Prisma.JellyfinEpisodeObservationExclusionUpdateManyWithoutUnitNestedInput
 }
 
 export type ProviderObservationUnitUncheckedUpdateWithoutPlexEpisodeRowsInput = {
@@ -1008,6 +1034,7 @@ export type ProviderObservationUnitUncheckedUpdateWithoutPlexEpisodeRowsInput = 
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   jellyfinEpisodeRows?: Prisma.JellyfinEpisodeObservationStageUncheckedUpdateManyWithoutUnitNestedInput
+  jellyfinEpisodeExclusions?: Prisma.JellyfinEpisodeObservationExclusionUncheckedUpdateManyWithoutUnitNestedInput
 }
 
 export type ProviderObservationUnitCreateWithoutJellyfinEpisodeRowsInput = {
@@ -1031,6 +1058,7 @@ export type ProviderObservationUnitCreateWithoutJellyfinEpisodeRowsInput = {
   completedAt?: Date | string | null
   run: Prisma.ProviderObservationRunCreateNestedOneWithoutUnitsInput
   plexEpisodeRows?: Prisma.PlexEpisodeObservationStageCreateNestedManyWithoutUnitInput
+  jellyfinEpisodeExclusions?: Prisma.JellyfinEpisodeObservationExclusionCreateNestedManyWithoutUnitInput
 }
 
 export type ProviderObservationUnitUncheckedCreateWithoutJellyfinEpisodeRowsInput = {
@@ -1054,6 +1082,7 @@ export type ProviderObservationUnitUncheckedCreateWithoutJellyfinEpisodeRowsInpu
   updatedAt?: Date | string
   completedAt?: Date | string | null
   plexEpisodeRows?: Prisma.PlexEpisodeObservationStageUncheckedCreateNestedManyWithoutUnitInput
+  jellyfinEpisodeExclusions?: Prisma.JellyfinEpisodeObservationExclusionUncheckedCreateNestedManyWithoutUnitInput
 }
 
 export type ProviderObservationUnitCreateOrConnectWithoutJellyfinEpisodeRowsInput = {
@@ -1093,6 +1122,7 @@ export type ProviderObservationUnitUpdateWithoutJellyfinEpisodeRowsInput = {
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   run?: Prisma.ProviderObservationRunUpdateOneRequiredWithoutUnitsNestedInput
   plexEpisodeRows?: Prisma.PlexEpisodeObservationStageUpdateManyWithoutUnitNestedInput
+  jellyfinEpisodeExclusions?: Prisma.JellyfinEpisodeObservationExclusionUpdateManyWithoutUnitNestedInput
 }
 
 export type ProviderObservationUnitUncheckedUpdateWithoutJellyfinEpisodeRowsInput = {
@@ -1116,6 +1146,119 @@ export type ProviderObservationUnitUncheckedUpdateWithoutJellyfinEpisodeRowsInpu
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   plexEpisodeRows?: Prisma.PlexEpisodeObservationStageUncheckedUpdateManyWithoutUnitNestedInput
+  jellyfinEpisodeExclusions?: Prisma.JellyfinEpisodeObservationExclusionUncheckedUpdateManyWithoutUnitNestedInput
+}
+
+export type ProviderObservationUnitCreateWithoutJellyfinEpisodeExclusionsInput = {
+  id?: string
+  ordinal: number
+  scopeKey: string
+  scopeDigest: string
+  scopePayload?: string | null
+  phase: string
+  expectedTargets: number
+  cursor?: number
+  expectedRawCount?: number | null
+  observedRawCount?: number
+  state: string
+  claimToken?: string | null
+  attemptCount?: number
+  nextAttemptAt?: Date | string | null
+  lastReasonCode?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  completedAt?: Date | string | null
+  run: Prisma.ProviderObservationRunCreateNestedOneWithoutUnitsInput
+  plexEpisodeRows?: Prisma.PlexEpisodeObservationStageCreateNestedManyWithoutUnitInput
+  jellyfinEpisodeRows?: Prisma.JellyfinEpisodeObservationStageCreateNestedManyWithoutUnitInput
+}
+
+export type ProviderObservationUnitUncheckedCreateWithoutJellyfinEpisodeExclusionsInput = {
+  id?: string
+  runId: string
+  ordinal: number
+  scopeKey: string
+  scopeDigest: string
+  scopePayload?: string | null
+  phase: string
+  expectedTargets: number
+  cursor?: number
+  expectedRawCount?: number | null
+  observedRawCount?: number
+  state: string
+  claimToken?: string | null
+  attemptCount?: number
+  nextAttemptAt?: Date | string | null
+  lastReasonCode?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  completedAt?: Date | string | null
+  plexEpisodeRows?: Prisma.PlexEpisodeObservationStageUncheckedCreateNestedManyWithoutUnitInput
+  jellyfinEpisodeRows?: Prisma.JellyfinEpisodeObservationStageUncheckedCreateNestedManyWithoutUnitInput
+}
+
+export type ProviderObservationUnitCreateOrConnectWithoutJellyfinEpisodeExclusionsInput = {
+  where: Prisma.ProviderObservationUnitWhereUniqueInput
+  create: Prisma.XOR<Prisma.ProviderObservationUnitCreateWithoutJellyfinEpisodeExclusionsInput, Prisma.ProviderObservationUnitUncheckedCreateWithoutJellyfinEpisodeExclusionsInput>
+}
+
+export type ProviderObservationUnitUpsertWithoutJellyfinEpisodeExclusionsInput = {
+  update: Prisma.XOR<Prisma.ProviderObservationUnitUpdateWithoutJellyfinEpisodeExclusionsInput, Prisma.ProviderObservationUnitUncheckedUpdateWithoutJellyfinEpisodeExclusionsInput>
+  create: Prisma.XOR<Prisma.ProviderObservationUnitCreateWithoutJellyfinEpisodeExclusionsInput, Prisma.ProviderObservationUnitUncheckedCreateWithoutJellyfinEpisodeExclusionsInput>
+  where?: Prisma.ProviderObservationUnitWhereInput
+}
+
+export type ProviderObservationUnitUpdateToOneWithWhereWithoutJellyfinEpisodeExclusionsInput = {
+  where?: Prisma.ProviderObservationUnitWhereInput
+  data: Prisma.XOR<Prisma.ProviderObservationUnitUpdateWithoutJellyfinEpisodeExclusionsInput, Prisma.ProviderObservationUnitUncheckedUpdateWithoutJellyfinEpisodeExclusionsInput>
+}
+
+export type ProviderObservationUnitUpdateWithoutJellyfinEpisodeExclusionsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  ordinal?: Prisma.IntFieldUpdateOperationsInput | number
+  scopeKey?: Prisma.StringFieldUpdateOperationsInput | string
+  scopeDigest?: Prisma.StringFieldUpdateOperationsInput | string
+  scopePayload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  phase?: Prisma.StringFieldUpdateOperationsInput | string
+  expectedTargets?: Prisma.IntFieldUpdateOperationsInput | number
+  cursor?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedRawCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  observedRawCount?: Prisma.IntFieldUpdateOperationsInput | number
+  state?: Prisma.StringFieldUpdateOperationsInput | string
+  claimToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  attemptCount?: Prisma.IntFieldUpdateOperationsInput | number
+  nextAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastReasonCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  run?: Prisma.ProviderObservationRunUpdateOneRequiredWithoutUnitsNestedInput
+  plexEpisodeRows?: Prisma.PlexEpisodeObservationStageUpdateManyWithoutUnitNestedInput
+  jellyfinEpisodeRows?: Prisma.JellyfinEpisodeObservationStageUpdateManyWithoutUnitNestedInput
+}
+
+export type ProviderObservationUnitUncheckedUpdateWithoutJellyfinEpisodeExclusionsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  runId?: Prisma.StringFieldUpdateOperationsInput | string
+  ordinal?: Prisma.IntFieldUpdateOperationsInput | number
+  scopeKey?: Prisma.StringFieldUpdateOperationsInput | string
+  scopeDigest?: Prisma.StringFieldUpdateOperationsInput | string
+  scopePayload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  phase?: Prisma.StringFieldUpdateOperationsInput | string
+  expectedTargets?: Prisma.IntFieldUpdateOperationsInput | number
+  cursor?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedRawCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  observedRawCount?: Prisma.IntFieldUpdateOperationsInput | number
+  state?: Prisma.StringFieldUpdateOperationsInput | string
+  claimToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  attemptCount?: Prisma.IntFieldUpdateOperationsInput | number
+  nextAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastReasonCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  plexEpisodeRows?: Prisma.PlexEpisodeObservationStageUncheckedUpdateManyWithoutUnitNestedInput
+  jellyfinEpisodeRows?: Prisma.JellyfinEpisodeObservationStageUncheckedUpdateManyWithoutUnitNestedInput
 }
 
 export type ProviderObservationUnitCreateManyRunInput = {
@@ -1160,6 +1303,7 @@ export type ProviderObservationUnitUpdateWithoutRunInput = {
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   plexEpisodeRows?: Prisma.PlexEpisodeObservationStageUpdateManyWithoutUnitNestedInput
   jellyfinEpisodeRows?: Prisma.JellyfinEpisodeObservationStageUpdateManyWithoutUnitNestedInput
+  jellyfinEpisodeExclusions?: Prisma.JellyfinEpisodeObservationExclusionUpdateManyWithoutUnitNestedInput
 }
 
 export type ProviderObservationUnitUncheckedUpdateWithoutRunInput = {
@@ -1183,6 +1327,7 @@ export type ProviderObservationUnitUncheckedUpdateWithoutRunInput = {
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   plexEpisodeRows?: Prisma.PlexEpisodeObservationStageUncheckedUpdateManyWithoutUnitNestedInput
   jellyfinEpisodeRows?: Prisma.JellyfinEpisodeObservationStageUncheckedUpdateManyWithoutUnitNestedInput
+  jellyfinEpisodeExclusions?: Prisma.JellyfinEpisodeObservationExclusionUncheckedUpdateManyWithoutUnitNestedInput
 }
 
 export type ProviderObservationUnitUncheckedUpdateManyWithoutRunInput = {
@@ -1214,11 +1359,13 @@ export type ProviderObservationUnitUncheckedUpdateManyWithoutRunInput = {
 export type ProviderObservationUnitCountOutputType = {
   plexEpisodeRows: number
   jellyfinEpisodeRows: number
+  jellyfinEpisodeExclusions: number
 }
 
 export type ProviderObservationUnitCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   plexEpisodeRows?: boolean | ProviderObservationUnitCountOutputTypeCountPlexEpisodeRowsArgs
   jellyfinEpisodeRows?: boolean | ProviderObservationUnitCountOutputTypeCountJellyfinEpisodeRowsArgs
+  jellyfinEpisodeExclusions?: boolean | ProviderObservationUnitCountOutputTypeCountJellyfinEpisodeExclusionsArgs
 }
 
 /**
@@ -1245,6 +1392,13 @@ export type ProviderObservationUnitCountOutputTypeCountJellyfinEpisodeRowsArgs<E
   where?: Prisma.JellyfinEpisodeObservationStageWhereInput
 }
 
+/**
+ * ProviderObservationUnitCountOutputType without action
+ */
+export type ProviderObservationUnitCountOutputTypeCountJellyfinEpisodeExclusionsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.JellyfinEpisodeObservationExclusionWhereInput
+}
+
 
 export type ProviderObservationUnitSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -1269,6 +1423,7 @@ export type ProviderObservationUnitSelect<ExtArgs extends runtime.Types.Extensio
   run?: boolean | Prisma.ProviderObservationRunDefaultArgs<ExtArgs>
   plexEpisodeRows?: boolean | Prisma.ProviderObservationUnit$plexEpisodeRowsArgs<ExtArgs>
   jellyfinEpisodeRows?: boolean | Prisma.ProviderObservationUnit$jellyfinEpisodeRowsArgs<ExtArgs>
+  jellyfinEpisodeExclusions?: boolean | Prisma.ProviderObservationUnit$jellyfinEpisodeExclusionsArgs<ExtArgs>
   _count?: boolean | Prisma.ProviderObservationUnitCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["providerObservationUnit"]>
 
@@ -1345,6 +1500,7 @@ export type ProviderObservationUnitInclude<ExtArgs extends runtime.Types.Extensi
   run?: boolean | Prisma.ProviderObservationRunDefaultArgs<ExtArgs>
   plexEpisodeRows?: boolean | Prisma.ProviderObservationUnit$plexEpisodeRowsArgs<ExtArgs>
   jellyfinEpisodeRows?: boolean | Prisma.ProviderObservationUnit$jellyfinEpisodeRowsArgs<ExtArgs>
+  jellyfinEpisodeExclusions?: boolean | Prisma.ProviderObservationUnit$jellyfinEpisodeExclusionsArgs<ExtArgs>
   _count?: boolean | Prisma.ProviderObservationUnitCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type ProviderObservationUnitIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -1360,6 +1516,7 @@ export type $ProviderObservationUnitPayload<ExtArgs extends runtime.Types.Extens
     run: Prisma.$ProviderObservationRunPayload<ExtArgs>
     plexEpisodeRows: Prisma.$PlexEpisodeObservationStagePayload<ExtArgs>[]
     jellyfinEpisodeRows: Prisma.$JellyfinEpisodeObservationStagePayload<ExtArgs>[]
+    jellyfinEpisodeExclusions: Prisma.$JellyfinEpisodeObservationExclusionPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1778,6 +1935,7 @@ export interface Prisma__ProviderObservationUnitClient<T, Null = never, ExtArgs 
   run<T extends Prisma.ProviderObservationRunDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ProviderObservationRunDefaultArgs<ExtArgs>>): Prisma.Prisma__ProviderObservationRunClient<runtime.Types.Result.GetResult<Prisma.$ProviderObservationRunPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
   plexEpisodeRows<T extends Prisma.ProviderObservationUnit$plexEpisodeRowsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ProviderObservationUnit$plexEpisodeRowsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$PlexEpisodeObservationStagePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   jellyfinEpisodeRows<T extends Prisma.ProviderObservationUnit$jellyfinEpisodeRowsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ProviderObservationUnit$jellyfinEpisodeRowsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$JellyfinEpisodeObservationStagePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  jellyfinEpisodeExclusions<T extends Prisma.ProviderObservationUnit$jellyfinEpisodeExclusionsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ProviderObservationUnit$jellyfinEpisodeExclusionsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$JellyfinEpisodeObservationExclusionPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -2270,6 +2428,30 @@ export type ProviderObservationUnit$jellyfinEpisodeRowsArgs<ExtArgs extends runt
   take?: number
   skip?: number
   distinct?: Prisma.JellyfinEpisodeObservationStageScalarFieldEnum | Prisma.JellyfinEpisodeObservationStageScalarFieldEnum[]
+}
+
+/**
+ * ProviderObservationUnit.jellyfinEpisodeExclusions
+ */
+export type ProviderObservationUnit$jellyfinEpisodeExclusionsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the JellyfinEpisodeObservationExclusion
+   */
+  select?: Prisma.JellyfinEpisodeObservationExclusionSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the JellyfinEpisodeObservationExclusion
+   */
+  omit?: Prisma.JellyfinEpisodeObservationExclusionOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.JellyfinEpisodeObservationExclusionInclude<ExtArgs> | null
+  where?: Prisma.JellyfinEpisodeObservationExclusionWhereInput
+  orderBy?: Prisma.JellyfinEpisodeObservationExclusionOrderByWithRelationInput | Prisma.JellyfinEpisodeObservationExclusionOrderByWithRelationInput[]
+  cursor?: Prisma.JellyfinEpisodeObservationExclusionWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.JellyfinEpisodeObservationExclusionScalarFieldEnum | Prisma.JellyfinEpisodeObservationExclusionScalarFieldEnum[]
 }
 
 /**

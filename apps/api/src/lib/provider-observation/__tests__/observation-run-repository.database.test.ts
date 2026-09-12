@@ -757,7 +757,6 @@ describe("provider observation run repository SQLite lifecycle", { timeout: 30_0
 		});
 		expect(await claimObservationUnit(prisma, { runId: run.id, now: started })).toBeNull();
 		expect(await prisma.plexEpisodeObservationStage.count({ where: { runId: run.id } })).toBe(1);
-
 		const mismatched = await createOrLoadObservationRun(prisma, {
 			authority: { ...authority, targetDigest: "f".repeat(64) },
 			units: [units[0]!],
@@ -824,6 +823,16 @@ describe("provider observation run repository SQLite lifecycle", { timeout: 30_0
 				sourceFingerprint: "fingerprint",
 			},
 		});
+		await prisma.jellyfinEpisodeObservationExclusion.create({
+			data: {
+				runId: run.id,
+				unitId: first!.unitId,
+				userKeyDigest: "resume-user",
+				pass: "collect",
+				jellyfinId: "resume-excluded-episode",
+				reason: "missing-episode-metadata",
+			},
+		});
 		let second = await claimObservationUnit(prisma, { runId: run.id, now });
 		for (const delay of [30_000, 120_000, 600_000]) {
 			expect(second).not.toBeNull();
@@ -841,6 +850,9 @@ describe("provider observation run repository SQLite lifecycle", { timeout: 30_0
 		await failObservationUnit(prisma, { claim: second!, reasonCode: "provider-unavailable", now });
 		await createOrLoadObservationRun(prisma, { authority, units, resumeFailed: true });
 		expect(await prisma.plexEpisodeObservationStage.count({ where: { runId: run.id } })).toBe(1);
+		expect(
+			await prisma.jellyfinEpisodeObservationExclusion.count({ where: { runId: run.id } }),
+		).toBe(1);
 		expect(
 			(await prisma.providerObservationUnit.findUnique({ where: { id: first!.unitId } }))?.state,
 		).toBe("complete");
@@ -907,6 +919,16 @@ describe("provider observation run repository SQLite lifecycle", { timeout: 30_0
 					userName: "user",
 				},
 			});
+			await prisma.jellyfinEpisodeObservationExclusion.create({
+				data: {
+					runId: run.id,
+					unitId,
+					userKeyDigest: `user-${unitId}`,
+					pass: "collect",
+					jellyfinId: `excluded-${unitId}`,
+					reason: "missing-episode-metadata",
+				},
+			});
 		}
 
 		const retryAt = new Date(started.getTime() + 30_000);
@@ -938,6 +960,9 @@ describe("provider observation run repository SQLite lifecycle", { timeout: 30_0
 		const remainingJellyfinRows = await prisma.jellyfinEpisodeObservationStage.findMany();
 		expect(remainingJellyfinRows).toHaveLength(1);
 		expect(remainingJellyfinRows[0]?.unitId).toBe(second!.id);
+		const remainingExclusions = await prisma.jellyfinEpisodeObservationExclusion.findMany();
+		expect(remainingExclusions).toHaveLength(1);
+		expect(remainingExclusions[0]?.unitId).toBe(second!.id);
 		expect(
 			await prisma.providerObservationUnit.findUnique({ where: { id: second!.id } }),
 		).toMatchObject({ state: "complete", cursor: 1, expectedRawCount: 1, observedRawCount: 1 });
@@ -1019,11 +1044,24 @@ describe("provider observation run repository SQLite lifecycle", { timeout: 30_0
 				userName: "user",
 			},
 		});
+		await prisma.jellyfinEpisodeObservationExclusion.create({
+			data: {
+				runId: run.id,
+				unitId: claim!.unitId,
+				userKeyDigest: "user",
+				pass: "collect",
+				jellyfinId: "excluded-jelly",
+				reason: "missing-episode-metadata",
+			},
+		});
 		expect(await invalidateObservationRuns(prisma, { instanceId: authority.instanceId })).toBe(1);
 		expect(await prisma.plexEpisodeObservationStage.count({ where: { runId: run.id } })).toBe(0);
 		expect(await prisma.jellyfinEpisodeObservationStage.count({ where: { runId: run.id } })).toBe(
 			0,
 		);
+		expect(
+			await prisma.jellyfinEpisodeObservationExclusion.count({ where: { runId: run.id } }),
+		).toBe(0);
 		expect(
 			await prisma.providerObservationUnit.findUnique({ where: { id: claim!.unitId } }),
 		).toMatchObject({ state: "invalidated", claimToken: null, nextAttemptAt: null });

@@ -115,6 +115,7 @@ export interface JellyfinEpisodeCoverageResult extends JellyfinCompleteItemsResu
 }
 
 export interface JellyfinEpisodeObservationItem {
+	excludedReason?: never;
 	id: string;
 	name: string;
 	type: "Episode";
@@ -126,8 +127,15 @@ export interface JellyfinEpisodeObservationItem {
 	lastPlayedDate: string | null;
 }
 
+export interface JellyfinEpisodeExcludedItem {
+	id: string;
+	type: "Episode";
+	excludedReason: "missing-episode-metadata";
+}
+
 export interface JellyfinEpisodeItemsPage {
-	items: JellyfinEpisodeObservationItem[];
+	/** Includes excluded identities so raw offsets are never shortened. */
+	items: Array<JellyfinEpisodeObservationItem | JellyfinEpisodeExcludedItem>;
 	startIndex: number;
 	totalRecordCount: number;
 }
@@ -445,16 +453,10 @@ export class JellyfinClient {
 			if (
 				item.Type !== "Episode" ||
 				item.Id.trim().length === 0 ||
-				!item.SeriesId ||
-				item.SeriesId.trim().length === 0 ||
-				!Number.isSafeInteger(item.ParentIndexNumber) ||
-				item.ParentIndexNumber === undefined ||
-				item.ParentIndexNumber === null ||
-				item.ParentIndexNumber < 0 ||
-				!Number.isSafeInteger(item.IndexNumber) ||
-				item.IndexNumber === undefined ||
-				item.IndexNumber === null ||
-				item.IndexNumber < 0 ||
+				(item.ParentIndexNumber != null &&
+					(!Number.isSafeInteger(item.ParentIndexNumber) || item.ParentIndexNumber < 0)) ||
+				(item.IndexNumber != null &&
+					(!Number.isSafeInteger(item.IndexNumber) || item.IndexNumber < 0)) ||
 				!item.UserData ||
 				typeof item.UserData.Played !== "boolean" ||
 				(item.UserData.PlayCount !== undefined &&
@@ -476,17 +478,26 @@ export class JellyfinClient {
 			throw new Error("Jellyfin episode page coverage is inconsistent");
 		}
 		return {
-			items: response.Items.map((item) => ({
-				id: item.Id,
-				name: item.Name,
-				type: "Episode" as const,
-				seriesId: item.SeriesId!,
-				episodeNumber: item.IndexNumber!,
-				seasonNumber: item.ParentIndexNumber!,
-				played: item.UserData!.Played!,
-				playCount: item.UserData!.PlayCount ?? null,
-				lastPlayedDate: item.UserData!.LastPlayedDate ?? null,
-			})),
+			items: response.Items.map((item) => {
+				if (!item.SeriesId?.trim() || item.IndexNumber == null || item.ParentIndexNumber == null) {
+					return {
+						id: item.Id,
+						type: "Episode" as const,
+						excludedReason: "missing-episode-metadata" as const,
+					};
+				}
+				return {
+					id: item.Id,
+					name: item.Name,
+					type: "Episode" as const,
+					seriesId: item.SeriesId!,
+					episodeNumber: item.IndexNumber!,
+					seasonNumber: item.ParentIndexNumber!,
+					played: item.UserData!.Played!,
+					playCount: item.UserData!.PlayCount ?? null,
+					lastPlayedDate: item.UserData!.LastPlayedDate ?? null,
+				};
+			}),
 			startIndex: response.StartIndex,
 			totalRecordCount: response.TotalRecordCount,
 		};

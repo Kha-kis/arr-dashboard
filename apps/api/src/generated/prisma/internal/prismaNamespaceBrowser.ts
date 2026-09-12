@@ -110,6 +110,7 @@ export const ModelName = {
   ProviderObservationUnit: 'ProviderObservationUnit',
   PlexEpisodeObservationStage: 'PlexEpisodeObservationStage',
   JellyfinEpisodeObservationStage: 'JellyfinEpisodeObservationStage',
+  JellyfinEpisodeObservationExclusion: 'JellyfinEpisodeObservationExclusion',
   SessionSnapshot: 'SessionSnapshot',
   NamingConfig: 'NamingConfig',
   NamingDeployHistory: 'NamingDeployHistory',
@@ -1331,6 +1332,19 @@ export const JellyfinEpisodeObservationStageScalarFieldEnum = {
 } as const
 
 export type JellyfinEpisodeObservationStageScalarFieldEnum = (typeof JellyfinEpisodeObservationStageScalarFieldEnum)[keyof typeof JellyfinEpisodeObservationStageScalarFieldEnum]
+
+
+export const JellyfinEpisodeObservationExclusionScalarFieldEnum = {
+  id: 'id',
+  runId: 'runId',
+  unitId: 'unitId',
+  userKeyDigest: 'userKeyDigest',
+  pass: 'pass',
+  jellyfinId: 'jellyfinId',
+  reason: 'reason'
+} as const
+
+export type JellyfinEpisodeObservationExclusionScalarFieldEnum = (typeof JellyfinEpisodeObservationExclusionScalarFieldEnum)[keyof typeof JellyfinEpisodeObservationExclusionScalarFieldEnum]
 
 
 export const SessionSnapshotScalarFieldEnum = {

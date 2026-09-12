@@ -48,6 +48,7 @@ const TABLE_NAMES = [
 	"providerObservationUnit",
 	"plexEpisodeObservationStage",
 	"jellyfinEpisodeObservationStage",
+	"jellyfinEpisodeObservationExclusion",
 	"queueCleanerConfig",
 	"libraryCleanupConfig",
 	"libraryCleanupRule",
@@ -95,6 +96,7 @@ describe("exportDatabase — operational history exclusion", () => {
 			providerObservationUnit: [{ id: "unit-1" }],
 			plexEpisodeObservationStage: [{ id: "plex-stage-1" }],
 			jellyfinEpisodeObservationStage: [{ id: "jellyfin-stage-1" }],
+			jellyfinEpisodeObservationExclusion: [{ id: "jellyfin-exclusion-1" }],
 		});
 		const result = await exportDatabase(prisma, { excludeOperationalHistory: true });
 		const serialized = JSON.stringify(result);
@@ -103,10 +105,12 @@ describe("exportDatabase — operational history exclusion", () => {
 		expect(serialized).not.toContain("providerObservationUnits");
 		expect(serialized).not.toContain("plexEpisodeObservationStages");
 		expect(serialized).not.toContain("jellyfinEpisodeObservationStages");
+		expect(serialized).not.toContain("jellyfinEpisodeObservationExclusions");
 		expect(mock.providerObservationRun.findMany).not.toHaveBeenCalled();
 		expect(mock.providerObservationUnit.findMany).not.toHaveBeenCalled();
 		expect(mock.plexEpisodeObservationStage.findMany).not.toHaveBeenCalled();
 		expect(mock.jellyfinEpisodeObservationStage.findMany).not.toHaveBeenCalled();
+		expect(mock.jellyfinEpisodeObservationExclusion.findMany).not.toHaveBeenCalled();
 	});
 
 	it("always exports complete label mutation history, including terminal rows", async () => {

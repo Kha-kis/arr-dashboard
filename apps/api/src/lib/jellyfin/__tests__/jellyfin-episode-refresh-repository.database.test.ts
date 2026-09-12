@@ -1130,6 +1130,107 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 		},
 	);
 
+	it.each([2, 3])(
+		"accounts for incomplete episode metadata durably only in V%i",
+		async (version) => {
+			const prisma = await database();
+			const seed = await completeFinalizerFixture(prisma);
+			if (version === 3) await bindV3Fixture(prisma, seed.run.id);
+			else await bindV2Fixture(prisma, seed.run.id, seed.scopes);
+			await prisma.serviceInstance.update({
+				where: { id: "jellyfin-1" },
+				data: { expectedIdentity: "verified-provider", identityStatus: "VERIFIED" },
+			});
+			await prisma.jellyfinEpisodeObservationStage.deleteMany({ where: { runId: seed.run.id } });
+			await prisma.providerObservationUnit.updateMany({
+				where: { runId: seed.run.id },
+				data: {
+					state: "pending",
+					claimToken: null,
+					nextAttemptAt: null,
+					completedAt: null,
+					cursor: 0,
+					expectedRawCount: null,
+					observedRawCount: 0,
+				},
+			});
+			await prisma.providerObservationRun.update({
+				where: { id: seed.run.id },
+				data: { state: "running", completedUnits: 0, completedWork: 0 },
+			});
+			for (const phase of ["collect", "verify"]) {
+				const claim = await claimObservationUnit(prisma, {
+					runId: seed.run.id,
+					now: seed.attempt.attemptedAt,
+					claimToken: `excluded-${phase}`,
+				});
+				expect(claim?.phase).toBe(phase);
+				const staged = await stageJellyfinEpisodePage(
+					prisma,
+					claim!,
+					seed.scopes[0]!,
+					{
+						startIndex: 0,
+						totalRecordCount: 2,
+						items: [
+							{
+								id: "episode-1",
+								type: "Episode",
+								name: "Pilot",
+								seriesId: "series-1",
+								seasonNumber: 1,
+								episodeNumber: 1,
+								played: true,
+								playCount: 1,
+								lastPlayedDate: null,
+							},
+							{ id: "orphan", type: "Episode", excludedReason: "missing-episode-metadata" },
+						],
+					},
+					seed.attempt.attemptedAt,
+				);
+				if (version === 2) {
+					expect(staged).toBe(false);
+					return;
+				}
+				expect(staged).toBe(true);
+				expect(
+					await prisma.providerObservationUnit.findUnique({ where: { id: claim!.unitId } }),
+				).toMatchObject({ state: "complete", cursor: 2, observedRawCount: 2 });
+			}
+			expect(
+				await finalizeJellyfinEpisodeRun({
+					prisma,
+					userId: "user-1",
+					instance: { id: "jellyfin-1" },
+					runId: seed.run.id,
+					scopes: seed.scopes,
+					attempt: seed.attempt,
+					now: seed.attempt.attemptedAt,
+				}),
+			).toEqual({ published: true, itemCount: 1 });
+			const status = await prisma.cacheRefreshStatus.findUniqueOrThrow({
+				where: {
+					instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin_episode" },
+				},
+			});
+			const decoded = decodeJellyfinEpisodeGenerationMetadata(status.generationMetadata);
+			expect(decoded).toMatchObject({
+				ok: true,
+				metadata: { publicationLevel: "positive-only", completeness: "partial" },
+			});
+			if (!decoded.ok) throw new Error("invalid metadata");
+			for (const unit of decoded.metadata.coverageReceipt.units) {
+				expect(unit).toMatchObject({
+					rawObserved: 2,
+					sourceBindings: 1,
+					canonicalEntities: 1,
+					acceptedSkips: [{ reason: "missing-supported-mapping", count: 1 }],
+				});
+			}
+		},
+	);
+
 	it("publishes a V3 collected subset when verify sees a newly added series", async () => {
 		const prisma = await database();
 		const seed = await completeFinalizerFixture(prisma);
@@ -1172,6 +1273,136 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 				}),
 			]),
 		);
+	});
+
+	it("excludes an identity whose metadata disappears in verify without losing unrelated positives", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await bindV3Fixture(prisma, seed.run.id);
+		await addStagePair(prisma, seed.run.id, {
+			jellyfinId: "episode-2",
+			seriesId: "series-1",
+			episodeNumber: 2,
+			played: true,
+		});
+		const verify = await prisma.providerObservationUnit.findFirstOrThrow({
+			where: { runId: seed.run.id, phase: "verify" },
+		});
+		await prisma.jellyfinEpisodeObservationStage.deleteMany({
+			where: { runId: seed.run.id, unitId: verify.id, jellyfinId: "episode-1" },
+		});
+		await prisma.jellyfinEpisodeObservationExclusion.create({
+			data: {
+				runId: seed.run.id,
+				unitId: verify.id,
+				pass: "verify",
+				userKeyDigest: hash(["jellyfin-user", "user-1"]),
+				jellyfinId: "episode-1",
+				reason: "missing-episode-metadata",
+			},
+		});
+		expect(
+			await finalizeJellyfinEpisodeRun({
+				prisma,
+				userId: "user-1",
+				instance: { id: "jellyfin-1" },
+				runId: seed.run.id,
+				scopes: seed.scopes,
+				attempt: seed.attempt,
+				now: seed.attempt.attemptedAt,
+			}),
+		).toEqual({ published: true, itemCount: 1 });
+		expect(
+			await prisma.jellyfinEpisodeCache.findMany({
+				select: { jellyfinId: true, episodeNumber: true },
+			}),
+		).toEqual([{ jellyfinId: "episode-2", episodeNumber: 2 }]);
+		expect(await prisma.jellyfinEpisodeObservationExclusion.count()).toBe(0);
+		const observation = await readOwnedJellyfinObservation({
+			prisma,
+			userId: "user-1",
+			instanceId: "jellyfin-1",
+			cacheType: "jellyfin_episode",
+			mode: "mutation",
+			now: seed.attempt.attemptedAt,
+		});
+		expect(observation).toMatchObject({ available: false, mutationAvailable: false, rows: [] });
+	});
+
+	it("publishes an all-excluded V3 pass as partial without inventing zero watch evidence", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await bindV3Fixture(prisma, seed.run.id);
+		const stages = await prisma.jellyfinEpisodeObservationStage.findMany({
+			where: { runId: seed.run.id },
+		});
+		await prisma.jellyfinEpisodeObservationExclusion.createMany({
+			data: stages.map((row) => ({
+				runId: row.runId,
+				unitId: row.unitId,
+				userKeyDigest: row.userKeyDigest,
+				pass: row.pass,
+				jellyfinId: row.jellyfinId,
+				reason: "missing-episode-metadata",
+			})),
+		});
+		await prisma.jellyfinEpisodeObservationStage.deleteMany({ where: { runId: seed.run.id } });
+		expect(
+			await finalizeJellyfinEpisodeRun({
+				prisma,
+				userId: "user-1",
+				instance: { id: "jellyfin-1" },
+				runId: seed.run.id,
+				scopes: seed.scopes,
+				attempt: seed.attempt,
+				now: seed.attempt.attemptedAt,
+			}),
+		).toEqual({ published: true, itemCount: 0 });
+		const status = await prisma.cacheRefreshStatus.findUniqueOrThrow({
+			where: { instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin_episode" } },
+		});
+		expect(decodeJellyfinEpisodeGenerationMetadata(status.generationMetadata)).toMatchObject({
+			ok: true,
+			metadata: { completeness: "partial", publicationLevel: "positive-only" },
+		});
+		expect(await prisma.jellyfinEpisodeObservationExclusion.count()).toBe(0);
+	});
+
+	it.each([
+		{ reason: "unrecognized-reason" },
+		{ userKeyDigest: "wrong-user" },
+		{ pass: "unknown-phase" },
+	])("rejects inconsistent exclusion authority: %j", async (corruption) => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await bindV3Fixture(prisma, seed.run.id);
+		const unit = await prisma.providerObservationUnit.findFirstOrThrow({
+			where: { runId: seed.run.id, phase: "verify" },
+		});
+		await prisma.jellyfinEpisodeObservationExclusion.create({
+			data: {
+				runId: seed.run.id,
+				unitId: unit.id,
+				userKeyDigest: hash(["jellyfin-user", "user-1"]),
+				pass: "verify",
+				jellyfinId: "orphan",
+				reason: "missing-episode-metadata",
+				...corruption,
+			},
+		});
+		expect(
+			await finalizeJellyfinEpisodeRun({
+				prisma,
+				userId: "user-1",
+				instance: { id: "jellyfin-1" },
+				runId: seed.run.id,
+				scopes: seed.scopes,
+				attempt: seed.attempt,
+				now: seed.attempt.attemptedAt,
+			}),
+		).toEqual({ published: false, itemCount: 0 });
+		await expectInvalidatedWithPublishedCachePreserved(prisma, seed.run.id);
+		expect(await prisma.jellyfinEpisodeObservationExclusion.count()).toBe(0);
 	});
 
 	it("publishes V3 coverage using unique staged rows when raw positions overlap", async () => {

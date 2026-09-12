@@ -359,6 +359,11 @@ export type PlexEpisodeObservationStage = Prisma.PlexEpisodeObservationStageMode
  */
 export type JellyfinEpisodeObservationStage = Prisma.JellyfinEpisodeObservationStageModel
 /**
+ * Model JellyfinEpisodeObservationExclusion
+ * 
+ */
+export type JellyfinEpisodeObservationExclusion = Prisma.JellyfinEpisodeObservationExclusionModel
+/**
  * Model SessionSnapshot
  * 
  */
