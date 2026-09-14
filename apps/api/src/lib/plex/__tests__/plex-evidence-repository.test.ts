@@ -4,10 +4,12 @@ import { createPositivePlexEpisodeDigest } from "../plex-episode-live-collector.
 import {
 	decodePlexEpisodeGenerationMetadata,
 	getPublishedEpisodeGenerationObservation,
+	loadAuthoritativePolicySnapshot,
 	loadInstanceEpisodeEvidence,
 	loadInstanceEvidence,
 	loadInstanceMutationEvidence,
 	loadInstanceSelectedEvidence,
+	loadInstanceSelectedMutationEvidence,
 	loadPositiveEpisodeDisplayEvidence,
 	loadPositiveEpisodeEvidence,
 	loadPositiveEpisodeParentEvidence,
@@ -586,6 +588,16 @@ async function loadMutation(testFixture: ReturnType<typeof fixture>) {
 	});
 }
 
+async function loadSelectedMutation(testFixture: ReturnType<typeof fixture>) {
+	return loadInstanceSelectedMutationEvidence(testFixture.prisma as never, {
+		userId: "user-1",
+		instanceId: "plex-1",
+		selection: { kind: "targets", targets: [{ tmdbId: 42, mediaType: "movie" }] },
+		now,
+		maxAgeMs: 3 * 60 * 60 * 1000,
+	});
+}
+
 async function loadTargetScopedWatchCount(testFixture: ReturnType<typeof fixture>) {
 	return loadTargetScopedPlexWatchCountMutationEvidence(testFixture.prisma as never, {
 		userId: "user-1",
@@ -961,6 +973,55 @@ describe("Plex evidence repository", () => {
 				reasonCodes: [],
 			},
 		});
+	});
+
+	it("accepts a current complete V6 publication through the repository mutation loader", async () => {
+		const current = status({
+			itemCount: 2,
+			generationMetadata: v6Metadata("authoritative", 2),
+		});
+		const result = await loadMutation(
+			fixture({
+				statuses: [current, current],
+				rows: [row(), row({ id: "row-2", tmdbId: 43 })],
+			}),
+		);
+
+		expect(result).toMatchObject({
+			available: true,
+			metadata: { version: 6, publicationLevel: "authoritative", completeness: "complete" },
+			evidence: { availability: "current", authority: "authoritative", reasonCodes: [] },
+		});
+	});
+
+	it("accepts a current complete V6 publication through selected mutation and policy loaders", async () => {
+		const current = status({
+			itemCount: 1,
+			generationMetadata: v6Metadata("authoritative", 1),
+		});
+		const selected = await loadSelectedMutation(
+			fixture({ statuses: [current, current], rows: [row()] }),
+		);
+		expect(selected).toMatchObject({
+			available: true,
+			metadata: { version: 6, publicationLevel: "authoritative", completeness: "complete" },
+		});
+
+		const policyFixture = fixture({ statuses: [current, current], rows: [row()] });
+		(policyFixture.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+			instance(),
+		]);
+		const policy = await loadAuthoritativePolicySnapshot(policyFixture.prisma as never, {
+			userId: "user-1",
+			now,
+			maxAgeMs: 3 * 60 * 60 * 1000,
+		});
+		expect(policy).toMatchObject([
+			{
+				available: true,
+				metadata: { version: 6, publicationLevel: "authoritative", completeness: "complete" },
+			},
+		]);
 	});
 
 	it("retains V4 rows as display-only last-known evidence", async () => {

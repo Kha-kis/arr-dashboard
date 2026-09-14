@@ -55,6 +55,8 @@ import {
 import {
 	type DecodedPlexGenerationMetadata,
 	evaluatePlexMutationAuthority,
+	isCompleteAuthoritativePlexGenerationMetadata,
+	isReceiptBackedPlexGenerationMetadata,
 	projectPlexProviderObservationStatus,
 } from "./plex-generation-metadata.js";
 import {
@@ -247,12 +249,7 @@ function sectionCatalogIdentity(
 }
 
 function persistedSectionCatalogIdentity(metadata: DecodedPlexGenerationMetadata): string | null {
-	if (
-		metadata.version !== 5 ||
-		metadata.publicationLevel !== "authoritative" ||
-		metadata.completeness !== "complete"
-	)
-		return null;
+	if (!isCompleteAuthoritativePlexGenerationMetadata(metadata)) return null;
 	return sectionCatalogIdentity(metadata.sections);
 }
 
@@ -437,11 +434,7 @@ async function verifyExactGenerationTargets(
 	| { ok: true; expected: { instanceId: string; generationId: string } }
 	| { ok: false; reasonCode: PlexCoverageReasonCode }
 > {
-	if (
-		input.metadata.version !== 5 ||
-		input.metadata.publicationLevel !== "authoritative" ||
-		input.metadata.completeness !== "complete"
-	) {
+	if (!isCompleteAuthoritativePlexGenerationMetadata(input.metadata)) {
 		return { ok: false, reasonCode: "target_ledger_binding_missing" };
 	}
 	const binding = requirePlexTargetLedgerBinding(input.metadata);
@@ -620,13 +613,13 @@ export class PlexAuthorityService {
 		});
 		if (
 			!strict.available ||
-			input.before.metadata.version !== 5 ||
+			!isCompleteAuthoritativePlexGenerationMetadata(input.before.metadata) ||
 			!isCurrentAuthoritativePlexEvidence(input.before.evidence)
 		) {
 			return unavailableEvidence(
 				input.instanceId,
 				input.before.evidence,
-				input.before.metadata.version === 5
+				isReceiptBackedPlexGenerationMetadata(input.before.metadata)
 					? (input.before.evidence.reasonCodes[0] ?? "mutation_authority_unavailable")
 					: "plex_settlement_metadata_missing",
 				input.before.providerStatus,
@@ -991,7 +984,7 @@ export class PlexAuthorityService {
 	}
 
 	/**
-	 * The V4/V5 parent-reader. It intentionally returns only observed Show
+	 * The V4/V5/V6 parent-reader. It intentionally returns only observed Show
 	 * parents and ledger targets. A requested Show absent from those arrays is
 	 * unknown; this method never produces a negative, zero, or exact-universe
 	 * assertion.
@@ -1103,7 +1096,8 @@ export class PlexAuthorityService {
 			},
 			partialReasons:
 				observed.metadata.version === 4 ||
-				(observed.metadata.version === 5 && observed.metadata.publicationLevel === "positive-only")
+				((observed.metadata.version === 5 || observed.metadata.version === 6) &&
+					observed.metadata.publicationLevel === "positive-only")
 					? observed.metadata.partialReasons
 					: [],
 			provenance: {

@@ -12,6 +12,9 @@ const repositoryMocks = vi.hoisted(() => ({
 	loadTargetScopedPlexWatchCountMutationEvidenceBatch: vi.fn(),
 	scanInstanceEpisodeParentPolicyEvidence: vi.fn(),
 }));
+const refresherMocks = vi.hoisted(() => ({
+	collectSettledPlexCacheLiveEvidence: vi.fn(),
+}));
 
 vi.mock("../plex-evidence-repository.js", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../plex-evidence-repository.js")>();
@@ -27,6 +30,14 @@ vi.mock("../plex-evidence-repository.js", async (importOriginal) => {
 			repositoryMocks.loadTargetScopedPlexWatchCountMutationEvidenceBatch,
 		scanInstanceEpisodeParentPolicyEvidence:
 			repositoryMocks.scanInstanceEpisodeParentPolicyEvidence,
+	};
+});
+
+vi.mock("../plex-cache-refresher.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../plex-cache-refresher.js")>();
+	return {
+		...actual,
+		collectSettledPlexCacheLiveEvidence: refresherMocks.collectSettledPlexCacheLiveEvidence,
 	};
 });
 
@@ -150,6 +161,40 @@ function persisted(
 	};
 }
 
+function v6Receipt(evidence: "complete" | "positive-only" = "complete") {
+	const unit = (scopeKey: string) => ({
+		scopeKey,
+		expectedRawCount: 1,
+		pagesAttempted: 1,
+		pagesCompleted: 1,
+		rawObserved: 1,
+		sourceBindings: 1,
+		canonicalEntities: 1,
+		acceptedSkips: [],
+		fatalCount: 0,
+	});
+	return {
+		version: 2 as const,
+		provider: "plex" as const,
+		attemptStartedAt: "2026-08-20T11:59:00.000Z",
+		observedAt: "2026-08-20T12:00:00.000Z",
+		evidence,
+		units: [unit("plex:aggregate")],
+		publishedCanonicalEntities: 1,
+		domains: ["library-inventory", "mapping", "watch-count", "watch-attribution", "on-deck"].map(
+			(domain) => ({
+				domain,
+				evidence: "complete" as const,
+				valueSemantics: "exact" as const,
+				units: [unit(`plex:${domain}`)],
+				...(domain === "mapping" || domain === "watch-count"
+					? { publishedCanonicalEntities: 1 }
+					: {}),
+			}),
+		),
+	};
+}
+
 function probe(overrides: Record<string, unknown> = {}) {
 	return {
 		activities: [],
@@ -195,6 +240,7 @@ async function settle(
 }
 
 async function mutateWithLedgerEvidence(input: {
+	version?: 5 | 6;
 	metadata?: PlexPersistedSelectionObservation["metadata"];
 	reread?: Partial<{
 		connectionGeneration: number;
@@ -215,11 +261,11 @@ async function mutateWithLedgerEvidence(input: {
 		tvdbId: null,
 		ratingKey: "101",
 	};
-	let metadata =
-		input.metadata ??
+	let metadata = (input.metadata ??
 		(input.withBinding
 			? {
 					...persisted().metadata,
+					...(input.version === 6 ? { version: 6, coverageReceipt: v6Receipt() } : {}),
 					itemCount: 1,
 					...createPlexTargetLedgerBinding({
 						instanceId: "plex-1",
@@ -229,22 +275,31 @@ async function mutateWithLedgerEvidence(input: {
 						targets: [ledgerTarget],
 					}),
 				}
-			: { ...persisted().metadata, itemCount: 1 });
-	if (metadata.version !== 5) throw new Error("expected V5 mutation metadata");
+			: {
+					...persisted().metadata,
+					...(input.version === 6 ? { version: 6, coverageReceipt: v6Receipt() } : {}),
+					itemCount: 1,
+				})) as PlexPersistedSelectionObservation["metadata"];
+	if (metadata.version !== 5 && metadata.version !== 6)
+		throw new Error("expected receipt-backed mutation metadata");
 	const itemCount = metadata.itemCount;
-	metadata = {
-		...metadata,
-		coverageReceipt: {
-			...metadata.coverageReceipt,
-			units: metadata.coverageReceipt.units.map((unit) => ({
-				...unit,
-				expectedRawCount: itemCount,
-				rawObserved: itemCount,
-				sourceBindings: itemCount,
-				canonicalEntities: itemCount,
-			})),
-		},
-	};
+	const receipt = metadata.coverageReceipt;
+	if (!receipt) throw new Error("expected receipt-backed mutation metadata");
+	if (receipt.version === 1) {
+		metadata = {
+			...metadata,
+			coverageReceipt: {
+				...receipt,
+				units: receipt.units.map((unit) => ({
+					...unit,
+					expectedRawCount: itemCount,
+					rawObserved: itemCount,
+					sourceBindings: itemCount,
+					canonicalEntities: itemCount,
+				})),
+			},
+		} as PlexPersistedSelectionObservation["metadata"];
+	}
 	const evidence = {
 		available: true,
 		instanceId: "plex-1",
@@ -284,7 +339,8 @@ async function mutateWithLedgerEvidence(input: {
 	repositoryMocks.loadInstanceSelectedEvidence.mockReset();
 	repositoryMocks.loadInstanceSelectedEvidence
 		.mockResolvedValueOnce(evidence)
-		.mockResolvedValueOnce(reread);
+		.mockResolvedValueOnce(reread)
+		.mockResolvedValue(reread);
 	const updateMetadataTags = vi.fn().mockResolvedValue(undefined);
 	const plexGenerationTarget = {
 		findMany: vi
@@ -296,6 +352,11 @@ async function mutateWithLedgerEvidence(input: {
 			throw new Error("synthetic cache backfill");
 		}),
 	};
+	refresherMocks.collectSettledPlexCacheLiveEvidence.mockReset();
+	refresherMocks.collectSettledPlexCacheLiveEvidence.mockResolvedValue({
+		complete: true,
+		inventoryTargets: [ledgerTarget],
+	});
 	const service = new PlexAuthorityService({
 		prisma: {
 			serviceInstance: {
@@ -305,6 +366,8 @@ async function mutateWithLedgerEvidence(input: {
 					service: "PLEX",
 					enabled: true,
 					expectedIdentity: "plex-machine-a",
+					connectionGeneration: 4,
+					identityGeneration: 9,
 				}),
 			},
 			plexGenerationTarget,
@@ -319,11 +382,14 @@ async function mutateWithLedgerEvidence(input: {
 				getLibrarySections: vi
 					.fn()
 					.mockResolvedValue([{ key: "movies", title: "Movies", type: "movie" }]),
-				getLibraryItems: vi
-					.fn()
-					.mockResolvedValue([
-						{ ratingKey: "101", title: "A", type: "movie", Guid: [{ id: "tmdb://1" }] },
-					]),
+				getLibraryItems: vi.fn().mockResolvedValue([
+					{
+						ratingKey: "101",
+						title: "A",
+						type: "movie",
+						Guid: [{ id: "tmdb://1" }],
+					},
+				]),
 				getHistory: vi.fn().mockResolvedValue([]),
 				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 				getOnDeck: vi.fn().mockResolvedValue([]),
@@ -1231,6 +1297,87 @@ describe("PlexAuthorityService settlement window", () => {
 		});
 	});
 
+	it("preserves partial reasons from a receipt-valid positive V6 parent", async () => {
+		const target = {
+			id: "target-v6",
+			instanceId: "plex-1",
+			generationId: "generation-v6-positive",
+			sectionId: "shows-a",
+			sectionUuid: "shows-a-uuid",
+			mediaType: "series" as const,
+			tmdbId: 42,
+			tvdbId: 84,
+			ratingKey: "show-42",
+		};
+		const targetBinding = createPlexTargetLedgerBinding({
+			instanceId: target.instanceId,
+			generationId: target.generationId,
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			targets: [target],
+		});
+		const partialReasons = [{ code: "currentItemsWithoutTmdbMetadata", count: 1 }];
+		repositoryMocks.loadPositiveEpisodeParentEvidence.mockResolvedValue({
+			available: true,
+			instanceId: target.instanceId,
+			generationId: target.generationId,
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			metadata: {
+				version: 6,
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				itemCount: 1,
+				canonicalizationVersion: 1,
+				sections: [firstShowSection],
+				observedRoots: [
+					{ sectionKey: firstShowSection.key, domain: "episode-parents", digest: "a".repeat(64) },
+				],
+				capabilities: [
+					{
+						domain: "episode-parents",
+						field: "membership",
+						semantics: "observed-targets-only",
+						operators: [],
+					},
+				],
+				...targetBinding,
+				partialReasons,
+				coverageReceipt: v6Receipt("positive-only"),
+			},
+			rows: [
+				{
+					...rowA,
+					instanceId: target.instanceId,
+					mediaType: "series",
+					tmdbId: target.tmdbId,
+					sectionId: target.sectionId,
+					ratingKey: target.ratingKey,
+					connectionGeneration: 4,
+					identityGeneration: 9,
+				},
+			],
+			evidence: {
+				availability: "current",
+				authority: "positive-only",
+				attemptState: "partial",
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				reasonCodes: ["latest_attempt_partial"],
+			},
+		});
+		const service = new PlexAuthorityService({
+			prisma: {
+				plexGenerationTarget: { findMany: vi.fn().mockResolvedValue([target]) },
+			} as never,
+			log: {} as never,
+		});
+
+		await expect(
+			service.readPositiveEpisodeParents({ userId: "user-1", instanceId: target.instanceId }),
+		).resolves.toMatchObject({ available: true, partialReasons });
+	});
+
 	it("uses an authoritative V3 generation through the positive parent reader", async () => {
 		const target = {
 			id: "target-v3",
@@ -1341,6 +1488,21 @@ describe("PlexAuthorityService settlement window", () => {
 		await expect(settle()).resolves.toMatchObject({
 			ok: true,
 			persisted: { generationId: "generation-1" },
+		});
+	});
+
+	it("settles an unchanged complete V6 authority window", async () => {
+		const metadata = {
+			...persisted().metadata,
+			version: 6 as const,
+			coverageReceipt: v6Receipt(),
+		};
+
+		await expect(
+			settle({ persisted: persisted({ metadata: metadata as never }) }),
+		).resolves.toMatchObject({
+			ok: true,
+			persisted: { metadata: { version: 6 } },
 		});
 	});
 
@@ -2191,6 +2353,46 @@ describe("PlexAuthorityService settlement window", () => {
 		expect(result).toMatchObject({
 			ok: false,
 			evidence: { reasonCodes: ["identity_generation_mismatch"] },
+		});
+		expect(updateMetadataTags).not.toHaveBeenCalled();
+		expect(plexGenerationTarget.findMany).not.toHaveBeenCalled();
+	});
+
+	it("keeps a complete V6 mutation closed when its target ledger is missing", async () => {
+		const { result, updateMetadataTags } = await mutateWithLedgerEvidence({
+			version: 6,
+			withBinding: true,
+			ledgerRows: [],
+		});
+
+		expect(result).toMatchObject({
+			ok: false,
+			evidence: { reasonCodes: ["target_count_mismatch"] },
+		});
+		expect(updateMetadataTags).not.toHaveBeenCalled();
+	});
+
+	it("verifies the selected target ledger before allowing a complete V6 mutation", async () => {
+		const { result, updateMetadataTags, plexGenerationTarget } = await mutateWithLedgerEvidence({
+			version: 6,
+			withBinding: true,
+		});
+
+		expect(result).toMatchObject({ ok: true });
+		expect(updateMetadataTags).toHaveBeenCalledOnce();
+		expect(plexGenerationTarget.findMany).toHaveBeenCalled();
+	});
+
+	it("keeps complete V6 mutation closed when persisted authority changes during settlement", async () => {
+		const { result, updateMetadataTags, plexGenerationTarget } = await mutateWithLedgerEvidence({
+			version: 6,
+			withBinding: true,
+			reread: { connectionGeneration: 5 },
+		});
+
+		expect(result).toMatchObject({
+			ok: false,
+			evidence: { reasonCodes: ["connection_generation_mismatch"] },
 		});
 		expect(updateMetadataTags).not.toHaveBeenCalled();
 		expect(plexGenerationTarget.findMany).not.toHaveBeenCalled();

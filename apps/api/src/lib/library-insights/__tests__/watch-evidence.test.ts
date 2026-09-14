@@ -91,6 +91,50 @@ function display(
 afterEach(() => vi.clearAllMocks());
 
 describe("readOwnedJellyfinInsightWatchEvidence", () => {
+	it("uses proven positive Jellyfin counts without granting negative authority", async () => {
+		const partialStatus: ProviderObservationStatus = {
+			...status("partial"),
+			evidence: "positive-only",
+			domains: [
+				{
+					domain: "watch-count",
+					availability: "current",
+					evidence: "positive-only",
+					valueSemantics: "lower-bound",
+					observedAt: observedAt.toISOString(),
+					reasonCodes: [],
+				},
+			],
+		};
+		displayMock.read.mockResolvedValueOnce(
+			display(
+				[
+					{
+						instanceId: "jellyfin-1",
+						instanceName: "Library One",
+						rows: [row("jellyfin-1", 3), { ...row("jellyfin-1", 0), tmdbId: 43 }],
+					},
+				],
+				[{ instanceId: "jellyfin-1", status: partialStatus }],
+			),
+		);
+		const result = await readOwnedJellyfinInsightWatchEvidence({
+			prisma: {} as never,
+			userId: "user-1",
+			instances: [instances[0]!],
+		});
+		expect(result.hasPositiveEvidence).toBe(true);
+		expect(result.negativeClaimsAuthoritative).toBe(false);
+		expect(result.rows).toEqual([
+			{
+				tmdbId: 42,
+				mediaType: "movie",
+				watchCount: 3,
+				watchCountSemantics: "lower-bound",
+				lastWatchedAt: null,
+			},
+		]);
+	});
 	it("returns the empty legacy-compatible state without reading an empty topology", async () => {
 		const result = await readOwnedJellyfinInsightWatchEvidence({
 			prisma: {} as never,

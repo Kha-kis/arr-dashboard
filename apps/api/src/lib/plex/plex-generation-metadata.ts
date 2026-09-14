@@ -77,6 +77,31 @@ export type PlexGenerationMetadataDecodeResult =
 	| { ok: true; metadata: DecodedPlexGenerationMetadata }
 	| { ok: false; reasonCode: PlexCoverageReasonCode };
 
+type ReceiptBackedPlexGenerationMetadata =
+	| Extract<DecodedPlexGenerationMetadata, { version: 5 }>
+	| Extract<DecodedPlexGenerationMetadata, { version: 6 }>;
+
+type CompleteAuthoritativePlexGenerationMetadata = Extract<
+	ReceiptBackedPlexGenerationMetadata,
+	{ publicationLevel: "authoritative"; completeness: "complete" }
+>;
+
+export function isReceiptBackedPlexGenerationMetadata(
+	metadata: DecodedPlexGenerationMetadata,
+): metadata is ReceiptBackedPlexGenerationMetadata {
+	return metadata.version === 5 || metadata.version === 6;
+}
+
+export function isCompleteAuthoritativePlexGenerationMetadata(
+	metadata: DecodedPlexGenerationMetadata,
+): metadata is CompleteAuthoritativePlexGenerationMetadata {
+	return (
+		isReceiptBackedPlexGenerationMetadata(metadata) &&
+		metadata.publicationLevel === "authoritative" &&
+		metadata.completeness === "complete"
+	);
+}
+
 export type PublishedPlexStatus = {
 	lastResult: string;
 	lastErrorMessage?: string | null;
@@ -1203,9 +1228,7 @@ export function evaluatePlexMutationAuthority(
 	if (
 		published.evidence.availability !== "current" ||
 		published.evidence.authority !== "authoritative" ||
-		published.metadata.publicationLevel !== "authoritative" ||
-		published.metadata.completeness !== "complete" ||
-		published.metadata.version !== 5
+		!isCompleteAuthoritativePlexGenerationMetadata(published.metadata)
 	) {
 		const reasonCode = published.evidence.reasonCodes[0] ?? "mutation_authority_unavailable";
 		const result = unavailable(reasonCode);

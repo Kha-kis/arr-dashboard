@@ -22,6 +22,8 @@ import {
 	PlexAuthorityService,
 	summarizePlexEvidence,
 } from "../../lib/plex/plex-authority-service.js";
+import { authorizeProviderEvidenceUse } from "../../lib/provider-observation/evidence-capabilities.js";
+import { projectWatchDisplayEvidence } from "../../lib/provider-observation/watch-display-evidence.js";
 import { SeerrClient } from "../../lib/seerr/seerr-client.js";
 import { safeJsonParse } from "../../lib/utils/json.js";
 import { validateRequest } from "../../lib/utils/validate.js";
@@ -65,6 +67,7 @@ interface WatchedMonitoredItem {
 	year: number | null;
 	sizeOnDisk: number;
 	watchCount: number;
+	watchCountSemantics: "exact" | "lower-bound";
 	lastWatchedAt: string | null;
 	qualityProfileName: string | null;
 }
@@ -79,7 +82,10 @@ const insightsQuerySchema = z.object({
 	limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
-type WatchData = Map<string, { watchCount: number; lastWatchedAt: Date | null }>;
+type WatchData = Map<
+	string,
+	{ watchCount: number; lastWatchedAt: Date | null; watchCountSemantics: "exact" | "lower-bound" }
+>;
 
 function mergeWatchRow(
 	watchData: WatchData,
@@ -87,22 +93,31 @@ function mergeWatchRow(
 	tmdbId: number,
 	watchCount: number,
 	lastWatchedAt: Date | null,
+	watchCountSemantics: "exact" | "lower-bound" = "exact",
 ) {
 	const key = `${mediaType}:${tmdbId}`;
 	const existing = watchData.get(key);
 	if (existing) {
-		existing.watchCount += watchCount;
-		if (lastWatchedAt && (!existing.lastWatchedAt || lastWatchedAt > existing.lastWatchedAt)) {
-			existing.lastWatchedAt = lastWatchedAt;
-		}
+		// Providers and shared-library instances may observe the same plays.
+		// Their maximum is a proven lower bound; summing could double-count.
+		existing.watchCount = Math.max(existing.watchCount, watchCount);
+		existing.watchCountSemantics = "lower-bound";
+		existing.lastWatchedAt = null;
 	} else {
-		watchData.set(key, { watchCount, lastWatchedAt });
+		watchData.set(key, { watchCount, lastWatchedAt, watchCountSemantics });
 	}
 }
 
 function mergeInsightRows(watchData: WatchData, rows: JellyfinInsightWatchEvidence["rows"]) {
 	for (const row of rows) {
-		mergeWatchRow(watchData, row.mediaType, row.tmdbId, row.watchCount, row.lastWatchedAt);
+		mergeWatchRow(
+			watchData,
+			row.mediaType,
+			row.tmdbId,
+			row.watchCount,
+			row.lastWatchedAt,
+			row.watchCountSemantics,
+		);
 	}
 }
 
@@ -308,69 +323,74 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 			});
 		}
 
-		// Get media server instances — Plex + Jellyfin/Emby
-		const plexWatchData: WatchData = new Map();
+		// Bound provider reads to the owned, monitored candidates shown by this panel.
+		const candidates = await app.prisma.libraryCache.findMany({
+			where: {
+				instanceId: { in: instanceIds },
+				instance: { userId },
+				monitored: true,
+				hasFile: true,
+			},
+			orderBy: { sizeOnDisk: "desc" },
+			take: params.limit * 5,
+		});
+		const targets = new Map<string, { tmdbId: number; mediaType: "movie" | "series" }>();
+		for (const candidate of candidates) {
+			const parsed = safeJsonParse(candidate.data) as { remoteIds?: { tmdbId?: unknown } } | null;
+			const tmdbId = parsed?.remoteIds?.tmdbId;
+			if (typeof tmdbId !== "number" || !Number.isSafeInteger(tmdbId) || tmdbId <= 0) continue;
+			const mediaType = candidate.itemType === "movie" ? "movie" : "series";
+			targets.set(`${mediaType}:${tmdbId}`, { tmdbId, mediaType });
+		}
 		const [plexEvidence, jellyfinInstances] = await Promise.all([
 			new PlexAuthorityService({
 				prisma: app.prisma,
 				encryptor: app.encryptor,
 				log: request.log,
-			}).scanUserPolicy({
+			}).readUserSelectedDisplay({
 				userId,
+				selection: { kind: "targets", targets: [...targets.values()] },
 				domains: ["membership", "watch"],
-				onBatch: ({ rows }) => {
-					for (const row of rows) {
-						mergeWatchRow(
-							plexWatchData,
-							row.mediaType,
-							row.tmdbId,
-							row.watchCount,
-							row.lastWatchedAt,
-						);
-					}
-				},
 			}),
 			app.prisma.serviceInstance.findMany({
 				where: { userId, enabled: true, service: { in: ["JELLYFIN", "EMBY"] } },
 				select: { id: true, label: true, service: true },
 			}),
 		]);
-		if (plexEvidence.length > 0 && !hasAuthoritativePlexEvidence(plexEvidence)) {
-			return reply.status(503).send({
-				error: "Plex cache evidence is unavailable",
-				evidence: summarizePlexEvidence(plexEvidence),
-			});
+		const watchData: WatchData = new Map();
+		let hasPlexData = false;
+		for (const source of plexEvidence) {
+			if (!source.available) continue;
+			for (const row of source.rows) {
+				const display = projectWatchDisplayEvidence({ status: source.providerStatus, row });
+				if (display.watchCount === null || !source.providerStatus) continue;
+				const decision = authorizeProviderEvidenceUse(source.providerStatus, {
+					domain: "watch-count",
+					use: "positive-predicate",
+					field: "watch-count",
+					operator: "greater_than",
+					threshold: 0,
+					observedValue: display.watchCount,
+					targetObserved: true,
+				});
+				if (!decision.authorized || display.watchCountSemantics === "unknown") continue;
+				hasPlexData = true;
+				mergeWatchRow(
+					watchData,
+					row.mediaType,
+					row.tmdbId,
+					display.watchCount,
+					display.lastWatchedAt ? new Date(display.lastWatchedAt) : null,
+					display.watchCountSemantics,
+				);
+			}
 		}
-
 		const jellyfinWatchEvidence = await readOwnedJellyfinInsightWatchEvidence({
 			prisma: app.prisma,
 			userId,
 			instances: jellyfinInstances as JellyfinDisplayInstance[],
 		});
-		if (plexEvidence.length === 0 && !jellyfinWatchEvidence.hasPositiveEvidence) {
-			return reply.send({
-				success: true,
-				data: { items: [], hasPlexData: false, hasWatchData: false },
-				...providerStatusResponse(jellyfinWatchEvidence),
-			});
-		}
-
-		const watchData: WatchData = new Map();
-		if (hasAuthoritativePlexEvidence(plexEvidence)) {
-			for (const [key, value] of plexWatchData) watchData.set(key, value);
-		}
 		mergeInsightRows(watchData, jellyfinWatchEvidence.rows);
-
-		// Fetch monitored library items
-		const candidates = await app.prisma.libraryCache.findMany({
-			where: {
-				instanceId: { in: instanceIds },
-				monitored: true,
-				hasFile: true,
-			},
-			orderBy: { sizeOnDisk: "desc" },
-			take: params.limit * 5, // Over-fetch — most monitored items may not be watched
-		});
 
 		// Match with watch data
 		const results: WatchedMonitoredItem[] = [];
@@ -405,6 +425,7 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 				year: item.year,
 				sizeOnDisk: Number(item.sizeOnDisk),
 				watchCount: watchInfo.watchCount,
+				watchCountSemantics: watchInfo.watchCountSemantics,
 				lastWatchedAt: watchInfo.lastWatchedAt?.toISOString() ?? null,
 				qualityProfileName: item.qualityProfileName,
 			});
@@ -417,10 +438,10 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 			success: true,
 			data: {
 				items: results,
-				hasPlexData: hasAuthoritativePlexEvidence(plexEvidence),
-				hasWatchData:
-					hasAuthoritativePlexEvidence(plexEvidence) || jellyfinWatchEvidence.hasPositiveEvidence,
+				hasPlexData,
+				hasWatchData: hasPlexData || jellyfinWatchEvidence.hasPositiveEvidence,
 			},
+			...(plexEvidence.length > 0 ? { evidence: summarizePlexEvidence(plexEvidence) } : {}),
 			...providerStatusResponse(jellyfinWatchEvidence),
 		});
 	});

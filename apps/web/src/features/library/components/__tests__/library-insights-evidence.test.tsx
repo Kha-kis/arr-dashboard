@@ -72,11 +72,11 @@ function providerStatus(
 				cacheType: "jellyfin",
 				status: {
 					availability,
-					evidence: "unknown",
-					observedAt: null,
-					ageSeconds: null,
+					evidence: availability === "current" ? "complete" : "unknown",
+					observedAt: availability === "current" ? "2026-09-14T12:00:00.000Z" : null,
+					ageSeconds: availability === "current" ? 0 : null,
 					latestAttempt: "successful",
-					reasonCodes: ["unknown-failure"],
+					reasonCodes: availability === "current" ? [] : ["unknown-failure"],
 				},
 			},
 		],
@@ -90,6 +90,43 @@ beforeEach(() => {
 });
 
 describe("LibraryInsightsSection Plex trust rendering", () => {
+	it("keeps a current but incomplete Jellyfin coverage notice visible for empty results", () => {
+		const status = providerStatus("current");
+		status.sources[0]!.status.evidence = "positive-only";
+		status.sources[0]!.status.reasonCodes = ["coverage-incomplete"];
+		queryState.watched = {
+			data: {
+				data: { items: [], hasPlexData: false, hasWatchData: false },
+				providerStatus: status,
+			},
+			isLoading: false,
+			error: null,
+		};
+		render(<LibraryInsightsSection />);
+		expect(screen.getByText("Showing current mapped data")).toBeInTheDocument();
+		expect(screen.queryByText(/0 items? need attention/i)).not.toBeInTheDocument();
+	});
+	it("keeps incomplete successful Plex coverage visible when no watched rows match", () => {
+		queryState.watched = {
+			data: {
+				data: { items: [], hasPlexData: false, hasWatchData: false },
+				evidence: {
+					publicationLevel: "positive-only",
+					completeness: "partial",
+					availability: "current",
+					authority: "positive-only",
+					attemptState: "partial",
+					reasonCodes: ["latest_attempt_partial"],
+				},
+			},
+			isLoading: false,
+			error: null,
+		};
+		render(<LibraryInsightsSection />);
+		expect(screen.getByText("Plex values are incomplete")).toBeInTheDocument();
+		expect(screen.getByText(/absence remains unknown/i)).toBeInTheDocument();
+		expect(screen.queryByText(/0 items? need attention/i)).not.toBeInTheDocument();
+	});
 	it("hides absent and all-current empty insights without a generic notice", () => {
 		queryState.diskWaste = {
 			data: { data: { items: [], hasPlexData: false, hasWatchData: false } },

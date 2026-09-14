@@ -5,6 +5,7 @@ import { createInjectAuthenticated, setupAuthInjection } from "./test-helpers.js
 const mocks = vi.hoisted(() => ({
 	loadUserEvidence: vi.fn(),
 	scanUserPolicyEvidence: vi.fn(),
+	readSelectedDisplay: vi.fn(),
 	readInsightWatchEvidence: vi.fn(),
 	seerrConstructed: vi.fn(),
 	seerrGetRequests: vi.fn(),
@@ -20,6 +21,9 @@ vi.mock("../../lib/plex/plex-evidence-repository.js", async (importOriginal) => 
 vi.mock("../../lib/plex/plex-authority-service.js", async (importOriginal) => ({
 	...(await importOriginal<typeof import("../../lib/plex/plex-authority-service.js")>()),
 	PlexAuthorityService: class {
+		async readUserSelectedDisplay(input: unknown) {
+			return await mocks.readSelectedDisplay(input);
+		}
 		async scanUserPolicy(input: unknown) {
 			return await mocks.scanUserPolicyEvidence(undefined, input);
 		}
@@ -223,6 +227,9 @@ describe("library insight Plex authority contracts", () => {
 		];
 		mocks.loadUserEvidence.mockResolvedValue(evidence);
 		mocks.scanUserPolicyEvidence.mockResolvedValue(evidence);
+		mocks.readSelectedDisplay.mockImplementation((input) =>
+			mocks.scanUserPolicyEvidence(undefined, input),
+		);
 		mocks.readInsightWatchEvidence.mockResolvedValue({
 			configured: false,
 			rows: [],
@@ -270,7 +277,6 @@ describe("library insight Plex authority contracts", () => {
 
 	it.each([
 		["disk-waste", "/api/library/insights/disk-waste", "totalWastedBytes"],
-		["watched-monitored", "/api/library/insights/watched-monitored", "hasWatchData"],
 		["requested-unwatched", "/api/library/insights/requested-unwatched", "hasWatchData"],
 	] as const)(
 		"withholds %s conclusions while a refresh is in progress",
@@ -288,6 +294,199 @@ describe("library insight Plex authority contracts", () => {
 			expect(JSON.stringify(body)).not.toContain("in_progress:");
 		},
 	);
+
+	it("shows current positive Plex watch observations without global exact authority", async () => {
+		const status = {
+			availability: "partial",
+			evidence: "positive-only",
+			observedAt: "2026-09-14T00:00:00.000Z",
+			ageSeconds: 0,
+			latestAttempt: "successful",
+			reasonCodes: ["coverage-incomplete"],
+			domains: [
+				{
+					domain: "watch-count",
+					availability: "current",
+					evidence: "positive-only",
+					valueSemantics: "lower-bound",
+					observedAt: "2026-09-14T00:00:00.000Z",
+					reasonCodes: [],
+				},
+				{
+					domain: "watch-attribution",
+					availability: "current",
+					evidence: "positive-only",
+					valueSemantics: "lower-bound",
+					observedAt: "2026-09-14T00:00:00.000Z",
+					reasonCodes: [],
+				},
+			],
+		};
+		mocks.readSelectedDisplay.mockResolvedValue([
+			{
+				available: true,
+				instanceId: "plex-1",
+				providerStatus: status,
+				evidence: {
+					availability: "current",
+					authority: "positive-only",
+					attemptState: "partial",
+					publicationLevel: "positive-only",
+					completeness: "partial",
+					reasonCodes: ["latest_attempt_partial"],
+				},
+				rows: [{ ...privateWatchRow, watchCount: 3, watchedByUsers: '["private-user"]' }],
+			},
+		]);
+		(app.prisma.libraryCache.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+			candidateItem(),
+		]);
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/api/library/insights/watched-monitored",
+		);
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			data: {
+				hasPlexData: true,
+				hasWatchData: true,
+				items: [{ watchCount: 3, watchCountSemantics: "lower-bound", lastWatchedAt: null }],
+			},
+			evidence: { completeness: "partial" },
+		});
+		expect(mocks.readSelectedDisplay).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: "user-1",
+				selection: { kind: "targets", targets: [{ tmdbId: 42, mediaType: "movie" }] },
+			}),
+		);
+		expect(mocks.scanUserPolicyEvidence).not.toHaveBeenCalled();
+		expect(response.body).not.toContain("private-user");
+	});
+
+	it.each([0, -1, Number.NaN])(
+		"does not turn an unproven Plex count %s into a watched result",
+		async (watchCount) => {
+			mocks.readSelectedDisplay.mockResolvedValue([
+				{
+					available: true,
+					instanceId: "plex-1",
+					evidence: {
+						...unavailableEvidence,
+						publicationLevel: "positive-only",
+						completeness: "partial",
+					},
+					providerStatus: {
+						...currentStatus,
+						evidence: "positive-only",
+						domains: [
+							{
+								domain: "watch-count",
+								availability: "current",
+								evidence: "positive-only",
+								valueSemantics: "lower-bound",
+								observedAt: currentStatus.observedAt,
+								reasonCodes: [],
+							},
+						],
+					},
+					rows: [{ ...privateWatchRow, watchCount, watchedByUsers: "[]" }],
+				},
+			]);
+			(app.prisma.libraryCache.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+				candidateItem(),
+			]);
+			const response = await createInjectAuthenticated(app)(
+				"GET",
+				"/api/library/insights/watched-monitored",
+			);
+			expect(response.statusCode).toBe(200);
+			expect(response.json().data).toMatchObject({
+				items: [],
+				hasPlexData: false,
+				hasWatchData: false,
+			});
+		},
+	);
+
+	it("does not sum potentially overlapping watch observations from multiple servers", async () => {
+		const source = {
+			available: true,
+			instanceId: "plex-1",
+			evidence: {
+				...unavailableEvidence,
+				publicationLevel: "positive-only",
+				completeness: "partial",
+			},
+			providerStatus: {
+				...currentStatus,
+				evidence: "positive-only",
+				domains: [
+					{
+						domain: "watch-count",
+						availability: "current",
+						evidence: "positive-only",
+						valueSemantics: "lower-bound",
+						observedAt: currentStatus.observedAt,
+						reasonCodes: [],
+					},
+				],
+			},
+			rows: [{ ...privateWatchRow, watchCount: 3, watchedByUsers: "[]" }],
+		};
+		mocks.readSelectedDisplay.mockResolvedValue([source, { ...source, instanceId: "plex-2" }]);
+		mocks.readInsightWatchEvidence.mockResolvedValue(
+			watchEvidence({
+				statuses: [{ instanceId: "jellyfin-1", status: currentStatus }],
+				rows: [privateWatchRow],
+			}),
+		);
+		(app.prisma.libraryCache.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+			candidateItem(),
+		]);
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/api/library/insights/watched-monitored",
+		);
+		expect(response.json().data.items).toMatchObject([
+			{ watchCount: 3, watchCountSemantics: "lower-bound", lastWatchedAt: null },
+		]);
+	});
+
+	it("retains Jellyfin watched results when Plex is unavailable", async () => {
+		mocks.readInsightWatchEvidence.mockResolvedValue(
+			watchEvidence({
+				statuses: [{ instanceId: "jellyfin-1", status: currentStatus }],
+				rows: [privateWatchRow],
+				negative: true,
+				availability: "current",
+			}),
+		);
+		(app.prisma.libraryCache.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+			candidateItem(),
+		]);
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/api/library/insights/watched-monitored",
+		);
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			data: { hasPlexData: false, hasWatchData: true, items: [{ watchCount: 2 }] },
+			evidence: { authority: "unavailable" },
+		});
+	});
+
+	it("returns unavailable Plex coverage without claiming an empty watched inventory", async () => {
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/api/library/insights/watched-monitored",
+		);
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			data: { items: [], hasPlexData: false, hasWatchData: false },
+			evidence: unavailableEvidence,
+		});
+	});
 
 	it("withholds disk-waste conclusions for a degraded owned Jellyfin topology before candidates", async () => {
 		mocks.scanUserPolicyEvidence.mockResolvedValue([]);
@@ -664,7 +863,12 @@ describe("library insight Plex authority contracts", () => {
 			data: { items: [], hasPlexData: false, hasWatchData: false },
 			providerStatus: { availability: "unavailable" },
 		});
-		expect(app.prisma.libraryCache.findMany).not.toHaveBeenCalled();
+		expect(app.prisma.libraryCache.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ instance: { userId: "user-1" } }),
+				take: 250,
+			}),
+		);
 	});
 
 	it("preserves requested empty and fail-soft status after current-complete observation", async () => {

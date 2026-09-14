@@ -5,11 +5,12 @@ import { useSearchParams } from "next/navigation";
 import { PlexQueryEvidenceNotice } from "../../../components/presentational/plex-evidence-notice";
 import {
 	ProviderObservationNotice,
-	resolveProviderObservationAvailability,
+	resolveProviderObservationUiCondition,
 } from "../../../components/presentational/provider-observation-notice";
 import { useDiskWasteInsights } from "../../../hooks/api/useDiskWasteInsights";
 import { useRequestedUnwatchedInsights } from "../../../hooks/api/useRequestedUnwatchedInsights";
 import { useWatchedMonitoredInsights } from "../../../hooks/api/useWatchedMonitoredInsights";
+import { isCurrentAuthoritativePlexEvidence } from "../../../lib/plex-evidence";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useInsightDismissals } from "../hooks/use-insight-dismissals";
 import { DiskWastePanel } from "./disk-waste-panel";
@@ -45,15 +46,17 @@ export function LibraryInsightsSection() {
 	const isLoading =
 		diskWaste.isLoading || watchedMonitored.isLoading || requestedUnwatched.isLoading;
 	const evidenceError = diskWaste.error ?? watchedMonitored.error ?? requestedUnwatched.error;
-	const hasEvidenceError = evidenceError != null;
+	const watchedEvidence = watchedMonitored.data?.evidence;
+	const hasPlexCoverageGap =
+		watchedEvidence !== undefined && !isCurrentAuthoritativePlexEvidence(watchedEvidence);
+	const hasEvidenceError = evidenceError != null || hasPlexCoverageGap;
 	const providerStatus = [
 		diskWaste.data?.providerStatus,
 		watchedMonitored.data?.providerStatus,
 		requestedUnwatched.data?.providerStatus,
 	] as const;
-	const providerAvailability = resolveProviderObservationAvailability(providerStatus);
-	const hasNonCurrentProvider =
-		providerAvailability !== undefined && providerAvailability !== "current";
+	const providerCondition = resolveProviderObservationUiCondition(providerStatus);
+	const hasNonCurrentProvider = providerCondition !== undefined && providerCondition !== "current";
 
 	// Don't render the section if all panels are empty and done loading
 	const hasContent =
@@ -101,7 +104,14 @@ export function LibraryInsightsSection() {
 					<span className="text-xs text-muted-foreground/60">— {segments.join(" · ")}</span>
 				)}
 			</div>
-			<PlexQueryEvidenceNotice error={evidenceError} label="Plex-based library insights" />
+			<PlexQueryEvidenceNotice
+				error={evidenceError}
+				evidence={evidenceError ? undefined : watchedEvidence}
+				hasDisplayedValues={
+					watchedMonitoredCount > 0 && watchedMonitored.data?.data.hasPlexData === true
+				}
+				label="Plex-based library insights"
+			/>
 			<ProviderObservationNotice providerStatus={providerStatus} label="Library insights" />
 			{priorityCue && (
 				<p className="text-xs text-muted-foreground/70 -mt-1 ml-6 italic">{priorityCue}</p>

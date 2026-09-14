@@ -33,6 +33,7 @@ import {
 	evaluatePlexLatestAttemptTrust,
 	evaluatePlexMutationAuthority,
 	evaluatePublishedPlexGeneration,
+	isCompleteAuthoritativePlexGenerationMetadata,
 	type PlexGenerationMetadataV6,
 	projectPlexProviderObservationStatus,
 } from "./plex-generation-metadata.js";
@@ -425,12 +426,7 @@ export function hasCurrentPlexMutationAuthority(
 		...options,
 		maxAgeMs: options.maxAgeMs ?? DEFAULT_PLEX_EVIDENCE_FRESHNESS_MS,
 	});
-	return (
-		strict.available &&
-		strict.metadata.version === 5 &&
-		strict.metadata.publicationLevel === "authoritative" &&
-		strict.metadata.completeness === "complete"
-	);
+	return strict.available && isCompleteAuthoritativePlexGenerationMetadata(strict.metadata);
 }
 
 function isCurrentVerifiedPlexInstance(instance: PlexEvidenceInstance): boolean {

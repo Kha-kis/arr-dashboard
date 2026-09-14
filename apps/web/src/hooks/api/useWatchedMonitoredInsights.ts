@@ -1,4 +1,4 @@
-import type { ProviderObservationStatusEnvelope } from "@arr/shared";
+import type { PlexEvidenceSummary, ProviderObservationStatusEnvelope } from "@arr/shared";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../../lib/api-client/base";
 
@@ -11,6 +11,7 @@ export interface WatchedMonitoredItem {
 	year: number | null;
 	sizeOnDisk: number;
 	watchCount: number;
+	watchCountSemantics?: "exact" | "lower-bound";
 	lastWatchedAt: string | null;
 	qualityProfileName: string | null;
 }
@@ -18,6 +19,7 @@ export interface WatchedMonitoredItem {
 export interface WatchedMonitoredResponse {
 	success: boolean;
 	providerStatus?: ProviderObservationStatusEnvelope;
+	evidence?: PlexEvidenceSummary;
 	data: {
 		items: WatchedMonitoredItem[];
 		hasPlexData: boolean;

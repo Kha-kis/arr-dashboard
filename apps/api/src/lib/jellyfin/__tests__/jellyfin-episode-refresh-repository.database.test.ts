@@ -677,6 +677,121 @@ async function bindV3Fixture(
 	}
 }
 
+async function replaceRunWithV3Scopes(
+	prisma: Awaited<ReturnType<typeof database>>,
+	scopes: Array<{ userId: string; userName: string; libraryId: string }>,
+	itemsByUser: Record<
+		string,
+		Array<{ jellyfinId: string; played: boolean; playCount: number; lastPlayedAt: Date | null }>
+	>,
+	attemptedAt: Date,
+) {
+	const parent = await prisma.cacheRefreshStatus.findUniqueOrThrow({
+		where: { instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin" } },
+	});
+	const parentRows = await prisma.jellyfinCache.findMany({ where: { instanceId: "jellyfin-1" } });
+	const parentMetadata = decodeJellyfinLibraryGenerationMetadata(parent.generationMetadata);
+	if (!parentMetadata.ok || parentMetadata.metadata.coverageReceipt.version !== 2)
+		throw new Error("fixture parent metadata is invalid");
+	const coverageReceipt = parentMetadata.metadata.coverageReceipt;
+	const inventoryScopeRows = scopes.map(({ userId, libraryId }) => ({
+		...coverageReceipt.domains.find((domain) => domain.domain === "library-inventory")!.units[0]!,
+		scopeKey: `user:${userId}/library:${libraryId}/inventory`,
+	}));
+	const normalizedParentMetadata = encodeJellyfinLibraryGenerationMetadata({
+		...parentMetadata.metadata,
+		coverageReceipt: {
+			...coverageReceipt,
+			domains: coverageReceipt.domains.map((domain) =>
+				domain.domain === "library-inventory" ? { ...domain, units: inventoryScopeRows } : domain,
+			),
+		},
+	});
+	await prisma.cacheRefreshStatus.update({
+		where: { id: parent.id },
+		data: { generationMetadata: normalizedParentMetadata },
+	});
+	const normalizedParent = decodeJellyfinLibraryGenerationMetadata(normalizedParentMetadata);
+	if (!normalizedParent.ok) throw new Error("normalized parent metadata is invalid");
+	const dependency = fingerprintJellyfinEpisodeParentDependency(
+		"jellyfin-1",
+		normalizedParent.metadata,
+		parentRows.map((row) => ({ ...row, mediaType: row.mediaType as "movie" | "series" })),
+	);
+	if (!dependency) throw new Error("fixture parent dependency is invalid");
+	const catalog = buildJellyfinEpisodeCatalogProvenance(
+		parentRows.map((row) => ({ ...row, mediaType: row.mediaType as "movie" | "series" })),
+		scopes.map(({ userId, libraryId }) => ({ userId, libraryId })),
+	);
+	if (!catalog) throw new Error("fixture catalog provenance is invalid");
+	const plan = buildJellyfinEpisodeScopePlan(scopes, {
+		parentLibraryGenerationId: parent.generationId!,
+		parentLibraryMetadataFingerprint: fingerprintJellyfinLibraryGenerationMetadata(
+			normalizedParent.metadata,
+		),
+		parentLibraryDependencyFingerprint: dependency,
+		catalogProvenance: catalog,
+	});
+	await prisma.providerObservationRun.deleteMany({
+		where: { instanceId: "jellyfin-1", cacheType: "jellyfin_episode" },
+	});
+	const parentGenerationId = jellyfinEpisodeCatalogGenerationKey(catalog)!;
+	const run = await createOrLoadObservationRun(prisma, {
+		authority: {
+			provider: "jellyfin_episode",
+			cacheType: "jellyfin_episode",
+			instanceId: "jellyfin-1",
+			parentGenerationId,
+			targetDigest: plan.targetDigest,
+			connectionGeneration: 1,
+			identityGeneration: 1,
+		},
+		units: plan.units,
+	});
+	const units = await prisma.providerObservationUnit.findMany({
+		where: { runId: run.id },
+		orderBy: { ordinal: "asc" },
+	});
+	for (const unit of units) {
+		const payload = JSON.parse(unit.scopePayload!) as { userId: string };
+		const items = itemsByUser[payload.userId] ?? [];
+		await prisma.providerObservationUnit.update({
+			where: { id: unit.id },
+			data: {
+				state: "complete",
+				completedAt: attemptedAt,
+				cursor: items.length,
+				expectedRawCount: items.length,
+				observedRawCount: items.length,
+			},
+		});
+		for (const item of items) {
+			await prisma.jellyfinEpisodeObservationStage.create({
+				data: {
+					runId: run.id,
+					unitId: unit.id,
+					userKeyDigest: hash(["jellyfin-user", payload.userId]),
+					pass: unit.phase,
+					jellyfinId: item.jellyfinId,
+					seriesId: "series-1",
+					seasonNumber: 1,
+					episodeNumber: item.jellyfinId === "episode-1" ? 1 : 2,
+					title: item.jellyfinId === "episode-1" ? "Pilot" : "Second",
+					played: item.played,
+					playCount: item.playCount,
+					lastPlayedAt: item.lastPlayedAt,
+					userName: "",
+				},
+			});
+		}
+	}
+	await prisma.providerObservationRun.update({
+		where: { id: run.id },
+		data: { completedUnits: units.length, completedWork: plan.targetCount },
+	});
+	return { run, plan };
+}
+
 async function finalizerState(prisma: Awaited<ReturnType<typeof database>>, runId: string) {
 	return {
 		rows: await prisma.jellyfinEpisodeCache.findMany({
@@ -1275,6 +1390,309 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 		);
 	});
 
+	it("publishes a fully verified stable V3 run as authoritative V2", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await bindV3Fixture(prisma, seed.run.id);
+		await prisma.serviceInstance.update({
+			where: { id: "jellyfin-1" },
+			data: { expectedIdentity: "verified-provider", identityStatus: "VERIFIED" },
+		});
+		const currentParent = await prisma.cacheRefreshStatus.findUniqueOrThrow({
+			where: { instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin" } },
+		});
+		const currentParentMetadata = decodeJellyfinLibraryGenerationMetadata(
+			currentParent.generationMetadata,
+		);
+		if (!currentParentMetadata.ok) throw new Error("current parent metadata is invalid");
+		const currentParentRows = await prisma.jellyfinCache.findMany({
+			where: { instanceId: "jellyfin-1" },
+		});
+		const currentParentDependency = fingerprintJellyfinEpisodeParentDependency(
+			"jellyfin-1",
+			currentParentMetadata.metadata,
+			currentParentRows.map((row) => ({
+				...row,
+				mediaType: row.mediaType as "movie" | "series",
+			})),
+		);
+		if (!currentParentDependency) throw new Error("current parent dependency is invalid");
+
+		await expect(
+			finalizeJellyfinEpisodeRun({
+				prisma,
+				userId: "user-1",
+				instance: { id: "jellyfin-1" },
+				runId: seed.run.id,
+				scopes: seed.scopes,
+				attempt: seed.attempt,
+				now: seed.attempt.attemptedAt,
+			}),
+		).resolves.toEqual({ published: true, itemCount: 1 });
+
+		const status = await prisma.cacheRefreshStatus.findUniqueOrThrow({
+			where: { instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin_episode" } },
+		});
+		const rawMetadata = JSON.parse(status.generationMetadata!) as Record<string, unknown>;
+		expect(rawMetadata).toMatchObject({
+			version: 2,
+			publicationLevel: "authoritative",
+			completeness: "complete",
+			parentLibraryGenerationId: currentParent.generationId,
+			parentLibraryMetadataFingerprint: fingerprintJellyfinLibraryGenerationMetadata(
+				currentParentMetadata.metadata,
+			),
+			parentLibraryDependencyFingerprint: currentParentDependency,
+		});
+		expect("catalogProvenance" in rawMetadata).toBe(false);
+		expect(decodeJellyfinEpisodeGenerationMetadata(status.generationMetadata)).toMatchObject({
+			ok: true,
+			metadata: { version: 2, publicationLevel: "authoritative", completeness: "complete" },
+		});
+		await expect(
+			readOwnedJellyfinObservation({
+				prisma,
+				userId: "user-1",
+				instanceId: "jellyfin-1",
+				cacheType: "jellyfin_episode",
+				mode: "mutation",
+				now: seed.attempt.attemptedAt,
+			}),
+		).resolves.toMatchObject({ available: true, mutationAvailable: true, rows: expect.any(Array) });
+	});
+
+	it("publishes a fully verified empty V3 scan as authoritative V2", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await bindV3Fixture(prisma, seed.run.id);
+		await prisma.serviceInstance.update({
+			where: { id: "jellyfin-1" },
+			data: { expectedIdentity: "verified-provider", identityStatus: "VERIFIED" },
+		});
+		await prisma.jellyfinEpisodeObservationStage.deleteMany({ where: { runId: seed.run.id } });
+		await prisma.providerObservationUnit.updateMany({
+			where: { runId: seed.run.id },
+			data: { cursor: 0, expectedRawCount: 0, observedRawCount: 0 },
+		});
+
+		await expect(
+			finalizeJellyfinEpisodeRun({
+				prisma,
+				userId: "user-1",
+				instance: { id: "jellyfin-1" },
+				runId: seed.run.id,
+				scopes: seed.scopes,
+				attempt: seed.attempt,
+				now: seed.attempt.attemptedAt,
+			}),
+		).resolves.toEqual({ published: true, itemCount: 0 });
+
+		const status = await prisma.cacheRefreshStatus.findUniqueOrThrow({
+			where: { instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin_episode" } },
+		});
+		expect(decodeJellyfinEpisodeGenerationMetadata(status.generationMetadata)).toMatchObject({
+			ok: true,
+			metadata: {
+				version: 2,
+				publicationLevel: "authoritative",
+				completeness: "complete",
+				itemCount: 0,
+			},
+		});
+	});
+
+	it("publishes stable watched and unwatched rows for multiple users as authoritative V2", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		const scopes = [
+			{ userId: "user-1", userName: "Alice", libraryId: "library-1" },
+			{ userId: "user-2", userName: "Bob", libraryId: "library-1" },
+		];
+		await prisma.user.create({
+			data: { id: "user-2", username: `episode-second-${Date.now()}-${Math.random()}` },
+		});
+		const { run } = await replaceRunWithV3Scopes(
+			prisma,
+			scopes,
+			{
+				"user-1": [
+					{
+						jellyfinId: "episode-1",
+						played: true,
+						playCount: 2,
+						lastPlayedAt: new Date("2026-09-06T10:00:00.000Z"),
+					},
+					{ jellyfinId: "episode-2", played: false, playCount: 0, lastPlayedAt: null },
+				],
+				"user-2": [
+					{
+						jellyfinId: "episode-1",
+						played: true,
+						playCount: 1,
+						lastPlayedAt: new Date("2026-09-07T00:00:00.000Z"),
+					},
+					{ jellyfinId: "episode-2", played: false, playCount: 0, lastPlayedAt: null },
+				],
+			},
+			seed.attempt.attemptedAt,
+		);
+		await prisma.serviceInstance.update({
+			where: { id: "jellyfin-1" },
+			data: { expectedIdentity: "verified-provider", identityStatus: "VERIFIED" },
+		});
+
+		await expect(
+			finalizeJellyfinEpisodeRun({
+				prisma,
+				userId: "user-1",
+				instance: { id: "jellyfin-1" },
+				runId: run.id,
+				scopes,
+				attempt: seed.attempt,
+				now: seed.attempt.attemptedAt,
+			}),
+		).resolves.toEqual({ published: true, itemCount: 2 });
+		const rows = await prisma.jellyfinEpisodeCache.findMany({
+			where: { instanceId: "jellyfin-1" },
+			orderBy: [{ seasonNumber: "asc" }, { episodeNumber: "asc" }],
+		});
+		expect(rows).toEqual([
+			expect.objectContaining({
+				episodeNumber: 1,
+				watched: true,
+				watchedByUsers: '["Alice","Bob"]',
+				lastWatchedAt: new Date("2026-09-07T00:00:00.000Z"),
+			}),
+			expect.objectContaining({
+				episodeNumber: 2,
+				watched: false,
+				watchedByUsers: "[]",
+				lastWatchedAt: null,
+			}),
+		]);
+	});
+
+	it("keeps V3 fallback when one native ID maps to different canonical shows", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		const parentRow = await prisma.jellyfinCache.findFirstOrThrow({
+			where: { instanceId: "jellyfin-1", libraryId: "library-1", jellyfinId: "series-1" },
+		});
+		await prisma.jellyfinCache.create({
+			data: {
+				...parentRow,
+				id: undefined,
+				tmdbId: 43,
+				libraryId: "library-2",
+				libraryName: "Other Library",
+			},
+		});
+		await rewriteAuthoritativeParent(prisma);
+		await prisma.user.create({
+			data: { id: "user-2", username: `episode-canonical-${Date.now()}-${Math.random()}` },
+		});
+		const scopes = [
+			{ userId: "user-1", userName: "Alice", libraryId: "library-1" },
+			{ userId: "user-2", userName: "Bob", libraryId: "library-2" },
+		];
+		const { run } = await replaceRunWithV3Scopes(
+			prisma,
+			scopes,
+			{
+				"user-1": [
+					{
+						jellyfinId: "episode-1",
+						played: true,
+						playCount: 1,
+						lastPlayedAt: new Date("2026-09-06T10:00:00.000Z"),
+					},
+				],
+				"user-2": [
+					{
+						jellyfinId: "episode-1",
+						played: true,
+						playCount: 1,
+						lastPlayedAt: new Date("2026-09-07T00:00:00.000Z"),
+					},
+				],
+			},
+			seed.attempt.attemptedAt,
+		);
+		await prisma.serviceInstance.update({
+			where: { id: "jellyfin-1" },
+			data: { expectedIdentity: "verified-provider", identityStatus: "VERIFIED" },
+		});
+
+		await expect(
+			finalizeJellyfinEpisodeRun({
+				prisma,
+				userId: "user-1",
+				instance: { id: "jellyfin-1" },
+				runId: run.id,
+				scopes,
+				attempt: seed.attempt,
+				now: seed.attempt.attemptedAt,
+			}),
+		).resolves.toEqual({ published: true, itemCount: 2 });
+		const status = await prisma.cacheRefreshStatus.findUniqueOrThrow({
+			where: { instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin_episode" } },
+		});
+		expect(decodeJellyfinEpisodeGenerationMetadata(status.generationMetadata)).toMatchObject({
+			ok: true,
+			metadata: { version: 3, publicationLevel: "positive-only", completeness: "partial" },
+		});
+	});
+
+	it("keeps V3 fallback for an unwatched cross-user native identity collision", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await bindV3Fixture(prisma, seed.run.id);
+		await prisma.serviceInstance.update({
+			where: { id: "jellyfin-1" },
+			data: { expectedIdentity: "verified-provider", identityStatus: "VERIFIED" },
+		});
+		await prisma.jellyfinEpisodeObservationStage.updateMany({
+			where: { runId: seed.run.id },
+			data: { played: false, playCount: 0, lastPlayedAt: null },
+		});
+		const stages = await prisma.jellyfinEpisodeObservationStage.findMany({
+			where: { runId: seed.run.id },
+		});
+		for (const stage of stages) {
+			const { id: _id, ...row } = stage;
+			await prisma.jellyfinEpisodeObservationStage.create({
+				data: {
+					...row,
+					userKeyDigest: hash(["jellyfin-user", "other-user"]),
+					episodeNumber: 2,
+				},
+			});
+		}
+		await prisma.providerObservationUnit.updateMany({
+			where: { runId: seed.run.id },
+			data: { cursor: 2, expectedRawCount: 2, observedRawCount: 2 },
+		});
+
+		await expect(
+			finalizeJellyfinEpisodeRun({
+				prisma,
+				userId: "user-1",
+				instance: { id: "jellyfin-1" },
+				runId: seed.run.id,
+				scopes: seed.scopes,
+				attempt: seed.attempt,
+				now: seed.attempt.attemptedAt,
+			}),
+		).resolves.toEqual({ published: true, itemCount: 0 });
+		const status = await prisma.cacheRefreshStatus.findUniqueOrThrow({
+			where: { instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin_episode" } },
+		});
+		expect(decodeJellyfinEpisodeGenerationMetadata(status.generationMetadata)).toMatchObject({
+			ok: true,
+			metadata: { version: 3, publicationLevel: "positive-only", completeness: "partial" },
+		});
+	});
+
 	it("excludes an identity whose metadata disappears in verify without losing unrelated positives", async () => {
 		const prisma = await database();
 		const seed = await completeFinalizerFixture(prisma);
@@ -1478,6 +1896,13 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 					},
 				});
 			}
+			// Keep this scenario genuinely partial: the provider's watch state
+			// changed between collect and verify while native coordinates stayed
+			// stable, so exact V2 publication must be refused.
+			await prisma.jellyfinEpisodeObservationStage.updateMany({
+				where: { runId: seed.run.id, pass: "verify", jellyfinId: "episode-1" },
+				data: { playCount: positiveCount + 1 },
+			});
 			await prisma.providerObservationUnit.updateMany({
 				where: { runId: seed.run.id },
 				data: { cursor: 2, expectedRawCount: 2, observedRawCount: 2 },
@@ -1707,6 +2132,10 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 		const prisma = await database();
 		const seed = await completeFinalizerFixture(prisma);
 		await bindV3Fixture(prisma, seed.run.id, { watchDrift: true });
+		await prisma.serviceInstance.update({
+			where: { id: "jellyfin-1" },
+			data: { expectedIdentity: "verified-provider", identityStatus: "VERIFIED" },
+		});
 		await expect(
 			finalizeJellyfinEpisodeRun({
 				prisma,
@@ -1718,6 +2147,13 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 				now: seed.attempt.attemptedAt,
 			}),
 		).resolves.toEqual({ published: true, itemCount: 1 });
+		const status = await prisma.cacheRefreshStatus.findUniqueOrThrow({
+			where: { instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin_episode" } },
+		});
+		expect(decodeJellyfinEpisodeGenerationMetadata(status.generationMetadata)).toMatchObject({
+			ok: true,
+			metadata: { version: 3, publicationLevel: "positive-only", completeness: "partial" },
+		});
 	});
 
 	it("uses the ten-second successful-progress continuation delay", () => {
@@ -2875,20 +3311,6 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 				);
 			}
 			const receiptEvaluation = evaluateProviderCoverageReceipt(decoded.metadata.coverageReceipt);
-			expect(receiptEvaluation).toMatchObject({ valid: true, evidence: "positive-only" });
-			const inventory = evaluateProviderDomainCoverageMap(decoded.metadata.coverageReceipt).get(
-				"episode-inventory",
-			);
-			expect(inventory?.reasonCodes).toEqual([
-				"positive-only",
-				...(overlap ? ["accepted-skips" as const] : []),
-				"coverage-incomplete",
-			]);
-			expect(inventory).toMatchObject({
-				availability: "current",
-				evidence: "positive-only",
-				valueSemantics: "lower-bound",
-			});
 			const readInput = {
 				prisma,
 				userId: "user-1",
@@ -2898,17 +3320,62 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 			};
 			const display = await readOwnedJellyfinObservation({ ...readInput, mode: "display" });
 			if (!display) throw new Error("expected display observation");
-			expect(display).toMatchObject({ available: true, mutationAvailable: false });
-			expect(display.rows).toHaveLength(2);
-			expect(await readOwnedJellyfinObservation({ ...readInput, mode: "mutation" })).toMatchObject({
-				available: false,
-				mutationAvailable: false,
-			});
-			expect(JSON.parse(second.generationMetadata!)).toMatchObject({
-				version: 3,
-				publicationLevel: "positive-only",
-				completeness: "partial",
-			});
+			if (overlap) {
+				expect(receiptEvaluation).toMatchObject({ valid: true, evidence: "positive-only" });
+				const inventory = evaluateProviderDomainCoverageMap(decoded.metadata.coverageReceipt).get(
+					"episode-inventory",
+				);
+				expect(inventory?.reasonCodes).toEqual([
+					"positive-only",
+					"accepted-skips",
+					"coverage-incomplete",
+				]);
+				expect(inventory).toMatchObject({
+					availability: "current",
+					evidence: "positive-only",
+					valueSemantics: "lower-bound",
+				});
+				expect(display).toMatchObject({ available: true, mutationAvailable: false });
+				expect(display.rows).toHaveLength(2);
+				expect(
+					await readOwnedJellyfinObservation({ ...readInput, mode: "mutation" }),
+				).toMatchObject({ available: false, mutationAvailable: false });
+				expect(JSON.parse(second.generationMetadata!)).toMatchObject({
+					version: 3,
+					publicationLevel: "positive-only",
+					completeness: "partial",
+				});
+			} else {
+				expect(receiptEvaluation).toMatchObject({
+					valid: true,
+					complete: true,
+					evidence: "complete",
+				});
+				expect(decoded.metadata).toMatchObject({
+					version: 2,
+					publicationLevel: "authoritative",
+					completeness: "complete",
+				});
+				expect(decoded.metadata.coverageReceipt).toMatchObject({
+					version: 1,
+					evidence: "complete",
+					publishedCanonicalEntities: 2,
+				});
+				expect(display).toMatchObject({
+					available: true,
+					mutationAvailable: false,
+					providerStatus: { availability: "current" },
+				});
+				expect(display.rows).toHaveLength(2);
+				const mutation = await readOwnedJellyfinObservation({ ...readInput, mode: "mutation" });
+				// The runner settles this publication after the attempt start time;
+				// mutation authority additionally requires those timestamps to match.
+				expect(mutation).toMatchObject({
+					available: false,
+					mutationAvailable: false,
+					providerStatus: { availability: "current" },
+				});
+			}
 		},
 	);
 
