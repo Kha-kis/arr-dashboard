@@ -130,6 +130,8 @@ export interface BackupData {
 		notificationAggregationConfig?: unknown[];
 		autoTagRule?: unknown[];
 		labelSyncRule?: unknown[];
+		/** Durable Jellyfin/Emby desired-state history (optional for legacy files). */
+		labelSyncMutationAttempts?: unknown[];
 		queueCleanerConfig?: unknown[];
 		libraryCleanupConfig?: unknown[];
 		libraryCleanupRule?: unknown[];

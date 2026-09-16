@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { Prisma, PrismaClient, ServiceInstance } from "../prisma.js";
+import { invalidateObservationRunsInTransaction } from "../provider-observation/observation-run-repository.js";
 import {
 	type DecryptedOwnedServiceSnapshot,
 	type ProviderIdentityObservation,
@@ -52,6 +53,28 @@ export function createProviderPublicationAuthority(
 		connectionGeneration: instance.connectionGeneration,
 		identityGeneration: instance.identityGeneration,
 	};
+}
+
+/** Compare every stored field that can grant provider publication authority. */
+export function sameProviderPublicationAuthority(
+	left: ProviderPublicationAuthority,
+	right: ProviderPublicationAuthority,
+): boolean {
+	return (
+		left.id === right.id &&
+		left.userId === right.userId &&
+		left.service === right.service &&
+		left.baseUrl === right.baseUrl &&
+		left.enabled === right.enabled &&
+		left.encryptedApiKey === right.encryptedApiKey &&
+		left.encryptionIv === right.encryptionIv &&
+		left.encryptedHttpAuthCredentials === right.encryptedHttpAuthCredentials &&
+		left.httpAuthEncryptionIv === right.httpAuthEncryptionIv &&
+		left.expectedIdentity === right.expectedIdentity &&
+		left.identityStatus === right.identityStatus &&
+		left.connectionGeneration === right.connectionGeneration &&
+		left.identityGeneration === right.identityGeneration
+	);
 }
 
 export type ProviderIdentityGuardCode =
@@ -235,14 +258,29 @@ async function ensureExpectedIdentity(
 	const mismatch = await withCurrentProviderPublicationAuthority(
 		prisma,
 		instance,
-		async (tx) =>
-			await tx.serviceInstance.updateMany({
+		async (tx) => {
+			await invalidateObservationRunsInTransaction(tx, { instanceId: instance.id });
+			await tx.cacheRefreshStatus.updateMany({
+				where: {
+					instanceId: instance.id,
+					connectionGeneration: instance.connectionGeneration,
+					identityGeneration: instance.identityGeneration,
+					lastAttemptResult: { startsWith: "in_progress:" },
+				},
+				data: {
+					lastAttemptResult: "error",
+					lastAttemptErrorMessage:
+						instance.service === "TAUTULLI" ? "provider_identity_changed" : "identity-changed",
+				},
+			});
+			return await tx.serviceInstance.updateMany({
 				where: providerPublicationPredicate(instance),
 				data: {
 					identityStatus: "MISMATCH",
 					identityLastCheckedAt: (options.now ?? (() => new Date()))(),
 				},
-			}),
+			});
+		},
 		options,
 	);
 	if (!mismatch.matched) {

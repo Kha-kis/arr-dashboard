@@ -15,7 +15,8 @@
  *   the 404 branch below.
  */
 
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyBaseLogger, type FastifyInstance, LogController } from "fastify";
+import pino from "pino";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // -----------------------------------------------------------------------------
@@ -41,26 +42,21 @@ vi.mock("../../lib/queue-cleaner/scheduler.js", () => ({
 }));
 
 const refreshOwnedPlexCache = vi.fn();
-const refreshTautulliCache = vi.fn();
-const refreshJellyfinCache = vi.fn();
-const requireTautulliClient = vi.fn();
-const requireJellyfinClient = vi.fn();
+const refreshOwnedTautulliCache = vi.fn();
+const refreshOwnedJellyfinCache = vi.fn();
+const runJellyfinCacheRefreshSingleFlight = vi.fn();
 vi.mock("../../lib/plex/plex-refresh-orchestration.js", () => ({
-	refreshOwnedPlexCache: (...args: unknown[]) => refreshOwnedPlexCache(...args),
+	refreshOwnedPlexCacheWithAttempt: (...args: unknown[]) => refreshOwnedPlexCache(...args),
 }));
 vi.mock("../../lib/tautulli/tautulli-cache-refresher.js", () => ({
-	createOwnedTautulliPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
-	refreshTautulliCache: (...args: unknown[]) => refreshTautulliCache(...args),
+	refreshOwnedTautulliCacheWithAttempt: (...args: unknown[]) => refreshOwnedTautulliCache(...args),
 }));
 vi.mock("../../lib/jellyfin/jellyfin-cache-refresher.js", () => ({
-	createOwnedJellyfinPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
-	refreshJellyfinCache: (...args: unknown[]) => refreshJellyfinCache(...args),
+	refreshOwnedJellyfinCacheWithAttempt: (...args: unknown[]) => refreshOwnedJellyfinCache(...args),
 }));
-vi.mock("../../lib/tautulli/tautulli-helpers.js", () => ({
-	requireTautulliClient: (...args: unknown[]) => requireTautulliClient(...args),
-}));
-vi.mock("../../lib/jellyfin/jellyfin-helpers.js", () => ({
-	requireJellyfinClient: (...args: unknown[]) => requireJellyfinClient(...args),
+vi.mock("../../lib/jellyfin/jellyfin-cache-singleflight.js", () => ({
+	runJellyfinCacheRefreshSingleFlightWithAttempt: (...args: unknown[]) =>
+		runJellyfinCacheRefreshSingleFlight(...args),
 }));
 
 // Neutralize the collectors so GET /pulse (not under test here) never
@@ -69,7 +65,7 @@ vi.mock("../../lib/pulse/collectors.js", () => ({
 	pulseCollectors: [],
 }));
 
-import { InstanceNotFoundError } from "../../lib/errors.js";
+import { dispatchPulseAction } from "../../lib/pulse/actions.js";
 import { registerPulseRoutes } from "../pulse.js";
 import { registerTestErrorHandler } from "./test-helpers.js";
 
@@ -101,13 +97,39 @@ function setupAuthGate(app: FastifyInstance) {
 }
 
 let app: FastifyInstance;
+let serializedRouteLogs: () => string;
 const plexInstance = {
 	id: "inst-plex-1",
 	userId: DEFAULT_USER.id,
 	service: "PLEX",
 	enabled: true,
+	baseUrl: "https://plex.example.invalid",
+	encryptedApiKey: "encrypted-key",
+	encryptionIv: "key-iv",
+	encryptedHttpAuthCredentials: null,
+	httpAuthEncryptionIv: null,
+	expectedIdentity: "plex-server-1",
+	identityStatus: "VERIFIED",
+	connectionGeneration: 1,
+	identityGeneration: 1,
+};
+const jellyfinInstance = {
+	id: "inst-jellyfin-1",
+	userId: DEFAULT_USER.id,
+	service: "JELLYFIN",
+	enabled: true,
+	baseUrl: "https://jellyfin.example.invalid",
+	encryptedApiKey: "encrypted-key",
+	encryptionIv: "key-iv",
+	encryptedHttpAuthCredentials: null,
+	httpAuthEncryptionIv: null,
+	expectedIdentity: "jellyfin-server-1",
+	identityStatus: "VERIFIED",
+	connectionGeneration: 7,
+	identityGeneration: 4,
 };
 const findPlexInstance = vi.fn();
+const cacheStatusUpsert = vi.fn();
 
 async function inject(
 	method: string,
@@ -133,19 +155,41 @@ beforeEach(async () => {
 	queueCleanerScheduler.isRunning.mockReset();
 	queueCleanerScheduler.start.mockReset();
 	refreshOwnedPlexCache.mockReset();
-	refreshTautulliCache.mockReset();
-	refreshJellyfinCache.mockReset();
-	requireTautulliClient.mockReset();
-	requireJellyfinClient.mockReset();
+	refreshOwnedTautulliCache.mockReset();
+	refreshOwnedJellyfinCache.mockReset();
+	runJellyfinCacheRefreshSingleFlight
+		.mockReset()
+		.mockImplementation(
+			async (
+				_authority: unknown,
+				_cacheType: unknown,
+				_attempt: unknown,
+				refresh: () => Promise<unknown>,
+			) => await refresh(),
+		);
 	findPlexInstance
 		.mockReset()
 		.mockImplementation(async ({ where }) =>
-			where.id === plexInstance.id && where.userId === DEFAULT_USER.id && where.enabled === true
-				? plexInstance
+			where.userId === DEFAULT_USER.id && where.enabled === true
+				? where.id === plexInstance.id
+					? plexInstance
+					: where.id === jellyfinInstance.id
+						? jellyfinInstance
+						: null
 				: null,
 		);
+	cacheStatusUpsert.mockReset().mockResolvedValue({});
 
-	app = Fastify({ logger: false });
+	const logLines: string[] = [];
+	const log = pino(
+		{ level: "info", base: null, timestamp: false },
+		{ write: (line: string) => logLines.push(line) },
+	) as unknown as FastifyBaseLogger;
+	serializedRouteLogs = () => logLines.join("");
+	app = Fastify({
+		loggerInstance: log,
+		logController: new LogController({ disableRequestLogging: true }),
+	});
 	setupAuthGate(app);
 	// Stubs for the write-through surfaces the dispatcher touches post-PR.
 	// Not the focus of this file (see pulse-action-e2e.test.ts for the
@@ -154,7 +198,21 @@ beforeEach(async () => {
 	app.decorate("schedulerRegistry", { list: () => [], markEnabled: () => {} } as unknown as never);
 	app.decorate("prisma", {
 		serviceInstance: { findFirst: findPlexInstance },
-		cacheRefreshStatus: { upsert: async () => ({}) },
+		cacheRefreshStatus: { upsert: cacheStatusUpsert },
+		$transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+			callback({
+				$queryRawUnsafe: vi.fn().mockResolvedValue([]),
+				libraryCleanupConfig: {
+					upsert: vi.fn().mockResolvedValue({ id: "cleanup-user-1" }),
+					findUnique: vi.fn().mockResolvedValue({ id: "cleanup-user-1", runClaimToken: null }),
+				},
+				serviceInstance: { findFirst: findPlexInstance },
+				cacheRefreshStatus: {
+					findUnique: vi.fn().mockResolvedValue(null),
+					create: vi.fn().mockResolvedValue({}),
+					updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				},
+			}),
 	} as unknown as never);
 	registerTestErrorHandler(app);
 	await app.register(registerPulseRoutes);
@@ -223,6 +281,32 @@ describe("POST /pulse/:id/action — scheduler.enable", () => {
 	});
 });
 
+describe("POST /pulse/:id/action — route log containment", () => {
+	it("logs only the bounded action category and settlement", async () => {
+		const privateSignalId = "private-signal-id";
+		const privateInstanceId = plexInstance.id;
+		refreshOwnedPlexCache.mockResolvedValue({ upserted: 1, errors: 0, errorMessages: [] });
+
+		const res = await inject("POST", `/pulse/${privateSignalId}/action`, {
+			body: {
+				kind: "cache.refresh",
+				target: { instanceId: privateInstanceId, cacheType: "plex" },
+				label: "Retry refresh",
+				destructive: false,
+			},
+		});
+
+		expect(res.statusCode).toBe(200);
+		const serialized = serializedRouteLogs();
+		expect(serialized).toContain('"action":"cache.refresh"');
+		expect(serialized).toContain('"cacheType":"plex"');
+		expect(serialized).toContain('"settlement":"accepted"');
+		for (const privateValue of [privateSignalId, privateInstanceId, DEFAULT_USER.id]) {
+			expect(serialized).not.toContain(privateValue);
+		}
+	});
+});
+
 describe("POST /pulse/:id/action — cache.refresh", () => {
 	const body = {
 		kind: "cache.refresh",
@@ -245,12 +329,15 @@ describe("POST /pulse/:id/action — cache.refresh", () => {
 		// Flush the microtask queue so the background task's await of the
 		// refresh mock resolves within this test's lifetime.
 		await new Promise((resolve) => setTimeout(resolve, 10));
-		expect(refreshOwnedPlexCache).toHaveBeenCalledWith({
-			prisma: app.prisma,
-			encryptor: app.encryptor,
-			instance: plexInstance,
-			log: expect.anything(),
-		});
+		expect(refreshOwnedPlexCache).toHaveBeenCalledWith(
+			{
+				prisma: app.prisma,
+				encryptor: app.encryptor,
+				instance: plexInstance,
+				log: expect.anything(),
+			},
+			expect.objectContaining({ resultMarker: expect.stringMatching(/^in_progress:/) }),
+		);
 	});
 
 	it("404 when the target instance is missing or not owned (InstanceNotFoundError)", async () => {
@@ -263,20 +350,9 @@ describe("POST /pulse/:id/action — cache.refresh", () => {
 		expect(refreshOwnedPlexCache).not.toHaveBeenCalled();
 	});
 
-	it("dispatches a Jellyfin retry through the owned-instance helper", async () => {
-		requireJellyfinClient.mockResolvedValue({
-			client: {},
-			instance: {
-				service: "JELLYFIN",
-				baseUrl: "https://jellyfin.example.com",
-				encryptedApiKey: "encrypted-key",
-				encryptionIv: "key-iv",
-				encryptedHttpAuthCredentials: null,
-				httpAuthEncryptionIv: null,
-				connectionGeneration: 7,
-			},
-		});
-		refreshJellyfinCache.mockResolvedValue({
+	it("dispatches a Jellyfin retry through authority-only singleflight", async () => {
+		findPlexInstance.mockResolvedValueOnce(jellyfinInstance);
+		refreshOwnedJellyfinCache.mockResolvedValue({
 			upserted: 7,
 			errors: 0,
 			errorMessages: [],
@@ -294,13 +370,37 @@ describe("POST /pulse/:id/action — cache.refresh", () => {
 
 		expect(res.statusCode).toBe(200);
 		await new Promise((resolve) => setTimeout(resolve, 10));
-		expect(requireJellyfinClient).toHaveBeenCalledTimes(1);
-		expect(requireJellyfinClient.mock.calls[0]?.slice(1)).toEqual(["user-1", "inst-jellyfin-1"]);
-		expect(refreshJellyfinCache).toHaveBeenCalledTimes(1);
+		expect(findPlexInstance).toHaveBeenCalledWith({
+			where: { id: "inst-jellyfin-1", userId: "user-1", enabled: true },
+		});
+		expect(runJellyfinCacheRefreshSingleFlight).toHaveBeenCalledWith(
+			expect.objectContaining({
+				id: jellyfinInstance.id,
+				userId: jellyfinInstance.userId,
+				service: jellyfinInstance.service,
+				encryptedApiKey: jellyfinInstance.encryptedApiKey,
+			}),
+			"jellyfin",
+			expect.objectContaining({ resultMarker: expect.stringMatching(/^in_progress:/) }),
+			expect.any(Function),
+		);
+		expect(runJellyfinCacheRefreshSingleFlight.mock.calls[0]?.[0]).not.toHaveProperty("apiKey");
+		expect(runJellyfinCacheRefreshSingleFlight.mock.calls[0]?.[0]).not.toHaveProperty(
+			"httpAuthHeaders",
+		);
+		expect(refreshOwnedJellyfinCache).toHaveBeenCalledWith(
+			expect.objectContaining({
+				prisma: app.prisma,
+				encryptor: app.encryptor,
+				instance: jellyfinInstance,
+			}),
+			expect.objectContaining({ resultMarker: expect.stringMatching(/^in_progress:/) }),
+		);
+		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
 	it("does not refresh Jellyfin when the target is missing or not owned", async () => {
-		requireJellyfinClient.mockRejectedValue(new InstanceNotFoundError("inst-jellyfin-1"));
+		findPlexInstance.mockResolvedValueOnce(null);
 
 		const res = await inject("POST", "/pulse/signal-1/action", {
 			body: {
@@ -312,6 +412,51 @@ describe("POST /pulse/:id/action — cache.refresh", () => {
 
 		expect(res.statusCode).toBe(404);
 		expect(JSON.parse(res.payload).error).toBe("InstanceNotFoundError");
-		expect(refreshJellyfinCache).not.toHaveBeenCalled();
+		expect(refreshOwnedJellyfinCache).not.toHaveBeenCalled();
+	});
+
+	it("rejects an owned Jellyfin action aimed at a different service", async () => {
+		findPlexInstance.mockResolvedValueOnce({ ...jellyfinInstance, service: "PLEX" });
+
+		const res = await inject("POST", "/pulse/signal-1/action", {
+			body: {
+				...body,
+				target: { instanceId: "inst-jellyfin-1", cacheType: "jellyfin" },
+				label: "Retry refresh",
+			},
+		});
+
+		expect(res.statusCode).toBe(400);
+		expect(JSON.parse(res.payload).error).toBe("AppValidationError");
+		expect(refreshOwnedJellyfinCache).not.toHaveBeenCalled();
+	});
+
+	it("logs only bounded fields when the owned Jellyfin refresh rejects", async () => {
+		findPlexInstance.mockResolvedValueOnce(jellyfinInstance);
+		refreshOwnedJellyfinCache.mockRejectedValueOnce(new Error("sentinel-secret"));
+		const warn = vi.fn();
+		const log = {
+			info: vi.fn(),
+			warn,
+		} as unknown as FastifyBaseLogger;
+
+		const result = await dispatchPulseAction(
+			app,
+			"user-1",
+			{
+				kind: "cache.refresh",
+				target: { instanceId: "inst-jellyfin-1", cacheType: "jellyfin" },
+				label: "Retry refresh",
+				destructive: false,
+			},
+			log,
+		);
+		await result.backgroundTask;
+
+		expect(warn).toHaveBeenCalledWith(
+			{ cacheType: "jellyfin", settlement: "failed" },
+			"Provider cache refresh settled",
+		);
+		expect(JSON.stringify(warn.mock.calls)).not.toContain("sentinel-secret");
 	});
 });

@@ -244,8 +244,66 @@ compose exec -T \
 				if (plexRefresh.upserted < 2) {
 					throw new Error(`Plex cache indexed only ${plexRefresh.upserted} fixture titles`);
 				}
+				let plexStatus = null;
+				let lastPlexStatus = null;
+				for (let attempt = 0; attempt < 40; attempt += 1) {
+					const response = await fetch(
+						`${apiBase}/api/plex/cache/${plexService.id}/status`,
+						{ headers: { cookie } },
+					);
+					const text = await response.text();
+					if (response.status !== 200 && response.status !== 503) {
+						throw new Error(`Plex cache status failed with HTTP ${response.status}`);
+					}
+					const candidate = text.length === 0 ? null : JSON.parse(text);
+					const evidence = candidate?.evidence;
+					lastPlexStatus = {
+						httpStatus: response.status,
+						cachedItems: Number.isSafeInteger(candidate?.cachedItems)
+							? candidate.cachedItems
+							: null,
+						publishedItemCount: Number.isSafeInteger(evidence?.publishedGeneration?.itemCount)
+							? evidence.publishedGeneration.itemCount
+							: null,
+						authority: ["authoritative", "positive-only", "unavailable"].includes(
+							evidence?.authority,
+						)
+							? evidence.authority
+							: null,
+						completeness: ["complete", "partial", "unknown"].includes(
+							evidence?.completeness,
+						)
+							? evidence.completeness
+							: null,
+						reasonCodes: Array.isArray(evidence?.reasonCodes)
+							? evidence.reasonCodes
+								.filter(
+									(reason) =>
+										typeof reason === "string" && /^[a-z0-9_-]{1,64}$/.test(reason),
+								)
+								.slice(0, 5)
+							: [],
+					};
+					if (response.status === 200) {
+						if (
+							candidate?.cachedItems >= 2 &&
+							candidate.evidence?.authority === "authoritative" &&
+							candidate.evidence?.completeness === "complete" &&
+							(candidate.evidence?.reasonCodes ?? []).length === 0
+						) {
+							plexStatus = candidate;
+							break;
+						}
+					}
+					await new Promise((resolve) => setTimeout(resolve, 3000));
+				}
+				if (!plexStatus) {
+					throw new Error(
+						`Plex cache refresh did not produce current authoritative evidence: ${JSON.stringify(lastPlexStatus)}`,
+					);
+				}
 				console.log(
-					`Dashboard bootstrap complete: ${configured.length} services ${process.env.LC_E2E_SKIP_CONNECTION_TESTS === "1" ? "configured" : "verified"}, 4 torrents visible, ${backfill.rowsHashed} rows newly correlated, ${plexRefresh.upserted} Plex titles cached`,
+					`Dashboard bootstrap complete: ${configured.length} services ${process.env.LC_E2E_SKIP_CONNECTION_TESTS === "1" ? "configured" : "verified"}, 4 torrents visible, ${backfill.rowsHashed} rows newly correlated, ${plexRefresh.upserted} authoritative Plex titles cached`,
 				);
 				process.exit(0);
 			}

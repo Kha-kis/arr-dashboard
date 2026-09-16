@@ -124,17 +124,25 @@ function expectNoProviderCanary(serialized: string): void {
 }
 
 function executionPrisma() {
-	const update = vi.fn().mockImplementation(({ data }) => Promise.resolve({ ...RULE, ...data }));
-	return {
+	const currentRule = { ...RULE };
+	const updateMany = vi.fn().mockImplementation(({ data }) => {
+		Object.assign(currentRule, data);
+		return Promise.resolve({ count: 1 });
+	});
+	const prisma = {
 		serviceInstance: {
 			findMany: vi.fn().mockResolvedValue([serviceInstance(RULE.sourceInstanceId)]),
 			findFirst: vi.fn().mockResolvedValue(serviceInstance(RULE.destInstanceId)),
 		},
 		labelSyncRule: {
-			findMany: vi.fn().mockResolvedValue([RULE]),
-			update,
+			findMany: vi.fn().mockResolvedValue([currentRule]),
+			findFirst: vi.fn().mockResolvedValue(currentRule),
+			updateMany,
 		},
 	};
+	return Object.assign(prisma, {
+		$transaction: vi.fn(async (work: (tx: typeof prisma) => Promise<unknown>) => work(prisma)),
+	});
 }
 
 describe("Plex label-sync outer exception containment", () => {
@@ -158,9 +166,21 @@ describe("Plex label-sync outer exception containment", () => {
 
 		await (scheduler as unknown as { tick(): Promise<void> }).tick();
 
-		expect(prisma.labelSyncRule.update).toHaveBeenCalledOnce();
-		expect(prisma.labelSyncRule.update).toHaveBeenCalledWith({
-			where: { id: RULE.id },
+		expect(prisma.labelSyncRule.updateMany).toHaveBeenCalledOnce();
+		expect(prisma.labelSyncRule.updateMany).toHaveBeenCalledWith({
+			where: {
+				id: RULE.id,
+				userId: RULE.userId,
+				name: RULE.name,
+				enabled: RULE.enabled,
+				sourceService: RULE.sourceService,
+				sourceInstanceId: RULE.sourceInstanceId,
+				sourceTagName: RULE.sourceTagName,
+				destService: RULE.destService,
+				destInstanceId: RULE.destInstanceId,
+				destTagName: RULE.destTagName,
+				updatedAt: RULE.updatedAt,
+			},
 			data: {
 				lastRunAt: expect.any(Date),
 				lastRunStatus: "failed",

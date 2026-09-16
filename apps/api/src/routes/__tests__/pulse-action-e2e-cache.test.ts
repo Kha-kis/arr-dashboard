@@ -20,29 +20,32 @@
 
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createPlexTargetLedgerBinding } from "../../lib/plex/plex-generation-target-ledger.js";
 
 // Dispatcher collaborators — must be mocked before the route module imports.
 const refreshOwnedPlexCache = vi.fn();
-const refreshJellyfinCache = vi.fn();
-const requireJellyfinClient = vi.fn();
+const refreshOwnedJellyfinCache = vi.fn();
+const runJellyfinCacheRefreshSingleFlight = vi.fn();
+const readOwnedJellyfinCacheHealthSources = vi.fn();
 vi.mock("../../lib/plex/plex-refresh-orchestration.js", () => ({
-	refreshOwnedPlexCache: (...args: unknown[]) => refreshOwnedPlexCache(...args),
+	refreshOwnedPlexCacheWithAttempt: (...args: unknown[]) => refreshOwnedPlexCache(...args),
 }));
 // Tautulli helpers are not exercised by this file but need stubs because
 // the dispatcher module imports them at top level.
 vi.mock("../../lib/tautulli/tautulli-cache-refresher.js", () => ({
-	createOwnedTautulliPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
-	refreshTautulliCache: vi.fn(),
-}));
-vi.mock("../../lib/tautulli/tautulli-helpers.js", () => ({
-	requireTautulliClient: vi.fn(),
+	refreshOwnedTautulliCacheWithAttempt: vi.fn(),
 }));
 vi.mock("../../lib/jellyfin/jellyfin-cache-refresher.js", () => ({
-	createOwnedJellyfinPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
-	refreshJellyfinCache: (...args: unknown[]) => refreshJellyfinCache(...args),
+	refreshOwnedJellyfinCacheWithAttempt: (...args: unknown[]) => refreshOwnedJellyfinCache(...args),
 }));
-vi.mock("../../lib/jellyfin/jellyfin-helpers.js", () => ({
-	requireJellyfinClient: (...args: unknown[]) => requireJellyfinClient(...args),
+vi.mock("../../lib/jellyfin/jellyfin-cache-singleflight.js", () => ({
+	runJellyfinCacheRefreshSingleFlightWithAttempt: (...args: unknown[]) =>
+		runJellyfinCacheRefreshSingleFlight(...args),
+}));
+vi.mock("../../lib/jellyfin/jellyfin-cache-health.js", () => ({
+	DEFAULT_JELLYFIN_CACHE_HEALTH_MAX_AGE_MS: 12 * 60 * 60 * 1000,
+	readOwnedJellyfinCacheHealthSources: (...args: unknown[]) =>
+		readOwnedJellyfinCacheHealthSources(...args),
 }));
 
 // Run only the staleness collector — keeps other collectors (ARR health,
@@ -78,6 +81,11 @@ type CacheStatusRow = {
 		label: string;
 		service: string;
 		enabled: boolean;
+		baseUrl?: string;
+		encryptedApiKey?: string;
+		encryptionIv?: string;
+		encryptedHttpAuthCredentials?: string | null;
+		httpAuthEncryptionIv?: string | null;
 		expectedIdentity?: string;
 		identityKind?: string;
 		identityStatus?: string;
@@ -91,20 +99,28 @@ type CacheStatusRow = {
 const HOURS = 60 * 60 * 1000;
 
 function makeStaleRow(overrides: Partial<CacheStatusRow> = {}): CacheStatusRow {
+	const observedAt = new Date(Date.now() - 13 * HOURS);
+	const targetLedger = createPlexTargetLedgerBinding({
+		instanceId: "inst-plex",
+		generationId: "plex-generation-1",
+		connectionGeneration: 1,
+		identityGeneration: 1,
+		targets: [],
+	});
 	return {
 		id: "plex-row",
 		instanceId: "inst-plex",
 		cacheType: "plex",
-		lastRefreshedAt: new Date(Date.now() - 13 * HOURS),
+		lastRefreshedAt: observedAt,
 		lastResult: "success",
 		lastErrorMessage: null,
-		lastAttemptAt: new Date(Date.now() - 13 * HOURS),
+		lastAttemptAt: observedAt,
 		lastAttemptResult: "success",
 		lastAttemptErrorMessage: null,
 		itemCount: 0,
 		generationId: "plex-generation-1",
 		generationMetadata: JSON.stringify({
-			version: 3,
+			version: 5,
 			publicationLevel: "authoritative",
 			completeness: "complete",
 			itemCount: 0,
@@ -121,6 +137,28 @@ function makeStaleRow(overrides: Partial<CacheStatusRow> = {}): CacheStatusRow {
 				},
 			],
 			roots: [{ sectionKey: "movies", domain: "membership", digest: "a".repeat(64) }],
+			...targetLedger,
+			partialReasons: [],
+			coverageReceipt: {
+				version: 1,
+				provider: "plex",
+				attemptStartedAt: observedAt.toISOString(),
+				observedAt: observedAt.toISOString(),
+				evidence: "complete",
+				units: [
+					{
+						scopeKey: "section:movies",
+						expectedRawCount: 0,
+						pagesAttempted: 1,
+						pagesCompleted: 1,
+						rawObserved: 0,
+						sourceBindings: 0,
+						canonicalEntities: 0,
+						acceptedSkips: [],
+						fatalCount: 0,
+					},
+				],
+			},
 		}),
 		connectionGeneration: 1,
 		identityGeneration: 1,
@@ -141,8 +179,54 @@ function makeStaleRow(overrides: Partial<CacheStatusRow> = {}): CacheStatusRow {
 	};
 }
 
+function makeJellyfinHealthSource(current: boolean) {
+	const observedAt = current ? new Date().toISOString() : "2026-09-01T00:00:00.000Z";
+	const status = current
+		? {
+				availability: "current" as const,
+				evidence: "complete" as const,
+				observedAt,
+				ageSeconds: 0,
+				latestAttempt: "successful" as const,
+				reasonCodes: [],
+			}
+		: {
+				availability: "last-known" as const,
+				evidence: "complete" as const,
+				observedAt,
+				ageSeconds: 3600,
+				latestAttempt: "failed" as const,
+				reasonCodes: ["refresh-failed" as const],
+			};
+	return {
+		fallbackObservedAt: "2026-08-30T00:00:00.000Z",
+		item: {
+			instanceId: "inst-jellyfin",
+			instanceName: "Home Jellyfin",
+			cacheType: "jellyfin" as const,
+			lastRefreshedAt: observedAt,
+			lastResult: current ? ("success" as const) : ("error" as const),
+			lastErrorMessage: current ? null : "Cache refresh failed; last-known values are retained",
+			itemCount: 12,
+			isStale: !current,
+			providerStatus: {
+				availability: status.availability,
+				sources: [
+					{
+						instanceId: "inst-jellyfin",
+						service: "jellyfin" as const,
+						cacheType: "jellyfin" as const,
+						status,
+					},
+				],
+			},
+		},
+	};
+}
+
 let app: FastifyInstance;
 let cacheStatuses: CacheStatusRow[];
+let ownedHealthSources: ReturnType<typeof makeJellyfinHealthSource>[];
 let userCounter = 0;
 const findPlexInstance = vi.fn();
 
@@ -183,8 +267,21 @@ function deferred<T>() {
 beforeEach(async () => {
 	userCounter += 1;
 	refreshOwnedPlexCache.mockReset();
-	refreshJellyfinCache.mockReset();
-	requireJellyfinClient.mockReset();
+	refreshOwnedJellyfinCache.mockReset();
+	ownedHealthSources = [];
+	readOwnedJellyfinCacheHealthSources
+		.mockReset()
+		.mockImplementation(async () => ownedHealthSources);
+	runJellyfinCacheRefreshSingleFlight
+		.mockReset()
+		.mockImplementation(
+			async (
+				_authority: unknown,
+				_cacheType: unknown,
+				_attempt: unknown,
+				refresh: () => Promise<unknown>,
+			) => await refresh(),
+		);
 
 	app = Fastify({ logger: false });
 	setupAuthGate(app, `e2e-cache-user-${userCounter}`);
@@ -196,15 +293,15 @@ beforeEach(async () => {
 	app.decorate("prisma", {
 		serviceInstance: {
 			findFirst: findPlexInstance,
-			findMany: async ({
-				where,
-			}: {
-				where: { service: string; userId: string; enabled: boolean };
-			}) =>
-				cacheStatuses
+			findMany: async ({ where }: { where: Record<string, unknown> }) => {
+				const services =
+					where.service && typeof where.service === "object" && "in" in where.service
+						? (where.service as { in: string[] }).in
+						: [where.service];
+				return cacheStatuses
 					.filter(
 						(status) =>
-							status.instance.service === where.service &&
+							services.includes(status.instance.service) &&
 							status.instance.enabled === where.enabled &&
 							where.userId === `e2e-cache-user-${userCounter}`,
 					)
@@ -212,10 +309,15 @@ beforeEach(async () => {
 						...status.instance,
 						id: status.instanceId,
 						userId: `e2e-cache-user-${userCounter}`,
-					})),
+						createdAt: new Date("2026-08-30T00:00:00.000Z"),
+					}));
+			},
 		},
 		cacheRefreshStatus: {
-			findMany: async () => cacheStatuses,
+			findMany: async ({ where }: { where?: { cacheType?: { notIn?: string[] } } }) =>
+				cacheStatuses.filter(
+					(status) => !(where?.cacheType?.notIn ?? []).includes(status.cacheType),
+				),
 			upsert: async (args: {
 				where: { instanceId_cacheType: { instanceId: string; cacheType: string } };
 				create: CacheStatusRow;
@@ -236,14 +338,30 @@ beforeEach(async () => {
 				return cacheStatuses[idx >= 0 ? idx : cacheStatuses.length - 1]!;
 			},
 		},
+		$transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+			callback({
+				$queryRawUnsafe: vi.fn().mockResolvedValue([]),
+				libraryCleanupConfig: {
+					upsert: vi.fn().mockResolvedValue({ id: "cleanup-user" }),
+					findUnique: vi.fn().mockResolvedValue({ id: "cleanup-user", runClaimToken: null }),
+				},
+				serviceInstance: { findFirst: findPlexInstance },
+				cacheRefreshStatus: {
+					findUnique: vi.fn().mockImplementation(async ({ where }) => {
+						const { instanceId, cacheType } = where.instanceId_cacheType;
+						return cacheStatuses?.find(
+							(status) => status.instanceId === instanceId && status.cacheType === cacheType,
+						);
+					}),
+					create: vi.fn().mockResolvedValue({}),
+					updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				},
+			}),
 		plexCache: { count: async () => 0 },
 	} as unknown as never);
 	findPlexInstance.mockReset().mockImplementation(async ({ where }) => {
 		const row = cacheStatuses.find(
-			(status) =>
-				status.instanceId === where.id &&
-				status.instance.service === "PLEX" &&
-				status.instance.enabled,
+			(status) => status.instanceId === where.id && status.instance.enabled === where.enabled,
 		);
 		return row && where.userId === `e2e-cache-user-${userCounter}` && where.enabled === true
 			? { ...row.instance, id: row.instanceId, userId: where.userId }
@@ -308,12 +426,15 @@ describe("Pulse actionability — cache.refresh end-to-end", () => {
 		// time; in the test it's essentially instant — but we still have
 		// to yield the event loop.
 		await new Promise((resolve) => setTimeout(resolve, 20));
-		expect(refreshOwnedPlexCache).toHaveBeenCalledWith({
-			prisma: app.prisma,
-			encryptor: app.encryptor,
-			instance: expect.objectContaining({ id: "inst-plex", service: "PLEX" }),
-			log: expect.anything(),
-		});
+		expect(refreshOwnedPlexCache).toHaveBeenCalledWith(
+			{
+				prisma: app.prisma,
+				encryptor: app.encryptor,
+				instance: expect.objectContaining({ id: "inst-plex", service: "PLEX" }),
+				log: expect.anything(),
+			},
+			expect.objectContaining({ resultMarker: expect.stringMatching(/^in_progress:/) }),
+		);
 
 		// 3. After the background task ran, the upsert callback has mutated
 		//    cacheStatuses[0].lastRefreshedAt to `now`. The collector should
@@ -334,21 +455,23 @@ describe("Pulse actionability — cache.refresh end-to-end", () => {
 				cacheType: "jellyfin",
 				lastResult: "error",
 				lastErrorMessage: "fetch failed",
-				instance: { label: "Home Jellyfin", service: "JELLYFIN", enabled: true },
+				instance: {
+					label: "Home Jellyfin",
+					service: "JELLYFIN",
+					enabled: true,
+					baseUrl: "https://jellyfin.example.invalid",
+					encryptedApiKey: "encrypted-key",
+					encryptionIv: "key-iv",
+					encryptedHttpAuthCredentials: null,
+					httpAuthEncryptionIv: null,
+					expectedIdentity: "jellyfin-server-1",
+					identityStatus: "VERIFIED",
+					connectionGeneration: 7,
+					identityGeneration: 4,
+				},
 			}),
 		];
-		requireJellyfinClient.mockResolvedValue({
-			client: { id: "jellyfin-client" },
-			instance: {
-				service: "JELLYFIN",
-				baseUrl: "https://jellyfin.example.com",
-				encryptedApiKey: "encrypted-key",
-				encryptionIv: "key-iv",
-				encryptedHttpAuthCredentials: null,
-				httpAuthEncryptionIv: null,
-				connectionGeneration: 7,
-			},
-		});
+		ownedHealthSources = [makeJellyfinHealthSource(false)];
 		const refreshGate = deferred<{
 			upserted: number;
 			errors: number;
@@ -356,11 +479,11 @@ describe("Pulse actionability — cache.refresh end-to-end", () => {
 			complete: boolean;
 			completedAt: Date;
 		}>();
-		refreshJellyfinCache.mockReturnValue(refreshGate.promise);
+		refreshOwnedJellyfinCache.mockReturnValue(refreshGate.promise);
 
 		const first = await injectGet("/pulse");
 		const failedItem = JSON.parse(first.payload).items.find(
-			(i: { id: string }) => i.id === "cache-error-jellyfin-row",
+			(i: { id: string }) => i.id === "cache-jellyfin-error-inst-jellyfin-jellyfin",
 		);
 		expect(failedItem).toMatchObject({
 			title: "Home Jellyfin: Jellyfin cache refresh failed",
@@ -377,19 +500,40 @@ describe("Pulse actionability — cache.refresh end-to-end", () => {
 			failedItem.action,
 		);
 		expect(actionRes.statusCode).toBe(200);
-		expect(requireJellyfinClient).toHaveBeenCalledTimes(1);
-		expect(requireJellyfinClient.mock.calls[0]?.slice(1)).toEqual([
-			`e2e-cache-user-${userCounter}`,
-			"inst-jellyfin",
-		]);
-		expect(refreshJellyfinCache).toHaveBeenCalledTimes(1);
+		expect(findPlexInstance).toHaveBeenCalledWith({
+			where: {
+				id: "inst-jellyfin",
+				userId: `e2e-cache-user-${userCounter}`,
+				enabled: true,
+			},
+		});
+		expect(runJellyfinCacheRefreshSingleFlight).toHaveBeenCalledWith(
+			expect.objectContaining({
+				id: "inst-jellyfin",
+				service: "JELLYFIN",
+				encryptedApiKey: "encrypted-key",
+			}),
+			"jellyfin",
+			expect.objectContaining({ resultMarker: expect.stringMatching(/^in_progress:/) }),
+			expect.any(Function),
+		);
+		expect(refreshOwnedJellyfinCache).toHaveBeenCalledWith(
+			expect.objectContaining({
+				prisma: app.prisma,
+				instance: expect.objectContaining({
+					id: "inst-jellyfin",
+					service: "JELLYFIN",
+				}),
+			}),
+			expect.objectContaining({ resultMarker: expect.stringMatching(/^in_progress:/) }),
+		);
 
 		// The route returns before a populated cache refresh completes. This
 		// immediate GET legitimately sees and re-caches the old warning.
 		const whilePending = await injectGet("/pulse");
 		expect(
 			JSON.parse(whilePending.payload).items.some(
-				(item: { id: string }) => item.id === "cache-error-jellyfin-row",
+				(item: { id: string }) => item.id === "cache-jellyfin-error-inst-jellyfin-jellyfin",
 			),
 		).toBe(true);
 
@@ -399,6 +543,7 @@ describe("Pulse actionability — cache.refresh end-to-end", () => {
 			lastResult: "success",
 			lastErrorMessage: null,
 		};
+		ownedHealthSources = [makeJellyfinHealthSource(true)];
 		refreshGate.resolve({
 			upserted: 12,
 			errors: 0,
@@ -412,7 +557,7 @@ describe("Pulse actionability — cache.refresh end-to-end", () => {
 		// Completion invalidation must evict the warning cached above.
 		const afterCompletion = await injectGet("/pulse");
 		const cacheWarnings = JSON.parse(afterCompletion.payload).items.filter((item: { id: string }) =>
-			item.id.endsWith("jellyfin-row"),
+			item.id.includes("inst-jellyfin-jellyfin"),
 		);
 		expect(cacheWarnings).toEqual([]);
 	});

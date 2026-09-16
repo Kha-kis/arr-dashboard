@@ -310,7 +310,9 @@ describe("executeLabelSyncRule (orchestration)", () => {
 			expect(result).toEqual({
 				status: "failed",
 				message:
-					"Jellyfin and Emby label destinations are temporarily unavailable because the provider cannot yet be re-authorized safely at execution time.",
+					destService === "jellyfin"
+						? "Jellyfin destination writes are waiting for mutation recovery."
+						: "Emby label destinations are temporarily unavailable because the provider cannot yet be re-authorized safely at execution time.",
 				totals: {
 					sourceInstancesScanned: 0,
 					taggedItemsFound: 0,

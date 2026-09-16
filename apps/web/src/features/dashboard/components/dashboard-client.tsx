@@ -732,9 +732,9 @@ export const DashboardClient = () => {
 
 						{/* Two-column widget grid for media widgets + storage */}
 						{(seerrInstance || hasMediaServer || stats?.combinedDisk) && (
-							<div className="grid gap-6 lg:grid-cols-2">
+							<div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-2">
 								{/* Left column */}
-								<div className="space-y-6">
+								<div className="min-w-0 space-y-6">
 									{seerrInstance && (
 										<SeerrRequestsWidget instanceId={seerrInstance.id} animationDelay={400} />
 									)}
@@ -749,7 +749,7 @@ export const DashboardClient = () => {
 									)}
 								</div>
 								{/* Right column */}
-								<div className="space-y-6">
+								<div className="min-w-0 space-y-6">
 									<PlexServerInfoWidget
 										hasPlexInstances={hasPlexInstances}
 										hasJellyfinInstances={hasJellyfinInstances}

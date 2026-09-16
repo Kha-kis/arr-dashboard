@@ -1,13 +1,19 @@
 /**
  * Jellyfin Watch Enrichment Routes
  *
- * Batch endpoint to fetch watch status for library items from JellyfinCache + TautulliCache.
- * No live API calls — reads exclusively from cached data.
+ * Batch endpoint to fetch confirmed positive watch status from owned observations.
+ * Each provider is projected independently; unavailable sources cannot hide
+ * verified positives, and omitted rows remain unknown.
  */
 
+import type { WatchEnrichmentItem } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { readUserSelectedTautulliCache } from "../../lib/tautulli/tautulli-cache-authority.js";
+import {
+	type JellyfinDisplayInstance,
+	readOwnedJellyfinLibraryDisplaySources,
+} from "../../lib/jellyfin/jellyfin-display-evidence.js";
+import { projectWatchDisplayEvidence } from "../../lib/provider-observation/watch-display-evidence.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 const enrichmentQuery = z.object({
@@ -36,7 +42,8 @@ export async function registerWatchEnrichmentRoutes(
 	/**
 	 * GET /api/jellyfin/watch-enrichment?tmdbIds=123,456&types=movie,series
 	 *
-	 * Reads JellyfinCache + optionally TautulliCache to return watch data.
+	 * Returns Jellyfin/Emby positives from display-admitted observations.
+	 * Provider status reports incomplete or unavailable native sources without asserting absence.
 	 * Keys in response are "movie:123" or "series:456".
 	 */
 	app.get("/", async (request, reply) => {
@@ -67,113 +74,96 @@ export async function registerWatchEnrichmentRoutes(
 
 		const jellyfinInstances = await app.prisma.serviceInstance.findMany({
 			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true },
+			select: { id: true, label: true, service: true },
 		});
-		const tautulliEvidence = await readUserSelectedTautulliCache(app.prisma, {
-			userId,
-			targets: [...uniqueKeys.values()].map((target) => ({
-				tmdbId: target.tmdbId,
-				mediaType: target.mediaType as "movie" | "series",
-			})),
-		});
-		if (tautulliEvidence.configured && !tautulliEvidence.available) {
-			return reply.status(503).send({
-				error: "Tautulli cache evidence is unavailable",
-				reasonCodes: tautulliEvidence.reasonCodes,
-			});
-		}
+		const displayEvidence =
+			jellyfinInstances.length > 0
+				? await readOwnedJellyfinLibraryDisplaySources({
+						prisma: app.prisma,
+						userId,
+						instances: jellyfinInstances as JellyfinDisplayInstance[],
+					})
+				: { sources: [], providerStatus: undefined };
+		const sourceStatuses = new Map(
+			displayEvidence.providerStatus?.sources.map((source) => [source.instanceId, source.status]) ??
+				[],
+		);
+		const jellyfinEntries = displayEvidence.sources
+			.flatMap((source) =>
+				source.rows.map((row) => ({
+					...row,
+					providerStatus: sourceStatuses.get(source.instanceId),
+				})),
+			)
+			.filter((entry) => tmdbIdList.includes(entry.tmdbId))
+			.sort(
+				(left, right) =>
+					left.instanceId.localeCompare(right.instanceId) || left.id.localeCompare(right.id),
+			);
 
-		const jellyfinInstanceIds = jellyfinInstances.map((i) => i.id);
-
-		const jellyfinEntries = await (jellyfinInstanceIds.length > 0
-			? app.prisma.jellyfinCache.findMany({
-					where: {
-						instanceId: { in: jellyfinInstanceIds },
-						tmdbId: { in: tmdbIdList },
-					},
-				})
-			: []);
-		const tautulliEntries = tautulliEvidence.rows;
-
-		// Aggregate enrichment data
-		const items: Record<
-			string,
-			{
-				lastWatchedAt: string | null;
-				watchCount: number;
-				watchedByUsers: string[];
-				onDeck: boolean;
-				userRating: number | null;
-				source: string;
-				jellyfinId: string | null;
-				instanceId: string | null;
-				collections: string[];
-			}
-		> = {};
-
-		// Index Jellyfin entries by key
-		for (const entry of jellyfinEntries) {
-			const key = `${entry.mediaType}:${entry.tmdbId}`;
-			if (!uniqueKeys.has(key)) continue;
-
-			let watchedByUsers: string[] = [];
-			try {
-				watchedByUsers = JSON.parse(entry.watchedByUsers) as string[];
-			} catch {
-				// Skip malformed JSON
-			}
-
+		const items: Record<string, WatchEnrichmentItem> = {};
+		for (const [key] of uniqueKeys) {
+			const jellyfinMatches = jellyfinEntries.filter(
+				(entry) => `${entry.mediaType}:${entry.tmdbId}` === key,
+			);
+			if (jellyfinMatches.length === 0) continue;
+			const projections = [
+				...jellyfinMatches.map((entry) => ({
+					entry,
+					display: projectWatchDisplayEvidence({ status: entry.providerStatus, row: entry }),
+				})),
+			];
+			const countContributors = projections.filter(
+				(candidate) =>
+					candidate.display.watchCount !== null &&
+					candidate.display.watchCountSemantics !== "unknown",
+			);
+			const preferredMedia = jellyfinMatches[0];
+			const preferredDisplay = preferredMedia
+				? projectWatchDisplayEvidence({
+						status: preferredMedia.providerStatus,
+						row: preferredMedia,
+					})
+				: undefined;
+			const count = countContributors.reduce(
+				(maximum, candidate) => Math.max(maximum, candidate.display.watchCount ?? 0),
+				0,
+			);
+			const watchCountSemantics =
+				countContributors.length === 0
+					? "unknown"
+					: countContributors.length === 1 &&
+							countContributors[0]?.display.watchCountSemantics === "exact"
+						? "exact"
+						: "lower-bound";
+			const zeroLowerBound = watchCountSemantics === "lower-bound" && count === 0;
 			let collections: string[] = [];
 			try {
-				collections = JSON.parse(entry.collections) as string[];
+				const parsed: unknown = preferredMedia ? JSON.parse(preferredMedia.collections) : [];
+				if (Array.isArray(parsed) && parsed.every((entry) => typeof entry === "string"))
+					collections = parsed;
 			} catch {
-				// Skip malformed JSON
+				// Malformed optional metadata is not display evidence.
 			}
-
-			const existing = items[key];
-			if (!existing || entry.watchCount > existing.watchCount) {
-				items[key] = {
-					lastWatchedAt: entry.lastWatchedAt?.toISOString() ?? null,
-					watchCount: entry.watchCount,
-					watchedByUsers,
-					onDeck: entry.onDeck,
-					userRating: entry.userRating,
-					source: "jellyfin",
-					jellyfinId: entry.jellyfinId,
-					instanceId: entry.instanceId,
-					collections,
-				};
-			}
-		}
-
-		// Supplement with Tautulli data where Jellyfin has no watch info
-		for (const entry of tautulliEntries) {
-			const key = `${entry.mediaType}:${entry.tmdbId}`;
-			if (!uniqueKeys.has(key)) continue;
-
-			const existing = items[key];
-			if (existing && existing.watchCount > 0) continue;
-
-			let watchedByUsers: string[] = [];
-			try {
-				watchedByUsers = JSON.parse(entry.watchedByUsers) as string[];
-			} catch {
-				// Skip malformed JSON
-			}
-
 			items[key] = {
-				lastWatchedAt: entry.lastWatchedAt?.toISOString() ?? null,
-				watchCount: entry.watchCount,
-				watchedByUsers,
-				onDeck: existing?.onDeck ?? false,
-				userRating: existing?.userRating ?? null,
-				source: "tautulli",
-				jellyfinId: existing?.jellyfinId ?? null,
-				instanceId: existing?.instanceId ?? null,
-				collections: existing?.collections ?? [],
+				lastWatchedAt: preferredDisplay?.lastWatchedAt ?? null,
+				watchCount: countContributors.length === 0 || zeroLowerBound ? null : count,
+				watchCountSemantics: zeroLowerBound ? "unknown" : watchCountSemantics,
+				watchedByUsers: preferredDisplay?.watchedByUsers ?? [],
+				onDeck: preferredMedia?.onDeck ?? false,
+				userRating: preferredMedia?.userRating ?? null,
+				source: "jellyfin",
+				ratingKey: null,
+				jellyfinId: preferredMedia?.jellyfinId ?? null,
+				instanceId: preferredMedia?.instanceId ?? null,
+				collections,
+				labels: [],
 			};
 		}
 
-		return reply.send({ items });
+		return reply.send({
+			items,
+			providerStatus: displayEvidence.providerStatus,
+		});
 	});
 }

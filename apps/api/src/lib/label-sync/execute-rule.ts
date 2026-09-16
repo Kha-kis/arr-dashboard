@@ -22,6 +22,7 @@ import type { ArrClientFactory } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
 import type { PrismaClient } from "../prisma.js";
 import { getLabelSyncDestinationMutationCapability } from "./destination-capability.js";
+import { isLabelSyncMutationAdmitted } from "./mutation-admission.js";
 import { DEST_WRITERS, SOURCE_READERS } from "./strategy-registry.js";
 import type { MatchCandidate } from "./strategy-types.js";
 
@@ -86,6 +87,9 @@ export async function executeLabelSyncRule(opts: ExecuteOpts): Promise<LabelSync
 	const destinationCapability = getLabelSyncDestinationMutationCapability(rule.destService);
 	if (!destinationCapability.supported) {
 		return failure(destinationCapability.message);
+	}
+	if (rule.destService === "jellyfin" && !isLabelSyncMutationAdmitted(prisma)) {
+		return failure("Jellyfin destination writes are waiting for mutation recovery.");
 	}
 
 	const childLog = log.child({

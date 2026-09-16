@@ -56,7 +56,12 @@ function instance(overrides: Record<string, unknown> = {}) {
 
 function prismaFor(
 	row: Record<string, unknown> | undefined,
-	options: { runClaimToken?: string | null; lockOrder?: string[]; lockedQueries?: string[] } = {},
+	options: {
+		runClaimToken?: string | null;
+		lockOrder?: string[];
+		lockedQueries?: string[];
+		activeRunIds?: string[];
+	} = {},
 ) {
 	let runClaimToken = options.runClaimToken ?? null;
 	const tx = {
@@ -76,6 +81,25 @@ function prismaFor(
 					return { count: 1 };
 				},
 			),
+		},
+		providerObservationRun: {
+			findMany: vi.fn(async () => (options.activeRunIds ?? []).map((id) => ({ id }))),
+			update: vi.fn(async ({ where }: { where: { id: string } }) => ({ id: where.id })),
+		},
+		providerObservationUnit: {
+			updateMany: vi.fn(async () => ({ count: 1 })),
+		},
+		plexEpisodeObservationStage: {
+			deleteMany: vi.fn(async () => ({ count: 1 })),
+		},
+		jellyfinEpisodeObservationStage: {
+			deleteMany: vi.fn(async () => ({ count: 1 })),
+		},
+		jellyfinEpisodeObservationExclusion: {
+			deleteMany: vi.fn(async () => ({ count: 1 })),
+		},
+		cacheRefreshStatus: {
+			updateMany: vi.fn(async () => ({ count: 1 })),
 		},
 		$queryRawUnsafe: vi.fn(async (query: string) => {
 			options.lockedQueries?.push(query);
@@ -296,7 +320,7 @@ describe("withGuardedProviderPublication", () => {
 
 	it("marks an owned identity mismatch without replacing its expected identity", async () => {
 		const row = instance();
-		const prisma = prismaFor(row);
+		const prisma = prismaFor(row, { activeRunIds: ["active-run"] });
 		identityModuleMocks.readProviderIdentity.mockResolvedValue(identity("plex-machine-b"));
 
 		await expect(
@@ -310,6 +334,31 @@ describe("withGuardedProviderPublication", () => {
 		expect(prisma.serviceInstance.updateMany).toHaveBeenCalledWith({
 			where: expect.objectContaining({ userId: "user-1", identityStatus: "VERIFIED" }),
 			data: expect.objectContaining({ identityStatus: "MISMATCH" }),
+		});
+		expect(prisma.plexEpisodeObservationStage.deleteMany).toHaveBeenCalledWith({
+			where: { runId: "active-run" },
+		});
+		expect(prisma.jellyfinEpisodeObservationStage.deleteMany).toHaveBeenCalledWith({
+			where: { runId: "active-run" },
+		});
+		expect(prisma.jellyfinEpisodeObservationExclusion.deleteMany).toHaveBeenCalledWith({
+			where: { runId: "active-run" },
+		});
+		expect(prisma.providerObservationRun.update).toHaveBeenCalledWith({
+			where: { id: "active-run" },
+			data: expect.objectContaining({ state: "invalidated", activeSlotKey: null }),
+		});
+		expect(prisma.cacheRefreshStatus.updateMany).toHaveBeenCalledWith({
+			where: {
+				instanceId: "provider-1",
+				connectionGeneration: 4,
+				identityGeneration: 8,
+				lastAttemptResult: { startsWith: "in_progress:" },
+			},
+			data: {
+				lastAttemptResult: "error",
+				lastAttemptErrorMessage: "identity-changed",
+			},
 		});
 	});
 

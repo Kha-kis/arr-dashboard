@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { evaluateProviderCoverageReceipt } from "../../provider-observation/coverage-receipt.js";
 import {
 	decodePlexGenerationMetadata,
 	encodeAuthoritativePlexGenerationMetadata,
@@ -63,6 +64,94 @@ const v3Metadata = JSON.stringify({
 	canonicalizationVersion: 1,
 	sections: v3Sections,
 	roots: v3Roots,
+});
+
+const completeCoverageReceipt = {
+	version: 1,
+	provider: "plex",
+	attemptStartedAt: "2026-09-02T12:00:00.000Z",
+	observedAt: "2026-09-02T12:00:01.000Z",
+	evidence: "complete",
+	units: [
+		{
+			scopeKey: "section:movies",
+			expectedRawCount: 1,
+			pagesAttempted: 1,
+			pagesCompleted: 1,
+			rawObserved: 1,
+			sourceBindings: 1,
+			canonicalEntities: 1,
+			acceptedSkips: [],
+			fatalCount: 0,
+		},
+	],
+} as const;
+
+const validV5AuthoritativeMetadata = JSON.stringify({
+	version: 5,
+	publicationLevel: "authoritative",
+	completeness: "complete",
+	itemCount: 1,
+	canonicalizationVersion: 1,
+	sections: v3Sections,
+	roots: v3Roots,
+	targetLedgerVersion: 1,
+	targetCount: 1,
+	targetDigest: "b".repeat(64),
+	partialReasons: [],
+	coverageReceipt: completeCoverageReceipt,
+});
+
+const validV5PositiveMetadata = JSON.stringify({
+	...validV4Metadata,
+	version: 5,
+	coverageReceipt: { ...completeCoverageReceipt, evidence: "positive-only" },
+});
+
+function v6Receipt(evidence: "complete" | "positive-only") {
+	const unit = (scopeKey: string) => ({
+		scopeKey,
+		expectedRawCount: 1,
+		pagesAttempted: 1,
+		pagesCompleted: 1,
+		rawObserved: 1,
+		sourceBindings: 1,
+		canonicalEntities: 1,
+		acceptedSkips: [],
+		fatalCount: 0,
+	});
+	return {
+		version: 2,
+		provider: "plex",
+		attemptStartedAt: "2026-09-02T11:59:00.000Z",
+		observedAt: "2026-09-02T12:00:01.000Z",
+		evidence,
+		units: [unit("plex:aggregate")],
+		publishedCanonicalEntities: 1,
+		domains: ["library-inventory", "mapping", "watch-count", "watch-attribution", "on-deck"].map(
+			(domain) => ({
+				domain,
+				evidence: "complete" as const,
+				valueSemantics: "exact" as const,
+				units: [unit(`plex:${domain}`)],
+				...(domain === "mapping" || domain === "watch-count"
+					? { publishedCanonicalEntities: 1 }
+					: {}),
+			}),
+		),
+	} as const;
+}
+
+const validV6AuthoritativeMetadata = JSON.stringify({
+	...JSON.parse(validV5AuthoritativeMetadata),
+	version: 6,
+	coverageReceipt: v6Receipt("complete"),
+});
+
+const validV6PositiveMetadata = JSON.stringify({
+	...JSON.parse(validV5PositiveMetadata),
+	version: 6,
+	coverageReceipt: v6Receipt("positive-only"),
 });
 
 function status(overrides: Record<string, unknown> = {}) {
@@ -136,6 +225,216 @@ describe("Plex generation metadata", () => {
 		});
 	});
 
+	it("round-trips the source coverage receipt in authoritative metadata", () => {
+		const encoded = encodeAuthoritativePlexGenerationMetadata({
+			sections: v3Sections,
+			itemCount: 1,
+			canonicalizationVersion: 1,
+			roots: v3Roots,
+			targetLedger: {
+				targetLedgerVersion: 1,
+				targetCount: 1,
+				targetDigest: "b".repeat(64),
+			},
+			partialReasons: [],
+			coverageReceipt: completeCoverageReceipt,
+		} as never);
+		const parsed = JSON.parse(encoded) as Record<string, unknown>;
+
+		expect(parsed).toMatchObject({
+			version: 5,
+			coverageReceipt: completeCoverageReceipt,
+			targetLedgerVersion: 1,
+			targetCount: 1,
+			targetDigest: "b".repeat(64),
+			partialReasons: [],
+		});
+		expect(decodePlexGenerationMetadata(encoded)).toMatchObject({
+			ok: true,
+			metadata: {
+				version: 5,
+				coverageReceipt: completeCoverageReceipt,
+				targetLedgerVersion: 1,
+				targetCount: 1,
+				targetDigest: "b".repeat(64),
+				partialReasons: [],
+			},
+		});
+	});
+
+	it("keeps authoritative and positive-only V5 envelopes as distinct exact variants", () => {
+		const authoritative = JSON.parse(validV5AuthoritativeMetadata) as Record<string, unknown>;
+		const positiveOnly = JSON.parse(validV5PositiveMetadata) as Record<string, unknown>;
+
+		expect(authoritative).toEqual({
+			version: 5,
+			publicationLevel: "authoritative",
+			completeness: "complete",
+			itemCount: 1,
+			canonicalizationVersion: 1,
+			sections: v3Sections,
+			roots: v3Roots,
+			targetLedgerVersion: 1,
+			targetCount: 1,
+			targetDigest: "b".repeat(64),
+			partialReasons: [],
+			coverageReceipt: completeCoverageReceipt,
+		});
+		expect(authoritative).not.toHaveProperty("observedRoots");
+		expect(authoritative).not.toHaveProperty("capabilities");
+
+		expect(positiveOnly).toEqual({
+			version: 5,
+			publicationLevel: "positive-only",
+			completeness: "partial",
+			itemCount: 1,
+			canonicalizationVersion: 1,
+			sections: validV4Metadata.sections,
+			observedRoots: validV4Metadata.observedRoots,
+			capabilities: validV4Metadata.capabilities,
+			targetLedgerVersion: 1,
+			targetCount: 1,
+			targetDigest: "b".repeat(64),
+			partialReasons: validV4Metadata.partialReasons,
+			coverageReceipt: { ...completeCoverageReceipt, evidence: "positive-only" },
+		});
+		expect(positiveOnly).not.toHaveProperty("roots");
+
+		expect(decodePlexGenerationMetadata(validV5AuthoritativeMetadata)).toMatchObject({
+			ok: true,
+			metadata: authoritative,
+		});
+		expect(decodePlexGenerationMetadata(validV5PositiveMetadata)).toMatchObject({
+			ok: true,
+			metadata: positiveOnly,
+		});
+	});
+
+	it.each([
+		[
+			"authoritative V5 with positive-only fields",
+			{
+				...JSON.parse(validV5AuthoritativeMetadata),
+				observedRoots: validV4Metadata.observedRoots,
+				capabilities: validV4Metadata.capabilities,
+			},
+		],
+		[
+			"positive-only V5 with authoritative roots",
+			{ ...JSON.parse(validV5PositiveMetadata), roots: v3Roots },
+		],
+		[
+			"authoritative V5 with a non-empty partial reason list",
+			{
+				...JSON.parse(validV5AuthoritativeMetadata),
+				partialReasons: validV4Metadata.partialReasons,
+			},
+		],
+		[
+			"positive-only V5 with empty partial reasons",
+			{ ...JSON.parse(validV5PositiveMetadata), partialReasons: [] },
+		],
+		[
+			"authoritative V5 with an unknown field",
+			{ ...JSON.parse(validV5AuthoritativeMetadata), debug: true },
+		],
+		[
+			"positive-only V5 with an unknown field",
+			{ ...JSON.parse(validV5PositiveMetadata), debug: true },
+		],
+	])("fails closed for %s", (_description, metadata) => {
+		expect(decodePlexGenerationMetadata(JSON.stringify(metadata))).toMatchObject({ ok: false });
+	});
+
+	it.each([
+		["a non-Plex provider", { ...completeCoverageReceipt, provider: "jellyfin" }],
+		[
+			"a canonical-entity count that disagrees with metadata",
+			{
+				...completeCoverageReceipt,
+				units: [{ ...completeCoverageReceipt.units[0], canonicalEntities: 2 }],
+			},
+		],
+		[
+			"completed pages beyond attempted pages",
+			{
+				...completeCoverageReceipt,
+				units: [{ ...completeCoverageReceipt.units[0], pagesCompleted: 2 }],
+			},
+		],
+		[
+			"an expected-total shortfall",
+			{
+				...completeCoverageReceipt,
+				units: [{ ...completeCoverageReceipt.units[0], expectedRawCount: 2 }],
+			},
+		],
+		[
+			"a fatal source unit",
+			{
+				...completeCoverageReceipt,
+				units: [{ ...completeCoverageReceipt.units[0], fatalCount: 1 }],
+			},
+		],
+		[
+			"a source-conservation mismatch",
+			{
+				...completeCoverageReceipt,
+				units: [{ ...completeCoverageReceipt.units[0], rawObserved: 2 }],
+			},
+		],
+	])("rejects V5 metadata with %s", (_description, coverageReceipt) => {
+		expect(
+			decodePlexGenerationMetadata(
+				JSON.stringify({ ...JSON.parse(validV5AuthoritativeMetadata), coverageReceipt }),
+			),
+		).toEqual({ ok: false, reasonCode: "metadata_invalid" });
+	});
+
+	it("rejects authoritative receipt evidence on a positive-only V5 envelope", () => {
+		expect(
+			decodePlexGenerationMetadata(
+				JSON.stringify({
+					...JSON.parse(validV5PositiveMetadata),
+					coverageReceipt: { ...completeCoverageReceipt, evidence: "complete" },
+				}),
+			),
+		).toEqual({ ok: false, reasonCode: "metadata_invalid" });
+	});
+
+	it("rejects positive-only V5 metadata unless source accounting is complete", () => {
+		const coverageReceipt = {
+			...completeCoverageReceipt,
+			evidence: "positive-only",
+			units: [{ ...completeCoverageReceipt.units[0], pagesCompleted: 0 }],
+		};
+		expect(
+			decodePlexGenerationMetadata(
+				JSON.stringify({ ...JSON.parse(validV5PositiveMetadata), coverageReceipt }),
+			),
+		).toEqual({ ok: false, reasonCode: "metadata_invalid" });
+	});
+
+	it("fails closed when a raw source row is unaccounted", () => {
+		const result = evaluateProviderCoverageReceipt({
+			...completeCoverageReceipt,
+			units: [
+				{
+					...completeCoverageReceipt.units[0],
+					rawObserved: 2,
+				},
+			],
+		});
+
+		expect(result).toMatchObject({
+			valid: true,
+			complete: false,
+			rawObserved: 2,
+			sourceBindings: 1,
+			reasonCodes: expect.arrayContaining(["coverage-incomplete"]),
+		});
+	});
+
 	it.each([
 		["bare V4", JSON.stringify({ version: 4, sections }), "metadata_invalid"],
 		["null", null, "missing_metadata"],
@@ -182,14 +481,7 @@ describe("Plex generation metadata", () => {
 	});
 
 	it("keeps bounded section/domain roots and excludes target identities in V3 metadata", () => {
-		const parsed = JSON.parse(
-			encodeAuthoritativePlexGenerationMetadata({
-				sections: v3Sections,
-				itemCount: 1,
-				canonicalizationVersion: 1,
-				roots: v3Roots,
-			}),
-		) as Record<string, unknown>;
+		const parsed = JSON.parse(v3Metadata) as Record<string, unknown>;
 
 		expect(parsed).toEqual({
 			version: 3,
@@ -205,19 +497,12 @@ describe("Plex generation metadata", () => {
 	});
 
 	it("round-trips a complete bounded target-ledger binding without target rows", () => {
-		const parsed = JSON.parse(
-			encodeAuthoritativePlexGenerationMetadata({
-				sections: v3Sections,
-				itemCount: 1,
-				canonicalizationVersion: 1,
-				roots: v3Roots,
-				targetLedger: {
-					targetLedgerVersion: 1,
-					targetCount: 2,
-					targetDigest: "b".repeat(64),
-				},
-			}),
-		) as Record<string, unknown>;
+		const parsed = {
+			...JSON.parse(v3Metadata),
+			targetLedgerVersion: 1,
+			targetCount: 2,
+			targetDigest: "b".repeat(64),
+		} as Record<string, unknown>;
 
 		expect(parsed).toMatchObject({
 			targetLedgerVersion: 1,
@@ -355,7 +640,7 @@ describe("Plex generation metadata", () => {
 		});
 	});
 
-	it("recognizes a well-formed V4 positive-only publication without granting mutation authority", () => {
+	it("retains a well-formed V4 positive-only publication as historical-only", () => {
 		const partialMetadata = JSON.stringify(validV4Metadata);
 		const partialStatus = status({
 			generationMetadata: partialMetadata,
@@ -370,16 +655,116 @@ describe("Plex generation metadata", () => {
 			available: true,
 			metadata: { version: 4, publicationLevel: "positive-only" },
 			evidence: {
-				availability: "current",
-				authority: "positive-only",
+				availability: "last-known",
+				authority: "unavailable",
 				attemptState: "partial",
-				publicationLevel: "positive-only",
-				completeness: "partial",
+				publicationLevel: "unavailable",
+				completeness: "unknown",
 				reasonCodes: ["latest_attempt_partial"],
 				publishedGeneration: { publicationLevel: "positive-only" },
 			},
 		});
 		expect(evaluatePlexMutationAuthority(partialStatus, options).available).toBe(false);
+	});
+
+	it("grants mutation authority only to a complete authoritative V5 receipt", () => {
+		const options = {
+			now: new Date("2026-09-02T12:00:02.000Z"),
+			maxAgeMs: 3 * 60 * 60 * 1000,
+		};
+		const authoritativeV5 = status({
+			generationMetadata: validV5AuthoritativeMetadata,
+			lastRefreshedAt: new Date("2026-09-02T12:00:01.000Z"),
+			lastAttemptAt: new Date("2026-09-02T12:00:01.000Z"),
+		});
+		const positiveV5 = status({
+			generationMetadata: validV5PositiveMetadata,
+			lastRefreshedAt: new Date("2026-09-02T12:00:01.000Z"),
+			lastAttemptAt: new Date("2026-09-02T12:00:01.000Z"),
+			lastAttemptResult: "partial",
+		});
+		const preReceipt = status({ generationMetadata: v3Metadata });
+
+		expect(evaluatePlexMutationAuthority(authoritativeV5, options)).toMatchObject({
+			available: true,
+			evidence: {
+				availability: "current",
+				authority: "authoritative",
+				publicationLevel: "authoritative",
+				completeness: "complete",
+			},
+		});
+		expect(evaluatePlexMutationAuthority(positiveV5, options).available).toBe(false);
+		expect(evaluatePlexMutationAuthority(preReceipt, options).available).toBe(false);
+	});
+
+	it("grants mutation authority to a complete authoritative V6 receipt", () => {
+		const result = evaluatePlexMutationAuthority(
+			status({
+				generationMetadata: validV6AuthoritativeMetadata,
+				lastRefreshedAt: new Date("2026-09-02T12:00:01.000Z"),
+				lastAttemptAt: new Date("2026-09-02T12:00:01.000Z"),
+			}),
+			{ now: new Date("2026-09-02T12:00:02.000Z"), maxAgeMs: 3 * 60 * 60 * 1000 },
+		);
+
+		expect(result).toMatchObject({
+			available: true,
+			metadata: { version: 6, publicationLevel: "authoritative", completeness: "complete" },
+			evidence: {
+				availability: "current",
+				authority: "authoritative",
+				publicationLevel: "authoritative",
+				completeness: "complete",
+			},
+		});
+	});
+
+	it("preserves the latest partial reason for a valid partial V6 publication", () => {
+		const result = evaluatePublishedPlexGeneration(
+			status({
+				generationMetadata: validV6PositiveMetadata,
+				lastRefreshedAt: new Date("2026-09-02T12:00:01.000Z"),
+				lastAttemptAt: new Date("2026-09-02T12:00:01.000Z"),
+				lastAttemptResult: "partial",
+			}),
+			{ now: new Date("2026-09-02T12:00:02.000Z"), maxAgeMs: 3 * 60 * 60 * 1000 },
+		);
+
+		expect(result).toMatchObject({
+			available: true,
+			metadata: { version: 6, publicationLevel: "positive-only", completeness: "partial" },
+			evidence: {
+				availability: "current",
+				authority: "positive-only",
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				reasonCodes: ["latest_attempt_partial"],
+			},
+		});
+	});
+
+	it("rejects a complete V6 publication with a malformed domain receipt", () => {
+		const metadata = JSON.parse(validV6AuthoritativeMetadata) as {
+			coverageReceipt: { domains: Array<{ publishedCanonicalEntities?: number }> };
+		};
+		metadata.coverageReceipt.domains[1]!.publishedCanonicalEntities = 2;
+
+		expect(decodePlexGenerationMetadata(JSON.stringify(metadata))).toEqual({
+			ok: false,
+			reasonCode: "metadata_invalid",
+		});
+	});
+
+	it("withholds V5 current trust when the receipt observed time differs from publication", () => {
+		const result = evaluatePublishedPlexGeneration(
+			status({ generationMetadata: validV5AuthoritativeMetadata }),
+			{ now: new Date("2026-09-02T12:00:02.000Z") },
+		);
+		expect(result).toMatchObject({
+			available: false,
+			evidence: { reasonCodes: ["metadata_invalid"] },
+		});
 	});
 
 	it.each([
@@ -427,15 +812,22 @@ describe("Plex generation metadata", () => {
 			{ now: new Date("2026-08-20T14:00:00.000Z"), maxAgeMs: 3 * 60 * 60 * 1000 },
 		);
 
-		expect(result).toEqual({
-			available: false,
+		expect(result).toMatchObject({
+			available: true,
+			publishedAt: new Date("2026-08-20T08:00:00.000Z"),
+			providerStatus: {
+				availability: "last-known",
+				observedAt: "2026-08-20T08:00:00.000Z",
+				ageSeconds: 21_600,
+				reasonCodes: ["coverage-incomplete", "refresh-failed"],
+			},
 			evidence: {
-				availability: "unavailable",
+				availability: "last-known",
 				authority: "unavailable",
 				attemptState: "error",
 				publicationLevel: "unavailable",
 				completeness: "unknown",
-				reasonCodes: ["published_generation_stale"],
+				reasonCodes: ["latest_attempt_failed"],
 			},
 		});
 	});
@@ -472,7 +864,15 @@ describe("Plex generation metadata", () => {
 	});
 
 	it.each([
-		["successful latest attempt", {}, true, "current", "authoritative", "success", true],
+		[
+			"successful latest pre-receipt attempt",
+			{},
+			true,
+			"last-known",
+			"unavailable",
+			"success",
+			false,
+		],
 		[
 			"missing latest-attempt result",
 			{ lastAttemptResult: null },
@@ -539,8 +939,8 @@ describe("Plex generation metadata", () => {
 		[
 			"stale publication",
 			{ lastRefreshedAt: new Date("2026-08-20T08:00:00.000Z") },
-			false,
-			"unavailable",
+			true,
+			"last-known",
 			"unavailable",
 			"success",
 			false,
@@ -572,7 +972,15 @@ describe("Plex generation metadata", () => {
 			"success",
 			false,
 		],
-		["subsequent successful refresh", {}, true, "current", "authoritative", "success", true],
+		[
+			"subsequent successful pre-receipt refresh",
+			{},
+			true,
+			"last-known",
+			"unavailable",
+			"success",
+			false,
+		],
 	] as const)(
 		"separates published observation from mutation authority for %s",
 		(_caseName, overrides, observationAvailable, availability, authority, attemptState, mutationAvailable) => {

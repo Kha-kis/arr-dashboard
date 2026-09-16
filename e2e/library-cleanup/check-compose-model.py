@@ -143,6 +143,21 @@ def validate_postgres_password_file(path_value: str) -> None:
     validate_postgres_password_value(value)
 
 
+def validate_run_token_file(path_value: str, expected_token: str) -> None:
+    path = Path(path_value)
+    if not path.is_file():
+        fail("LC_E2E run-token secret file does not exist or is not a regular file")
+    try:
+        value = path.read_bytes()
+    except OSError as error:
+        fail(f"LC_E2E run-token secret file cannot be read: {error.strerror or 'unknown error'}")
+    value = value.rstrip(b"\r\n")
+    if value.decode("ascii", errors="ignore") != expected_token or not re.fullmatch(
+        rb"[a-f0-9]{64}", value
+    ):
+        fail("LC_E2E run-token secret does not match the rendered run-ownership token")
+
+
 def validate_subnet(value: str) -> str:
     try:
         subnet = ipaddress.ip_network(value, strict=True)
@@ -349,13 +364,22 @@ def validate_model(
         fail("dashboard-baseline has an unexpected profile contract")
 
     secrets = model.get("secrets", {})
-    if not isinstance(secrets, dict) or set(secrets) != {"plex_claim", "postgres_password"}:
+    if not isinstance(secrets, dict) or set(secrets) != {
+        "plex_claim",
+        "postgres_password",
+        "run_token",
+    }:
         fail("rendered secret set does not exactly match the Library Cleanup harness")
     postgres_secret = secrets.get("postgres_password", {})
     password_file = postgres_secret.get("file") if isinstance(postgres_secret, dict) else None
     if not isinstance(password_file, str):
         fail("rendered PostgreSQL password secret file is missing")
     validate_postgres_password_file(password_file)
+    run_token_secret = secrets.get("run_token", {})
+    run_token_file = run_token_secret.get("file") if isinstance(run_token_secret, dict) else None
+    if not isinstance(run_token_file, str):
+        fail("rendered LC_E2E run-token secret file is missing")
+    validate_run_token_file(run_token_file, run_token)
 
 
 def expect_rejected(model: dict[str, object], description: str, **kwargs: object) -> None:

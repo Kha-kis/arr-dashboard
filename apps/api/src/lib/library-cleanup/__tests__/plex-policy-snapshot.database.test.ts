@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "../../../generated/prisma/client.js";
 import { publishAuthoritativePlexCacheGeneration } from "../../plex/plex-cache-storage.js";
 import { encodeAuthoritativePlexGenerationMetadata } from "../../plex/plex-generation-metadata.js";
+import { createPlexTargetLedgerBinding } from "../../plex/plex-generation-target-ledger.js";
 import { beginPlexCacheRefreshAttempt } from "../../services/provider-cache-status.js";
 import type { ProviderPublicationAuthority } from "../../services/provider-identity-guard.js";
 import { buildEvalContextWithHealth } from "../cleanup-executor.js";
@@ -77,6 +78,19 @@ async function publish(
 ) {
 	const attempt = await beginPlexCacheRefreshAttempt(client, "plex", authority);
 	expect(attempt).not.toBeNull();
+	const completedAt = new Date();
+	const targets = [
+		{
+			instanceId: authority.id,
+			generationId,
+			sectionId: "movies",
+			sectionUuid: "movies-uuid",
+			mediaType: "movie" as const,
+			tmdbId,
+			tvdbId: null,
+			ratingKey: `rating-${tmdbId}`,
+		},
+	];
 	await client.$transaction(async (tx) => {
 		await publishAuthoritativePlexCacheGeneration(tx, {
 			instance: authority as never,
@@ -102,20 +116,9 @@ async function publish(
 					identityGeneration: authority.identityGeneration,
 				},
 			],
-			completedAt: new Date(),
+			completedAt,
 			generationId,
-			targets: [
-				{
-					instanceId: authority.id,
-					generationId,
-					sectionId: "movies",
-					sectionUuid: "movies-uuid",
-					mediaType: "movie",
-					tmdbId,
-					tvdbId: null,
-					ratingKey: `rating-${tmdbId}`,
-				},
-			],
+			targets,
 			generationMetadata: encodeAuthoritativePlexGenerationMetadata({
 				sections: [
 					{
@@ -131,6 +134,34 @@ async function publish(
 				itemCount: 1,
 				canonicalizationVersion: 1,
 				roots: [{ sectionKey: "movies", domain: "membership", digest: "a".repeat(64) }],
+				targetLedger: createPlexTargetLedgerBinding({
+					instanceId: authority.id,
+					generationId,
+					connectionGeneration: authority.connectionGeneration,
+					identityGeneration: authority.identityGeneration,
+					targets,
+				}),
+				partialReasons: [],
+				coverageReceipt: {
+					version: 1,
+					provider: "plex",
+					attemptStartedAt: attempt!.attemptedAt.toISOString(),
+					observedAt: completedAt.toISOString(),
+					evidence: "complete",
+					units: [
+						{
+							scopeKey: "section:movies",
+							expectedRawCount: 1,
+							pagesAttempted: 1,
+							pagesCompleted: 1,
+							rawObserved: 1,
+							sourceBindings: 1,
+							canonicalEntities: 1,
+							acceptedSkips: [],
+							fatalCount: 0,
+						},
+					],
+				},
 			}),
 			attempt: attempt!,
 		});

@@ -25,6 +25,11 @@ import type { ArrClient, ArrClientFactory } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
 import { buildEvalContextWithHealth } from "../library-cleanup/cleanup-executor.js";
 import {
+	collectNativePresenceInstances,
+	loadNativePresenceContext,
+	type NativePresenceContext,
+} from "../provider-observation/native-presence-evidence.js";
+import {
 	evaluateSingleConditionState,
 	type RuleEvaluationState,
 } from "../library-cleanup/rule-evaluators.js";
@@ -33,6 +38,8 @@ import type { AutoTagRule, PrismaClient, ServiceInstance, User } from "../prisma
 import { safeJsonParse } from "../utils/json.js";
 import { loadCompleteListEvidence } from "./list-evidence-loader.js";
 import { adaptLiveArrItemForAutoTag } from "./live-arr-evidence.js";
+import { acquireAutoTagTargetLock } from "./target-lock.js";
+import { AutoTagAuthorityChangedError, isCurrentAutoTagTarget } from "./target-authorization.js";
 
 export interface WebhookHandlerDeps {
 	prisma: PrismaClient;
@@ -147,10 +154,13 @@ export async function processWebhook(opts: {
 	const { ctx, failedSources } = await safeBuildContext(deps, user.id, applicable, log);
 
 	let tagsApplied = 0;
+	let unresolved = 0;
 	const candidateRules: AutoTagRule[] = [];
 	for (const rule of applicable) {
 		const ruleInput = adaptRuleForEval(rule);
-		if (matchesRule(cacheItem, ruleInput, ctx, failedSources) === "true") {
+		const state = matchesRule(cacheItem, ruleInput, ctx, failedSources);
+		if (state === "unknown") unresolved++;
+		if (state === "true") {
 			candidateRules.push(rule);
 		}
 	}
@@ -158,23 +168,17 @@ export async function processWebhook(opts: {
 	if (candidateRules.length === 0) {
 		return {
 			status: "ok",
-			message: "No rules matched the imported item.",
+			message:
+				unresolved > 0
+					? `${unresolved} rule(s) have unresolved evidence; no tags applied.`
+					: "No rules matched the imported item.",
+			tagsApplied: 0,
 			rulesEvaluated: applicable.length,
 		};
 	}
 
-	// Apply each unique tag. Use ensureTag + series/movie.update with merge
-	// semantics — same pattern as the scheduled executor.
-	const uniqueTags = [...new Set(candidateRules.map((rule) => rule.tagName))];
-	const tagIds = new Map<string, number>();
-	for (const tagName of uniqueTags) {
-		try {
-			const tagId = await ensureTag(arrClient, tagName);
-			tagIds.set(tagName, tagId);
-		} catch (err) {
-			log.warn({ err, tag: tagName }, "Failed to ensure tag");
-		}
-	}
+	// Revalidate the live item and rule evidence before creating tags or writing.
+	const releaseTarget = await acquireAutoTagTargetLock(instance, event.arrItemId);
 
 	try {
 		const accessor = event.mediaType === "series" ? "series" : "movie";
@@ -186,20 +190,93 @@ export async function processWebhook(opts: {
 			arrItemId: event.arrItemId,
 			itemType: event.mediaType,
 		});
-		const latestEvidence = await safeBuildContext(deps, user.id, candidateRules, log);
+		const latestEvidence = await safeBuildContext(
+			deps,
+			user.id,
+			candidateRules,
+			log,
+			ctx.nativePresence,
+		);
+		const usesNativePresence =
+			collectNativePresenceInstances(candidateRules.map(adaptRuleForEval)).length > 0;
+		if (usesNativePresence && !(await isCurrentAutoTagTarget(deps.prisma, user.id, instance))) {
+			return {
+				status: "ignored",
+				message: "ARR connection changed; no tags applied.",
+				tagsApplied: 0,
+				rulesEvaluated: applicable.length,
+			};
+		}
+		const matchingRules = candidateRules.filter((rule) => {
+			const state = matchesRule(
+				latestItem,
+				adaptRuleForEval(rule),
+				latestEvidence.ctx,
+				latestEvidence.failedSources,
+			);
+			if (state === "unknown") unresolved++;
+			return state === "true";
+		});
+		const tagIds = new Map<string, number>();
+		for (const tagName of new Set(matchingRules.map((rule) => rule.tagName))) {
+			const assertTagAuthority = async () => {
+				const tagRules = matchingRules.filter((rule) => rule.tagName === tagName);
+				const evidence = await safeBuildContext(
+					deps,
+					user.id,
+					tagRules,
+					log,
+					latestEvidence.ctx.nativePresence,
+				);
+				if (
+					!(await isCurrentAutoTagTarget(deps.prisma, user.id, instance)) ||
+					!tagRules.some(
+						(rule) =>
+							matchesRule(
+								latestItem,
+								adaptRuleForEval(rule),
+								evidence.ctx,
+								evidence.failedSources,
+							) === "true",
+					)
+				)
+					throw new AutoTagAuthorityChangedError();
+			};
+			try {
+				tagIds.set(
+					tagName,
+					await ensureTag(arrClient, tagName, usesNativePresence ? assertTagAuthority : undefined),
+				);
+			} catch (error) {
+				if (error instanceof AutoTagAuthorityChangedError) unresolved++;
+				else throw error;
+			}
+		}
+		const boundaryEvidence = usesNativePresence
+			? await safeBuildContext(deps, user.id, matchingRules, log, latestEvidence.ctx.nativePresence)
+			: latestEvidence;
+		if (usesNativePresence && !(await isCurrentAutoTagTarget(deps.prisma, user.id, instance))) {
+			return {
+				status: "ignored",
+				message: "ARR connection changed; no item tags applied.",
+				tagsApplied: 0,
+				rulesEvaluated: applicable.length,
+			};
+		}
 		const matchingTagIds: number[] = [];
-		for (const rule of candidateRules) {
-			const ruleInput = adaptRuleForEval(rule);
-			if (
-				matchesRule(latestItem, ruleInput, latestEvidence.ctx, latestEvidence.failedSources) !==
-				"true"
-			) {
+		for (const rule of matchingRules) {
+			const state = matchesRule(
+				latestItem,
+				adaptRuleForEval(rule),
+				boundaryEvidence.ctx,
+				boundaryEvidence.failedSources,
+			);
+			if (state !== "true") {
+				if (state === "unknown") unresolved++;
 				continue;
 			}
 			const tagId = tagIds.get(rule.tagName);
-			if (tagId === undefined) continue;
-			tagsApplied++;
-			if (!matchingTagIds.includes(tagId)) matchingTagIds.push(tagId);
+			if (tagId !== undefined && !matchingTagIds.includes(tagId)) matchingTagIds.push(tagId);
 		}
 
 		const existingTags = extractItemTags(latestItem.data);
@@ -211,15 +288,18 @@ export async function processWebhook(opts: {
 				tags: [...existingTags, ...newTagIds],
 			});
 		}
+		tagsApplied = matchingTagIds.length;
 	} catch (err) {
 		const reason = err instanceof ArrError ? err.message : String(err);
 		log.warn({ err: reason }, "Failed to revalidate or update item tags");
 		return { status: "error", message: `Tag update failed: ${reason}` };
+	} finally {
+		releaseTarget();
 	}
 
 	return {
 		status: "ok",
-		message: `Applied ${tagsApplied} tag${tagsApplied === 1 ? "" : "s"} from ${applicable.length} rule${applicable.length === 1 ? "" : "s"}.`,
+		message: `Applied ${tagsApplied} tag${tagsApplied === 1 ? "" : "s"} from ${applicable.length} rule${applicable.length === 1 ? "" : "s"}.${unresolved > 0 ? ` ${unresolved} rule(s) skipped because evidence is unresolved.` : ""}`,
 		tagsApplied,
 		rulesEvaluated: applicable.length,
 	};
@@ -418,6 +498,7 @@ async function safeBuildContext(
 	userId: string,
 	rules: AutoTagRule[],
 	log: FastifyBaseLogger,
+	previousNativePresence?: NativePresenceContext,
 ): Promise<Awaited<ReturnType<typeof buildEvalContextWithHealth>>> {
 	try {
 		const evidence = await buildEvalContextWithHealth(
@@ -459,6 +540,24 @@ async function safeBuildContext(
 				evidence.failedSources.add("trakt");
 			}
 		}
+		const nativeInstances = collectNativePresenceInstances(
+			rules.map((rule) => ({
+				ruleType: rule.ruleType,
+				parameters: (safeJsonParse(rule.parameters) as Record<string, unknown>) ?? {},
+				conditions: safeJsonParse(rule.conditions) as Array<{
+					ruleType: string;
+					parameters: Record<string, unknown>;
+				}> | null,
+			})),
+		);
+		if (nativeInstances.length > 0) {
+			evidence.ctx.nativePresence = await loadNativePresenceContext(
+				deps.prisma,
+				userId,
+				nativeInstances,
+				previousNativePresence,
+			);
+		}
 		return evidence;
 	} catch (err) {
 		log.warn({ err }, "Failed to build evaluation context — provider rules remain unknown");
@@ -494,10 +593,15 @@ function collectRawListIdentifiers(
 // Helpers
 // ============================================================================
 
-async function ensureTag(client: ArrClient, label: string): Promise<number> {
+async function ensureTag(
+	client: ArrClient,
+	label: string,
+	beforeCreate?: () => Promise<void>,
+): Promise<number> {
 	const tags = (await client.tag.getAll()) as Array<{ id: number; label: string }>;
 	const existing = tags.find((t) => t.label === label);
 	if (existing) return existing.id;
+	await beforeCreate?.();
 	// biome-ignore lint/suspicious/noExplicitAny: SDK Tag union typing requires the cast
 	const created = (await (client.tag as any).create({ label })) as { id: number; label: string };
 	return created.id;

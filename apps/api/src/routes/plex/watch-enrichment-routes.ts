@@ -1,19 +1,19 @@
 /**
  * Plex Watch Enrichment Routes
  *
- * Batch endpoint to fetch watch status for library items from PlexCache + TautulliCache.
- * No live API calls — reads exclusively from cached data refreshed on a 6h schedule.
+ * Batch endpoint to fetch confirmed positive watch status for library items.
+ * Each provider is projected independently so one unavailable cache cannot hide
+ * current positives from another; omitted rows always remain unknown.
  */
 
 import type { WatchEnrichmentResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import {
-	hasAuthoritativeSelectedPlexEvidence,
+	listDisplayableSelectedPlexEvidence,
+	PlexAuthorityService,
 	summarizePlexEvidence,
 } from "../../lib/plex/plex-authority-service.js";
-import { PlexAuthorityService } from "../../lib/plex/plex-authority-service.js";
-import { readUserSelectedTautulliCache } from "../../lib/tautulli/tautulli-cache-authority.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { aggregateWatchEnrichment } from "./lib/watch-enrichment-helpers.js";
 
@@ -44,7 +44,8 @@ export async function registerWatchEnrichmentRoutes(
 	/**
 	 * GET /api/plex/watch-enrichment?tmdbIds=123,456&types=movie,series
 	 *
-	 * Reads PlexCache + TautulliCache to return watch count, last watched, on-deck, rating.
+	 * Returns confirmed positive Plex watch observations. Provider status describes incomplete or
+	 * unavailable Plex evidence; an omitted item is unknown rather than unwatched.
 	 * tmdbIds and types are parallel arrays (same length, same order).
 	 */
 	app.get("/", async (request, reply) => {
@@ -81,7 +82,7 @@ export async function registerWatchEnrichmentRoutes(
 			prisma: app.prisma,
 			encryptor: app.encryptor,
 			log: request.log,
-		}).readUserSelected({
+		}).readUserSelectedDisplay({
 			userId,
 			selection: {
 				kind: "targets",
@@ -93,39 +94,13 @@ export async function registerWatchEnrichmentRoutes(
 			domains: ["membership", "display", "labels", "collections", "watch", "on-deck"],
 		});
 		const evidenceSummary = summarizePlexEvidence(plexEvidence);
-		if (plexEvidence.length > 0 && !hasAuthoritativeSelectedPlexEvidence(plexEvidence)) {
-			return reply.status(503).send({
-				error: "Plex cache evidence is unavailable",
-				evidence: evidenceSummary,
-			});
-		}
-		const tautulliEvidence = await readUserSelectedTautulliCache(app.prisma, {
-			userId,
-			targets: [...uniqueKeys.values()].map((target) => ({
-				tmdbId: target.tmdbId,
-				mediaType: target.mediaType as "movie" | "series",
-			})),
-		});
-		if (tautulliEvidence.configured && !tautulliEvidence.available) {
-			return reply.status(503).send({
-				error: "Tautulli cache evidence is unavailable",
-				reasonCodes: tautulliEvidence.reasonCodes,
-			});
-		}
-
-		const plexEntries = hasAuthoritativeSelectedPlexEvidence(plexEvidence)
-			? plexEvidence.flatMap((entry) => entry.rows)
-			: [];
-		const tautulliEntries = tautulliEvidence.rows;
+		const displayablePlexEvidence = listDisplayableSelectedPlexEvidence(plexEvidence);
+		const plexEntries = displayablePlexEvidence.flatMap((entry) =>
+			entry.rows.map((row) => ({ ...row, providerStatus: entry.providerStatus })),
+		);
 
 		// Aggregate into enrichment items using extracted pure helper
-		const items = aggregateWatchEnrichment(
-			uniqueKeys,
-			plexEntries,
-			tautulliEntries,
-			filterUser,
-			request.log,
-		);
+		const items = aggregateWatchEnrichment(uniqueKeys, plexEntries, [], filterUser, request.log);
 
 		const response: WatchEnrichmentResponse = {
 			items,

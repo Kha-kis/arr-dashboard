@@ -25,6 +25,11 @@ import type {
 import type { FastifyBaseLogger } from "fastify";
 import type { Encryptor } from "../auth/encryption.js";
 import type { Prisma, PrismaClient, ServiceInstance } from "../prisma.js";
+import type {
+	ProviderCoverageReceiptV1,
+	ProviderCoverageReceiptV2,
+	ProviderCoverageUnitV1,
+} from "../provider-observation/coverage-receipt.js";
 import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import {
 	beginPlexCacheRefreshAttempt,
@@ -48,7 +53,12 @@ import {
 	createPlexSelectionProjection,
 	PLEX_CANONICALIZATION_VERSION,
 } from "./plex-canonical-projection.js";
-import { PlexClient } from "./plex-client.js";
+import {
+	PlexClient,
+	type PlexCompletePageResult,
+	type PlexLibraryItem,
+	type PlexSettlementLibrary,
+} from "./plex-client.js";
 import {
 	encodeAuthoritativePlexGenerationMetadata,
 	encodePositivePlexGenerationMetadata,
@@ -59,6 +69,7 @@ import {
 	type PlexGenerationTarget,
 	type PlexTargetLedgerBinding,
 } from "./plex-generation-target-ledger.js";
+import { classifyPlexInventoryDrift } from "./plex-inventory-drift.js";
 import { evaluatePlexLiveSettlement } from "./plex-live-settlement.js";
 
 /** Bound Prisma's cached createMany query plans for production-sized libraries. */
@@ -98,6 +109,10 @@ function parsePlexTvdbId(guids: Array<{ id: string }> | undefined): number | nul
 	}
 
 	return null;
+}
+
+function normalizePlexViewCount(value: unknown): number | null {
+	return Number.isSafeInteger(value) && (value as number) >= 0 ? (value as number) : null;
 }
 
 // ============================================================================
@@ -211,6 +226,7 @@ export interface PlexPublicationContext {
 }
 
 export interface PlexCacheRefreshResult {
+	nativeInventoryStatus?: "published" | "failed" | "superseded";
 	upserted: number;
 	errors: number;
 	errorMessages: string[];
@@ -228,6 +244,7 @@ export interface PlexCacheRefreshResult {
 	kind?: "authoritative-snapshot" | "positive-observation" | "unpublished";
 	observation?: PlexCachePositiveObservation;
 	block?: PlexPublicationBlock;
+	receipt?: ProviderCoverageReceiptV1 | ProviderCoverageReceiptV2;
 }
 
 export type PlexCacheCollectionResult =
@@ -236,11 +253,13 @@ export type PlexCacheCollectionResult =
 			complete: true;
 			snapshot: PlexCacheSnapshot;
 			inventoryTargets: PlexInventoryTarget[];
+			receipt: ProviderCoverageReceiptV2;
 	  })
 	| (PlexCacheRefreshResult & {
 			kind: "positive-observation";
 			complete: false;
 			observation: PlexCachePositiveObservation;
+			receipt: ProviderCoverageReceiptV2;
 			snapshot?: never;
 			inventoryTargets?: never;
 	  })
@@ -248,6 +267,7 @@ export type PlexCacheCollectionResult =
 			kind: "unpublished";
 			complete: false;
 			block: PlexPublicationBlock;
+			receipt: ProviderCoverageReceiptV2;
 			snapshot?: never;
 			inventoryTargets?: never;
 			observation?: never;
@@ -292,7 +312,10 @@ function unpublishedCollection(input: {
 	errorMessages: string[];
 	reasons: readonly string[];
 	superseded?: boolean;
+	receipt?: ProviderCoverageReceiptV2;
+	attemptStartedAt?: Date;
 }): PlexCacheCollectionResult {
+	const observedAt = new Date();
 	return {
 		kind: "unpublished",
 		upserted: 0,
@@ -301,7 +324,97 @@ function unpublishedCollection(input: {
 		complete: false,
 		...(input.superseded ? { superseded: true } : {}),
 		block: { reasons: [...input.reasons].sort((left, right) => left.localeCompare(right)) },
+		receipt:
+			input.receipt ??
+			createCoverageReceipt({
+				attemptStartedAt: input.attemptStartedAt ?? observedAt,
+				observedAt,
+				evidence: "unknown",
+				units: [],
+			}),
 	};
+}
+
+function createCoverageReceipt(input: {
+	attemptStartedAt: Date;
+	observedAt: Date;
+	evidence: ProviderCoverageReceiptV2["evidence"];
+	units: ProviderCoverageUnitV1[];
+	domains?: ProviderCoverageReceiptV2["domains"];
+	publishedCanonicalEntities?: number;
+}): ProviderCoverageReceiptV2 {
+	return {
+		version: 2,
+		provider: "plex",
+		attemptStartedAt: input.attemptStartedAt.toISOString(),
+		observedAt: input.observedAt.toISOString(),
+		evidence: input.evidence,
+		units: input.units,
+		...(input.publishedCanonicalEntities === undefined
+			? {}
+			: { publishedCanonicalEntities: input.publishedCanonicalEntities }),
+		domains: input.domains ?? [],
+	};
+}
+
+function createDomainUnit(input: {
+	scopeKey: string;
+	rawObserved: number;
+	sourceBindings: number;
+	canonicalEntities: number;
+	acceptedSkips?: ProviderCoverageUnitV1["acceptedSkips"];
+	expectedRawCount?: number | null;
+}): ProviderCoverageUnitV1 {
+	return {
+		scopeKey: input.scopeKey,
+		expectedRawCount: input.expectedRawCount ?? input.rawObserved,
+		pagesAttempted: 1,
+		pagesCompleted: 1,
+		rawObserved: input.rawObserved,
+		sourceBindings: input.sourceBindings,
+		canonicalEntities: input.canonicalEntities,
+		acceptedSkips: input.acceptedSkips ?? [],
+		fatalCount: 0,
+	};
+}
+
+function onDeckItemsMissingForDomain(
+	gap: boolean,
+	rawObserved: number,
+	sourceBindings: number,
+): ProviderCoverageUnitV1["acceptedSkips"] {
+	if (!gap || rawObserved <= sourceBindings) return [];
+	return [{ reason: "missing-supported-mapping", count: rawObserved - sourceBindings }];
+}
+
+function createCoverageUnit(
+	scopeKey: string,
+	pageResult: Pick<
+		PlexCompletePageResult<unknown>,
+		"expectedRawCount" | "pagesAttempted" | "pagesCompleted" | "rawObserved"
+	>,
+): ProviderCoverageUnitV1 {
+	return {
+		scopeKey,
+		expectedRawCount: pageResult.expectedRawCount,
+		pagesAttempted: pageResult.pagesAttempted,
+		pagesCompleted: pageResult.pagesCompleted,
+		rawObserved: pageResult.rawObserved,
+		sourceBindings: 0,
+		canonicalEntities: 0,
+		acceptedSkips: [],
+		fatalCount: 0,
+	};
+}
+
+function acceptCoverageSkip(
+	unit: ProviderCoverageUnitV1,
+	reason: ProviderCoverageUnitV1["acceptedSkips"][number]["reason"],
+	count = 1,
+): void {
+	const existing = unit.acceptedSkips.find((skip) => skip.reason === reason);
+	if (existing) existing.count += count;
+	else unit.acceptedSkips.push({ reason, count });
 }
 
 const PLEX_CACHE_CANONICAL_DOMAINS = [
@@ -346,7 +459,7 @@ function libraryInventoryItemSignature(
 		item.title,
 		item.userRating ?? null,
 		item.addedAt ?? null,
-		item.viewCount ?? 0,
+		normalizePlexViewCount(item.viewCount),
 		item.lastViewedAt ?? null,
 		item.thumb ?? null,
 		(item.Guid ?? []).map((guid) => guid.id).sort(),
@@ -406,7 +519,7 @@ function plexClientForSnapshot(
 	);
 }
 
-function unpublishedResult(error: unknown): PlexCacheRefreshResult {
+function unpublishedResult(error: unknown, attemptStartedAt?: Date): PlexCacheRefreshResult {
 	if (
 		(error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_SUPERSEDED") ||
 		error instanceof PlexRefreshAttemptSupersededError
@@ -416,6 +529,7 @@ function unpublishedResult(error: unknown): PlexCacheRefreshResult {
 			errorMessages: [],
 			reasons: ["superseded"],
 			superseded: true,
+			attemptStartedAt,
 		});
 	}
 	return unpublishedCollection({
@@ -426,6 +540,7 @@ function unpublishedResult(error: unknown): PlexCacheRefreshResult {
 				: `Atomic Plex cache publication failed: ${getErrorMessage(error)}`,
 		],
 		reasons: ["publication-error"],
+		attemptStartedAt,
 	});
 }
 
@@ -438,15 +553,16 @@ export async function refreshPlexCache(
 	context: PlexPublicationContext,
 ): Promise<PlexCacheRefreshResult> {
 	const { prisma, instance, log } = context;
+	let attempt: PlexCacheRefreshAttempt | null = null;
 	try {
-		const attempt = await beginPlexCacheRefreshAttempt(prisma, "plex", instance, {
+		attempt = await beginPlexCacheRefreshAttempt(prisma, "plex", instance, {
 			cleanupRunClaimToken: context.cleanupRunClaimToken,
 		});
 		if (!attempt) return unpublishedResult(new PlexRefreshAttemptSupersededError());
 		return await refreshPlexCacheWithAttempt(context, attempt);
 	} catch (error) {
-		const result = unpublishedResult(error);
-		log.error({ err: error, instanceId: instance.id }, "Plex cache publication rejected");
+		const result = unpublishedResult(error, attempt?.attemptedAt);
+		log.error({ category: "plex-cache-publication-rejected" }, "Plex cache publication rejected");
 		return result;
 	}
 }
@@ -471,6 +587,7 @@ export async function refreshPlexCacheWithAttempt(
 					plexClientForSnapshot(instance, log),
 					instance.id,
 					log,
+					{ attemptStartedAt: attempt.attemptedAt },
 				),
 			async (tx, collected) => await publishPlexCacheSnapshot(tx, instance, attempt!, collected),
 			{
@@ -490,7 +607,7 @@ export async function refreshPlexCacheWithAttempt(
 				{ cleanupRunClaimToken: context.cleanupRunClaimToken },
 			);
 			if (finished === "superseded") {
-				return unpublishedResult(new PlexRefreshAttemptSupersededError());
+				return unpublishedResult(new PlexRefreshAttemptSupersededError(), attempt.attemptedAt);
 			}
 		}
 		return result;
@@ -513,11 +630,8 @@ export async function refreshPlexCacheWithAttempt(
 				publicationError = new PlexRefreshAttemptSupersededError();
 			}
 		}
-		const result = unpublishedResult(publicationError);
-		log.error(
-			{ err: publicationError, instanceId: instance.id },
-			"Plex cache publication rejected",
-		);
+		const result = unpublishedResult(publicationError, attempt.attemptedAt);
+		log.error({ category: "plex-cache-publication-rejected" }, "Plex cache publication rejected");
 		return result;
 	}
 }
@@ -580,6 +694,7 @@ async function publishPlexCacheSnapshot(
 			observedRoots: collected.observation.observedRoots,
 			targetLedger,
 			partialReasons: collected.observation.partialReasons,
+			coverageReceipt: collected.receipt,
 		});
 		await publishPositivePlexCacheGeneration(tx, {
 			instance,
@@ -597,6 +712,8 @@ async function publishPlexCacheSnapshot(
 			canonicalizationVersion: PLEX_CANONICALIZATION_VERSION,
 			roots: settlement.roots,
 			targetLedger,
+			partialReasons: [],
+			coverageReceipt: collected.receipt,
 		});
 		await publishAuthoritativePlexCacheGeneration(tx, {
 			instance,
@@ -647,9 +764,21 @@ function supportedSettlementSections(
 		);
 }
 
-function settlementSectionIdentity(sections: readonly PlexGenerationSectionV3[]): string {
+function settlementSectionIdentity(
+	sections: readonly Pick<
+		PlexGenerationSectionV3,
+		"key" | "uuid" | "type" | "title" | "scannedAt" | "updatedAt"
+	>[],
+): string {
 	return JSON.stringify(
-		sections.map((section) => [section.key, section.uuid, section.type, section.title]),
+		sections.map((section) => [
+			section.key,
+			section.uuid,
+			section.type,
+			section.title,
+			section.scannedAt,
+			section.updatedAt,
+		]),
 	);
 }
 
@@ -702,10 +831,10 @@ function positiveObservationSignature(observation: PlexCachePositiveObservation)
 	const projection = createPlexSelectionProjection({
 		rows: observation.rows,
 		selection: { kind: "all" },
-		domains: ["episode-parents"],
+		domains: PLEX_CACHE_CANONICAL_DOMAINS,
 	});
 	return JSON.stringify({
-		rows: projection.domains["episode-parents"],
+		rows: projection.domains,
 		targets: observation.observedTargets.map((target) => [
 			target.sectionId,
 			target.mediaType,
@@ -717,7 +846,10 @@ function positiveObservationSignature(observation: PlexCachePositiveObservation)
 	});
 }
 
-async function loadPublicationSettlementProbe(client: PlexClient) {
+async function loadPublicationSettlementProbe(client: PlexClient): Promise<{
+	all: PlexSettlementLibrary[];
+	supported: PlexGenerationSectionV3[];
+}> {
 	const [activities, sections] = await Promise.all([
 		client.getActivities({ uncached: true }),
 		client.getLibrarySettlementSections({ uncached: true }),
@@ -736,38 +868,62 @@ async function loadPublicationSettlementProbe(client: PlexClient) {
 	if (!settlement.settled) {
 		throw new Error(`Plex live settlement unavailable: ${settlement.reasonCodes.join(",")}`);
 	}
-	return supportedSettlementSections(sections);
+	return { all: sections, supported: supportedSettlementSections(sections) };
 }
 
 /**
  * Bracket complete collection with uncached settlement probes, then perform a
- * post-end complete canonical pass before allowing publication. The last
- * complete collection is deliberately the terminal upstream observation: a
- * trailing probe would create a gap in which its older rows could be accepted.
+ * post-end complete canonical pass before allowing publication. The terminal
+ * row collection is bracketed by an exact section observation before and after
+ * the collection; no row collection follows the post-collection observation.
  * Plex exposes no read lock or atomic snapshot, so a new change may still begin
- * after that terminal observation; callers only claim authority for the fixed
- * point that was actually observed.
+ * after that matched pair; callers only claim authority for the fixed point
+ * that was actually observed.
  */
 export async function collectSettledPlexCacheLiveEvidence(
 	client: PlexClient,
 	instanceId: string,
 	log: FastifyBaseLogger,
+	options: { attemptStartedAt?: Date } = {},
 ): Promise<PlexCacheCollectionResult> {
+	const attemptStartedAt = options.attemptStartedAt ?? new Date();
 	try {
-		const startSections = await loadPublicationSettlementProbe(client);
-		const preliminary = await collectPlexCacheLiveEvidence(client, instanceId, log);
+		const collectionOptions = { ...options, attemptStartedAt };
+		const startObservation = await loadPublicationSettlementProbe(client);
+		const preliminary = await collectPlexCacheLiveEvidence(
+			client,
+			instanceId,
+			log,
+			collectionOptions,
+		);
 		if (preliminary.kind === "unpublished") return preliminary;
 
-		const endSections = await loadPublicationSettlementProbe(client);
-		if (settlementSectionIdentity(endSections) !== settlementSectionIdentity(startSections)) {
+		const endObservation = await loadPublicationSettlementProbe(client);
+		if (
+			settlementSectionIdentity(endObservation.supported) !==
+			settlementSectionIdentity(startObservation.supported)
+		) {
 			throw new Error("Plex library section identity changed during settlement");
 		}
 
-		const finalSections = await loadPublicationSettlementProbe(client);
-		if (settlementSectionIdentity(finalSections) !== settlementSectionIdentity(endSections)) {
+		const finalObservation = await loadPublicationSettlementProbe(client);
+		if (
+			settlementSectionIdentity(finalObservation.supported) !==
+			settlementSectionIdentity(endObservation.supported)
+		) {
 			throw new Error("Plex library section identity changed before final canonical pass");
 		}
-		const final = await collectPlexCacheLiveEvidence(client, instanceId, log);
+		const terminalObservation = await loadPublicationSettlementProbe(client);
+		if (
+			settlementSectionIdentity(terminalObservation.supported) !==
+			settlementSectionIdentity(finalObservation.supported)
+		) {
+			throw new Error("Plex library section identity changed before terminal collection");
+		}
+		const final = await collectPlexCacheLiveEvidence(client, instanceId, log, {
+			...collectionOptions,
+			settlementSections: terminalObservation.all,
+		});
 		if (final.kind === "unpublished") return final;
 		if (final.kind !== preliminary.kind) {
 			throw new Error("Plex collection kind changed during settlement");
@@ -788,6 +944,15 @@ export async function collectSettledPlexCacheLiveEvidence(
 			throw new Error("Plex observed targets changed after the settlement end probe");
 		}
 
+		const terminalPostObservation = await loadPublicationSettlementProbe(client);
+		if (
+			settlementSectionIdentity(terminalPostObservation.supported) !==
+			settlementSectionIdentity(terminalObservation.supported)
+		) {
+			throw new Error("Plex library section identity changed during terminal collection");
+		}
+
+		const finalSections = terminalPostObservation.supported;
 		const sectionUuids = new Map(finalSections.map((section) => [section.key, section.uuid]));
 		if (final.kind === "positive-observation") {
 			const positiveSections = finalSections.filter((section) => section.type === "show");
@@ -799,9 +964,11 @@ export async function collectSettledPlexCacheLiveEvidence(
 				}
 				return { ...target, sectionUuid };
 			});
+			const completedAt = new Date();
 			return {
 				...final,
-				completedAt: new Date(),
+				completedAt,
+				receipt: { ...final.receipt, observedAt: completedAt.toISOString() },
 				observation: {
 					...final.observation,
 					observedTargets,
@@ -819,19 +986,29 @@ export async function collectSettledPlexCacheLiveEvidence(
 		});
 		if (!inventoryTargets) throw new Error("Plex final collection lacked exact inventory targets");
 
+		const completedAt = final.completedAt ?? new Date();
 		return {
 			...final,
+			completedAt,
+			receipt: { ...final.receipt, observedAt: completedAt.toISOString() },
 			inventoryTargets,
 			settlement: {
 				sections: finalSections,
 				roots: snapshotRoots(final.snapshot, finalSections),
 			},
 		};
-	} catch (error) {
+	} catch {
+		const observedAt = new Date();
 		return unpublishedCollection({
 			errors: 1,
-			errorMessages: [`Plex settlement publication failed: ${getErrorMessage(error)}`],
+			errorMessages: [],
 			reasons: ["settlement-unavailable"],
+			receipt: createCoverageReceipt({
+				attemptStartedAt,
+				observedAt,
+				evidence: "unknown",
+				units: [],
+			}),
 		});
 	}
 }
@@ -847,7 +1024,11 @@ export async function collectPlexCacheLiveEvidence(
 	client: PlexClient,
 	instanceId: string,
 	log: FastifyBaseLogger,
-	options: { preserveProviderDuplicates?: boolean } = {},
+	options: {
+		preserveProviderDuplicates?: boolean;
+		attemptStartedAt?: Date;
+		settlementSections?: PlexSettlementLibrary[];
+	} = {},
 ): Promise<PlexCacheCollectionResult> {
 	const upserted = 0;
 	let errors = 0;
@@ -855,22 +1036,54 @@ export async function collectPlexCacheLiveEvidence(
 	let completedAt: Date | undefined;
 	const errorMessages: string[] = [];
 	const incompleteReasons: Record<string, number> = {};
+	const coverageUnits: ProviderCoverageUnitV1[] = [];
+	const mappingUnits: ProviderCoverageUnitV1[] = [];
+	const libraryInventoryUnits: ProviderCoverageUnitV1[] = [];
+	const attemptStartedAt = options.attemptStartedAt ?? new Date();
+	let coverageFailure = false;
 	let totalLibraryItems = 0;
 	let mappedLibraryItems = 0;
 	let ignoredHistoricalItems = 0;
+	let providerWatchCountsComplete = true;
+	let positiveWatchEvidence = 0;
+	let positiveAttributionEvidence = 0;
+	let historyAttributionGap = false;
+	let onDeckFetchComplete = true;
+	let onDeckMembershipGap = false;
+	let onDeckRelevantItems = 0;
+	let onDeckMappedItems = 0;
+	let onDeckUnsupportedItems = 0;
+	let attributionRawHistory = 0;
+	let attributionResolvedHistory = 0;
+	let attributionUnresolvedHistory = 0;
 	const markIncomplete = (reason: string) => {
 		complete = false;
 		incompleteReasons[reason] = (incompleteReasons[reason] ?? 0) + 1;
 	};
+	const currentObservedAt = () => new Date();
 
 	try {
 		// 1. Build accountId → username map
-		const accounts = await client.getAccounts();
-		if (accounts.length === 0) {
+		let accounts: Awaited<ReturnType<PlexClient["getAccounts"]>> = [];
+		let accountsAvailable = true;
+		try {
+			accounts = await client.getAccounts();
+		} catch {
+			accountsAvailable = false;
+			historyAttributionGap = true;
+			log.warn(
+				{ category: "plex-cache-accounts-unavailable" },
+				"Plex cache refresh: accounts unavailable",
+			);
+		}
+		if (accountsAvailable && accounts.length === 0) {
 			markIncomplete("noUserAccounts");
 			errors++;
 			errorMessages.push("Plex returned no user accounts");
-			log.warn({ instanceId }, "Plex cache refresh: no user accounts discovered");
+			log.warn(
+				{ category: "plex-cache-no-user-accounts" },
+				"Plex cache refresh: no user accounts discovered",
+			);
 		}
 		const accountMap = new Map<number, string>();
 		for (const account of accounts) {
@@ -881,10 +1094,11 @@ export async function collectPlexCacheLiveEvidence(
 		// Videos sections report a movie/show type but use a "no metadata" agent,
 		// so they are excluded from the cleanup-authority domain rather than
 		// poisoning completeness for supported media.
-		const sections = await client.getLibrarySections();
+		const sections = options.settlementSections ?? (await client.getLibrarySections());
 		const mediaLibs = sections.filter(
 			(s) => (s.type === "movie" || s.type === "show") && !isPersonalMediaSection(s),
 		);
+		const inventorySections = sections.filter((s) => s.type === "movie" || s.type === "show");
 		// Retain the Personal Media section IDs so history rows can be attributed
 		// to an unsupported section even when they lack a usable media key.
 		// Unknown/missing section IDs are never treated as safe.
@@ -900,7 +1114,10 @@ export async function collectPlexCacheLiveEvidence(
 			markIncomplete("noMediaLibraries");
 			errors++;
 			errorMessages.push("Plex returned no movie or show libraries");
-			log.warn({ instanceId }, "Plex cache refresh: no movie or show libraries discovered");
+			log.warn(
+				{ category: "plex-cache-no-media-libraries" },
+				"Plex cache refresh: no movie or show libraries discovered",
+			);
 		}
 
 		// 3. Build ratingKey → item data (TMDB ID, media type, rating, section)
@@ -917,7 +1134,7 @@ export async function collectPlexCacheLiveEvidence(
 				collections: string[];
 				labels: string[];
 				addedAt: number | null;
-				viewCount: number;
+				viewCount: number | null;
 				lastViewedAt: number | null;
 				thumb: string | null;
 			}
@@ -926,21 +1143,87 @@ export async function collectPlexCacheLiveEvidence(
 		const initialLibraryInventorySignature: string[] = [];
 		const inventoryTargets: PlexInventoryTarget[] = [];
 
-		for (const lib of mediaLibs) {
+		for (const lib of inventorySections) {
+			let pageResult: PlexCompletePageResult<PlexLibraryItem>;
 			try {
-				const items = await client.getLibraryItems(lib.key);
+				pageResult = await client.getLibraryItemsWithCoverage(lib.key);
+				const unit = createCoverageUnit(`section:${lib.key}`, pageResult);
+				coverageUnits.push(unit);
+				if (pageResult.reason !== null) {
+					unit.fatalCount = 1;
+					coverageFailure = true;
+					markIncomplete("librarySnapshotFetchFailures");
+					errors++;
+					log.warn(
+						{
+							pagesAttempted: pageResult.pagesAttempted,
+							pagesCompleted: pageResult.pagesCompleted,
+							rawObserved: pageResult.rawObserved,
+							expectedRawCount: pageResult.expectedRawCount,
+						},
+						"Plex cache refresh: library section coverage incomplete",
+					);
+					continue;
+				}
+				const items = pageResult.items;
+				const mappingUnit = createDomainUnit({
+					scopeKey: `section:${lib.key}:mapping`,
+					rawObserved: 0,
+					sourceBindings: 0,
+					canonicalEntities: 0,
+				});
+				const libraryUnit = createDomainUnit({
+					scopeKey: `section:${lib.key}:inventory`,
+					rawObserved: items.length,
+					sourceBindings: 0,
+					canonicalEntities: 0,
+					expectedRawCount: pageResult.expectedRawCount,
+				});
+				if (isPersonalMediaSection(lib)) {
+					if (pageResult.rawObserved > 0) {
+						acceptCoverageSkip(unit, "unsupported-personal-media", pageResult.rawObserved);
+					}
+					continue;
+				}
 				for (const item of items) {
 					initialLibraryInventorySignature.push(libraryInventoryItemSignature(lib, item));
+				}
+				unit.rawObserved = items.length;
+				for (const item of items) {
+					const viewCount = normalizePlexViewCount(item.viewCount);
 					totalLibraryItems++;
+					if (item.type === "collection") {
+						acceptCoverageSkip(unit, "known-container");
+						acceptCoverageSkip(libraryUnit, "known-container");
+						continue;
+					}
+					if (item.type !== "movie" && item.type !== "show") {
+						acceptCoverageSkip(unit, "unsupported-provider-object");
+						acceptCoverageSkip(libraryUnit, "unsupported-provider-object");
+						continue;
+					}
+					libraryUnit.sourceBindings++;
+					mappingUnit.rawObserved++;
 					if (!item.ratingKey.trim()) {
+						acceptCoverageSkip(unit, "missing-stable-key");
+						acceptCoverageSkip(mappingUnit, "missing-stable-key");
 						markIncomplete("currentLibraryItemsWithoutRatingKeys");
 						continue;
 					}
 					currentLibraryRatingKeys.add(item.ratingKey);
 					const tmdbId = parsePlexTmdbId(item.Guid);
 					if (!tmdbId) {
+						acceptCoverageSkip(unit, "missing-supported-mapping");
+						acceptCoverageSkip(mappingUnit, "missing-supported-mapping");
 						markIncomplete("currentItemsWithoutTmdbMetadata");
 						continue;
+					}
+					unit.sourceBindings++;
+					mappingUnit.sourceBindings++;
+					if (viewCount === null) {
+						providerWatchCountsComplete = false;
+					} else if (viewCount > 0) {
+						positiveWatchEvidence = Math.max(positiveWatchEvidence, viewCount);
 					}
 
 					const mediaType: "movie" | "series" = item.type === "movie" ? "movie" : "series";
@@ -963,17 +1246,40 @@ export async function collectPlexCacheLiveEvidence(
 						collections: item.Collection?.map((c) => c.tag) ?? [],
 						labels: item.Label?.map((l) => l.tag) ?? [],
 						addedAt: item.addedAt ?? null,
-						viewCount: item.viewCount ?? 0,
+						viewCount,
 						lastViewedAt: item.lastViewedAt ?? null,
 						thumb: item.thumb ?? null,
 					});
 				}
-			} catch (err) {
+				const sectionCanonicalKeys = new Set(
+					[...ratingKeyMap.values()]
+						.filter((item) => item.sectionId === lib.key)
+						.map((item) => `${item.mediaType}:${item.tmdbId}`),
+				);
+				mappingUnit.canonicalEntities = sectionCanonicalKeys.size;
+				mappingUnit.expectedRawCount = mappingUnit.rawObserved;
+				libraryUnit.canonicalEntities = sectionCanonicalKeys.size;
+				mappingUnits.push(mappingUnit);
+				libraryInventoryUnits.push(libraryUnit);
+			} catch {
 				markIncomplete("librarySnapshotFetchFailures");
-				const msg = `Failed to fetch library "${lib.title}": ${getErrorMessage(err)}`;
-				log.warn({ err, sectionId: lib.key, sectionTitle: lib.title }, msg);
+				coverageFailure = true;
+				coverageUnits.push({
+					scopeKey: `section:${lib.key}`,
+					expectedRawCount: null,
+					pagesAttempted: 1,
+					pagesCompleted: 0,
+					rawObserved: 0,
+					sourceBindings: 0,
+					canonicalEntities: 0,
+					acceptedSkips: [],
+					fatalCount: 1,
+				});
+				log.warn(
+					{ category: "plex-cache-library-section-unobserved" },
+					"Plex cache refresh: library section could not be observed",
+				);
 				errors++;
-				errorMessages.push(msg);
 			}
 		}
 		initialLibraryInventorySignature.sort();
@@ -987,7 +1293,18 @@ export async function collectPlexCacheLiveEvidence(
 		mappedLibraryItems = ratingKeyMap.size;
 
 		// 4. Get history and aggregate (per-section: key includes sectionId)
-		const history = await client.getHistory({ maxResults: 100_000, requireComplete: true });
+		let history: Awaited<ReturnType<PlexClient["getHistory"]>> = [];
+		let historyAvailable = true;
+		try {
+			history = await client.getHistory({ maxResults: 100_000, requireComplete: true });
+		} catch {
+			historyAvailable = false;
+			historyAttributionGap = true;
+			log.warn(
+				{ category: "plex-cache-history-unavailable" },
+				"Plex cache refresh: history unavailable",
+			);
+		}
 		const historyCount = history.length;
 		const aggregations = new Map<string, ItemAggregation>();
 
@@ -1003,26 +1320,38 @@ export async function collectPlexCacheLiveEvidence(
 					if (entry.librarySectionID && personalMediaSectionIds.has(entry.librarySectionID)) {
 						continue;
 					}
+					attributionRawHistory++;
+					attributionUnresolvedHistory++;
+					historyAttributionGap = true;
 					markIncomplete("historyItemsWithoutUsableMediaKey");
 				}
 				continue;
 			}
+			if (!isRelevantHistory) continue;
 
 			const username = accountMap.get(entry.accountID);
 			if (isRelevantHistory) {
-				if (!username) {
-					markIncomplete("historyItemsWithUnknownAccounts");
-					continue;
-				}
 				if (!currentLibraryRatingKeys.has(itemRatingKey)) {
 					ignoredHistoricalItems++;
+					continue;
+				}
+				if (!username) {
+					attributionRawHistory++;
+					attributionUnresolvedHistory++;
+					historyAttributionGap = true;
+					markIncomplete("historyItemsWithUnknownAccounts");
 					continue;
 				}
 			}
 
 			const itemData = ratingKeyMap.get(itemRatingKey);
 			if (!itemData) {
-				if (isRelevantHistory) markIncomplete("currentHistoryItemsWithoutMappedMetadata");
+				if (isRelevantHistory) {
+					attributionRawHistory++;
+					attributionUnresolvedHistory++;
+					historyAttributionGap = true;
+					markIncomplete("currentHistoryItemsWithoutMappedMetadata");
+				}
 				continue;
 			}
 
@@ -1030,19 +1359,26 @@ export async function collectPlexCacheLiveEvidence(
 				options.preserveProviderDuplicates ? `:${itemData.ratingKey}` : ""
 			}`;
 			if (!username) {
+				attributionRawHistory++;
+				attributionUnresolvedHistory++;
+				historyAttributionGap = true;
 				markIncomplete("historyItemsWithUnknownAccounts");
 				continue;
 			}
 
 			const existing = aggregations.get(aggKey);
+			attributionRawHistory++;
+			attributionResolvedHistory++;
 			if (existing) {
 				existing.watchCount++;
+				positiveAttributionEvidence++;
 				existing.watchedByUsers.add(username);
 				const watchedAt = new Date(entry.viewedAt * 1000);
 				if (!existing.lastWatchedAt || watchedAt > existing.lastWatchedAt) {
 					existing.lastWatchedAt = watchedAt;
 				}
 			} else {
+				positiveAttributionEvidence++;
 				aggregations.set(aggKey, {
 					tmdbId: itemData.tmdbId,
 					mediaType: itemData.mediaType,
@@ -1072,7 +1408,13 @@ export async function collectPlexCacheLiveEvidence(
 				itemData.lastViewedAt === null ? null : new Date(itemData.lastViewedAt * 1000);
 			const existing = aggregations.get(aggKey);
 			if (existing) {
-				existing.watchCount = Math.max(existing.watchCount, itemData.viewCount);
+				if (itemData.viewCount !== null) {
+					existing.watchCount = Math.max(existing.watchCount, itemData.viewCount);
+				}
+				if (itemData.viewCount === null || existing.watchCount > itemData.viewCount) {
+					providerWatchCountsComplete = false;
+				}
+				positiveWatchEvidence = Math.max(positiveWatchEvidence, existing.watchCount);
 				if (
 					itemLastWatchedAt &&
 					(!existing.lastWatchedAt || itemLastWatchedAt > existing.lastWatchedAt)
@@ -1080,6 +1422,9 @@ export async function collectPlexCacheLiveEvidence(
 					existing.lastWatchedAt = itemLastWatchedAt;
 				}
 			} else {
+				if (itemData.viewCount !== null && itemData.viewCount > 0) {
+					positiveWatchEvidence = Math.max(positiveWatchEvidence, itemData.viewCount);
+				}
 				aggregations.set(aggKey, {
 					tmdbId: itemData.tmdbId,
 					mediaType: itemData.mediaType,
@@ -1088,7 +1433,7 @@ export async function collectPlexCacheLiveEvidence(
 					title: itemData.title,
 					ratingKey: itemData.ratingKey,
 					lastWatchedAt: itemLastWatchedAt,
-					watchCount: itemData.viewCount,
+					watchCount: itemData.viewCount ?? 0,
 					watchedByUsers: new Set(),
 					onDeck: false,
 					userRating: itemData.userRating,
@@ -1106,6 +1451,11 @@ export async function collectPlexCacheLiveEvidence(
 			const onDeckItems = await client.getOnDeck();
 			verifiedOnDeckSignature = onDeckSignature(onDeckItems);
 			for (const deckItem of onDeckItems) {
+				onDeckRelevantItems++;
+				if (deckItem.type !== "movie" && deckItem.type !== "episode") {
+					onDeckUnsupportedItems++;
+					continue;
+				}
 				// For episodes, use the show's ratingKey
 				const itemRatingKey =
 					deckItem.type === "episode"
@@ -1114,6 +1464,7 @@ export async function collectPlexCacheLiveEvidence(
 
 				const itemData = ratingKeyMap.get(itemRatingKey);
 				if (!itemData) {
+					onDeckMembershipGap = true;
 					if (deckItem.type === "movie" || deckItem.type === "episode") {
 						markIncomplete("onDeckItemsWithoutMappedMetadata");
 					}
@@ -1126,13 +1477,18 @@ export async function collectPlexCacheLiveEvidence(
 				const agg = aggregations.get(aggKey);
 				if (agg) {
 					agg.onDeck = true;
+					onDeckMappedItems++;
 				}
 			}
-		} catch (err) {
+		} catch {
+			onDeckFetchComplete = false;
 			markIncomplete("onDeckFetchFailures");
 			errors++;
-			errorMessages.push(`Failed to fetch Plex on-deck items: ${getErrorMessage(err)}`);
-			log.warn({ err }, "Failed to fetch Plex on-deck items");
+			errorMessages.push("Failed to fetch Plex on-deck items");
+			log.warn(
+				{ category: "plex-cache-on-deck-unavailable" },
+				"Plex cache refresh: on-deck unavailable",
+			);
 		}
 
 		// Release ratingKeyMap — all data now lives in aggregations (#239)
@@ -1162,6 +1518,120 @@ export async function collectPlexCacheLiveEvidence(
 			addedAt: agg.addedAt,
 			thumb: agg.thumb,
 		}));
+		const mappingGap = mappingUnits.some((unit) => unit.acceptedSkips.length > 0);
+		const domainUnit = createDomainUnit({
+			scopeKey: "plex:watch-count",
+			rawObserved: rows.length,
+			sourceBindings: rows.length,
+			canonicalEntities: rows.length,
+		});
+		const attributionUnit = createDomainUnit({
+			scopeKey: "plex:watch-attribution",
+			rawObserved: attributionRawHistory,
+			sourceBindings: attributionResolvedHistory,
+			canonicalEntities: attributionResolvedHistory,
+			acceptedSkips:
+				attributionUnresolvedHistory > 0
+					? [{ reason: "missing-supported-mapping", count: attributionUnresolvedHistory }]
+					: [],
+		});
+		const onDeckUnit = createDomainUnit({
+			scopeKey: "plex:on-deck",
+			rawObserved: onDeckRelevantItems,
+			sourceBindings: onDeckMappedItems,
+			canonicalEntities: onDeckMappedItems,
+			acceptedSkips: onDeckItemsMissingForDomain(
+				onDeckMembershipGap,
+				onDeckRelevantItems,
+				onDeckMappedItems,
+			),
+		});
+		if (onDeckUnsupportedItems > 0) {
+			const existing = onDeckUnit.acceptedSkips.find(
+				(skip) => skip.reason === "unsupported-provider-object",
+			);
+			if (existing) existing.count += onDeckUnsupportedItems;
+			else
+				onDeckUnit.acceptedSkips.push({
+					reason: "unsupported-provider-object",
+					count: onDeckUnsupportedItems,
+				});
+		}
+		const domains: ProviderCoverageReceiptV2["domains"] = [
+			{
+				domain: "library-inventory",
+				evidence:
+					coverageFailure || libraryInventoryUnits.length !== mediaLibs.length
+						? "unknown"
+						: "complete",
+				valueSemantics:
+					coverageFailure || libraryInventoryUnits.length !== mediaLibs.length
+						? "unknown"
+						: "exact",
+				units: libraryInventoryUnits,
+			},
+			{
+				domain: "mapping",
+				evidence: mappingGap ? (mappedLibraryItems > 0 ? "positive-only" : "unknown") : "complete",
+				valueSemantics: mappingGap ? (mappedLibraryItems > 0 ? "lower-bound" : "unknown") : "exact",
+				units: mappingUnits,
+				publishedCanonicalEntities: rows.length,
+			},
+			{
+				domain: "watch-count",
+				evidence: providerWatchCountsComplete
+					? "complete"
+					: positiveWatchEvidence > 0
+						? "positive-only"
+						: "unknown",
+				valueSemantics: providerWatchCountsComplete
+					? "exact"
+					: positiveWatchEvidence > 0
+						? "lower-bound"
+						: "unknown",
+				units: [domainUnit],
+				publishedCanonicalEntities: rows.length,
+			},
+			{
+				domain: "watch-attribution",
+				evidence: historyAttributionGap
+					? positiveAttributionEvidence > 0
+						? "positive-only"
+						: "unknown"
+					: "complete",
+				valueSemantics: historyAttributionGap
+					? positiveAttributionEvidence > 0
+						? "lower-bound"
+						: "unknown"
+					: "exact",
+				units: [attributionUnit],
+			},
+			{
+				domain: "on-deck",
+				evidence:
+					!onDeckFetchComplete || onDeckMembershipGap
+						? onDeckMappedItems > 0
+							? "positive-only"
+							: "unknown"
+						: "complete",
+				valueSemantics:
+					!onDeckFetchComplete || onDeckMembershipGap
+						? onDeckMappedItems > 0
+							? "lower-bound"
+							: "unknown"
+						: "exact",
+				units: [onDeckUnit],
+			},
+		];
+		const receiptOnlyPartial = domains.some(
+			(domain) => domain.evidence !== "complete" || domain.valueSemantics !== "exact",
+		);
+		if (receiptOnlyPartial) complete = false;
+		for (const unit of coverageUnits) {
+			unit.canonicalEntities = rows.filter(
+				(row) => row.sectionId === unit.scopeKey.slice("section:".length),
+			).length;
+		}
 		const snapshotSections = mediaLibs
 			.map((section) => ({
 				key: section.key,
@@ -1174,8 +1644,23 @@ export async function collectPlexCacheLiveEvidence(
 					left.title.localeCompare(right.title) ||
 					left.type.localeCompare(right.type),
 			);
+		const logCompletion = () => {
+			log.info(
+				{
+					totalLibraryItems,
+					mappedLibraryItems,
+					ignoredHistoricalItems,
+					incompleteReasons,
+					totalHistory: historyCount,
+					uniqueItems: aggregationsArray.length,
+					upserted,
+					errors,
+				},
+				"Plex cache refresh complete",
+			);
+		};
 
-		if (errors === 0 && complete) {
+		if (errors === 0 || incompleteReasons.onDeckFetchFailures !== undefined) {
 			const latestSections = await client.getLibrarySections();
 			const latestMediaLibs = latestSections.filter(
 				(section) =>
@@ -1189,8 +1674,11 @@ export async function collectPlexCacheLiveEvidence(
 			}
 			const latestLibraryInventorySignature: string[] = [];
 			for (const lib of latestMediaLibs) {
-				const items = await client.getLibraryItems(lib.key);
-				for (const item of items) {
+				const pageResult = await client.getLibraryItemsWithCoverage(lib.key);
+				if (pageResult.reason !== null) {
+					throw new Error("Plex library coverage changed before cache publication");
+				}
+				for (const item of pageResult.items) {
 					latestLibraryInventorySignature.push(libraryInventoryItemSignature(lib, item));
 				}
 			}
@@ -1199,14 +1687,35 @@ export async function collectPlexCacheLiveEvidence(
 				JSON.stringify(latestLibraryInventorySignature) !==
 				JSON.stringify(initialLibraryInventorySignature)
 			) {
+				log.warn(
+					{
+						category: "plex-inventory-drift",
+						domains: classifyPlexInventoryDrift(
+							initialLibraryInventorySignature,
+							latestLibraryInventorySignature,
+						),
+					},
+					"Plex inventory changed during observation",
+				);
 				throw new Error("Plex library inventory changed before cache publication");
 			}
-			await client.verifyHistorySnapshot(history);
-			const latestOnDeckSignature = onDeckSignature(await client.getOnDeck());
-			if (JSON.stringify(latestOnDeckSignature) !== JSON.stringify(verifiedOnDeckSignature)) {
-				throw new Error("Plex on-deck state changed before cache publication");
+			if (historyAvailable) await client.verifyHistorySnapshot(history);
+			try {
+				const latestOnDeckSignature = onDeckSignature(await client.getOnDeck());
+				if (
+					incompleteReasons.onDeckFetchFailures === undefined &&
+					JSON.stringify(latestOnDeckSignature) !== JSON.stringify(verifiedOnDeckSignature)
+				) {
+					throw new Error("Plex on-deck state changed before cache publication");
+				}
+			} catch (error) {
+				if (incompleteReasons.onDeckFetchFailures === undefined) throw error;
 			}
+		}
+
+		if (errors === 0 && complete) {
 			completedAt = new Date();
+			logCompletion();
 			return {
 				kind: "authoritative-snapshot",
 				upserted: 0,
@@ -1214,13 +1723,20 @@ export async function collectPlexCacheLiveEvidence(
 				errorMessages: [],
 				complete: true,
 				completedAt,
+				receipt: createCoverageReceipt({
+					attemptStartedAt,
+					observedAt: completedAt,
+					evidence: "complete",
+					units: coverageUnits,
+					domains,
+					publishedCanonicalEntities: rows.length,
+				}),
 				inventoryTargets,
 				snapshot: { rows, sections: snapshotSections },
 			};
 		}
 		log.warn(
 			{
-				instanceId,
 				aggregationSize: aggregationsArray.length,
 				totalLibraryItems,
 				mappedLibraryItems,
@@ -1231,25 +1747,20 @@ export async function collectPlexCacheLiveEvidence(
 			"Plex cache: skipping eviction because the refreshed inventory was incomplete",
 		);
 
-		log.info(
-			{
-				instanceId,
-				totalLibraryItems,
-				mappedLibraryItems,
-				ignoredHistoricalItems,
-				incompleteReasons,
-				totalHistory: historyCount,
-				uniqueItems: aggregationsArray.length,
-				upserted,
-				errors,
-			},
-			"Plex cache refresh complete",
-		);
-
-		if (canPublishPositivePlexObservation(incompleteReasons)) {
+		if (
+			canPublishPositivePlexObservation(incompleteReasons) ||
+			(receiptOnlyPartial && errors === 0)
+		) {
 			appendIncompleteReasonMessages(errorMessages, incompleteReasons);
+			const positiveRows = rows;
+			const positiveCoverageUnits = coverageUnits.map((unit) => ({
+				...unit,
+				canonicalEntities: positiveRows.filter(
+					(row) => row.sectionId === unit.scopeKey.slice("section:".length),
+				).length,
+			}));
 			try {
-				await client.verifyHistorySnapshot(history);
+				if (historyAvailable) await client.verifyHistorySnapshot(history);
 			} catch (error) {
 				errorMessages.push(
 					`Plex positive observation verification failed: ${getErrorMessage(error)}`,
@@ -1258,17 +1769,27 @@ export async function collectPlexCacheLiveEvidence(
 					errors: errors + 1,
 					errorMessages,
 					reasons: [...Object.keys(incompleteReasons), "verification-exception"],
+					attemptStartedAt,
 				});
 			}
+			logCompletion();
 			return {
 				kind: "positive-observation",
 				upserted: 0,
 				errors,
 				errorMessages,
 				complete: false,
+				receipt: createCoverageReceipt({
+					attemptStartedAt,
+					observedAt: currentObservedAt(),
+					evidence: "positive-only",
+					units: positiveCoverageUnits,
+					domains,
+					publishedCanonicalEntities: positiveRows.length,
+				}),
 				observation: {
-					rows: rows.filter((row) => row.mediaType === "series"),
-					observedTargets: inventoryTargets.filter((target) => target.mediaType === "series"),
+					rows: positiveRows,
+					observedTargets: inventoryTargets,
 					capabilities: [
 						{
 							domain: "episode-parents",
@@ -1282,10 +1803,11 @@ export async function collectPlexCacheLiveEvidence(
 				},
 			};
 		}
+		logCompletion();
 	} catch (error) {
 		complete = false;
 		const msg = `Plex cache refresh failed: ${getErrorMessage(error)}`;
-		log.error({ err: error, instanceId }, msg);
+		log.error({ category: "plex-cache-refresh-failed" }, "Plex cache refresh failed");
 		errors++;
 		errorMessages.push(msg);
 	}
@@ -1295,6 +1817,12 @@ export async function collectPlexCacheLiveEvidence(
 	return unpublishedCollection({
 		errors,
 		errorMessages,
-		reasons: Object.keys(incompleteReasons),
+		reasons: coverageFailure ? ["coverage-incomplete"] : Object.keys(incompleteReasons),
+		receipt: createCoverageReceipt({
+			attemptStartedAt,
+			observedAt: currentObservedAt(),
+			evidence: "unknown",
+			units: coverageUnits,
+		}),
 	});
 }

@@ -34,7 +34,13 @@ export type PulseActionKind = z.infer<typeof pulseActionKindSchema>;
 export const schedulerJobIdSchema = z.enum(["hunting", "queue-cleaner"]);
 export type SchedulerJobId = z.infer<typeof schedulerJobIdSchema>;
 
-export const pulseCacheTypeSchema = z.enum(["plex", "tautulli", "jellyfin"]);
+export const pulseCacheTypeSchema = z.enum([
+	"plex",
+	"plex_episode",
+	"tautulli",
+	"jellyfin",
+	"jellyfin_episode",
+]);
 export type PulseCacheType = z.infer<typeof pulseCacheTypeSchema>;
 
 // ARR services whose queues the dispatcher can retry. Prowlarr has no

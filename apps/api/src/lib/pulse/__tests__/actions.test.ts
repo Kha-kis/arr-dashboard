@@ -10,7 +10,6 @@
 import type { PulseAction } from "@arr/shared";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { withCleanupMaintenanceGuard } from "../../library-cleanup/cleanup-maintenance-gate.js";
 
 // -----------------------------------------------------------------------------
 // Module mocks — declared before the dispatcher import so vi can hoist them.
@@ -54,11 +53,38 @@ const plexInstance = {
 	identityGeneration: 3,
 };
 const refreshOwnedTautulliCache = vi.fn();
+const refreshOwnedJellyfinCache = vi.fn();
+const singleflightJellyfin = vi.fn();
+const runNextPlexEpisodeWorkItem = vi.fn();
+const runNextJellyfinEpisodeWorkItem = vi.fn();
+const episodeRefreshSchedulerRetry = vi.fn();
+const libraryRefreshRecovery = { admit: vi.fn(), arm: vi.fn() };
 vi.mock("../../plex/plex-refresh-orchestration.js", () => ({
-	refreshOwnedPlexCache: (...args: unknown[]) => refreshOwnedPlexCache(...args),
+	refreshOwnedPlexCacheWithAttempt: (...args: unknown[]) => refreshOwnedPlexCache(...args),
+	runNextPlexEpisodeWorkItem: (...args: unknown[]) => runNextPlexEpisodeWorkItem(...args),
 }));
 vi.mock("../../tautulli/tautulli-cache-refresher.js", () => ({
-	refreshOwnedTautulliCache: (...args: unknown[]) => refreshOwnedTautulliCache(...args),
+	refreshOwnedTautulliCacheWithAttempt: (...args: unknown[]) => refreshOwnedTautulliCache(...args),
+}));
+vi.mock("../../jellyfin/jellyfin-cache-refresher.js", () => ({
+	refreshOwnedJellyfinCacheWithAttempt: (...args: unknown[]) => refreshOwnedJellyfinCache(...args),
+}));
+vi.mock("../../jellyfin/jellyfin-episode-cache-refresher.js", () => ({
+	runNextJellyfinEpisodeWorkItem: (...args: unknown[]) => runNextJellyfinEpisodeWorkItem(...args),
+}));
+vi.mock("../../jellyfin/jellyfin-cache-singleflight.js", () => ({
+	runJellyfinCacheRefreshSingleFlightWithAttempt: (...args: unknown[]) =>
+		singleflightJellyfin(...args),
+}));
+const claimProviderCacheRefreshAttempt = vi.fn();
+const startProviderCacheRefreshInBackground = vi.fn();
+vi.mock("../../services/provider-cache-status.js", () => ({
+	claimProviderCacheRefreshAttempt: (...args: unknown[]) =>
+		claimProviderCacheRefreshAttempt(...args),
+}));
+vi.mock("../../provider-observation/background-cache-refresh.js", () => ({
+	startProviderCacheRefreshInBackground: (...args: unknown[]) =>
+		startProviderCacheRefreshInBackground(...args),
 }));
 
 const findOwnedEnabledTautulliInstance = vi.fn();
@@ -73,10 +99,13 @@ import { dispatchPulseAction } from "../actions.js";
 // Harness
 // -----------------------------------------------------------------------------
 
+const fakeLogInfo = vi.fn();
+const fakeLogWarn = vi.fn();
+const fakeLogError = vi.fn();
 const fakeLog = {
-	info: vi.fn(),
-	warn: vi.fn(),
-	error: vi.fn(),
+	info: fakeLogInfo,
+	warn: fakeLogWarn,
+	error: fakeLogError,
 	debug: vi.fn(),
 	trace: vi.fn(),
 	fatal: vi.fn(),
@@ -120,6 +149,10 @@ const fakeApp = {
 		markEnabled: (jobId: string) => markEnabled(jobId),
 	},
 	encryptor: { decrypt: vi.fn() },
+	episodeRefreshScheduler: {
+		retry: (...args: unknown[]) => episodeRefreshSchedulerRetry(...args),
+	},
+	libraryRefreshRecovery,
 } as unknown as FastifyInstance;
 
 beforeEach(() => {
@@ -128,11 +161,53 @@ beforeEach(() => {
 	queueCleanerScheduler.isRunning.mockReset();
 	queueCleanerScheduler.start.mockReset();
 	refreshOwnedPlexCache.mockReset();
+	runNextPlexEpisodeWorkItem.mockReset();
 	refreshOwnedTautulliCache.mockReset();
+	refreshOwnedJellyfinCache.mockReset();
+	runNextJellyfinEpisodeWorkItem.mockReset();
+	episodeRefreshSchedulerRetry.mockReset().mockResolvedValue({ status: "accepted" });
+	singleflightJellyfin.mockReset();
+	claimProviderCacheRefreshAttempt.mockReset().mockResolvedValue({
+		status: "acquired",
+		attempt: {
+			attemptedAt: new Date("2026-09-05T00:00:00.000Z"),
+			resultMarker: "in_progress:123e4567-e89b-42d3-a456-426614174000",
+		},
+	});
+	startProviderCacheRefreshInBackground
+		.mockReset()
+		.mockImplementation(
+			async (options: {
+				claim: () => Promise<unknown>;
+				produce: (attempt: unknown) => Promise<unknown>;
+			}) => {
+				const claim = await options.claim();
+				if (typeof claim !== "object" || claim === null || !("status" in claim)) {
+					throw new Error("invalid claim");
+				}
+				if (claim.status === "already-running") {
+					return { accepted: true, backgroundTask: Promise.resolve() };
+				}
+				if (claim.status !== "acquired" || !("attempt" in claim)) {
+					throw new Error("unexpected claim");
+				}
+				return {
+					accepted: true,
+					backgroundTask: Promise.resolve()
+						.then(() => options.produce(claim.attempt))
+						.catch(() => undefined),
+				};
+			},
+		);
 	findOwnedEnabledTautulliInstance.mockReset();
 	markEnabled.mockReset();
 	cacheStatusUpsert.mockReset();
 	cacheStatusUpsert.mockResolvedValue({});
+	libraryRefreshRecovery.admit.mockReset();
+	libraryRefreshRecovery.arm.mockReset();
+	fakeLogInfo.mockReset();
+	fakeLogWarn.mockReset();
+	fakeLogError.mockReset();
 });
 
 afterEach(() => {
@@ -234,6 +309,61 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		...plexAction,
 		target: { instanceId: "inst-tautulli-1", cacheType: "tautulli" },
 	};
+	const plexEpisodeAction = {
+		kind: "cache.refresh",
+		target: { instanceId: "inst-plex-1", cacheType: "plex_episode" },
+		label: "Retry refresh",
+		destructive: false,
+	} as unknown as PulseAction;
+	const jellyfinEpisodeAction = {
+		kind: "cache.refresh",
+		target: { instanceId: "inst-plex-1", cacheType: "jellyfin_episode" },
+		label: "Retry refresh",
+		destructive: false,
+	} as unknown as PulseAction;
+
+	it("hands Plex episode Retry to the app-scoped scheduler continuation chain", async () => {
+		const result = await dispatchPulseAction(fakeApp, "user-1", plexEpisodeAction, fakeLog);
+		expect(episodeRefreshSchedulerRetry).toHaveBeenCalledWith("plex_episode", {
+			instanceId: plexInstance.id,
+			userId: "user-1",
+		});
+		expect(result.backgroundTask).toBeUndefined();
+		expect(runNextPlexEpisodeWorkItem).not.toHaveBeenCalled();
+		expect(refreshOwnedPlexCache).not.toHaveBeenCalled();
+	});
+
+	it("hands Jellyfin episode Retry to the app-scoped scheduler continuation chain", async () => {
+		const jellyfinInstance = { ...plexInstance, service: "JELLYFIN" as const };
+		const findFirst = fakeApp.prisma.serviceInstance.findFirst as unknown as ReturnType<
+			typeof vi.fn
+		>;
+		findFirst.mockResolvedValueOnce(jellyfinInstance);
+		const result = await dispatchPulseAction(fakeApp, "user-1", jellyfinEpisodeAction, fakeLog);
+		expect(episodeRefreshSchedulerRetry).toHaveBeenCalledWith("jellyfin_episode", {
+			instanceId: jellyfinInstance.id,
+			userId: "user-1",
+		});
+		expect(result.backgroundTask).toBeUndefined();
+		expect(runNextJellyfinEpisodeWorkItem).not.toHaveBeenCalled();
+		expect(refreshOwnedJellyfinCache).not.toHaveBeenCalled();
+	});
+
+	it("fails closed when the provider scheduler is unavailable", async () => {
+		episodeRefreshSchedulerRetry.mockResolvedValue({ status: "unavailable" });
+		await expect(
+			dispatchPulseAction(fakeApp, "user-1", plexEpisodeAction, fakeLog),
+		).rejects.toMatchObject({ statusCode: 409 });
+		expect(runNextPlexEpisodeWorkItem).not.toHaveBeenCalled();
+	});
+
+	it("fails closed when the scheduler loses ownership or enabled state", async () => {
+		episodeRefreshSchedulerRetry.mockResolvedValue({ status: "ineligible" });
+		await expect(
+			dispatchPulseAction(fakeApp, "user-1", plexEpisodeAction, fakeLog),
+		).rejects.toMatchObject({ statusCode: 404 });
+		expect(runNextPlexEpisodeWorkItem).not.toHaveBeenCalled();
+	});
 
 	it("refreshes the Plex cache through the pre-decryption authority boundary", async () => {
 		refreshOwnedPlexCache.mockResolvedValue({
@@ -252,6 +382,16 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		// don't yet know the upsert count at return time.
 		expect(result.status).toBe("ok");
 		expect(result.detail).toBeUndefined();
+		expect(startProviderCacheRefreshInBackground.mock.calls[0]?.[0]).toEqual(
+			expect.objectContaining({
+				recovery: expect.objectContaining({
+					provider: "plex",
+					userId: "user-1",
+					instanceId: plexInstance.id,
+					handoff: libraryRefreshRecovery,
+				}),
+			}),
+		);
 		expect(findOwnedEnabledTautulliInstance).not.toHaveBeenCalled();
 
 		// Await the background task so the rest of the assertions see the
@@ -259,12 +399,15 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		// this; the HTTP client has already received 200.
 		await result.backgroundTask;
 
-		expect(refreshOwnedPlexCache).toHaveBeenCalledWith({
-			prisma: fakeApp.prisma,
-			encryptor: fakeApp.encryptor,
-			instance: plexInstance,
-			log: fakeLog,
-		});
+		expect(refreshOwnedPlexCache).toHaveBeenCalledWith(
+			{
+				prisma: fakeApp.prisma,
+				encryptor: fakeApp.encryptor,
+				instance: plexInstance,
+				log: fakeLog,
+			},
+			expect.objectContaining({ resultMarker: expect.stringMatching(/^in_progress:/) }),
+		);
 		// The refresher transaction is the sole successful-generation publisher.
 		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
@@ -291,13 +434,36 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		// before asserting they ran.
 		await result.backgroundTask;
 
-		expect(refreshOwnedTautulliCache).toHaveBeenCalledWith({
-			prisma: fakeApp.prisma,
-			encryptor: fakeApp.encryptor,
-			instance: tautulliInstance,
-			log: fakeLog,
-		});
+		expect(refreshOwnedTautulliCache).toHaveBeenCalledWith(
+			{
+				prisma: fakeApp.prisma,
+				encryptor: fakeApp.encryptor,
+				instance: tautulliInstance,
+				log: fakeLog,
+			},
+			expect.objectContaining({ resultMarker: expect.stringMatching(/^in_progress:/) }),
+		);
 		expect(cacheStatusUpsert).not.toHaveBeenCalled();
+	});
+
+	it("does not put the private instance identifier in cache-refresh logs", async () => {
+		const privateInstanceId = "private-instance-id-should-not-be-logged";
+		const findFirst = fakeApp.prisma.serviceInstance.findFirst as unknown as ReturnType<
+			typeof vi.fn
+		>;
+		findFirst.mockResolvedValueOnce({
+			...plexInstance,
+			id: privateInstanceId,
+		});
+		const action: PulseAction = {
+			...plexAction,
+			target: { instanceId: privateInstanceId, cacheType: "plex" },
+		};
+
+		const result = await dispatchPulseAction(fakeApp, "user-1", action, fakeLog);
+		await result.backgroundTask;
+
+		expect(JSON.stringify(fakeLogInfo.mock.calls)).not.toContain(privateInstanceId);
 	});
 
 	it("leaves incomplete Plex attempt recording to the authority boundary", async () => {
@@ -351,9 +517,6 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		expect(result.status).toBe("ok");
 		// The refresher has NOT completed yet — upsert should not have fired.
 		expect(cacheStatusUpsert).not.toHaveBeenCalled();
-		await expect(withCleanupMaintenanceGuard(async () => undefined)).rejects.toMatchObject({
-			statusCode: 409,
-		});
 
 		// Let the slow refresh complete, then the background task should
 		// run the write-through.
@@ -367,7 +530,6 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		await result.backgroundTask;
 
 		expect(cacheStatusUpsert).not.toHaveBeenCalled();
-		await expect(withCleanupMaintenanceGuard(async () => "restored")).resolves.toBe("restored");
 	});
 
 	it("does not race the sealed refresher's attempt lifecycle when its background promise rejects", async () => {

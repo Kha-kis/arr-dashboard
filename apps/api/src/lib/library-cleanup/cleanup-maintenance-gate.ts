@@ -53,6 +53,18 @@ export function acquireCleanupOperationGuard(): () => void {
 }
 
 /**
+ * Acquire a shared lease that is independent from the caller's async context.
+ *
+ * Background work must keep this lease after its request or scheduler callback
+ * has returned. The returned release is idempotent and intentionally has no
+ * promise or cancellation semantics: the owner releases it when the work has
+ * actually settled.
+ */
+export function acquireIndependentCleanupOperationGuard(): () => void {
+	return acquireCleanupOperationGuardState({ allowNestedExclusive: true }).release;
+}
+
+/**
  * Run a destructive topology mutation only when every cleanup-sensitive
  * operation has settled, and prevent new operations from starting meanwhile.
  */

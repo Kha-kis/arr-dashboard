@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -8,18 +7,15 @@ import {
 	PLEX_LIBRARIES,
 	parseSections,
 } from "./bootstrap-plex.mjs";
+import { historyPayload } from "./plex-loopback-proxy.mjs";
 
 test("loopback Plex history fixture has one stable nonempty history key", () => {
-	const compose = readFileSync(new URL("./compose.yml", import.meta.url), "utf8");
-	const historyFixture = compose.match(
-		/if \(requestUrl\.pathname === "\/status\/sessions\/history\/all"\) \{([\s\S]*?)\n          \}/,
-	)?.[1];
-
-	assert.ok(historyFixture, "loopback Plex history fixture must be present");
-	const historyKeys = [...historyFixture.matchAll(/historyKey:\s*"([^"]+)"/g)].map(
-		([, historyKey]) => historyKey,
+	const metadata = historyPayload("normal", 0).MediaContainer.Metadata;
+	assert.equal(metadata.length, 1, "loopback Plex history fixture must be nonempty");
+	assert.deepEqual(
+		metadata.map(({ historyKey }) => historyKey),
+		["lc-e2e-plex-history-pilot-17-a"],
 	);
-	assert.deepEqual(historyKeys, ["lc-e2e-plex-history-pilot-17"]);
 });
 
 test("Plex URL stays on the exact isolated loopback bridge", () => {

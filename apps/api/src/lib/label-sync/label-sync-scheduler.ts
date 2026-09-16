@@ -22,6 +22,9 @@ import {
 	type TickWrapper,
 } from "../scheduler-registry/scheduler-registry.js";
 import { executeLabelSyncRule } from "./execute-rule.js";
+import { reconcileJellyfinMutationAttempts } from "./jellyfin-mutation-executor.js";
+import { isLabelSyncMutationAdmitted } from "./mutation-admission.js";
+import { persistLabelSyncRunResult } from "./persist-run-result.js";
 
 const TICK_INTERVAL_MS = 5 * 60 * 1000; // Wake every 5 minutes
 const RULE_COOLDOWN_MS = 60 * 60 * 1000; // Skip rules that ran in the last hour
@@ -83,6 +86,22 @@ export class LabelSyncScheduler {
 		this.inFlight = true;
 
 		try {
+			// Unknown sends need observation even when a rule is cooling down or
+			// its source no longer yields candidates. This worker never sends tags.
+			if (isLabelSyncMutationAdmitted(this.prisma)) {
+				try {
+					await reconcileJellyfinMutationAttempts({
+						prisma: this.prisma,
+						encryptor: this.encryptor,
+						log: this.log,
+					});
+				} catch {
+					this.log.warn(
+						{ category: "label-sync-reconciliation-failed" },
+						"Label sync mutation reconciliation remains pending",
+					);
+				}
+			}
 			const cooldownThreshold = new Date(Date.now() - RULE_COOLDOWN_MS);
 			const dueRules = await this.prisma.labelSyncRule.findMany({
 				where: {
@@ -121,14 +140,14 @@ export class LabelSyncScheduler {
 						log: this.log,
 					});
 
-					await this.prisma.labelSyncRule.update({
-						where: { id: rule.id },
-						data: {
-							lastRunAt: new Date(),
-							lastRunStatus: result.status,
-							lastRunMessage: result.message,
-						},
-					});
+					const persisted = await persistLabelSyncRunResult(this.prisma, rule, result);
+					if (!persisted) {
+						this.log.info(
+							{ ruleId: rule.id },
+							"Skipped label-sync result because the rule changed or was deleted",
+						);
+						continue;
+					}
 
 					if (result.status === "success") succeeded++;
 					else if (result.status === "partial") partial++;
@@ -140,14 +159,24 @@ export class LabelSyncScheduler {
 						{ err, ruleId: rule.id },
 						"Label-sync rule execution threw — recording as failure",
 					);
-					await this.prisma.labelSyncRule
-						.update({
-							where: { id: rule.id },
-							data: {
-								lastRunAt: new Date(),
-								lastRunStatus: "failed",
-								lastRunMessage: `Scheduler exception: ${message}`,
-							},
+					await persistLabelSyncRunResult(this.prisma, rule, {
+						status: "failed",
+						message: `Scheduler exception: ${message}`,
+						totals: {
+							sourceInstancesScanned: 0,
+							taggedItemsFound: 0,
+							destMatchesFound: 0,
+							labelsApplied: 0,
+							failures: 1,
+						},
+					})
+						.then((persisted) => {
+							if (!persisted) {
+								this.log.info(
+									{ ruleId: rule.id },
+									"Skipped label-sync failure because the rule changed or was deleted",
+								);
+							}
 						})
 						.catch((updateErr: unknown) => {
 							this.log.error(

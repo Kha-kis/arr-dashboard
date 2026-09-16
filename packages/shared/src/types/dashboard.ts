@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { providerObservationStatusSchema } from "./provider-observation";
 
 const queueStatusMessageSchema = z.object({
 	title: z.string().optional(),
@@ -204,6 +205,229 @@ export const multiInstanceHistoryResponseSchema = z.object({
 });
 
 export type MultiInstanceHistoryResponse = z.infer<typeof multiInstanceHistoryResponseSchema>;
+
+/** Bounds shared by the durable History v2 payload and its API normalizer. */
+export const HISTORY_NORMALIZED_JSON_MAX_BYTES = 8 * 1024;
+export const HISTORY_SEARCH_TEXT_MAX_LENGTH = 2_048;
+export const HISTORY_PAGE_MAX_ITEMS = 100;
+export const HISTORY_EVENT_TYPE_MAX_LENGTH = 128;
+export const HISTORY_DISPLAY_TEXT_MAX_LENGTH = 512;
+export const HISTORY_IDENTIFIER_TEXT_MAX_LENGTH = 256;
+export const HISTORY_CUSTOM_FORMAT_MAX_COUNT = 32;
+export const HISTORY_SOURCE_MAX_COUNT = 1_000;
+export const HISTORY_CURSOR_MAX_LENGTH = 4_096;
+
+const historyServices = ["sonarr", "radarr", "prowlarr", "lidarr", "readarr"] as const;
+
+export const historyServiceSchema = z.enum(historyServices);
+export type HistoryService = z.infer<typeof historyServiceSchema>;
+
+const safeNonnegativeIntegerSchema = z.number().int().nonnegative().refine(Number.isSafeInteger);
+const safeFiniteNonnegativeNumberSchema = z.number().finite().nonnegative();
+const safeText = (max: number) =>
+	z
+		.string()
+		.min(1)
+		.max(max)
+		.refine((value) => value === value.trim())
+		.refine(
+			(value) =>
+				![...value].some(
+					(character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+				),
+		)
+		.refine(
+			(value) => !/(?:\b[a-z][a-z\d+.-]*:\/\/|\bwww\.|\b(?:data|mailto|magnet):)/i.test(value),
+		);
+const safeIdentifierText = safeText(HISTORY_IDENTIFIER_TEXT_MAX_LENGTH);
+const safeDisplayText = safeText(HISTORY_DISPLAY_TEXT_MAX_LENGTH);
+const historyInstanceLabelSchema = z
+	.string()
+	.min(1)
+	.max(HISTORY_DISPLAY_TEXT_MAX_LENGTH)
+	.refine((value) => value === value.trim())
+	.refine(
+		(value) =>
+			![...value].some(
+				(character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+			),
+	);
+const canonicalHistoryEventAtSchema = z
+	.string()
+	.regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+	.refine((value) => !Number.isNaN(Date.parse(value)) && new Date(value).toISOString() === value);
+const canonicalHistoryEventTypeSchema = z
+	.string()
+	.min(1)
+	.max(HISTORY_EVENT_TYPE_MAX_LENGTH)
+	.refine((value) => value === value.trim() && value === value.toLowerCase())
+	.refine(
+		(value) =>
+			![...value].some(
+				(character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+			),
+	)
+	.refine((value) => !/(?:\b[a-z][a-z\d+.-]*:\/\/|\bwww\.|\b(?:data|mailto|magnet):)/i.test(value));
+
+const historyCustomFormatSchema = z
+	.object({
+		id: safeNonnegativeIntegerSchema,
+		name: safeDisplayText,
+	})
+	.strict();
+
+const historyPayloadCommonShape = {
+	version: z.literal(1),
+	providerEventId: safeNonnegativeIntegerSchema,
+	eventAt: canonicalHistoryEventAtSchema,
+	eventType: canonicalHistoryEventTypeSchema,
+	downloadId: safeIdentifierText.optional(),
+	title: safeDisplayText.optional(),
+	sourceTitle: safeDisplayText.optional(),
+	size: safeFiniteNonnegativeNumberSchema.optional(),
+	qualityName: safeDisplayText.optional(),
+	customFormats: z.array(historyCustomFormatSchema).max(HISTORY_CUSTOM_FORMAT_MAX_COUNT).optional(),
+	customFormatScore: z.number().finite().int().refine(Number.isSafeInteger).optional(),
+	downloadClient: safeDisplayText.optional(),
+	indexer: safeDisplayText.optional(),
+	protocol: safeDisplayText.optional(),
+};
+
+const historyPayloadBranch = <const T extends HistoryService, const S extends z.ZodRawShape>(
+	service: T,
+	serviceFields: S,
+) =>
+	z
+		.object({ ...historyPayloadCommonShape, service: z.literal(service), ...serviceFields })
+		.strict();
+
+export const historyNormalizedPayloadV1Schema = z.discriminatedUnion("service", [
+	historyPayloadBranch("sonarr", {
+		seriesId: safeNonnegativeIntegerSchema.optional(),
+		seriesSlug: safeIdentifierText.optional(),
+		episodeId: safeNonnegativeIntegerSchema.optional(),
+	}),
+	historyPayloadBranch("radarr", {
+		movieId: safeNonnegativeIntegerSchema.optional(),
+		movieSlug: safeIdentifierText.optional(),
+	}),
+	historyPayloadBranch("prowlarr", {
+		indexerId: safeNonnegativeIntegerSchema.optional(),
+	}),
+	historyPayloadBranch("lidarr", {
+		artistId: safeNonnegativeIntegerSchema.optional(),
+		albumId: safeNonnegativeIntegerSchema.optional(),
+		trackId: safeNonnegativeIntegerSchema.optional(),
+	}),
+	historyPayloadBranch("readarr", {
+		authorId: safeNonnegativeIntegerSchema.optional(),
+		bookId: safeNonnegativeIntegerSchema.optional(),
+	}),
+]);
+export type HistoryNormalizedPayloadV1 = z.infer<typeof historyNormalizedPayloadV1Schema>;
+
+const historyItemCommonShape = {
+	id: safeIdentifierText,
+	instanceId: safeIdentifierText,
+	instanceName: historyInstanceLabelSchema,
+	providerEventId: safeNonnegativeIntegerSchema,
+	eventAt: canonicalHistoryEventAtSchema,
+	eventType: canonicalHistoryEventTypeSchema,
+	downloadId: safeIdentifierText.optional(),
+	title: safeDisplayText.optional(),
+	sourceTitle: safeDisplayText.optional(),
+	size: safeFiniteNonnegativeNumberSchema.optional(),
+	qualityName: safeDisplayText.optional(),
+	customFormats: z.array(historyCustomFormatSchema).max(HISTORY_CUSTOM_FORMAT_MAX_COUNT).optional(),
+	customFormatScore: z.number().finite().int().refine(Number.isSafeInteger).optional(),
+	downloadClient: safeDisplayText.optional(),
+	indexer: safeDisplayText.optional(),
+	protocol: safeDisplayText.optional(),
+};
+
+export const historyItemV2Schema = z.discriminatedUnion("service", [
+	z
+		.object({
+			...historyItemCommonShape,
+			service: z.literal("sonarr"),
+			seriesId: safeNonnegativeIntegerSchema.optional(),
+			seriesSlug: safeIdentifierText.optional(),
+			episodeId: safeNonnegativeIntegerSchema.optional(),
+		})
+		.strict(),
+	z
+		.object({
+			...historyItemCommonShape,
+			service: z.literal("radarr"),
+			movieId: safeNonnegativeIntegerSchema.optional(),
+			movieSlug: safeIdentifierText.optional(),
+		})
+		.strict(),
+	z
+		.object({
+			...historyItemCommonShape,
+			service: z.literal("prowlarr"),
+			indexerId: safeNonnegativeIntegerSchema.optional(),
+		})
+		.strict(),
+	z
+		.object({
+			...historyItemCommonShape,
+			service: z.literal("lidarr"),
+			artistId: safeNonnegativeIntegerSchema.optional(),
+			albumId: safeNonnegativeIntegerSchema.optional(),
+			trackId: safeNonnegativeIntegerSchema.optional(),
+		})
+		.strict(),
+	z
+		.object({
+			...historyItemCommonShape,
+			service: z.literal("readarr"),
+			authorId: safeNonnegativeIntegerSchema.optional(),
+			bookId: safeNonnegativeIntegerSchema.optional(),
+		})
+		.strict(),
+]);
+export type HistoryItemV2 = z.infer<typeof historyItemV2Schema>;
+
+const positiveObservationStatusSchema = providerObservationStatusSchema
+	.strict()
+	.refine(({ availability, evidence }) =>
+		availability === "unavailable"
+			? evidence === "unknown"
+			: availability !== "current" && evidence === "positive-only",
+	);
+
+export const historySourceV2Schema = z
+	.object({
+		instanceId: safeIdentifierText,
+		instanceName: historyInstanceLabelSchema,
+		service: historyServiceSchema,
+		providerStatus: positiveObservationStatusSchema,
+		retainedObservationCount: safeNonnegativeIntegerSchema,
+	})
+	.strict();
+export type HistorySourceV2 = z.infer<typeof historySourceV2Schema>;
+
+export const historyPageInfoV2Schema = z
+	.object({
+		nextCursor: z.string().min(1).max(HISTORY_CURSOR_MAX_LENGTH).nullable(),
+		hasNextPage: z.boolean(),
+		matchingObservedCount: safeNonnegativeIntegerSchema,
+	})
+	.strict()
+	.refine(({ nextCursor, hasNextPage }) => hasNextPage === Boolean(nextCursor));
+export type HistoryPageInfoV2 = z.infer<typeof historyPageInfoV2Schema>;
+
+export const historyResponseV2Schema = z
+	.object({
+		version: z.literal(2),
+		items: z.array(historyItemV2Schema).max(HISTORY_PAGE_MAX_ITEMS),
+		sources: z.array(historySourceV2Schema).max(HISTORY_SOURCE_MAX_COUNT),
+		pageInfo: historyPageInfoV2Schema,
+	})
+	.strict();
+export type HistoryResponseV2 = z.infer<typeof historyResponseV2Schema>;
 
 export const calendarItemSchema = z.object({
 	id: z.union([z.string(), z.number()]),

@@ -53,6 +53,28 @@ packages/shared/src/types/ # Shared Zod schemas + TypeScript types
 - `app.sessionService` — session create/invalidate/cookie management
 - `app.config` — environment config
 
+### Provider inventory and watch evidence
+
+`ProviderNativeInventorySnapshot` and `ProviderNativeInventoryItem` store owned
+provider-native movie, series, and episode identities. Library and episode
+domains publish independently. Snapshot generation, provider identity, and
+connection generation bind each read; failed or incomplete refreshes retain the
+previous publication with explicit freshness and completeness status.
+
+`lib/provider-observation/native-inventory.ts` owns publication and bounded,
+generation-pinned reads. `inventory-connections.ts` derives ARR matches without
+discarding unmatched native items. The authenticated
+`/api/library/provider-inventory` route exposes those results; its pagination and
+status contract is documented in [API-ROUTES.md](API-ROUTES.md).
+
+Inventory presence, ARR matching, and watch history are separate evidence.
+Positive watch-count cleanup uses target-specific Jellyfin or Tautulli/Plex
+proofs and revalidates provider identity, native item, and the positive threshold
+at execution. Generic display observations cannot substitute for that proof.
+Unknown history does not establish zero plays, unwatched state, or permission
+to mutate. Tautulli metadata batches and the shared request/time budget bound
+provider work; exhausted or ambiguous reads remain unknown.
+
 ## Code Style & Conventions
 
 - **Linting**: Biome for API + shared packages, ESLint for web (React-specific rules). Biome for formatting across all packages. Run `pnpm run lint` / `pnpm run format`

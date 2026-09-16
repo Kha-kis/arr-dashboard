@@ -1,9 +1,7 @@
 import type { Prisma, PrismaClient, ServiceInstance } from "../prisma.js";
 
 export const TAUTULLI_CACHE_FRESHNESS_MS = 12 * 60 * 60 * 1000;
-const TAUTULLI_SELECTED_CACHE_PAGE_SIZE = 100;
 const TAUTULLI_SELECTED_CACHE_MAX_ROWS = 200;
-const TAUTULLI_SELECTED_CACHE_MAX_PAGES = 2;
 const TAUTULLI_CACHE_READ_TRANSACTION_ATTEMPTS = 3;
 const TAUTULLI_CACHE_READ_TRANSACTION_TIMEOUT_MS = 10_000;
 const TAUTULLI_CACHE_READ_RETRY_DELAY_MS = 15;
@@ -24,12 +22,13 @@ export type TautulliCacheAuthorityReason =
 	| "cache_rows_stale"
 	| "cache_stale"
 	| "tautulli_mapping_required"
+	| "provider_completion_unverifiable"
 	| "unknown_failure";
 
 export type TautulliCacheAuthorityState =
 	| "in_progress"
 	| "failed_unavailable"
-	| "healthy_complete"
+	| "degraded_unavailable"
 	| "no_publication";
 
 export interface TautulliCacheAuthorityProjection {
@@ -161,13 +160,10 @@ export function evaluateTautulliCacheAuthority(
 	if (now.getTime() - status.lastRefreshedAt.getTime() > maxAgeMs) {
 		return failed(["cache_stale"], status);
 	}
-	return {
-		available: true,
-		state: "healthy_complete",
-		reasonCodes: [],
-		cachedItems: counts.exact,
-		lastRefreshedAt: status.lastRefreshedAt,
-	};
+	// Tautulli exposes neither a provider-issued completion/version marker nor
+	// an atomic catalog snapshot. Matching local generations, counts, and
+	// timestamps therefore cannot prove complete publication or exact absence.
+	return failed(["provider_completion_unverifiable"], status, "degraded_unavailable");
 }
 
 export async function readOwnedTautulliCacheAuthority(
@@ -316,50 +312,15 @@ async function readUserSelectedTautulliCacheSnapshot(
 			rows: [],
 		};
 	}
-	if (input.targets.length === 0) {
-		return { configured: true, available: true, reasonCodes: [], rows: [] };
-	}
-
-	const rows: TautulliSelectedCacheRow[] = [];
-	let cursor: string | undefined;
-	for (
-		let pageNumber = 0;
-		pageNumber < TAUTULLI_SELECTED_CACHE_MAX_PAGES && rows.length < input.targets.length;
-		pageNumber++
-	) {
-		const page = await prisma.tautulliCache.findMany({
-			where: {
-				instanceId: instance.id,
-				instance: { userId: input.userId },
-				connectionGeneration: instance.connectionGeneration,
-				identityGeneration: instance.identityGeneration,
-				OR: input.targets.map((target) => ({
-					tmdbId: target.tmdbId,
-					mediaType: target.mediaType,
-				})),
-			},
-			select: {
-				id: true,
-				instanceId: true,
-				tmdbId: true,
-				mediaType: true,
-				lastWatchedAt: true,
-				watchCount: true,
-				watchedByUsers: true,
-			},
-			take: Math.min(
-				TAUTULLI_SELECTED_CACHE_PAGE_SIZE,
-				TAUTULLI_SELECTED_CACHE_MAX_ROWS - rows.length,
-			),
-			...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-			orderBy: { id: "asc" },
-		});
-		if (page.length === 0) break;
-		rows.push(...page);
-		cursor = page[page.length - 1]!.id;
-		if (page.length < TAUTULLI_SELECTED_CACHE_PAGE_SIZE) break;
-	}
-	return { configured: true, available: true, reasonCodes: [], rows };
+	// Configured Tautulli publications are intentionally non-authoritative.
+	// Keep this terminal guard even if the projection gains diagnostic states:
+	// request-facing consumers must not regain raw watch rows implicitly.
+	return {
+		configured: true,
+		available: false,
+		reasonCodes: ["provider_completion_unverifiable"],
+		rows: [],
+	};
 }
 
 function unavailableSelectedTautulliCache(): TautulliSelectedCacheResult {

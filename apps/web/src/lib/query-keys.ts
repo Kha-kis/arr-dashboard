@@ -19,8 +19,8 @@
 export const dashboardKeys = {
 	all: ["dashboard"] as const,
 	queue: ["dashboard", "queue"] as const,
-	history: (params: Record<string, unknown>) =>
-		["dashboard", "history", "containment", params] as const,
+	history: ({ cursor: _cursor, ...params }: Record<string, unknown>) =>
+		["dashboard", "history", params] as const,
 	calendar: (params: Record<string, unknown>) => ["dashboard", "calendar", params] as const,
 	statistics: ["dashboard", "statistics"] as const,
 };
@@ -54,6 +54,13 @@ export const libraryKeys = {
 	filtering: ["library", "all-for-filtering"] as const,
 	syncStatus: ["library", "sync", "status"] as const,
 	episodes: (params: Record<string, unknown>) => ["library", "episodes", params] as const,
+	nativeInventory: (params: {
+		instanceId: string;
+		domain: "library" | "episode";
+		afterNativeId: string | null;
+		expectedGenerationId: string | null;
+		refreshKey: number;
+	}) => ["library", "native-inventory", params] as const,
 	albums: (instanceId: string, artistId: number) =>
 		["library", "albums", { instanceId, artistId }] as const,
 	tracks: (instanceId: string, albumId: number) =>
@@ -469,6 +476,7 @@ export const labelSyncKeys = {
 export const autoTagKeys = {
 	all: ["auto-tag"] as const,
 	rules: ["auto-tag", "rules"] as const,
+	preview: (id: string) => ["auto-tag", "preview", id] as const,
 	webhookConfig: ["auto-tag", "webhook-config"] as const,
 	webhookInstallStatus: ["auto-tag", "webhook-install-status"] as const,
 };

@@ -7,6 +7,7 @@ import type {
 	LabelSyncSourceService,
 	ServiceInstanceSummary,
 } from "@arr/shared";
+import { getLabelSyncDestinationMutationCapability } from "@arr/shared";
 import { useMemo, useState } from "react";
 import { Button } from "../../../components/ui/button";
 import {
@@ -83,6 +84,7 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 			),
 		[services, form.destService],
 	);
+	const destinationCapability = getLabelSyncDestinationMutationCapability(form.destService);
 
 	const createMutation = useCreateLabelSyncRule();
 	const updateMutation = useUpdateLabelSyncRule();
@@ -254,16 +256,22 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 							>
 								{LABEL_SYNC_SERVICE_OPTIONS.map((opt) => {
 									const count = enabledInstanceCountBySlug[opt.matchSlug] ?? 0;
-									const disabled = count === 0;
+									const capability = getLabelSyncDestinationMutationCapability(opt.value);
+									const disabled = count === 0 || !capability.supported;
+									const reason =
+										count === 0
+											? `No enabled ${opt.label} instance configured`
+											: capability.supported
+												? undefined
+												: capability.message;
 									return (
-										<option
-											key={opt.value}
-											value={opt.value}
-											disabled={disabled}
-											title={disabled ? `No enabled ${opt.label} instance configured` : undefined}
-										>
+										<option key={opt.value} value={opt.value} disabled={disabled} title={reason}>
 											{opt.label}
-											{disabled ? " — none configured" : ""}
+											{count === 0
+												? " — none configured"
+												: !capability.supported
+													? " — unavailable"
+													: ""}
 										</option>
 									);
 								})}
@@ -289,6 +297,15 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 							</select>
 						</div>
 					</div>
+
+					{!destinationCapability.supported && (
+						<div
+							role="alert"
+							className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-500"
+						>
+							{destinationCapability.message}
+						</div>
+					)}
 
 					{/* Destination tag/label */}
 					<div className="space-y-1.5">

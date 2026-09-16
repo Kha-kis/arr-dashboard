@@ -7,6 +7,7 @@
 import { randomUUID } from "node:crypto";
 import {
 	bulkApprovalSchema,
+	type CleanupFieldOptionsResponse,
 	type CleanupRuleExpression,
 	cleanupExplainRequestSchema,
 	cleanupRuleRequiresRadarrRatings,
@@ -22,6 +23,11 @@ import {
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
+import { decodeJellyfinLibraryGenerationMetadata } from "../lib/jellyfin/jellyfin-generation-metadata.js";
+import {
+	loadAdditionalTargetWatchFacts,
+	positiveTargetWatchRuleTypes,
+} from "../lib/library-cleanup/additional-target-watch-policy.js";
 import {
 	approvalRecordToAuditSnapshot,
 	cleanupAuditEnabled,
@@ -39,6 +45,7 @@ import {
 	executeCleanupRun,
 	executeRetryItems,
 	extractSeriesTmdbId,
+	loadTargetScopedPlexWatchCountFacts,
 	mergeSanitizedProviderEvidence,
 	prefetchFreshPlexEpisodeWatchData,
 	withCleanupPolicyMutationLease,
@@ -58,17 +65,54 @@ import {
 	buildFreshCompleteFileIdIndex,
 	getAllHashesForFileIdComplete,
 } from "../lib/library-sync/infohash-backfill-by-inode.js";
+
 import {
 	hasAuthoritativePlexEvidence,
 	listPublishedSections,
+	PlexAuthorityService,
 	summarizePlexEvidence,
 } from "../lib/plex/plex-authority-service.js";
-import { PlexAuthorityService } from "../lib/plex/plex-authority-service.js";
 import { createQuiClient } from "../lib/qui/client-factory.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { safeJsonParse as utilSafeJsonParse } from "../lib/utils/json.js";
 import { parsePaginationQuery } from "../lib/utils/pagination.js";
 import { validateRequest } from "../lib/utils/validate.js";
+
+function hasApplicableTargetScopedPlexWatchCountRule(
+	rules: Array<{
+		enabled: boolean;
+		targetScope: string;
+		ruleType: string;
+		parameters: string;
+		operator: string | null;
+		conditions: string | null;
+	}>,
+): boolean {
+	return rules.some((rule) => {
+		if (!rule.enabled || rule.targetScope === "episode") return false;
+		const expression = normalizeStoredCleanupRuleExpression(rule);
+		if (!expression) return false;
+		const conditions: Array<{ ruleType: string; parameters: Record<string, unknown> }> = [];
+		const stack = [expression.root];
+		while (stack.length > 0) {
+			const node = stack.pop()!;
+			if (node.type === "condition") conditions.push(node);
+			else if (node.type === "group") stack.push(...node.children);
+			else stack.push(node.child);
+		}
+		return (
+			conditions.length > 0 &&
+			conditions.every(
+				(condition) =>
+					condition.ruleType === "plex_watch_count" &&
+					condition.parameters.operator === "greater_than" &&
+					typeof condition.parameters.count === "number" &&
+					Number.isFinite(condition.parameters.count) &&
+					condition.parameters.count >= 0,
+			)
+		);
+	});
+}
 
 // Rate limits
 const PREVIEW_RATE_LIMIT = { max: 5, timeWindow: "1 minute" };
@@ -260,12 +304,99 @@ function safeJsonParse(val: string | null | undefined): unknown {
 	}
 }
 
+type JellyfinGenerationStatus = {
+	instanceId: string;
+	cacheType: string;
+	lastResult: string;
+	lastErrorMessage: string | null;
+	lastRefreshedAt: Date;
+	itemCount: number;
+	lastAttemptAt: Date | null;
+	lastAttemptResult: string | null;
+	lastAttemptErrorMessage: string | null;
+	generationId: string | null;
+	generationMetadata: string | null;
+	connectionGeneration: number | null;
+	identityGeneration: number | null;
+};
+
+type JellyfinAuthorityInstance = {
+	id: string;
+	service: string;
+	enabled: boolean;
+	expectedIdentity: string | null;
+	identityStatus: string;
+	connectionGeneration: number;
+	identityGeneration: number;
+};
+
+function hasAuthoritativeCompleteJellyfinGeneration(
+	status: JellyfinGenerationStatus,
+	instance: JellyfinAuthorityInstance,
+): boolean {
+	const lastRefreshedAt = status.lastRefreshedAt?.getTime();
+	const lastAttemptAt = status.lastAttemptAt?.getTime();
+	if (
+		!instance.enabled ||
+		instance.identityStatus !== "VERIFIED" ||
+		typeof instance.expectedIdentity !== "string" ||
+		instance.expectedIdentity.trim() === "" ||
+		status.cacheType !== "jellyfin" ||
+		status.lastResult !== "success" ||
+		status.lastErrorMessage !== null ||
+		status.lastAttemptResult !== "success" ||
+		status.lastAttemptErrorMessage !== null ||
+		!Number.isFinite(lastRefreshedAt) ||
+		lastAttemptAt !== lastRefreshedAt ||
+		!status.generationId ||
+		status.connectionGeneration !== instance.connectionGeneration ||
+		status.identityGeneration !== instance.identityGeneration
+	) {
+		return false;
+	}
+	const metadata = decodeJellyfinLibraryGenerationMetadata(status.generationMetadata);
+	if (!metadata.ok || metadata.metadata.publicationLevel !== "authoritative") return false;
+	const expectedProvider = instance.service === "EMBY" ? "emby" : "jellyfin";
+	return (
+		metadata.metadata.provider === expectedProvider &&
+		metadata.metadata.itemCount === status.itemCount &&
+		metadata.metadata.coverageReceipt.observedAt === status.lastRefreshedAt.toISOString() &&
+		metadata.metadata.connectionGeneration === instance.connectionGeneration &&
+		metadata.metadata.identityGeneration === instance.identityGeneration
+	);
+}
+
+function fingerprintJellyfinAuthority(
+	instances: readonly JellyfinAuthorityInstance[],
+	statuses: readonly JellyfinGenerationStatus[],
+): string {
+	return JSON.stringify(
+		instances
+			.map((instance) => ({
+				instance: {
+					id: instance.id,
+					service: instance.service,
+					enabled: instance.enabled,
+					expectedIdentity: instance.expectedIdentity,
+					identityStatus: instance.identityStatus,
+					connectionGeneration: instance.connectionGeneration,
+					identityGeneration: instance.identityGeneration,
+				},
+				status: statuses.find((candidate) => candidate.instanceId === instance.id) ?? null,
+			}))
+			.sort((left, right) => left.instance.id.localeCompare(right.instance.id)),
+	);
+}
+
 // ============================================================================
 // Routes
 // ============================================================================
 
 // Field options cache: userId → { data, expiresAt }
-const fieldOptionsCache = new Map<string, { data: unknown; expiresAt: number }>();
+const fieldOptionsCache = new Map<
+	string,
+	{ data: CleanupFieldOptionsResponse; expiresAt: number; jellyfinAuthorityFingerprint: string }
+>();
 const FIELD_OPTIONS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const CLEANUP_ACTIVITY_EVENTS_PER_TIMELINE = 200;
 const cleanupActivityEventParamsSchema = z.object({
@@ -399,11 +530,76 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 	 */
 	app.get("/library-cleanup/field-options", async (request, reply) => {
 		const userId = request.currentUser!.id;
+		const readJellyfinAuthoritySnapshot = async () => {
+			const instances = await app.prisma.serviceInstance.findMany({
+				where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
+				select: {
+					id: true,
+					service: true,
+					enabled: true,
+					expectedIdentity: true,
+					identityStatus: true,
+					connectionGeneration: true,
+					identityGeneration: true,
+				},
+			});
+			const instanceIds = instances.map((instance) => instance.id);
+			const statuses: JellyfinGenerationStatus[] =
+				instanceIds.length === 0
+					? []
+					: await app.prisma.cacheRefreshStatus.findMany({
+							where: {
+								instanceId: { in: instanceIds },
+								cacheType: "jellyfin",
+								instance: { userId },
+							},
+							select: {
+								instanceId: true,
+								cacheType: true,
+								lastResult: true,
+								lastErrorMessage: true,
+								lastRefreshedAt: true,
+								itemCount: true,
+								lastAttemptAt: true,
+								lastAttemptResult: true,
+								lastAttemptErrorMessage: true,
+								generationId: true,
+								generationMetadata: true,
+								connectionGeneration: true,
+								identityGeneration: true,
+							},
+						});
+			return {
+				instances,
+				statuses,
+				fingerprint: fingerprintJellyfinAuthority(instances, statuses),
+			};
+		};
+		const initialJellyfinSnapshot = await readJellyfinAuthoritySnapshot();
+		// Rule availability is configuration, not evidence authorizing execution.
+		// Recheck even on a cache hit so connecting/disabling a provider is reflected immediately.
+		const positiveWatchInstances = await app.prisma.serviceInstance.findMany({
+			where: { userId, enabled: true, service: { in: ["TAUTULLI", "PLEX"] } },
+			select: { service: true },
+		});
+		const hasTautulliPositiveWatchCount =
+			positiveWatchInstances.some((instance) => instance.service === "TAUTULLI") &&
+			positiveWatchInstances.some((instance) => instance.service === "PLEX");
+		const jellyfinInstances = initialJellyfinSnapshot.instances;
+		const jellyfinStatuses = initialJellyfinSnapshot.statuses;
+		const initialJellyfinAuthorityFingerprint = initialJellyfinSnapshot.fingerprint;
+		let jellyfinAuthorityFingerprint = initialJellyfinAuthorityFingerprint;
+		let jellyfinAuthorityStable = true;
+		let jellyfinInstancesForResult = jellyfinInstances;
 
 		// Check cache
 		const cached = fieldOptionsCache.get(userId);
-		if (cached && cached.expiresAt > Date.now()) {
-			return reply.send(cached.data);
+		if (
+			cached &&
+			cached.expiresAt > Date.now() &&
+			cached.jellyfinAuthorityFingerprint === initialJellyfinAuthorityFingerprint
+		) {
+			return reply.send({ ...cached.data, hasTautulliPositiveWatchCount });
 		}
 
 		// Get user's Sonarr + Radarr instances (full fields for client creation)
@@ -491,8 +687,8 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			}
 		};
 
-		// B1 containment: do not offer Tautulli-dependent rule values while
-		// Tautulli is deliberately non-actionable for cleanup.
+		// Generic Tautulli history remains non-authoritative. The separate positive
+		// watch-count option uses target-specific live proof and does not need user lists.
 		const tautulliUsers = new Set<string>();
 
 		// Extract distinct Plex users / libraries / collections / labels in
@@ -532,16 +728,32 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		// Extract distinct Jellyfin users + libraries (cursor-paginated)
 		const jellyfinUsers = new Set<string>();
 		const jellyfinLibraries = new Set<string>();
-		const jellyfinInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] } },
-			select: { id: true },
-		});
 		if (jellyfinInstances.length > 0) {
-			const jellyfinInstanceIds = jellyfinInstances.map((i) => i.id);
+			const jellyfinAuthorities = jellyfinInstances.flatMap((instance) => {
+				const status = jellyfinStatuses.find((candidate) => candidate.instanceId === instance.id);
+				return status && hasAuthoritativeCompleteJellyfinGeneration(status, instance)
+					? [
+							{
+								instanceId: instance.id,
+								connectionGeneration: instance.connectionGeneration,
+								identityGeneration: instance.identityGeneration,
+							},
+						]
+					: [];
+			});
+			const candidateJellyfinUsers = new Set<string>();
+			const candidateJellyfinLibraries = new Set<string>();
 			let cursor: string | undefined;
-			while (true) {
+			while (jellyfinAuthorities.length > 0) {
 				const batch = await app.prisma.jellyfinCache.findMany({
-					where: { instanceId: { in: jellyfinInstanceIds } },
+					where: {
+						instance: { userId },
+						OR: jellyfinAuthorities.map((authority) => ({
+							instanceId: authority.instanceId,
+							connectionGeneration: authority.connectionGeneration,
+							identityGeneration: authority.identityGeneration,
+						})),
+					},
 					select: { id: true, watchedByUsers: true, libraryName: true },
 					take: FIELD_OPTIONS_BATCH_SIZE,
 					...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
@@ -549,11 +761,32 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				});
 				if (batch.length === 0) break;
 				for (const row of batch) {
-					if (row.libraryName) jellyfinLibraries.add(row.libraryName);
-					collectStrings(row.watchedByUsers, jellyfinUsers);
+					if (typeof row.libraryName === "string" && row.libraryName)
+						candidateJellyfinLibraries.add(row.libraryName);
+					collectStrings(row.watchedByUsers, candidateJellyfinUsers);
 				}
 				cursor = batch[batch.length - 1]!.id;
 				if (batch.length < FIELD_OPTIONS_BATCH_SIZE) break;
+			}
+			const finalJellyfinSnapshot = await readJellyfinAuthoritySnapshot();
+			jellyfinInstancesForResult = finalJellyfinSnapshot.instances;
+			jellyfinAuthorityFingerprint = finalJellyfinSnapshot.fingerprint;
+			jellyfinAuthorityStable =
+				initialJellyfinAuthorityFingerprint === finalJellyfinSnapshot.fingerprint;
+			if (
+				jellyfinAuthorityStable &&
+				jellyfinAuthorities.every((authority) => {
+					const instance = finalJellyfinSnapshot.instances.find(
+						(candidate) => candidate.id === authority.instanceId,
+					);
+					const status = finalJellyfinSnapshot.statuses.find(
+						(candidate) => candidate.instanceId === authority.instanceId,
+					);
+					return instance && status && hasAuthoritativeCompleteJellyfinGeneration(status, instance);
+				})
+			) {
+				for (const value of candidateJellyfinUsers) jellyfinUsers.add(value);
+				for (const value of candidateJellyfinLibraries) jellyfinLibraries.add(value);
 			}
 		}
 
@@ -597,15 +830,21 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			arrTags,
 			hasPlex: plexEvidence.length > 0,
 			hasTautulli: false,
-			hasJellyfin: jellyfinInstances.length > 0,
+			hasTautulliPositiveWatchCount,
+			hasJellyfin: jellyfinInstancesForResult.length > 0,
 			...(plexEvidence.length > 0 ? { plexEvidence: summarizePlexEvidence(plexEvidence) } : {}),
 		};
 
 		// Store in cache
-		fieldOptionsCache.set(userId, {
-			data: result,
-			expiresAt: Date.now() + FIELD_OPTIONS_CACHE_TTL,
-		});
+		if (jellyfinAuthorityStable) {
+			fieldOptionsCache.set(userId, {
+				data: result,
+				expiresAt: Date.now() + FIELD_OPTIONS_CACHE_TTL,
+				jellyfinAuthorityFingerprint,
+			});
+		} else {
+			fieldOptionsCache.delete(userId);
+		}
 
 		return reply.send(result);
 	});
@@ -2048,12 +2287,51 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			config.rules.filter((rule) => rule.targetScope !== "episode"),
 			{ providerEvidence: "live" },
 		);
+		const targetScopedPlexFacts = hasApplicableTargetScopedPlexWatchCountRule(config.rules)
+			? await loadTargetScopedPlexWatchCountFacts(
+					{
+						prisma: app.prisma,
+						arrClientFactory: app.arrClientFactory,
+						encryptor: app.encryptor,
+						traktClientId: process.env.TRAKT_CLIENT_ID ?? null,
+						log: request.log,
+					},
+					userId,
+					[cacheItem as unknown as CacheItemForEval],
+				)
+			: new Map();
+		const additionalTargetFacts = await loadAdditionalTargetWatchFacts(
+			{
+				prisma: app.prisma,
+				arrClientFactory: app.arrClientFactory,
+				encryptor: app.encryptor,
+				traktClientId: process.env.TRAKT_CLIENT_ID ?? null,
+				log: request.log,
+			},
+			userId,
+			[cacheItem as unknown as CacheItemForEval],
+			positiveTargetWatchRuleTypes(config.rules),
+			ctx.providerWatchCountFacts,
+			{ verifyPositiveCounts: true },
+		);
+		const explainCtx = {
+			...ctx,
+			providerWatchCountFacts: new Map(
+				[...(ctx.providerWatchCountFacts ?? [])].map(([key, facts]) => [key, [...facts]]),
+			),
+		};
+		for (const [key, facts] of [...targetScopedPlexFacts, ...additionalTargetFacts]) {
+			explainCtx.providerWatchCountFacts!.set(key, [
+				...(explainCtx.providerWatchCountFacts!.get(key) ?? []),
+				...facts,
+			]);
+		}
 
 		const results = explainItemAgainstRules(
 			cacheItem as unknown as CacheItemForEval,
 			config.rules,
 			instance.service,
-			ctx,
+			explainCtx,
 			episodeEvidence,
 			failedSources,
 		);

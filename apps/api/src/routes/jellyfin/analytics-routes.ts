@@ -8,6 +8,11 @@
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import {
+	isArithmeticAuthoritativeProviderObservationStatus,
+	type JellyfinDisplayInstance,
+	readOwnedJellyfinEpisodeDisplaySources,
+} from "../../lib/jellyfin/jellyfin-display-evidence.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { analyticsQuery } from "../plex/analytics-schemas.js";
 import { aggregateBandwidthAnalytics } from "../plex/lib/bandwidth-analytics-helpers.js";
@@ -382,30 +387,60 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 
 		const instances = await app.prisma.serviceInstance.findMany({
 			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true },
+			select: { id: true, label: true, service: true },
 		});
 
 		if (instances.length === 0) {
 			return reply.send({ shows: [] });
 		}
 
-		const episodes = await app.prisma.jellyfinEpisodeCache.findMany({
-			where: {
-				instanceId: { in: instances.map((i) => i.id) },
-				showTmdbId: { in: tmdbIds },
-			},
-			select: { showTmdbId: true, watched: true, watchedByUsers: true },
+		const displayInstances: JellyfinDisplayInstance[] = instances.flatMap((instance) =>
+			instance.service === "JELLYFIN" || instance.service === "EMBY"
+				? [{ id: instance.id, label: instance.label, service: instance.service }]
+				: [],
+		);
+		const displayEvidence = await readOwnedJellyfinEpisodeDisplaySources({
+			prisma: app.prisma,
+			userId,
+			instances: displayInstances,
 		});
+		if (!isArithmeticAuthoritativeProviderObservationStatus(displayEvidence.providerStatus)) {
+			return reply.send({ shows: [], providerStatus: displayEvidence.providerStatus });
+		}
 
-		const { parseFailures, totalEpisodes, failedPreviews, ...completion } =
-			aggregateUserEpisodeCompletion(episodes);
-		if (parseFailures > 0) {
+		const episodes = displayEvidence.sources
+			.flatMap((source) => source.rows)
+			.filter((episode) => tmdbIds.includes(episode.showTmdbId))
+			.sort(
+				(left, right) =>
+					left.showTmdbId - right.showTmdbId ||
+					left.instanceId.localeCompare(right.instanceId) ||
+					left.seasonNumber - right.seasonNumber ||
+					left.episodeNumber - right.episodeNumber ||
+					left.id.localeCompare(right.id),
+			);
+
+		const completionResult = aggregateUserEpisodeCompletion(episodes);
+		if (completionResult.parseFailures > 0) {
 			request.log.warn(
-				{ parseFailures, totalEpisodes, failedPreviews, route: "jellyfin/episode-completion" },
+				{
+					parseFailures: completionResult.parseFailures,
+					totalEpisodes: completionResult.totalEpisodes,
+					route: "jellyfin/episode-completion",
+				},
 				"Episode cache JSON parse failures detected",
 			);
 		}
-		return reply.send(completion);
+		const shows = completionResult.shows
+			.map((show) => ({
+				...show,
+				users: [...show.users].sort(
+					(left, right) =>
+						right.percent - left.percent || left.username.localeCompare(right.username),
+				),
+			}))
+			.sort((left, right) => left.tmdbId - right.tmdbId);
+		return reply.send({ shows, providerStatus: displayEvidence.providerStatus });
 	});
 
 	// ── Top Media Leaderboard ─────────────────────────────────────

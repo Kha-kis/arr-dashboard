@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ServiceBadge } from "../../../components/layout";
 import { useLibraryMonitorMutation } from "../../../hooks/api/useLibrary";
-import { type DiskWasteItem, useDiskWasteInsights } from "../../../hooks/api/useDiskWasteInsights";
+import type { DiskWasteItem, DiskWasteResponse } from "../../../hooks/api/useDiskWasteInsights";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { getLinuxInstanceName, getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
@@ -24,10 +24,12 @@ function formatSize(bytes: number): string {
  * Collapsed by default — expands to show the list.
  */
 export function DiskWastePanel({
+	queryData,
 	autoExpand = false,
 	isDismissed,
 	onDismiss,
 }: {
+	queryData: DiskWasteResponse | undefined;
 	autoExpand?: boolean;
 	isDismissed?: (instanceId: string, arrItemId: number) => boolean;
 	onDismiss?: (instanceId: string, arrItemId: number) => void;
@@ -45,21 +47,28 @@ export function DiskWastePanel({
 	const monitorMutation = useLibraryMonitorMutation();
 	const [pendingId, setPendingId] = useState<string | null>(null);
 
-	const { data, isLoading } = useDiskWasteInsights({
-		minSizeGb: 1,
-		minAgeDays: 30,
-		limit: 25,
-	});
-
-	const allItems = data?.data?.items ?? [];
+	const allItems = queryData?.data?.items ?? [];
+	const confirmedItems = allItems.filter((item) => item.watchState === "unwatched");
+	const unknownItems = [
+		...(queryData?.data?.unknownItems ?? []),
+		...allItems.filter((item) => item.watchState !== "unwatched"),
+	].filter(
+		(item, index, collection) =>
+			collection.findIndex(
+				(candidate) =>
+					candidate.instanceId === item.instanceId && candidate.arrItemId === item.arrItemId,
+			) === index,
+	);
 	const items = isDismissed
-		? allItems.filter((i) => !isDismissed(i.instanceId, i.arrItemId))
-		: allItems;
-	const totalWasted = items.reduce((sum, r) => sum + r.sizeOnDisk, 0);
-	const hasWatchData = data?.data?.hasWatchData ?? data?.data?.hasPlexData ?? false;
+		? confirmedItems.filter((i) => !isDismissed(i.instanceId, i.arrItemId))
+		: confirmedItems;
+	const visibleUnknownItems = isDismissed
+		? unknownItems.filter((i) => !isDismissed(i.instanceId, i.arrItemId))
+		: unknownItems;
+	const totalWasted = queryData?.data?.totalWastedBytes ?? null;
 
 	const handleUnmonitor = async (item: DiskWasteItem) => {
-		if (!item.monitored) return;
+		if (item.watchState !== "unwatched" || !item.monitored) return;
 		const key = `${item.instanceId}:${item.arrItemId}`;
 		setPendingId(key);
 		try {
@@ -77,8 +86,7 @@ export function DiskWastePanel({
 		}
 	};
 
-	// Don't render if no items, still loading, or no watch server connected
-	if (isLoading || items.length === 0 || !hasWatchData) return null;
+	if (items.length === 0 && visibleUnknownItems.length === 0) return null;
 
 	return (
 		<div
@@ -101,13 +109,19 @@ export function DiskWastePanel({
 						<AlertTriangle className="h-4 w-4" style={{ color: SEMANTIC_COLORS.warning.from }} />
 					</div>
 					<div>
-						<span className="text-sm font-medium text-foreground">
-							{items.length} unwatched item{items.length !== 1 ? "s" : ""} using{" "}
-							{formatSize(totalWasted)}
-						</span>
-						{!hasWatchData && (
-							<span className="text-xs text-muted-foreground ml-2">
-								(no media server connected)
+						{items.length > 0 && (
+							<span className="text-sm font-medium text-foreground">
+								{items.length} unwatched item{items.length !== 1 ? "s" : ""}
+								{totalWasted !== null ? ` using ${formatSize(totalWasted)}` : ""}
+							</span>
+						)}
+						{items.length > 0 && visibleUnknownItems.length > 0 && (
+							<span className="text-sm text-muted-foreground"> · </span>
+						)}
+						{visibleUnknownItems.length > 0 && (
+							<span className="text-sm font-medium text-foreground">
+								{visibleUnknownItems.length} item
+								{visibleUnknownItems.length !== 1 ? "s" : ""} with unknown watch status
 							</span>
 						)}
 					</div>
@@ -123,10 +137,17 @@ export function DiskWastePanel({
 			{/* Expanded content */}
 			{expanded && (
 				<div className="border-t border-border/20 px-4 py-3 space-y-2">
-					<p className="text-xs text-muted-foreground mb-3">
-						Largest library items ({">"}1 GB) added over 30 days ago that have never been watched.
-						Sorted by size.
-					</p>
+					{queryData?.data?.limited && (
+						<p className="text-xs text-muted-foreground mb-3">
+							Showing a bounded set of candidates; more items may need review.
+						</p>
+					)}
+					{items.length > 0 && (
+						<p className="text-xs text-muted-foreground mb-3">
+							Largest library items ({">"}1 GB) added over 30 days ago with confirmed unwatched
+							status. Sorted by size.
+						</p>
+					)}
 					{items.map((item) => (
 						<DiskWasteRow
 							key={`${item.instanceId}-${item.arrItemId}`}
@@ -137,6 +158,23 @@ export function DiskWastePanel({
 							onDismiss={onDismiss ? () => onDismiss(item.instanceId, item.arrItemId) : undefined}
 						/>
 					))}
+					{visibleUnknownItems.length > 0 && (
+						<div className="space-y-2">
+							<p className="text-xs text-muted-foreground mb-3">
+								Watch status is unknown for these candidates; they are not recommendations.
+							</p>
+							{visibleUnknownItems.map((item) => (
+								<DiskWasteUnknownRow
+									key={`unknown-${item.instanceId}-${item.arrItemId}`}
+									item={item}
+									incognitoMode={incognitoMode}
+									onDismiss={
+										onDismiss ? () => onDismiss(item.instanceId, item.arrItemId) : undefined
+									}
+								/>
+							))}
+						</div>
+					)}
 				</div>
 			)}
 		</div>
@@ -189,6 +227,49 @@ function DiskWasteRow({
 					Unmonitor
 				</button>
 			)}
+			{onDismiss && (
+				<button
+					type="button"
+					onClick={onDismiss}
+					className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/10"
+					title="Dismiss this item from insights"
+				>
+					<XCircle className="h-3 w-3" />
+				</button>
+			)}
+		</div>
+	);
+}
+
+function DiskWasteUnknownRow({
+	item,
+	incognitoMode,
+	onDismiss,
+}: {
+	item: DiskWasteItem;
+	incognitoMode: boolean;
+	onDismiss?: () => void;
+}) {
+	return (
+		<div className="group flex items-center gap-3 rounded-lg px-3 py-2 bg-muted/5 border border-border/10">
+			<AlertTriangle
+				className="h-3.5 w-3.5 shrink-0"
+				style={{ color: SEMANTIC_COLORS.warning.from }}
+			/>
+			<div className="flex-1 min-w-0">
+				<span className="text-sm font-medium text-foreground truncate block">
+					{incognitoMode ? getLinuxIsoName(item.title) : item.title}
+					{item.year ? ` (${item.year})` : ""}
+				</span>
+				<span className="text-xs text-muted-foreground">
+					{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}
+					{" · "}Watch status unknown
+				</span>
+			</div>
+			<ServiceBadge service={item.service} />
+			<span className="text-xs font-mono text-muted-foreground shrink-0">
+				{formatSize(item.sizeOnDisk)}
+			</span>
 			{onDismiss && (
 				<button
 					type="button"

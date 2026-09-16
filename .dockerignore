@@ -15,6 +15,7 @@
 .env.*
 !.env.example
 !.env.production.example
+apps/api/config-dev/
 
 # Git
 .git

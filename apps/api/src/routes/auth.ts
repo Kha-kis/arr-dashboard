@@ -6,6 +6,10 @@ import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
 import { hashPassword, verifyPassword } from "../lib/auth/password.js";
 import { getSessionMetadata } from "../lib/auth/session-metadata.js";
 import { parseUserAgent } from "../lib/auth/user-agent-parser.js";
+import {
+	createJellyfinMutationRepository,
+	MutationRepositoryError,
+} from "../lib/label-sync/jellyfin-mutation-repository.js";
 import { withExclusiveCleanupTopologyMutationLease } from "../lib/library-cleanup/cleanup-executor.js";
 import { assertNoActiveTrashRecoveryForInstance } from "../lib/trash-guides/recovery-evidence.js";
 import { validateRequest } from "../lib/utils/validate.js";
@@ -697,13 +701,20 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					});
 				}
 
-				// Log BEFORE deletion since the user record will be gone after
+				await createJellyfinMutationRepository(app.prisma).withGuardedAccountDeletion(
+					{ userId },
+					async (tx) => {
+						// Repeat the authorization checks under the same transaction that
+						// fences mutation claims and removes terminal recovery records.
+						const current = await tx.user.findUnique({ where: { id: userId } });
+						const oidc = await tx.oIDCAccount.count({ where: { userId } });
+						const credentials = await tx.webAuthnCredential.count({ where: { userId } });
+						if (!current || current.hashedPassword || oidc > 0 || credentials > 0)
+							throw new MutationRepositoryError("conflict");
+						await tx.user.delete({ where: { id: userId } });
+					},
+				);
 				request.log.info({ username: request.currentUser!.username }, "Account deleted");
-
-				// Delete all user data (cascade will handle related records)
-				await app.prisma.user.delete({
-					where: { id: userId },
-				});
 
 				// Invalidate session and clear cookie
 				if (request.sessionToken) {

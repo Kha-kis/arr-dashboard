@@ -35,9 +35,10 @@ import {
 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { PlexQueryEvidenceNotice } from "../../../components/presentational/plex-evidence-notice";
+import { ProviderObservationNotice } from "../../../components/presentational/provider-observation-notice";
 import { Button } from "../../../components/ui";
 import { useMovieFileQuery } from "../../../hooks/api/useLibrary";
-import { useEpisodeWatchStatus } from "../../../hooks/api/usePlex";
+import { useLibraryEpisodeWatchStatus } from "../../../hooks/api/useLibraryEpisodeWatchStatus";
 import { useSeerrMovieDetails, useSeerrTvDetails } from "../../../hooks/api/useSeerr";
 import { useFocusTrap } from "../../../hooks/useFocusTrap";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -45,6 +46,7 @@ import {
 	getLinuxInstanceName,
 	getLinuxIsoName,
 	getLinuxSavePath,
+	getLinuxUsername,
 	useIncognitoMode,
 } from "../../../lib/incognito";
 import { RATING_COLOR, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
@@ -90,6 +92,8 @@ export interface EnrichedDetailModalProps {
 	plexUrl?: string | null;
 	/** Label for the media server link (e.g., "Plex", "Jellyfin", "Emby") */
 	mediaServerLabel?: string;
+	/** Native endpoint for the selected instance (Emby uses the Jellyfin adapter). */
+	episodeProvider?: "plex" | "jellyfin";
 }
 
 export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
@@ -104,6 +108,7 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 	userRating,
 	plexUrl,
 	mediaServerLabel,
+	episodeProvider = "plex",
 }) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const focusTrapRef = useFocusTrap<HTMLDivElement>(true, onClose);
@@ -126,19 +131,20 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 	const liveMovieFile = movieFileQuery.data?.movieFile ?? null;
 	const liveQualityProfileName = movieFileQuery.data?.qualityProfileName;
 
-	// Fetch Plex episode watch status for series items
-	const episodeWatchQuery = useEpisodeWatchStatus(
+	// Query the selected native provider without cross-provider fallback.
+	const episodeWatchQuery = useLibraryEpisodeWatchStatus(
 		!isMovie ? plexData?.instanceId : undefined,
 		!isMovie ? tmdbId : undefined,
+		episodeProvider,
 	);
 	const episodeWatchMap = useMemo(() => {
-		if (!episodeWatchQuery.data?.episodes) return null;
+		if (!episodeWatchQuery.episodes) return null;
 		const map = new Map<string, PlexEpisodeStatus>();
-		for (const ep of episodeWatchQuery.data.episodes) {
+		for (const ep of episodeWatchQuery.episodes) {
 			map.set(`${ep.seasonNumber}:${ep.episodeNumber}`, ep);
 		}
 		return map;
-	}, [episodeWatchQuery.data]);
+	}, [episodeWatchQuery.episodes]);
 
 	const details = isMovie ? movieQuery.data : tvQuery.data;
 	const isDetailsLoading = isMovie ? movieQuery.isLoading : tvQuery.isLoading;
@@ -350,16 +356,8 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 				{/* Hero backdrop */}
 				{!incognitoMode && <BackdropHero backdropPath={backdropPath} title={title} />}
 
-				{!isMovie && (
-					<PlexQueryEvidenceNotice
-						error={episodeWatchQuery.error}
-						evidence={episodeWatchQuery.data?.evidence}
-						label="Episode watch status"
-					/>
-				)}
-
 				{/* Content */}
-				<div className="relative -mt-24 px-6 pb-6 space-y-6">
+				<div className={`relative px-6 pb-6 space-y-6 ${incognitoMode ? "pt-6" : "-mt-24"}`}>
 					{/* Header: poster + info */}
 					<div className="flex gap-5">
 						{!incognitoMode && hasPoster && (
@@ -471,6 +469,21 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 							</div>
 						</div>
 					</div>
+					{!isMovie &&
+						(episodeProvider === "jellyfin" ? (
+							<ProviderObservationNotice
+								providerStatus={episodeWatchQuery.providerStatus}
+								isError={!!episodeWatchQuery.error}
+								label="Episode watch status"
+							/>
+						) : (
+							<PlexQueryEvidenceNotice
+								error={episodeWatchQuery.error}
+								evidence={episodeWatchQuery.plexEvidence}
+								hasDisplayedValues={(episodeWatchMap?.size ?? 0) > 0}
+								label="Episode watch status"
+							/>
+						))}
 
 					{/* Loading spinner */}
 					{isDetailsLoading && (
@@ -901,7 +914,7 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 														seasonNumber={season.seasonNumber}
 													/>
 
-													{/* Plex Watch Status */}
+													{/* Observed watch status */}
 													{episodeWatchMap &&
 														episodeWatchMap.size > 0 &&
 														(() => {
@@ -925,7 +938,7 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 																			Watch Status
 																		</span>
 																		<span className="text-xs text-muted-foreground">
-																			({watchedCount}/{seasonEps.length} watched)
+																			(Observed watched episodes: {watchedCount})
 																		</span>
 																	</div>
 																	<div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-1.5">
@@ -941,7 +954,7 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 																				}}
 																				title={
 																					ep.watched && ep.watchedByUsers.length > 0
-																						? `Watched by: ${ep.watchedByUsers.join(", ")}${ep.lastWatchedAt ? ` — ${new Date(ep.lastWatchedAt).toLocaleDateString()}` : ""}`
+																						? `Watched by: ${ep.watchedByUsers.map((name) => (incognitoMode ? getLinuxUsername(name) : name)).join(", ")}${ep.lastWatchedAt ? ` — ${new Date(ep.lastWatchedAt).toLocaleDateString()}` : ""}`
 																						: undefined
 																				}
 																			>
@@ -965,7 +978,7 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 																				<span
 																					className={`truncate ${ep.watched ? "text-foreground/70" : "text-muted-foreground/40"}`}
 																				>
-																					{ep.title}
+																					{incognitoMode ? getLinuxIsoName(ep.title) : ep.title}
 																				</span>
 																			</div>
 																		))}

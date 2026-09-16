@@ -5,17 +5,22 @@
  * Enables users to see when data was last synced and trigger a refresh.
  */
 
-import type { CacheHealthResponse } from "@arr/shared";
+import type { CacheHealthResponse, ProviderObservationAcceptedResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import { requireEnabledInstance } from "../../lib/arr/instance-helpers.js";
+import { AppValidationError } from "../../lib/errors.js";
 import {
-	createOwnedJellyfinPublicationSnapshot,
-	refreshJellyfinCache,
-} from "../../lib/jellyfin/jellyfin-cache-refresher.js";
-import { runJellyfinCacheRefreshSingleFlight } from "../../lib/jellyfin/jellyfin-cache-singleflight.js";
-import { requireJellyfinClient } from "../../lib/jellyfin/jellyfin-helpers.js";
+	type JellyfinCacheHealthInstance,
+	readOwnedJellyfinCacheHealthSources,
+} from "../../lib/jellyfin/jellyfin-cache-health.js";
+import { refreshOwnedJellyfinCacheWithAttempt } from "../../lib/jellyfin/jellyfin-cache-refresher.js";
+import { runJellyfinCacheRefreshSingleFlightWithAttempt } from "../../lib/jellyfin/jellyfin-cache-singleflight.js";
+import { startProviderCacheRefreshInBackground } from "../../lib/provider-observation/background-cache-refresh.js";
+import type { FastifyWithLibraryRefreshRecovery } from "../../lib/services/library-refresh-recovery.js";
+import { claimProviderCacheRefreshAttempt } from "../../lib/services/provider-cache-status.js";
+import { createProviderPublicationAuthority } from "../../lib/services/provider-identity-guard.js";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { buildCacheHealthItems } from "../plex/lib/cache-health-helpers.js";
 
 const instanceParams = z.object({
 	instanceId: z.string().min(1),
@@ -31,26 +36,21 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 		const userId = request.currentUser!.id;
 
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true, label: true },
-		});
-
-		if (instances.length === 0) {
-			const response: CacheHealthResponse = { items: [] };
-			return reply.send(response);
-		}
-
-		const instanceIds = instances.map((i) => i.id);
-		const instanceMap = new Map(instances.map((i) => [i.id, i.label]));
-
-		const statuses = await app.prisma.cacheRefreshStatus.findMany({
 			where: {
-				instanceId: { in: instanceIds },
-				cacheType: { in: ["jellyfin", "jellyfin_episode"] },
+				userId,
+				service: { in: ["JELLYFIN", "EMBY"] },
+				enabled: true,
 			},
+			select: { id: true, label: true, service: true, createdAt: true },
 		});
 
-		const items = buildCacheHealthItems(statuses, instanceMap);
+		const sources = await readOwnedJellyfinCacheHealthSources({
+			prisma: app.prisma,
+			userId,
+			instances: instances as JellyfinCacheHealthInstance[],
+		});
+
+		const items = sources.map((source) => source.item);
 		const response: CacheHealthResponse = { items };
 		return reply.send(response);
 	});
@@ -67,26 +67,36 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 		async (request, reply) => {
 			const { instanceId } = validateRequest(instanceParams, request.params);
 			const userId = request.currentUser!.id;
+			const log = request.log;
 
-			const { instance } = await requireJellyfinClient(app, userId, instanceId);
-			const publicationInstance = createOwnedJellyfinPublicationSnapshot(app.encryptor, instance);
+			const instance = await requireEnabledInstance(app, userId, instanceId);
+			if (instance.service !== "JELLYFIN" && instance.service !== "EMBY") {
+				throw new AppValidationError("Instance is not a Jellyfin or Emby service");
+			}
+			const authority = createProviderPublicationAuthority(instance);
+			const recovery = (app as FastifyWithLibraryRefreshRecovery).libraryRefreshRecovery;
 
-			const result = await runJellyfinCacheRefreshSingleFlight(
-				publicationInstance,
-				() =>
-					refreshJellyfinCache({
-						prisma: app.prisma,
-						instance: publicationInstance,
-						log: request.log,
-					}),
-				{ prisma: app.prisma, log: request.log },
-			);
-
-			return reply.send({
-				success: result.complete && Boolean(result.completedAt),
-				upserted: result.upserted,
-				errors: result.errors,
+			await startProviderCacheRefreshInBackground({
+				cacheType: "jellyfin",
+				claim: () => claimProviderCacheRefreshAttempt(app.prisma, "jellyfin", authority),
+				produce: (attempt) =>
+					runJellyfinCacheRefreshSingleFlightWithAttempt(authority, "jellyfin", attempt, () =>
+						refreshOwnedJellyfinCacheWithAttempt(
+							{ prisma: app.prisma, encryptor: app.encryptor, instance, log },
+							attempt,
+						),
+					),
+				log,
+				...(recovery
+					? { recovery: { provider: "jellyfin" as const, userId, instanceId, handoff: recovery } }
+					: {}),
 			});
+
+			const response: ProviderObservationAcceptedResponse = {
+				status: "accepted",
+				cacheType: "jellyfin",
+			};
+			return reply.status(202).send(response);
 		},
 	);
 }

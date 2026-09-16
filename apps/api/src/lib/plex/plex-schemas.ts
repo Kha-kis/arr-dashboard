@@ -128,6 +128,69 @@ export const plexLibraryItemsResponseSchema = z.looseObject({
 	}),
 });
 
+const isValidPlexNativeRatingKey = (value: string): boolean =>
+	value.trim().length > 0 && !value.includes("\0");
+
+const plexNativeRatingKeySchema = z.string().refine(isValidPlexNativeRatingKey);
+
+const plexNativeOptionalStringSchema = z.preprocess(
+	(value) => (typeof value === "string" && isValidPlexNativeRatingKey(value) ? value : null),
+	z.string().nullable(),
+);
+
+const plexNativeTitleSchema = z.preprocess(
+	(value) => (typeof value === "string" ? value : ""),
+	z.string(),
+);
+
+const plexNativeEpisodeOptionalIntegerSchema = (minimum: number) =>
+	z.preprocess((value) => {
+		if (typeof value === "number" && Number.isSafeInteger(value) && value >= minimum) {
+			return value;
+		}
+		if (typeof value === "string" && value.trim() !== "" && /^\d+$/.test(value.trim())) {
+			const parsed = Number(value);
+			if (Number.isSafeInteger(parsed) && parsed >= minimum) return parsed;
+		}
+		return null;
+	}, z.number().int().min(minimum).nullable());
+
+/** /library/sections/{id}/all?type=4 native episode inventory endpoint. */
+export const plexNativeEpisodeItemsResponseSchema = z.looseObject({
+	MediaContainer: z.looseObject({
+		...plexPaginationFields,
+		Metadata: z
+			.array(
+				z.looseObject({
+					ratingKey: plexNativeRatingKeySchema,
+					type: z.literal("episode"),
+					title: plexNativeTitleSchema,
+					grandparentRatingKey: plexNativeOptionalStringSchema,
+					parentIndex: plexNativeEpisodeOptionalIntegerSchema(0),
+					index: plexNativeEpisodeOptionalIntegerSchema(0),
+				}),
+			)
+			.optional(),
+	}),
+});
+
+/** /library/sections/{id}/all native movie/show/container inventory endpoint. */
+export const plexNativeLibraryItemsResponseSchema = z.looseObject({
+	MediaContainer: z.looseObject({
+		...plexPaginationFields,
+		Metadata: z
+			.array(
+				z.looseObject({
+					ratingKey: plexNativeRatingKeySchema,
+					type: z.union([z.literal("movie"), z.literal("show"), z.literal("collection")]),
+					title: plexNativeTitleSchema,
+					Guid: z.array(z.looseObject({ id: z.string() })).optional(),
+				}),
+			)
+			.optional(),
+	}),
+});
+
 /** /library/metadata/{ids} bounded tag enrichment response. */
 export const plexMetadataTagsResponseSchema = z.looseObject({
 	MediaContainer: z.looseObject({
@@ -182,6 +245,33 @@ export const plexLibraryGuidItemsResponseSchema = z.looseObject({
 				}),
 			)
 			.optional(),
+	}),
+});
+
+const plexTargetMetadataBaseSchema = z.looseObject({
+	ratingKey: z.string().trim().min(1),
+	guid: z.string().trim().min(1),
+	Guid: z.array(z.looseObject({ id: z.string().trim().min(1) })).min(1),
+	librarySectionID: z.coerce.string().trim().min(1),
+});
+
+const plexTargetMetadataIdentitySchema = z.union([
+	plexTargetMetadataBaseSchema.extend({
+		type: z.union([z.literal("movie"), z.literal("show")]),
+		parentRatingKey: z.string().trim().min(1).optional(),
+		grandparentRatingKey: z.string().trim().min(1).optional(),
+	}),
+	plexTargetMetadataBaseSchema.extend({
+		type: z.literal("episode"),
+		parentRatingKey: z.string().trim().min(1),
+		grandparentRatingKey: z.string().trim().min(1),
+	}),
+]);
+
+/** Strict single-item metadata used to bind Tautulli history GUIDs. */
+export const plexTargetMetadataResponseSchema = z.looseObject({
+	MediaContainer: z.looseObject({
+		Metadata: z.array(plexTargetMetadataIdentitySchema),
 	}),
 });
 

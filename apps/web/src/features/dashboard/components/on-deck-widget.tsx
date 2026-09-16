@@ -1,21 +1,30 @@
 "use client";
 
+import {
+	type ProviderObservationDomain,
+	providerObservationStatusFromPlexEvidence,
+} from "@arr/shared";
 import { ChevronLeft, ChevronRight, Film, PlayCircle, Tv } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PlexEvidenceNotice } from "../../../components/presentational/plex-evidence-notice";
+import {
+	ProviderObservationNotice,
+	resolveProviderObservationUiCondition,
+} from "../../../components/presentational/provider-observation-notice";
 import { useJellyfinOnDeck } from "../../../hooks/api/useJellyfin";
 import { useOnDeck } from "../../../hooks/api/usePlex";
 import { getLinuxIsoName, getLinuxSectionName, useIncognitoMode } from "../../../lib/incognito";
-import {
-	getPlexEvidenceFromError,
-	isCurrentAuthoritativePlexEvidence,
-} from "../../../lib/plex-evidence";
+import { getPlexEvidenceFromError } from "../../../lib/plex-evidence";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
 const mediaGradient = SERVICE_GRADIENTS.plex;
 const MAX_DISPLAY = 10;
+const JELLYFIN_ON_DECK_REQUIRED_DOMAINS = [
+	"library-inventory",
+	"mapping",
+	"on-deck",
+] as const satisfies readonly ProviderObservationDomain[];
 
 function getPlexThumbUrl(instanceId: string, thumb: string): string {
 	return `/api/plex/thumb/${instanceId}?path=${encodeURIComponent(thumb)}`;
@@ -81,10 +90,21 @@ export const OnDeckWidget = ({
 	const isLoading = plexQuery.isLoading || jellyfinQuery.isLoading;
 	// Only error if all enabled sources failed
 	const plexEvidence = plexQuery.data?.evidence ?? getPlexEvidenceFromError(plexQuery.error);
-	const plexUnavailable =
-		hasPlexInstances &&
-		(plexQuery.isError ||
-			(plexEvidence !== undefined && !isCurrentAuthoritativePlexEvidence(plexEvidence)));
+	const plexProviderStatus = providerObservationStatusFromPlexEvidence(plexEvidence);
+	const plexTransportError = plexQuery.isError && plexEvidence === undefined;
+	const providerStatus = [
+		hasPlexInstances ? plexProviderStatus : undefined,
+		hasJellyfinInstances ? jellyfinQuery.data?.providerStatus : undefined,
+	];
+	const requiredDomains = [undefined, JELLYFIN_ON_DECK_REQUIRED_DOMAINS] as const;
+	const providerTransportError =
+		plexTransportError || (hasJellyfinInstances && jellyfinQuery.isError);
+	const providerNoticeNeeded =
+		resolveProviderObservationUiCondition(
+			providerStatus,
+			providerTransportError,
+			requiredDomains,
+		) !== "current";
 	const [failedThumbs, setFailedThumbs] = useState<Set<string>>(new Set());
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -97,6 +117,7 @@ export const OnDeckWidget = ({
 		setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
 	}, []);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: Recalculate scroll controls when results change.
 	useEffect(() => {
 		updateScrollState();
 		const el = scrollRef.current;
@@ -113,8 +134,8 @@ export const OnDeckWidget = ({
 	}, []);
 
 	if (!enabled || isLoading) return null;
-	if (items.length === 0 && !plexUnavailable) return null;
-	if (items.length === 0 && plexUnavailable) {
+	if (items.length === 0 && !providerNoticeNeeded) return null;
+	if (items.length === 0 && providerNoticeNeeded) {
 		return (
 			<div
 				className="animate-in fade-in slide-in-from-bottom-4 duration-500"
@@ -124,7 +145,13 @@ export const OnDeckWidget = ({
 					<div className="px-6 py-4">
 						<h3 className="text-sm font-semibold text-foreground">Continue Watching</h3>
 					</div>
-					<PlexEvidenceNotice evidence={plexEvidence} />
+					{providerNoticeNeeded && (
+						<ProviderObservationNotice
+							providerStatus={providerStatus}
+							requiredDomains={requiredDomains}
+							isError={providerTransportError}
+						/>
+					)}
 				</div>
 			</div>
 		);
@@ -158,13 +185,19 @@ export const OnDeckWidget = ({
 					<div>
 						<h3 className="text-sm font-semibold text-foreground">Continue Watching</h3>
 						<p className="text-xs text-muted-foreground">
-							{plexUnavailable
-								? "Showing available items; Plex coverage is unavailable"
+							{providerNoticeNeeded
+								? "Showing available items; provider coverage is bounded"
 								: `${items.length} item${items.length !== 1 ? "s" : ""} on deck`}
 						</p>
 					</div>
 				</div>
-				{plexUnavailable && <PlexEvidenceNotice evidence={plexEvidence} />}
+				{providerNoticeNeeded && (
+					<ProviderObservationNotice
+						providerStatus={providerStatus}
+						requiredDomains={requiredDomains}
+						isError={providerTransportError}
+					/>
+				)}
 
 				<div className="relative group/scroll">
 					<div

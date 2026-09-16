@@ -20,6 +20,7 @@ import { getRegexSafetyError, REGEX_MAX_LENGTH } from "./regex-safety.js";
 // ============================================================================
 
 export const ruleTypeSchema = z.enum([
+	"media_server_presence",
 	"age",
 	"size",
 	"rating",
@@ -471,7 +472,12 @@ export type TraktListMemberRuleParams = z.infer<typeof traktListMemberRuleParams
 // ============================================================================
 
 /** Map of rule type → its Zod parameter schema, used for write-time validation */
+export const mediaServerPresenceParamsSchema = z
+	.object({ instanceId: z.string().trim().min(1).max(500) })
+	.strict();
+
 export const ruleParamSchemaMap: Record<string, z.ZodType> = {
+	media_server_presence: mediaServerPresenceParamsSchema,
 	age: ageRuleParamsSchema,
 	size: sizeRuleParamsSchema,
 	rating: ratingRuleParamsSchema,

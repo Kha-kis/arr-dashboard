@@ -107,8 +107,55 @@ export const Pagination = ({
 				</div>
 			</div>
 
-			{/* Page navigation */}
-			<div className="flex items-center gap-1">
+			{/* Compact mobile navigation keeps every primary paging action in view. */}
+			<div className="flex items-center justify-between gap-1 sm:hidden">
+				<Button
+					variant="ghost"
+					size="sm"
+					onClick={() => onPageChange(1)}
+					disabled={currentPage === 1}
+					title="First page"
+					className="h-8 w-8 p-0"
+				>
+					<ChevronsLeft className="h-4 w-4" />
+				</Button>
+				<Button
+					variant="ghost"
+					size="sm"
+					onClick={() => onPageChange(currentPage - 1)}
+					disabled={currentPage === 1}
+					title="Previous page"
+					className="h-8 w-8 p-0"
+				>
+					<ChevronLeft className="h-4 w-4" />
+				</Button>
+				<span className="px-2 text-xs text-muted-foreground">
+					Page <span className="font-medium text-foreground">{currentPage}</span> of {totalPages}
+				</span>
+				<Button
+					variant="ghost"
+					size="sm"
+					onClick={() => onPageChange(currentPage + 1)}
+					disabled={currentPage === totalPages}
+					title="Next page"
+					className="h-8 w-8 p-0"
+				>
+					<ChevronRight className="h-4 w-4" />
+				</Button>
+				<Button
+					variant="ghost"
+					size="sm"
+					onClick={() => onPageChange(totalPages)}
+					disabled={currentPage === totalPages}
+					title="Last page"
+					className="h-8 w-8 p-0"
+				>
+					<ChevronsRight className="h-4 w-4" />
+				</Button>
+			</div>
+
+			{/* Full page-number navigation for wider viewports. */}
+			<div className="hidden items-center gap-1 sm:flex">
 				{/* First page button */}
 				<Button
 					variant="ghost"

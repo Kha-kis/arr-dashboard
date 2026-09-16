@@ -92,6 +92,78 @@ export const jellyfinItemsResponseSchema = z.object({
 	TotalRecordCount: z.number(),
 });
 
+const isValidJellyfinNativeId = (value: string): boolean =>
+	value.trim().length > 0 && !value.includes("\0");
+
+const jellyfinNativeIdSchema = z.string().refine(isValidJellyfinNativeId);
+const jellyfinNativeNameSchema = z.preprocess(
+	(value) => (typeof value === "string" ? value : ""),
+	z.string(),
+);
+const jellyfinNativeProviderIdsSchema = z.preprocess((value) => {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	return Object.fromEntries(
+		Object.entries(value).filter(([, candidate]) => typeof candidate === "string"),
+	);
+}, z.record(z.string(), z.string()).optional());
+
+/** Server-scoped /Library/MediaFolders projection used by native inventory. */
+export const jellyfinNativeMediaFoldersResponseSchema = z.object({
+	Items: z.array(
+		z.looseObject({
+			Id: jellyfinNativeIdSchema,
+			Name: jellyfinNativeNameSchema,
+			Type: z.string().trim().min(1),
+			CollectionType: z.preprocess(
+				(value) => (typeof value === "string" && value.trim() ? value : undefined),
+				z.string().optional(),
+			),
+		}),
+	),
+	TotalRecordCount: z.number(),
+	StartIndex: z.number().optional(),
+});
+
+/** Minimal server-scoped /Items projection for native library inventory. */
+export const jellyfinNativeLibraryItemsResponseSchema = z.object({
+	Items: z.array(
+		z.looseObject({
+			Id: jellyfinNativeIdSchema,
+			Type: z.union([z.literal("Movie"), z.literal("Series"), z.literal("BoxSet")]),
+			Name: jellyfinNativeNameSchema,
+			ProviderIds: jellyfinNativeProviderIdsSchema,
+		}),
+	),
+	StartIndex: z.number(),
+	TotalRecordCount: z.number(),
+});
+
+const jellyfinNativeOptionalStringSchema = z.preprocess(
+	(value) => (typeof value === "string" && value.trim().length > 0 ? value : undefined),
+	z.string().optional(),
+);
+const jellyfinNativeOptionalNumberSchema = z.preprocess(
+	(value) =>
+		typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined,
+	z.number().int().nonnegative().optional(),
+);
+
+/** Minimal server-scoped /Items projection for native episode inventory. */
+export const jellyfinNativeEpisodeItemsResponseSchema = z.object({
+	Items: z.array(
+		z.looseObject({
+			Id: jellyfinNativeIdSchema,
+			Type: z.literal("Episode"),
+			Name: jellyfinNativeNameSchema,
+			SeriesId: jellyfinNativeOptionalStringSchema,
+			ParentIndexNumber: jellyfinNativeOptionalNumberSchema,
+			IndexNumber: jellyfinNativeOptionalNumberSchema,
+		}),
+	),
+	StartIndex: z.number(),
+	TotalRecordCount: z.number(),
+});
+
 // ============================================================================
 // Sessions
 // ============================================================================
@@ -141,6 +213,43 @@ export const jellyfinEpisodesResponseSchema = z.object({
 	TotalRecordCount: z.number(),
 });
 
+/**
+ * Evidence-only BaseItemDto projection for the durable episode collector.
+ *
+ * Jellyfin legitimately serializes many unrelated BaseItemDto properties as
+ * null. Those display fields must not reject watch evidence that does not use
+ * them, so this schema validates only the fields consumed by publication.
+ * Missing episode coordinates become explicit exclusions; missing Played state
+ * and malformed supplied authority values still reject the page.
+ */
+const jellyfinEpisodePageItemSchema = z.looseObject({
+	Id: z.string(),
+	Name: z
+		.string()
+		.nullable()
+		.optional()
+		.transform((value) => value ?? ""),
+	Type: z.string(),
+	SeriesId: z.string().nullable().optional(),
+	IndexNumber: z.number().nullable().optional(),
+	ParentIndexNumber: z.number().nullable().optional(),
+	UserData: z
+		.looseObject({
+			Played: z.boolean().nullable().optional(),
+			PlayCount: z.number().nullable().optional(),
+			LastPlayedDate: z.string().nullable().optional(),
+		})
+		.nullable()
+		.optional(),
+});
+
+/** Strict single-page envelope used only by the durable episode collector. */
+export const jellyfinEpisodeItemsPageSchema = z.object({
+	Items: z.array(jellyfinEpisodePageItemSchema),
+	StartIndex: z.number(),
+	TotalRecordCount: z.number(),
+});
+
 // ============================================================================
 // Item detail (for label-sync read-modify-write tag updates)
 //
@@ -156,3 +265,81 @@ export const jellyfinItemDetailSchema = z
 		Tags: z.array(z.string()).optional(),
 	})
 	.passthrough();
+
+/**
+ * Minimal user-scoped item projection used by the target-watch proof reader.
+ * UserData is deliberately optional at the schema boundary so the client can
+ * distinguish an absent watch projection from a malformed supplied value.
+ */
+export const jellyfinTargetWatchItemSchema = z
+	.object({
+		Id: z.string(),
+		Type: z.enum(["Movie", "Series"]),
+		ProviderIds: z.record(z.string(), z.string()).optional(),
+		UserData: z
+			.object({
+				Played: z.boolean().optional(),
+				PlayCount: z.number().nullable().optional(),
+			})
+			.nullable()
+			.optional(),
+	})
+	.passthrough();
+
+// ============================================================================
+// Mutation adapter responses
+// ============================================================================
+
+/**
+ * These schemas are intentionally separate from the display/source schemas.
+ * The mutation adapter must retain a complete replacement DTO, while only
+ * exposing a small, immutable identity snapshot to its caller.
+ */
+const MUTATION_STRING_MAX = 256;
+const mutationBoundedStringSchema = z
+	.string()
+	.min(1)
+	.max(MUTATION_STRING_MAX)
+	.refine((value) => value.trim().length > 0);
+
+const mutationProviderIdsSchema = z.record(
+	z.string().max(MUTATION_STRING_MAX),
+	mutationBoundedStringSchema,
+);
+const mutationTagsSchema = z
+	.array(mutationBoundedStringSchema)
+	.max(10_000)
+	.refine((tags) => new Set(tags).size === tags.length);
+
+export const jellyfinMutationServerInfoSchema = z.object({
+	Id: mutationBoundedStringSchema,
+});
+
+export const jellyfinMutationUsersSchema = z
+	.array(
+		z.object({
+			Id: mutationBoundedStringSchema,
+			Policy: z.object({ IsAdministrator: z.boolean(), IsDisabled: z.boolean() }),
+		}),
+	)
+	.max(10_000)
+	.refine((users) => new Set(users.map((user) => user.Id)).size === users.length);
+
+export const jellyfinMutationItemSchema = z
+	.object({
+		Id: mutationBoundedStringSchema,
+		Type: z.enum(["Movie", "Series"]),
+		ProviderIds: mutationProviderIdsSchema,
+		Tags: mutationTagsSchema,
+	})
+	.passthrough();
+
+export const jellyfinMutationAncestorsSchema = z
+	.array(
+		z
+			.object({
+				Id: mutationBoundedStringSchema,
+			})
+			.passthrough(),
+	)
+	.max(10_000);

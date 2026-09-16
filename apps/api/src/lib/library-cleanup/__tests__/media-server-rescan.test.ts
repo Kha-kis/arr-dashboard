@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	createPlexTargetLedgerBinding,
+	requirePlexTargetLedgerBinding,
+	verifyPersistedPlexGenerationTargets,
+} from "../../plex/plex-generation-target-ledger.js";
 import { withCurrentProviderPublicationAuthority } from "../../services/provider-identity-guard.js";
 import { providerInstanceAuthorityFingerprint } from "../../services/service-identity.js";
 import {
@@ -38,19 +43,67 @@ vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
 			}
 
 			scanInstanceExactPolicy(input: never) {
-				return repository.scanInstancePolicyEvidence(this.prisma, input);
+				return this.verifyExactTargets(input).then(() =>
+					repository.scanInstancePolicyEvidence(this.prisma, input),
+				);
 			}
 
 			scanInstanceExactPolicyPersisted(input: never) {
-				return repository.scanInstancePolicyEvidence(this.prisma, input);
+				return this.verifyExactTargets(input).then(() =>
+					repository.scanInstancePolicyEvidence(this.prisma, input),
+				);
+			}
+
+			private async verifyExactTargets(input: { userId: string; instanceId: string }) {
+				const targetStore = (this.prisma as { plexGenerationTarget?: unknown })
+					.plexGenerationTarget;
+				if (!targetStore) return;
+				const evidence = await repository.loadInstanceEvidence(this.prisma, input);
+				if (!evidence.available) return;
+				const binding = requirePlexTargetLedgerBinding(evidence.metadata);
+				if (!binding.ok) throw new Error("Plex fixture omitted its target ledger binding");
+				const verified = await verifyPersistedPlexGenerationTargets(this.prisma, {
+					expected: {
+						instanceId: evidence.instanceId,
+						generationId: evidence.generationId,
+						connectionGeneration: evidence.connectionGeneration,
+						identityGeneration: evidence.identityGeneration,
+						...binding.binding,
+					},
+					sections: evidence.sections as unknown as Array<{
+						key: string;
+						uuid: string;
+						type: "movie" | "show";
+					}>,
+				});
+				if (!verified.ok)
+					throw new Error(`Plex fixture target ledger was not exact: ${verified.reason}`);
 			}
 		},
 	};
 });
 
-function plexV3Metadata(itemCount: number) {
+function plexV3Metadata(
+	itemCount: number,
+	instanceId = "plex-1",
+	generationId = "plex-generation-1",
+	completedAt = new Date(),
+	targets: Parameters<typeof createPlexTargetLedgerBinding>[0]["targets"] = [],
+) {
+	if (itemCount > 0 && targets.length === 0)
+		throw new Error("Nonempty Plex metadata fixtures require bound target rows");
+	if (itemCount !== targets.length)
+		throw new Error("Plex metadata itemCount must equal its bound target count");
+	const observedAt = completedAt.toISOString();
+	const targetLedger = createPlexTargetLedgerBinding({
+		instanceId,
+		generationId,
+		connectionGeneration: 3,
+		identityGeneration: 7,
+		targets,
+	});
 	return JSON.stringify({
-		version: 3,
+		version: 5,
 		publicationLevel: "authoritative",
 		completeness: "complete",
 		itemCount,
@@ -67,9 +120,28 @@ function plexV3Metadata(itemCount: number) {
 			},
 		],
 		roots: [{ sectionKey: "movies", domain: "membership", digest: "a".repeat(64) }],
-		targetLedgerVersion: 1,
-		targetCount: itemCount,
-		targetDigest: "c".repeat(64),
+		...targetLedger,
+		partialReasons: [],
+		coverageReceipt: {
+			version: 1,
+			provider: "plex",
+			attemptStartedAt: observedAt,
+			observedAt,
+			evidence: "complete",
+			units: [
+				{
+					scopeKey: "section:movies",
+					expectedRawCount: itemCount,
+					pagesAttempted: 1,
+					pagesCompleted: 1,
+					rawObserved: itemCount,
+					sourceBindings: itemCount,
+					canonicalEntities: itemCount,
+					acceptedSkips: [],
+					fatalCount: 0,
+				},
+			],
+		},
 	});
 }
 
@@ -100,6 +172,25 @@ const providerIndependentSafetySnapshot = serializeExecutableSafetyPlan({
 	},
 });
 
+const testPlexTargetLedger = createPlexTargetLedgerBinding({
+	instanceId: "plex-1",
+	generationId: "plex-generation-1",
+	connectionGeneration: 3,
+	identityGeneration: 7,
+	targets: [
+		{
+			instanceId: "plex-1",
+			generationId: "plex-generation-1",
+			sectionId: "movies",
+			sectionUuid: "movies-uuid",
+			mediaType: "movie",
+			tmdbId: 42,
+			tvdbId: null,
+			ratingKey: "plex-movie-42",
+		},
+	],
+});
+
 const testPlexEvidence = createSanitizedProviderEvidence(
 	["plex"],
 	[
@@ -115,6 +206,8 @@ const testPlexEvidence = createSanitizedProviderEvidence(
 			verifiedAt: "2026-08-14T23:00:00.000Z",
 			statusFingerprint: "2".repeat(64),
 			rowFingerprint: "3".repeat(64),
+			generationId: "plex-generation-1",
+			...testPlexTargetLedger,
 		},
 	],
 );
@@ -590,6 +683,12 @@ function installRecoveryCandidateProjection(
 }
 
 describe("durable media-server rescans", () => {
+	it("does not construct nonempty authority without bound target rows", () => {
+		expect(() => plexV3Metadata(1, "plex-1", "generation-1", new Date())).toThrow(
+			"require bound target rows",
+		);
+	});
+
 	beforeEach(() => vi.clearAllMocks());
 
 	it("persists one owned enabled media-server target before deletion", async () => {
@@ -642,7 +741,7 @@ describe("durable media-server rescans", () => {
 						connectionGeneration: 3,
 						identityGeneration: 7,
 						generationId: "plex-generation-1",
-						generationMetadata: plexV3Metadata(0),
+						generationMetadata: plexV3Metadata(0, "plex-1", "plex-generation-1", refreshedAt),
 					},
 				]),
 			},
@@ -954,6 +1053,25 @@ describe("durable media-server rescans", () => {
 						status: statusPayload,
 					}),
 					rowFingerprint: authorityFingerprint([row]),
+					generationId: "generation-a",
+					...createPlexTargetLedgerBinding({
+						instanceId: plexInstance.id,
+						generationId: "generation-a",
+						connectionGeneration: 3,
+						identityGeneration: 7,
+						targets: [
+							{
+								instanceId: plexInstance.id,
+								generationId: "generation-a",
+								sectionId: "movies",
+								sectionUuid: "movies-uuid",
+								mediaType: "movie",
+								tmdbId: 42,
+								tvdbId: null,
+								ratingKey: "plex-movie-42",
+							},
+						],
+					}),
 				},
 			],
 		);
@@ -1073,6 +1191,26 @@ describe("durable media-server rescans", () => {
 			identityGeneration: 7,
 			updatedAt: instanceUpdatedAt,
 		};
+		const targetRows = [
+			{
+				id: "plex-target-1",
+				instanceId: plexInstance.id,
+				generationId: "generation-b",
+				sectionId: "movies",
+				sectionUuid: "movies-uuid",
+				mediaType: "movie" as const,
+				tmdbId: 42,
+				tvdbId: null,
+				ratingKey: "plex-movie-42",
+			},
+		];
+		const targetLedger = createPlexTargetLedgerBinding({
+			instanceId: plexInstance.id,
+			generationId: "generation-b",
+			connectionGeneration: 3,
+			identityGeneration: 7,
+			targets: targetRows,
+		});
 		const accepted = createSanitizedProviderEvidence(
 			["plex"],
 			[
@@ -1096,7 +1234,7 @@ describe("durable media-server rescans", () => {
 					generationId: "generation-b",
 					targetLedgerVersion: 1,
 					targetCount: 1,
-					targetDigest: "c".repeat(64),
+					targetDigest: targetLedger.targetDigest,
 				},
 			],
 		);
@@ -1117,6 +1255,7 @@ describe("durable media-server rescans", () => {
 			addedAt: null,
 			connectionGeneration: 3,
 			identityGeneration: 7,
+			ratingKey: "plex-movie-42",
 		};
 		const fixture = deps({ instances: [plexInstance] });
 		Object.assign(fixture.deps, {
@@ -1146,10 +1285,17 @@ describe("durable media-server rescans", () => {
 						connectionGeneration: 3,
 						identityGeneration: 7,
 						generationId: "generation-b",
-						generationMetadata: plexV3Metadata(1),
+						generationMetadata: plexV3Metadata(
+							1,
+							plexInstance.id,
+							"generation-b",
+							refreshedAt,
+							targetRows,
+						),
 					},
 				]),
 			},
+			plexGenerationTarget: { findMany: vi.fn().mockResolvedValue(targetRows) },
 			plexCache: { findMany: vi.fn(async () => [row]) },
 			$transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
 				callback(fixture.prisma),
@@ -1158,6 +1304,13 @@ describe("durable media-server rescans", () => {
 
 		const renewed = await renewCurrentProviderRetryAuthority(fixture.deps, "user-1", accepted);
 
+		expect(
+			(
+				fixture.prisma as typeof fixture.prisma & {
+					plexGenerationTarget: { findMany: ReturnType<typeof vi.fn> };
+				}
+			).plexGenerationTarget.findMany,
+		).toHaveBeenCalled();
 		expect(renewed.fingerprint).not.toBe(accepted.fingerprint);
 		expect(renewed.sources[0]).toMatchObject({
 			instanceFingerprint: providerInstanceAuthorityFingerprint(plexInstance.id),

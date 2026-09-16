@@ -9,10 +9,10 @@ import type { PlexRecentlyAddedResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import {
-	hasAuthoritativeSelectedPlexEvidence,
+	listDisplayableSelectedPlexEvidence,
+	PlexAuthorityService,
 	summarizePlexEvidence,
 } from "../../lib/plex/plex-authority-service.js";
-import { PlexAuthorityService } from "../../lib/plex/plex-authority-service.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { mapToRecentlyAddedItems } from "./lib/recently-added-helpers.js";
 
@@ -44,24 +44,23 @@ export async function registerRecentlyAddedRoutes(
 			prisma: app.prisma,
 			encryptor: app.encryptor,
 			log: request.log,
-		}).readUserSelected({
+		}).readUserSelectedDisplay({
 			userId,
 			selection: { kind: "recently-added", limit },
 			domains: ["membership", "display"],
 		});
 		const summary = summarizePlexEvidence(evidence);
-		if (!hasAuthoritativeSelectedPlexEvidence(evidence)) {
+		const displayableEvidence = listDisplayableSelectedPlexEvidence(evidence);
+		if (displayableEvidence.length === 0) {
 			return reply.status(503).send({
 				error: "Plex cache evidence is unavailable",
 				evidence: summary,
 			});
 		}
 		const instanceMap = new Map(
-			evidence.flatMap((entry) =>
-				entry.available ? [[entry.instanceId, entry.instanceName] as const] : [],
-			),
+			displayableEvidence.map((entry) => [entry.instanceId, entry.instanceName] as const),
 		);
-		const cacheEntries = evidence
+		const cacheEntries = displayableEvidence
 			.flatMap((entry) => entry.rows)
 			.sort((left, right) => right.addedAt!.getTime() - left.addedAt!.getTime())
 			.slice(0, limit);

@@ -8,6 +8,7 @@
 
 import type { FastifyBaseLogger } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { evaluateProviderCoverageReceipt } from "../../provider-observation/coverage-receipt.js";
 import {
 	collectJellyfinCacheLiveEvidence,
 	JELLYFIN_CACHE_PUBLICATION_CHUNK_SIZE,
@@ -20,6 +21,10 @@ import type {
 	JellyfinLibrary,
 	JellyfinUser,
 } from "../jellyfin-client.js";
+import {
+	encodeJellyfinLibraryGenerationMetadata,
+	fingerprintJellyfinLibraryRows,
+} from "../jellyfin-generation-metadata.js";
 
 const publication = vi.hoisted(() => ({ client: undefined as JellyfinClient | undefined }));
 
@@ -71,8 +76,9 @@ async function refreshJellyfinCache(
 	instanceId: string,
 	log: FastifyBaseLogger,
 	_expectedConnection?: string,
-	options?: { publish?: boolean },
+	options?: { publish?: boolean; service?: "JELLYFIN" | "EMBY" },
 ) {
+	ensureCoverageMethod(client);
 	if (options?.publish === false) {
 		return await collectJellyfinCacheLiveEvidence(client, instanceId, log);
 	}
@@ -82,7 +88,7 @@ async function refreshJellyfinCache(
 		instance: {
 			id: instanceId,
 			userId: "user-1",
-			service: "JELLYFIN",
+			service: options?.service ?? "JELLYFIN",
 			label: "Jellyfin",
 			baseUrl: "https://jellyfin-current.example.com",
 			apiKey: "key",
@@ -163,9 +169,46 @@ function makeMockClient(items: JellyfinItem[]): JellyfinClient {
 		getUsers: vi.fn().mockResolvedValue(oneUser),
 		getLibraries: vi.fn().mockResolvedValue(oneLibrary),
 		getLibraryItems: vi.fn().mockResolvedValue(items),
+		getLibraryItemsWithCoverage: vi.fn(async function (
+			this: JellyfinClient,
+			...args: Parameters<JellyfinClient["getLibraryItems"]>
+		) {
+			const result = await this.getLibraryItems(...args);
+			return {
+				items: result,
+				expectedRawCount: result.length,
+				pagesAttempted: 1,
+				pagesCompleted: 1,
+				rawObserved: result.length,
+				reason: null,
+			};
+		}),
 		getResumeItems: vi.fn().mockResolvedValue([]),
 		getNextUp: vi.fn().mockResolvedValue([]),
 	} as unknown as JellyfinClient;
+}
+
+function ensureCoverageMethod(client: JellyfinClient): JellyfinClient {
+	const candidate = client as JellyfinClient & {
+		getLibraryItemsWithCoverage?: JellyfinClient["getLibraryItemsWithCoverage"];
+	};
+	if (!candidate.getLibraryItemsWithCoverage) {
+		candidate.getLibraryItemsWithCoverage = vi.fn(async function (
+			this: JellyfinClient,
+			...args: Parameters<JellyfinClient["getLibraryItems"]>
+		) {
+			const result = await this.getLibraryItems(...args);
+			return {
+				items: result,
+				expectedRawCount: result.length,
+				pagesAttempted: 1,
+				pagesCompleted: 1,
+				rawObserved: result.length,
+				reason: null,
+			};
+		});
+	}
+	return client;
 }
 
 /**
@@ -204,6 +247,26 @@ function makeMockPrisma() {
 		),
 	};
 	return { stub, upserts, tx };
+}
+
+function receiptFrom(result: unknown):
+	| {
+			version: number;
+			provider: string;
+			evidence: string;
+			units: Array<Record<string, unknown>>;
+	  }
+	| undefined {
+	return (
+		result as {
+			receipt?: {
+				version: number;
+				provider: string;
+				evidence: string;
+				units: Array<Record<string, unknown>>;
+			};
+		}
+	).receipt;
 }
 
 afterEach(() => {
@@ -384,6 +447,158 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		});
 	});
 
+	it("emits one source-conserving receipt unit for overlapping user/library visibility", async () => {
+		const users: JellyfinUser[] = [
+			{ id: "u1", name: "Alice" },
+			{ id: "u2", name: "Bob" },
+		];
+		const libraries: JellyfinLibrary[] = [
+			{ id: "l1", name: "Shared Library", collectionType: "CollectionFolder" },
+		];
+		const visibleItems = [
+			makeMovieItem({ id: "source-a", tmdbId: 42, name: "Edition A" }),
+			makeMovieItem({ id: "source-b", tmdbId: 42, name: "Edition B" }),
+			makeSeriesItem({ id: "source-series", tmdbId: 84, name: "Series" }),
+			makeBoxSetItem({ id: "container-1", name: "Favorites" }),
+		];
+		const client = {
+			getUsers: vi.fn().mockResolvedValue(users),
+			getLibraries: vi.fn().mockResolvedValue(libraries),
+			getLibraryItems: vi.fn().mockResolvedValue(visibleItems),
+			getResumeItems: vi.fn().mockResolvedValue([]),
+			getNextUp: vi.fn().mockResolvedValue([]),
+		} as unknown as JellyfinClient;
+		ensureCoverageMethod(client);
+
+		const result = await collectJellyfinCacheLiveEvidence(client, "inst-1", silentLog);
+		const receipt = receiptFrom(result);
+
+		expect(receipt).toBeDefined();
+		expect(receipt).toMatchObject({
+			version: 2,
+			provider: "jellyfin",
+			evidence: "complete",
+			units: expect.arrayContaining([
+				expect.objectContaining({
+					scopeKey: "user:u1/library:l1",
+					expectedRawCount: 4,
+					rawObserved: 4,
+					sourceBindings: 3,
+					canonicalEntities: 2,
+					acceptedSkips: [{ reason: "known-container", count: 1 }],
+					fatalCount: 0,
+				}),
+				expect.objectContaining({
+					scopeKey: "user:u2/library:l1",
+					expectedRawCount: 4,
+					rawObserved: 4,
+					sourceBindings: 3,
+					canonicalEntities: 2,
+					acceptedSkips: [{ reason: "known-container", count: 1 }],
+					fatalCount: 0,
+				}),
+			]),
+			publishedCanonicalEntities: 2,
+		});
+		// The two provider editions share one canonical media/library identity, while
+		// the receipt still accounts for both source bindings before deduplication.
+		expect(result.snapshot?.rows).toHaveLength(2);
+		expect(result.complete).toBe(true);
+		expect(evaluateProviderCoverageReceipt(receipt)).toMatchObject({
+			valid: true,
+			complete: false,
+		});
+	});
+
+	it("selects the same representative fields regardless of source order", async () => {
+		const higher = makeMovieItem({
+			id: "source-z",
+			name: "Zed Edition",
+			dateCreated: "2024-01-01T00:00:00Z",
+			imageTags: { Primary: "z-tag" },
+		});
+		const lower = makeMovieItem({
+			id: "source-a",
+			name: "Alpha Edition",
+			dateCreated: "2025-01-01T00:00:00Z",
+			imageTags: { Primary: "a-tag" },
+		});
+		const collect = async (items: JellyfinItem[]) =>
+			await collectJellyfinCacheLiveEvidence(makeMockClient(items), "inst-1", silentLog, {
+				attemptStartedAt: new Date("2026-01-01T00:00:00Z"),
+				observedAt: new Date("2026-01-01T00:01:00Z"),
+			});
+
+		const forward = await collect([higher, lower]);
+		const reverse = await collect([lower, higher]);
+		expect(forward.snapshot?.rows).toEqual(reverse.snapshot?.rows);
+		expect(forward.snapshot?.rows[0]).toMatchObject({
+			jellyfinId: "source-a",
+			title: "Alpha Edition",
+			addedAt: new Date("2025-01-01T00:00:00Z"),
+			thumb: "/Items/source-a/Images/Primary",
+		});
+		expect(evaluateProviderCoverageReceipt(forward.receipt)).toMatchObject({
+			valid: true,
+			complete: false,
+		});
+	});
+
+	it("selects a stable library label across overlapping user visibility", async () => {
+		const users: JellyfinUser[] = [
+			{ id: "user-z", name: "Zed" },
+			{ id: "user-a", name: "Alpha" },
+		];
+		const collect = async (orderedUsers: JellyfinUser[]) => {
+			const client = {
+				getUsers: vi.fn().mockResolvedValue(orderedUsers),
+				getLibraries: vi.fn(async (userId: string) => [
+					{
+						id: "shared-library",
+						name: userId === "user-z" ? "Zeta Library" : "Alpha Library",
+						collectionType: "movies",
+					},
+				]),
+				getLibraryItemsWithCoverage: vi.fn().mockResolvedValue({
+					items: [makeMovieItem({ id: "shared-source", tmdbId: 42 })],
+					expectedRawCount: 1,
+					pagesAttempted: 1,
+					pagesCompleted: 1,
+					rawObserved: 1,
+					reason: null,
+				}),
+				getResumeItems: vi.fn().mockResolvedValue([]),
+				getNextUp: vi.fn().mockResolvedValue([]),
+			} as unknown as JellyfinClient;
+			return await collectJellyfinCacheLiveEvidence(client, "inst-1", silentLog, {
+				attemptStartedAt: new Date("2026-01-01T00:00:00Z"),
+				observedAt: new Date("2026-01-01T00:01:00Z"),
+			});
+		};
+
+		const forward = await collect(users);
+		const reverse = await collect([...users].reverse());
+
+		expect(forward.snapshot?.rows).toEqual(reverse.snapshot?.rows);
+		expect(forward.snapshot?.rows[0]?.libraryName).toBe("Alpha Library");
+	});
+
+	it("binds an EMBY service snapshot to an emby receipt", async () => {
+		const client = makeMockClient([makeMovieItem()]);
+		const { stub } = makeMockPrisma();
+		const result = await refreshJellyfinCache(
+			client,
+			stub as never,
+			"inst-1",
+			silentLog,
+			undefined,
+			{ service: "EMBY" },
+		);
+
+		expect(result.complete).toBe(true);
+		expect(result.receipt?.provider).toBe("emby");
+	});
+
 	it("fails closed when any user's library inventory is unavailable", async () => {
 		const twoUsers: JellyfinUser[] = [
 			{ id: "user-1", name: "Alice" },
@@ -399,16 +614,40 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		const deleteMany = vi.fn();
 		const transaction = vi.fn();
 		const stub = { jellyfinCache: { deleteMany }, $transaction: transaction };
+		const warn = vi.fn();
+		const error = vi.fn();
+		const privacyLog = { warn, error } as unknown as FastifyBaseLogger;
 
-		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", privacyLog);
 
 		expect(result.complete).toBe(false);
 		expect(result.errors).toBeGreaterThan(0);
-		expect(result.errorMessages).toContainEqual(
-			expect.stringContaining("Bob's library inventory was truncated"),
+		expect(result.errorMessages).toContain("library-discovery-failed");
+		expect(JSON.stringify(result.errorMessages)).not.toContain(
+			"Bob's library inventory was truncated",
 		);
+		const serializedLogCalls = JSON.stringify({ warn: warn.mock.calls, error: error.mock.calls });
+		expect(serializedLogCalls).not.toContain("Bob's library inventory was truncated");
+		expect(serializedLogCalls).not.toContain("Bob");
+		const logArguments = [...warn.mock.calls, ...error.mock.calls].flat();
+		expect(
+			logArguments.some(
+				(value) =>
+					value instanceof Error ||
+					(typeof value === "object" &&
+						value !== null &&
+						Object.values(value).some((nested) => nested instanceof Error)),
+			),
+		).toBe(false);
 		expect(deleteMany).not.toHaveBeenCalled();
 		expect(transaction).not.toHaveBeenCalled();
+		const receipt = receiptFrom(result);
+		expect(receipt).toMatchObject({
+			version: 1,
+			provider: "jellyfin",
+			evidence: "unknown",
+			units: expect.any(Array),
+		});
 	});
 
 	it("evicts stale rows when a discovered library is authoritatively empty", async () => {
@@ -419,6 +658,31 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 
 		expect(result).toMatchObject({ errors: 0, complete: true, upserted: 0 });
 		expect(tx.jellyfinCache.deleteMany).toHaveBeenCalledWith({ where: { instanceId: "inst-1" } });
+	});
+
+	it("fails closed with unknown receipt evidence when user discovery is unavailable", async () => {
+		const privateFailure = "private user endpoint detail";
+		const client = {
+			getUsers: vi.fn().mockRejectedValue(new Error(privateFailure)),
+		} as unknown as JellyfinClient;
+		const deleteMany = vi.fn();
+		const transaction = vi.fn();
+		const stub = { jellyfinCache: { deleteMany }, $transaction: transaction };
+
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+		const receipt = receiptFrom(result);
+
+		expect(result.complete).toBe(false);
+		expect(result.errors).toBeGreaterThan(0);
+		expect(deleteMany).not.toHaveBeenCalled();
+		expect(transaction).not.toHaveBeenCalled();
+		expect(receipt).toMatchObject({
+			version: 1,
+			provider: "jellyfin",
+			evidence: "unknown",
+			units: [],
+		});
+		expect(JSON.stringify(receipt)).not.toContain(privateFailure);
 	});
 
 	it("fails closed without evicting when user discovery is empty", async () => {
@@ -433,6 +697,56 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		expect(result.complete).toBe(false);
 		expect(result.errors).toBeGreaterThan(0);
 		expect(deleteMany).not.toHaveBeenCalled();
+		const receipt = receiptFrom(result);
+		expect(receipt).toMatchObject({
+			version: 1,
+			provider: "jellyfin",
+			evidence: "unknown",
+			units: [],
+		});
+	});
+
+	it.each([
+		[
+			"duplicate user IDs",
+			[
+				{ id: "same-user", name: "Alice" },
+				{ id: "same-user", name: "Bob" },
+			],
+		],
+		["blank user IDs", [{ id: "", name: "Alice" }]],
+	] as const)("fails closed for %s", async (_description, users) => {
+		const client = {
+			getUsers: vi.fn().mockResolvedValue(users),
+		} as unknown as JellyfinClient;
+
+		const result = await collectJellyfinCacheLiveEvidence(client, "inst-1", silentLog);
+
+		expect(result.complete).toBe(false);
+		expect(evaluateProviderCoverageReceipt(result.receipt)).toMatchObject({
+			valid: true,
+			complete: false,
+		});
+		expect(JSON.stringify(result.errorMessages)).not.toContain("same-user");
+	});
+
+	it("fails closed for duplicate library IDs without an invalid receipt", async () => {
+		const client = {
+			getUsers: vi.fn().mockResolvedValue(oneUser),
+			getLibraries: vi.fn().mockResolvedValue([
+				{ id: "duplicate-library", name: "One", collectionType: "movies" },
+				{ id: "duplicate-library", name: "Two", collectionType: "movies" },
+			]),
+		} as unknown as JellyfinClient;
+
+		const result = await collectJellyfinCacheLiveEvidence(client, "inst-1", silentLog);
+
+		expect(result.complete).toBe(false);
+		expect(result.errorMessages).toContain("invalid-library-identity");
+		expect(evaluateProviderCoverageReceipt(result.receipt)).toMatchObject({
+			valid: true,
+			complete: false,
+		});
 	});
 
 	it("leaves the previous generation unchanged when atomic publication fails", async () => {
@@ -514,8 +828,187 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
 
 		expect(result.complete).toBe(false);
-		expect(result.errors).toBeGreaterThan(0);
+		expect(result.errors).toBe(0);
 		expect(deleteMany).not.toHaveBeenCalled();
+	});
+
+	it("publishes mapped library rows when on-deck independently fails", async () => {
+		const mappedMovie = makeMovieItem({ id: "movie-mapped", tmdbId: 101 });
+		const mappedSeries = makeSeriesItem({ id: "series-mapped", tmdbId: 202 });
+		const missingMapping = makeMovieItem({ id: "movie-unmapped", tmdbId: undefined });
+		const client = {
+			getUsers: vi.fn().mockResolvedValue(oneUser),
+			getLibraries: vi
+				.fn()
+				.mockResolvedValue([
+					{ id: "library-1", name: "Library", collectionType: "CollectionFolder" },
+				]),
+			getLibraryItemsWithCoverage: vi.fn().mockResolvedValue({
+				items: [mappedMovie, mappedSeries, missingMapping],
+				expectedRawCount: 3,
+				pagesAttempted: 1,
+				pagesCompleted: 1,
+				rawObserved: 3,
+				reason: null,
+			}),
+			getResumeItems: vi.fn().mockRejectedValue(new Error("on-deck unavailable")),
+			getNextUp: vi.fn().mockRejectedValue(new Error("on-deck unavailable")),
+		} as unknown as JellyfinClient;
+
+		const result = await collectJellyfinCacheLiveEvidence(client, "inst-1", silentLog, {
+			attemptStartedAt: new Date("2026-09-06T12:00:00.000Z"),
+			observedAt: new Date("2026-09-06T12:01:00.000Z"),
+		});
+
+		expect(result.snapshot?.rows).toHaveLength(2);
+		expect(result.snapshot?.rows.map((row) => row.tmdbId).sort()).toEqual([101, 202]);
+		expect(result.receipt.version).toBe(2);
+		expect((result.receipt as { domains: unknown[] }).domains).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ domain: "library-inventory", valueSemantics: "exact" }),
+				expect.objectContaining({ domain: "mapping", valueSemantics: "lower-bound" }),
+				expect.objectContaining({ domain: "on-deck", valueSemantics: "unknown" }),
+			]),
+		);
+	});
+
+	it("keeps missing and invalid watch facts non-authoritative while retaining inventory", async () => {
+		const client = makeMockClient([
+			makeMovieItem({ id: "missing-watch", tmdbId: 301 }),
+			makeMovieItem({
+				id: "invalid-watch",
+				tmdbId: 302,
+				played: true,
+				playCount: Number.NaN,
+				lastPlayedDate: "not-a-date",
+			}),
+			makeMovieItem({
+				id: "negative-watch",
+				tmdbId: 303,
+				played: true,
+				playCount: -1,
+				lastPlayedDate: "2026-09-06T12:00:00.000Z",
+			}),
+			makeMovieItem({
+				id: "positive-watch",
+				tmdbId: 304,
+				played: true,
+				playCount: 2,
+				lastPlayedDate: "2026-09-06T12:00:00.000Z",
+			}),
+		]);
+
+		const result = await collectJellyfinCacheLiveEvidence(client, "inst-1", silentLog, {
+			attemptStartedAt: new Date("2026-09-06T12:00:00.000Z"),
+			observedAt: new Date("2026-09-06T12:01:00.000Z"),
+		});
+
+		expect(result.snapshot?.rows).toHaveLength(4);
+		expect(result.snapshot?.rows).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					jellyfinId: "missing-watch",
+					watchCount: 0,
+					lastWatchedAt: null,
+				}),
+				expect.objectContaining({
+					jellyfinId: "invalid-watch",
+					watchCount: 0,
+					lastWatchedAt: null,
+				}),
+				expect.objectContaining({ jellyfinId: "negative-watch", watchCount: 0 }),
+				expect.objectContaining({
+					jellyfinId: "positive-watch",
+					watchCount: 2,
+					lastWatchedAt: new Date("2026-09-06T12:00:00.000Z"),
+				}),
+			]),
+		);
+		expect(result.receipt).toMatchObject({ evidence: "complete" });
+		expect(result.receipt).toEqual(
+			expect.objectContaining({
+				domains: expect.arrayContaining([
+					expect.objectContaining({
+						domain: "watch-count",
+						evidence: "positive-only",
+						valueSemantics: "lower-bound",
+					}),
+					expect.objectContaining({
+						domain: "watch-attribution",
+						evidence: "positive-only",
+						valueSemantics: "lower-bound",
+					}),
+				]),
+			}),
+		);
+	});
+
+	it("does not turn normalized missing watch data into exact zero evidence", async () => {
+		const result = await collectJellyfinCacheLiveEvidence(
+			makeMockClient([makeMovieItem({ id: "unwatched", tmdbId: 305 })]),
+			"inst-1",
+			silentLog,
+		);
+
+		expect(result.snapshot?.rows).toHaveLength(1);
+		expect(result.receipt).toEqual(
+			expect.objectContaining({
+				domains: expect.arrayContaining([
+					expect.objectContaining({
+						domain: "watch-count",
+						evidence: "unknown",
+						valueSemantics: "unknown",
+					}),
+					expect.objectContaining({
+						domain: "watch-attribution",
+						evidence: "unknown",
+						valueSemantics: "unknown",
+					}),
+				]),
+			}),
+		);
+	});
+
+	it.each([
+		[
+			"positive-watch",
+			makeMovieItem({
+				id: "owned-positive-watch",
+				tmdbId: 306,
+				played: true,
+				playCount: 2,
+				lastPlayedDate: "2026-09-06T12:00:00.000Z",
+			}),
+		],
+		["no-watch", makeMovieItem({ id: "owned-no-watch", tmdbId: 307 })],
+	] as const)("encodes an owned V2 collection with %s watch facts", async (_label, item) => {
+		const result = await collectJellyfinCacheLiveEvidence(
+			makeMockClient([item]),
+			"inst-1",
+			silentLog,
+			{
+				attemptStartedAt: new Date("2026-09-06T12:00:00.000Z"),
+				observedAt: new Date("2026-09-06T12:01:00.000Z"),
+			},
+		);
+		const { snapshot, receipt } = result;
+		if (!snapshot || !receipt) throw new Error("collection fixture did not publish");
+
+		expect(() =>
+			encodeJellyfinLibraryGenerationMetadata({
+				version: 1,
+				provider: "jellyfin",
+				cacheType: "jellyfin",
+				publicationLevel: "authoritative",
+				completeness: "complete",
+				canonicalizationVersion: 1,
+				itemCount: snapshot.rows.length,
+				connectionGeneration: 7,
+				identityGeneration: 3,
+				contentFingerprint: fingerprintJellyfinLibraryRows(snapshot.rows),
+				coverageReceipt: receipt,
+			}),
+		).not.toThrow();
 	});
 
 	it("fails closed without evicting when media library discovery is empty", async () => {
@@ -531,21 +1024,67 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		expect(result.complete).toBe(false);
 		expect(result.errors).toBeGreaterThan(0);
 		expect(deleteMany).not.toHaveBeenCalled();
+		expect(receiptFrom(result)).toMatchObject({
+			version: 1,
+			provider: "jellyfin",
+			evidence: "unknown",
+			units: expect.any(Array),
+		});
 	});
 
 	it("fails closed without evicting when a library inventory is partial", async () => {
 		const client = {
 			...makeMockClient([]),
-			getLibraryItems: vi.fn().mockRejectedValue(new Error("pagination stopped early")),
+			getLibraryItems: vi.fn(() => {
+				throw new Error("legacy array boundary must not be used");
+			}),
+			getLibraryItemsWithCoverage: vi.fn().mockResolvedValue({
+				items: [],
+				expectedRawCount: 2_000,
+				pagesAttempted: 2,
+				pagesCompleted: 1,
+				rawObserved: 1_000,
+				reason: "page-failure",
+			}),
 		} as unknown as JellyfinClient;
 		const deleteMany = vi.fn();
 		const stub = { jellyfinCache: { findMany: vi.fn(), deleteMany }, $transaction: vi.fn() };
+		const coverageClient = client as unknown as {
+			getLibraryItemsWithCoverage: ReturnType<typeof vi.fn>;
+		};
 
 		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
 
 		expect(result.complete).toBe(false);
 		expect(result.errors).toBeGreaterThan(0);
 		expect(deleteMany).not.toHaveBeenCalled();
+		expect(coverageClient.getLibraryItemsWithCoverage).toHaveBeenCalledWith("user-1", "lib-1", {
+			includeItemTypes: "Series",
+		});
+		expect(client.getLibraryItems).not.toHaveBeenCalled();
+		expect(receiptFrom(result)).toMatchObject({
+			version: 1,
+			provider: "jellyfin",
+			evidence: "unknown",
+			units: expect.arrayContaining([
+				expect.objectContaining({
+					scopeKey: "user:user-1/library:lib-1",
+					expectedRawCount: 2_000,
+					pagesAttempted: 2,
+					pagesCompleted: 1,
+					rawObserved: 1_000,
+					sourceBindings: 0,
+					canonicalEntities: 0,
+					acceptedSkips: [],
+					fatalCount: 1,
+				}),
+			]),
+		});
+		const receipt = receiptFrom(result);
+		expect(evaluateProviderCoverageReceipt(receipt)).toMatchObject({
+			valid: true,
+			complete: false,
+		});
 	});
 
 	it("ignores a BoxSet alongside a Series without blocking cache publication", async () => {
@@ -557,6 +1096,19 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
 		expect(upserts).toHaveLength(1);
 		expect(upserts[0]).toMatchObject({ create: { jellyfinId: "jf-series-1" } });
+		expect(receiptFrom(result)?.units).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					scopeKey: "user:user-1/library:lib-1",
+					expectedRawCount: 2,
+					rawObserved: 2,
+					sourceBindings: 1,
+					canonicalEntities: 1,
+					acceptedSkips: [{ reason: "known-container", count: 1 }],
+					fatalCount: 0,
+				}),
+			]),
+		);
 	});
 
 	it("ignores a BoxSet alongside a Movie without blocking cache publication", async () => {
@@ -593,6 +1145,19 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		expect(tx.jellyfinCache.deleteMany).toHaveBeenCalledWith({ where: { instanceId: "inst-1" } });
 		expect(tx.jellyfinCache.createMany).not.toHaveBeenCalled();
 		expect(tx.cacheRefreshStatus.upsert).toHaveBeenCalledOnce();
+		expect(receiptFrom(result)?.units).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					scopeKey: "user:user-1/library:lib-1",
+					expectedRawCount: 2,
+					rawObserved: 2,
+					sourceBindings: 0,
+					canonicalEntities: 0,
+					acceptedSkips: [{ reason: "known-container", count: 2 }],
+					fatalCount: 0,
+				}),
+			]),
+		);
 	});
 
 	it("ignores several BoxSets across independently scanned libraries", async () => {
@@ -643,6 +1208,19 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		expect(result).toMatchObject({ complete: false, errors: 0, upserted: 0 });
 		expect(tx.jellyfinCache.deleteMany).not.toHaveBeenCalled();
 		expect(stub.$transaction).not.toHaveBeenCalled();
+		expect(receiptFrom(result)?.units).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					scopeKey: "user:user-1/library:lib-1",
+					expectedRawCount: 2,
+					rawObserved: 2,
+					sourceBindings: 1,
+					canonicalEntities: 1,
+					acceptedSkips: [{ reason: "unsupported-provider-object", count: 1 }],
+					fatalCount: 0,
+				}),
+			]),
+		);
 	});
 
 	it("fails closed without evicting when a relevant item has no TMDb mapping", async () => {
@@ -657,6 +1235,19 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 
 		expect(result).toMatchObject({ complete: false, errors: 0, upserted: 0 });
 		expect(deleteMany).not.toHaveBeenCalled();
+		expect(receiptFrom(result)?.units).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					scopeKey: "user:user-1/library:lib-1",
+					expectedRawCount: 1,
+					rawObserved: 1,
+					sourceBindings: 0,
+					canonicalEntities: 0,
+					acceptedSkips: [{ reason: "missing-supported-mapping", count: 1 }],
+					fatalCount: 0,
+				}),
+			]),
+		);
 	});
 
 	it("publishes a complete empty replacement in one transaction", async () => {
@@ -702,5 +1293,84 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 			}),
 		]);
 		expect(transaction).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["unsupported provider objects", { type: "Playlist", tmdbId: undefined }],
+		["missing stable keys", { id: "", tmdbId: 42 }],
+		["missing supported mappings", { tmdbId: undefined }],
+	] as const)(
+		"retains safe rows for %s as a positive-only observation",
+		async (_label, skipped) => {
+			const client = makeMockClient([
+				makeMovieItem({ id: "safe-row", tmdbId: 42 }),
+				makeMovieItem(skipped),
+			]);
+
+			const result = await collectJellyfinCacheLiveEvidence(client, "inst-1", silentLog, {
+				attemptStartedAt: new Date("2026-01-01T00:00:00.000Z"),
+				observedAt: new Date("2026-01-01T00:01:00.000Z"),
+			});
+
+			expect(result).toMatchObject({
+				complete: false,
+				errors: 0,
+				completedAt: new Date("2026-01-01T00:01:00.000Z"),
+			});
+			expect(result.snapshot?.rows).toHaveLength(1);
+			expect(result.receipt).toMatchObject({
+				evidence: "positive-only",
+				publishedCanonicalEntities: 1,
+			});
+			expect(evaluateProviderCoverageReceipt(result.receipt)).toMatchObject({
+				valid: true,
+				complete: false,
+				acceptedSkipCount: 1,
+			});
+		},
+	);
+
+	it("treats an unmatched on-deck relation as a conserved semantic omission", async () => {
+		const client = makeMockClient([makeMovieItem({ id: "safe-row", tmdbId: 42 })]);
+		(client.getResumeItems as ReturnType<typeof vi.fn>).mockResolvedValue([
+			makeMovieItem({ id: "not-in-library", tmdbId: undefined }),
+		]);
+
+		const result = await collectJellyfinCacheLiveEvidence(client, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ complete: false, errors: 0 });
+		expect(result.snapshot?.rows).toHaveLength(1);
+		expect(result.receipt?.evidence).toBe("positive-only");
+		expect(result.receipt?.units).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					scopeKey: "user:user-1/on-deck",
+					rawObserved: 1,
+					sourceBindings: 0,
+					acceptedSkips: [{ reason: "missing-supported-mapping", count: 1 }],
+				}),
+			]),
+		);
+	});
+
+	it("preserves no publication when semantic omissions produce no safe rows", async () => {
+		const client = makeMockClient([makeMovieItem({ tmdbId: undefined })]);
+		const result = await collectJellyfinCacheLiveEvidence(client, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ complete: false, errors: 0 });
+		expect(result.snapshot).toBeUndefined();
+		expect(result.receipt?.evidence).toBe("unknown");
+	});
+
+	it("blocks publication on a source identity collision", async () => {
+		const client = makeMockClient([
+			makeMovieItem({ id: "same-source", tmdbId: 42 }),
+			makeSeriesItem({ id: "same-source", tmdbId: 84 }),
+		]);
+		const result = await collectJellyfinCacheLiveEvidence(client, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ complete: false, errors: 1 });
+		expect(result.snapshot).toBeUndefined();
+		expect(result.errorMessages).toContain("source-identity-conflict");
 	});
 });

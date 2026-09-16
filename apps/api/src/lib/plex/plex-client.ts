@@ -9,11 +9,17 @@ import type { FastifyBaseLogger } from "fastify";
 import type { z } from "zod";
 import type { ClientInstanceData } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
+import {
+	hasNativeInventoryExternalIds,
+	type NativeInventoryExternalIds,
+	normalizeNativeExternalId,
+	normalizeNativeInventoryExternalIds,
+} from "../provider-observation/native-inventory.js";
 import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import { parseUpstreamOrThrow } from "../validation/parse-upstream.js";
 import {
-	plexActivitiesResponseSchema,
 	plexAccountsResponseSchema,
+	plexActivitiesResponseSchema,
 	plexAllLeavesResponseSchema,
 	plexEpisodeMediaItemsResponseSchema,
 	plexEpisodesResponseSchema,
@@ -23,11 +29,14 @@ import {
 	plexLibraryItemsResponseSchema,
 	plexLibraryMediaItemsResponseSchema,
 	plexMetadataTagsResponseSchema,
+	plexNativeEpisodeItemsResponseSchema,
+	plexNativeLibraryItemsResponseSchema,
 	plexOnDeckResponseSchema,
 	plexSectionsResponseSchema,
-	plexSettlementSectionsResponseSchema,
 	plexServerInfoResponseSchema,
 	plexSessionsResponseSchema,
+	plexSettlementSectionsResponseSchema,
+	plexTargetMetadataResponseSchema,
 } from "./plex-schemas.js";
 
 // ============================================================================
@@ -77,6 +86,19 @@ export interface PlexLibraryItem {
 	Guid?: PlexGuid[];
 	Collection?: Array<{ tag: string }>;
 	Label?: Array<{ tag: string }>;
+}
+
+export interface PlexCompletePageResult<T> {
+	items: T[];
+	expectedRawCount: number | null;
+	pagesAttempted: number;
+	pagesCompleted: number;
+	rawObserved: number;
+	reason: "page-failure" | null;
+}
+
+interface PlexCompletePageResultInternal<T> extends PlexCompletePageResult<T> {
+	failureMessage?: string;
 }
 
 export interface PlexMovieMediaPart {
@@ -164,14 +186,59 @@ export interface PlexEpisodeItem {
 	lastViewedAt?: number;
 }
 
+export interface PlexNativeEpisodeItem {
+	ratingKey: string;
+	type: "episode";
+	title: string;
+	grandparentRatingKey: string | null;
+	seasonNumber: number | null;
+	episodeNumber: number | null;
+}
+
+export interface PlexNativeLibraryItem {
+	ratingKey: string;
+	type: "movie" | "show" | "collection";
+	title: string;
+	externalIds?: NativeInventoryExternalIds;
+}
+
+/** Current metadata identity needed to bind a historical provider row. */
+export interface PlexTargetMetadata {
+	ratingKey: string;
+	type: "movie" | "show" | "episode";
+	guid: string;
+	Guid: PlexGuid[];
+	librarySectionID: string;
+	parentRatingKey?: string;
+	grandparentRatingKey?: string;
+}
+
 // ============================================================================
 // Client Implementation
 // ============================================================================
 
 const DEFAULT_TIMEOUT = 15_000;
 const SAFETY_PAGE_SIZE = 200;
+// Metadata identifiers are encoded into the URL path rather than paged through
+// query parameters. Keep this transport budget independent from result paging
+// so large libraries remain verifiable behind bounded URI/proxy limits.
+const METADATA_TAG_BATCH_SIZE = 50;
+const TARGET_METADATA_BATCH_SIZE = 100;
 const SAFETY_MAX_ITEMS = 100_000;
 const HISTORY_SORT = "viewedAt:desc";
+
+function plexExternalIds(guids: readonly PlexGuid[] | undefined): NativeInventoryExternalIds {
+	const tmdb: unknown[] = [];
+	const tvdb: unknown[] = [];
+	for (const guid of guids ?? []) {
+		const match = guid.id.trim().match(/^(tmdb|tvdb):\/\/(.+)$/i);
+		if (!match) continue;
+		const id = normalizeNativeExternalId(match[2]);
+		if (id === undefined) continue;
+		(match[1]?.toLowerCase() === "tmdb" ? tmdb : tvdb).push(id);
+	}
+	return normalizeNativeInventoryExternalIds({ tmdb, tvdb });
+}
 
 /**
  * Extract a ratingKey from a Plex path like "/library/metadata/65486".
@@ -314,27 +381,154 @@ export class PlexClient {
 	 * Get all items from a library section.
 	 */
 	async getLibraryItems(sectionId: string): Promise<PlexLibraryItem[]> {
-		const items = await this.getCompleteSafetyMetadata(
+		const result = await this.getLibraryItemsWithCoverage(sectionId);
+		if (result.reason !== null) {
+			throw new Error("Plex safety pagination stopped before the declared total");
+		}
+		return result.items;
+	}
+
+	/**
+	 * Get a complete library section with bounded coverage accounting. A page
+	 * failure never exposes the rows observed before the failure.
+	 */
+	async getLibraryItemsWithCoverage(
+		sectionId: string,
+	): Promise<PlexCompletePageResult<PlexLibraryItem>> {
+		const pageResult = await this.getCompleteSafetyMetadataWithCoverage(
 			`/library/sections/${sectionId}/all?includeGuids=1&includeCollections=1&includeLabels=1`,
 			plexLibraryItemsResponseSchema,
 			(item) => item.ratingKey,
 		);
-		const tags = await this.getAuthoritativeMetadataTags(items.map((item) => item.ratingKey));
+		if (pageResult.reason !== null) {
+			return {
+				items: [],
+				expectedRawCount: pageResult.expectedRawCount,
+				pagesAttempted: pageResult.pagesAttempted,
+				pagesCompleted: pageResult.pagesCompleted,
+				rawObserved: pageResult.rawObserved,
+				reason: pageResult.reason,
+			};
+		}
+		const items = pageResult.items;
+		let tags: Awaited<ReturnType<PlexClient["getAuthoritativeMetadataTags"]>>;
+		try {
+			tags = await this.getAuthoritativeMetadataTags(items.map((item) => item.ratingKey));
+		} catch {
+			return {
+				items: [],
+				expectedRawCount: pageResult.expectedRawCount,
+				pagesAttempted: pageResult.pagesAttempted,
+				pagesCompleted: pageResult.pagesCompleted,
+				rawObserved: pageResult.rawObserved,
+				reason: "page-failure",
+			};
+		}
 
-		return items.map((m) => ({
-			ratingKey: m.ratingKey,
-			title: m.title,
-			type: m.type,
-			year: m.year,
-			userRating: m.userRating,
-			addedAt: m.addedAt,
-			viewCount: m.viewCount,
-			lastViewedAt: m.lastViewedAt,
-			thumb: m.thumb,
-			Guid: m.Guid?.map((g) => ({ id: g.id })),
-			Collection: tags.get(m.ratingKey)?.Collection?.map((c) => ({ tag: c.tag })),
-			Label: tags.get(m.ratingKey)?.Label?.map((l) => ({ tag: l.tag })),
-		}));
+		return {
+			items: items.map((m) => ({
+				ratingKey: m.ratingKey,
+				title: m.title,
+				type: m.type,
+				year: m.year,
+				userRating: m.userRating,
+				addedAt: m.addedAt,
+				viewCount: m.viewCount,
+				lastViewedAt: m.lastViewedAt,
+				thumb: m.thumb,
+				Guid: m.Guid?.map((g) => ({ id: g.id })),
+				Collection: tags.get(m.ratingKey)?.Collection?.map((c) => ({ tag: c.tag })),
+				Label: tags.get(m.ratingKey)?.Label?.map((l) => ({ tag: l.tag })),
+			})),
+			expectedRawCount: pageResult.expectedRawCount,
+			pagesAttempted: pageResult.pagesAttempted,
+			pagesCompleted: pageResult.pagesCompleted,
+			rawObserved: pageResult.rawObserved,
+			reason: null,
+		};
+	}
+
+	/**
+	 * Get the complete native episode inventory for one owned library section.
+	 * Mapping and watch metadata are deliberately outside this boundary: native
+	 * presence remains observable even when those optional fields are absent.
+	 */
+	async getNativeEpisodeItemsWithCoverage(
+		sectionId: string,
+	): Promise<PlexCompletePageResult<PlexNativeEpisodeItem>> {
+		const pageResult = await this.getCompleteSafetyMetadataWithCoverage(
+			`/library/sections/${encodeURIComponent(sectionId)}/all?type=4`,
+			plexNativeEpisodeItemsResponseSchema,
+			(item) => item.ratingKey,
+		);
+		if (pageResult.reason !== null) {
+			return {
+				items: [],
+				expectedRawCount: pageResult.expectedRawCount,
+				pagesAttempted: pageResult.pagesAttempted,
+				pagesCompleted: pageResult.pagesCompleted,
+				rawObserved: pageResult.rawObserved,
+				reason: pageResult.reason,
+			};
+		}
+
+		return {
+			items: pageResult.items.map((item) => ({
+				ratingKey: item.ratingKey,
+				type: item.type,
+				title: item.title,
+				grandparentRatingKey: item.grandparentRatingKey,
+				seasonNumber: item.parentIndex,
+				episodeNumber: item.index,
+			})),
+			expectedRawCount: pageResult.expectedRawCount,
+			pagesAttempted: pageResult.pagesAttempted,
+			pagesCompleted: pageResult.pagesCompleted,
+			rawObserved: pageResult.rawObserved,
+			reason: null,
+		};
+	}
+
+	/**
+	 * Get the complete native movie, show, and container inventory for one
+	 * owned library section. Container rows are retained for the caller to
+	 * account for explicitly when selecting supported media domains.
+	 */
+	async getNativeLibraryItemsWithCoverage(
+		sectionId: string,
+	): Promise<PlexCompletePageResult<PlexNativeLibraryItem>> {
+		const pageResult = await this.getCompleteSafetyMetadataWithCoverage(
+			`/library/sections/${encodeURIComponent(sectionId)}/all?includeGuids=1`,
+			plexNativeLibraryItemsResponseSchema,
+			(item) => item.ratingKey,
+		);
+		if (pageResult.reason !== null) {
+			return {
+				items: [],
+				expectedRawCount: pageResult.expectedRawCount,
+				pagesAttempted: pageResult.pagesAttempted,
+				pagesCompleted: pageResult.pagesCompleted,
+				rawObserved: pageResult.rawObserved,
+				reason: pageResult.reason,
+			};
+		}
+
+		return {
+			items: pageResult.items.map((item) => {
+				const externalIds = plexExternalIds(item.Guid);
+				return {
+					ratingKey: item.ratingKey,
+					type: item.type,
+					title: item.title,
+					...(hasNativeInventoryExternalIds(externalIds) ? { externalIds } : {}),
+				};
+			}),
+			expectedRawCount: pageResult.expectedRawCount,
+			pagesAttempted: pageResult.pagesAttempted,
+			pagesCompleted: pageResult.pagesCompleted,
+			rawObserved: pageResult.rawObserved,
+			reason: null,
+		};
 	}
 
 	private async getAuthoritativeMetadataTags(ratingKeys: readonly string[]) {
@@ -342,8 +536,8 @@ export class PlexClient {
 			string,
 			{ Collection?: Array<{ tag: string }>; Label?: Array<{ tag: string }> }
 		>();
-		for (let offset = 0; offset < ratingKeys.length; offset += SAFETY_PAGE_SIZE) {
-			const chunk = ratingKeys.slice(offset, offset + SAFETY_PAGE_SIZE);
+		for (let offset = 0; offset < ratingKeys.length; offset += METADATA_TAG_BATCH_SIZE) {
+			const chunk = ratingKeys.slice(offset, offset + METADATA_TAG_BATCH_SIZE);
 			const path = `/library/metadata/${chunk.map(encodeURIComponent).join(",")}?includeCollections=1&includeLabels=1`;
 			const data = await this.request(path, { schema: plexMetadataTagsResponseSchema });
 			const metadata = data.MediaContainer.Metadata ?? [];
@@ -379,52 +573,118 @@ export class PlexClient {
 		}>,
 		keyOf: (item: T) => string,
 	): Promise<T[]> {
+		const result = await this.getCompleteSafetyMetadataWithCoverage(path, schema, keyOf);
+		if (result.reason !== null) {
+			throw new Error(result.failureMessage ?? "Plex safety pagination failed");
+		}
+		return result.items;
+	}
+
+	private async getCompleteSafetyMetadataWithCoverage<T>(
+		path: string,
+		schema: z.ZodType<{
+			MediaContainer: {
+				offset: number;
+				size: number;
+				totalSize: number;
+				Metadata?: T[];
+			};
+		}>,
+		keyOf: (item: T) => string,
+	): Promise<PlexCompletePageResultInternal<T>> {
 		const allItems: T[] = [];
 		const seenKeys = new Set<string>();
-		let expectedTotal: number | undefined;
+		let expectedTotal: number | null = null;
 		let offset = 0;
+		let pagesAttempted = 0;
+		let pagesCompleted = 0;
+		let failureMessage: string | undefined;
 
-		while (expectedTotal === undefined || offset < expectedTotal) {
+		while (expectedTotal === null || offset < expectedTotal) {
+			pagesAttempted++;
 			const pageUrl = new URL(path, "http://plex.invalid");
 			pageUrl.searchParams.set("X-Plex-Container-Start", String(offset));
 			pageUrl.searchParams.set("X-Plex-Container-Size", String(SAFETY_PAGE_SIZE));
-			const page = await this.request(`${pageUrl.pathname}${pageUrl.search}`, { schema });
+			let page: {
+				MediaContainer: {
+					offset: number;
+					size: number;
+					totalSize: number;
+					Metadata?: T[];
+				};
+			};
+			try {
+				page = (await this.request(`${pageUrl.pathname}${pageUrl.search}`, {
+					schema,
+				})) as typeof page;
+			} catch {
+				failureMessage = "Plex safety pagination page request failed";
+				break;
+			}
 			const container = page.MediaContainer;
 			const items = container.Metadata ?? [];
 
 			if (container.offset !== offset || container.size !== items.length) {
-				throw new Error("Plex safety pagination metadata did not match the returned page");
+				failureMessage = "Plex safety pagination metadata did not match the returned page";
+				break;
 			}
-			if (expectedTotal === undefined) {
+			if (expectedTotal === null) {
 				expectedTotal = container.totalSize;
 				if (expectedTotal > SAFETY_MAX_ITEMS) {
-					throw new Error("Plex safety result set is too large to verify completely");
+					failureMessage = "Plex safety result set is too large to verify completely";
+					break;
 				}
 			} else if (container.totalSize !== expectedTotal) {
-				throw new Error("Plex safety result set changed while it was being paged");
+				failureMessage = "Plex safety result set changed while it was being paged";
+				break;
 			}
+			if (expectedTotal === null) break;
 			if (offset + items.length > expectedTotal) {
-				throw new Error("Plex safety pagination exceeded its declared total");
+				failureMessage = "Plex safety pagination exceeded its declared total";
+				break;
 			}
 			if (items.length === 0 && offset < expectedTotal) {
-				throw new Error("Plex safety pagination stopped before the declared total");
+				failureMessage = "Plex safety pagination stopped before the declared total";
+				break;
 			}
 
+			let duplicate = false;
 			for (const item of items) {
 				const key = keyOf(item);
 				if (seenKeys.has(key)) {
-					throw new Error("Plex safety pagination returned a duplicate item");
+					duplicate = true;
+					break;
 				}
 				seenKeys.add(key);
 				allItems.push(item);
 			}
+			if (duplicate) {
+				failureMessage = "Plex safety pagination returned a duplicate item";
+				break;
+			}
+			pagesCompleted++;
 			offset += items.length;
 		}
 
-		if (expectedTotal === undefined || allItems.length !== expectedTotal) {
-			throw new Error("Plex safety result set could not be verified as complete");
+		if (failureMessage || expectedTotal === null || allItems.length !== expectedTotal) {
+			return {
+				items: [],
+				expectedRawCount: expectedTotal,
+				pagesAttempted,
+				pagesCompleted,
+				rawObserved: allItems.length,
+				reason: "page-failure",
+				...(failureMessage ? { failureMessage } : {}),
+			};
 		}
-		return allItems;
+		return {
+			items: allItems,
+			expectedRawCount: expectedTotal,
+			pagesAttempted,
+			pagesCompleted,
+			rawObserved: allItems.length,
+			reason: null,
+		};
 	}
 
 	/**
@@ -744,6 +1004,59 @@ export class PlexClient {
 			throw new Error(`Plex episode ${ratingKey} returned an invalid watch count`);
 		}
 		return watchCount;
+	}
+
+	/**
+	 * Read one current Plex metadata record with the identity fields required
+	 * for historical watch reproof. A missing or duplicate record is unsafe to
+	 * interpret as the requested item.
+	 */
+	async getTargetMetadata(ratingKey: string): Promise<PlexTargetMetadata> {
+		const metadata = await this.getTargetMetadataBatch([ratingKey]);
+		if (metadata.length !== 1) {
+			throw new Error("Plex target metadata was not uniquely identified");
+		}
+		return metadata[0]!;
+	}
+
+	/**
+	 * Read current Plex metadata for a bounded set of historical targets.
+	 * Plex accepts comma-separated metadata identifiers in one request. Missing
+	 * records are returned as unavailable; an unexpected or duplicate record is
+	 * unsafe to bind and fails the whole batch.
+	 */
+	async getTargetMetadataBatch(ratingKeys: readonly string[]): Promise<PlexTargetMetadata[]> {
+		const requested = [...ratingKeys];
+		if (requested.length === 0) return [];
+		if (
+			requested.length > TARGET_METADATA_BATCH_SIZE ||
+			requested.some((ratingKey) => typeof ratingKey !== "string" || ratingKey.trim() === "") ||
+			new Set(requested).size !== requested.length
+		) {
+			throw new Error("Plex target metadata batch request is invalid or exceeds its limit");
+		}
+
+		const data = await this.request(
+			`/library/metadata/${requested.map(encodeURIComponent).join(",")}?includeGuids=1`,
+			{ schema: plexTargetMetadataResponseSchema },
+		);
+		const expected = new Set(requested);
+		const seen = new Set<string>();
+		for (const item of data.MediaContainer.Metadata) {
+			if (!expected.has(item.ratingKey) || seen.has(item.ratingKey)) {
+				throw new Error("Plex target metadata batch returned an unexpected or duplicate item");
+			}
+			seen.add(item.ratingKey);
+		}
+		return data.MediaContainer.Metadata.map((item) => ({
+			ratingKey: item.ratingKey,
+			type: item.type,
+			guid: item.guid,
+			Guid: item.Guid.map((guid) => ({ id: guid.id })),
+			librarySectionID: item.librarySectionID,
+			...(item.parentRatingKey ? { parentRatingKey: item.parentRatingKey } : {}),
+			...(item.grandparentRatingKey ? { grandparentRatingKey: item.grandparentRatingKey } : {}),
+		}));
 	}
 
 	/**

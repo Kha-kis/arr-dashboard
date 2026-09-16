@@ -27,19 +27,23 @@ import { requireEnabledInstance } from "../arr/instance-helpers.js";
 import { parseQueueId } from "../dashboard/queue-utils.js";
 import { AppValidationError, ConflictError, InstanceNotFoundError } from "../errors.js";
 import { getHuntingScheduler } from "../hunting/scheduler.js";
-import { withIndependentCleanupOperationGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
-import {
-	createOwnedJellyfinPublicationSnapshot,
-	refreshJellyfinCache,
-} from "../jellyfin/jellyfin-cache-refresher.js";
-import { runJellyfinCacheRefreshSingleFlight } from "../jellyfin/jellyfin-cache-singleflight.js";
-import { requireJellyfinClient } from "../jellyfin/jellyfin-helpers.js";
-import { refreshOwnedPlexCache } from "../plex/plex-refresh-orchestration.js";
+import { refreshOwnedJellyfinCacheWithAttempt } from "../jellyfin/jellyfin-cache-refresher.js";
+import { runJellyfinCacheRefreshSingleFlightWithAttempt } from "../jellyfin/jellyfin-cache-singleflight.js";
+import { refreshOwnedPlexCacheWithAttempt } from "../plex/plex-refresh-orchestration.js";
+import { startProviderCacheRefreshInBackground } from "../provider-observation/background-cache-refresh.js";
 import { getQueueCleanerScheduler } from "../queue-cleaner/scheduler.js";
-import { recordWatchProviderCacheRefreshFailure } from "../services/provider-cache-status.js";
-import type { OwnedProviderPublicationSnapshot } from "../services/provider-identity-guard.js";
-import { refreshOwnedTautulliCache } from "../tautulli/tautulli-cache-refresher.js";
+import type {
+	EpisodeRefreshProvider,
+	FastifyWithEpisodeRefreshScheduler,
+} from "../services/episode-refresh-scheduler-bridge.js";
+import type { FastifyWithLibraryRefreshRecovery } from "../services/library-refresh-recovery.js";
+import {
+	claimProviderCacheRefreshAttempt,
+	type ProviderCacheRefreshAttempt,
+} from "../services/provider-cache-status.js";
+import { createProviderPublicationAuthority } from "../services/provider-identity-guard.js";
 import { findOwnedEnabledTautulliInstance } from "../tautulli/tautulli-cache-authority.js";
+import { refreshOwnedTautulliCacheWithAttempt } from "../tautulli/tautulli-cache-refresher.js";
 
 export interface PulseActionResult {
 	status: "ok";
@@ -131,9 +135,9 @@ async function dispatchSchedulerEnable(
 // ---------------------------------------------------------------------------
 //
 // **Fire-and-forget semantics.** Ownership validation is synchronous (the
-// require*Client helpers throw InstanceNotFoundError → 404 for
-// missing/unowned instances and AppValidationError → 400 for wrong
-// service type), but the actual refresh runs in the background. We return
+// owner-scoped instance helpers throw InstanceNotFoundError → 404 for
+// missing/unowned instances and AppValidationError → 400 for wrong service
+// type), but the actual refresh runs in the background. We return
 // 200 as soon as the refresh is *accepted* — not when it completes —
 // because:
 //
@@ -161,148 +165,130 @@ async function dispatchCacheRefresh(
 	cacheType: PulseCacheType,
 	log: FastifyBaseLogger,
 ): Promise<PulseActionResult> {
+	if (cacheType === "plex_episode") {
+		const instance = await requireEnabledInstance(app, userId, instanceId);
+		if (instance.service !== "PLEX") {
+			throw new AppValidationError("Instance is not a Plex service");
+		}
+		return dispatchEpisodeSchedulerRetry(app, userId, instanceId, "plex_episode", log);
+	}
+
+	if (cacheType === "jellyfin_episode") {
+		const instance = await requireEnabledInstance(app, userId, instanceId);
+		if (instance.service !== "JELLYFIN" && instance.service !== "EMBY") {
+			throw new AppValidationError("Instance is not a Jellyfin or Emby service");
+		}
+		return dispatchEpisodeSchedulerRetry(app, userId, instanceId, "jellyfin_episode", log);
+	}
+
 	if (cacheType === "plex") {
 		const instance = await requireEnabledInstance(app, userId, instanceId);
 		if (instance.service !== "PLEX") {
 			throw new AppValidationError("Instance is not a Plex service");
 		}
-		const backgroundTask = runBackgroundCacheRefresh({
-			app,
-			log,
-			instanceId,
+		const authority = createProviderPublicationAuthority(instance);
+		const recovery = (app as FastifyWithLibraryRefreshRecovery).libraryRefreshRecovery;
+		const admission = await startProviderCacheRefreshInBackground({
 			cacheType: "plex",
-			refresh: () =>
-				refreshOwnedPlexCache({
-					prisma: app.prisma,
-					encryptor: app.encryptor,
-					instance,
-					log,
-				}),
-			failureRecordedByRefresh: true,
+			claim: () => claimProviderCacheRefreshAttempt(app.prisma, "plex", authority),
+			produce: (attempt: ProviderCacheRefreshAttempt) =>
+				refreshOwnedPlexCacheWithAttempt(
+					{
+						prisma: app.prisma,
+						encryptor: app.encryptor,
+						instance,
+						log,
+					},
+					attempt,
+				),
+			log,
+			...(recovery
+				? { recovery: { provider: "plex" as const, userId, instanceId, handoff: recovery } }
+				: {}),
 		});
-		log.info({ instanceId, cacheType }, "pulse-action: plex cache refresh dispatched");
-		return { status: "ok", backgroundTask };
+		log.info({ cacheType, settlement: "accepted" }, "pulse-action: cache refresh accepted");
+		return { status: "ok", backgroundTask: admission.backgroundTask };
 	}
 
 	if (cacheType === "jellyfin") {
-		const { instance } = await requireJellyfinClient(app, userId, instanceId);
-		const publicationInstance = createOwnedJellyfinPublicationSnapshot(app.encryptor, instance);
-		const backgroundTask = runBackgroundCacheRefresh({
-			app,
-			log,
-			instanceId,
+		const instance = await requireEnabledInstance(app, userId, instanceId);
+		if (instance.service !== "JELLYFIN" && instance.service !== "EMBY") {
+			throw new AppValidationError("Instance is not a Jellyfin or Emby service");
+		}
+		const authority = createProviderPublicationAuthority(instance);
+		const recovery = (app as FastifyWithLibraryRefreshRecovery).libraryRefreshRecovery;
+		const admission = await startProviderCacheRefreshInBackground({
 			cacheType: "jellyfin",
-			refresh: () =>
-				runJellyfinCacheRefreshSingleFlight(
-					publicationInstance,
-					() =>
-						refreshJellyfinCache({
+			claim: () => claimProviderCacheRefreshAttempt(app.prisma, "jellyfin", authority),
+			produce: (attempt: ProviderCacheRefreshAttempt) =>
+				runJellyfinCacheRefreshSingleFlightWithAttempt(authority, "jellyfin", attempt, () =>
+					refreshOwnedJellyfinCacheWithAttempt(
+						{
 							prisma: app.prisma,
-							instance: publicationInstance,
+							encryptor: app.encryptor,
+							instance,
 							log,
-						}),
-					{ prisma: app.prisma, log },
+						},
+						attempt,
+					),
 				),
-			failureRecordedByRefresh: true,
-			publicationAuthority: publicationInstance,
+			log,
+			...(recovery
+				? { recovery: { provider: "jellyfin" as const, userId, instanceId, handoff: recovery } }
+				: {}),
 		});
-		log.info({ instanceId, cacheType }, "pulse-action: jellyfin cache refresh dispatched");
-		return { status: "ok", backgroundTask };
+		log.info({ cacheType, settlement: "accepted" }, "pulse-action: cache refresh accepted");
+		return { status: "ok", backgroundTask: admission.backgroundTask };
 	}
 
 	// tautulli
 	const instance = await findOwnedEnabledTautulliInstance(app.prisma, { userId, instanceId });
 	if (!instance) throw new InstanceNotFoundError(instanceId);
-	const backgroundTask = runBackgroundCacheRefresh({
-		app,
-		log,
-		instanceId,
+	const authority = createProviderPublicationAuthority(instance);
+	const admission = await startProviderCacheRefreshInBackground({
 		cacheType: "tautulli",
-		refresh: () =>
-			refreshOwnedTautulliCache({
-				prisma: app.prisma,
-				encryptor: app.encryptor,
-				instance,
-				log,
-			}),
-		failureRecordedByRefresh: true,
-	});
-	log.info({ instanceId, cacheType }, "pulse-action: tautulli cache refresh dispatched");
-	return { status: "ok", backgroundTask };
-}
-
-function runBackgroundCacheRefresh(opts: {
-	app: FastifyInstance;
-	log: FastifyBaseLogger;
-	instanceId: string;
-	cacheType: PulseCacheType;
-	refresh: () => Promise<CacheRefreshResult>;
-	failureRecordedByRefresh?: boolean;
-	publicationAuthority?: OwnedProviderPublicationSnapshot;
-}): Promise<void> {
-	const {
+		claim: () => claimProviderCacheRefreshAttempt(app.prisma, "tautulli", authority),
+		produce: (attempt: ProviderCacheRefreshAttempt) =>
+			refreshOwnedTautulliCacheWithAttempt(
+				{
+					prisma: app.prisma,
+					encryptor: app.encryptor,
+					instance,
+					log,
+				},
+				attempt,
+			),
 		log,
-		instanceId,
-		cacheType,
-		refresh,
-		failureRecordedByRefresh = false,
-		publicationAuthority,
-	} = opts;
-	return withIndependentCleanupOperationGuard(async () => {
-		try {
-			const result = await refresh();
-			if (
-				(!result.complete || !result.completedAt) &&
-				!result.superseded &&
-				!failureRecordedByRefresh &&
-				publicationAuthority
-			) {
-				await recordBackgroundCacheRefreshFailure(
-					opts,
-					result.errorMessages?.slice(0, 3).join("; ").slice(0, 200) ||
-						`${cacheType} refresh did not publish a complete generation`,
-				);
-			}
-			log.info(
-				{ instanceId, cacheType, upserted: result.upserted, errors: result.errors },
-				"pulse-action: cache refresh completed (background)",
-			);
-		} catch (err) {
-			if (!failureRecordedByRefresh && publicationAuthority) {
-				await recordBackgroundCacheRefreshFailure(
-					opts,
-					err instanceof Error ? err.message : String(err),
-				);
-			}
-			log.error(
-				cacheType === "tautulli"
-					? { instanceId, cacheType, reasonCode: "unknown_failure" }
-					: { err, instanceId, cacheType },
-				"pulse-action: cache refresh failed (background)",
-			);
-		}
 	});
+	log.info({ cacheType, settlement: "accepted" }, "pulse-action: cache refresh accepted");
+	return { status: "ok", backgroundTask: admission.backgroundTask };
 }
 
-async function recordBackgroundCacheRefreshFailure(
-	opts: {
-		app: FastifyInstance;
-		log: FastifyBaseLogger;
-		instanceId: string;
-		cacheType: PulseCacheType;
-		publicationAuthority?: OwnedProviderPublicationSnapshot;
-	},
-	message: string,
-): Promise<void> {
-	if (opts.publicationAuthority) {
-		await recordWatchProviderCacheRefreshFailure(
-			opts.app.prisma,
-			opts.cacheType,
-			message,
-			opts.publicationAuthority,
-			opts.log,
-		);
+/**
+ * Admit a manual episode retry into the provider scheduler's existing
+ * continuation chain. There is intentionally no one-page fallback: a
+ * missing scheduler or an instance that became ineligible fails closed.
+ */
+async function dispatchEpisodeSchedulerRetry(
+	app: FastifyInstance,
+	userId: string,
+	instanceId: string,
+	provider: EpisodeRefreshProvider,
+	log: FastifyBaseLogger,
+): Promise<PulseActionResult> {
+	const scheduler = (app as FastifyWithEpisodeRefreshScheduler).episodeRefreshScheduler;
+	if (!scheduler) {
+		throw new ConflictError("Episode refresh scheduler is unavailable");
 	}
+	const admission = await scheduler.retry(provider, { userId, instanceId });
+	if (admission.status === "unavailable") {
+		throw new ConflictError("Episode refresh scheduler is unavailable");
+	}
+	if (admission.status === "ineligible") {
+		throw new InstanceNotFoundError(instanceId);
+	}
+	log.info({ cacheType: provider, settlement: "accepted" }, "pulse-action: episode retry accepted");
+	return { status: "ok", backgroundTask: admission.backgroundTask };
 }
 
 // ---------------------------------------------------------------------------
@@ -370,29 +356,4 @@ async function dispatchQueueRetry(
 		"pulse-action: queue item retried",
 	);
 	return { status: "ok" };
-}
-
-// ---------------------------------------------------------------------------
-// CacheRefreshStatus write-through
-// ---------------------------------------------------------------------------
-//
-// Bumps the `lastRefreshedAt` timestamp (and result metadata) on the
-// `CacheRefreshStatus` row the collector reads from. Without this, a
-// successful dispatcher run would leave the row stale on the next GET
-// /pulse poll — the collector determines staleness from this table, not
-// from the refresher's return value.
-//
-// Mirrors the upsert already performed by the inline manual-refresh
-// route at apps/api/src/routes/plex/cache-routes.ts so the two paths
-// behave identically for operators. The status upsert is best-effort
-// (`.catch(...)`): a failure here must not fail the action itself, since
-// the refresh already succeeded.
-
-interface CacheRefreshResult {
-	upserted: number;
-	errors: number;
-	errorMessages?: readonly string[];
-	complete: boolean;
-	completedAt?: Date;
-	superseded?: boolean;
 }

@@ -6,9 +6,9 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ServiceBadge, StatusBadge } from "../../../components/layout";
 import { useLibraryMonitorMutation } from "../../../hooks/api/useLibrary";
-import {
-	type WatchedMonitoredItem,
-	useWatchedMonitoredInsights,
+import type {
+	WatchedMonitoredItem,
+	WatchedMonitoredResponse,
 } from "../../../hooks/api/useWatchedMonitoredInsights";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { getLinuxInstanceName, getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
@@ -23,10 +23,12 @@ import { cn } from "../../../lib/utils";
  * Collapsed by default.
  */
 export function WatchedMonitoredPanel({
+	queryData,
 	autoExpand = false,
 	isDismissed,
 	onDismiss,
 }: {
+	queryData: WatchedMonitoredResponse | undefined;
 	autoExpand?: boolean;
 	isDismissed?: (instanceId: string, arrItemId: number) => boolean;
 	onDismiss?: (instanceId: string, arrItemId: number) => void;
@@ -44,9 +46,8 @@ export function WatchedMonitoredPanel({
 	const monitorMutation = useLibraryMonitorMutation();
 	const [pendingId, setPendingId] = useState<string | null>(null);
 
-	const { data, isLoading } = useWatchedMonitoredInsights({ limit: 25 });
-
 	const handleUnmonitor = async (item: WatchedMonitoredItem) => {
+		if (item.watchCountSemantics !== "exact") return;
 		const key = `${item.instanceId}:${item.arrItemId}`;
 		setPendingId(key);
 		try {
@@ -64,13 +65,13 @@ export function WatchedMonitoredPanel({
 		}
 	};
 
-	const allItems = data?.data?.items ?? [];
+	const allItems = queryData?.data?.items ?? [];
 	const items = isDismissed
 		? allItems.filter((i) => !isDismissed(i.instanceId, i.arrItemId))
 		: allItems;
-	const hasWatchData = data?.data?.hasWatchData ?? data?.data?.hasPlexData ?? false;
+	const hasWatchData = queryData?.data?.hasWatchData ?? queryData?.data?.hasPlexData ?? false;
 
-	if (isLoading || items.length === 0 || !hasWatchData) return null;
+	if (items.length === 0 || !hasWatchData) return null;
 
 	return (
 		<div
@@ -108,6 +109,8 @@ export function WatchedMonitoredPanel({
 					<p className="text-xs text-muted-foreground mb-3">
 						Movies and ended series with watch history that are still monitored. Continuing series
 						are excluded. Sorted by watch count.
+						{items.some((item) => item.watchCountSemantics === "lower-bound") &&
+							" Counts marked ≥ are observed minimums; this list may be incomplete. Unmonitor is unavailable for these observations."}
 					</p>
 					{items.map((item) => (
 						<WatchedRow
@@ -155,22 +158,25 @@ function WatchedRow({
 			</div>
 			<ServiceBadge service={item.service} />
 			<StatusBadge status="success">
+				{item.watchCountSemantics === "lower-bound" ? "≥ " : ""}
 				{item.watchCount} play{item.watchCount !== 1 ? "s" : ""}
 			</StatusBadge>
-			<button
-				type="button"
-				onClick={onUnmonitor}
-				disabled={isPending}
-				className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/20"
-				title="Stop monitoring this item"
-			>
-				{isPending ? (
-					<Loader2 className="h-3 w-3 animate-spin" />
-				) : (
-					<PauseCircle className="h-3 w-3" />
-				)}
-				Unmonitor
-			</button>
+			{item.watchCountSemantics === "exact" && (
+				<button
+					type="button"
+					onClick={onUnmonitor}
+					disabled={isPending}
+					className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/20"
+					title="Stop monitoring this item"
+				>
+					{isPending ? (
+						<Loader2 className="h-3 w-3 animate-spin" />
+					) : (
+						<PauseCircle className="h-3 w-3" />
+					)}
+					Unmonitor
+				</button>
+			)}
 			{onDismiss && (
 				<button
 					type="button"

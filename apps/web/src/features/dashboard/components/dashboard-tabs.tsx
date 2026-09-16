@@ -46,7 +46,10 @@ export const DashboardTabs = ({
 		>
 			<div className="relative border-b border-border/50">
 				<LayoutGroup>
-					<nav className="flex gap-1" role="tablist">
+					<nav
+						className={cn("grid gap-1 sm:flex", tabs.length === 3 ? "grid-cols-3" : "grid-cols-2")}
+						role="tablist"
+					>
 						{tabs.map((tab) => {
 							const Icon = tab.icon;
 							const isActive = activeTab === tab.id;
@@ -57,10 +60,11 @@ export const DashboardTabs = ({
 									key={tab.id}
 									type="button"
 									role="tab"
+									aria-label={tab.label}
 									aria-selected={isActive}
 									onClick={() => onTabChange(tab.id)}
 									className={cn(
-										"group relative flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors duration-300",
+										"group relative flex min-w-0 items-center justify-center gap-1 px-2 py-3 text-xs font-medium transition-colors duration-300 sm:gap-2 sm:px-4 sm:text-sm",
 										isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground",
 									)}
 									whileHover={{ scale: 1.02 }}
@@ -74,7 +78,7 @@ export const DashboardTabs = ({
 									/>
 
 									{/* Label */}
-									<span className="relative">{tab.label}</span>
+									<span className="relative hidden sm:inline">{tab.label}</span>
 
 									{/* Badge */}
 									{hasBadge && (

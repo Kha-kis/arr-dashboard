@@ -2,6 +2,7 @@ import type { FastifyPluginCallback } from "fastify";
 import { registerFetchRoutes } from "./library/fetch-routes.js";
 import { registerInsightsRoutes } from "./library/insights-routes.js";
 import { registerMonitorRoutes } from "./library/monitor-routes.js";
+import { registerProviderInventoryRoutes } from "./library/provider-inventory-routes.js";
 import { registerSearchRoutes } from "./library/search-routes.js";
 import { registerSyncRoutes } from "./library/sync-routes.js";
 
@@ -12,6 +13,7 @@ import { registerSyncRoutes } from "./library/sync-routes.js";
 const libraryRoute: FastifyPluginCallback = (app, _opts, done) => {
 	// Register all route modules
 	app.register(registerFetchRoutes);
+	app.register(registerProviderInventoryRoutes);
 	app.register(registerInsightsRoutes);
 	app.register(registerMonitorRoutes);
 	app.register(registerSearchRoutes);

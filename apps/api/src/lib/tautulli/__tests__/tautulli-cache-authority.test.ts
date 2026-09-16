@@ -10,6 +10,7 @@ import {
 const allowedProductionAccess = new Set([
 	path.normalize("src/lib/tautulli/tautulli-cache-authority.ts"),
 	path.normalize("src/lib/tautulli/tautulli-cache-refresher.ts"),
+	path.normalize("src/lib/tautulli/tautulli-observation-repository.ts"),
 	path.normalize("src/lib/services/service-identity-lifecycle.ts"),
 ]);
 
@@ -20,7 +21,15 @@ async function productionTypeScriptFiles(directory: string): Promise<string[]> {
 		const absolute = path.join(directory, entry.name);
 		if (entry.isDirectory()) {
 			if (
-				["__tests__", "fixtures", "generated", "node_modules", "dist", ".next"].includes(entry.name)
+				[
+					"__tests__",
+					"config-dev",
+					"fixtures",
+					"generated",
+					"node_modules",
+					"dist",
+					".next",
+				].includes(entry.name)
 			) {
 				continue;
 			}
@@ -57,17 +66,35 @@ const status = {
 };
 
 describe("Tautulli cache authority", () => {
-	it("recognizes only a fresh complete exact-generation publication", () => {
+	it("keeps an otherwise-current exact-generation publication non-authoritative", () => {
 		expect(
 			evaluateTautulliCacheAuthority(instance, status, { total: 2, exact: 2 }, { now }),
 		).toEqual(
 			expect.objectContaining({
-				available: true,
-				state: "healthy_complete",
-				reasonCodes: [],
-				cachedItems: 2,
+				available: false,
+				state: "degraded_unavailable",
+				reasonCodes: ["provider_completion_unverifiable"],
+				cachedItems: null,
 			}),
 		);
+	});
+
+	it("keeps a current positive display publication unavailable to authority consumers", () => {
+		const result = evaluateTautulliCacheAuthority(
+			instance,
+			status,
+			{
+				total: 2,
+				exact: 2,
+			},
+			{ now },
+		);
+
+		expect(result).toMatchObject({
+			available: false,
+			state: "degraded_unavailable",
+			reasonCodes: ["provider_completion_unverifiable"],
+		});
 	});
 
 	it.each([
@@ -143,7 +170,12 @@ describe("Tautulli cache authority", () => {
 			now,
 		});
 
-		expect(result?.available).toBe(true);
+		expect(result).toMatchObject({
+			available: false,
+			state: "degraded_unavailable",
+			reasonCodes: ["provider_completion_unverifiable"],
+			cachedItems: null,
+		});
 		expect(prisma.serviceInstance.findFirst).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: expect.objectContaining({ id: "tautulli-1", userId: "user-1" }),
@@ -297,7 +329,7 @@ describe("Tautulli cache authority", () => {
 		expect(prisma.tautulliCache.count).not.toHaveBeenCalled();
 	});
 
-	it("cursor-paginates selected rows with tenant and exact-generation scope on every page", async () => {
+	it("does not load selected rows from an otherwise-current configured publication", async () => {
 		const rows = Array.from({ length: 101 }, (_, index) => ({
 			id: `row-${String(index + 1).padStart(3, "0")}`,
 			instanceId: "tautulli-1",
@@ -333,24 +365,16 @@ describe("Tautulli cache authority", () => {
 			now,
 		});
 
-		expect(result).toMatchObject({ configured: true, available: true, rows });
-		expect(prisma.tautulliCache.findMany).toHaveBeenCalledTimes(2);
-		for (const call of prisma.tautulliCache.findMany.mock.calls) {
-			expect(call[0].where).toEqual(
-				expect.objectContaining({
-					instance: { userId: "user-1" },
-					instanceId: "tautulli-1",
-					connectionGeneration: 4,
-					identityGeneration: 9,
-				}),
-			);
-		}
-		expect(prisma.tautulliCache.findMany.mock.calls.map(([query]) => query.take)).toEqual([
-			100, 100,
-		]);
+		expect(result).toEqual({
+			configured: true,
+			available: false,
+			reasonCodes: ["provider_completion_unverifiable"],
+			rows: [],
+		});
+		expect(prisma.tautulliCache.findMany).not.toHaveBeenCalled();
 	});
 
-	it("keeps lifecycle clearing between validation and row loading inside one Serializable snapshot", async () => {
+	it("keeps lifecycle validation and degraded projection inside one Serializable snapshot", async () => {
 		const selectedRow = {
 			id: "row-1",
 			instanceId: "tautulli-1",
@@ -395,17 +419,18 @@ describe("Tautulli cache authority", () => {
 				targets: [{ tmdbId: 1, mediaType: "movie" }],
 				now,
 			}),
-		).resolves.toMatchObject({
+		).resolves.toEqual({
 			configured: true,
-			available: true,
-			reasonCodes: [],
-			rows: [selectedRow],
+			available: false,
+			reasonCodes: ["provider_completion_unverifiable"],
+			rows: [],
 		});
 		expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
 			isolationLevel: "Serializable",
 			timeout: expect.any(Number),
 		});
 		expect(prisma.serviceInstance.findMany).not.toHaveBeenCalled();
+		expect(snapshotPrisma.tautulliCache.findMany).not.toHaveBeenCalled();
 	});
 
 	it("quarantines ambiguous multiple Tautulli sources before any row read", async () => {

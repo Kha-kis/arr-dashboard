@@ -34,10 +34,6 @@ const SIDEBAR_NAVIGATION = [
 
 const EXPECTED_LIDARR_POSTER_CSP =
 	/^Loading the image 'http:\/\/lidarr:8686\/config\/MediaCover\/\d+\/poster\.jpg' violates the following Content Security Policy directive: "img-src 'self' data: https:"\. The action has been blocked\.$/;
-const HISTORY_CONTAINMENT_MESSAGE =
-	"History is temporarily unavailable while safe, bounded pagination is restored.";
-const EXPECTED_HISTORY_RESOURCE_ERROR =
-	/^Failed to load resource: the server responded with a status of 503 \(Service Unavailable\)$/;
 
 interface ConsoleError {
 	route: string;
@@ -102,11 +98,29 @@ test.describe("Full Navigation Sweep", () => {
 
 			if (route === "/history") {
 				const historyResponse = await historyResponsePromise;
-				expect(historyResponse?.status()).toBe(503);
-				expect(await historyResponse?.json()).toEqual({
-					error: HISTORY_CONTAINMENT_MESSAGE,
-				});
-				await expect(page.getByText(HISTORY_CONTAINMENT_MESSAGE)).toBeVisible();
+				expect(historyResponse?.status()).toBe(200);
+				const historyPayload = await historyResponse?.json();
+				expect(Object.keys(historyPayload).sort()).toEqual(
+					["items", "pageInfo", "sources", "version"].sort(),
+				);
+				expect(historyPayload.version).toBe(2);
+				expect(Array.isArray(historyPayload.items)).toBe(true);
+				expect(historyPayload.items.length).toBeLessThanOrEqual(100);
+				expect(Array.isArray(historyPayload.sources)).toBe(true);
+				expect(historyPayload.sources.length).toBeLessThanOrEqual(1_000);
+				expect(Object.keys(historyPayload.pageInfo).sort()).toEqual(
+					["hasNextPage", "matchingObservedCount", "nextCursor"].sort(),
+				);
+				expect(typeof historyPayload.pageInfo.hasNextPage).toBe("boolean");
+				expect(
+					historyPayload.pageInfo.nextCursor === null ||
+						typeof historyPayload.pageInfo.nextCursor === "string",
+				).toBe(true);
+				expect(historyPayload.pageInfo.hasNextPage).toBe(
+					Boolean(historyPayload.pageInfo.nextCursor),
+				);
+				expect(Number.isSafeInteger(historyPayload.pageInfo.matchingObservedCount)).toBe(true);
+				expect(historyPayload.pageInfo.matchingObservedCount).toBeGreaterThanOrEqual(0);
 			}
 
 			// Delay between navigations
@@ -129,15 +143,8 @@ test.describe("Full Navigation Sweep", () => {
 			(error) => error.route === "/library" && EXPECTED_LIDARR_POSTER_CSP.test(error.message),
 		);
 		expect(expectedLidarrCspErrors.length).toBeLessThanOrEqual(1);
-		const expectedHistoryContainmentErrors = consoleErrors.filter(
-			(error) => error.route === "/history" && EXPECTED_HISTORY_RESOURCE_ERROR.test(error.message),
-		);
-		expect(expectedHistoryContainmentErrors.length).toBeLessThanOrEqual(1);
-
 		const unexpectedErrors = consoleErrors.filter(
-			(error) =>
-				!(error.route === "/library" && EXPECTED_LIDARR_POSTER_CSP.test(error.message)) &&
-				!(error.route === "/history" && EXPECTED_HISTORY_RESOURCE_ERROR.test(error.message)),
+			(error) => !(error.route === "/library" && EXPECTED_LIDARR_POSTER_CSP.test(error.message)),
 		);
 
 		expect(unexpectedErrors).toHaveLength(0);

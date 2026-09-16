@@ -55,6 +55,10 @@ interface AggregatedTorrentObservation {
 
 type ObservationWriteClient = Pick<PrismaTypes.TransactionClient, "$executeRaw">;
 
+async function yieldToEventLoop(): Promise<void> {
+	await new Promise<void>((resolve) => setImmediate(resolve));
+}
+
 async function stageQuiObservationChunk(
 	prisma: ObservationWriteClient,
 	tableName: "library_cache" | "episode_file_cache",
@@ -92,17 +96,23 @@ async function stageQuiObservations(
 	prisma: ObservationWriteClient,
 	userId: string,
 	aggregate: ReadonlyMap<string, AggregatedTorrentObservation>,
+	dbProvider: "sqlite" | "postgresql",
 ): Promise<number> {
 	const observations = [...aggregate.entries()];
 	let rowsUpdated = 0;
+	let hasPreviousChunk = false;
 	for (const tableName of ["library_cache", "episode_file_cache"] as const) {
 		for (let offset = 0; offset < observations.length; offset += OBSERVATION_WRITE_CHUNK_SIZE) {
+			if (hasPreviousChunk && dbProvider === "sqlite") {
+				await yieldToEventLoop();
+			}
 			rowsUpdated += await stageQuiObservationChunk(
 				prisma,
 				tableName,
 				userId,
 				observations.slice(offset, offset + OBSERVATION_WRITE_CHUNK_SIZE),
 			);
+			hasPreviousChunk = true;
 		}
 	}
 	return rowsUpdated;
@@ -210,6 +220,7 @@ async function persistCompleteAbsence(
 	prisma: Pick<Prisma.TransactionClient, "libraryCache" | "episodeFileCache">,
 	userId: string,
 	seenHashes: ReadonlySet<string>,
+	dbProvider: "sqlite" | "postgresql",
 ): Promise<number> {
 	const [libraryCandidates, episodeCandidates] = await Promise.all([
 		prisma.libraryCache.findMany({
@@ -229,7 +240,11 @@ async function persistCompleteAbsence(
 		.map((row) => row.id);
 
 	let rowsCleared = 0;
+	let hasPreviousChunk = false;
 	for (let offset = 0; offset < libraryIds.length; offset += UPDATE_CHUNK_SIZE) {
+		if (hasPreviousChunk && dbProvider === "sqlite") {
+			await yieldToEventLoop();
+		}
 		const updated = await prisma.libraryCache.updateMany({
 			where: {
 				id: { in: libraryIds.slice(offset, offset + UPDATE_CHUNK_SIZE) },
@@ -242,8 +257,12 @@ async function persistCompleteAbsence(
 			},
 		});
 		rowsCleared += updated.count;
+		hasPreviousChunk = true;
 	}
 	for (let offset = 0; offset < episodeIds.length; offset += UPDATE_CHUNK_SIZE) {
+		if (hasPreviousChunk && dbProvider === "sqlite") {
+			await yieldToEventLoop();
+		}
 		const updated = await prisma.episodeFileCache.updateMany({
 			where: {
 				id: { in: episodeIds.slice(offset, offset + UPDATE_CHUNK_SIZE) },
@@ -256,6 +275,7 @@ async function persistCompleteAbsence(
 			},
 		});
 		rowsCleared += updated.count;
+		hasPreviousChunk = true;
 	}
 	return rowsCleared;
 }
@@ -407,11 +427,17 @@ export async function runQuiTorrentStateSync(
 					// Stage each cache table with bounded CASE updates. This avoids one
 					// synchronous better-sqlite3 statement per hash while keeping the
 					// state and ratio paired with their normalized hash.
-					publishedRowsUpdated = await stageQuiObservations(app.prisma, userId, aggregate);
+					publishedRowsUpdated = await stageQuiObservations(
+						app.prisma,
+						userId,
+						aggregate,
+						app.dbProvider,
+					);
 					publishedRowsCleared = await persistCompleteAbsence(
 						app.prisma,
 						userId,
 						new Set(aggregate.keys()),
+						app.dbProvider,
 					);
 					await publishUserQuiFreshness(app, userId, observedAt);
 					for (const [hash, observation] of aggregate) {

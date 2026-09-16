@@ -401,6 +401,9 @@ export const ModelName = {
   Session: 'Session',
   ServiceTag: 'ServiceTag',
   ServiceInstance: 'ServiceInstance',
+  HistoryObservation: 'HistoryObservation',
+  HistorySourceStatus: 'HistorySourceStatus',
+  HistoryCollectionLease: 'HistoryCollectionLease',
   InodeIndexCache: 'InodeIndexCache',
   ServiceInstanceTag: 'ServiceInstanceTag',
   OIDCProvider: 'OIDCProvider',
@@ -449,11 +452,19 @@ export const ModelName = {
   JellyfinEpisodeCache: 'JellyfinEpisodeCache',
   TautulliCache: 'TautulliCache',
   CacheRefreshStatus: 'CacheRefreshStatus',
+  ProviderObservationRun: 'ProviderObservationRun',
+  ProviderNativeInventorySnapshot: 'ProviderNativeInventorySnapshot',
+  ProviderNativeInventoryItem: 'ProviderNativeInventoryItem',
+  ProviderObservationUnit: 'ProviderObservationUnit',
+  PlexEpisodeObservationStage: 'PlexEpisodeObservationStage',
+  JellyfinEpisodeObservationStage: 'JellyfinEpisodeObservationStage',
+  JellyfinEpisodeObservationExclusion: 'JellyfinEpisodeObservationExclusion',
   SessionSnapshot: 'SessionSnapshot',
   NamingConfig: 'NamingConfig',
   NamingDeployHistory: 'NamingDeployHistory',
   SeerrActionLog: 'SeerrActionLog',
   LabelSyncRule: 'LabelSyncRule',
+  LabelSyncMutationAttempt: 'LabelSyncMutationAttempt',
   AutoTagRule: 'AutoTagRule',
   TmdbListCache: 'TmdbListCache',
   TraktListCache: 'TraktListCache',
@@ -476,7 +487,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "inodeIndexCache" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "episodeFileCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupMediaServerScan" | "libraryCleanupMediaServerScanLease" | "libraryCleanupLog" | "libraryCleanupAuditEvent" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexGenerationTarget" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule" | "tmdbListCache" | "traktListCache" | "listCacheRefreshStatus" | "quiActivityLog" | "quiActionLog" | "quiEventLog"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "historyObservation" | "historySourceStatus" | "historyCollectionLease" | "inodeIndexCache" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "episodeFileCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupMediaServerScan" | "libraryCleanupMediaServerScanLease" | "libraryCleanupLog" | "libraryCleanupAuditEvent" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexGenerationTarget" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "providerObservationRun" | "providerNativeInventorySnapshot" | "providerNativeInventoryItem" | "providerObservationUnit" | "plexEpisodeObservationStage" | "jellyfinEpisodeObservationStage" | "jellyfinEpisodeObservationExclusion" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "labelSyncMutationAttempt" | "autoTagRule" | "tmdbListCache" | "traktListCache" | "listCacheRefreshStatus" | "quiActivityLog" | "quiActionLog" | "quiEventLog"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -773,6 +784,228 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         count: {
           args: Prisma.ServiceInstanceCountArgs<ExtArgs>
           result: runtime.Types.Utils.Optional<Prisma.ServiceInstanceCountAggregateOutputType> | number
+        }
+      }
+    }
+    HistoryObservation: {
+      payload: Prisma.$HistoryObservationPayload<ExtArgs>
+      fields: Prisma.HistoryObservationFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.HistoryObservationFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryObservationPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.HistoryObservationFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryObservationPayload>
+        }
+        findFirst: {
+          args: Prisma.HistoryObservationFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryObservationPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.HistoryObservationFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryObservationPayload>
+        }
+        findMany: {
+          args: Prisma.HistoryObservationFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryObservationPayload>[]
+        }
+        create: {
+          args: Prisma.HistoryObservationCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryObservationPayload>
+        }
+        createMany: {
+          args: Prisma.HistoryObservationCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.HistoryObservationCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryObservationPayload>[]
+        }
+        delete: {
+          args: Prisma.HistoryObservationDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryObservationPayload>
+        }
+        update: {
+          args: Prisma.HistoryObservationUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryObservationPayload>
+        }
+        deleteMany: {
+          args: Prisma.HistoryObservationDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.HistoryObservationUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.HistoryObservationUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryObservationPayload>[]
+        }
+        upsert: {
+          args: Prisma.HistoryObservationUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryObservationPayload>
+        }
+        aggregate: {
+          args: Prisma.HistoryObservationAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateHistoryObservation>
+        }
+        groupBy: {
+          args: Prisma.HistoryObservationGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.HistoryObservationGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.HistoryObservationCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.HistoryObservationCountAggregateOutputType> | number
+        }
+      }
+    }
+    HistorySourceStatus: {
+      payload: Prisma.$HistorySourceStatusPayload<ExtArgs>
+      fields: Prisma.HistorySourceStatusFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.HistorySourceStatusFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistorySourceStatusPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.HistorySourceStatusFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistorySourceStatusPayload>
+        }
+        findFirst: {
+          args: Prisma.HistorySourceStatusFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistorySourceStatusPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.HistorySourceStatusFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistorySourceStatusPayload>
+        }
+        findMany: {
+          args: Prisma.HistorySourceStatusFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistorySourceStatusPayload>[]
+        }
+        create: {
+          args: Prisma.HistorySourceStatusCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistorySourceStatusPayload>
+        }
+        createMany: {
+          args: Prisma.HistorySourceStatusCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.HistorySourceStatusCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistorySourceStatusPayload>[]
+        }
+        delete: {
+          args: Prisma.HistorySourceStatusDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistorySourceStatusPayload>
+        }
+        update: {
+          args: Prisma.HistorySourceStatusUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistorySourceStatusPayload>
+        }
+        deleteMany: {
+          args: Prisma.HistorySourceStatusDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.HistorySourceStatusUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.HistorySourceStatusUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistorySourceStatusPayload>[]
+        }
+        upsert: {
+          args: Prisma.HistorySourceStatusUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistorySourceStatusPayload>
+        }
+        aggregate: {
+          args: Prisma.HistorySourceStatusAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateHistorySourceStatus>
+        }
+        groupBy: {
+          args: Prisma.HistorySourceStatusGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.HistorySourceStatusGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.HistorySourceStatusCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.HistorySourceStatusCountAggregateOutputType> | number
+        }
+      }
+    }
+    HistoryCollectionLease: {
+      payload: Prisma.$HistoryCollectionLeasePayload<ExtArgs>
+      fields: Prisma.HistoryCollectionLeaseFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.HistoryCollectionLeaseFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryCollectionLeasePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.HistoryCollectionLeaseFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryCollectionLeasePayload>
+        }
+        findFirst: {
+          args: Prisma.HistoryCollectionLeaseFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryCollectionLeasePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.HistoryCollectionLeaseFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryCollectionLeasePayload>
+        }
+        findMany: {
+          args: Prisma.HistoryCollectionLeaseFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryCollectionLeasePayload>[]
+        }
+        create: {
+          args: Prisma.HistoryCollectionLeaseCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryCollectionLeasePayload>
+        }
+        createMany: {
+          args: Prisma.HistoryCollectionLeaseCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.HistoryCollectionLeaseCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryCollectionLeasePayload>[]
+        }
+        delete: {
+          args: Prisma.HistoryCollectionLeaseDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryCollectionLeasePayload>
+        }
+        update: {
+          args: Prisma.HistoryCollectionLeaseUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryCollectionLeasePayload>
+        }
+        deleteMany: {
+          args: Prisma.HistoryCollectionLeaseDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.HistoryCollectionLeaseUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.HistoryCollectionLeaseUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryCollectionLeasePayload>[]
+        }
+        upsert: {
+          args: Prisma.HistoryCollectionLeaseUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HistoryCollectionLeasePayload>
+        }
+        aggregate: {
+          args: Prisma.HistoryCollectionLeaseAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateHistoryCollectionLease>
+        }
+        groupBy: {
+          args: Prisma.HistoryCollectionLeaseGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.HistoryCollectionLeaseGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.HistoryCollectionLeaseCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.HistoryCollectionLeaseCountAggregateOutputType> | number
         }
       }
     }
@@ -4328,6 +4561,524 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    ProviderObservationRun: {
+      payload: Prisma.$ProviderObservationRunPayload<ExtArgs>
+      fields: Prisma.ProviderObservationRunFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ProviderObservationRunFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderObservationRunPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ProviderObservationRunFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderObservationRunPayload>
+        }
+        findFirst: {
+          args: Prisma.ProviderObservationRunFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderObservationRunPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ProviderObservationRunFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderObservationRunPayload>
+        }
+        findMany: {
+          args: Prisma.ProviderObservationRunFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderObservationRunPayload>[]
+        }
+        create: {
+          args: Prisma.ProviderObservationRunCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderObservationRunPayload>
+        }
+        createMany: {
+          args: Prisma.ProviderObservationRunCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ProviderObservationRunCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderObservationRunPayload>[]
+        }
+        delete: {
+          args: Prisma.ProviderObservationRunDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderObservationRunPayload>
+        }
+        update: {
+          args: Prisma.ProviderObservationRunUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderObservationRunPayload>
+        }
+        deleteMany: {
+          args: Prisma.ProviderObservationRunDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ProviderObservationRunUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ProviderObservationRunUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderObservationRunPayload>[]
+        }
+        upsert: {
+          args: Prisma.ProviderObservationRunUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderObservationRunPayload>
+        }
+        aggregate: {
+          args: Prisma.ProviderObservationRunAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateProviderObservationRun>
+        }
+        groupBy: {
+          args: Prisma.ProviderObservationRunGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ProviderObservationRunGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ProviderObservationRunCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ProviderObservationRunCountAggregateOutputType> | number
+        }
+      }
+    }
+    ProviderNativeInventorySnapshot: {
+      payload: Prisma.$ProviderNativeInventorySnapshotPayload<ExtArgs>
+      fields: Prisma.ProviderNativeInventorySnapshotFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ProviderNativeInventorySnapshotFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderNativeInventorySnapshotPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ProviderNativeInventorySnapshotFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderNativeInventorySnapshotPayload>
+        }
+        findFirst: {
+          args: Prisma.ProviderNativeInventorySnapshotFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderNativeInventorySnapshotPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ProviderNativeInventorySnapshotFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderNativeInventorySnapshotPayload>
+        }
+        findMany: {
+          args: Prisma.ProviderNativeInventorySnapshotFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderNativeInventorySnapshotPayload>[]
+        }
+        create: {
+          args: Prisma.ProviderNativeInventorySnapshotCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderNativeInventorySnapshotPayload>
+        }
+        createMany: {
+          args: Prisma.ProviderNativeInventorySnapshotCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ProviderNativeInventorySnapshotCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderNativeInventorySnapshotPayload>[]
+        }
+        delete: {
+          args: Prisma.ProviderNativeInventorySnapshotDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderNativeInventorySnapshotPayload>
+        }
+        update: {
+          args: Prisma.ProviderNativeInventorySnapshotUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderNativeInventorySnapshotPayload>
+        }
+        deleteMany: {
+          args: Prisma.ProviderNativeInventorySnapshotDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ProviderNativeInventorySnapshotUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ProviderNativeInventorySnapshotUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderNativeInventorySnapshotPayload>[]
+        }
+        upsert: {
+          args: Prisma.ProviderNativeInventorySnapshotUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderNativeInventorySnapshotPayload>
+        }
+        aggregate: {
+          args: Prisma.ProviderNativeInventorySnapshotAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateProviderNativeInventorySnapshot>
+        }
+        groupBy: {
+          args: Prisma.ProviderNativeInventorySnapshotGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ProviderNativeInventorySnapshotGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ProviderNativeInventorySnapshotCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ProviderNativeInventorySnapshotCountAggregateOutputType> | number
+        }
+      }
+    }
+    ProviderNativeInventoryItem: {
+      payload: Prisma.$ProviderNativeInventoryItemPayload<ExtArgs>
+      fields: Prisma.ProviderNativeInventoryItemFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ProviderNativeInventoryItemFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderNativeInventoryItemPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ProviderNativeInventoryItemFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderNativeInventoryItemPayload>
+        }
+        findFirst: {
+          args: Prisma.ProviderNativeInventoryItemFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderNativeInventoryItemPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ProviderNativeInventoryItemFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderNativeInventoryItemPayload>
+        }
+        findMany: {
+          args: Prisma.ProviderNativeInventoryItemFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderNativeInventoryItemPayload>[]
+        }
+        create: {
+          args: Prisma.ProviderNativeInventoryItemCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderNativeInventoryItemPayload>
+        }
+        createMany: {
+          args: Prisma.ProviderNativeInventoryItemCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ProviderNativeInventoryItemCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderNativeInventoryItemPayload>[]
+        }
+        delete: {
+          args: Prisma.ProviderNativeInventoryItemDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderNativeInventoryItemPayload>
+        }
+        update: {
+          args: Prisma.ProviderNativeInventoryItemUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderNativeInventoryItemPayload>
+        }
+        deleteMany: {
+          args: Prisma.ProviderNativeInventoryItemDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ProviderNativeInventoryItemUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ProviderNativeInventoryItemUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderNativeInventoryItemPayload>[]
+        }
+        upsert: {
+          args: Prisma.ProviderNativeInventoryItemUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderNativeInventoryItemPayload>
+        }
+        aggregate: {
+          args: Prisma.ProviderNativeInventoryItemAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateProviderNativeInventoryItem>
+        }
+        groupBy: {
+          args: Prisma.ProviderNativeInventoryItemGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ProviderNativeInventoryItemGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ProviderNativeInventoryItemCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ProviderNativeInventoryItemCountAggregateOutputType> | number
+        }
+      }
+    }
+    ProviderObservationUnit: {
+      payload: Prisma.$ProviderObservationUnitPayload<ExtArgs>
+      fields: Prisma.ProviderObservationUnitFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ProviderObservationUnitFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderObservationUnitPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ProviderObservationUnitFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderObservationUnitPayload>
+        }
+        findFirst: {
+          args: Prisma.ProviderObservationUnitFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderObservationUnitPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ProviderObservationUnitFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderObservationUnitPayload>
+        }
+        findMany: {
+          args: Prisma.ProviderObservationUnitFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderObservationUnitPayload>[]
+        }
+        create: {
+          args: Prisma.ProviderObservationUnitCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderObservationUnitPayload>
+        }
+        createMany: {
+          args: Prisma.ProviderObservationUnitCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ProviderObservationUnitCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderObservationUnitPayload>[]
+        }
+        delete: {
+          args: Prisma.ProviderObservationUnitDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderObservationUnitPayload>
+        }
+        update: {
+          args: Prisma.ProviderObservationUnitUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderObservationUnitPayload>
+        }
+        deleteMany: {
+          args: Prisma.ProviderObservationUnitDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ProviderObservationUnitUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ProviderObservationUnitUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderObservationUnitPayload>[]
+        }
+        upsert: {
+          args: Prisma.ProviderObservationUnitUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProviderObservationUnitPayload>
+        }
+        aggregate: {
+          args: Prisma.ProviderObservationUnitAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateProviderObservationUnit>
+        }
+        groupBy: {
+          args: Prisma.ProviderObservationUnitGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ProviderObservationUnitGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ProviderObservationUnitCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ProviderObservationUnitCountAggregateOutputType> | number
+        }
+      }
+    }
+    PlexEpisodeObservationStage: {
+      payload: Prisma.$PlexEpisodeObservationStagePayload<ExtArgs>
+      fields: Prisma.PlexEpisodeObservationStageFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.PlexEpisodeObservationStageFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexEpisodeObservationStagePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.PlexEpisodeObservationStageFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexEpisodeObservationStagePayload>
+        }
+        findFirst: {
+          args: Prisma.PlexEpisodeObservationStageFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexEpisodeObservationStagePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.PlexEpisodeObservationStageFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexEpisodeObservationStagePayload>
+        }
+        findMany: {
+          args: Prisma.PlexEpisodeObservationStageFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexEpisodeObservationStagePayload>[]
+        }
+        create: {
+          args: Prisma.PlexEpisodeObservationStageCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexEpisodeObservationStagePayload>
+        }
+        createMany: {
+          args: Prisma.PlexEpisodeObservationStageCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.PlexEpisodeObservationStageCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexEpisodeObservationStagePayload>[]
+        }
+        delete: {
+          args: Prisma.PlexEpisodeObservationStageDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexEpisodeObservationStagePayload>
+        }
+        update: {
+          args: Prisma.PlexEpisodeObservationStageUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexEpisodeObservationStagePayload>
+        }
+        deleteMany: {
+          args: Prisma.PlexEpisodeObservationStageDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.PlexEpisodeObservationStageUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.PlexEpisodeObservationStageUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexEpisodeObservationStagePayload>[]
+        }
+        upsert: {
+          args: Prisma.PlexEpisodeObservationStageUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexEpisodeObservationStagePayload>
+        }
+        aggregate: {
+          args: Prisma.PlexEpisodeObservationStageAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregatePlexEpisodeObservationStage>
+        }
+        groupBy: {
+          args: Prisma.PlexEpisodeObservationStageGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.PlexEpisodeObservationStageGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.PlexEpisodeObservationStageCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.PlexEpisodeObservationStageCountAggregateOutputType> | number
+        }
+      }
+    }
+    JellyfinEpisodeObservationStage: {
+      payload: Prisma.$JellyfinEpisodeObservationStagePayload<ExtArgs>
+      fields: Prisma.JellyfinEpisodeObservationStageFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.JellyfinEpisodeObservationStageFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationStagePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.JellyfinEpisodeObservationStageFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationStagePayload>
+        }
+        findFirst: {
+          args: Prisma.JellyfinEpisodeObservationStageFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationStagePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.JellyfinEpisodeObservationStageFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationStagePayload>
+        }
+        findMany: {
+          args: Prisma.JellyfinEpisodeObservationStageFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationStagePayload>[]
+        }
+        create: {
+          args: Prisma.JellyfinEpisodeObservationStageCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationStagePayload>
+        }
+        createMany: {
+          args: Prisma.JellyfinEpisodeObservationStageCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.JellyfinEpisodeObservationStageCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationStagePayload>[]
+        }
+        delete: {
+          args: Prisma.JellyfinEpisodeObservationStageDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationStagePayload>
+        }
+        update: {
+          args: Prisma.JellyfinEpisodeObservationStageUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationStagePayload>
+        }
+        deleteMany: {
+          args: Prisma.JellyfinEpisodeObservationStageDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.JellyfinEpisodeObservationStageUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.JellyfinEpisodeObservationStageUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationStagePayload>[]
+        }
+        upsert: {
+          args: Prisma.JellyfinEpisodeObservationStageUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationStagePayload>
+        }
+        aggregate: {
+          args: Prisma.JellyfinEpisodeObservationStageAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateJellyfinEpisodeObservationStage>
+        }
+        groupBy: {
+          args: Prisma.JellyfinEpisodeObservationStageGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.JellyfinEpisodeObservationStageGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.JellyfinEpisodeObservationStageCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.JellyfinEpisodeObservationStageCountAggregateOutputType> | number
+        }
+      }
+    }
+    JellyfinEpisodeObservationExclusion: {
+      payload: Prisma.$JellyfinEpisodeObservationExclusionPayload<ExtArgs>
+      fields: Prisma.JellyfinEpisodeObservationExclusionFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.JellyfinEpisodeObservationExclusionFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationExclusionPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.JellyfinEpisodeObservationExclusionFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationExclusionPayload>
+        }
+        findFirst: {
+          args: Prisma.JellyfinEpisodeObservationExclusionFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationExclusionPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.JellyfinEpisodeObservationExclusionFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationExclusionPayload>
+        }
+        findMany: {
+          args: Prisma.JellyfinEpisodeObservationExclusionFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationExclusionPayload>[]
+        }
+        create: {
+          args: Prisma.JellyfinEpisodeObservationExclusionCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationExclusionPayload>
+        }
+        createMany: {
+          args: Prisma.JellyfinEpisodeObservationExclusionCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.JellyfinEpisodeObservationExclusionCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationExclusionPayload>[]
+        }
+        delete: {
+          args: Prisma.JellyfinEpisodeObservationExclusionDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationExclusionPayload>
+        }
+        update: {
+          args: Prisma.JellyfinEpisodeObservationExclusionUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationExclusionPayload>
+        }
+        deleteMany: {
+          args: Prisma.JellyfinEpisodeObservationExclusionDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.JellyfinEpisodeObservationExclusionUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.JellyfinEpisodeObservationExclusionUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationExclusionPayload>[]
+        }
+        upsert: {
+          args: Prisma.JellyfinEpisodeObservationExclusionUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeObservationExclusionPayload>
+        }
+        aggregate: {
+          args: Prisma.JellyfinEpisodeObservationExclusionAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateJellyfinEpisodeObservationExclusion>
+        }
+        groupBy: {
+          args: Prisma.JellyfinEpisodeObservationExclusionGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.JellyfinEpisodeObservationExclusionGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.JellyfinEpisodeObservationExclusionCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.JellyfinEpisodeObservationExclusionCountAggregateOutputType> | number
+        }
+      }
+    }
     SessionSnapshot: {
       payload: Prisma.$SessionSnapshotPayload<ExtArgs>
       fields: Prisma.SessionSnapshotFieldRefs
@@ -4695,6 +5446,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         count: {
           args: Prisma.LabelSyncRuleCountArgs<ExtArgs>
           result: runtime.Types.Utils.Optional<Prisma.LabelSyncRuleCountAggregateOutputType> | number
+        }
+      }
+    }
+    LabelSyncMutationAttempt: {
+      payload: Prisma.$LabelSyncMutationAttemptPayload<ExtArgs>
+      fields: Prisma.LabelSyncMutationAttemptFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.LabelSyncMutationAttemptFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LabelSyncMutationAttemptPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.LabelSyncMutationAttemptFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LabelSyncMutationAttemptPayload>
+        }
+        findFirst: {
+          args: Prisma.LabelSyncMutationAttemptFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LabelSyncMutationAttemptPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.LabelSyncMutationAttemptFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LabelSyncMutationAttemptPayload>
+        }
+        findMany: {
+          args: Prisma.LabelSyncMutationAttemptFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LabelSyncMutationAttemptPayload>[]
+        }
+        create: {
+          args: Prisma.LabelSyncMutationAttemptCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LabelSyncMutationAttemptPayload>
+        }
+        createMany: {
+          args: Prisma.LabelSyncMutationAttemptCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.LabelSyncMutationAttemptCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LabelSyncMutationAttemptPayload>[]
+        }
+        delete: {
+          args: Prisma.LabelSyncMutationAttemptDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LabelSyncMutationAttemptPayload>
+        }
+        update: {
+          args: Prisma.LabelSyncMutationAttemptUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LabelSyncMutationAttemptPayload>
+        }
+        deleteMany: {
+          args: Prisma.LabelSyncMutationAttemptDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.LabelSyncMutationAttemptUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.LabelSyncMutationAttemptUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LabelSyncMutationAttemptPayload>[]
+        }
+        upsert: {
+          args: Prisma.LabelSyncMutationAttemptUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LabelSyncMutationAttemptPayload>
+        }
+        aggregate: {
+          args: Prisma.LabelSyncMutationAttemptAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateLabelSyncMutationAttempt>
+        }
+        groupBy: {
+          args: Prisma.LabelSyncMutationAttemptGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.LabelSyncMutationAttemptGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.LabelSyncMutationAttemptCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.LabelSyncMutationAttemptCountAggregateOutputType> | number
         }
       }
     }
@@ -5323,6 +6148,57 @@ export const ServiceInstanceScalarFieldEnum = {
 } as const
 
 export type ServiceInstanceScalarFieldEnum = (typeof ServiceInstanceScalarFieldEnum)[keyof typeof ServiceInstanceScalarFieldEnum]
+
+
+export const HistoryObservationScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  connectionGeneration: 'connectionGeneration',
+  providerEventId: 'providerEventId',
+  eventAt: 'eventAt',
+  eventTypeKey: 'eventTypeKey',
+  searchText: 'searchText',
+  normalizedPayload: 'normalizedPayload',
+  firstObservedAt: 'firstObservedAt',
+  lastObservedAt: 'lastObservedAt'
+} as const
+
+export type HistoryObservationScalarFieldEnum = (typeof HistoryObservationScalarFieldEnum)[keyof typeof HistoryObservationScalarFieldEnum]
+
+
+export const HistorySourceStatusScalarFieldEnum = {
+  instanceId: 'instanceId',
+  connectionGeneration: 'connectionGeneration',
+  publishedAt: 'publishedAt',
+  publicationMetadata: 'publicationMetadata',
+  retainedObservationCount: 'retainedObservationCount',
+  lastAttemptAt: 'lastAttemptAt',
+  lastAttemptResult: 'lastAttemptResult',
+  lastAttemptReason: 'lastAttemptReason',
+  publicationRevision: 'publicationRevision',
+  retentionEpoch: 'retentionEpoch',
+  collectHeadNext: 'collectHeadNext',
+  nextBackfillPage: 'nextBackfillPage',
+  activeCollectionPage: 'activeCollectionPage'
+} as const
+
+export type HistorySourceStatusScalarFieldEnum = (typeof HistorySourceStatusScalarFieldEnum)[keyof typeof HistorySourceStatusScalarFieldEnum]
+
+
+export const HistoryCollectionLeaseScalarFieldEnum = {
+  userId: 'userId',
+  claimToken: 'claimToken',
+  claimedAt: 'claimedAt',
+  heartbeatAt: 'heartbeatAt',
+  expiresAt: 'expiresAt',
+  lastAttemptAt: 'lastAttemptAt',
+  lastAttemptResult: 'lastAttemptResult',
+  lastAttemptReason: 'lastAttemptReason',
+  nextSourceCursor: 'nextSourceCursor',
+  updatedAt: 'updatedAt'
+} as const
+
+export type HistoryCollectionLeaseScalarFieldEnum = (typeof HistoryCollectionLeaseScalarFieldEnum)[keyof typeof HistoryCollectionLeaseScalarFieldEnum]
 
 
 export const InodeIndexCacheScalarFieldEnum = {
@@ -6303,6 +7179,149 @@ export const CacheRefreshStatusScalarFieldEnum = {
 export type CacheRefreshStatusScalarFieldEnum = (typeof CacheRefreshStatusScalarFieldEnum)[keyof typeof CacheRefreshStatusScalarFieldEnum]
 
 
+export const ProviderObservationRunScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  provider: 'provider',
+  cacheType: 'cacheType',
+  authorityKey: 'authorityKey',
+  activeSlotKey: 'activeSlotKey',
+  parentGenerationId: 'parentGenerationId',
+  targetDigest: 'targetDigest',
+  targetCount: 'targetCount',
+  connectionGeneration: 'connectionGeneration',
+  identityGeneration: 'identityGeneration',
+  state: 'state',
+  totalUnits: 'totalUnits',
+  completedUnits: 'completedUnits',
+  totalWork: 'totalWork',
+  completedWork: 'completedWork',
+  nextAttemptAt: 'nextAttemptAt',
+  lastReasonCode: 'lastReasonCode',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  completedAt: 'completedAt'
+} as const
+
+export type ProviderObservationRunScalarFieldEnum = (typeof ProviderObservationRunScalarFieldEnum)[keyof typeof ProviderObservationRunScalarFieldEnum]
+
+
+export const ProviderNativeInventorySnapshotScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  domain: 'domain',
+  generationId: 'generationId',
+  observedAt: 'observedAt',
+  connectionGeneration: 'connectionGeneration',
+  identityGeneration: 'identityGeneration',
+  scopeDigest: 'scopeDigest',
+  contentDigest: 'contentDigest',
+  itemCount: 'itemCount',
+  scopeCount: 'scopeCount',
+  lastAttemptAt: 'lastAttemptAt',
+  lastAttemptToken: 'lastAttemptToken',
+  lastAttemptResult: 'lastAttemptResult',
+  lastAttemptReason: 'lastAttemptReason'
+} as const
+
+export type ProviderNativeInventorySnapshotScalarFieldEnum = (typeof ProviderNativeInventorySnapshotScalarFieldEnum)[keyof typeof ProviderNativeInventorySnapshotScalarFieldEnum]
+
+
+export const ProviderNativeInventoryItemScalarFieldEnum = {
+  id: 'id',
+  snapshotId: 'snapshotId',
+  nativeId: 'nativeId',
+  mediaType: 'mediaType',
+  libraryIds: 'libraryIds',
+  parentNativeId: 'parentNativeId',
+  seasonNumber: 'seasonNumber',
+  episodeNumber: 'episodeNumber',
+  title: 'title',
+  externalIds: 'externalIds'
+} as const
+
+export type ProviderNativeInventoryItemScalarFieldEnum = (typeof ProviderNativeInventoryItemScalarFieldEnum)[keyof typeof ProviderNativeInventoryItemScalarFieldEnum]
+
+
+export const ProviderObservationUnitScalarFieldEnum = {
+  id: 'id',
+  runId: 'runId',
+  ordinal: 'ordinal',
+  scopeKey: 'scopeKey',
+  scopeDigest: 'scopeDigest',
+  scopePayload: 'scopePayload',
+  phase: 'phase',
+  expectedTargets: 'expectedTargets',
+  cursor: 'cursor',
+  expectedRawCount: 'expectedRawCount',
+  observedRawCount: 'observedRawCount',
+  state: 'state',
+  claimToken: 'claimToken',
+  attemptCount: 'attemptCount',
+  nextAttemptAt: 'nextAttemptAt',
+  lastReasonCode: 'lastReasonCode',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  completedAt: 'completedAt'
+} as const
+
+export type ProviderObservationUnitScalarFieldEnum = (typeof ProviderObservationUnitScalarFieldEnum)[keyof typeof ProviderObservationUnitScalarFieldEnum]
+
+
+export const PlexEpisodeObservationStageScalarFieldEnum = {
+  id: 'id',
+  runId: 'runId',
+  unitId: 'unitId',
+  showTmdbId: 'showTmdbId',
+  parentRatingKey: 'parentRatingKey',
+  seasonNumber: 'seasonNumber',
+  episodeNumber: 'episodeNumber',
+  ratingKey: 'ratingKey',
+  title: 'title',
+  watched: 'watched',
+  watchedByUsers: 'watchedByUsers',
+  lastWatchedAt: 'lastWatchedAt',
+  watchCount: 'watchCount',
+  refreshedAt: 'refreshedAt',
+  sourceFingerprint: 'sourceFingerprint'
+} as const
+
+export type PlexEpisodeObservationStageScalarFieldEnum = (typeof PlexEpisodeObservationStageScalarFieldEnum)[keyof typeof PlexEpisodeObservationStageScalarFieldEnum]
+
+
+export const JellyfinEpisodeObservationStageScalarFieldEnum = {
+  id: 'id',
+  runId: 'runId',
+  unitId: 'unitId',
+  userKeyDigest: 'userKeyDigest',
+  pass: 'pass',
+  jellyfinId: 'jellyfinId',
+  seriesId: 'seriesId',
+  seasonNumber: 'seasonNumber',
+  episodeNumber: 'episodeNumber',
+  title: 'title',
+  played: 'played',
+  playCount: 'playCount',
+  lastPlayedAt: 'lastPlayedAt',
+  userName: 'userName'
+} as const
+
+export type JellyfinEpisodeObservationStageScalarFieldEnum = (typeof JellyfinEpisodeObservationStageScalarFieldEnum)[keyof typeof JellyfinEpisodeObservationStageScalarFieldEnum]
+
+
+export const JellyfinEpisodeObservationExclusionScalarFieldEnum = {
+  id: 'id',
+  runId: 'runId',
+  unitId: 'unitId',
+  userKeyDigest: 'userKeyDigest',
+  pass: 'pass',
+  jellyfinId: 'jellyfinId',
+  reason: 'reason'
+} as const
+
+export type JellyfinEpisodeObservationExclusionScalarFieldEnum = (typeof JellyfinEpisodeObservationExclusionScalarFieldEnum)[keyof typeof JellyfinEpisodeObservationExclusionScalarFieldEnum]
+
+
 export const SessionSnapshotScalarFieldEnum = {
   id: 'id',
   instanceId: 'instanceId',
@@ -6392,6 +7411,37 @@ export const LabelSyncRuleScalarFieldEnum = {
 } as const
 
 export type LabelSyncRuleScalarFieldEnum = (typeof LabelSyncRuleScalarFieldEnum)[keyof typeof LabelSyncRuleScalarFieldEnum]
+
+
+export const LabelSyncMutationAttemptScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  ruleId: 'ruleId',
+  destinationInstanceId: 'destinationInstanceId',
+  provider: 'provider',
+  mediaType: 'mediaType',
+  tmdbId: 'tmdbId',
+  connectionGeneration: 'connectionGeneration',
+  identityGeneration: 'identityGeneration',
+  targetItemId: 'targetItemId',
+  libraryId: 'libraryId',
+  intentFingerprint: 'intentFingerprint',
+  ruleFingerprint: 'ruleFingerprint',
+  destinationTag: 'destinationTag',
+  activeOperationKey: 'activeOperationKey',
+  claimToken: 'claimToken',
+  sendAttemptCount: 'sendAttemptCount',
+  reconcileAttemptCount: 'reconcileAttemptCount',
+  requestStartedAt: 'requestStartedAt',
+  lastObservedAt: 'lastObservedAt',
+  completedAt: 'completedAt',
+  status: 'status',
+  reasonCode: 'reasonCode',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type LabelSyncMutationAttemptScalarFieldEnum = (typeof LabelSyncMutationAttemptScalarFieldEnum)[keyof typeof LabelSyncMutationAttemptScalarFieldEnum]
 
 
 export const AutoTagRuleScalarFieldEnum = {
@@ -6767,6 +7817,9 @@ export type GlobalOmitConfig = {
   session?: Prisma.SessionOmit
   serviceTag?: Prisma.ServiceTagOmit
   serviceInstance?: Prisma.ServiceInstanceOmit
+  historyObservation?: Prisma.HistoryObservationOmit
+  historySourceStatus?: Prisma.HistorySourceStatusOmit
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseOmit
   inodeIndexCache?: Prisma.InodeIndexCacheOmit
   serviceInstanceTag?: Prisma.ServiceInstanceTagOmit
   oIDCProvider?: Prisma.OIDCProviderOmit
@@ -6815,11 +7868,19 @@ export type GlobalOmitConfig = {
   jellyfinEpisodeCache?: Prisma.JellyfinEpisodeCacheOmit
   tautulliCache?: Prisma.TautulliCacheOmit
   cacheRefreshStatus?: Prisma.CacheRefreshStatusOmit
+  providerObservationRun?: Prisma.ProviderObservationRunOmit
+  providerNativeInventorySnapshot?: Prisma.ProviderNativeInventorySnapshotOmit
+  providerNativeInventoryItem?: Prisma.ProviderNativeInventoryItemOmit
+  providerObservationUnit?: Prisma.ProviderObservationUnitOmit
+  plexEpisodeObservationStage?: Prisma.PlexEpisodeObservationStageOmit
+  jellyfinEpisodeObservationStage?: Prisma.JellyfinEpisodeObservationStageOmit
+  jellyfinEpisodeObservationExclusion?: Prisma.JellyfinEpisodeObservationExclusionOmit
   sessionSnapshot?: Prisma.SessionSnapshotOmit
   namingConfig?: Prisma.NamingConfigOmit
   namingDeployHistory?: Prisma.NamingDeployHistoryOmit
   seerrActionLog?: Prisma.SeerrActionLogOmit
   labelSyncRule?: Prisma.LabelSyncRuleOmit
+  labelSyncMutationAttempt?: Prisma.LabelSyncMutationAttemptOmit
   autoTagRule?: Prisma.AutoTagRuleOmit
   tmdbListCache?: Prisma.TmdbListCacheOmit
   traktListCache?: Prisma.TraktListCacheOmit

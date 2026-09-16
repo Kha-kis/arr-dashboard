@@ -1,17 +1,14 @@
-import type { HistoryItem } from "@arr/shared";
+import type { HistoryItemV2, HistoryResponseV2 } from "@arr/shared";
 import { useMemo } from "react";
 import { type DayGroup, groupByDay } from "../lib/date-utils";
 import {
-	type ActivitySummary,
+	composeHistoryItems,
 	createActivitySummary,
 	createServiceSummary,
 	createStatusSummary,
 	extractInstanceOptions,
-	extractStatusOptions,
-	filterProwlarrRss,
 	groupHistoryItems,
 	type HistoryGroup,
-	normalizeStatus,
 } from "../lib/history-utils";
 
 export interface HistoryFilters {
@@ -22,125 +19,63 @@ export interface HistoryFilters {
 	startDate?: string;
 	endDate?: string;
 }
-
 export interface ProcessedHistoryData {
-	allItems: HistoryItem[];
-	filteredItems: HistoryItem[];
+	allItems: HistoryItemV2[];
+	filteredItems: HistoryItemV2[];
 	groupedItems: HistoryGroup[];
 	groupedByDay: DayGroup<HistoryGroup>[];
 	instanceOptions: Array<{ value: string; label: string }>;
-	statusOptions: Array<{ value: string; label: string }>;
-	serviceSummary: Map<HistoryItem["service"], number>;
+	serviceSummary: Map<HistoryItemV2["service"], number>;
 	statusSummary: Array<[string, number]>;
-	activitySummary: ActivitySummary;
+	activitySummary: ReturnType<typeof createActivitySummary>;
 	filtersActive: boolean;
 	emptyMessage?: string;
+	sources: HistoryResponseV2["sources"];
+	matchingObservedCount: number;
+	hasNextPage: boolean;
 }
-
-/**
- * Processes and filters history data
- */
 export const useHistoryData = (
-	data:
-		| {
-				aggregated?: HistoryItem[];
-				instances?: Array<{ instanceId: string; instanceName: string }>;
-		  }
-		| undefined,
+	data: { pages: HistoryResponseV2[] } | undefined,
 	filters: HistoryFilters,
 	groupByDownload: boolean,
-	hideProwlarrRss: boolean,
+	_hideProwlarrRss: boolean,
 ): ProcessedHistoryData => {
-	const allAggregated = useMemo(() => data?.aggregated ?? [], [data?.aggregated]);
-	const instances = useMemo(() => data?.instances ?? [], [data?.instances]);
-
-	// Apply Prowlarr RSS filter before other processing
-	const rssFilteredItems = useMemo(
-		() => (hideProwlarrRss ? filterProwlarrRss(allAggregated) : allAggregated),
-		[allAggregated, hideProwlarrRss],
+	const composed = useMemo(() => composeHistoryItems(data?.pages ?? []), [data?.pages]);
+	const instanceOptions = useMemo(
+		() => extractInstanceOptions(composed.sources),
+		[composed.sources],
 	);
-
-	const instanceOptions = useMemo(() => extractInstanceOptions(instances), [instances]);
-
-	const statusOptions = useMemo(() => extractStatusOptions(rssFilteredItems), [rssFilteredItems]);
-
-	const filteredItems = useMemo(() => {
-		const term = filters.searchTerm.trim().toLowerCase();
-		return rssFilteredItems.filter((item) => {
-			if (filters.serviceFilter !== "all" && item.service !== filters.serviceFilter) {
-				return false;
-			}
-			if (filters.instanceFilter !== "all" && item.instanceId !== filters.instanceFilter) {
-				return false;
-			}
-			const currentStatus = normalizeStatus(item.status, item.eventType);
-			if (filters.statusFilter !== "all" && currentStatus !== filters.statusFilter) {
-				return false;
-			}
-			if (term.length > 0) {
-				const haystack = [
-					item.title,
-					item.sourceTitle,
-					item.downloadClient,
-					item.indexer,
-					item.reason,
-				]
-					.filter(Boolean)
-					.map((value) => value!.toLowerCase());
-				if (!haystack.some((value) => value.includes(term))) {
-					return false;
-				}
-			}
-			return true;
-		});
-	}, [
-		rssFilteredItems,
-		filters.serviceFilter,
-		filters.instanceFilter,
-		filters.statusFilter,
-		filters.searchTerm,
-	]);
-
-	const serviceSummary = useMemo(() => createServiceSummary(rssFilteredItems), [rssFilteredItems]);
-
-	const statusSummary = useMemo(() => createStatusSummary(filteredItems), [filteredItems]);
-
-	const activitySummary = useMemo(() => createActivitySummary(allAggregated), [allAggregated]);
-
+	const groupedItems = useMemo(
+		() => groupHistoryItems(composed.items, groupByDownload),
+		[composed.items, groupByDownload],
+	);
+	const groupedByDay = useMemo(
+		() => groupByDay(groupedItems, (group) => group.items[0]?.eventAt),
+		[groupedItems],
+	);
 	const filtersActive =
 		filters.serviceFilter !== "all" ||
 		filters.instanceFilter !== "all" ||
-		filters.statusFilter !== "all" ||
+		filters.statusFilter !== "" ||
 		filters.searchTerm.trim().length > 0 ||
 		Boolean(filters.startDate) ||
 		Boolean(filters.endDate);
-
-	const emptyMessage =
-		filteredItems.length === 0 && rssFilteredItems.length > 0
-			? "No history records match the current filters."
-			: undefined;
-
-	const groupedItems = useMemo(
-		() => groupHistoryItems(filteredItems, groupByDownload),
-		[filteredItems, groupByDownload],
-	);
-
-	const groupedByDay = useMemo(
-		() => groupByDay(groupedItems, (group) => group.items[0]?.date),
-		[groupedItems],
-	);
-
 	return {
-		allItems: rssFilteredItems,
-		filteredItems,
+		allItems: composed.items,
+		filteredItems: composed.items,
 		groupedItems,
 		groupedByDay,
 		instanceOptions,
-		statusOptions,
-		serviceSummary,
-		statusSummary,
-		activitySummary,
+		serviceSummary: createServiceSummary(composed.items),
+		statusSummary: createStatusSummary(composed.items),
+		activitySummary: createActivitySummary(composed.items),
 		filtersActive,
-		emptyMessage,
+		emptyMessage:
+			composed.items.length === 0
+				? "No retained observations match the active filters."
+				: undefined,
+		sources: composed.sources,
+		matchingObservedCount: composed.matchingObservedCount,
+		hasNextPage: composed.hasNextPage,
 	};
 };

@@ -12,12 +12,14 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import { refreshJellyfinCache } from "../../jellyfin/jellyfin-cache-refresher.js";
 import type { JellyfinClient, JellyfinItem } from "../../jellyfin/jellyfin-client.js";
-import type { PrismaClient } from "../../prisma.js";
+import { prefetchPlexData } from "../../library-cleanup/cleanup-executor.js";
+import type { CleanupExecutorDeps } from "../../library-cleanup/types.js";
+import type { PrismaClient, ServiceInstance } from "../../prisma.js";
 import {
 	createProviderPublicationAuthority,
 	type OwnedProviderPublicationSnapshot,
 } from "../../services/provider-identity-guard.js";
-import { refreshTautulliCache } from "../../tautulli/tautulli-cache-refresher.js";
+import { refreshOwnedTautulliCache } from "../../tautulli/tautulli-cache-refresher.js";
 import type { TautulliClient } from "../../tautulli/tautulli-client.js";
 import { refreshPlexCache } from "../plex-cache-refresher.js";
 import type { PlexClient, PlexLibraryItem } from "../plex-client.js";
@@ -26,8 +28,6 @@ import {
 	calculatePlexGenerationTargetDigest,
 	type PlexGenerationTarget,
 } from "../plex-generation-target-ledger.js";
-import { prefetchPlexData } from "../../library-cleanup/cleanup-executor.js";
-import type { CleanupExecutorDeps } from "../../library-cleanup/types.js";
 
 const publication = vi.hoisted(() => ({
 	plexClient: undefined as PlexClient | undefined,
@@ -221,6 +221,11 @@ function reportHeap(message: string): void {
 						baseUrl: "http://tautulli.invalid",
 						encryptedApiKey: "x",
 						encryptionIv: "y",
+						expectedIdentity: "plex-a",
+						identityKind: "TAUTULLI_PMS_IDENTIFIER",
+						identityStatus: "VERIFIED",
+						connectionGeneration: 0,
+						identityGeneration: 0,
 					},
 				],
 			});
@@ -239,6 +244,7 @@ function reportHeap(message: string): void {
 				title: `Plex Movie ${index}`,
 				type: "movie",
 				Guid: [{ id: `tmdb://${100_000 + index}` }],
+				viewCount: 0,
 				Collection: [{ tag: `Collection ${index % 20}` }],
 				Label: [{ tag: `Label ${index % 10}` }],
 				addedAt: 1_700_000_000 + index,
@@ -262,6 +268,14 @@ function reportHeap(message: string): void {
 					.fn()
 					.mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
 				getLibraryItems: vi.fn().mockResolvedValue(plexItems),
+				getLibraryItemsWithCoverage: vi.fn().mockResolvedValue({
+					items: plexItems,
+					expectedRawCount: plexItems.length,
+					pagesAttempted: 1,
+					pagesCompleted: 1,
+					rawObserved: plexItems.length,
+					reason: null,
+				}),
 				getHistory: vi.fn().mockResolvedValue([]),
 				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 				getOnDeck: vi.fn().mockResolvedValue([]),
@@ -285,12 +299,20 @@ function reportHeap(message: string): void {
 					.fn()
 					.mockResolvedValue([{ id: "movies", name: "Movies", collectionType: "movies" }]),
 				getLibraryItems: vi.fn().mockResolvedValue(jellyfinItems),
+				getLibraryItemsWithCoverage: vi.fn().mockResolvedValue({
+					items: jellyfinItems,
+					expectedRawCount: jellyfinItems.length,
+					pagesAttempted: 1,
+					pagesCompleted: 1,
+					rawObserved: jellyfinItems.length,
+					reason: null,
+				}),
 				getResumeItems: vi.fn().mockResolvedValue([]),
 				getNextUp: vi.fn().mockResolvedValue([]),
 			} as unknown as JellyfinClient;
 
 			const tautulliHistory = Array.from({ length: 201 }, (_, index) => ({
-				row_id: index + 1,
+				row_id: 201 - index,
 				rating_key: `tautulli-${index}`,
 				parent_rating_key: "",
 				grandparent_rating_key: "",
@@ -298,7 +320,7 @@ function reportHeap(message: string): void {
 				grandparent_title: "",
 				media_type: "movie",
 				user: "Alice",
-				date: 1_700_000_000 + index,
+				date: Math.floor(Date.now() / 1000),
 				play_count: 1,
 			}));
 			tautulliClient = {
@@ -327,7 +349,7 @@ function reportHeap(message: string): void {
 		async function refreshPlexAndAssert(): Promise<void> {
 			publication.plexClient = plexClient;
 			const sectionCallsBefore = vi.mocked(plexClient.getLibrarySections).mock.calls.length;
-			const itemCallsBefore = vi.mocked(plexClient.getLibraryItems).mock.calls.length;
+			const itemCallsBefore = vi.mocked(plexClient.getLibraryItemsWithCoverage).mock.calls.length;
 			const plex = await refreshPlexCache({
 				prisma,
 				instance: plexPublicationInstance,
@@ -338,7 +360,7 @@ function reportHeap(message: string): void {
 			expect(vi.mocked(plexClient.getLibrarySections).mock.calls.length).toBeGreaterThan(
 				sectionCallsBefore,
 			);
-			expect(vi.mocked(plexClient.getLibraryItems).mock.calls.length).toBeGreaterThan(
+			expect(vi.mocked(plexClient.getLibraryItemsWithCoverage).mock.calls.length).toBeGreaterThan(
 				itemCallsBefore,
 			);
 			expect(
@@ -381,42 +403,19 @@ function reportHeap(message: string): void {
 			expect(jellyfin).toMatchObject({ complete: true, errors: 0, upserted: JELLYFIN_ITEMS });
 		}
 
-		async function refreshTautulli(): Promise<Awaited<ReturnType<typeof refreshTautulliCache>>> {
+		async function refreshTautulli(): Promise<
+			Awaited<ReturnType<typeof refreshOwnedTautulliCache>>
+		> {
 			publication.tautulliClient = tautulliClient;
-			const attemptedAt = new Date();
-			const resultMarker = `in_progress:heap-${attemptedAt.getTime()}`;
-			await prisma.cacheRefreshStatus.upsert({
-				where: {
-					instanceId_cacheType: { instanceId: "heap-tautulli", cacheType: "tautulli" },
-				},
-				create: {
-					instanceId: "heap-tautulli",
-					cacheType: "tautulli",
-					lastRefreshedAt: attemptedAt,
-					lastResult: "error",
-					lastErrorMessage: "refresh_in_progress",
-					itemCount: 0,
-					lastAttemptAt: attemptedAt,
-					lastAttemptResult: resultMarker,
-					connectionGeneration: 0,
-					identityGeneration: 0,
-				},
-				update: {
-					lastAttemptAt: attemptedAt,
-					lastAttemptResult: resultMarker,
-					lastAttemptErrorMessage: null,
-				},
-			});
-			return await refreshTautulliCache({
+			return await refreshOwnedTautulliCache({
 				prisma,
+				encryptor: { decrypt: vi.fn(() => "token") },
 				instance: {
 					id: "heap-tautulli",
 					userId: "heap-user",
 					service: "TAUTULLI",
 					label: "Heap Tautulli",
 					baseUrl: "http://tautulli.invalid",
-					apiKey: "token",
-					httpAuthHeaders: {},
 					enabled: true,
 					encryptedApiKey: "x",
 					encryptionIv: "y",
@@ -426,9 +425,8 @@ function reportHeap(message: string): void {
 					identityStatus: "VERIFIED",
 					connectionGeneration: 0,
 					identityGeneration: 0,
-				},
+				} as unknown as ServiceInstance,
 				log: silentLog,
-				attempt: { attemptedAt, resultMarker },
 			});
 		}
 
@@ -567,6 +565,27 @@ function reportHeap(message: string): void {
 								digest: "a".repeat(64),
 							})),
 							targetLedger,
+							partialReasons: [],
+							coverageReceipt: {
+								version: 1,
+								provider: "plex",
+								attemptStartedAt: completedAt.toISOString(),
+								observedAt: completedAt.toISOString(),
+								evidence: "complete",
+								units: [
+									{
+										scopeKey: "heap",
+										expectedRawCount: PLEX_POLICY_READ_ITEMS_PER_INSTANCE,
+										pagesAttempted: 1,
+										pagesCompleted: 1,
+										rawObserved: PLEX_POLICY_READ_ITEMS_PER_INSTANCE,
+										sourceBindings: PLEX_POLICY_READ_ITEMS_PER_INSTANCE,
+										canonicalEntities: PLEX_POLICY_READ_ITEMS_PER_INSTANCE,
+										acceptedSkips: [],
+										fatalCount: 0,
+									},
+								],
+							},
 						}),
 						lastAttemptAt: completedAt,
 						lastAttemptResult: "success",
@@ -667,7 +686,7 @@ function reportHeap(message: string): void {
 			try {
 				publication.plexClient = plexClient;
 				const sectionCallsBefore = vi.mocked(plexClient.getLibrarySections).mock.calls.length;
-				const itemCallsBefore = vi.mocked(plexClient.getLibraryItems).mock.calls.length;
+				const itemCallsBefore = vi.mocked(plexClient.getLibraryItemsWithCoverage).mock.calls.length;
 				const result = await refreshPlexCache({
 					prisma,
 					instance: plexPublicationInstance,
@@ -681,7 +700,7 @@ function reportHeap(message: string): void {
 				expect(vi.mocked(plexClient.getLibrarySections).mock.calls.length).toBeGreaterThan(
 					sectionCallsBefore,
 				);
-				expect(vi.mocked(plexClient.getLibraryItems).mock.calls.length).toBeGreaterThan(
+				expect(vi.mocked(plexClient.getLibraryItemsWithCoverage).mock.calls.length).toBeGreaterThan(
 					itemCallsBefore,
 				);
 				const rows = await prisma.plexCache.findMany({ where: { instanceId: "heap-plex" } });
@@ -740,7 +759,7 @@ function reportHeap(message: string): void {
 			try {
 				publication.plexClient = plexClient;
 				const sectionCallsBefore = vi.mocked(plexClient.getLibrarySections).mock.calls.length;
-				const itemCallsBefore = vi.mocked(plexClient.getLibraryItems).mock.calls.length;
+				const itemCallsBefore = vi.mocked(plexClient.getLibraryItemsWithCoverage).mock.calls.length;
 				const result = await refreshPlexCache({
 					prisma,
 					instance: plexPublicationInstance,
@@ -754,7 +773,7 @@ function reportHeap(message: string): void {
 				expect(vi.mocked(plexClient.getLibrarySections).mock.calls.length).toBeGreaterThan(
 					sectionCallsBefore,
 				);
-				expect(vi.mocked(plexClient.getLibraryItems).mock.calls.length).toBeGreaterThan(
+				expect(vi.mocked(plexClient.getLibraryItemsWithCoverage).mock.calls.length).toBeGreaterThan(
 					itemCallsBefore,
 				);
 				const rows = await prisma.plexCache.findMany({ where: { instanceId: "heap-plex" } });
@@ -830,9 +849,7 @@ function reportHeap(message: string): void {
 					log: silentLog,
 				});
 				expect(result).toMatchObject({ complete: false, upserted: 0, errors: 1 });
-				expect(result.errorMessages.join(" ")).toMatch(
-					/Atomic cache publication failed:.*constraint/is,
-				);
+				expect(result.errorMessages).toEqual(["Atomic cache publication failed"]);
 				expect(await prisma.jellyfinCache.findMany({ where: { instanceId: "heap-emby" } })).toEqual(
 					[expect.objectContaining({ title: "Preserved Emby generation", jellyfinId: "old-emby" })],
 				);

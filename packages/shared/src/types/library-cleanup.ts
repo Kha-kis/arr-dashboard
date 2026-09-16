@@ -394,6 +394,9 @@ function getImdbRatingServiceValidationError(rule: CleanupRuleScopeInput): strin
  * unwatched/absent state from an incomplete cache.
  */
 export function getCleanupRuleScopeValidationError(rule: CleanupRuleScopeInput): string | null {
+	if (cleanupRuleUsesNativePresence(rule)) {
+		return "Media-server presence is supported for auto-tag rules only; it does not authorize cleanup";
+	}
 	const imdbServiceError = getImdbRatingServiceValidationError(rule);
 	if (imdbServiceError) return imdbServiceError;
 	if (
@@ -430,6 +433,31 @@ export function getCleanupRuleScopeValidationError(rule: CleanupRuleScopeInput):
 	}
 
 	return null;
+}
+
+export function cleanupRuleUsesNativePresence(rule: CleanupRuleScopeInput): boolean {
+	if (rule.ruleType === "media_server_presence") return true;
+	if (
+		rule.conditions?.some(
+			(condition) =>
+				typeof condition === "object" &&
+				condition !== null &&
+				"ruleType" in condition &&
+				condition.ruleType === "media_server_presence",
+		)
+	)
+		return true;
+	if (!rule.expression) return false;
+	const parsed = cleanupRuleExpressionSchema.safeParse(rule.expression);
+	if (!parsed.success) return false;
+	const stack: CleanupRuleExpression[] = [parsed.data.root];
+	while (stack.length) {
+		const node = stack.pop()!;
+		if (node.type === "condition" && node.ruleType === "media_server_presence") return true;
+		if (node.type === "group") stack.push(...node.children);
+		if (node.type === "not") stack.push(node.child);
+	}
+	return false;
 }
 
 export const createCleanupRuleSchema = baseCleanupRuleSchema.superRefine((data, ctx) => {
@@ -728,6 +756,8 @@ export interface CleanupFieldOptionsResponse {
 	arrTags: Array<{ id: number; label: string }>;
 	hasPlex: boolean;
 	hasTautulli: boolean;
+	/** Configured for target-verified positive counts; does not grant generic Tautulli authority. */
+	hasTautulliPositiveWatchCount?: boolean;
 	hasJellyfin: boolean;
 	/** Present only when Plex is configured; distinguishes unavailable values from an empty set. */
 	plexEvidence?: PlexEvidenceSummary;

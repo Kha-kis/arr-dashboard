@@ -264,7 +264,7 @@ export const registerPulseRoutes: FastifyPluginCallback = (app, _opts, done) => 
 		},
 		async (request, reply) => {
 			const userId = request.currentUser!.id;
-			const { id: signalId } = validateRequest(pulseIdParams, request.params);
+			validateRequest(pulseIdParams, request.params);
 			const action = validateRequest(pulseActionSchema, request.body);
 
 			const result = await dispatchPulseAction(app, userId, action, request.log);
@@ -274,9 +274,8 @@ export const registerPulseRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			request.log.info(
 				{
 					action: action.kind,
-					target: action.target,
-					signalId,
-					userId,
+					...(action.kind === "cache.refresh" ? { cacheType: action.target.cacheType } : {}),
+					settlement: "accepted",
 				},
 				"pulse-action: dispatched",
 			);

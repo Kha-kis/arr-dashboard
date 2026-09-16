@@ -46,7 +46,10 @@ describe("PlexClient authoritative inventory completeness", () => {
 			.mockResolvedValueOnce(
 				response({ offset: 200, size: 1, totalSize: 201, Metadata: [libraryItem(201)] }),
 			)
-			.mockResolvedValueOnce(response({ size: 200, Metadata: firstPage }))
+			.mockResolvedValueOnce(response({ size: 50, Metadata: firstPage.slice(0, 50) }))
+			.mockResolvedValueOnce(response({ size: 50, Metadata: firstPage.slice(50, 100) }))
+			.mockResolvedValueOnce(response({ size: 50, Metadata: firstPage.slice(100, 150) }))
+			.mockResolvedValueOnce(response({ size: 50, Metadata: firstPage.slice(150, 200) }))
 			.mockResolvedValueOnce(response({ size: 1, Metadata: [libraryItem(201)] }));
 		vi.stubGlobal("fetch", fetchMock);
 		const client = new PlexClient("http://plex.test", "token", log);
@@ -54,9 +57,44 @@ describe("PlexClient authoritative inventory completeness", () => {
 		const items = await client.getLibraryItems("movies");
 
 		expect(items).toHaveLength(201);
-		expect(fetchMock).toHaveBeenCalledTimes(4);
+		expect(fetchMock).toHaveBeenCalledTimes(7);
 		const secondUrl = new URL(fetchMock.mock.calls[1]?.[0] as string);
 		expect(secondUrl.searchParams.get("X-Plex-Container-Start")).toBe("200");
+	});
+
+	it("keeps authoritative metadata hydration within a transport-safe key budget", async () => {
+		const items = Array.from({ length: 201 }, (_, index) => libraryItem(index + 1));
+		const metadataBatchSizes: number[] = [];
+		const fetchMock = vi.fn(async (input: string | URL | Request) => {
+			const url = new URL(input instanceof Request ? input.url : input.toString());
+			if (url.pathname.includes("/library/sections/")) {
+				const start = Number(url.searchParams.get("X-Plex-Container-Start") ?? "0");
+				const page = items.slice(start, start + 200);
+				return response({
+					offset: start,
+					size: page.length,
+					totalSize: items.length,
+					Metadata: page,
+				});
+			}
+			const keys = url.pathname.replace("/library/metadata/", "").split(",");
+			metadataBatchSizes.push(keys.length);
+			if (keys.length > 50) return new Response(null, { status: 414 });
+			return response({
+				size: keys.length,
+				Metadata: keys.map((key) => libraryItem(Number(key.replace("item-", "")))),
+			});
+		});
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		await expect(client.getLibraryItemsWithCoverage("movies")).resolves.toMatchObject({
+			items: expect.arrayContaining([expect.objectContaining({ ratingKey: "item-201" })]),
+			expectedRawCount: 201,
+			rawObserved: 201,
+			reason: null,
+		});
+		expect(metadataBatchSizes).toEqual([50, 50, 50, 50, 1]);
 	});
 
 	it("enriches complete section rows with item-level labels and collections", async () => {
@@ -102,6 +140,166 @@ describe("PlexClient authoritative inventory completeness", () => {
 		const client = new PlexClient("http://plex.test", "token", log);
 
 		await expect(client.getLibraryItems("movies")).rejects.toThrow(/stopped before/i);
+	});
+
+	it("exposes declared totals and page counters for a complete library inventory", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(
+				response({ offset: 0, size: 2, totalSize: 2, Metadata: [libraryItem(1), libraryItem(2)] }),
+			)
+			.mockResolvedValueOnce(
+				response({
+					size: 2,
+					Metadata: [libraryItem(1), libraryItem(2)],
+				}),
+			);
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		await expect(client.getLibraryItemsWithCoverage("movies")).resolves.toMatchObject({
+			items: [
+				expect.objectContaining({ ratingKey: "item-1" }),
+				expect.objectContaining({ ratingKey: "item-2" }),
+			],
+			expectedRawCount: 2,
+			rawObserved: 2,
+			pagesAttempted: 1,
+			pagesCompleted: 1,
+			reason: null,
+		});
+	});
+
+	it.each([
+		[
+			"repeated pages",
+			[
+				response({ offset: 0, size: 2, totalSize: 4, Metadata: [libraryItem(1), libraryItem(2)] }),
+				response({ offset: 2, size: 2, totalSize: 4, Metadata: [libraryItem(1), libraryItem(2)] }),
+			],
+		],
+		[
+			"count shrink",
+			[
+				response({ offset: 0, size: 2, totalSize: 4, Metadata: [libraryItem(1), libraryItem(2)] }),
+				response({ offset: 2, size: 1, totalSize: 3, Metadata: [libraryItem(3)] }),
+			],
+		],
+		[
+			"count growth",
+			[
+				response({ offset: 0, size: 2, totalSize: 4, Metadata: [libraryItem(1), libraryItem(2)] }),
+				response({ offset: 2, size: 1, totalSize: 5, Metadata: [libraryItem(3)] }),
+			],
+		],
+	] as const)("returns no partial items for %s", async (_name, responses) => {
+		vi.stubGlobal(
+			"fetch",
+			vi
+				.fn()
+				.mockImplementationOnce(() => responses[0])
+				.mockImplementationOnce(() => responses[1]),
+		);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		const result = await client.getLibraryItemsWithCoverage("movies");
+
+		expect(result.items).toEqual([]);
+		expect(result.expectedRawCount).toBe(4);
+		expect(result.rawObserved).toBe(2);
+		expect(result.pagesAttempted).toBe(responses.length > 1 ? 2 : 1);
+		expect(result.pagesCompleted).toBe(1);
+		expect(result.reason).toBe("page-failure");
+		expect(JSON.stringify(result)).not.toMatch(/Movie|item-|token|http/i);
+	});
+
+	it("returns bounded counters when a page becomes empty before the declared total", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(
+				response({ offset: 0, size: 2, totalSize: 4, Metadata: [libraryItem(1), libraryItem(2)] }),
+			)
+			.mockResolvedValueOnce(response({ offset: 2, size: 0, totalSize: 4, Metadata: [] }));
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		await expect(client.getLibraryItemsWithCoverage("movies")).resolves.toMatchObject({
+			items: [],
+			expectedRawCount: 4,
+			rawObserved: 2,
+			pagesAttempted: 2,
+			pagesCompleted: 1,
+			reason: "page-failure",
+		});
+	});
+
+	it("redacts tag enrichment failures after complete pagination while preserving counters", async () => {
+		const firstPage = Array.from({ length: 200 }, (_, index) => libraryItem(index + 1));
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(
+				response({ offset: 0, size: 200, totalSize: 201, Metadata: firstPage }),
+			)
+			.mockResolvedValueOnce(
+				response({ offset: 200, size: 1, totalSize: 201, Metadata: [libraryItem(201)] }),
+			)
+			.mockRejectedValueOnce(new Error("private provider response text"));
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		const result = await client.getLibraryItemsWithCoverage("movies");
+
+		expect(result).toMatchObject({
+			items: [],
+			expectedRawCount: 201,
+			pagesAttempted: 2,
+			pagesCompleted: 2,
+			rawObserved: 201,
+			reason: "page-failure",
+		});
+		expect(JSON.stringify(result)).not.toContain("private provider response text");
+	});
+
+	it("fails closed when a metadata hydration batch omits a requested key", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(
+				response({ offset: 0, size: 2, totalSize: 2, Metadata: [libraryItem(1), libraryItem(2)] }),
+			)
+			.mockResolvedValueOnce(response({ size: 1, Metadata: [libraryItem(1)] }));
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		await expect(client.getLibraryItemsWithCoverage("movies")).resolves.toMatchObject({
+			items: [],
+			expectedRawCount: 2,
+			rawObserved: 2,
+			reason: "page-failure",
+		});
+	});
+
+	it("returns a bounded result when the provider exceeds the safe page cap", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue(
+				response({
+					offset: 0,
+					size: 1,
+					totalSize: 100_001,
+					Metadata: [libraryItem(1)],
+				}),
+			),
+		);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		await expect(client.getLibraryItemsWithCoverage("movies")).resolves.toMatchObject({
+			items: [],
+			expectedRawCount: 100_001,
+			rawObserved: 0,
+			pagesAttempted: 1,
+			pagesCompleted: 0,
+			reason: "page-failure",
+		});
 	});
 
 	it("rejects capped history instead of exposing a partial watch inventory", async () => {

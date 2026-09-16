@@ -23,11 +23,17 @@ vi.mock("../../../../hooks/api/useLibrary", () => ({
 	useLibraryEpisodeMonitorMutation: () => ({ mutateAsync: vi.fn() }),
 }));
 
+import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
+
 import { SeasonEpisodeList } from "../season-episode-list";
 
 function wrapper({ children }: { children: ReactNode }) {
 	const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-	return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+	return (
+		<QueryClientProvider client={qc}>
+			<IncognitoProvider>{children}</IncognitoProvider>
+		</QueryClientProvider>
+	);
 }
 
 describe("<SeasonEpisodeList /> error state microcopy", () => {

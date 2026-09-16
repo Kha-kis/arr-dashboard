@@ -10,13 +10,21 @@
  */
 
 import type {
+	PlexEvidenceSummary,
+	ProviderObservationReasonCode,
+	ProviderObservationStatus,
 	PulseAction,
 	PulseCacheType,
 	PulseItem,
 	QueueRetryService,
 	SchedulerJobId,
 } from "@arr/shared";
-import { ARR_SERVICES_UPPER, LIBRARY_SERVICES_UPPER } from "@arr/shared";
+import {
+	ARR_SERVICES_UPPER,
+	LIBRARY_SERVICES_UPPER,
+	projectProviderObservationUi,
+	providerObservationStatusFromPlexEvidence,
+} from "@arr/shared";
 import type { SonarrClient } from "arr-sdk";
 import { LidarrClient, ProwlarrClient } from "arr-sdk";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
@@ -28,14 +36,22 @@ import {
 	isSonarrClient,
 } from "../arr/client-helpers.js";
 import { QuiApiError, QuiInstanceUnreachableError } from "../errors.js";
+import type { JellyfinCacheHealthInstance } from "../jellyfin/jellyfin-cache-health.js";
+import {
+	DEFAULT_JELLYFIN_CACHE_HEALTH_MAX_AGE_MS,
+	readOwnedJellyfinCacheHealthSources,
+} from "../jellyfin/jellyfin-cache-health.js";
 import { createJellyfinClient } from "../jellyfin/jellyfin-client.js";
 import { createPlexClient } from "../plex/plex-client.js";
-import { decodePlexGenerationMetadata } from "../plex/plex-generation-metadata.js";
-import { decodePlexPositiveEpisodeGenerationMetadata } from "../plex/plex-positive-episode-generation-metadata.js";
+import {
+	decodePlexGenerationMetadata,
+	normalizePlexAttemptState,
+} from "../plex/plex-generation-metadata.js";
 import {
 	getPublishedEpisodeGenerationObservation,
 	loadUserGenerationObservations,
 } from "../plex/plex-persisted-observation-repository.js";
+import { decodePlexPositiveEpisodeGenerationMetadata } from "../plex/plex-positive-episode-generation-metadata.js";
 import { createQuiClient } from "../qui/client-factory.js";
 import { listQuiInstances } from "../qui/instance-helpers.js";
 import {
@@ -45,7 +61,7 @@ import {
 	safeRequest,
 } from "../statistics/statistics-utils.js";
 import { createTautulliClient } from "../tautulli/tautulli-client.js";
-import { readOwnedTautulliCacheAuthority } from "../tautulli/tautulli-cache-authority.js";
+import { readOwnedTautulliObservation } from "../tautulli/tautulli-observation-repository.js";
 import { integrationHealth } from "../validation/integration-health.js";
 
 // ============================================================================
@@ -597,7 +613,13 @@ const collectSeerrCircuitBreaker: Collector = async (app, userId) => {
 // cacheType values (e.g. "plex_episode") still emit a warning — just
 // without an action button, so we don't ship a click the backend can't
 // fulfil.
-const REFRESHABLE_CACHE_TYPES = new Set<PulseCacheType>(["plex", "tautulli", "jellyfin"]);
+const REFRESHABLE_CACHE_TYPES = new Set<PulseCacheType>([
+	"plex",
+	"plex_episode",
+	"tautulli",
+	"jellyfin",
+	"jellyfin_episode",
+]);
 
 function actionForCache(
 	instanceId: string,
@@ -620,17 +642,346 @@ function cacheSource(cacheType: string, instanceService: string): string {
 	return "plex";
 }
 
+function plexCacheUiCondition(
+	cacheStatus: {
+		lastResult: string;
+		lastAttemptAt?: Date | null;
+		lastAttemptResult?: string | null;
+		lastRefreshedAt: Date;
+	},
+	newerFailedAttempt: boolean,
+	evidence: PlexEvidenceSummary | undefined,
+) {
+	const running =
+		evidence?.attemptState === "in_progress" ||
+		(normalizePlexAttemptState(cacheStatus.lastAttemptResult) === "in_progress" &&
+			cacheStatus.lastAttemptAt != null &&
+			cacheStatus.lastAttemptAt.getTime() >= cacheStatus.lastRefreshedAt.getTime());
+	const failed =
+		evidence?.attemptState === "error" || cacheStatus.lastResult === "error" || newerFailedAttempt;
+	const status: ProviderObservationStatus = running
+		? {
+				availability: "unavailable",
+				evidence: "unknown",
+				observedAt: null,
+				ageSeconds: null,
+				latestAttempt: "running",
+				reasonCodes: ["no-publication", "refresh-running"],
+			}
+		: failed
+			? {
+					availability: "unavailable",
+					evidence: "unknown",
+					observedAt: null,
+					ageSeconds: null,
+					latestAttempt: "failed",
+					reasonCodes: ["refresh-failed"],
+				}
+			: providerObservationStatusFromPlexEvidence(evidence);
+	return projectProviderObservationUi(status).condition;
+}
+
+type OwnedJellyfinHealthSource = Awaited<
+	ReturnType<typeof readOwnedJellyfinCacheHealthSources>
+>[number];
+
+function projectJellyfinPulseItem(
+	source: OwnedJellyfinHealthSource,
+	observationNow: Date,
+): PulseItem | null {
+	const item = source.item;
+	const status = item.providerStatus?.sources[0]?.status;
+	const cacheType = item.cacheType;
+	const provider = cacheType.startsWith("emby") ? "emby" : "jellyfin";
+	const cacheLabel =
+		cacheType === "jellyfin"
+			? "Jellyfin"
+			: cacheType === "jellyfin_episode"
+				? "Jellyfin episodes"
+				: cacheType === "emby"
+					? "Emby"
+					: "Emby episodes";
+	const projection = status
+		? projectProviderObservationUi(status)
+		: { condition: "unavailable" as const };
+	if (projection.condition === "current") return null;
+	const details = {
+		"informational-gap": {
+			suffix: "cache has informational coverage gaps",
+			detail: "Current mapped data remains available; unsupported items were excluded.",
+			severity: "info" as const,
+			actionLabel: "View status",
+		},
+		collecting: {
+			suffix: "cache refresh is in progress",
+			detail: "Cache collection is in progress.",
+			severity: "info" as const,
+			actionLabel: "View status",
+		},
+		"retryable-failure": {
+			suffix: "cache refresh failed",
+			detail: "Cache refresh did not complete.",
+			severity: "warning" as const,
+			actionLabel: "Check settings",
+		},
+		"identity-action-required": {
+			suffix: "identity needs verification",
+			detail: "Verify the service identity in Settings.",
+			severity: "warning" as const,
+			actionLabel: "Verify identity",
+		},
+		unavailable: {
+			suffix: "cache evidence is unavailable",
+			detail: "Cache evidence is unavailable.",
+			severity: "warning" as const,
+			actionLabel: "Check settings",
+		},
+	} as const;
+	const detail = details[projection.condition];
+	const action =
+		projection.condition === "retryable-failure"
+			? actionForCache(
+					item.instanceId,
+					cacheType === "emby"
+						? "jellyfin"
+						: cacheType === "emby_episode"
+							? "jellyfin_episode"
+							: cacheType,
+					"Retry refresh",
+				)
+			: undefined;
+	const itemCondition =
+		projection.condition === "collecting"
+			? "refreshing"
+			: projection.condition === "retryable-failure" || projection.condition === "unavailable"
+				? "error"
+				: projection.condition;
+	return {
+		id: `cache-${provider}-${itemCondition}-${item.instanceId}-${cacheType}`,
+		severity: detail.severity,
+		category: "health",
+		title: `${item.instanceName}: ${cacheLabel} ${detail.suffix}`,
+		detail: detail.detail,
+		actionUrl: "/settings",
+		actionLabel: detail.actionLabel,
+		source: provider,
+		timestamp: item.lastRefreshedAt ?? source.fallbackObservedAt ?? observationNow.toISOString(),
+		...(action ? { action } : {}),
+	};
+}
+
+const TAUTULLI_PULSE_REASON_CODES = new Set<ProviderObservationReasonCode>([
+	"no-publication",
+	"identity-unverified",
+	"identity-changed",
+	"refresh-running",
+	"refresh-failed",
+	"publication-superseded",
+	"receipt-invalid",
+	"coverage-incomplete",
+	"accepted-skips",
+	"provider-limit",
+	"provider-unavailable",
+	"publication-stale",
+	"rows-inconsistent",
+	"positive-only",
+	"unknown-failure",
+]);
+
+type OwnedTautulliObservation = NonNullable<
+	Awaited<ReturnType<typeof readOwnedTautulliObservation>>
+>;
+
+function validTautulliStatus(status: ProviderObservationStatus): boolean {
+	return (
+		(status.availability === "current" ||
+			status.availability === "partial" ||
+			status.availability === "last-known" ||
+			status.availability === "unavailable") &&
+		((status.availability === "unavailable" && status.evidence === "unknown") ||
+			(status.availability !== "unavailable" && status.evidence === "positive-only")) &&
+		(status.latestAttempt === "idle" ||
+			status.latestAttempt === "running" ||
+			status.latestAttempt === "failed" ||
+			status.latestAttempt === "successful") &&
+		Array.isArray(status.reasonCodes) &&
+		status.reasonCodes.every((reason) => TAUTULLI_PULSE_REASON_CODES.has(reason))
+	);
+}
+
+function tautulliObservedAt(status: ProviderObservationStatus, fallback: Date): string {
+	if (typeof status.observedAt === "string" && Number.isFinite(Date.parse(status.observedAt))) {
+		return new Date(status.observedAt).toISOString();
+	}
+	return fallback.toISOString();
+}
+
+function tautulliReasonCodes(status: ProviderObservationStatus): string {
+	return [...new Set(status.reasonCodes)].sort().join(", ");
+}
+
+function tautulliPositiveActivityLabel(count: number): string {
+	return `${count} media item${count === 1 ? "" : "s"} with observed recent positive activity`;
+}
+
+function tautulliPositiveActivityAvailability(count: number): string {
+	return `${tautulliPositiveActivityLabel(count)} ${count === 1 ? "is" : "are"} available`;
+}
+
+function tautulliPositiveActivityRemaining(count: number): string {
+	return `${tautulliPositiveActivityLabel(count)} ${count === 1 ? "remains" : "remain"} available`;
+}
+
+function projectTautulliPulseItem(
+	instance: { id: string; label: string; createdAt: Date },
+	observation: OwnedTautulliObservation,
+): PulseItem {
+	const status = observation.providerStatus;
+	const count = observation.rows.length;
+	const timestamp = tautulliObservedAt(status, instance.createdAt);
+
+	if (!validTautulliStatus(status)) {
+		return {
+			id: `cache-tautulli-unavailable-${instance.id}`,
+			severity: "warning",
+			category: "health",
+			title: `${instance.label}: observations are unavailable`,
+			detail: "Tautulli observations are unavailable (unknown-failure).",
+			actionUrl: "/settings",
+			actionLabel: "Check settings",
+			source: "tautulli",
+			timestamp,
+		};
+	}
+	const projection = projectProviderObservationUi(status);
+	if (projection.condition === "identity-action-required") {
+		return {
+			id: `cache-tautulli-identity-${instance.id}`,
+			severity: "warning",
+			category: "health",
+			title: `${instance.label}: identity needs verification`,
+			detail: "Verify the service identity in Settings.",
+			actionUrl: "/settings",
+			actionLabel: "Verify identity",
+			source: "tautulli",
+			timestamp,
+		};
+	}
+	if (projection.condition === "retryable-failure") {
+		return {
+			id: `cache-tautulli-error-${instance.id}`,
+			severity: "warning",
+			category: "health",
+			title: `${instance.label}: observation refresh failed`,
+			detail: "Observation refresh did not complete.",
+			actionUrl: "/settings",
+			actionLabel: "Check settings",
+			source: "tautulli",
+			timestamp,
+			...(actionForCache(instance.id, "tautulli", "Retry refresh")
+				? { action: actionForCache(instance.id, "tautulli", "Retry refresh") }
+				: {}),
+		};
+	}
+
+	if (status.latestAttempt === "running") {
+		return {
+			id: `cache-tautulli-refreshing-${instance.id}`,
+			severity: "info",
+			category: "health",
+			title: `${instance.label}: observation refresh is in progress`,
+			detail:
+				count > 0
+					? `${tautulliPositiveActivityRemaining(count)} while the latest refresh is in progress.`
+					: "No prior bounded positive observation is available yet.",
+			actionUrl: "/settings",
+			actionLabel: "View status",
+			source: "tautulli",
+			timestamp,
+		};
+	}
+
+	if (
+		(status.availability === "current" || status.availability === "partial") &&
+		status.evidence === "positive-only"
+	) {
+		return {
+			id: `cache-tautulli-partial-${instance.id}`,
+			severity: "info",
+			category: "health",
+			title: `${instance.label}: Tautulli observed coverage is partial`,
+			detail:
+				count > 0
+					? `${tautulliPositiveActivityAvailability(count)}; coverage is incomplete.`
+					: "No media items with observed recent positive activity are available in this bounded window; coverage is incomplete.",
+			actionUrl: "/settings",
+			actionLabel: "View status",
+			source: "tautulli",
+			timestamp,
+		};
+	}
+
+	if (status.availability === "last-known" && status.evidence === "positive-only") {
+		return {
+			id: `cache-tautulli-last-known-${instance.id}`,
+			severity: "warning",
+			category: "health",
+			title: `${instance.label}: prior positive observations are not current`,
+			detail:
+				count > 0
+					? `${tautulliPositiveActivityRemaining(count)}; the latest publication is not current.`
+					: "The latest publication is not current; no bounded positive observation is available.",
+			actionUrl: "/settings",
+			actionLabel: "View status",
+			source: "tautulli",
+			timestamp,
+		};
+	}
+
+	const reasons = tautulliReasonCodes(status) || "unknown-failure";
+	return {
+		id: `cache-tautulli-unavailable-${instance.id}`,
+		severity: "warning",
+		category: "health",
+		title: `${instance.label}: observations are unavailable`,
+		detail: `Tautulli observations are unavailable (${reasons}).`,
+		actionUrl: "/settings",
+		actionLabel: "Check settings",
+		source: "tautulli",
+		timestamp,
+	};
+}
+
 const collectCacheStaleness: Collector = async (app, userId) => {
-	const [cacheStatuses, tautulliInstances] = await Promise.all([
+	const observationNow = new Date();
+	const [cacheStatuses, tautulliInstances, jellyfinInstances] = await Promise.all([
 		app.prisma.cacheRefreshStatus.findMany({
-			where: { instance: { userId, enabled: true } },
+			where: {
+				instance: { userId, enabled: true },
+				cacheType: { notIn: ["jellyfin", "jellyfin_episode", "tautulli"] },
+			},
 			include: { instance: { select: { label: true, service: true } } },
 		}),
 		app.prisma.serviceInstance.findMany({
 			where: { userId, enabled: true, service: "TAUTULLI" },
 			select: { id: true, label: true, createdAt: true },
 		}),
+		app.prisma.serviceInstance.findMany({
+			where: {
+				userId,
+				enabled: true,
+				service: { in: ["JELLYFIN", "EMBY"] },
+			},
+			select: { id: true, label: true, service: true, createdAt: true },
+		}),
 	]);
+	const jellyfinHealthSources = await readOwnedJellyfinCacheHealthSources({
+		prisma: app.prisma,
+		userId,
+		instances: jellyfinInstances as JellyfinCacheHealthInstance[],
+		now: observationNow,
+		maxAgeMs: DEFAULT_JELLYFIN_CACHE_HEALTH_MAX_AGE_MS,
+	});
 
 	const plexEvidenceByStatus = new Map<
 		string,
@@ -654,6 +1005,10 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 
 	const items: PulseItem[] = [];
 	const staleThreshold = Date.now() - STALE_CACHE_HOURS * 60 * 60 * 1000;
+	for (const source of jellyfinHealthSources) {
+		const item = projectJellyfinPulseItem(source, observationNow);
+		if (item) items.push(item);
+	}
 
 	for (const status of cacheStatuses) {
 		const label = status.instance.label;
@@ -676,23 +1031,15 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 			status.lastAttemptAt.getTime() > status.lastRefreshedAt.getTime();
 		let effectiveResult =
 			status.lastResult === "success" && (newerFailedAttempt || status.lastErrorMessage !== null)
-				? "partial"
+				? "error"
 				: status.lastResult;
 		let effectiveError = status.lastAttemptErrorMessage ?? status.lastErrorMessage;
-		if (status.cacheType === "tautulli") {
-			const authority = await readOwnedTautulliCacheAuthority(app.prisma, {
-				userId,
-				instanceId: status.instanceId,
-			});
-			if (!authority?.available) {
-				effectiveResult = authority?.state === "in_progress" ? "in_progress" : "error";
-				effectiveError = (authority?.reasonCodes ?? ["no_publication"]).join(", ");
-			} else {
-				effectiveResult = "success";
-				effectiveError = null;
-			}
-		} else if (status.cacheType === "plex" || status.cacheType === "plex_episode") {
-			const evidence = plexEvidenceByStatus.get(`${status.instanceId}:${status.cacheType}`);
+		const plexEvidence =
+			status.cacheType === "plex" || status.cacheType === "plex_episode"
+				? plexEvidenceByStatus.get(`${status.instanceId}:${status.cacheType}`)
+				: undefined;
+		if (status.cacheType === "plex" || status.cacheType === "plex_episode") {
+			const evidence = plexEvidence;
 			if (evidence?.attemptState === "in_progress") {
 				effectiveResult = "in_progress";
 				effectiveError =
@@ -704,7 +1051,7 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 				status.lastResult === "success" &&
 				(evidence?.publicationLevel === "positive-only" || evidence?.completeness === "partial")
 			) {
-				effectiveResult = "partial";
+				effectiveResult = "informational";
 				const metadata = decodePlexGenerationMetadata(status.generationMetadata);
 				if (status.cacheType === "plex" && metadata.ok && metadata.metadata.version === 4) {
 					effectiveError = [
@@ -734,6 +1081,14 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 			}
 		}
 		const effectiveTimestamp = status.lastAttemptAt ?? status.lastRefreshedAt;
+		const plexCondition =
+			status.cacheType === "plex" || status.cacheType === "plex_episode"
+				? plexCacheUiCondition(status, newerFailedAttempt, plexEvidence)
+				: undefined;
+		if (plexCondition === "collecting") effectiveResult = "in_progress";
+		else if (plexCondition === "retryable-failure") effectiveResult = "error";
+		else if (plexCondition === "informational-gap") effectiveResult = "informational";
+		else if (plexCondition === "unavailable") effectiveResult = "unavailable";
 
 		if (effectiveResult === "in_progress") {
 			items.push({
@@ -756,26 +1111,36 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 				severity: "warning",
 				category: "health",
 				title: `${label}: ${cacheLabel} cache refresh failed`,
-				detail: effectiveError ?? "Unknown error",
+				detail: "Cache refresh did not complete.",
 				actionUrl: "/settings",
 				actionLabel: "Check settings",
 				source: cacheSource(status.cacheType, status.instance.service),
 				timestamp: effectiveTimestamp.toISOString(),
 				...(action ? { action } : {}),
 			});
-		} else if (effectiveResult === "partial") {
-			const action = actionForCache(status.instanceId, status.cacheType, "Retry refresh");
+		} else if (effectiveResult === "unavailable") {
 			items.push({
-				id: `cache-partial-${status.id}`,
+				id: `cache-unavailable-${status.id}`,
 				severity: "warning",
 				category: "health",
-				title: `${label}: ${cacheLabel} cache coverage is degraded`,
-				detail: effectiveError ?? "The cache refresh completed with incomplete freshness coverage.",
+				title: `${label}: ${cacheLabel} cache evidence is unavailable`,
+				detail: "Cache evidence is unavailable.",
 				actionUrl: "/settings",
 				actionLabel: "Check settings",
 				source: cacheSource(status.cacheType, status.instance.service),
 				timestamp: effectiveTimestamp.toISOString(),
-				...(action ? { action } : {}),
+			});
+		} else if (effectiveResult === "partial" || effectiveResult === "informational") {
+			items.push({
+				id: `cache-partial-${status.id}`,
+				severity: "info",
+				category: "health",
+				title: `${label}: ${cacheLabel} cache has informational coverage gaps`,
+				detail: "Current mapped data remains available; some provider coverage is bounded.",
+				actionUrl: "/settings",
+				actionLabel: "View status",
+				source: cacheSource(status.cacheType, status.instance.service),
+				timestamp: effectiveTimestamp.toISOString(),
 			});
 		} else if (status.lastRefreshedAt.getTime() < staleThreshold) {
 			const hoursAgo = Math.round(
@@ -797,47 +1162,13 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 		}
 	}
 
-	const tautulliStatusInstanceIds = new Set(
-		cacheStatuses
-			.filter((status) => status.cacheType === "tautulli")
-			.map((status) => status.instanceId),
-	);
 	for (const instance of tautulliInstances) {
-		if (tautulliStatusInstanceIds.has(instance.id)) continue;
-		const authority = await readOwnedTautulliCacheAuthority(app.prisma, {
+		const observation = await readOwnedTautulliObservation(app.prisma, {
 			userId,
 			instanceId: instance.id,
 		});
-		if (!authority || authority.available) continue;
-
-		const timestamp = authority.lastRefreshedAt?.toISOString() ?? instance.createdAt.toISOString();
-		if (authority.state === "in_progress") {
-			items.push({
-				id: `cache-refreshing-tautulli-${instance.id}`,
-				severity: "info",
-				category: "health",
-				title: `${instance.label}: Tautulli cache refresh is in progress`,
-				detail: authority.reasonCodes.join(", "),
-				actionUrl: "/settings",
-				actionLabel: "View status",
-				source: "tautulli",
-				timestamp,
-			});
-			continue;
-		}
-
-		items.push({
-			id: `cache-error-tautulli-${instance.id}`,
-			severity: "warning",
-			category: "health",
-			title: `${instance.label}: Tautulli cache refresh failed`,
-			detail: authority.reasonCodes.join(", "),
-			actionUrl: "/settings",
-			actionLabel: "Check settings",
-			source: "tautulli",
-			timestamp,
-			action: actionForCache(instance.id, "tautulli", "Retry refresh"),
-		});
+		if (!observation) continue;
+		items.push(projectTautulliPulseItem(instance, observation));
 	}
 	return items;
 };

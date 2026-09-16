@@ -54,9 +54,9 @@ export const prismaPlugin = fp(
 			// biome-ignore lint/suspicious/noExplicitAny: @types/pg@8.20.0 Pool type incompatible with @prisma/adapter-pg's bundled @types/pg@8.11.11
 			adapter = new PrismaPg(pgPool as any);
 		} else {
-			const { PrismaBetterSqlite3 } = await import("@prisma/adapter-better-sqlite3");
+			const { createRecoverableSqliteAdapter } = await import("../lib/sqlite-adapter.js");
 			const dbPath = parseSqliteUrl(databaseUrl);
-			adapter = new PrismaBetterSqlite3({ url: dbPath });
+			adapter = createRecoverableSqliteAdapter({ url: dbPath });
 		}
 
 		const prisma = new PrismaClient({ adapter });

@@ -12,6 +12,11 @@
 
 import type { FastifyBaseLogger } from "fastify";
 import { describe, expect, it, vi } from "vitest";
+import {
+	createPlexTargetLedgerBinding,
+	requirePlexTargetLedgerBinding,
+	verifyPersistedPlexGenerationTargets,
+} from "../../plex/plex-generation-target-ledger.js";
 import { plexConnectionFingerprint } from "../../plex/service-instance-fingerprint.js";
 import {
 	buildEvalContextWithHealth,
@@ -34,11 +39,17 @@ vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
 		PlexAuthorityService: class {
 			private readonly prisma: {
 				serviceInstance?: { findMany: (input: unknown) => Promise<Array<Record<string, unknown>>> };
+				plexGenerationTarget?: {
+					findMany: (input: unknown) => Promise<Array<Record<string, unknown>>>;
+				};
 			};
 
 			constructor(input: {
 				prisma: {
 					serviceInstance?: {
+						findMany: (input: unknown) => Promise<Array<Record<string, unknown>>>;
+					};
+					plexGenerationTarget?: {
 						findMany: (input: unknown) => Promise<Array<Record<string, unknown>>>;
 					};
 				};
@@ -108,11 +119,41 @@ vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
 			}
 
 			async scanInstanceExactPolicy(input: { userId: string; instanceId: string }) {
+				await this.verifyExactTargets(input);
 				return await this.scanInstancePolicy(input);
 			}
 
 			async scanInstanceExactPolicyPersisted(input: { userId: string; instanceId: string }) {
+				await this.verifyExactTargets(input);
 				return await this.scanInstancePolicy(input);
+			}
+
+			private async verifyExactTargets(input: { userId: string; instanceId: string }) {
+				if (!this.prisma.plexGenerationTarget) return;
+				const instance = await this.instance(input);
+				const evidence = await repository.loadInstanceEvidence(
+					this.repositoryWithInstance(instance),
+					input,
+				);
+				if (!evidence.available) return;
+				const binding = requirePlexTargetLedgerBinding(evidence.metadata);
+				if (!binding.ok) throw new Error("Plex fixture omitted its target ledger binding");
+				const verified = await verifyPersistedPlexGenerationTargets(this.prisma as never, {
+					expected: {
+						instanceId: evidence.instanceId,
+						generationId: evidence.generationId,
+						connectionGeneration: evidence.connectionGeneration,
+						identityGeneration: evidence.identityGeneration,
+						...binding.binding,
+					},
+					sections: evidence.sections as unknown as Array<{
+						key: string;
+						uuid: string;
+						type: "movie" | "show";
+					}>,
+				});
+				if (!verified.ok)
+					throw new Error(`Plex fixture target ledger was not exact: ${verified.reason}`);
 			}
 
 			scanUserPolicy(input: never) {
@@ -165,6 +206,7 @@ function makePlexRow(overrides: {
 	userRating?: number | null;
 	connectionGeneration?: number | null;
 	identityGeneration?: number | null;
+	ratingKey?: string;
 }) {
 	return {
 		id: overrides.id,
@@ -183,6 +225,9 @@ function makePlexRow(overrides: {
 		addedAt: overrides.addedAt ?? null,
 		connectionGeneration: overrides.connectionGeneration ?? 3,
 		identityGeneration: overrides.identityGeneration ?? 7,
+		ratingKey:
+			overrides.ratingKey ??
+			`plex-${overrides.mediaType}-${overrides.tmdbId}-${overrides.sectionId}`,
 	};
 }
 
@@ -218,34 +263,95 @@ const log = {
 	fatal: vi.fn(),
 } as unknown as FastifyBaseLogger;
 
-function completeStatus(instanceId: string, completedAt = new Date(), itemCount = 0) {
+function completeStatus(
+	instanceId: string,
+	completedAt = new Date(),
+	itemCount = 0,
+	targets: Parameters<typeof createPlexTargetLedgerBinding>[0]["targets"] = [],
+	generationId = `generation-${instanceId}`,
+) {
+	if (itemCount > 0 && targets.length === 0)
+		throw new Error("Nonempty Plex status fixtures require bound target rows");
+	if (itemCount !== targets.length)
+		throw new Error("Plex status itemCount must equal its bound target count");
+	const sections =
+		targets.length > 0
+			? [
+					...new Map(
+						targets.map((target) => [
+							target.sectionId,
+							{
+								key: target.sectionId,
+								uuid: target.sectionUuid,
+								title: target.sectionId,
+								type: target.mediaType === "series" ? "show" : "movie",
+								refreshing: false,
+								scannedAt: 1_777_000_000,
+								updatedAt: 1_777_000_100,
+							},
+						]),
+					).values(),
+				]
+			: [
+					{
+						key: "1",
+						uuid: "movies-uuid",
+						title: "Movies",
+						type: "movie" as const,
+						refreshing: false,
+						scannedAt: 1_777_000_000,
+						updatedAt: 1_777_000_100,
+					},
+				];
+	const receiptUnits = sections.map((section) => {
+		const count = targets.filter((target) => target.sectionId === section.key).length;
+		return {
+			scopeKey: `section:${section.key}`,
+			expectedRawCount: count,
+			pagesAttempted: 1,
+			pagesCompleted: 1,
+			rawObserved: count,
+			sourceBindings: count,
+			canonicalEntities: count,
+			acceptedSkips: [],
+			fatalCount: 0,
+		};
+	});
+	const targetLedger = createPlexTargetLedgerBinding({
+		instanceId,
+		generationId,
+		connectionGeneration: 3,
+		identityGeneration: 7,
+		targets,
+	});
 	return {
 		instanceId,
 		lastRefreshedAt: completedAt,
 		lastResult: "success",
 		itemCount,
-		generationId: `generation-${instanceId}`,
+		generationId,
 		generationMetadata: JSON.stringify({
-			version: 3,
+			version: 5,
 			publicationLevel: "authoritative",
 			completeness: "complete",
 			itemCount,
 			canonicalizationVersion: 1,
-			sections: [
-				{
-					key: "1",
-					uuid: "movies-uuid",
-					title: "Movies",
-					type: "movie",
-					refreshing: false,
-					scannedAt: 1_777_000_000,
-					updatedAt: 1_777_000_100,
-				},
-			],
-			roots: [{ sectionKey: "1", domain: "membership", digest: "a".repeat(64) }],
-			targetLedgerVersion: 1,
-			targetCount: itemCount,
-			targetDigest: "c".repeat(64),
+			sections,
+			roots: sections.map((section) => ({
+				sectionKey: section.key,
+				domain: "membership",
+				digest: "a".repeat(64),
+			})),
+			...targetLedger,
+			partialReasons: [],
+			coverageReceipt: {
+				version: 1,
+				provider: "plex",
+				attemptStartedAt: completedAt.toISOString(),
+				observedAt: completedAt.toISOString(),
+				evidence: "complete",
+				units: receiptUnits,
+			},
 		}),
 		lastErrorMessage: null,
 		lastAttemptAt: completedAt,
@@ -256,16 +362,56 @@ function completeStatus(instanceId: string, completedAt = new Date(), itemCount 
 	};
 }
 
-function completeEpisodeStatus(instanceId: string, completedAt: Date, itemCount: number) {
+type PlexFixtureRow = ReturnType<typeof makePlexRow>;
+type PlexFixtureTarget = Parameters<typeof createPlexTargetLedgerBinding>[0]["targets"][number];
+
+function targetFromRow(
+	row: PlexFixtureRow,
+	generationId = `generation-${row.instanceId}`,
+): PlexFixtureTarget {
 	return {
-		...completeStatus(instanceId, completedAt, itemCount),
+		instanceId: row.instanceId,
+		generationId,
+		sectionId: row.sectionId,
+		sectionUuid: row.sectionId === "1" ? "movies-uuid" : `${row.sectionId}-uuid`,
+		mediaType: row.mediaType,
+		tmdbId: row.tmdbId,
+		tvdbId: null,
+		ratingKey: row.ratingKey,
+	};
+}
+
+function completeStatusFromRows(
+	rows: readonly PlexFixtureRow[],
+	completedAt = new Date(),
+	generationId = `generation-${rows[0]?.instanceId ?? "plex-inst-1"}`,
+) {
+	const targets = rows.map((row) => targetFromRow(row, generationId));
+	return completeStatus(
+		rows[0]?.instanceId ?? "plex-inst-1",
+		completedAt,
+		rows.length,
+		targets,
+		generationId,
+	);
+}
+
+function completeEpisodeStatus(
+	instanceId: string,
+	completedAt: Date,
+	itemCount: number,
+	parentRows: readonly PlexFixtureRow[],
+) {
+	return {
+		...completeStatusFromRows(parentRows, completedAt),
 		cacheType: "plex_episode",
+		itemCount,
 		generationId: `episode-generation-${instanceId}`,
 		generationMetadata: JSON.stringify({
-			version: 2,
+			version: 3,
 			parentPlexGenerationId: `generation-${instanceId}`,
 			parentPublicationLevel: "authoritative",
-			parentMetadataVersion: 3,
+			parentMetadataVersion: 5,
 			canonicalizationVersion: 1,
 			episodeDigest: "b".repeat(64),
 			connectionGeneration: 3,
@@ -274,9 +420,14 @@ function completeEpisodeStatus(instanceId: string, completedAt: Date, itemCount:
 	};
 }
 
-function episodeStatuses(instanceId: string, completedAt: Date, itemCount: number) {
-	const parent = completeStatus(instanceId, completedAt, 1);
-	const episode = completeEpisodeStatus(instanceId, completedAt, itemCount);
+function episodeStatuses(
+	instanceId: string,
+	completedAt: Date,
+	itemCount: number,
+	parentRows: readonly PlexFixtureRow[],
+) {
+	const parent = completeStatusFromRows(parentRows, completedAt);
+	const episode = completeEpisodeStatus(instanceId, completedAt, itemCount, parentRows);
 	return vi.fn(async ({ where }: { where: { cacheType: string } }) =>
 		where.cacheType === "plex" ? [parent] : [episode],
 	);
@@ -358,6 +509,10 @@ const unavailablePlexEvidenceCases = [
 ] satisfies ReadonlyArray<readonly [string, () => PlexStatusOverride]>;
 
 describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
+	it("does not construct nonempty authority without bound target rows", () => {
+		expect(() => completeStatus("plex-inst-1", new Date(), 1)).toThrow("require bound target rows");
+	});
+
 	it("does not authorize cleanup from an unverified Plex cache source", async () => {
 		const instance = {
 			id: "plex-inst-1",
@@ -371,10 +526,11 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			connectionGeneration: 3,
 			identityGeneration: 7,
 		};
+		const row = makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" });
 		const prisma = {
 			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
 			cacheRefreshStatus: {
-				findMany: vi.fn().mockResolvedValue([completeStatus(instance.id, new Date(), 1)]),
+				findMany: vi.fn().mockResolvedValue([completeStatusFromRows([row])]),
 			},
 			plexCache: {
 				count: vi.fn().mockResolvedValue(1),
@@ -384,6 +540,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 						makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
 					]),
 			},
+			plexGenerationTarget: { findMany: vi.fn().mockResolvedValue([]) },
 		} as unknown as CleanupExecutorDeps["prisma"];
 
 		const result = await buildEvalContextWithHealth(
@@ -433,7 +590,8 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 						? new Date("2026-08-10T11:00:00.000Z")
 						: new Date("2026-08-10T00:00:00.000Z"),
 			});
-			const baseStatus = completeStatus(instance.id, new Date(), 1);
+			const row = makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" });
+			const baseStatus = completeStatusFromRows([row]);
 			const statusOverride = overrides();
 			const status = statusOverride ? { ...baseStatus, ...statusOverride } : undefined;
 			const prisma = {
@@ -441,11 +599,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 				cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue(status ? [status] : []) },
 				plexCache: {
 					count: vi.fn().mockResolvedValue(1),
-					findMany: vi
-						.fn()
-						.mockResolvedValue([
-							makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
-						]),
+					findMany: vi.fn().mockResolvedValue([row]),
 				},
 			} as unknown as CleanupExecutorDeps["prisma"];
 			const rule = plexCleanupRule();
@@ -473,8 +627,10 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 	it("preserves prior rows while withholding cleanup authority after a failed latest attempt", async () => {
 		const instance = verifiedPlexInstance();
 		const publishedAt = new Date(Date.now() - 60_000);
+		const row = makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" });
+		const targetRows = [targetFromRow(row)];
 		const status = {
-			...completeStatus(instance.id, publishedAt, 1),
+			...completeStatusFromRows([row], publishedAt),
 			lastErrorMessage: "refresh failed after publication",
 			lastAttemptAt: new Date(),
 			lastAttemptResult: "error",
@@ -482,15 +638,17 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 		};
 		const prisma = {
 			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
-			cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue([status]) },
-			plexCache: {
-				count: vi.fn().mockResolvedValue(1),
+			cacheRefreshStatus: {
 				findMany: vi
 					.fn()
-					.mockResolvedValue([
-						makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
-					]),
+					.mockResolvedValueOnce([completeStatusFromRows([row], publishedAt)])
+					.mockResolvedValue([status]),
 			},
+			plexCache: {
+				count: vi.fn().mockResolvedValue(1),
+				findMany: vi.fn().mockResolvedValue([row]),
+			},
+			plexGenerationTarget: { findMany: vi.fn().mockResolvedValue(targetRows) },
 		} as unknown as CleanupExecutorDeps["prisma"];
 
 		const result = await buildEvalContextWithHealth(
@@ -507,18 +665,43 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 	it("keeps a complete Plex generation available for cleanup evaluation", async () => {
 		const completedAt = new Date();
 		const instance = verifiedPlexInstance();
-		const status = completeStatus(instance.id, completedAt, 1);
+		const targetRows = [
+			{
+				id: "target-row-1",
+				instanceId: instance.id,
+				generationId: `generation-${instance.id}`,
+				sectionId: "1",
+				sectionUuid: "movies-uuid",
+				mediaType: "movie" as const,
+				tmdbId: 42,
+				tvdbId: null,
+				ratingKey: "plex-movie-42",
+			},
+		];
+		const status = completeStatus(instance.id, completedAt, 1, targetRows);
+		const targetLedger = createPlexTargetLedgerBinding({
+			instanceId: instance.id,
+			generationId: status.generationId,
+			connectionGeneration: 3,
+			identityGeneration: 7,
+			targets: targetRows,
+		});
 		const prisma = {
 			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
 			cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue([status]) },
 			plexCache: {
 				count: vi.fn().mockResolvedValue(1),
-				findMany: vi
-					.fn()
-					.mockResolvedValue([
-						makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
-					]),
+				findMany: vi.fn().mockResolvedValue([
+					makePlexRow({
+						id: "row-1",
+						tmdbId: 42,
+						mediaType: "movie",
+						sectionId: "1",
+						ratingKey: "plex-movie-42",
+					}),
+				]),
 			},
+			plexGenerationTarget: { findMany: vi.fn().mockResolvedValue(targetRows) },
 		} as unknown as CleanupExecutorDeps["prisma"];
 
 		const result = await buildEvalContextWithHealth(
@@ -526,26 +709,25 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			"user-1",
 			[plexCleanupRule()],
 		);
-
 		expect(result.failedSources).not.toContain("plex");
-		expect(result.ctx.plexMap?.get("series:42")).toEqual(
-			expect.objectContaining({ watchCount: 0 }),
-		);
+		expect(prisma.plexGenerationTarget.findMany).toHaveBeenCalled();
+		expect(result.ctx.plexMap?.get("movie:42")).toEqual(expect.objectContaining({ watchCount: 0 }));
 		expect(result.providerEvidence?.sources).toEqual([
 			expect.objectContaining({
 				service: "PLEX",
 				cacheType: "plex",
 				generationId: status.generationId,
 				targetLedgerVersion: 1,
-				targetCount: 1,
-				targetDigest: "c".repeat(64),
+				targetCount: targetRows.length,
+				targetDigest: targetLedger.targetDigest,
 			}),
 		]);
 	});
 
 	it("rejects a Plex map when its published generation changes while rows are read", async () => {
 		const instance = verifiedPlexInstance();
-		const first = completeStatus(instance.id, new Date(), 1);
+		const row = makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" });
+		const first = completeStatusFromRows([row]);
 		const second = { ...first, identityGeneration: 8 };
 		const prisma = {
 			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
@@ -586,8 +768,9 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			identityGeneration: 7,
 		};
 		const completedAt = new Date();
-		const normalStatus = completeStatus(instance.id, completedAt, 1);
-		const episodeStatus = completeStatus(instance.id, completedAt, 2);
+		const row = makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" });
+		const normalStatus = completeStatusFromRows([row], completedAt);
+		const episodeStatus = { ...normalStatus, itemCount: 2 };
 		const prisma = {
 			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
 			cacheRefreshStatus: {
@@ -597,11 +780,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			},
 			plexCache: {
 				count: vi.fn().mockResolvedValue(1),
-				findMany: vi
-					.fn()
-					.mockResolvedValue([
-						makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
-					]),
+				findMany: vi.fn().mockResolvedValue([row]),
 			},
 			plexEpisodeCache: {
 				findMany: vi.fn().mockResolvedValue([
@@ -637,8 +816,9 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 	it("rejects an interleaved map/section generation", async () => {
 		const instance = verifiedPlexInstance();
 		const completedAt = new Date();
+		const row = makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "movie", sectionId: "1" });
 		const status = (generationId: string, includeNewSection: boolean) => {
-			const complete = completeStatus(instance.id, completedAt, 1);
+			const complete = completeStatusFromRows([row], completedAt, generationId);
 			const metadata = JSON.parse(complete.generationMetadata);
 			return {
 				...complete,
@@ -677,11 +857,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			cacheRefreshStatus: { findMany: statusReads },
 			plexCache: {
 				count: vi.fn().mockResolvedValue(1),
-				findMany: vi
-					.fn()
-					.mockResolvedValueOnce([
-						makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "movie", sectionId: "1" }),
-					]),
+				findMany: vi.fn().mockResolvedValueOnce([row]),
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 
@@ -711,14 +887,28 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 		const first = verifiedPlexInstance({ id: "plex-inst-a" });
 		const second = verifiedPlexInstance({ id: "plex-inst-b" });
 		const completedAt = new Date();
+		const firstRow = makePlexRow({
+			id: "row-a",
+			instanceId: first.id,
+			tmdbId: 41,
+			mediaType: "movie",
+			sectionId: "missing",
+			sectionTitle: "Missing inventory",
+		});
+		const secondRow = makePlexRow({
+			id: "row-b",
+			instanceId: second.id,
+			tmdbId: 42,
+			mediaType: "movie",
+			sectionId: "movies",
+			sectionTitle: "Movies",
+		});
 		const firstStatus = {
-			...completeStatus(first.id, completedAt, 1),
-			generationId: "plex-generation-a",
+			...completeStatusFromRows([firstRow], completedAt, "plex-generation-a"),
 			generationMetadata: JSON.stringify({ sections: [] }),
 		};
 		const secondStatus = {
-			...completeStatus(second.id, completedAt, 1),
-			generationId: "plex-generation-b",
+			...completeStatusFromRows([secondRow], completedAt, "plex-generation-b"),
 			generationMetadata: JSON.stringify({
 				sections: [{ key: "movies", title: "Movies", type: "movie" }],
 			}),
@@ -740,24 +930,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 					async ({ where, cursor }: { where: { instanceId: string }; cursor?: { id: string } }) =>
 						cursor
 							? []
-							: [
-									makePlexRow({
-										id: "row-a",
-										instanceId: first.id,
-										tmdbId: 41,
-										mediaType: "movie",
-										sectionId: "missing",
-										sectionTitle: "Missing inventory",
-									}),
-									makePlexRow({
-										id: "row-b",
-										instanceId: second.id,
-										tmdbId: 42,
-										mediaType: "movie",
-										sectionId: "movies",
-										sectionTitle: "Movies",
-									}),
-								].filter((row) => row.instanceId === where.instanceId),
+							: [firstRow, secondRow].filter((row) => row.instanceId === where.instanceId),
 				),
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
@@ -787,16 +960,32 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 		const stable = verifiedPlexInstance({ id: "plex-inst-stable" });
 		const advancing = verifiedPlexInstance({ id: "plex-inst-advancing" });
 		const completedAt = new Date();
+		const stableRow = makePlexRow({
+			id: "stable-row",
+			instanceId: stable.id,
+			tmdbId: 41,
+			mediaType: "movie",
+			sectionId: "stable",
+			sectionTitle: "Stable Movies",
+			watchCount: 0,
+		});
+		const advancingRow = makePlexRow({
+			id: "advancing-row",
+			instanceId: advancing.id,
+			tmdbId: 42,
+			mediaType: "movie",
+			sectionId: "advancing-a",
+			sectionTitle: "Advancing Movies A",
+			watchCount: 0,
+		});
 		const stableStatus = {
-			...completeStatus(stable.id, completedAt, 1),
-			generationId: "stable-generation-a",
+			...completeStatusFromRows([stableRow], completedAt, "stable-generation-a"),
 			generationMetadata: JSON.stringify({
 				sections: [{ key: "stable", title: "Stable Movies", type: "movie" }],
 			}),
 		};
 		const advancingA = {
-			...completeStatus(advancing.id, completedAt, 1),
-			generationId: "advancing-generation-a",
+			...completeStatusFromRows([advancingRow], completedAt, "advancing-generation-a"),
 			generationMetadata: JSON.stringify({
 				sections: [{ key: "advancing-a", title: "Advancing Movies A", type: "movie" }],
 			}),
@@ -809,26 +998,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			}),
 		};
 		let advancingStatusReads = 0;
-		const rows = [
-			makePlexRow({
-				id: "stable-row",
-				instanceId: stable.id,
-				tmdbId: 41,
-				mediaType: "movie",
-				sectionId: "stable",
-				sectionTitle: "Stable Movies",
-				watchCount: 0,
-			}),
-			makePlexRow({
-				id: "advancing-row",
-				instanceId: advancing.id,
-				tmdbId: 42,
-				mediaType: "movie",
-				sectionId: "advancing-a",
-				sectionTitle: "Advancing Movies A",
-				watchCount: 0,
-			}),
-		];
+		const rows = [stableRow, advancingRow];
 		const prisma = {
 			serviceInstance: { findMany: vi.fn().mockResolvedValue([stable, advancing]) },
 			cacheRefreshStatus: {
@@ -868,9 +1038,16 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 
 	it("does not validate a configured B-only section against A generation rows", async () => {
 		const instance = verifiedPlexInstance();
+		const row = makePlexRow({
+			id: "row-a",
+			tmdbId: 42,
+			mediaType: "movie",
+			sectionId: "movies-a",
+			sectionTitle: "Movies A",
+			watchCount: 0,
+		});
 		const status = {
-			...completeStatus(instance.id, new Date(), 1),
-			generationId: "plex-generation-a",
+			...completeStatusFromRows([row], new Date(), "plex-generation-a"),
 			generationMetadata: JSON.stringify({
 				sections: [{ key: "movies-a", title: "Movies A", type: "movie" }],
 			}),
@@ -879,16 +1056,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
 			cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue([status]) },
 			plexCache: {
-				findMany: vi.fn().mockResolvedValue([
-					makePlexRow({
-						id: "row-a",
-						tmdbId: 42,
-						mediaType: "movie",
-						sectionId: "movies-a",
-						sectionTitle: "Movies A",
-						watchCount: 0,
-					}),
-				]),
+				findMany: vi.fn().mockResolvedValue([row]),
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 
@@ -961,7 +1129,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 				findMany: vi.fn().mockResolvedValue([verifiedPlexInstance()]),
 			},
 			cacheRefreshStatus: {
-				findMany: vi.fn().mockResolvedValue([completeStatus("plex-inst-1", new Date(), 501)]),
+				findMany: vi.fn().mockResolvedValue([completeStatusFromRows([...batch1, ...batch2])]),
 			},
 			plexCache: { findMany: findManySpy, count: vi.fn().mockResolvedValue(501) },
 		} as unknown as CleanupExecutorDeps["prisma"];
@@ -1020,10 +1188,18 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 					}),
 				];
 			});
+		const finalRow = makePlexRow({
+			id: "pc-stream-final",
+			tmdbId: 20_000,
+			mediaType: "movie",
+			sectionId: "lib-1",
+		});
 		const prisma = {
 			serviceInstance: { findMany: vi.fn().mockResolvedValue([verifiedPlexInstance()]) },
 			cacheRefreshStatus: {
-				findMany: vi.fn().mockResolvedValue([completeStatus("plex-inst-1", new Date(), 501)]),
+				findMany: vi
+					.fn()
+					.mockResolvedValue([completeStatusFromRows(firstBatch.concat([finalRow]))]),
 			},
 			plexCache: { findMany, count: vi.fn().mockResolvedValue(501) },
 		} as unknown as CleanupExecutorDeps["prisma"];
@@ -1047,6 +1223,13 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			mediaType: "movie",
 			sectionId: "movies-a",
 		});
+		const rowB = makePlexRow({
+			id: "row-b",
+			instanceId: instanceB.id,
+			tmdbId: 2,
+			mediaType: "movie",
+			sectionId: "movies-b",
+		});
 		Object.defineProperty(rowA, "watchCount", {
 			configurable: true,
 			enumerable: true,
@@ -1060,21 +1243,13 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			if (!firstInstanceConsumed) {
 				throw new Error("second instance was read before the first instance was consumed");
 			}
-			return [
-				makePlexRow({
-					id: "row-b",
-					instanceId: "plex-b",
-					tmdbId: 2,
-					mediaType: "movie",
-					sectionId: "movies-b",
-				}),
-			];
+			return [rowB];
 		});
 		const prisma = {
 			serviceInstance: { findMany: vi.fn().mockResolvedValue([instanceA, instanceB]) },
 			cacheRefreshStatus: {
 				findMany: vi.fn(async ({ where }: { where: { instanceId: string } }) => [
-					completeStatus(where.instanceId, completedAt, 1),
+					completeStatusFromRows([where.instanceId === instanceA.id ? rowA : rowB], completedAt),
 				]),
 			},
 			plexCache: { findMany, count: vi.fn().mockResolvedValue(1) },
@@ -1098,18 +1273,15 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 	});
 
 	it("terminates after a single short batch (no extra findMany call)", async () => {
-		const findManySpy = vi
-			.fn()
-			.mockResolvedValueOnce([
-				makePlexRow({ id: "pc-1", tmdbId: 1, mediaType: "movie", sectionId: "lib-1" }),
-			]);
+		const row = makePlexRow({ id: "pc-1", tmdbId: 1, mediaType: "movie", sectionId: "lib-1" });
+		const findManySpy = vi.fn().mockResolvedValueOnce([row]);
 
 		const prisma = {
 			serviceInstance: {
 				findMany: vi.fn().mockResolvedValue([verifiedPlexInstance()]),
 			},
 			cacheRefreshStatus: {
-				findMany: vi.fn().mockResolvedValue([completeStatus("plex-inst-1", new Date(), 1)]),
+				findMany: vi.fn().mockResolvedValue([completeStatusFromRows([row])]),
 			},
 			plexCache: { findMany: findManySpy, count: vi.fn().mockResolvedValue(1) },
 		} as unknown as CleanupExecutorDeps["prisma"];
@@ -1258,8 +1430,17 @@ describe("prefetchFreshPlexEpisodeWatchData", () => {
 			updatedAt: new Date(0),
 			[field]: new Date("2026-07-30T11:50:00.000Z"),
 		};
+		const parentRow = makePlexRow({
+			id: "parent-row",
+			tmdbId: 42,
+			mediaType: "series",
+			sectionId: "1",
+		});
 		const prisma = {
-			plexCache: { count: vi.fn().mockResolvedValue(1) },
+			plexCache: {
+				count: vi.fn().mockResolvedValue(1),
+				findMany: vi.fn().mockResolvedValue([parentRow]),
+			},
 			plexEpisodeCache: {
 				groupBy: vi.fn().mockResolvedValue([{ instanceId: "plex-inst-1", _count: { id: 1 } }]),
 				findMany: vi.fn().mockResolvedValue([
@@ -1280,7 +1461,7 @@ describe("prefetchFreshPlexEpisodeWatchData", () => {
 				]),
 			},
 			cacheRefreshStatus: {
-				findMany: episodeStatuses("plex-inst-1", completedAt, 1),
+				findMany: episodeStatuses("plex-inst-1", completedAt, 1, [parentRow]),
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 
@@ -1321,8 +1502,17 @@ describe("prefetchFreshPlexEpisodeWatchData", () => {
 			encryptedApiKey: "old-encrypted-token",
 			encryptionIv: "old-iv",
 		} as never);
+		const parentRow = makePlexRow({
+			id: "parent-row",
+			tmdbId: 42,
+			mediaType: "series",
+			sectionId: "1",
+		});
 		const prisma = {
-			plexCache: { count: vi.fn().mockResolvedValue(1) },
+			plexCache: {
+				count: vi.fn().mockResolvedValue(1),
+				findMany: vi.fn().mockResolvedValue([parentRow]),
+			},
 			plexEpisodeCache: {
 				groupBy: vi.fn().mockResolvedValue([{ instanceId: "plex-inst-1", _count: { id: 1 } }]),
 				findMany: vi.fn().mockResolvedValue([
@@ -1345,7 +1535,9 @@ describe("prefetchFreshPlexEpisodeWatchData", () => {
 				]),
 			},
 			cacheRefreshStatus: {
-				findMany: episodeStatuses("plex-inst-1", new Date("2026-07-30T11:45:00.000Z"), 1),
+				findMany: episodeStatuses("plex-inst-1", new Date("2026-07-30T11:45:00.000Z"), 1, [
+					parentRow,
+				]),
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 
@@ -1381,8 +1573,17 @@ describe("prefetchFreshPlexEpisodeWatchData", () => {
 			identityGeneration: 7,
 			updatedAt: new Date("2026-07-30T10:00:00.000Z"),
 		};
+		const parentRow = makePlexRow({
+			id: "parent-row",
+			tmdbId: 42,
+			mediaType: "series",
+			sectionId: "1",
+		});
 		const prisma = {
-			plexCache: { count: vi.fn().mockResolvedValue(1) },
+			plexCache: {
+				count: vi.fn().mockResolvedValue(1),
+				findMany: vi.fn().mockResolvedValue([parentRow]),
+			},
 			plexEpisodeCache: {
 				groupBy: vi.fn().mockResolvedValue([{ instanceId: "plex-inst-1", _count: { id: 1 } }]),
 				findMany: vi.fn().mockResolvedValue([
@@ -1403,7 +1604,7 @@ describe("prefetchFreshPlexEpisodeWatchData", () => {
 				]),
 			},
 			cacheRefreshStatus: {
-				findMany: episodeStatuses("plex-inst-1", completedAt, 1),
+				findMany: episodeStatuses("plex-inst-1", completedAt, 1, [parentRow]),
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 
@@ -1438,8 +1639,17 @@ describe("prefetchFreshPlexEpisodeWatchData", () => {
 			identityGeneration: 7,
 			updatedAt: new Date("2026-07-30T10:00:00.000Z"),
 		};
+		const parentRow = makePlexRow({
+			id: "parent-row",
+			tmdbId: 42,
+			mediaType: "series",
+			sectionId: "1",
+		});
 		const prisma = {
-			plexCache: { count: vi.fn().mockResolvedValue(1) },
+			plexCache: {
+				count: vi.fn().mockResolvedValue(1),
+				findMany: vi.fn().mockResolvedValue([parentRow]),
+			},
 			plexEpisodeCache: {
 				groupBy: vi.fn().mockResolvedValue([{ instanceId: "plex-inst-1", _count: { id: 1 } }]),
 				findMany: vi.fn().mockResolvedValue([
@@ -1460,7 +1670,9 @@ describe("prefetchFreshPlexEpisodeWatchData", () => {
 				]),
 			},
 			cacheRefreshStatus: {
-				findMany: episodeStatuses("plex-inst-1", new Date("2026-07-30T11:45:00.000Z"), 1),
+				findMany: episodeStatuses("plex-inst-1", new Date("2026-07-30T11:45:00.000Z"), 1, [
+					parentRow,
+				]),
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 

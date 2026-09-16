@@ -6,7 +6,8 @@
  * for testability.
  */
 
-import type { WatchEnrichmentItem } from "@arr/shared";
+import type { ProviderObservationStatus, WatchEnrichmentItem } from "@arr/shared";
+import { projectWatchDisplayEvidence } from "../../../lib/provider-observation/watch-display-evidence.js";
 
 /** Shape of a PlexCache entry relevant to enrichment aggregation */
 export interface PlexCacheEntry {
@@ -21,6 +22,7 @@ export interface PlexCacheEntry {
 	watchedByUsers: string;
 	collections: string;
 	labels: string;
+	providerStatus: ProviderObservationStatus | undefined;
 }
 
 /** Shape of a TautulliCache entry relevant to enrichment aggregation */
@@ -31,11 +33,26 @@ export interface TautulliCacheEntry {
 	lastWatchedAt: Date | null;
 	watchCount: number;
 	watchedByUsers: string;
+	providerStatus: ProviderObservationStatus | undefined;
 }
 
 /** Minimal logger interface for parse failure warnings */
 export interface ParseLogger {
 	warn: (obj: Record<string, unknown>, msg: string) => void;
+}
+
+function exactCurrentOnDeck(entry: PlexCacheEntry | undefined): boolean | null {
+	if (!entry?.providerStatus) return null;
+	const domain = entry.providerStatus.domains?.find((candidate) => candidate.domain === "on-deck");
+	if (
+		entry.providerStatus.availability !== "current" ||
+		!domain ||
+		domain.availability !== "current" ||
+		domain.evidence !== "complete" ||
+		domain.valueSemantics !== "exact"
+	)
+		return null;
+	return entry.onDeck;
 }
 
 /**
@@ -62,96 +79,86 @@ export function aggregateWatchEnrichment(
 
 		if (plexMatches.length === 0 && tautulliMatches.length === 0) continue;
 
-		let lastWatchedAt: Date | null = null;
-		let plexWatchCount = 0;
-		let tautulliWatchCount = 0;
-		const allUsers = new Set<string>();
-		let onDeck = false;
-		let userRating: number | null = null;
-		let ratingKey: string | null = null;
-		let instanceId: string | null = null;
-		let collections: string[] = [];
-		let labels: string[] = [];
-
-		for (const entry of plexMatches) {
-			if (entry.lastWatchedAt && (!lastWatchedAt || entry.lastWatchedAt > lastWatchedAt)) {
-				lastWatchedAt = entry.lastWatchedAt;
-			}
-			plexWatchCount += entry.watchCount;
-			if (entry.onDeck) onDeck = true;
-			if (entry.userRating != null && (userRating == null || entry.userRating > userRating)) {
-				userRating = entry.userRating;
-			}
-			if (entry.ratingKey && !ratingKey) {
-				ratingKey = entry.ratingKey;
-				instanceId = entry.instanceId;
-				try {
-					collections = JSON.parse(entry.collections) as string[];
-				} catch {
-					logger.warn(
-						{ instanceId: entry.instanceId, tmdbId: entry.tmdbId, field: "collections" },
-						"Skipping malformed JSON in PlexCache field",
-					);
-					collections = [];
-				}
-				try {
-					labels = JSON.parse(entry.labels) as string[];
-				} catch {
-					logger.warn(
-						{ instanceId: entry.instanceId, tmdbId: entry.tmdbId, field: "labels" },
-						"Skipping malformed JSON in PlexCache field",
-					);
-					labels = [];
-				}
-			}
-			try {
-				const users = JSON.parse(entry.watchedByUsers) as string[];
-				for (const u of users) allUsers.add(u);
-			} catch {
-				logger.warn(
-					{ instanceId: entry.instanceId, tmdbId: entry.tmdbId, field: "watchedByUsers" },
-					"Skipping malformed JSON in PlexCache field",
-				);
-			}
-		}
-
-		for (const entry of tautulliMatches) {
-			if (entry.lastWatchedAt && (!lastWatchedAt || entry.lastWatchedAt > lastWatchedAt)) {
-				lastWatchedAt = entry.lastWatchedAt;
-			}
-			tautulliWatchCount += entry.watchCount;
-			try {
-				const users = JSON.parse(entry.watchedByUsers) as string[];
-				for (const u of users) allUsers.add(u);
-			} catch {
-				logger.warn(
-					{ instanceId: entry.instanceId, tmdbId: entry.tmdbId, field: "watchedByUsers" },
-					"Skipping malformed JSON in TautulliCache field",
-				);
-			}
-		}
-
 		const hasPlex = plexMatches.length > 0;
 		const hasTautulli = tautulliMatches.length > 0;
+		const projections = [
+			...plexMatches.map((entry) => ({
+				entry,
+				display: projectWatchDisplayEvidence({ status: entry.providerStatus, row: entry }),
+			})),
+			...tautulliMatches.map((entry) => ({
+				entry,
+				display: projectWatchDisplayEvidence({ status: entry.providerStatus, row: entry }),
+			})),
+		];
+		const countContributors = projections.filter(
+			(
+				candidate,
+			): candidate is typeof candidate & {
+				display: { watchCount: number; watchCountSemantics: "exact" | "lower-bound" };
+			} =>
+				candidate.display.watchCount !== null &&
+				candidate.display.watchCountSemantics !== "unknown",
+		);
+		const preferredPlex = projections.find(
+			(
+				candidate,
+			): candidate is {
+				entry: PlexCacheEntry;
+				display: ReturnType<typeof projectWatchDisplayEvidence>;
+			} => "ratingKey" in candidate.entry,
+		);
+		const attribution = preferredPlex?.display ?? {
+			lastWatchedAt: null,
+			watchedByUsers: [] as string[],
+		};
+		const metadata = preferredPlex?.entry;
+		const parseMetadata = (value: string, field: "collections" | "labels") => {
+			try {
+				const parsed: unknown = JSON.parse(value);
+				return Array.isArray(parsed) && parsed.every((entry) => typeof entry === "string")
+					? parsed
+					: [];
+			} catch {
+				logger.warn(
+					{ instanceId: metadata?.instanceId ?? "", tmdbId, field },
+					"Skipping malformed JSON in PlexCache field",
+				);
+				return [];
+			}
+		};
+		const count = countContributors.reduce(
+			(maximum, candidate) => Math.max(maximum, candidate.display.watchCount),
+			0,
+		);
+		const countSemantics =
+			countContributors.length === 0
+				? "unknown"
+				: countContributors.length === 1 &&
+						countContributors[0]!.display.watchCountSemantics === "exact"
+					? "exact"
+					: "lower-bound";
+		const zeroLowerBound = countSemantics === "lower-bound" && count === 0;
 
 		const item: WatchEnrichmentItem = {
-			lastWatchedAt: lastWatchedAt?.toISOString() ?? null,
-			watchCount: Math.max(plexWatchCount, tautulliWatchCount),
-			watchedByUsers: [...allUsers],
-			onDeck,
-			userRating,
+			lastWatchedAt: attribution.lastWatchedAt,
+			watchCount: countContributors.length === 0 || zeroLowerBound ? null : count,
+			watchCountSemantics: zeroLowerBound ? "unknown" : countSemantics,
+			watchedByUsers: attribution.watchedByUsers,
+			onDeck: exactCurrentOnDeck(metadata),
+			userRating: metadata?.userRating ?? null,
 			source: hasPlex && hasTautulli ? "both" : hasPlex ? "plex" : "tautulli",
-			ratingKey,
-			instanceId,
-			collections,
-			labels,
+			ratingKey: metadata?.ratingKey ?? null,
+			instanceId: metadata?.instanceId ?? null,
+			collections: metadata ? parseMetadata(metadata.collections, "collections") : [],
+			labels: metadata ? parseMetadata(metadata.labels, "labels") : [],
 		};
 
-		if (filterUser && !allUsers.has(filterUser)) {
-			item.watchCount = 0;
+		if (filterUser && !attribution.watchedByUsers.includes(filterUser)) {
+			item.watchCount = null;
+			item.watchCountSemantics = "unknown";
 			item.lastWatchedAt = null;
 			item.watchedByUsers = [];
-			item.onDeck = false;
 			item.userRating = null;
 		}
 

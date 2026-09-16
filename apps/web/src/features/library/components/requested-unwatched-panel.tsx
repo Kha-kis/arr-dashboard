@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { ServiceBadge, StatusBadge } from "../../../components/layout";
 import {
 	type RequestedUnwatchedItem,
-	useRequestedUnwatchedInsights,
+	type RequestedUnwatchedResponse,
 } from "../../../hooks/api/useRequestedUnwatchedInsights";
 import {
 	getLinuxInstanceName,
@@ -23,10 +23,12 @@ import { cn } from "../../../lib/utils";
  * but have never been watched in Plex. Advisory only.
  */
 export function RequestedUnwatchedPanel({
+	queryData,
 	autoExpand = false,
 	isDismissed,
 	onDismiss,
 }: {
+	queryData: RequestedUnwatchedResponse | undefined;
 	autoExpand?: boolean;
 	isDismissed?: (instanceId: string, arrItemId: number) => boolean;
 	onDismiss?: (instanceId: string, arrItemId: number) => void;
@@ -42,19 +44,25 @@ export function RequestedUnwatchedPanel({
 		}
 	}, [autoExpand]);
 
-	const { data, isLoading } = useRequestedUnwatchedInsights({
-		minAgeDays: 7,
-		limit: 25,
-	});
-
-	const allItems = data?.data?.items ?? [];
+	const allItems = queryData?.data?.items ?? [];
+	const confirmedItems = allItems.filter((item) => item.watchState === "unwatched");
+	const unknownItems = [
+		...(queryData?.data?.unknownItems ?? []),
+		...allItems.filter((item) => item.watchState !== "unwatched"),
+	].filter(
+		(item, index, collection) =>
+			collection.findIndex(
+				(candidate) =>
+					candidate.instanceId === item.instanceId && candidate.arrItemId === item.arrItemId,
+			) === index,
+	);
 	const items = isDismissed
-		? allItems.filter((i) => !isDismissed(i.instanceId, i.arrItemId))
-		: allItems;
-	const hasSeerrData = data?.data?.hasSeerrData ?? false;
-	const hasWatchData = data?.data?.hasWatchData ?? data?.data?.hasPlexData ?? false;
-
-	if (isLoading || items.length === 0 || !hasSeerrData || !hasWatchData) return null;
+		? confirmedItems.filter((i) => !isDismissed(i.instanceId, i.arrItemId))
+		: confirmedItems;
+	const visibleUnknownItems = isDismissed
+		? unknownItems.filter((i) => !isDismissed(i.instanceId, i.arrItemId))
+		: unknownItems;
+	if (items.length === 0 && visibleUnknownItems.length === 0) return null;
 
 	return (
 		<div
@@ -76,7 +84,20 @@ export function RequestedUnwatchedPanel({
 						<Inbox className="h-4 w-4" style={{ color: SEMANTIC_COLORS.error.from }} />
 					</div>
 					<span className="text-sm font-medium text-foreground">
-						{items.length} requested item{items.length !== 1 ? "s" : ""} never watched
+						{items.length > 0 && (
+							<span>
+								{items.length} requested item{items.length !== 1 ? "s" : ""} never watched
+							</span>
+						)}
+						{items.length > 0 && visibleUnknownItems.length > 0 && (
+							<span className="text-sm text-muted-foreground"> · </span>
+						)}
+						{visibleUnknownItems.length > 0 && (
+							<span>
+								{visibleUnknownItems.length} item
+								{visibleUnknownItems.length !== 1 ? "s" : ""} with unknown watch status
+							</span>
+						)}
 					</span>
 				</div>
 				<ChevronDown
@@ -89,9 +110,17 @@ export function RequestedUnwatchedPanel({
 
 			{expanded && (
 				<div className="border-t border-border/20 px-4 py-3 space-y-2">
-					<p className="text-xs text-muted-foreground mb-3">
-						Items requested via Seerr that are available but have never been watched after 7+ days.
-					</p>
+					{queryData?.data?.limited && (
+						<p className="text-xs text-muted-foreground mb-3">
+							Showing a bounded set of requests; more items may need review.
+						</p>
+					)}
+					{items.length > 0 && (
+						<p className="text-xs text-muted-foreground mb-3">
+							Items requested via Seerr that are available but have never been watched after 7+
+							days.
+						</p>
+					)}
 					{items.map((item) => (
 						<RequestedRow
 							key={`${item.instanceId}-${item.arrItemId}`}
@@ -100,7 +129,65 @@ export function RequestedUnwatchedPanel({
 							onDismiss={onDismiss ? () => onDismiss(item.instanceId, item.arrItemId) : undefined}
 						/>
 					))}
+					{visibleUnknownItems.length > 0 && (
+						<div className="space-y-2">
+							<p className="text-xs text-muted-foreground mb-3">
+								Watch status is unknown for these requests; they are not recommendations.
+							</p>
+							{visibleUnknownItems.map((item) => (
+								<RequestedUnknownRow
+									key={`unknown-${item.instanceId}-${item.arrItemId}`}
+									item={item}
+									incognitoMode={incognitoMode}
+									onDismiss={
+										onDismiss ? () => onDismiss(item.instanceId, item.arrItemId) : undefined
+									}
+								/>
+							))}
+						</div>
+					)}
 				</div>
+			)}
+		</div>
+	);
+}
+
+function RequestedUnknownRow({
+	item,
+	incognitoMode,
+	onDismiss,
+}: {
+	item: RequestedUnwatchedItem;
+	incognitoMode: boolean;
+	onDismiss?: () => void;
+}) {
+	return (
+		<div className="group flex items-center gap-3 rounded-lg px-3 py-2 bg-muted/5 border border-border/10">
+			<Inbox className="h-3.5 w-3.5 shrink-0" style={{ color: SEMANTIC_COLORS.warning.from }} />
+			<div className="flex-1 min-w-0">
+				<span className="text-sm font-medium text-foreground truncate block">
+					{incognitoMode ? getLinuxIsoName(item.title) : item.title}
+					{item.year ? ` (${item.year})` : ""}
+				</span>
+				<span className="text-xs text-muted-foreground">
+					{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}
+					{" · "}Available {item.addedDaysAgo}d ago · Watch status unknown
+				</span>
+			</div>
+			<ServiceBadge service={item.service} />
+			<StatusBadge status="warning">
+				<User className="h-2.5 w-2.5 mr-0.5" />
+				{incognitoMode ? getLinuxUsername(item.requestedBy) : item.requestedBy}
+			</StatusBadge>
+			{onDismiss && (
+				<button
+					type="button"
+					onClick={onDismiss}
+					className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/10"
+					title="Dismiss this item from insights"
+				>
+					<XCircle className="h-3 w-3" />
+				</button>
 			)}
 		</div>
 	);

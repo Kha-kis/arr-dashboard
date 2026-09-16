@@ -31,7 +31,7 @@ This split is intentional. The registry observes; it does not schedule.
 | Fastify plugin (decorates `app.schedulerRegistry`) | `apps/api/src/plugins/scheduler-registry.ts` |
 | Where every scheduler plugin gets registered | `apps/api/src/bootstrap/schedulers.ts` |
 | HTTP surface | `apps/api/src/routes/system.ts` (`GET /system/jobs`) |
-| Job plugins (one per scheduler) | `apps/api/src/plugins/*-scheduler.ts` (e.g. `hunting-scheduler.ts`, `backup-scheduler.ts`, `queue-cleaner-scheduler.ts`) |
+| Job plugins (one per scheduler) | `apps/api/src/plugins/*-scheduler.ts` (e.g. `hunting-scheduler.ts`, `backup-scheduler.ts`, `queue-cleaner-scheduler.ts`, `history-collection-scheduler.ts`) |
 | Job tick implementations | `apps/api/src/lib/<domain>/*-executor.ts` (e.g. `lib/hunting/hunt-executor.ts`) |
 
 ## Invariants
@@ -53,6 +53,13 @@ This split is intentional. The registry observes; it does not schedule.
    "is anything running anywhere?" check is local to this process.
 6. **The `/system/jobs` endpoint never triggers a tick.** It is read-only.
    Pinned by `system-jobs.test.ts`.
+
+The History observation job uses a three-minute startup delay and a five-minute
+interval. Its whole-tick overlap guard is process-local and is checked before
+registry tracking or owner enumeration. Each accepted tick enumerates distinct
+enabled History owners by ascending `userId`, then invokes the frozen collector
+serially. The collector's durable per-owner lease is the cross-process
+authority; the registry and in-memory guard do not coordinate processes.
 
 ## Failure-handling policy
 

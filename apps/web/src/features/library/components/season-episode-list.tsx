@@ -3,12 +3,14 @@
 import { Film, HardDrive, Loader2, PauseCircle, PlayCircle, Search } from "lucide-react";
 import { useState } from "react";
 import { Button, toast } from "../../../components/ui";
+import { useIncognitoMode } from "../../../contexts/IncognitoContext";
 import {
 	useEpisodesQuery,
 	useLibraryEpisodeMonitorMutation,
 	useLibraryEpisodeSearchMutation,
 } from "../../../hooks/api/useLibrary";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { getLinuxIsoName, getLinuxSavePath } from "../../../lib/incognito";
 import { formatBytes } from "../lib/library-utils";
 import { LibraryBadge } from "./library-badge";
 
@@ -37,6 +39,7 @@ export const SeasonEpisodeList = ({
 	seriesId,
 	seasonNumber,
 }: SeasonEpisodeListProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const { data, isLoading, isError } = useEpisodesQuery({
 		instanceId,
 		seriesId,
@@ -122,7 +125,13 @@ export const SeasonEpisodeList = ({
 							<div className="flex-1 min-w-0">
 								<div className="flex items-center gap-2">
 									<span className="font-medium text-foreground">E{episode.episodeNumber}</span>
-									<span className="text-muted-foreground truncate">{episode.title || "TBA"}</span>
+									<span className="text-muted-foreground truncate">
+										{episode.title
+											? incognitoMode
+												? getLinuxIsoName(episode.title)
+												: episode.title
+											: "TBA"}
+									</span>
 									{episode.finaleType && (
 										<span className="text-[10px] uppercase tracking-wider text-amber-400/70 font-medium">
 											{episode.finaleType}
@@ -254,7 +263,7 @@ export const SeasonEpisodeList = ({
 								{/* File path */}
 								{ef.relativePath && (
 									<span className="basis-full text-muted-foreground/50 break-all">
-										{ef.relativePath}
+										{incognitoMode ? getLinuxSavePath(ef.relativePath) : ef.relativePath}
 									</span>
 								)}
 							</div>

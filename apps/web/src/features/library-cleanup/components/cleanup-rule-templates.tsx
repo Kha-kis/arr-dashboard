@@ -23,7 +23,7 @@ export interface RuleTemplate {
 	icon: LucideIcon;
 	category: TemplateCategory;
 	/** Services that must be configured for this template to be useful */
-	requiredServices: Array<"plex" | "seerr" | "tautulli">;
+	requiredServices: Array<"plex" | "seerr" | "tautulli" | "watch-source">;
 	/** Builds a CreateCleanupRule with placeholder values the user can customize */
 	buildRule: () => CreateCleanupRule;
 }
@@ -37,7 +37,7 @@ export const RULE_TEMPLATES: RuleTemplate[] = [
 			"Matches when the Seerr requester also appears in watch data for the item (Plex, Emby, or Jellyfin). No username setup needed.",
 		icon: Combine,
 		category: "cross-service",
-		requiredServices: ["plex", "seerr"],
+		requiredServices: ["seerr", "watch-source"],
 		buildRule: () => ({
 			name: "Requested & Watched by Requester",
 			enabled: true,
@@ -58,7 +58,7 @@ export const RULE_TEMPLATES: RuleTemplate[] = [
 			"Matches when the Seerr requester has not watched the item (Plex, Emby, or Jellyfin). Only evaluated when watch data exists.",
 		icon: EyeOff,
 		category: "cross-service",
-		requiredServices: ["plex", "seerr"],
+		requiredServices: ["seerr", "watch-source"],
 		buildRule: () => ({
 			name: "Requested but Not Watched by Requester",
 			enabled: true,
@@ -136,6 +136,7 @@ export const RULE_TEMPLATES: RuleTemplate[] = [
 
 interface CleanupRuleTemplatesProps {
 	hasPlex: boolean;
+	hasJellyfin: boolean;
 	hasSeerr: boolean;
 	hasTautulli: boolean;
 	onSelectTemplate: (rule: CreateCleanupRule) => void;
@@ -143,14 +144,16 @@ interface CleanupRuleTemplatesProps {
 
 export function CleanupRuleTemplates({
 	hasPlex,
+	hasJellyfin,
 	hasSeerr,
 	hasTautulli,
 	onSelectTemplate,
 }: CleanupRuleTemplatesProps) {
 	const { gradient } = useThemeGradient();
 
-	const serviceAvailable = (service: "plex" | "seerr" | "tautulli") => {
+	const serviceAvailable = (service: "plex" | "seerr" | "tautulli" | "watch-source") => {
 		if (service === "plex") return hasPlex;
+		if (service === "watch-source") return hasPlex || hasJellyfin;
 		if (service === "seerr") return hasSeerr;
 		if (service === "tautulli") return hasTautulli;
 		return false;

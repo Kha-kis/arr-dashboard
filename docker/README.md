@@ -80,6 +80,22 @@ Prisma's `--accept-data-loss` option. If an upgrade requires a destructive
 transition, keep the previous image running and follow that release's explicit
 backup and migration instructions before retrying the upgrade.
 
+### Upgrade and rollback safety
+
+Before an upgrade, quiesce the target and create a recoverable, owner-only
+snapshot using the database provider's supported backup mechanism. Verify the
+snapshot exists and prove recovery in an isolated disposable target before
+allowing schema synchronization: run the provider's integrity checks against a
+copied SQLite snapshot, or restore a PostgreSQL dump into a separate temporary
+database and verify bounded pre-upgrade invariants without exposing row values.
+
+The launcher performs only non-destructive forward reconciliation and never
+passes `--accept-data-loss`. An old image is not a database downgrade tool:
+Prisma's exact behavior for extra tables depends on the schema contents. If a
+rollback is required after synchronization, stop the new image, restore the
+pre-upgrade snapshot, and then start the prior image. Keeping the old image
+running is not sufficient once the new image has synchronized the database.
+
 ## Environment Variables
 
 ### Core

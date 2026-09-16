@@ -6,7 +6,7 @@
  * Wrapped with React.memo for list performance optimization.
  */
 
-import type { LibraryItem } from "@arr/shared";
+import type { LibraryItem, SeriesProgressItem } from "@arr/shared";
 import {
 	AlertTriangle,
 	ArrowUpCircle,
@@ -38,6 +38,7 @@ import { formatBytes, formatRuntime } from "../lib/library-utils";
 import { LibraryBadge } from "./library-badge";
 import { PosterImage } from "./poster-image";
 import { TorrentStateBadge } from "./torrent-state-badge";
+import type { SeriesProgressByProvider } from "./library-content";
 
 function formatRelativeTime(isoDate: string): string {
 	const diff = Date.now() - new Date(isoDate).getTime();
@@ -92,17 +93,19 @@ interface LibraryCardProps {
 	/** TMDB poster path from Seerr enrichment (e.g. "/xyz123.jpg") */
 	posterPath?: string | null;
 	/** Plex watch count (number of play events) */
-	watchCount?: number;
+	watchCount?: number | null;
+	watchCountSemantics?: "exact" | "lower-bound" | "unknown";
+	watchSource?: "plex" | "tautulli" | "both" | "jellyfin";
 	/** Whether the item is currently on a Plex user's On Deck list */
-	onDeck?: boolean;
+	onDeck?: boolean | null;
 	/** Last time any user watched this item (ISO 8601) */
 	lastWatchedAt?: string | null;
 	/** Plex users who have watched this item */
 	watchedByUsers?: string[];
 	/** Plex user rating (0-10 scale) */
 	plexUserRating?: number | null;
-	/** Plex watch progress for series (watched/total episodes) */
-	seriesProgress?: { watched: number; total: number; percent: number } | null;
+	/** Per-provider watch progress for series, preserving provider evidence */
+	seriesProgress?: SeriesProgressByProvider | null;
 	/** Media server deep link URL */
 	plexUrl?: string | null;
 	/** Label for the media server link (e.g., "Plex", "Jellyfin", "Emby") */
@@ -136,6 +139,54 @@ interface LibraryCardProps {
 	 * for the `topHosts` returned in seedingSummary.
 	 */
 	trackerIcons?: Record<string, { iconUrl?: string; name?: string }>;
+}
+
+function SeriesProgressDisplay({
+	provider,
+	progress,
+}: {
+	provider: "Plex" | "Jellyfin";
+	progress: SeriesProgressItem | undefined;
+}) {
+	if (!progress || typeof progress.status !== "string") return null;
+	if (progress.status === "exact") {
+		return (
+			<div
+				className="flex items-center gap-2"
+				title={`${provider}: Watched ${progress.watched}/${progress.total} episodes (${progress.percent}%)`}
+			>
+				<span className="text-[10px] font-medium text-muted-foreground w-14 shrink-0">
+					{provider}
+				</span>
+				<div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+					<div
+						className="h-full rounded-full transition-all duration-500"
+						style={{
+							width: `${progress.percent}%`,
+							background: `linear-gradient(90deg, ${SEMANTIC_COLORS.info.from}, ${SEMANTIC_COLORS.success.from})`,
+						}}
+					/>
+				</div>
+				<span className="text-[10px] text-muted-foreground whitespace-nowrap">
+					{progress.watched}/{progress.total} ({progress.percent}%)
+				</span>
+			</div>
+		);
+	}
+	if (progress.status === "partial") {
+		return (
+			<div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+				<span className="font-medium w-14 shrink-0">{provider}</span>
+				<span>At least {progress.watched} episodes watched</span>
+			</div>
+		);
+	}
+	return (
+		<div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+			<span className="font-medium w-14 shrink-0">{provider}</span>
+			<span>Watch status unknown</span>
+		</div>
+	);
 }
 
 /**
@@ -179,6 +230,8 @@ export const LibraryCard = memo(function LibraryCard({
 	openIssueCount,
 	posterPath,
 	watchCount,
+	watchCountSemantics,
+	watchSource,
 	onDeck,
 	lastWatchedAt,
 	watchedByUsers,
@@ -649,24 +702,32 @@ export const LibraryCard = memo(function LibraryCard({
 									{openIssueCount}
 								</span>
 							)}
-							{typeof watchCount === "number" && watchCount > 0 && (
-								<span
-									className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold"
-									style={{
-										backgroundColor: SEMANTIC_COLORS.info.bg,
-										border: `1px solid ${SEMANTIC_COLORS.info.border}`,
-										color: SEMANTIC_COLORS.info.text,
-									}}
-									title={
-										!incognitoMode && watchedByUsers?.length
-											? `Watched by: ${watchedByUsers.join(", ")}`
-											: undefined
-									}
-								>
-									<Eye className="h-3 w-3" />
-									{watchCount}
-								</span>
-							)}
+							{typeof watchCount === "number" &&
+								watchCountSemantics !== "unknown" &&
+								watchCountSemantics !== undefined &&
+								(watchCountSemantics !== "lower-bound" || watchCount > 0) && (
+									<span
+										className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold"
+										style={{
+											backgroundColor: SEMANTIC_COLORS.info.bg,
+											border: `1px solid ${SEMANTIC_COLORS.info.border}`,
+											color: SEMANTIC_COLORS.info.text,
+										}}
+										title={
+											watchCountSemantics === "lower-bound"
+												? "Observed watch count (lower bound)"
+												: !incognitoMode && watchedByUsers?.length
+													? `Watched by: ${watchedByUsers.join(", ")}`
+													: undefined
+										}
+									>
+										<Eye className="h-3 w-3" />
+										{watchCountSemantics === "lower-bound" && (
+											<span className="sr-only">Observed watch count lower bound</span>
+										)}
+										{watchCountSemantics === "lower-bound" ? `${watchCount}+` : watchCount}
+									</span>
+								)}
 							{onDeck && (
 								<span
 									className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold"
@@ -680,7 +741,7 @@ export const LibraryCard = memo(function LibraryCard({
 									On Deck
 								</span>
 							)}
-							{lastWatchedAt && (
+							{lastWatchedAt && watchSource !== "tautulli" && (
 								<span
 									className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs text-muted-foreground"
 									style={{
@@ -720,24 +781,10 @@ export const LibraryCard = memo(function LibraryCard({
 						))}
 					</div>
 
-					{/* Plex watch progress bar for series */}
-					{seriesProgress && seriesProgress.total > 0 && (
-						<div
-							className="flex items-center gap-2"
-							title={`Watched ${seriesProgress.watched}/${seriesProgress.total} episodes (${seriesProgress.percent}%)`}
-						>
-							<div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-								<div
-									className="h-full rounded-full transition-all duration-500"
-									style={{
-										width: `${seriesProgress.percent}%`,
-										background: `linear-gradient(90deg, ${SEMANTIC_COLORS.info.from}, ${SEMANTIC_COLORS.success.from})`,
-									}}
-								/>
-							</div>
-							<span className="text-[10px] text-muted-foreground whitespace-nowrap">
-								{seriesProgress.watched}/{seriesProgress.total} ({seriesProgress.percent}%)
-							</span>
+					{seriesProgress && (
+						<div className="space-y-1">
+							<SeriesProgressDisplay provider="Plex" progress={seriesProgress.plex} />
+							<SeriesProgressDisplay provider="Jellyfin" progress={seriesProgress.jellyfin} />
 						</div>
 					)}
 

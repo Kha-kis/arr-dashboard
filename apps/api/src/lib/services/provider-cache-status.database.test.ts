@@ -11,18 +11,24 @@ import {
 	encodeAuthoritativePlexGenerationMetadata,
 	evaluatePlexMutationAuthority,
 } from "../plex/plex-generation-metadata.js";
+import { createPlexTargetLedgerBinding } from "../plex/plex-generation-target-ledger.js";
 import {
-	beginProviderCacheRefreshAttempt,
-	beginPlexCacheRefreshAttempt,
-	finishProviderCacheRefreshAttemptFailure,
-	finishPlexCacheRefreshAttemptFailure,
-} from "./provider-cache-status.js";
-import type { ProviderPublicationAuthority } from "./provider-identity-guard.js";
-import { clearDurableProviderCacheState } from "./service-identity-lifecycle.js";
+	claimObservationUnit,
+	createOrLoadObservationRun,
+} from "../provider-observation/observation-run-repository.js";
 import {
 	readOwnedTautulliCacheAuthority,
 	readUserSelectedTautulliCache,
 } from "../tautulli/tautulli-cache-authority.js";
+import {
+	beginPlexCacheRefreshAttempt,
+	beginProviderCacheRefreshAttempt,
+	claimProviderCacheRefreshAttempt,
+	finishPlexCacheRefreshAttemptFailure,
+	finishProviderCacheRefreshAttemptFailure,
+	reconcileInterruptedProviderCacheRefreshAttempts,
+} from "./provider-cache-status.js";
+import type { ProviderPublicationAuthority } from "./provider-identity-guard.js";
 
 const apiRoot = join(process.cwd());
 const log = { warn: vi.fn() };
@@ -135,10 +141,7 @@ async function seedObsoleteStatus(
 	});
 }
 
-async function exerciseConcurrentTautulliSnapshot(
-	client: PrismaClient,
-	writer: PrismaClient,
-): Promise<void> {
+async function exerciseTautulliSelectedReadQuarantine(client: PrismaClient): Promise<void> {
 	const publishedAt = new Date("2026-08-28T12:00:00.000Z");
 	await client.user.create({
 		data: { id: tautulliAuthority.userId, username: "tautulli-snapshot", hashedPassword: "hash" },
@@ -180,62 +183,31 @@ async function exerciseConcurrentTautulliSnapshot(
 		},
 	});
 
-	let selectedReadReached!: () => void;
-	const atSelectedRead = new Promise<void>((resolve) => {
-		selectedReadReached = resolve;
-	});
-	let releaseSelectedRead!: () => void;
-	const selectedReadRelease = new Promise<void>((resolve) => {
-		releaseSelectedRead = resolve;
-	});
+	let selectedRowsRead = false;
 	const reader = client.$extends({
 		query: {
 			tautulliCache: {
 				async findMany({ args, query }) {
-					selectedReadReached();
-					await selectedReadRelease;
+					selectedRowsRead = true;
 					return await query(args);
 				},
 			},
 		},
 	});
 
-	const read = readUserSelectedTautulliCache(reader as never, {
+	const result = await readUserSelectedTautulliCache(reader as never, {
 		userId: tautulliAuthority.userId,
 		targets: [{ tmdbId: 42, mediaType: "movie" }],
 		now: publishedAt,
 	});
-	await atSelectedRead;
-	const reset = writer.$transaction(
-		async (tx) => {
-			await tx.serviceInstance.update({
-				where: { id: tautulliAuthority.id },
-				data: { connectionGeneration: { increment: 1 } },
-			});
-			await clearDurableProviderCacheState(tx, tautulliAuthority.id);
-		},
-		{ isolationLevel: "Serializable" },
-	);
-	releaseSelectedRead();
-
-	const [result] = await Promise.all([read, reset]);
-	expect(result.available && result.rows.length === 0).toBe(false);
-	if (result.available) {
-		expect(result).toMatchObject({
-			configured: true,
-			reasonCodes: [],
-			rows: [{ id: "tautulli-current-row", tmdbId: 42, watchCount: 3 }],
-		});
-	} else {
-		expect(result.reasonCodes.length).toBeGreaterThan(0);
-	}
-	await expect(
-		writer.serviceInstance.findUniqueOrThrow({ where: { id: tautulliAuthority.id } }),
-	).resolves.toMatchObject({ connectionGeneration: 5 });
-	expect(
-		await writer.cacheRefreshStatus.count({ where: { instanceId: tautulliAuthority.id } }),
-	).toBe(0);
-	expect(await writer.tautulliCache.count({ where: { instanceId: tautulliAuthority.id } })).toBe(0);
+	expect(result).toEqual({
+		configured: true,
+		available: false,
+		reasonCodes: ["provider_completion_unverifiable"],
+		rows: [],
+	});
+	expect(selectedRowsRead).toBe(false);
+	expect(await client.tautulliCache.count({ where: { instanceId: tautulliAuthority.id } })).toBe(1);
 }
 
 async function exerciseConcurrentTautulliAuthoritySnapshot(
@@ -321,17 +293,9 @@ async function exerciseConcurrentTautulliAuthoritySnapshot(
 	const [result, attempt] = await Promise.all([read, claim]);
 	expect(attempt).not.toBeNull();
 	expect(result).not.toBeNull();
-	expect(result?.available && result.cachedItems === 0).toBe(false);
-	if (result?.available) {
-		expect(result).toMatchObject({
-			state: "healthy_complete",
-			reasonCodes: [],
-			cachedItems: 1,
-		});
-	} else {
-		expect(result?.cachedItems).toBeNull();
-		expect(result?.reasonCodes.length).toBeGreaterThan(0);
-	}
+	expect(result?.available).toBe(false);
+	expect(result?.cachedItems).toBeNull();
+	expect(result?.reasonCodes.length).toBeGreaterThan(0);
 	await expect(
 		writer.cacheRefreshStatus.findUniqueOrThrow({
 			where: {
@@ -344,11 +308,407 @@ async function exerciseConcurrentTautulliAuthoritySnapshot(
 	).resolves.toMatchObject({ lastAttemptResult: expect.stringMatching(/^in_progress:/) });
 }
 
+async function exerciseRecoverableEpisodeAttempt(
+	client: PrismaClient,
+	episodeAuthority: ProviderPublicationAuthority,
+): Promise<void> {
+	const run = await createOrLoadObservationRun(client, {
+		authority: {
+			provider: "plex_episode",
+			cacheType: "plex_episode",
+			instanceId: episodeAuthority.id,
+			parentGenerationId: "parent-generation",
+			targetDigest: "d".repeat(64),
+			connectionGeneration: episodeAuthority.connectionGeneration,
+			identityGeneration: episodeAuthority.identityGeneration,
+		},
+		units: [
+			{
+				ordinal: 0,
+				scopeKey: "scope:one",
+				scopeDigest: "e".repeat(64),
+				phase: "collect",
+				expectedTargets: 1,
+			},
+		],
+	});
+	const unit = await client.providerObservationUnit.findFirstOrThrow({
+		where: { runId: run.id },
+	});
+	const marker = "in_progress:00000000-0000-4000-8000-000000000001";
+	await client.cacheRefreshStatus.create({
+		data: {
+			instanceId: episodeAuthority.id,
+			cacheType: "plex_episode",
+			lastRefreshedAt: new Date("2026-08-20T10:00:00.000Z"),
+			lastResult: "error",
+			itemCount: 0,
+			lastAttemptAt: new Date("2026-08-20T11:00:00.000Z"),
+			lastAttemptResult: marker,
+			connectionGeneration: episodeAuthority.connectionGeneration,
+			identityGeneration: episodeAuthority.identityGeneration,
+		},
+	});
+
+	expect(await reconcileInterruptedProviderCacheRefreshAttempts(client)).toBe(1);
+	await client.$transaction([
+		client.providerObservationUnit.update({
+			where: { id: unit.id },
+			data: {
+				state: "failed",
+				attemptCount: 1,
+				nextAttemptAt: new Date("2026-09-09T00:00:00.000Z"),
+				lastReasonCode: "provider-unavailable",
+			},
+		}),
+		client.providerObservationRun.update({
+			where: { id: run.id },
+			data: {
+				state: "failed",
+				nextAttemptAt: new Date("2026-09-09T00:00:00.000Z"),
+				lastReasonCode: "provider-unavailable",
+			},
+		}),
+	]);
+	expect(await reconcileInterruptedProviderCacheRefreshAttempts(client)).toBe(0);
+	await client.$transaction([
+		client.providerObservationUnit.update({
+			where: { id: unit.id },
+			data: { attemptCount: 4, nextAttemptAt: null },
+		}),
+		client.providerObservationRun.update({
+			where: { id: run.id },
+			data: { nextAttemptAt: null },
+		}),
+	]);
+	expect(await reconcileInterruptedProviderCacheRefreshAttempts(client)).toBe(0);
+	await client.$transaction([
+		client.providerObservationUnit.update({
+			where: { id: unit.id },
+			data: { state: "complete", nextAttemptAt: null, completedAt: new Date() },
+		}),
+		client.providerObservationRun.update({
+			where: { id: run.id },
+			data: {
+				state: "complete",
+				activeSlotKey: null,
+				completedUnits: 1,
+				completedWork: 1,
+				nextAttemptAt: null,
+				completedAt: new Date(),
+			},
+		}),
+	]);
+	expect(await reconcileInterruptedProviderCacheRefreshAttempts(client)).toBe(0);
+	await expect(
+		client.cacheRefreshStatus.findUniqueOrThrow({
+			where: {
+				instanceId_cacheType: {
+					instanceId: episodeAuthority.id,
+					cacheType: "plex_episode",
+				},
+			},
+		}),
+	).resolves.toMatchObject({
+		lastAttemptResult: "error",
+		lastAttemptErrorMessage: "unknown-failure",
+	});
+}
+
 describe("provider cache status SQLite takeover contract", () => {
-	it("serializes a lifecycle clear at the Tautulli validation-to-row-read boundary", async () => {
+	it("retires the outer marker before releasing its inherited unit claim", async () => {
 		const client = await createDatabase();
-		const writer = await createDatabasePeer(client);
-		await exerciseConcurrentTautulliSnapshot(client, writer);
+		await seedAuthority(client);
+		const run = await createOrLoadObservationRun(client, {
+			authority: {
+				provider: "plex_episode",
+				cacheType: "plex_episode",
+				instanceId: authority.id,
+				parentGenerationId: "parent-generation",
+				targetDigest: "d".repeat(64),
+				connectionGeneration: authority.connectionGeneration,
+				identityGeneration: authority.identityGeneration,
+			},
+			units: [
+				{
+					ordinal: 0,
+					scopeKey: "scope:one",
+					scopeDigest: "e".repeat(64),
+					phase: "collect",
+					expectedTargets: 1,
+				},
+			],
+		});
+		const started = new Date("2026-08-20T11:00:00.000Z");
+		const claim = await claimObservationUnit(client, {
+			runId: run.id,
+			now: started,
+			claimToken: "inherited-unit-token",
+		});
+		expect(claim).not.toBeNull();
+		const marker = "in_progress:00000000-0000-4000-8000-000000000001";
+		await client.cacheRefreshStatus.create({
+			data: {
+				instanceId: authority.id,
+				cacheType: "plex_episode",
+				lastRefreshedAt: new Date("2026-08-20T10:00:00.000Z"),
+				lastResult: "success",
+				itemCount: 7,
+				generationId: "published-generation",
+				generationMetadata: "published-metadata",
+				lastAttemptAt: started,
+				lastAttemptResult: marker,
+				connectionGeneration: authority.connectionGeneration,
+				identityGeneration: authority.identityGeneration,
+			},
+		});
+
+		expect(
+			await reconcileInterruptedProviderCacheRefreshAttempts(client, {
+				now: () => new Date("2026-08-20T12:00:00.000Z"),
+			}),
+		).toBe(1);
+		const status = await client.cacheRefreshStatus.findUniqueOrThrow({
+			where: { instanceId_cacheType: { instanceId: authority.id, cacheType: "plex_episode" } },
+		});
+		expect(status).toMatchObject({
+			lastRefreshedAt: new Date("2026-08-20T10:00:00.000Z"),
+			lastResult: "success",
+			itemCount: 7,
+			generationId: "published-generation",
+			generationMetadata: "published-metadata",
+			lastAttemptAt: started,
+		});
+		expect(status.lastAttemptResult).toBe("error");
+		expect(status.lastAttemptErrorMessage).toBe("unknown-failure");
+		expect(
+			await client.providerObservationUnit.findUniqueOrThrow({ where: { id: claim!.unitId } }),
+		).toMatchObject({ state: "pending", claimToken: null, cursor: 0, attemptCount: 0 });
+	}, 30_000);
+
+	it("refuses a missing outer marker without releasing an inherited unit claim", async () => {
+		const client = await createDatabase();
+		await seedAuthority(client);
+		const run = await createOrLoadObservationRun(client, {
+			authority: {
+				provider: "plex_episode",
+				cacheType: "plex_episode",
+				instanceId: authority.id,
+				parentGenerationId: "parent-generation",
+				targetDigest: "d".repeat(64),
+				connectionGeneration: authority.connectionGeneration,
+				identityGeneration: authority.identityGeneration,
+			},
+			units: [
+				{
+					ordinal: 0,
+					scopeKey: "scope:one",
+					scopeDigest: "e".repeat(64),
+					phase: "collect",
+					expectedTargets: 1,
+				},
+			],
+		});
+		const claim = await claimObservationUnit(client, {
+			runId: run.id,
+			now: new Date("2026-08-20T11:00:00.000Z"),
+			claimToken: "inherited-unit-token",
+		});
+		expect(claim).not.toBeNull();
+		await client.cacheRefreshStatus.create({
+			data: {
+				instanceId: authority.id,
+				cacheType: "plex_episode",
+				lastRefreshedAt: new Date("2026-08-20T10:00:00.000Z"),
+				lastResult: "success",
+				itemCount: 7,
+				generationId: "published-generation",
+				generationMetadata: "published-metadata",
+				lastAttemptAt: null,
+				lastAttemptResult: null,
+				connectionGeneration: authority.connectionGeneration,
+				identityGeneration: authority.identityGeneration,
+			},
+		});
+
+		await expect(reconcileInterruptedProviderCacheRefreshAttempts(client)).rejects.toThrow(
+			"unmatched inherited claim",
+		);
+		expect(
+			await client.providerObservationUnit.findUniqueOrThrow({ where: { id: claim!.unitId } }),
+		).toMatchObject({ state: "running", claimToken: claim!.claimToken });
+		expect(
+			await client.cacheRefreshStatus.findUniqueOrThrow({
+				where: {
+					instanceId_cacheType: { instanceId: authority.id, cacheType: "plex_episode" },
+				},
+			}),
+		).toMatchObject({ lastAttemptAt: null, lastAttemptResult: null });
+	}, 30_000);
+
+	it("rolls back the marker rotation when the exact unit CAS loses", async () => {
+		const client = await createDatabase();
+		await seedAuthority(client);
+		const run = await createOrLoadObservationRun(client, {
+			authority: {
+				provider: "plex_episode",
+				cacheType: "plex_episode",
+				instanceId: authority.id,
+				parentGenerationId: "parent-generation",
+				targetDigest: "d".repeat(64),
+				connectionGeneration: authority.connectionGeneration,
+				identityGeneration: authority.identityGeneration,
+			},
+			units: [
+				{
+					ordinal: 0,
+					scopeKey: "scope:one",
+					scopeDigest: "e".repeat(64),
+					phase: "collect",
+					expectedTargets: 1,
+				},
+			],
+		});
+		const started = new Date("2026-08-20T11:00:00.000Z");
+		const claim = await claimObservationUnit(client, {
+			runId: run.id,
+			now: started,
+			claimToken: "inherited-unit-token",
+		});
+		expect(claim).not.toBeNull();
+		const marker = "in_progress:00000000-0000-4000-8000-000000000001";
+		await client.cacheRefreshStatus.create({
+			data: {
+				instanceId: authority.id,
+				cacheType: "plex_episode",
+				lastRefreshedAt: new Date("2026-08-20T10:00:00.000Z"),
+				lastResult: "success",
+				itemCount: 7,
+				generationId: "published-generation",
+				generationMetadata: "published-metadata",
+				lastAttemptAt: started,
+				lastAttemptResult: marker,
+				connectionGeneration: authority.connectionGeneration,
+				identityGeneration: authority.identityGeneration,
+			},
+		});
+		const failingClient = client.$extends({
+			query: {
+				providerObservationUnit: {
+					async updateMany({ args, query }) {
+						if (args.where?.claimToken === claim!.claimToken) return { count: 0 };
+						return await query(args);
+					},
+				},
+			},
+		});
+
+		await expect(
+			reconcileInterruptedProviderCacheRefreshAttempts(failingClient as never, {
+				now: () => new Date("2026-08-20T12:00:00.000Z"),
+			}),
+		).rejects.toThrow("claim CAS lost");
+		expect(
+			await client.cacheRefreshStatus.findUniqueOrThrow({
+				where: { instanceId_cacheType: { instanceId: authority.id, cacheType: "plex_episode" } },
+			}),
+		).toMatchObject({ lastAttemptAt: started, lastAttemptResult: marker });
+		expect(
+			await client.providerObservationUnit.findUniqueOrThrow({ where: { id: claim!.unitId } }),
+		).toMatchObject({ state: "running", claimToken: claim!.claimToken });
+	}, 30_000);
+
+	it("reclaims a null-timestamp in-progress marker while preserving the published generation", async () => {
+		const client = await createDatabase();
+		await seedAuthority(client);
+		await client.cacheRefreshStatus.create({
+			data: {
+				instanceId: authority.id,
+				cacheType: "plex_episode",
+				lastRefreshedAt: new Date("2026-08-20T10:00:00.000Z"),
+				lastResult: "success",
+				itemCount: 7,
+				generationId: "published-generation",
+				generationMetadata: "published-metadata",
+				lastAttemptAt: null,
+				lastAttemptResult: "in_progress:legacy",
+				connectionGeneration: authority.connectionGeneration,
+				identityGeneration: authority.identityGeneration,
+			},
+		});
+
+		const claim = await claimProviderCacheRefreshAttempt(client, "plex_episode", authority, {
+			now: () => new Date("2026-08-20T12:00:00.000Z"),
+		});
+
+		expect(claim).toMatchObject({
+			status: "acquired",
+			attempt: { resultMarker: expect.stringMatching(/^in_progress:/) },
+		});
+		await expect(
+			client.cacheRefreshStatus.findUniqueOrThrow({
+				where: {
+					instanceId_cacheType: { instanceId: authority.id, cacheType: "plex_episode" },
+				},
+			}),
+		).resolves.toMatchObject({
+			lastResult: "success",
+			itemCount: 7,
+			generationId: "published-generation",
+			generationMetadata: "published-metadata",
+			lastAttemptAt: new Date("2026-08-20T12:00:00.000Z"),
+			lastAttemptResult: expect.stringMatching(/^in_progress:/),
+		});
+	}, 30_000);
+
+	it("retires an interrupted Plex episode attempt while retaining pending and failed work", async () => {
+		const client = await createDatabase();
+		await seedAuthority(client);
+		await exerciseRecoverableEpisodeAttempt(client, authority);
+	}, 30_000);
+
+	it("recovers an inherited claim idempotently while preserving the publication", async () => {
+		const client = await createDatabase();
+		await seedAuthority(client);
+		const publishedAt = new Date("2026-08-20T10:00:00.000Z");
+		const attemptedAt = new Date("2026-08-20T11:00:00.000Z");
+		await client.cacheRefreshStatus.create({
+			data: {
+				instanceId: authority.id,
+				cacheType: "plex",
+				lastRefreshedAt: publishedAt,
+				lastResult: "success",
+				lastErrorMessage: null,
+				itemCount: 7,
+				generationId: "published-generation",
+				generationMetadata: "published-metadata",
+				lastAttemptAt: attemptedAt,
+				lastAttemptResult: "in_progress:00000000-0000-4000-8000-000000000001",
+				lastAttemptErrorMessage: null,
+				connectionGeneration: authority.connectionGeneration,
+				identityGeneration: authority.identityGeneration,
+			},
+		});
+
+		expect(await reconcileInterruptedProviderCacheRefreshAttempts(client)).toBe(1);
+		expect(await reconcileInterruptedProviderCacheRefreshAttempts(client)).toBe(0);
+		await expect(
+			client.cacheRefreshStatus.findUniqueOrThrow({
+				where: { instanceId_cacheType: { instanceId: authority.id, cacheType: "plex" } },
+			}),
+		).resolves.toMatchObject({
+			lastResult: "success",
+			itemCount: 7,
+			generationId: "published-generation",
+			generationMetadata: "published-metadata",
+			lastAttemptResult: "error",
+			lastAttemptErrorMessage: "unknown-failure",
+		});
+	}, 30_000);
+
+	it("never opens a selected-row read for configured Tautulli evidence", async () => {
+		const client = await createDatabase();
+		await exerciseTautulliSelectedReadQuarantine(client);
 	}, 30_000);
 
 	it("serializes an attempt claim at the Tautulli status-to-count boundary", async () => {
@@ -357,7 +717,23 @@ describe("provider cache status SQLite takeover contract", () => {
 		await exerciseConcurrentTautulliAuthoritySnapshot(client, writer);
 	}, 30_000);
 
-	it("keeps overlap A unavailable, publishes B, and prevents A from finishing over B", async () => {
+	it("converges simultaneous first claims on one absent status", async () => {
+		const client = await createDatabase();
+		const peer = await createDatabasePeer(client);
+		await seedAuthority(client);
+		await client.libraryCleanupConfig.create({ data: { userId: authority.userId } });
+
+		const claims = await Promise.all([
+			claimProviderCacheRefreshAttempt(client, "plex", authority),
+			claimProviderCacheRefreshAttempt(peer, "plex", authority),
+		]);
+
+		expect(claims.filter((claim) => claim.status === "acquired")).toHaveLength(1);
+		expect(claims.filter((claim) => claim.status === "already-running")).toHaveLength(1);
+		expect(claims.some((claim) => claim.status === "superseded")).toBe(false);
+	}, 30_000);
+
+	it("keeps an existing claim unavailable and prevents a second claim", async () => {
 		const client = await createDatabase();
 		await client.user.create({
 			data: { id: tautulliAuthority.userId, username: "tautulli-status", hashedPassword: "hash" },
@@ -380,43 +756,12 @@ describe("provider cache status SQLite takeover contract", () => {
 			}),
 		).resolves.toMatchObject({ available: false, state: "in_progress" });
 
-		const attemptB = await beginProviderCacheRefreshAttempt(client, "tautulli", tautulliAuthority);
-		expect(attemptB?.resultMarker).not.toBe(attemptA?.resultMarker);
-		const completedAt = new Date();
-		await client.$transaction(async (tx) => {
-			const claimed = await tx.cacheRefreshStatus.updateMany({
-				where: {
-					instanceId: tautulliAuthority.id,
-					cacheType: "tautulli",
-					lastAttemptAt: attemptB!.attemptedAt,
-					lastAttemptResult: attemptB!.resultMarker,
-					connectionGeneration: tautulliAuthority.connectionGeneration,
-					identityGeneration: tautulliAuthority.identityGeneration,
-				},
-				data: {
-					lastRefreshedAt: completedAt,
-					lastResult: "success",
-					lastErrorMessage: null,
-					itemCount: 1,
-					lastAttemptAt: completedAt,
-					lastAttemptResult: "success",
-					lastAttemptErrorMessage: null,
-				},
-			});
-			expect(claimed.count).toBe(1);
-			await tx.tautulliCache.create({
-				data: {
-					instanceId: tautulliAuthority.id,
-					tmdbId: 42,
-					mediaType: "movie",
-					lastWatchedAt: completedAt,
-					watchCount: 3,
-					watchedByUsers: "[]",
-					connectionGeneration: tautulliAuthority.connectionGeneration,
-					identityGeneration: tautulliAuthority.identityGeneration,
-				},
-			});
-		});
+		const secondClaim = await claimProviderCacheRefreshAttempt(
+			client,
+			"tautulli",
+			tautulliAuthority,
+		);
+		expect(secondClaim).toEqual({ status: "already-running", attempt: attemptA });
 
 		expect(
 			await finishProviderCacheRefreshAttemptFailure(
@@ -427,17 +772,17 @@ describe("provider cache status SQLite takeover contract", () => {
 				attemptA!,
 				log,
 			),
-		).toBe("superseded");
+		).toBe("recorded");
 		await expect(
 			readOwnedTautulliCacheAuthority(client, {
 				userId: tautulliAuthority.userId,
 				instanceId: tautulliAuthority.id,
-				now: completedAt,
 			}),
 		).resolves.toMatchObject({
-			available: true,
-			state: "healthy_complete",
-			cachedItems: 1,
+			available: false,
+			state: "failed_unavailable",
+			reasonCodes: ["refresh_failed", "provider_response_invalid"],
+			cachedItems: null,
 		});
 		await expect(
 			client.cacheRefreshStatus.findUniqueOrThrow({
@@ -448,7 +793,7 @@ describe("provider cache status SQLite takeover contract", () => {
 					},
 				},
 			}),
-		).resolves.toMatchObject({ lastResult: "success", lastAttemptResult: "success" });
+		).resolves.toMatchObject({ lastResult: "error", lastAttemptResult: "error" });
 	}, 30_000);
 
 	it.each([
@@ -524,7 +869,7 @@ describe("provider cache status SQLite takeover contract", () => {
 			expect(attempt?.resultMarker).toMatch(/^in_progress:/);
 			expect(status).toMatchObject({
 				lastResult: "error",
-				lastErrorMessage: "Plex cache refresh has not published a generation",
+				lastErrorMessage: "provider cache refresh has not published a generation",
 				itemCount: 0,
 				generationId: null,
 				generationMetadata: null,
@@ -629,7 +974,19 @@ describe("provider cache status SQLite takeover contract", () => {
 
 		const attemptB = await beginPlexCacheRefreshAttempt(client, "plex", authority);
 		expect(attemptB).not.toBeNull();
-		const completedAt = new Date("2026-08-20T12:00:00.000Z");
+		const completedAt = new Date(attemptB!.attemptedAt.getTime() + 1_000);
+		const replacementTargets = [
+			{
+				instanceId: authority.id,
+				generationId: "replacement-generation",
+				sectionId: "movies",
+				sectionUuid: "movies-uuid",
+				mediaType: "movie" as const,
+				tmdbId: 2,
+				tvdbId: null,
+				ratingKey: "replacement",
+			},
+		];
 		await client.$transaction(async (tx) => {
 			await publishAuthoritativePlexCacheGeneration(tx, {
 				instance: authority as never,
@@ -657,18 +1014,7 @@ describe("provider cache status SQLite takeover contract", () => {
 				],
 				completedAt,
 				generationId: "replacement-generation",
-				targets: [
-					{
-						instanceId: authority.id,
-						generationId: "replacement-generation",
-						sectionId: "movies",
-						sectionUuid: "movies-uuid",
-						mediaType: "movie",
-						tmdbId: 2,
-						tvdbId: null,
-						ratingKey: "replacement",
-					},
-				],
+				targets: replacementTargets,
 				generationMetadata: encodeAuthoritativePlexGenerationMetadata({
 					sections: [
 						{
@@ -684,6 +1030,34 @@ describe("provider cache status SQLite takeover contract", () => {
 					itemCount: 1,
 					canonicalizationVersion: 1,
 					roots: [{ sectionKey: "movies", domain: "membership", digest: "a".repeat(64) }],
+					targetLedger: createPlexTargetLedgerBinding({
+						instanceId: authority.id,
+						generationId: "replacement-generation",
+						connectionGeneration: authority.connectionGeneration,
+						identityGeneration: authority.identityGeneration,
+						targets: replacementTargets,
+					}),
+					partialReasons: [],
+					coverageReceipt: {
+						version: 1,
+						provider: "plex",
+						attemptStartedAt: attemptB!.attemptedAt.toISOString(),
+						observedAt: completedAt.toISOString(),
+						evidence: "complete",
+						units: [
+							{
+								scopeKey: "section:movies",
+								expectedRawCount: 1,
+								pagesAttempted: 1,
+								pagesCompleted: 1,
+								rawObserved: 1,
+								sourceBindings: 1,
+								canonicalEntities: 1,
+								acceptedSkips: [],
+								fatalCount: 0,
+							},
+						],
+					},
 				}),
 				attempt: attemptB!,
 			});
@@ -709,11 +1083,241 @@ describe("provider cache status SQLite takeover contract", () => {
 			),
 		).toBe("superseded");
 	}, 30_000);
+
+	it("rolls back V5 status, cache rows, and target ledger when replacement target insertion aborts", async () => {
+		const client = await createDatabase();
+		await seedAuthority(client);
+		const priorCompletedAt = new Date("2026-09-02T11:59:00.000Z");
+		const priorTargets = [
+			{
+				instanceId: authority.id,
+				generationId: "prior-generation",
+				sectionId: "movies",
+				sectionUuid: "movies-uuid",
+				mediaType: "movie" as const,
+				tmdbId: 1,
+				tvdbId: null,
+				ratingKey: "prior-rating",
+			},
+		];
+		const priorMetadata = encodeAuthoritativePlexGenerationMetadata({
+			sections: [
+				{
+					key: "movies",
+					uuid: "movies-uuid",
+					title: "Movies",
+					type: "movie",
+					refreshing: false,
+					scannedAt: 1,
+					updatedAt: 1,
+				},
+			],
+			itemCount: 1,
+			canonicalizationVersion: 1,
+			roots: [{ sectionKey: "movies", domain: "membership", digest: "a".repeat(64) }],
+			targetLedger: createPlexTargetLedgerBinding({
+				instanceId: authority.id,
+				generationId: "prior-generation",
+				connectionGeneration: authority.connectionGeneration,
+				identityGeneration: authority.identityGeneration,
+				targets: priorTargets,
+			}),
+			partialReasons: [],
+			coverageReceipt: {
+				version: 1,
+				provider: "plex",
+				attemptStartedAt: priorCompletedAt.toISOString(),
+				observedAt: priorCompletedAt.toISOString(),
+				evidence: "complete",
+				units: [
+					{
+						scopeKey: "section:movies",
+						expectedRawCount: 1,
+						pagesAttempted: 1,
+						pagesCompleted: 1,
+						rawObserved: 1,
+						sourceBindings: 1,
+						canonicalEntities: 1,
+						acceptedSkips: [],
+						fatalCount: 0,
+					},
+				],
+			},
+		});
+		await client.cacheRefreshStatus.create({
+			data: {
+				instanceId: authority.id,
+				cacheType: "plex",
+				lastRefreshedAt: priorCompletedAt,
+				lastResult: "success",
+				lastErrorMessage: null,
+				itemCount: 1,
+				generationId: "prior-generation",
+				generationMetadata: priorMetadata,
+				lastAttemptAt: priorCompletedAt,
+				lastAttemptResult: "success",
+				lastAttemptErrorMessage: null,
+				connectionGeneration: authority.connectionGeneration,
+				identityGeneration: authority.identityGeneration,
+			},
+		});
+		await client.plexCache.create({
+			data: {
+				id: "prior-row",
+				instanceId: authority.id,
+				tmdbId: 1,
+				mediaType: "movie",
+				sectionId: "movies",
+				sectionTitle: "Movies",
+				title: "Prior",
+				ratingKey: "prior-rating",
+				lastWatchedAt: null,
+				watchCount: 0,
+				watchedByUsers: "[]",
+				onDeck: false,
+				userRating: null,
+				collections: "[]",
+				labels: "[]",
+				addedAt: null,
+				thumb: null,
+				connectionGeneration: authority.connectionGeneration,
+				identityGeneration: authority.identityGeneration,
+			},
+		});
+		await client.plexGenerationTarget.createMany({ data: priorTargets });
+
+		const attempt = await beginPlexCacheRefreshAttempt(client, "plex", authority);
+		expect(attempt).not.toBeNull();
+		const rollbackSnapshot = {
+			status: await client.cacheRefreshStatus.findUniqueOrThrow({
+				where: { instanceId_cacheType: { instanceId: authority.id, cacheType: "plex" } },
+			}),
+			cacheRows: await client.plexCache.findMany({
+				where: { instanceId: authority.id },
+				orderBy: { id: "asc" },
+			}),
+			targetRows: await client.plexGenerationTarget.findMany({
+				where: { instanceId: authority.id },
+				orderBy: { id: "asc" },
+			}),
+		};
+		const replacementCompletedAt = new Date(attempt!.attemptedAt.getTime() + 1_000);
+		const replacementTargets = [
+			{
+				instanceId: authority.id,
+				generationId: "replacement-generation",
+				sectionId: "movies",
+				sectionUuid: "movies-uuid",
+				mediaType: "movie" as const,
+				tmdbId: 2,
+				tvdbId: null,
+				ratingKey: "replacement-rating",
+			},
+		];
+		const replacementMetadata = encodeAuthoritativePlexGenerationMetadata({
+			sections: [
+				{
+					key: "movies",
+					uuid: "movies-uuid",
+					title: "Movies",
+					type: "movie",
+					refreshing: false,
+					scannedAt: 1,
+					updatedAt: 1,
+				},
+			],
+			itemCount: 1,
+			canonicalizationVersion: 1,
+			roots: [{ sectionKey: "movies", domain: "membership", digest: "a".repeat(64) }],
+			targetLedger: createPlexTargetLedgerBinding({
+				instanceId: authority.id,
+				generationId: "replacement-generation",
+				connectionGeneration: authority.connectionGeneration,
+				identityGeneration: authority.identityGeneration,
+				targets: replacementTargets,
+			}),
+			partialReasons: [],
+			coverageReceipt: {
+				version: 1,
+				provider: "plex",
+				attemptStartedAt: attempt!.attemptedAt.toISOString(),
+				observedAt: replacementCompletedAt.toISOString(),
+				evidence: "complete",
+				units: [
+					{
+						scopeKey: "section:movies",
+						expectedRawCount: 1,
+						pagesAttempted: 1,
+						pagesCompleted: 1,
+						rawObserved: 1,
+						sourceBindings: 1,
+						canonicalEntities: 1,
+						acceptedSkips: [],
+						fatalCount: 0,
+					},
+				],
+			},
+		});
+		await client.$executeRawUnsafe(
+			"CREATE TRIGGER fail_replacement_target BEFORE INSERT ON plex_generation_targets WHEN NEW.ratingKey = 'replacement-rating' BEGIN SELECT RAISE(ABORT, 'replacement target rejected'); END",
+		);
+		try {
+			await expect(
+				client.$transaction(async (tx) => {
+					await publishAuthoritativePlexCacheGeneration(tx, {
+						instance: authority as never,
+						rows: [
+							{
+								instanceId: authority.id,
+								tmdbId: 2,
+								mediaType: "movie",
+								sectionId: "movies",
+								sectionTitle: "Movies",
+								title: "Replacement",
+								ratingKey: "replacement-rating",
+								lastWatchedAt: null,
+								watchCount: 0,
+								watchedByUsers: "[]",
+								onDeck: false,
+								userRating: null,
+								collections: "[]",
+								labels: "[]",
+								addedAt: null,
+								thumb: null,
+								connectionGeneration: authority.connectionGeneration,
+								identityGeneration: authority.identityGeneration,
+							},
+						],
+						completedAt: replacementCompletedAt,
+						generationId: "replacement-generation",
+						generationMetadata: replacementMetadata,
+						targets: replacementTargets,
+						attempt: attempt!,
+					});
+				}),
+			).rejects.toThrow();
+		} finally {
+			await client.$executeRawUnsafe("DROP TRIGGER IF EXISTS fail_replacement_target");
+		}
+		expect({
+			status: await client.cacheRefreshStatus.findUniqueOrThrow({
+				where: { instanceId_cacheType: { instanceId: authority.id, cacheType: "plex" } },
+			}),
+			cacheRows: await client.plexCache.findMany({
+				where: { instanceId: authority.id },
+				orderBy: { id: "asc" },
+			}),
+			targetRows: await client.plexGenerationTarget.findMany({
+				where: { instanceId: authority.id },
+				orderBy: { id: "asc" },
+			}),
+		}).toEqual(rollbackSnapshot);
+	}, 30_000);
 });
 
 describe("provider cache status PostgreSQL Serializable snapshot contract", () => {
 	it.runIf(Boolean(process.env.TAUTULLI_AUTHORITY_POSTGRES_URL))(
-		"serializes the same lifecycle clear without a mixed selected-cache snapshot",
+		"never opens a selected-row read for configured Tautulli evidence",
 		async () => {
 			const connectionString = process.env.TAUTULLI_AUTHORITY_POSTGRES_URL!;
 			if (new URL(connectionString).pathname !== "/tautulli_authority_test") {
@@ -722,11 +1326,9 @@ describe("provider cache status PostgreSQL Serializable snapshot contract", () =
 				);
 			}
 			const reader = await createTestPgClient(connectionString);
-			const writer = await createTestPgClient(connectionString);
 			try {
-				await exerciseConcurrentTautulliSnapshot(reader.prisma, writer.prisma);
+				await exerciseTautulliSelectedReadQuarantine(reader.prisma);
 			} finally {
-				await writer.cleanup();
 				await reader.cleanup();
 			}
 		},

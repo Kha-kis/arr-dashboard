@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Native media-server inventory**: Plex and Jellyfin library views include
+  movies, series, and episodes that have no ARR or TMDB match. The additive
+  `ProviderNativeInventorySnapshot` and `ProviderNativeInventoryItem` models
+  retain each owned provider's published inventory across refresh attempts.
+  ARR matching and watch evidence are evaluated separately; unknown matches or
+  watch status do not authorize cleanup.
+
+- **Plex refresh startup recovery** — Episode work waits automatically while a
+  valid library refresh is running. Cache status retains validated partial
+  observations instead of misreporting their metadata as malformed. Interrupted
+  refresh claims are released at startup while completed scan units are retained
+  for automatic recovery.
+
+- **Library watch insights and progress** — Incomplete media-server evidence now
+  returns useful read-only results with explicit unknown watch status instead of
+  blocking whole insight/progress endpoints with 503. Unknown candidates have no
+  watch-based Unmonitor action. Plex and Jellyfin progress are displayed separately,
+  with duplicate episode coordinates counted once. API consumers must handle
+  nullable totals/percentages, `watchState`, and the new progress `status` and
+  `configured` fields; requested insights also distinguish request coverage from
+  watch coverage. Insight results alone do not authorize cleanup or provider writes.
+
+- **Positive watch-count cleanup** — Jellyfin and Tautulli rules can use verified
+  positive counts for greater-than conditions, with the exact media item, server
+  identity, and count checked again before execution. Tautulli checks historical
+  plays even when its recent cache is empty. Provider reads are bounded; reaching
+  the limit produces a partial result and leaves unchecked items unknown.
+
+- **Truthful Jellyfin cache display** — Safe positive observations can be
+  displayed as partial evidence while semantic omissions remain visible and
+  mutation authority stays fail-closed.
+- **Durable cache refresh acceptance** — Plex, Jellyfin/Emby, and Tautulli
+  refresh requests now use a prompt `202 Accepted` receipt; observe eventual
+  completion through cache health/status instead of treating request acceptance
+  as refresh completion.
+
 ## [2.24.1] - 2026-08-16 — Recovery and timezone correctness
 
 This patch makes partial Sonarr episode cleanup recover safely, fixes public

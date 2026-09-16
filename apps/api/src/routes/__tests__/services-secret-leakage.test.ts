@@ -99,6 +99,10 @@ beforeEach(async () => {
 	vi.clearAllMocks();
 
 	mockPrisma = {
+		$transaction: vi.fn(async (callback: (tx: typeof mockPrisma) => Promise<unknown>) =>
+			callback(mockPrisma),
+		),
+		labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 		libraryCleanupConfig: {
 			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -214,6 +218,10 @@ describe("Service instance secret non-leakage", () => {
 		expect(res.statusCode).toBe(200);
 		const body = JSON.parse(res.payload);
 		assertNoSecretLeakage(body);
+		expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
+		expect(mockPrisma.labelSyncMutationAttempt.findMany).toHaveBeenCalledWith({
+			where: { userId: "user-1", destinationInstanceId: "inst-1" },
+		});
 	});
 
 	it("Prisma create is called with encrypted values — the raw key never touches the DB layer", async () => {

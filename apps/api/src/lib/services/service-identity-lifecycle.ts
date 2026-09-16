@@ -1,12 +1,12 @@
+import { deletePlexCacheRows, deleteProviderCacheStatuses } from "../plex/plex-cache-storage.js";
+import type { PrismaClientInstance } from "../prisma.js";
 import {
 	confirmProviderIdentity,
-	providerIdentityAuthorityFingerprint,
-	providerInstanceAuthorityFingerprint,
 	type ProviderIdentityObservation,
 	type ProviderIdentityService,
+	providerIdentityAuthorityFingerprint,
+	providerInstanceAuthorityFingerprint,
 } from "./service-identity.js";
-import type { PrismaClientInstance } from "../prisma.js";
-import { deletePlexCacheRows, deleteProviderCacheStatuses } from "../plex/plex-cache-storage.js";
 
 const PROVIDER_IDENTITY_SERVICES = new Set<ProviderIdentityService>([
 	"PLEX",
@@ -93,6 +93,9 @@ export function replacementIdentityData(
 }
 
 type ProviderCacheStatePrisma = {
+	providerNativeInventorySnapshot: {
+		deleteMany(args: { where: { instanceId: string } }): Promise<unknown>;
+	};
 	plexCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
 	plexEpisodeCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
 	tautulliCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
@@ -105,6 +108,7 @@ export async function clearDurableProviderCacheState(
 	prisma: ProviderCacheStatePrisma,
 	instanceId: string,
 ): Promise<void> {
+	await prisma.providerNativeInventorySnapshot.deleteMany({ where: { instanceId } });
 	await deletePlexCacheRows(prisma as never, instanceId);
 	await prisma.tautulliCache.deleteMany({ where: { instanceId } });
 	await prisma.jellyfinCache.deleteMany({ where: { instanceId } });

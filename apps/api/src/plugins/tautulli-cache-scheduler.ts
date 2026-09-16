@@ -1,12 +1,8 @@
 /**
  * Tautulli Cache Scheduler Plugin
  *
- * Periodically refreshes TautulliCache data from all enabled Tautulli instances.
- * Runs every 6 hours with an initial 30-second startup delay.
- *
- * BUG FIX: The refreshTautulliCache() function existed but was never called,
- * meaning Tautulli cleanup rules silently matched nothing. This scheduler
- * wires it up to actually populate the cache.
+ * Periodically collects bounded positive Tautulli observations from all enabled
+ * Tautulli instances. Runs every five minutes with a two-minute startup delay.
  */
 
 import type { FastifyInstance } from "fastify";
@@ -15,13 +11,14 @@ import type { ServiceInstance } from "../lib/prisma.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { refreshOwnedTautulliCache } from "../lib/tautulli/tautulli-cache-refresher.js";
 
-const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const STARTUP_DELAY_MS = 2 * 60_000; // 2 minutes — staggered after plex-cache (30s) to reduce peak memory
 
 export async function refreshScheduledTautulliCacheInstance(
 	app: Pick<FastifyInstance, "encryptor" | "prisma" | "log">,
 	instance: ServiceInstance,
 ): Promise<void> {
+	const startedAt = Date.now();
 	try {
 		const result = await refreshOwnedTautulliCache({
 			prisma: app.prisma,
@@ -29,20 +26,22 @@ export async function refreshScheduledTautulliCacheInstance(
 			instance,
 			log: app.log,
 		});
+		const superseded = result.kind === "unpublished" && result.superseded === true;
 		app.log.info(
 			{
-				instanceId: instance.id,
-				complete: result.complete,
+				provider: "tautulli",
+				outcome: superseded ? "superseded" : result.kind,
 				upserted: result.upserted,
 				errors: result.errors,
-				superseded: result.superseded === true,
+				superseded,
+				durationMs: Math.max(0, Date.now() - startedAt),
 			},
-			"Tautulli cache refresh completed for instance",
+			"Tautulli observation scheduler completed",
 		);
 	} catch {
 		app.log.error(
-			{ instanceId: instance.id, reasonCode: "unknown_failure" },
-			"Tautulli cache refresh failed for instance",
+			{ provider: "tautulli", reasonCode: "unknown_failure" },
+			"Tautulli observation scheduler failed",
 		);
 	}
 }
@@ -66,67 +65,45 @@ const tautulliCacheSchedulerPlugin = fastifyPlugin(
 					});
 
 					if (instances.length === 0) {
-						app.log.debug("Tautulli cache refresh: no enabled Tautulli instances, skipping");
+						app.log.debug("Tautulli observation scheduler: no enabled instances, skipping");
 						return;
 					}
 
-					app.log.info(
-						{ count: instances.length },
-						"Starting Tautulli cache refresh for all instances",
-					);
+					app.log.info({ count: instances.length }, "Starting Tautulli observation collection");
 
 					for (const instance of instances) {
 						await refreshScheduledTautulliCacheInstance(app, instance);
 					}
-
-					// Check for stale caches (>12h since last successful refresh)
-					const staleThreshold = new Date(Date.now() - 12 * 60 * 60 * 1000);
-					const staleEntries = await app.prisma.cacheRefreshStatus.findMany({
-						where: {
-							cacheType: "tautulli",
-							lastRefreshedAt: { lt: staleThreshold },
-						},
-						include: { instance: { select: { label: true } } },
-					});
-					if (staleEntries.length > 0) {
-						const names = staleEntries
-							.map((e) => e.instance.label.replace(/[<>&"']/g, "").slice(0, 50))
-							.join(", ");
-						app.log.warn(
-							{ staleInstances: names },
-							"Tautulli cache data is stale (>12h since last refresh)",
-						);
-						await app.notificationService
-							.notify({
-								eventType: "CACHE_REFRESH_STALE",
-								title: "Tautulli cache data is stale",
-								body: `Cache has not refreshed in over 12 hours for: ${names}`,
-								url: "/settings",
-							})
-							.catch((notifyErr) => {
-								app.log.warn({ err: notifyErr }, "Failed to send stale-cache notification");
-							});
-					}
 				});
-			} catch (err) {
-				app.log.error({ err }, "Tautulli cache scheduler: failed to query instances");
+			} catch {
+				app.log.error(
+					{ provider: "tautulli", reasonCode: "scheduler_tick_failed" },
+					"Tautulli observation scheduler failed",
+				);
 			} finally {
 				isRunning = false;
 			}
 		}
 
 		app.addHook("onReady", async () => {
-			app.log.info("Tautulli cache scheduler initialized (6h interval, 2min startup delay)");
+			app.log.info(
+				{ intervalMs: INTERVAL_MS, startupDelayMs: STARTUP_DELAY_MS },
+				"Tautulli observation scheduler initialized",
+			);
 
-			// Initial refresh after startup delay
 			timeoutHandle = setTimeout(() => {
-				refreshAllTautulliCaches().catch((err) => {
-					app.log.error({ err }, "Failed during initial Tautulli cache refresh");
+				refreshAllTautulliCaches().catch(() => {
+					app.log.error(
+						{ provider: "tautulli", reasonCode: "startup_tick_failed" },
+						"Tautulli observation scheduler failed",
+					);
 				});
-				// Recurring refresh
 				intervalHandle = setInterval(() => {
-					refreshAllTautulliCaches().catch((err) => {
-						app.log.error({ err }, "Failed during scheduled Tautulli cache refresh");
+					refreshAllTautulliCaches().catch(() => {
+						app.log.error(
+							{ provider: "tautulli", reasonCode: "interval_tick_failed" },
+							"Tautulli observation scheduler failed",
+						);
 					});
 				}, INTERVAL_MS);
 			}, STARTUP_DELAY_MS);
@@ -135,12 +112,12 @@ const tautulliCacheSchedulerPlugin = fastifyPlugin(
 		app.addHook("onClose", async () => {
 			if (timeoutHandle) clearTimeout(timeoutHandle);
 			if (intervalHandle) clearInterval(intervalHandle);
-			app.log.info("Tautulli cache scheduler stopped");
+			app.log.info("Tautulli observation scheduler stopped");
 		});
 	},
 	{
 		name: "tautulli-cache-scheduler",
-		dependencies: ["prisma", "security", "notification-service", "scheduler-registry"],
+		dependencies: ["prisma", "security", "scheduler-registry"],
 	},
 );
 

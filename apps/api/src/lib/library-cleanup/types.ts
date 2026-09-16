@@ -4,6 +4,7 @@
  * Internal types for the cleanup rule evaluation pipeline.
  */
 
+import type { ProviderObservationStatus } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
@@ -12,6 +13,7 @@ import type { PlexClient } from "../plex/plex-client.js";
 import type { LibraryItemType, PrismaClient, ServiceInstance } from "../prisma.js";
 import type { QuiClient } from "../qui/client-factory.js";
 import type { SeerrClient } from "../seerr/seerr-client.js";
+import type { TargetWatchReadBudget } from "../tautulli/target-watch-read-budget.js";
 import type { TautulliClient } from "../tautulli/tautulli-client.js";
 import type { TmdbListItem } from "../tmdb/list-client.js";
 import type { TraktListItem } from "../trakt/list-client.js";
@@ -26,6 +28,8 @@ export interface CompleteQuiFileHashIndex {
 }
 
 export interface CleanupExecutorDeps {
+	/** Shared only within one cleanup/preview/approval operation, never a global cache. */
+	targetWatchReadBudget?: TargetWatchReadBudget;
 	prisma: PrismaClient;
 	arrClientFactory: ArrClientFactory;
 	/** Audit attribution for configured runs; scheduler/system is the default. */
@@ -177,6 +181,46 @@ export interface JellyfinWatchInfo {
  */
 export type JellyfinWatchMap = Map<string, JellyfinWatchInfo>;
 
+/**
+ * A persisted, target-bound provider observation. It is intentionally not a
+ * durable authorization token: callers must re-authorize it against the
+ * current published generation before an upstream write.
+ */
+export interface ProviderWatchCountFact {
+	userId: string;
+	provider: "PLEX" | "JELLYFIN" | "TAUTULLI";
+	cacheType: "plex" | "jellyfin" | "tautulli";
+	instanceId: string;
+	generationId: string;
+	targetKey: string;
+	coordinate: string;
+	/** Canonical title resolved from the verified persisted Plex generation section. */
+	sectionTitle?: string;
+	observedValue: number;
+	status: ProviderObservationStatus;
+	/** Set only by a provider's target-proof reader; never by an aggregate map. */
+	targetScoped?: true;
+}
+
+export interface ProviderFactGrant {
+	userId: string;
+	provider: "PLEX" | "JELLYFIN" | "TAUTULLI";
+	cacheType: "plex" | "jellyfin" | "tautulli";
+	instanceId: string;
+	generationId: string;
+	targetKey: string;
+	coordinate: string;
+	domain: "watch-count";
+	field: "watch-count";
+	operator: "greater_than" | "less_than" | "equals";
+	threshold: number;
+	observedValue: number;
+	basis: "exact" | "observed-lower-bound";
+}
+
+/** Generic configured watch-source families used by requester-aware rules. */
+export type WatchSourceFamily = "plex" | "jellyfin";
+
 /** Aggregated episode completion data for a show */
 export interface PlexEpisodeStats {
 	total: number;
@@ -205,6 +249,8 @@ export function listMembershipKey(
  */
 export interface EvalContext {
 	now: Date;
+	/** Positive native inventory evidence, supplied only by auto-tag workflows. */
+	nativePresence?: import("../provider-observation/native-presence-evidence.js").NativePresenceContext;
 	seerrMap?: SeerrRequestMap;
 	tautulliMap?: TautulliWatchMap;
 	plexMap?: PlexWatchMap;
@@ -214,6 +260,10 @@ export interface EvalContext {
 	jellyfinMap?: JellyfinWatchMap;
 	/** Reuses PlexEpisodeMap shape — same total/watched/seasons structure */
 	jellyfinEpisodeMap?: PlexEpisodeMap;
+	/** Present for cleanup paths; absence preserves legacy display-only evaluation. */
+	providerWatchCountFacts?: Map<string, ProviderWatchCountFact[]>;
+	/** Configured watch-source families for requester-aware Seerr rules. */
+	requesterWatchSourceFamilies?: Set<WatchSourceFamily>;
 	/**
 	 * Auto-tagger external list memberships (used by `tmdb_list_member` and
 	 * `trakt_list_member` rules). Map key is the list identifier (TMDb listId

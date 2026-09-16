@@ -23,6 +23,7 @@ import {
 	tautulliResponseWrapperSchema,
 	tautulliServerInfoSchema,
 	tautulliServersInfoSchema,
+	tautulliTargetHistoryDataSchema,
 	tautulliUserWatchTimeStatsSchema,
 } from "./tautulli-schemas.js";
 
@@ -32,6 +33,24 @@ import {
 
 export interface TautulliHistoryData {
 	data: TautulliHistoryItem[];
+	recordsFiltered: number;
+	recordsTotal: number;
+}
+
+export interface TautulliTargetHistoryItem {
+	row_id: number;
+	reference_id: string;
+	rating_key: string;
+	parent_rating_key?: string;
+	grandparent_rating_key?: string;
+	guid: string;
+	stopped: number;
+	section_id?: string;
+	media_type: string;
+}
+
+export interface TautulliTargetHistoryData {
+	data: TautulliTargetHistoryItem[];
 	recordsFiltered: number;
 	recordsTotal: number;
 }
@@ -197,6 +216,7 @@ export class TautulliClient {
 	 */
 	async getHistory(params?: {
 		rating_key?: string;
+		grandparent_rating_key?: string;
 		length?: number;
 		start?: number;
 		section_id?: string;
@@ -232,6 +252,46 @@ export class TautulliClient {
 		}
 
 		return this.command("get_history", params, tautulliHistoryDataSchema);
+	}
+
+	/**
+	 * Read a bounded, ungrouped history prefix for one exact Plex item. This
+	 * uses a separate strict schema because target authority requires stable
+	 * row/reference IDs, completion state, section identity, and GUID binding.
+	 */
+	async getTargetHistory(params: {
+		rating_key?: string;
+		grandparent_rating_key?: string;
+		length?: number;
+		start?: number;
+		section_id: string;
+	}): Promise<TautulliTargetHistoryData> {
+		const length = Math.min(Math.max(Math.trunc(params.length ?? 500), 1), 500);
+		const start = Math.max(Math.trunc(params.start ?? 0), 0);
+		if ((params.rating_key ? 1 : 0) + (params.grandparent_rating_key ? 1 : 0) !== 1) {
+			throw new Error("Tautulli target history requires exactly one item key");
+		}
+		return this.command(
+			"get_history",
+			{
+				...params,
+				length,
+				start,
+				order_column: "row_id",
+				order_dir: "desc",
+				grouping: 0,
+				include_activity: 0,
+				json_data: JSON.stringify({
+					draw: 1,
+					columns: [{ data: "row_id", orderable: true, searchable: false }],
+					order: [{ column: 0, dir: "desc" }],
+					start,
+					length,
+					search: { value: "" },
+				}),
+			},
+			tautulliTargetHistoryDataSchema,
+		);
 	}
 
 	/**
@@ -283,8 +343,8 @@ export class TautulliClient {
 	/**
 	 * Get metadata for a specific item, including GUIDs (TMDB, IMDB, etc.).
 	 */
-	async getMetadata(ratingKey: string): Promise<TautulliMetadata> {
-		return this.command("get_metadata", { rating_key: ratingKey }, tautulliMetadataSchema);
+	async getMetadata(ratingKey: string, signal?: AbortSignal): Promise<TautulliMetadata> {
+		return this.command("get_metadata", { rating_key: ratingKey }, tautulliMetadataSchema, signal);
 	}
 
 	/**
@@ -295,6 +355,7 @@ export class TautulliClient {
 		cmd: string,
 		params?: Record<string, unknown>,
 		schema?: z.ZodType<T>,
+		signal?: AbortSignal,
 	): Promise<T> {
 		const url = new URL(`${this.baseUrl}/api/v2`);
 		url.searchParams.set("apikey", this.apiKey);
@@ -317,9 +378,10 @@ export class TautulliClient {
 
 		let response: Response;
 		try {
+			const timeoutSignal = AbortSignal.timeout(this.timeout);
 			response = await fetch(safeUrl, {
 				headers: { Accept: "application/json", ...this.httpAuthHeaders },
-				signal: AbortSignal.timeout(this.timeout),
+				signal: signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal,
 			});
 		} catch (err) {
 			// Sanitize error to avoid leaking API key from URL in error messages

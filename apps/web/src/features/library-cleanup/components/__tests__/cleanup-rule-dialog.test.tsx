@@ -55,10 +55,11 @@ const mockFieldOptions: CleanupFieldOptionsResponse = {
 	jellyfinLibraries: [],
 	arrTags: [],
 	plexEvidence: undefined,
+	hasTautulliPositiveWatchCount: false,
 };
 
 const mockServicesQueryState: {
-	data: Array<{ id: string; service: "sonarr" | "radarr"; enabled: boolean }> | undefined;
+	data: Array<{ id: string; service: "sonarr" | "radarr" | "seerr"; enabled: boolean }> | undefined;
 	isLoading: boolean;
 	isFetching: boolean;
 	isError: boolean;
@@ -181,6 +182,9 @@ describe("CleanupRuleDialog", () => {
 		mockServicesQueryState.isFetching = false;
 		mockServicesQueryState.isError = false;
 		mockFieldOptions.hasPlex = false;
+		mockFieldOptions.hasTautulli = false;
+		mockFieldOptions.hasTautulliPositiveWatchCount = false;
+		mockFieldOptions.hasJellyfin = false;
 		mockFieldOptions.plexEvidence = undefined;
 	});
 
@@ -189,6 +193,23 @@ describe("CleanupRuleDialog", () => {
 	// ================================================================
 
 	describe("create mode", () => {
+		it("shows Cross-Service with Seerr and Jellyfin but without Plex", () => {
+			mockFieldOptions.hasJellyfin = true;
+			mockServicesQueryState.data = [{ id: "seerr-1", service: "seerr", enabled: true }];
+
+			renderDialog();
+
+			expect(screen.getByRole("button", { name: "Cross-Service" })).toBeInTheDocument();
+		});
+
+		it("hides Cross-Service when Seerr has no configured watch provider", () => {
+			mockServicesQueryState.data = [{ id: "seerr-1", service: "seerr", enabled: true }];
+
+			renderDialog();
+
+			expect(screen.queryByRole("button", { name: "Cross-Service" })).not.toBeInTheDocument();
+		});
+
 		it("shows unavailable Plex selector evidence without claiming empty current values", () => {
 			mockFieldOptions.hasPlex = true;
 			mockFieldOptions.plexEvidence = {
@@ -202,10 +223,190 @@ describe("CleanupRuleDialog", () => {
 
 			renderDialog();
 
-			expect(screen.getByText(/Plex values are unavailable/i)).toBeInTheDocument();
+			expect(screen.getByText(/Showing last-known Plex values/i)).toBeInTheDocument();
+			expect(
+				screen.getByText(/No Plex rows are being shown; absence remains unknown/i),
+			).toBeInTheDocument();
 			expect(
 				screen.queryByText(/no Plex libraries|0 libraries|none available/i),
 			).not.toBeInTheDocument();
+		});
+
+		it("exposes only a positive Tautulli watch-count rule when the positive capability is available", () => {
+			mockFieldOptions.hasTautulliPositiveWatchCount = true;
+
+			renderDialog();
+
+			fireEvent.click(screen.getByRole("button", { name: "Tautulli Integration" }));
+			fireEvent.click(screen.getByText("Tautulli: Watch Count"));
+
+			const operator = screen.getByLabelText("Operator");
+			expect(operator).toHaveValue("greater_than");
+			expect(screen.getByRole("option", { name: "Greater than" })).toBeInTheDocument();
+			expect(screen.queryByRole("option", { name: "Less than" })).not.toBeInTheDocument();
+			expect(screen.getByText(/verified positive plays/i)).toBeInTheDocument();
+		});
+
+		it("saves a positive Tautulli watch-count rule with a greater-than predicate", async () => {
+			mockFieldOptions.hasTautulliPositiveWatchCount = true;
+			const onSave = vi.fn();
+
+			renderDialog({ onSave });
+			fireEvent.change(screen.getByPlaceholderText("e.g., Old low-rated movies"), {
+				target: { value: "Positive Tautulli plays" },
+			});
+			fireEvent.click(screen.getByRole("button", { name: "Tautulli Integration" }));
+			fireEvent.click(screen.getByText("Tautulli: Watch Count"));
+			fireEvent.change(screen.getByLabelText("Count"), { target: { value: "2" } });
+			fireEvent.click(screen.getByText("Add Rule").closest("button")!);
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				ruleType: "tautulli_watch_count",
+				parameters: { operator: "greater_than", count: 2 },
+			});
+		});
+
+		it("keeps the full Tautulli rule set when generic Tautulli is configured", () => {
+			mockFieldOptions.hasTautulli = true;
+
+			renderDialog();
+			fireEvent.click(screen.getByRole("button", { name: "Tautulli Integration" }));
+
+			expect(screen.getByText("Tautulli: Last Watched")).toBeInTheDocument();
+			expect(screen.getByText("Tautulli: Watch Count")).toBeInTheDocument();
+			expect(screen.getByText("Tautulli: Watched By")).toBeInTheDocument();
+		});
+
+		it("preserves an explicit negative Tautulli template predicate", async () => {
+			mockFieldOptions.hasTautulliPositiveWatchCount = true;
+			const onSave = vi.fn();
+
+			renderDialog({
+				onSave,
+				templateData: {
+					name: "Legacy Tautulli template",
+					ruleType: "tautulli_watch_count",
+					enabled: true,
+					targetScope: "series",
+					priority: 0,
+					parameters: { operator: "less_than", count: 3 },
+					action: "delete",
+					scanMediaServerAfterDelete: false,
+					retentionMode: false,
+					useGlobalRejectionMemory: true,
+					rejectionMemoryDays: 0,
+				} as CreateCleanupRule,
+			});
+
+			expect(screen.getByLabelText("Operator")).toHaveValue("less_than");
+			expect(screen.getByText(/saved legacy predicate.*unsupported/i)).toBeInTheDocument();
+			fireEvent.click(screen.getByText("Add Rule").closest("button")!);
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				ruleType: "tautulli_watch_count",
+				parameters: { operator: "less_than", count: 3 },
+			});
+		});
+
+		it("preserves an explicit negative Tautulli predicate in a composite template", async () => {
+			mockFieldOptions.hasTautulliPositiveWatchCount = true;
+			const onSave = vi.fn();
+
+			renderDialog({
+				onSave,
+				templateData: {
+					name: "Legacy composite Tautulli template",
+					ruleType: "composite",
+					enabled: true,
+					targetScope: "series",
+					priority: 0,
+					parameters: {},
+					action: "delete",
+					scanMediaServerAfterDelete: false,
+					retentionMode: false,
+					useGlobalRejectionMemory: true,
+					rejectionMemoryDays: 0,
+					operator: "AND",
+					conditions: [
+						{ ruleType: "tautulli_watch_count", parameters: { operator: "less_than", count: 4 } },
+					],
+				} as CreateCleanupRule,
+			});
+
+			expect(screen.getByLabelText("Operator")).toHaveValue("less_than");
+			expect(screen.getByText(/saved legacy predicate.*unsupported/i)).toBeInTheDocument();
+			fireEvent.click(screen.getByText("Add Rule").closest("button")!);
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				operator: "AND",
+				conditions: [
+					{ ruleType: "tautulli_watch_count", parameters: { operator: "less_than", count: 4 } },
+				],
+			});
+		});
+
+		it("only offers the legacy negative operator for the negative condition in a mixed template", async () => {
+			mockFieldOptions.hasTautulliPositiveWatchCount = true;
+			const onSave = vi.fn();
+
+			renderDialog({
+				onSave,
+				templateData: {
+					name: "Mixed Tautulli template",
+					ruleType: "composite",
+					enabled: true,
+					targetScope: "series",
+					priority: 0,
+					parameters: {},
+					action: "delete",
+					scanMediaServerAfterDelete: false,
+					retentionMode: false,
+					useGlobalRejectionMemory: true,
+					rejectionMemoryDays: 0,
+					operator: "AND",
+					conditions: [
+						{
+							ruleType: "tautulli_watch_count",
+							parameters: { operator: "greater_than", count: 2 },
+						},
+						{ ruleType: "tautulli_watch_count", parameters: { operator: "less_than", count: 4 } },
+					],
+				} as CreateCleanupRule,
+			});
+
+			const operators = screen.getAllByLabelText("Operator");
+			expect(operators).toHaveLength(2);
+			expect(operators[0]).toHaveValue("greater_than");
+			expect(operators[0]!.querySelector('option[value="less_than"]')).not.toBeInTheDocument();
+			expect(operators[1]).toHaveValue("less_than");
+			expect(screen.getByText(/saved legacy predicate.*unsupported/i)).toBeInTheDocument();
+			fireEvent.click(screen.getByText("Add Rule").closest("button")!);
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				conditions: [
+					{ ruleType: "tautulli_watch_count", parameters: { operator: "greater_than", count: 2 } },
+					{ ruleType: "tautulli_watch_count", parameters: { operator: "less_than", count: 4 } },
+				],
+			});
+		});
+
+		it("makes a positive Tautulli watch-count condition reachable in a composite rule", () => {
+			mockFieldOptions.hasTautulliPositiveWatchCount = true;
+
+			renderDialog();
+			fireEvent.click(screen.getByText("Composite Rule"));
+			fireEvent.click(screen.getByText("+ Add Condition"));
+
+			const conditionType = screen.getByRole("combobox", { name: "Condition type" });
+			fireEvent.change(conditionType, { target: { value: "tautulli_watch_count" } });
+
+			expect(screen.getByLabelText("Operator")).toHaveValue("greater_than");
+			expect(screen.queryByRole("option", { name: "Less than" })).not.toBeInTheDocument();
+			expect(screen.getByText(/verified positive plays/i)).toBeInTheDocument();
 		});
 		it("renders the dialog title for create mode", () => {
 			renderDialog();
@@ -628,6 +829,83 @@ describe("CleanupRuleDialog", () => {
 				}),
 			});
 			expect(screen.getByText("Rating")).toBeInTheDocument();
+		});
+
+		it("preserves a saved legacy negative Tautulli predicate while explaining that it is unsupported", async () => {
+			mockFieldOptions.hasTautulliPositiveWatchCount = true;
+			const onSave = vi.fn();
+
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "tautulli_watch_count",
+					parameters: { operator: "less_than", count: 3 },
+				}),
+			});
+
+			expect(screen.getByLabelText("Operator")).toHaveValue("less_than");
+			expect(screen.getByRole("option", { name: "Less than" })).toBeInTheDocument();
+			expect(screen.getByText(/saved legacy predicate.*unsupported/i)).toBeInTheDocument();
+			fireEvent.click(screen.getByText("Save Changes").closest("button")!);
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				ruleType: "tautulli_watch_count",
+				parameters: { operator: "less_than", count: 3 },
+			});
+		});
+
+		it("keeps an edited positive Tautulli predicate positive without offering less than", async () => {
+			mockFieldOptions.hasTautulliPositiveWatchCount = true;
+			const onSave = vi.fn();
+
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "tautulli_watch_count",
+					parameters: { operator: "greater_than", count: 2 },
+				}),
+			});
+
+			expect(screen.getByLabelText("Operator")).toHaveValue("greater_than");
+			expect(screen.queryByRole("option", { name: "Less than" })).not.toBeInTheDocument();
+			expect(screen.queryByText(/saved legacy predicate.*unsupported/i)).not.toBeInTheDocument();
+			fireEvent.click(screen.getByText("Save Changes").closest("button")!);
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				ruleType: "tautulli_watch_count",
+				parameters: { operator: "greater_than", count: 2 },
+			});
+		});
+
+		it("preserves a saved legacy negative Tautulli predicate inside a composite rule", async () => {
+			mockFieldOptions.hasTautulliPositiveWatchCount = true;
+			const onSave = vi.fn();
+
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "composite",
+					operator: "AND",
+					parameters: {},
+					conditions: [
+						{ ruleType: "tautulli_watch_count", parameters: { operator: "less_than", count: 4 } },
+					],
+				}),
+			});
+
+			expect(screen.getByLabelText("Operator")).toHaveValue("less_than");
+			expect(screen.getByText(/saved legacy predicate.*unsupported/i)).toBeInTheDocument();
+			fireEvent.click(screen.getByText("Save Changes").closest("button")!);
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				operator: "AND",
+				conditions: [
+					{ ruleType: "tautulli_watch_count", parameters: { operator: "less_than", count: 4 } },
+				],
+			});
 		});
 
 		it("hydrates and preserves a monitored rule while editing", async () => {

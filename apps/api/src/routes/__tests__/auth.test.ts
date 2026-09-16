@@ -108,7 +108,7 @@ function createMockPrisma() {
 		updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 	};
 
-	return {
+	const prisma = {
 		user: userMock,
 		libraryCleanupConfig: {
 			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
@@ -131,15 +131,14 @@ function createMockPrisma() {
 		session: {
 			findMany: vi.fn().mockResolvedValue([]),
 		},
-		// $transaction: execute the callback with the same prisma mock as `tx`
-		$transaction: vi.fn().mockImplementation(async (fn: (tx: any) => Promise<any>) => {
-			return fn({
-				user: userMock,
-				oIDCAccount: oidcAccountMock,
-				oIDCProvider: oidcProviderMock,
-			});
-		}),
+		labelSyncMutationAttempt: {
+			findMany: vi.fn().mockResolvedValue([]),
+			deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+		},
 	};
+	return Object.assign(prisma, {
+		$transaction: vi.fn().mockImplementation(async (fn: (tx: any) => Promise<any>) => fn(prisma)),
+	});
 }
 
 // ---------------------------------------------------------------------------
@@ -553,6 +552,7 @@ describe("DELETE /auth/password", () => {
 
 describe("DELETE /auth/account", () => {
 	it("holds the cleanup topology lease while cascading user data", async () => {
+		mockPrisma.user.findFirst.mockResolvedValue(makeUser({ hashedPassword: null }));
 		mockPrisma.user.findUnique.mockResolvedValue(makeUser({ hashedPassword: null }));
 
 		const res = await injectAuthenticated("DELETE", "/auth/account");

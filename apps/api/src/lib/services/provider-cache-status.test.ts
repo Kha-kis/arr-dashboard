@@ -1,9 +1,13 @@
+import type { ProviderObservationStatus } from "@arr/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	beginPlexCacheRefreshAttempt,
+	claimProviderCacheRefreshAttempt,
 	classifyProviderCacheStatusGeneration,
-	finishProviderCacheRefreshAttemptFailure,
 	finishPlexCacheRefreshAttemptFailure,
+	finishProviderCacheRefreshAttemptFailure,
+	projectProviderObservationUi,
+	reconcileInterruptedProviderCacheRefreshAttempts,
 	recordPlexCacheRefreshFailure,
 	recordWatchProviderCacheRefreshFailure,
 } from "./provider-cache-status.js";
@@ -67,6 +71,7 @@ function publicationFixture(
 		cacheRefreshStatus: {
 			findUnique: vi.fn().mockResolvedValue(status),
 			upsert: vi.fn().mockResolvedValue({}),
+			create: vi.fn().mockResolvedValue({}),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 		},
 	};
@@ -154,6 +159,191 @@ describe("provider cache status generation classifier", () => {
 	);
 });
 
+describe("provider observation UI projection", () => {
+	it("fails closed instead of throwing for malformed runtime status", () => {
+		expect(() => projectProviderObservationUi({ availability: "current" } as never)).not.toThrow();
+		expect(projectProviderObservationUi({ availability: "current" } as never)).toEqual({
+			condition: "unavailable",
+		});
+	});
+
+	it("keeps current mapped data usable while exposing deterministic mapping gaps as informational", () => {
+		expect(
+			projectProviderObservationUi({
+				availability: "partial",
+				evidence: "partial",
+				observedAt: "2026-09-07T00:00:00.000Z",
+				ageSeconds: 0,
+				latestAttempt: "successful",
+				reasonCodes: ["accepted-skips", "coverage-incomplete"],
+				domains: [
+					{
+						domain: "library-inventory",
+						availability: "current",
+						evidence: "complete",
+						valueSemantics: "exact",
+						observedAt: "2026-09-07T00:00:00.000Z",
+
+						reasonCodes: [],
+					},
+					{
+						domain: "mapping",
+						availability: "current",
+						evidence: "partial",
+						valueSemantics: "lower-bound",
+						observedAt: "2026-09-07T00:00:00.000Z",
+						reasonCodes: ["accepted-skips"],
+					},
+				],
+			}),
+		).toEqual({ condition: "informational-gap" });
+	});
+
+	it.each([
+		[
+			"fails closed when unavailable unknown evidence only reports a provider limit",
+			{
+				availability: "unavailable",
+				evidence: "unknown",
+				observedAt: null,
+				ageSeconds: null,
+				latestAttempt: "successful",
+				reasonCodes: ["provider-limit"],
+			},
+			undefined,
+			"unavailable",
+		],
+		[
+			"keeps unknown unavailable evidence collecting while durable work is active",
+			{
+				availability: "unavailable",
+				evidence: "unknown",
+				observedAt: null,
+				ageSeconds: null,
+				latestAttempt: "running",
+				reasonCodes: ["provider-limit", "no-publication", "refresh-running"],
+			},
+			{ state: "running" },
+			"collecting",
+		],
+		[
+			"marks a current usable domain with accepted skips as informational",
+			{
+				availability: "current",
+				evidence: "unknown",
+				observedAt: "2026-09-07T00:00:00.000Z",
+				ageSeconds: 0,
+				latestAttempt: "successful",
+				reasonCodes: ["accepted-skips"],
+				domains: [
+					{
+						domain: "library-inventory",
+						availability: "current",
+						evidence: "complete",
+						valueSemantics: "exact",
+						observedAt: "2026-09-07T00:00:00.000Z",
+						reasonCodes: [],
+					},
+				],
+			},
+			undefined,
+			"informational-gap",
+		],
+		[
+			"does not infer usable data from current unknown evidence",
+			{
+				availability: "current",
+				evidence: "unknown",
+				observedAt: "2026-09-07T00:00:00.000Z",
+				ageSeconds: 0,
+				latestAttempt: "successful",
+				reasonCodes: [],
+			},
+			undefined,
+			"unavailable",
+		],
+		[
+			"fails closed for partial evidence with an invalid receipt and no usable domain",
+			{
+				availability: "partial",
+				evidence: "partial",
+				observedAt: "2026-09-07T00:00:00.000Z",
+				ageSeconds: 0,
+				latestAttempt: "successful",
+				reasonCodes: ["receipt-invalid"],
+			},
+			undefined,
+			"unavailable",
+		],
+	] as const)("%s", (_name, status, work, expected) => {
+		expect(
+			projectProviderObservationUi(status as unknown as ProviderObservationStatus, work as never),
+		).toEqual({ condition: expected });
+	});
+
+	it("projects an active durable run as collecting with only bounded numeric progress", () => {
+		const projection = projectProviderObservationUi(
+			{
+				availability: "unavailable",
+				evidence: "unknown",
+				observedAt: null,
+				ageSeconds: null,
+				latestAttempt: "running",
+				reasonCodes: ["no-publication", "refresh-running"],
+			},
+			{
+				state: "running",
+				completedUnits: 7,
+				totalUnits: 13,
+				completedWork: 7,
+				totalWork: 13,
+			},
+		);
+
+		expect(projection).toEqual({
+			condition: "collecting",
+			progress: {
+				completedUnits: 7,
+				totalUnits: 13,
+				completedWork: 7,
+				totalWork: 13,
+			},
+		});
+		expect(JSON.stringify(projection)).not.toMatch(
+			/run-|scope|provider-|title|label|user|https?:|error/i,
+		);
+	});
+
+	it.each([
+		["negative", { completedUnits: -1, totalUnits: 13, completedWork: 0, totalWork: 13 }],
+		["fractional", { completedUnits: 1.5, totalUnits: 13, completedWork: 0, totalWork: 13 }],
+		[
+			"unsafe",
+			{
+				completedUnits: Number.MAX_SAFE_INTEGER + 1,
+				totalUnits: Number.MAX_SAFE_INTEGER + 1,
+				completedWork: 0,
+				totalWork: 13,
+			},
+		],
+		["exceeds total", { completedUnits: 14, totalUnits: 13, completedWork: 0, totalWork: 13 }],
+		["missing denominator", { completedUnits: 7, totalUnits: 13, completedWork: 7 }],
+	] as const)("omits %s progress", (_name, progress) => {
+		const projection = projectProviderObservationUi(
+			{
+				availability: "unavailable",
+				evidence: "unknown",
+				observedAt: null,
+				ageSeconds: null,
+				latestAttempt: "running",
+				reasonCodes: ["no-publication", "refresh-running"],
+			},
+			{ state: "running", ...progress },
+		);
+		expect(projection).toEqual({ condition: "collecting" });
+	});
+});
+
 describe("Plex cache refresh attempt lifecycle", () => {
 	it("claims a Tautulli attempt with a bounded non-secret initial reason", async () => {
 		const current = plexSnapshot({
@@ -170,9 +360,9 @@ describe("Plex cache refresh attempt lifecycle", () => {
 		);
 
 		expect(attempt?.resultMarker).toMatch(/^in_progress:/);
-		expect(state.tx.cacheRefreshStatus.upsert).toHaveBeenCalledWith(
+		expect(state.tx.cacheRefreshStatus.create).toHaveBeenCalledWith(
 			expect.objectContaining({
-				create: expect.objectContaining({
+				data: expect.objectContaining({
 					cacheType: "tautulli",
 					lastErrorMessage: "refresh_in_progress",
 					lastAttemptResult: attempt?.resultMarker,
@@ -188,11 +378,11 @@ describe("Plex cache refresh attempt lifecycle", () => {
 		const attempt = await beginPlexCacheRefreshAttempt(state.prisma as never, "plex", current);
 
 		expect(attempt?.resultMarker).toMatch(/^in_progress:/);
-		expect(state.tx.cacheRefreshStatus.upsert).toHaveBeenCalledWith(
+		expect(state.tx.cacheRefreshStatus.create).toHaveBeenCalledWith(
 			expect.objectContaining({
-				create: expect.objectContaining({
+				data: expect.objectContaining({
 					lastResult: "error",
-					lastErrorMessage: "Plex cache refresh has not published a generation",
+					lastErrorMessage: "provider cache refresh has not published a generation",
 					connectionGeneration: current.connectionGeneration,
 					identityGeneration: current.identityGeneration,
 					lastAttemptResult: attempt?.resultMarker,
@@ -271,7 +461,7 @@ describe("Plex cache refresh attempt lifecycle", () => {
 		).resolves.toBeNull();
 
 		expect(state.tx.cacheRefreshStatus.updateMany).not.toHaveBeenCalled();
-		expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+		expect(state.tx.cacheRefreshStatus.create).not.toHaveBeenCalled();
 	});
 
 	it.each([
@@ -317,7 +507,7 @@ describe("Plex cache refresh attempt lifecycle", () => {
 				data: expect.objectContaining({
 					lastRefreshedAt: attempt?.attemptedAt,
 					lastResult: "error",
-					lastErrorMessage: "Plex cache refresh has not published a generation",
+					lastErrorMessage: "provider cache refresh has not published a generation",
 					itemCount: 0,
 					generationId: null,
 					generationMetadata: null,
@@ -331,7 +521,7 @@ describe("Plex cache refresh attempt lifecycle", () => {
 		},
 	);
 
-	it("supersedes a current in-progress attempt with a later current attempt", async () => {
+	it("reclaims an invalid current in-progress marker", async () => {
 		const current = plexSnapshot();
 		const state = publicationFixture(current, {
 			connectionGeneration: current.connectionGeneration,
@@ -340,13 +530,126 @@ describe("Plex cache refresh attempt lifecycle", () => {
 			lastAttemptResult: "in_progress:older",
 		});
 
-		const older = await beginPlexCacheRefreshAttempt(state.prisma as never, "plex", current);
-		const later = await beginPlexCacheRefreshAttempt(state.prisma as never, "plex", current);
+		await expect(
+			beginPlexCacheRefreshAttempt(state.prisma as never, "plex", current),
+		).resolves.toMatchObject({ resultMarker: expect.stringMatching(/^in_progress:/) });
+		expect(state.tx.cacheRefreshStatus.create).not.toHaveBeenCalled();
+	});
 
-		expect(older?.resultMarker).toMatch(/^in_progress:/);
-		expect(later?.resultMarker).toMatch(/^in_progress:/);
-		expect(later?.resultMarker).not.toBe(older?.resultMarker);
-		expect(state.tx.cacheRefreshStatus.upsert).toHaveBeenCalledTimes(2);
+	it("returns an exact already-running claim without overwriting it", async () => {
+		const current = plexSnapshot();
+		const attemptedAt = new Date("2026-08-20T11:00:00.000Z");
+		const resultMarker = "in_progress:00000000-0000-4000-8000-000000000001";
+		const state = publicationFixture(current, {
+			connectionGeneration: current.connectionGeneration,
+			identityGeneration: current.identityGeneration,
+			lastAttemptAt: attemptedAt,
+			lastAttemptResult: resultMarker,
+		});
+
+		await expect(
+			claimProviderCacheRefreshAttempt(state.prisma as never, "plex", current),
+		).resolves.toEqual({
+			status: "already-running",
+			attempt: { attemptedAt, resultMarker },
+		});
+		expect(state.tx.cacheRefreshStatus.updateMany).not.toHaveBeenCalled();
+		expect(state.tx.cacheRefreshStatus.create).not.toHaveBeenCalled();
+	});
+
+	it("claims a current terminal row with a compare-and-set predicate", async () => {
+		const current = plexSnapshot();
+		const attemptedAt = new Date("2026-08-20T11:00:00.000Z");
+		const state = publicationFixture(current, {
+			id: "current-status",
+			connectionGeneration: current.connectionGeneration,
+			identityGeneration: current.identityGeneration,
+			lastAttemptAt: attemptedAt,
+			lastAttemptResult: "success",
+		});
+
+		const result = await claimProviderCacheRefreshAttempt(state.prisma as never, "plex", current);
+
+		expect(result.status).toBe("acquired");
+		if (result.status === "acquired") expect(result.attempt.resultMarker).toMatch(/^in_progress:/);
+		expect(state.tx.cacheRefreshStatus.updateMany).toHaveBeenCalledWith({
+			where: {
+				id: "current-status",
+				instanceId: current.id,
+				cacheType: "plex",
+				connectionGeneration: current.connectionGeneration,
+				identityGeneration: current.identityGeneration,
+				lastAttemptAt: attemptedAt,
+				lastAttemptResult: "success",
+			},
+			data: expect.objectContaining({
+				lastAttemptResult: expect.stringMatching(/^in_progress:/),
+			}),
+		});
+	});
+
+	it("supersedes a terminal claim when any observed publication scalar changed", async () => {
+		const current = plexSnapshot();
+		const status = {
+			id: "current-status",
+			connectionGeneration: current.connectionGeneration,
+			identityGeneration: current.identityGeneration,
+			lastRefreshedAt: new Date("2026-08-20T10:00:00.000Z"),
+			lastResult: "success",
+			lastErrorMessage: null,
+			itemCount: 4,
+			generationId: "published-generation",
+			generationMetadata: "published-metadata",
+			lastAttemptAt: new Date("2026-08-20T11:00:00.000Z"),
+			lastAttemptResult: "success",
+			lastAttemptErrorMessage: null,
+		};
+		const state = publicationFixture(current, status);
+		state.tx.cacheRefreshStatus.updateMany.mockResolvedValue({ count: 0 });
+
+		await expect(
+			claimProviderCacheRefreshAttempt(state.prisma as never, "plex", current),
+		).resolves.toEqual({
+			status: "superseded",
+		});
+		expect(state.tx.cacheRefreshStatus.updateMany).toHaveBeenCalledWith({
+			where: expect.objectContaining({
+				lastRefreshedAt: status.lastRefreshedAt,
+				lastResult: status.lastResult,
+				lastErrorMessage: status.lastErrorMessage,
+				itemCount: status.itemCount,
+				generationId: status.generationId,
+				generationMetadata: status.generationMetadata,
+				lastAttemptErrorMessage: status.lastAttemptErrorMessage,
+			}),
+			data: expect.any(Object),
+		});
+	});
+
+	it("reclaims a current malformed in-progress marker without replacing publication fields", async () => {
+		const current = plexSnapshot();
+		const state = publicationFixture(current, {
+			connectionGeneration: current.connectionGeneration,
+			identityGeneration: current.identityGeneration,
+			lastAttemptAt: new Date("2026-08-20T11:00:00.000Z"),
+			lastAttemptResult: "in_progress:unknown",
+		});
+
+		const claim = await claimProviderCacheRefreshAttempt(state.prisma as never, "plex", current);
+
+		expect(claim).toMatchObject({
+			status: "acquired",
+			attempt: { resultMarker: expect.stringMatching(/^in_progress:/) },
+		});
+		expect(state.tx.cacheRefreshStatus.updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					lastAttemptResult: expect.stringMatching(/^in_progress:/),
+					lastAttemptErrorMessage: null,
+				}),
+			}),
+		);
+		expect(state.tx.cacheRefreshStatus.create).not.toHaveBeenCalled();
 	});
 
 	it("rejects two CAS-losing obsolete takeover retries without weakening the fence", async () => {
@@ -372,6 +675,41 @@ describe("Plex cache refresh attempt lifecycle", () => {
 		expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
 	});
 
+	it("rejects a valid marker whose claim time is in the future", async () => {
+		const current = plexSnapshot();
+		const state = publicationFixture(current, {
+			connectionGeneration: current.connectionGeneration,
+			identityGeneration: current.identityGeneration,
+			lastAttemptAt: new Date("2026-08-20T12:00:00.000Z"),
+			lastAttemptResult: "in_progress:00000000-0000-4000-8000-000000000001",
+		});
+
+		await expect(
+			claimProviderCacheRefreshAttempt(state.prisma as never, "plex", current, {
+				now: () => new Date("2026-08-20T11:00:00.000Z"),
+			}),
+		).resolves.toEqual({ status: "superseded" });
+		expect(state.tx.cacheRefreshStatus.updateMany).not.toHaveBeenCalled();
+	});
+
+	it("rejects a terminal row whose attempt time is in the future", async () => {
+		const current = plexSnapshot();
+		const state = publicationFixture(current, {
+			id: "future-terminal",
+			connectionGeneration: current.connectionGeneration,
+			identityGeneration: current.identityGeneration,
+			lastAttemptAt: new Date("2026-08-20T12:00:00.000Z"),
+			lastAttemptResult: "success",
+		});
+
+		await expect(
+			claimProviderCacheRefreshAttempt(state.prisma as never, "plex", current, {
+				now: () => new Date("2026-08-20T11:00:00.000Z"),
+			}),
+		).resolves.toEqual({ status: "superseded" });
+		expect(state.tx.cacheRefreshStatus.updateMany).not.toHaveBeenCalled();
+	});
+
 	it.each(["plex", "plex_episode"] as const)(
 		"marks %s in progress without replacing prior publication fields",
 		async (cacheType) => {
@@ -384,16 +722,16 @@ describe("Plex cache refresh attempt lifecycle", () => {
 			const attempt = await beginPlexCacheRefreshAttempt(state.prisma as never, cacheType, current);
 
 			expect(attempt?.resultMarker).toMatch(/^in_progress:/);
-			expect(state.tx.cacheRefreshStatus.upsert).toHaveBeenCalledWith(
+			expect(state.tx.cacheRefreshStatus.updateMany).toHaveBeenCalledWith(
 				expect.objectContaining({
-					update: expect.objectContaining({
+					data: expect.objectContaining({
 						lastAttemptAt: attempt?.attemptedAt,
 						lastAttemptResult: attempt?.resultMarker,
 						lastAttemptErrorMessage: null,
 					}),
 				}),
 			);
-			expect(state.tx.cacheRefreshStatus.upsert.mock.calls[0]![0].update).not.toEqual(
+			expect(state.tx.cacheRefreshStatus.updateMany.mock.calls[0]![0].data).not.toEqual(
 				expect.objectContaining({
 					lastRefreshedAt: expect.anything(),
 					lastResult: expect.anything(),
@@ -437,6 +775,33 @@ describe("Plex cache refresh attempt lifecycle", () => {
 		});
 	});
 
+	it("does not finish an attempt when its transactional precondition is false", async () => {
+		const current = plexSnapshot();
+		const state = publicationFixture(current, {
+			connectionGeneration: 4,
+			identityGeneration: 9,
+		});
+		const precondition = vi.fn().mockResolvedValue(false);
+
+		const result = await finishProviderCacheRefreshAttemptFailure(
+			state.prisma as never,
+			"plex_episode",
+			"provider-unavailable",
+			current,
+			{
+				attemptedAt: new Date("2026-08-20T12:00:00.000Z"),
+				resultMarker: "in_progress:attempt-a",
+			},
+			log,
+			{},
+			precondition,
+		);
+
+		expect(result).toBe("superseded");
+		expect(precondition).toHaveBeenCalledWith(state.tx);
+		expect(state.tx.cacheRefreshStatus.updateMany).not.toHaveBeenCalled();
+	});
+
 	it("redacts non-allowlisted Tautulli failure text before persistence", async () => {
 		const current = plexSnapshot({ id: "tautulli-1", service: "TAUTULLI" });
 		const state = publicationFixture(current, {
@@ -462,6 +827,44 @@ describe("Plex cache refresh attempt lifecycle", () => {
 				data: { lastAttemptResult: "error", lastAttemptErrorMessage: "legacy_error_redacted" },
 			}),
 		);
+	});
+
+	it("preserves every shared bounded Tautulli observation reason code", async () => {
+		const current = plexSnapshot({ id: "tautulli-1", service: "TAUTULLI" });
+		const reasonCodes = [
+			"publication-superseded",
+			"receipt-invalid",
+			"coverage-incomplete",
+			"accepted-skips",
+			"provider-limit",
+			"provider-unavailable",
+			"rows-inconsistent",
+			"positive-only",
+			"unknown-failure",
+		] as const;
+
+		for (const reasonCode of reasonCodes) {
+			const state = publicationFixture(current, {
+				connectionGeneration: 4,
+				identityGeneration: 9,
+			});
+			await finishProviderCacheRefreshAttemptFailure(
+				state.prisma as never,
+				"tautulli",
+				reasonCode,
+				current,
+				{
+					attemptedAt: new Date("2026-08-20T12:00:00.000Z"),
+					resultMarker: "in_progress:tautulli-a",
+				},
+				log,
+			);
+			expect(state.tx.cacheRefreshStatus.updateMany).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: { lastAttemptResult: "error", lastAttemptErrorMessage: reasonCode },
+				}),
+			);
+		}
 	});
 
 	it("cannot overwrite a newer attempt marker with an older failure", async () => {
@@ -504,7 +907,7 @@ describe("recordPlexCacheRefreshFailure", () => {
 			);
 
 			expect(result).toBe("superseded");
-			expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+			expect(state.tx.cacheRefreshStatus.create).not.toHaveBeenCalled();
 		},
 	);
 
@@ -524,7 +927,7 @@ describe("recordPlexCacheRefreshFailure", () => {
 			);
 
 			expect(result).toBe("superseded");
-			expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+			expect(state.tx.cacheRefreshStatus.create).not.toHaveBeenCalled();
 		},
 	);
 
@@ -574,7 +977,113 @@ describe("recordPlexCacheRefreshFailure", () => {
 	});
 });
 
+describe("provider cache startup recovery", () => {
+	it("marks inherited valid claims as bounded errors without changing publication fields", async () => {
+		const attemptedAt = new Date("2026-08-20T11:00:00.000Z");
+		const status = {
+			id: "tautulli-status",
+			instanceId: "tautulli-1",
+			cacheType: "tautulli",
+			lastRefreshedAt: new Date("2026-08-20T10:00:00.000Z"),
+			lastResult: "success",
+			lastErrorMessage: null,
+			itemCount: 3,
+			generationId: "published-generation",
+			generationMetadata: "published-metadata",
+			lastAttemptAt: attemptedAt,
+			lastAttemptResult: "in_progress:00000000-0000-4000-8000-000000000001",
+			lastAttemptErrorMessage: null,
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			instance: { service: "TAUTULLI" },
+		};
+		const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+		const prisma = {
+			$transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+				callback({
+					cacheRefreshStatus: {
+						findMany: vi.fn().mockResolvedValue([status]),
+						updateMany,
+					},
+					providerObservationRun: {
+						findMany: vi.fn().mockResolvedValue([]),
+					},
+				}),
+			),
+		};
+
+		await expect(reconcileInterruptedProviderCacheRefreshAttempts(prisma as never)).resolves.toBe(
+			1,
+		);
+		expect(updateMany).toHaveBeenCalledWith({
+			where: expect.objectContaining({
+				id: status.id,
+				instanceId: status.instanceId,
+				cacheType: status.cacheType,
+				lastAttemptAt: status.lastAttemptAt,
+				lastAttemptResult: status.lastAttemptResult,
+				connectionGeneration: status.connectionGeneration,
+				identityGeneration: status.identityGeneration,
+			}),
+			data: {
+				lastAttemptResult: "error",
+				lastAttemptErrorMessage: "unknown_failure",
+			},
+		});
+	});
+});
+
 describe("recordWatchProviderCacheRefreshFailure", () => {
+	it("sanitizes an attempt-status write failure log", async () => {
+		const privateInstance = plexSnapshot({ id: "PRIVATE_INSTANCE_ID" });
+		const privateError = "PRIVATE_DATABASE_ERROR token=PRIVATE_CREDENTIAL";
+		const state = {
+			$transaction: vi.fn().mockRejectedValue(new Error(privateError)),
+		};
+		const result = await finishProviderCacheRefreshAttemptFailure(
+			state as never,
+			"tautulli",
+			"provider-unavailable",
+			{ ...privateInstance, service: "TAUTULLI" },
+			{
+				attemptedAt: new Date("2026-08-20T12:00:00.000Z"),
+				resultMarker: "in_progress:tautulli-a",
+			},
+			log,
+		);
+
+		expect(result).toBe("failed");
+		expect(log.warn).toHaveBeenCalledWith(
+			{ cacheType: "tautulli", reasonCode: "attempt_status_write_failed" },
+			expect.any(String),
+		);
+		expect(JSON.stringify(log.warn.mock.calls)).not.toContain("PRIVATE_INSTANCE_ID");
+		expect(JSON.stringify(log.warn.mock.calls)).not.toContain(privateError);
+	});
+
+	it("sanitizes a failure-status write failure log", async () => {
+		const privateInstance = plexSnapshot({ id: "PRIVATE_INSTANCE_ID" });
+		const privateError = "PRIVATE_DATABASE_ERROR token=PRIVATE_CREDENTIAL";
+		const state = {
+			$transaction: vi.fn().mockRejectedValue(new Error(privateError)),
+		};
+		const result = await recordWatchProviderCacheRefreshFailure(
+			state as never,
+			"tautulli",
+			"provider-unavailable",
+			{ ...privateInstance, service: "TAUTULLI" },
+			log,
+		);
+
+		expect(result).toBe("failed");
+		expect(log.warn).toHaveBeenCalledWith(
+			{ cacheType: "tautulli", reasonCode: "failure_status_write_failed" },
+			expect.any(String),
+		);
+		expect(JSON.stringify(log.warn.mock.calls)).not.toContain("PRIVATE_INSTANCE_ID");
+		expect(JSON.stringify(log.warn.mock.calls)).not.toContain(privateError);
+	});
+
 	it.each([
 		["JELLYFIN", "jellyfin"],
 		["EMBY", "jellyfin_episode"],

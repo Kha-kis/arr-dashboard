@@ -142,7 +142,7 @@ def require_owned(labels: dict[str, str], project: str, token: str, description:
 		raise OwnershipError(f"{description} has a different run token")
 
 
-def model_mounts(service: dict[str, Any]) -> tuple[set[str], set[str]]:
+def model_mounts(service: dict[str, Any]) -> tuple[set[str], set[str], set[str]]:
 	volume_targets = {
 		mount["target"]
 		for mount in service.get("volumes", [])
@@ -155,7 +155,12 @@ def model_mounts(service: dict[str, Any]) -> tuple[set[str], set[str]]:
 		target = secret.get("target", secret["source"])
 		if isinstance(target, str):
 			secret_targets.add(target if target.startswith("/") else f"/run/secrets/{target}")
-	return volume_targets, secret_targets
+	config_targets: set[str] = set()
+	for config in service.get("configs", []):
+		if not isinstance(config, dict) or not isinstance(config.get("target"), str):
+			continue
+		config_targets.add(config["target"])
+	return volume_targets, secret_targets, config_targets
 
 
 def validate_resources(
@@ -227,7 +232,7 @@ def validate_resources(
 		if container.get("Image") != image_ids.get(expected_image):
 			raise OwnershipError(f"{name} image identity differs from the validated model")
 
-		expected_volumes, expected_secrets = model_mounts(services[service_name])
+		expected_volumes, expected_secrets, expected_configs = model_mounts(services[service_name])
 		actual_volumes: set[str] = set()
 		for mount in container.get("Mounts", []):
 			mount_type = mount.get("Type")
@@ -237,7 +242,9 @@ def validate_resources(
 				mount_labels = mount.get("Labels", {})
 				require_owned(mount_labels, project, token, f"volume mounted at {target}")
 			elif not (
-				mount_type == "bind" and target in expected_secrets and mount.get("RW") is False
+				mount_type == "bind"
+				and target in expected_secrets | expected_configs
+				and mount.get("RW") is False
 			):
 				raise OwnershipError(f"{name} has unapproved {mount_type} mount at {target}")
 		if actual_volumes != expected_volumes:

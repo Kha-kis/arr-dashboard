@@ -4,13 +4,25 @@ import type {
 	PlexEvidenceSummary,
 	PlexGenerationDomainRoot,
 	PlexGenerationMetadataV3,
+	PlexGenerationMetadataV5,
 	PlexGenerationSection,
 	PlexGenerationSectionV3,
 	PlexPartialReason,
 	PlexPartialReasonCode,
 	PlexPositiveGenerationMetadataV4,
 	PlexPublicationLevel,
+	ProviderCoverageReceiptV1,
+	ProviderCoverageReceiptV2,
+	ProviderObservationStatus,
 } from "@arr/shared";
+import {
+	evaluateProviderCoverageReceipt,
+	evaluateProviderDomainCoverageMap,
+} from "../provider-observation/coverage-receipt.js";
+import {
+	type ProviderIdentityState,
+	projectProviderObservationStatus,
+} from "../provider-observation/status-projection.js";
 import {
 	decodePlexTargetLedgerBinding,
 	type PlexTargetLedgerBinding,
@@ -25,11 +37,70 @@ export type DecodedPlexGenerationMetadata =
 			sections: PlexGenerationSection[];
 	  }
 	| PlexGenerationMetadataV3
-	| PlexPositiveGenerationMetadataV4;
+	| PlexPositiveGenerationMetadataV4
+	| PlexGenerationMetadataV5
+	| PlexGenerationMetadataV6;
+
+type PlexGenerationMetadataV6Base = {
+	version: 6;
+	publicationLevel: PlexPublicationLevel;
+	completeness: "complete" | "partial";
+	itemCount: number;
+	canonicalizationVersion: 1;
+	sections: PlexGenerationSectionV3[];
+	targetLedgerVersion: 1;
+	targetCount: number;
+	targetDigest: string;
+	partialReasons: PlexPartialReason[];
+	coverageReceipt: ProviderCoverageReceiptV2;
+};
+
+export type PlexGenerationMetadataV6 =
+	| (PlexGenerationMetadataV6Base & {
+			publicationLevel: "authoritative";
+			completeness: "complete";
+			roots: PlexGenerationDomainRoot[];
+			observedRoots?: never;
+			capabilities?: never;
+			partialReasons: [];
+	  })
+	| (PlexGenerationMetadataV6Base & {
+			publicationLevel: "positive-only";
+			completeness: "partial";
+			observedRoots: PlexGenerationDomainRoot[];
+			capabilities: PlexPositiveGenerationMetadataV4["capabilities"];
+			roots?: never;
+			partialReasons: PlexPartialReason[];
+	  });
 
 export type PlexGenerationMetadataDecodeResult =
 	| { ok: true; metadata: DecodedPlexGenerationMetadata }
 	| { ok: false; reasonCode: PlexCoverageReasonCode };
+
+type ReceiptBackedPlexGenerationMetadata =
+	| Extract<DecodedPlexGenerationMetadata, { version: 5 }>
+	| Extract<DecodedPlexGenerationMetadata, { version: 6 }>;
+
+type CompleteAuthoritativePlexGenerationMetadata = Extract<
+	ReceiptBackedPlexGenerationMetadata,
+	{ publicationLevel: "authoritative"; completeness: "complete" }
+>;
+
+export function isReceiptBackedPlexGenerationMetadata(
+	metadata: DecodedPlexGenerationMetadata,
+): metadata is ReceiptBackedPlexGenerationMetadata {
+	return metadata.version === 5 || metadata.version === 6;
+}
+
+export function isCompleteAuthoritativePlexGenerationMetadata(
+	metadata: DecodedPlexGenerationMetadata,
+): metadata is CompleteAuthoritativePlexGenerationMetadata {
+	return (
+		isReceiptBackedPlexGenerationMetadata(metadata) &&
+		metadata.publicationLevel === "authoritative" &&
+		metadata.completeness === "complete"
+	);
+}
 
 export type PublishedPlexStatus = {
 	lastResult: string;
@@ -51,8 +122,125 @@ export type PublishedPlexGenerationResult =
 			itemCount: number;
 			metadata: DecodedPlexGenerationMetadata;
 			evidence: PlexEvidenceSummary;
+			providerStatus: ProviderObservationStatus;
 	  }
-	| { available: false; evidence: PlexEvidenceSummary };
+	| { available: false; evidence: PlexEvidenceSummary; providerStatus: ProviderObservationStatus };
+
+function providerAttempt(status: PublishedPlexStatus | null | undefined) {
+	if (!status?.lastAttemptAt || !(status.lastAttemptAt instanceof Date)) return null;
+	const attemptState = normalizePlexAttemptState(status.lastAttemptResult);
+	if (attemptState === "success")
+		return { state: "successful" as const, attemptedAt: status.lastAttemptAt };
+	if (attemptState === "partial")
+		return { state: "successful" as const, attemptedAt: status.lastAttemptAt };
+	if (attemptState === "in_progress")
+		return { state: "running" as const, attemptedAt: status.lastAttemptAt };
+	if (attemptState === "error")
+		return { state: "failed" as const, attemptedAt: status.lastAttemptAt };
+	return null;
+}
+
+function unavailableProviderStatus(reasonCode: ProviderObservationStatus["reasonCodes"][number]) {
+	return {
+		availability: "unavailable" as const,
+		evidence: "unknown" as const,
+		observedAt: null,
+		ageSeconds: null,
+		latestAttempt: "idle" as const,
+		reasonCodes: [reasonCode],
+	};
+}
+
+/** Plex adapter for the shared display projection. It never authorizes mutation. */
+export function projectPlexProviderObservationStatus(input: {
+	status: PublishedPlexStatus | null | undefined;
+	metadata?: DecodedPlexGenerationMetadata;
+	identity?: ProviderIdentityState;
+	now?: Date;
+	maxAgeMs?: number;
+}): ProviderObservationStatus {
+	const identity = input.identity ?? "current";
+	const now = input.now ?? new Date();
+	const maxAgeMs = input.maxAgeMs ?? Number.MAX_SAFE_INTEGER;
+	if (identity !== "current") {
+		return projectProviderObservationStatus({
+			identity,
+			publication: null,
+			latestAttempt: null,
+			now,
+			maxAgeMs,
+		});
+	}
+	if (!input.status) return unavailableProviderStatus("no-publication");
+	const trust = evaluatePlexLatestAttemptTrust(input.status, now);
+	if (!input.metadata) {
+		let invalidReceiptMetadata = false;
+		try {
+			const version = JSON.parse(input.status.generationMetadata ?? "").version;
+			invalidReceiptMetadata = version === 5 || version === 6;
+		} catch {
+			// Malformed metadata has no receipt-backed publication.
+		}
+		return projectProviderObservationStatus({
+			identity,
+			publication: invalidReceiptMetadata
+				? {
+						observedAt: input.status.lastRefreshedAt,
+						evaluation: evaluateProviderCoverageReceipt(undefined),
+					}
+				: null,
+			latestAttempt: providerAttempt(input.status),
+			now,
+			maxAgeMs,
+		});
+	}
+	if (input.metadata.version === 5 || input.metadata.version === 6) {
+		const projected = projectProviderObservationStatus({
+			identity,
+			publication: {
+				observedAt: input.status.lastRefreshedAt,
+				evaluation: evaluateProviderCoverageReceipt(input.metadata.coverageReceipt),
+			},
+			latestAttempt: providerAttempt(input.status),
+			now,
+			maxAgeMs,
+		});
+		if (projected.availability !== "current" || trust.reasonCode === null) return projected;
+		return {
+			...projected,
+			availability: "last-known",
+			reasonCodes: ["unknown-failure"],
+		};
+	}
+	const baseline = projectProviderObservationStatus({
+		identity,
+		publication: null,
+		latestAttempt: providerAttempt(input.status),
+		now,
+		maxAgeMs,
+	});
+	if (baseline.availability === "unavailable" && baseline.reasonCodes[0] !== "no-publication") {
+		return baseline;
+	}
+	const observedAt = input.status.lastRefreshedAt;
+	const ageMs = now.getTime() - observedAt.getTime();
+	if (!Number.isFinite(observedAt.getTime()) || ageMs < 0)
+		return unavailableProviderStatus("unknown-failure");
+	return {
+		availability: "last-known",
+		evidence: "unknown",
+		observedAt: observedAt.toISOString(),
+		ageSeconds: Math.floor(ageMs / 1000),
+		latestAttempt: baseline.latestAttempt,
+		reasonCodes: [
+			"coverage-incomplete",
+			...baseline.reasonCodes.filter(
+				(reason): reason is "refresh-running" | "refresh-failed" =>
+					reason === "refresh-running" || reason === "refresh-failed",
+			),
+		],
+	};
+}
 
 function unavailable(reasonCode: PlexCoverageReasonCode): PublishedPlexGenerationResult {
 	return {
@@ -65,6 +253,7 @@ function unavailable(reasonCode: PlexCoverageReasonCode): PublishedPlexGeneratio
 			completeness: "unknown",
 			reasonCodes: [reasonCode],
 		},
+		providerStatus: unavailableProviderStatus("no-publication"),
 	};
 }
 
@@ -82,6 +271,7 @@ function unavailableForStatus(
 ): PublishedPlexGenerationResult {
 	const result = unavailable(reasonCode);
 	result.evidence.attemptState = normalizePlexAttemptState(status.lastAttemptResult);
+	result.providerStatus = projectPlexProviderObservationStatus({ status });
 	return result;
 }
 
@@ -247,7 +437,42 @@ function hasExactObjectKeys(value: Record<string, unknown>, expectedKeys: readon
 	return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
 }
 
-function decodeV4(e: Record<string, unknown>): PlexGenerationMetadataDecodeResult {
+function parsePartialReasons(value: unknown, allowEmpty = false): PlexPartialReason[] | null {
+	if (
+		!Array.isArray(value) ||
+		(!allowEmpty && value.length < 1) ||
+		value.length > partialCodes.size
+	)
+		return null;
+	let previous = "";
+	const reasons: PlexPartialReason[] = [];
+	for (const entry of value) {
+		if (
+			typeof entry !== "object" ||
+			entry === null ||
+			Array.isArray(entry) ||
+			!hasExactObjectKeys(entry as Record<string, unknown>, ["code", "count"])
+		)
+			return null;
+		const reason = entry as Record<string, unknown>;
+		if (
+			typeof reason.code !== "string" ||
+			!partialCodes.has(reason.code as PlexPartialReasonCode) ||
+			!Number.isSafeInteger(reason.count) ||
+			(reason.count as number) < 1 ||
+			reason.code <= previous
+		)
+			return null;
+		previous = reason.code;
+		reasons.push({ code: reason.code as PlexPartialReasonCode, count: reason.count as number });
+	}
+	return reasons;
+}
+
+function decodeV4(
+	e: Record<string, unknown>,
+	options: { allowEmptyPartialReasons?: boolean } = {},
+): PlexGenerationMetadataDecodeResult {
 	if (
 		!hasExactObjectKeys(e, [
 			"version",
@@ -326,34 +551,8 @@ function decodeV4(e: Record<string, unknown>): PlexGenerationMetadataDecodeResul
 		return { ok: false, reasonCode: "metadata_invalid" };
 	const b = decodePlexTargetLedgerBinding(e);
 	if (!b.ok || !b.binding) return { ok: false, reasonCode: "metadata_invalid" };
-	if (
-		!Array.isArray(e.partialReasons) ||
-		e.partialReasons.length < 1 ||
-		e.partialReasons.length > 7
-	)
-		return { ok: false, reasonCode: "metadata_invalid" };
-	let prev = "";
-	const reasons: PlexPartialReason[] = [];
-	for (const x of e.partialReasons) {
-		if (
-			typeof x !== "object" ||
-			x === null ||
-			Array.isArray(x) ||
-			!hasExactObjectKeys(x as Record<string, unknown>, ["code", "count"])
-		)
-			return { ok: false, reasonCode: "metadata_invalid" };
-		const r = x as Record<string, unknown>;
-		if (
-			typeof r.code !== "string" ||
-			!partialCodes.has(r.code as PlexPartialReasonCode) ||
-			!Number.isSafeInteger(r.count) ||
-			(r.count as number) < 1 ||
-			r.code <= prev
-		)
-			return { ok: false, reasonCode: "metadata_invalid" };
-		prev = r.code;
-		reasons.push({ code: r.code as PlexPartialReasonCode, count: r.count as number });
-	}
+	const reasons = parsePartialReasons(e.partialReasons, options.allowEmptyPartialReasons);
+	if (!reasons) return { ok: false, reasonCode: "metadata_invalid" };
 	return {
 		ok: true,
 		metadata: {
@@ -378,6 +577,317 @@ function decodeV4(e: Record<string, unknown>): PlexGenerationMetadataDecodeResul
 	};
 }
 
+function exactV3Sections(sections: PlexGenerationSectionV3[], raw: unknown): boolean {
+	return (
+		Array.isArray(raw) &&
+		raw.length === sections.length &&
+		raw.every(
+			(section) =>
+				typeof section === "object" &&
+				section !== null &&
+				!Array.isArray(section) &&
+				hasExactObjectKeys(section as Record<string, unknown>, [
+					"key",
+					"uuid",
+					"title",
+					"type",
+					"refreshing",
+					"scannedAt",
+					"updatedAt",
+				]),
+		)
+	);
+}
+
+function exactRoots(roots: PlexGenerationDomainRoot[], raw: unknown): boolean {
+	return (
+		Array.isArray(raw) &&
+		raw.length === roots.length &&
+		raw.every(
+			(root) =>
+				typeof root === "object" &&
+				root !== null &&
+				!Array.isArray(root) &&
+				hasExactObjectKeys(root as Record<string, unknown>, ["sectionKey", "domain", "digest"]),
+		)
+	);
+}
+
+function hasCompletePlexReceipt(
+	receipt: unknown,
+	publicationLevel: PlexPublicationLevel,
+	itemCount: number,
+): receipt is ProviderCoverageReceiptV1 {
+	const evaluated = evaluateProviderCoverageReceipt(receipt);
+	if (
+		!evaluated.valid ||
+		evaluated.provider !== "plex" ||
+		evaluated.canonicalEntities !== itemCount ||
+		!receipt ||
+		typeof receipt !== "object" ||
+		Array.isArray(receipt)
+	)
+		return false;
+	const parsed = receipt as ProviderCoverageReceiptV1;
+	if (publicationLevel === "authoritative") {
+		return parsed.evidence === "complete" && evaluated.complete;
+	}
+	if (parsed.evidence !== "positive-only") return false;
+	return evaluateProviderCoverageReceipt({ ...parsed, evidence: "complete" }).complete;
+}
+
+function hasValidV2PlexReceipt(
+	value: unknown,
+	publicationLevel: "authoritative" | "positive-only",
+	itemCount: number,
+): value is ProviderCoverageReceiptV2 {
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		Array.isArray(value) ||
+		(value as Record<string, unknown>).version !== 2
+	)
+		return false;
+	const { domains: _domains, version: _version, ...coreFields } = value as Record<string, unknown>;
+	const evaluation = evaluateProviderCoverageReceipt({ ...coreFields, version: 1 });
+	if (
+		!evaluation.valid ||
+		evaluation.provider !== "plex" ||
+		evaluation.publishedCanonicalEntities !== itemCount
+	)
+		return false;
+	const domains = evaluateProviderDomainCoverageMap(value);
+	const expectedDomains = [
+		"library-inventory",
+		"mapping",
+		"watch-count",
+		"watch-attribution",
+		"on-deck",
+	] as const;
+	if (
+		domains.size !== expectedDomains.length ||
+		!expectedDomains.every((domain) => domains.has(domain))
+	)
+		return false;
+	const rawDomains = (value as Record<string, unknown>).domains;
+	if (!Array.isArray(rawDomains)) return false;
+	for (const domain of rawDomains) {
+		if (typeof domain !== "object" || domain === null || Array.isArray(domain)) continue;
+		const rawDomain = domain as Record<string, unknown>;
+		if (rawDomain.domain === "mapping" || rawDomain.domain === "watch-count") {
+			if (rawDomain.publishedCanonicalEntities !== itemCount) return false;
+		}
+	}
+	const aggregateEvaluation = evaluateProviderCoverageReceipt(value);
+	if (publicationLevel === "authoritative") {
+		return aggregateEvaluation.complete && aggregateEvaluation.evidence === "complete";
+	}
+	return aggregateEvaluation.evidence === "positive-only" && !aggregateEvaluation.complete;
+}
+
+function decodeV6(e: Record<string, unknown>): PlexGenerationMetadataDecodeResult {
+	const common = [
+		"version",
+		"publicationLevel",
+		"completeness",
+		"itemCount",
+		"canonicalizationVersion",
+		"sections",
+		"targetLedgerVersion",
+		"targetCount",
+		"targetDigest",
+		"partialReasons",
+		"coverageReceipt",
+	] as const;
+	if (
+		e.canonicalizationVersion !== 1 ||
+		!Number.isSafeInteger(e.itemCount) ||
+		(e.itemCount as number) < 0 ||
+		!hasValidV2PlexReceipt(
+			e.coverageReceipt,
+			e.publicationLevel as "authoritative" | "positive-only",
+			e.itemCount as number,
+		)
+	)
+		return { ok: false, reasonCode: "metadata_invalid" };
+	const sections = normalizeV3Sections(e.sections);
+	if (typeof sections === "string" || !exactV3Sections(sections, e.sections)) {
+		return { ok: false, reasonCode: "metadata_invalid" };
+	}
+	const ledger = decodePlexTargetLedgerBinding(e);
+	if (!ledger.ok || !ledger.binding) return { ok: false, reasonCode: "metadata_invalid" };
+	if (e.publicationLevel === "authoritative") {
+		if (
+			!hasExactObjectKeys(e, [...common, "roots"]) ||
+			e.completeness !== "complete" ||
+			!Array.isArray(e.partialReasons) ||
+			e.partialReasons.length !== 0
+		)
+			return { ok: false, reasonCode: "metadata_invalid" };
+		const roots = normalizeV3Roots(e.roots, new Set(sections.map((section) => section.key)));
+		if (typeof roots === "string" || !exactRoots(roots, e.roots))
+			return { ok: false, reasonCode: "metadata_invalid" };
+		return {
+			ok: true,
+			metadata: {
+				version: 6,
+				publicationLevel: "authoritative",
+				completeness: "complete",
+				itemCount: e.itemCount as number,
+				canonicalizationVersion: 1,
+				sections,
+				roots,
+				...ledger.binding,
+				partialReasons: [],
+				coverageReceipt: e.coverageReceipt,
+			},
+		};
+	}
+	if (
+		e.publicationLevel !== "positive-only" ||
+		e.completeness !== "partial" ||
+		!hasExactObjectKeys(e, [...common, "observedRoots", "capabilities"])
+	)
+		return { ok: false, reasonCode: "metadata_invalid" };
+	const decodedV4 = decodeV4(
+		{
+			version: 4,
+			publicationLevel: e.publicationLevel,
+			completeness: e.completeness,
+			itemCount: e.itemCount,
+			canonicalizationVersion: e.canonicalizationVersion,
+			sections: e.sections,
+			observedRoots: e.observedRoots,
+			capabilities: e.capabilities,
+			targetLedgerVersion: e.targetLedgerVersion,
+			targetCount: e.targetCount,
+			targetDigest: e.targetDigest,
+			partialReasons: e.partialReasons,
+		},
+		{ allowEmptyPartialReasons: true },
+	);
+	if (!decodedV4.ok) return { ok: false, reasonCode: "metadata_invalid" };
+	return {
+		ok: true,
+		metadata: {
+			version: 6,
+			publicationLevel: "positive-only",
+			completeness: "partial",
+			itemCount: e.itemCount as number,
+			canonicalizationVersion: 1,
+			sections,
+			observedRoots: (decodedV4.metadata as PlexPositiveGenerationMetadataV4).observedRoots,
+			capabilities: (decodedV4.metadata as PlexPositiveGenerationMetadataV4).capabilities,
+			...ledger.binding,
+			partialReasons: [...(decodedV4.metadata as PlexPositiveGenerationMetadataV4).partialReasons],
+			coverageReceipt: e.coverageReceipt,
+		},
+	};
+}
+
+function decodeV5(e: Record<string, unknown>): PlexGenerationMetadataDecodeResult {
+	const common = [
+		"version",
+		"publicationLevel",
+		"completeness",
+		"itemCount",
+		"canonicalizationVersion",
+		"sections",
+		"targetLedgerVersion",
+		"targetCount",
+		"targetDigest",
+		"partialReasons",
+		"coverageReceipt",
+	] as const;
+	if (
+		e.canonicalizationVersion !== 1 ||
+		typeof e.itemCount !== "number" ||
+		!Number.isSafeInteger(e.itemCount) ||
+		e.itemCount < 0
+	) {
+		return { ok: false, reasonCode: "metadata_invalid" };
+	}
+	const sections = normalizeV3Sections(e.sections);
+	if (typeof sections === "string" || !exactV3Sections(sections, e.sections)) {
+		return { ok: false, reasonCode: "metadata_invalid" };
+	}
+	const ledger = decodePlexTargetLedgerBinding(e);
+	if (!ledger.ok || !ledger.binding) return { ok: false, reasonCode: "metadata_invalid" };
+
+	if (e.publicationLevel === "authoritative") {
+		if (
+			!hasExactObjectKeys(e, [...common, "roots"]) ||
+			e.completeness !== "complete" ||
+			!Array.isArray(e.partialReasons) ||
+			e.partialReasons.length !== 0
+		)
+			return { ok: false, reasonCode: "metadata_invalid" };
+		const roots = normalizeV3Roots(e.roots, new Set(sections.map((section) => section.key)));
+		if (
+			typeof roots === "string" ||
+			!exactRoots(roots, e.roots) ||
+			!hasCompletePlexReceipt(e.coverageReceipt, "authoritative", e.itemCount)
+		)
+			return { ok: false, reasonCode: "metadata_invalid" };
+		return {
+			ok: true,
+			metadata: {
+				version: 5,
+				publicationLevel: "authoritative",
+				completeness: "complete",
+				itemCount: e.itemCount,
+				canonicalizationVersion: 1,
+				sections,
+				roots,
+				...ledger.binding,
+				partialReasons: [],
+				coverageReceipt: e.coverageReceipt,
+			},
+		};
+	}
+
+	if (
+		e.publicationLevel !== "positive-only" ||
+		!hasExactObjectKeys(e, [...common, "observedRoots", "capabilities"])
+	)
+		return { ok: false, reasonCode: "metadata_invalid" };
+	const decodedV4 = decodeV4({
+		version: 4,
+		publicationLevel: e.publicationLevel,
+		completeness: e.completeness,
+		itemCount: e.itemCount,
+		canonicalizationVersion: e.canonicalizationVersion,
+		sections: e.sections,
+		observedRoots: e.observedRoots,
+		capabilities: e.capabilities,
+		targetLedgerVersion: e.targetLedgerVersion,
+		targetCount: e.targetCount,
+		targetDigest: e.targetDigest,
+		partialReasons: e.partialReasons,
+	});
+	if (!decodedV4.ok || !hasCompletePlexReceipt(e.coverageReceipt, "positive-only", e.itemCount))
+		return { ok: false, reasonCode: "metadata_invalid" };
+	const v4 = decodedV4.metadata as PlexPositiveGenerationMetadataV4;
+	return {
+		ok: true,
+		metadata: {
+			version: 5,
+			publicationLevel: "positive-only",
+			completeness: "partial",
+			itemCount: v4.itemCount,
+			canonicalizationVersion: 1,
+			sections: v4.sections,
+			observedRoots: v4.observedRoots,
+			capabilities: v4.capabilities,
+			targetLedgerVersion: v4.targetLedgerVersion,
+			targetCount: v4.targetCount,
+			targetDigest: v4.targetDigest,
+			partialReasons: v4.partialReasons as [PlexPartialReason, ...PlexPartialReason[]],
+			coverageReceipt: e.coverageReceipt as ProviderCoverageReceiptV1,
+		},
+	};
+}
+
 export function decodePlexGenerationMetadata(
 	raw: string | null | undefined,
 ): PlexGenerationMetadataDecodeResult {
@@ -392,6 +902,8 @@ export function decodePlexGenerationMetadata(
 		return { ok: false, reasonCode: "malformed_metadata" };
 	}
 	const envelope = parsed as Record<string, unknown>;
+	if (envelope.version === 6) return decodeV6(envelope);
+	if (envelope.version === 5) return decodeV5(envelope);
 	if (envelope.version === 4) return decodeV4(envelope);
 	const normalizedSections =
 		envelope.version === 3
@@ -480,17 +992,41 @@ export function encodeAuthoritativePlexGenerationMetadata(input: {
 	itemCount: number;
 	canonicalizationVersion: 1;
 	roots: PlexGenerationDomainRoot[];
-	targetLedger?: PlexTargetLedgerBinding;
+	targetLedger: PlexTargetLedgerBinding;
+	partialReasons: readonly [];
+	coverageReceipt: ProviderCoverageReceiptV1 | ProviderCoverageReceiptV2;
 }): string {
-	const metadata: PlexGenerationMetadataV3 = {
-		version: 3,
+	if (input.coverageReceipt.version === 1) {
+		const metadata: Extract<PlexGenerationMetadataV5, { publicationLevel: "authoritative" }> = {
+			version: 5,
+			publicationLevel: "authoritative",
+			completeness: "complete",
+			itemCount: input.itemCount,
+			canonicalizationVersion: input.canonicalizationVersion,
+			sections: input.sections,
+			roots: input.roots,
+			...input.targetLedger,
+			partialReasons: [],
+			coverageReceipt: input.coverageReceipt,
+		};
+		const decoded = decodePlexGenerationMetadata(JSON.stringify(metadata));
+		if (!decoded.ok || decoded.metadata.publicationLevel !== "authoritative") {
+			throw new Error("Invalid authoritative Plex generation metadata");
+		}
+		return JSON.stringify(metadata);
+	}
+	const coverageReceipt = input.coverageReceipt;
+	const metadata: Extract<PlexGenerationMetadataV6, { publicationLevel: "authoritative" }> = {
+		version: 6,
 		publicationLevel: "authoritative",
 		completeness: "complete",
 		itemCount: input.itemCount,
 		canonicalizationVersion: input.canonicalizationVersion,
 		sections: input.sections,
 		roots: input.roots,
-		...(input.targetLedger ?? {}),
+		...input.targetLedger,
+		partialReasons: [],
+		coverageReceipt,
 	};
 	const decoded = decodePlexGenerationMetadata(JSON.stringify(metadata));
 	if (!decoded.ok || decoded.metadata.publicationLevel !== "authoritative") {
@@ -506,9 +1042,38 @@ export function encodePositivePlexGenerationMetadata(input: {
 	observedRoots: PlexGenerationDomainRoot[];
 	targetLedger: PlexTargetLedgerBinding;
 	partialReasons: readonly PlexPartialReason[];
+	coverageReceipt: ProviderCoverageReceiptV1 | ProviderCoverageReceiptV2;
 }): string {
-	const metadata: PlexPositiveGenerationMetadataV4 = {
-		version: 4,
+	if (input.coverageReceipt.version === 1) {
+		const metadata: Extract<PlexGenerationMetadataV5, { publicationLevel: "positive-only" }> = {
+			version: 5,
+			publicationLevel: "positive-only",
+			completeness: "partial",
+			itemCount: input.itemCount,
+			canonicalizationVersion: input.canonicalizationVersion,
+			sections: input.sections,
+			observedRoots: input.observedRoots,
+			capabilities: [
+				{
+					domain: "episode-parents",
+					field: "membership",
+					semantics: "observed-targets-only",
+					operators: [],
+				},
+			],
+			...input.targetLedger,
+			partialReasons: input.partialReasons as [PlexPartialReason, ...PlexPartialReason[]],
+			coverageReceipt: input.coverageReceipt,
+		};
+		const decoded = decodePlexGenerationMetadata(JSON.stringify(metadata));
+		if (!decoded.ok || decoded.metadata.publicationLevel !== "positive-only") {
+			throw new Error("Invalid positive-only Plex generation metadata");
+		}
+		return JSON.stringify(metadata);
+	}
+	const coverageReceipt = input.coverageReceipt;
+	const metadata: Extract<PlexGenerationMetadataV6, { publicationLevel: "positive-only" }> = {
+		version: 6,
 		publicationLevel: "positive-only",
 		completeness: "partial",
 		itemCount: input.itemCount,
@@ -524,7 +1089,8 @@ export function encodePositivePlexGenerationMetadata(input: {
 			},
 		],
 		...input.targetLedger,
-		partialReasons: input.partialReasons,
+		partialReasons: [...input.partialReasons],
+		coverageReceipt,
 	};
 	const decoded = decodePlexGenerationMetadata(JSON.stringify(metadata));
 	if (!decoded.ok || decoded.metadata.publicationLevel !== "positive-only") {
@@ -559,11 +1125,7 @@ export function evaluatePublishedPlexGeneration(
 		result.evidence.attemptState = attempt.attemptState;
 		return result;
 	}
-	if (options.maxAgeMs !== undefined && now.getTime() - publishedAt > options.maxAgeMs) {
-		const result = unavailable("published_generation_stale");
-		result.evidence.attemptState = attempt.attemptState;
-		return result;
-	}
+	const stale = options.maxAgeMs !== undefined && now.getTime() - publishedAt > options.maxAgeMs;
 	const publishedGeneration = publishedGenerationSummary({
 		generationId: status.generationId,
 		publicationLevel: decoded.metadata.publicationLevel,
@@ -571,43 +1133,87 @@ export function evaluatePublishedPlexGeneration(
 		itemCount: status.itemCount,
 	});
 	const currentPositiveOnly =
+		!stale &&
+		decoded.metadata.version === 5 &&
+		decoded.metadata.publicationLevel === "positive-only" &&
+		decoded.metadata.completeness === "partial" &&
+		(attempt.attemptState === "partial" || attempt.attemptState === "success") &&
+		(attempt.reasonCode === null || attempt.reasonCode === "latest_attempt_partial");
+	const currentV6PositiveOnly =
+		!stale &&
+		decoded.metadata.version === 6 &&
 		decoded.metadata.publicationLevel === "positive-only" &&
 		decoded.metadata.completeness === "partial" &&
 		(attempt.attemptState === "partial" || attempt.attemptState === "success") &&
 		(attempt.reasonCode === null || attempt.reasonCode === "latest_attempt_partial");
 	const settlementMetadataMissing =
 		decoded.metadata.version < 3 && decoded.metadata.publicationLevel === "authoritative";
-	const authoritativeCurrent =
-		decoded.metadata.version === 3 &&
+	const receiptMetadataMissing = decoded.metadata.version >= 3 && decoded.metadata.version < 5;
+	const currentV6Authoritative =
+		!stale &&
+		decoded.metadata.version === 6 &&
 		decoded.metadata.publicationLevel === "authoritative" &&
 		decoded.metadata.completeness === "complete" &&
 		attempt.attemptState === "success" &&
 		attempt.reasonCode === null;
+	const authoritativeCurrent =
+		!stale &&
+		(decoded.metadata.version === 5 || decoded.metadata.version === 6) &&
+		decoded.metadata.publicationLevel === "authoritative" &&
+		decoded.metadata.completeness === "complete" &&
+		attempt.attemptState === "success" &&
+		attempt.reasonCode === null;
+	if (
+		(decoded.metadata.version === 5 || decoded.metadata.version === 6) &&
+		Date.parse(decoded.metadata.coverageReceipt.observedAt) !== publishedAt
+	) {
+		const result = unavailableForStatus("metadata_invalid", status);
+		result.evidence.attemptState = attempt.attemptState;
+		return result;
+	}
 	return {
 		available: true,
 		generationId: status.generationId,
 		publishedAt: status.lastRefreshedAt,
 		itemCount: status.itemCount,
 		metadata: decoded.metadata,
+		providerStatus: projectPlexProviderObservationStatus({
+			status,
+			metadata: decoded.metadata,
+			now: options.now,
+			maxAgeMs: options.maxAgeMs,
+		}),
 		evidence: {
-			availability: authoritativeCurrent || currentPositiveOnly ? "current" : "last-known",
+			availability:
+				authoritativeCurrent || currentPositiveOnly || currentV6PositiveOnly
+					? "current"
+					: "last-known",
 			authority: authoritativeCurrent
 				? "authoritative"
-				: currentPositiveOnly
+				: currentPositiveOnly || currentV6PositiveOnly
 					? "positive-only"
 					: "unavailable",
 			attemptState: attempt.attemptState,
 			publicationLevel: authoritativeCurrent
 				? "authoritative"
-				: currentPositiveOnly
+				: currentPositiveOnly || currentV6PositiveOnly
 					? "positive-only"
 					: "unavailable",
-			completeness: authoritativeCurrent ? "complete" : currentPositiveOnly ? "partial" : "unknown",
+			completeness:
+				authoritativeCurrent || currentV6Authoritative
+					? "complete"
+					: currentPositiveOnly || currentV6PositiveOnly
+						? "partial"
+						: "unknown",
 			reasonCodes: attempt.reasonCode
 				? [attempt.reasonCode]
-				: settlementMetadataMissing
-					? ["plex_settlement_metadata_missing"]
-					: [],
+				: stale
+					? ["published_generation_stale"]
+					: settlementMetadataMissing
+						? ["plex_settlement_metadata_missing"]
+						: receiptMetadataMissing
+							? ["receipt_missing"]
+							: [],
 			publishedGeneration,
 		},
 	};
@@ -622,13 +1228,13 @@ export function evaluatePlexMutationAuthority(
 	if (
 		published.evidence.availability !== "current" ||
 		published.evidence.authority !== "authoritative" ||
-		published.metadata.publicationLevel !== "authoritative" ||
-		published.metadata.completeness !== "complete"
+		!isCompleteAuthoritativePlexGenerationMetadata(published.metadata)
 	) {
 		const reasonCode = published.evidence.reasonCodes[0] ?? "mutation_authority_unavailable";
 		const result = unavailable(reasonCode);
 		result.evidence.attemptState = published.evidence.attemptState;
 		result.evidence.publishedGeneration = published.evidence.publishedGeneration;
+		result.providerStatus = published.providerStatus;
 		return result;
 	}
 	return {

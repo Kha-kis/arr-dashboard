@@ -69,6 +69,7 @@ model User {
   webauthnCredentials            WebAuthnCredential[]
   trashSettings                  TrashSettings?
   serviceInstances               ServiceInstance[]
+  historyCollectionLease         HistoryCollectionLease?
   userCustomFormats              UserCustomFormat[]
   qualitySizeMappings            QualitySizeMapping[]
   libraryCleanupConfigs          LibraryCleanupConfig[]
@@ -78,6 +79,7 @@ model User {
   notificationRules              NotificationRule[]
   notificationAggregationConfigs NotificationAggregationConfig[]
   labelSyncRules                 LabelSyncRule[]
+  labelSyncMutationAttempts      LabelSyncMutationAttempt[]
   autoTagRules                   AutoTagRule[]
   tmdbListCacheRows              TmdbListCache[]
   traktListCacheRows             TraktListCache[]
@@ -164,6 +166,8 @@ model ServiceInstance {
 
   // Relations
   user                    User                             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  historyObservations     HistoryObservation[]
+  historySourceStatus     HistorySourceStatus?
   tags                    ServiceInstanceTag[]
   trashSyncHistory        TrashSyncHistory[]
   trashBackups            TrashBackup[]
@@ -195,10 +199,71 @@ model ServiceInstance {
   quiActionLogs           QuiActionLog[]
   quiEventLogs            QuiEventLog[]
   inodeIndexCache         InodeIndexCache?
+  labelSyncMutationAttempts LabelSyncMutationAttempt[]
+  providerObservationRuns ProviderObservationRun[]
+  nativeInventorySnapshots ProviderNativeInventorySnapshot[]
 
   @@index([service])
   @@index([userId])
   @@index([service, enabled, identityStatus])
+}
+
+model HistoryObservation {
+  id                   String   @id @default(cuid())
+  instanceId           String
+  connectionGeneration Int
+  providerEventId      Int
+  eventAt              DateTime
+  eventTypeKey         String
+  searchText           String
+  normalizedPayload    String
+  firstObservedAt      DateTime
+  lastObservedAt       DateTime
+
+  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@unique([instanceId, connectionGeneration, providerEventId])
+  @@index([eventAt, id])
+  @@index([instanceId, connectionGeneration, eventAt, id])
+  @@index([instanceId, connectionGeneration, firstObservedAt, id])
+  @@map("history_observations")
+}
+
+model HistorySourceStatus {
+  instanceId               String   @id
+  connectionGeneration     Int
+  publishedAt              DateTime?
+  publicationMetadata      String?
+  retainedObservationCount Int      @default(0)
+  lastAttemptAt            DateTime?
+  lastAttemptResult        String?
+  lastAttemptReason        String?
+  publicationRevision      Int      @default(0)
+  retentionEpoch           Int      @default(0)
+  collectHeadNext          Boolean  @default(true)
+  nextBackfillPage         Int      @default(2)
+  activeCollectionPage     Int?
+
+  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@map("history_source_statuses")
+}
+
+model HistoryCollectionLease {
+  userId            String   @id
+  claimToken        String?  @unique
+  claimedAt         DateTime?
+  heartbeatAt       DateTime?
+  expiresAt         DateTime?
+  lastAttemptAt     DateTime?
+  lastAttemptResult String?
+  lastAttemptReason String?
+  nextSourceCursor  String?
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("history_collection_leases")
 }
 
 // Persisted inode-index snapshot per qui instance — eliminates the
@@ -1772,6 +1837,175 @@ model CacheRefreshStatus {
   @@map("cache_refresh_status")
 }
 
+model ProviderObservationRun {
+  id                   String   @id @default(cuid())
+  instanceId           String
+  provider             String
+  cacheType            String
+  authorityKey         String
+  activeSlotKey        String?  @unique
+  parentGenerationId   String?
+  targetDigest         String
+  targetCount          Int
+  connectionGeneration Int
+  identityGeneration   Int
+  state                String
+  totalUnits           Int
+  completedUnits       Int      @default(0)
+  totalWork            Int
+  completedWork        Int      @default(0)
+  nextAttemptAt        DateTime?
+  lastReasonCode       String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  completedAt          DateTime?
+  instance             ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  units                ProviderObservationUnit[]
+
+  @@index([authorityKey, createdAt])
+  @@index([instanceId, cacheType, state, nextAttemptAt])
+  @@map("provider_observation_runs")
+}
+
+/// Generation-bound native provider presence, independent of TMDB and watch data.
+model ProviderNativeInventorySnapshot {
+  id                    String    @id @default(cuid())
+  instanceId            String
+  domain                String    // "library" | "episode"
+  generationId          String?
+  observedAt            DateTime?
+  connectionGeneration  Int?
+  identityGeneration    Int?
+  scopeDigest           String?
+  contentDigest         String?
+  itemCount             Int       @default(0)
+  scopeCount            Int       @default(0)
+  lastAttemptAt         DateTime?
+  lastAttemptToken      String?
+  lastAttemptResult     String    @default("unknown")
+  lastAttemptReason     String?
+
+  instance              ServiceInstance             @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  items                 ProviderNativeInventoryItem[]
+
+  @@unique([instanceId, domain])
+  @@index([instanceId, domain, generationId])
+  @@map("provider_native_inventory_snapshots")
+}
+
+model ProviderNativeInventoryItem {
+  id              String   @id @default(cuid())
+  snapshotId      String
+  nativeId        String
+  mediaType       String   // "movie" | "series" | "episode"
+  libraryIds      String   // JSON array of provider-native library ids
+  parentNativeId  String?
+  seasonNumber    Int?
+  episodeNumber   Int?
+  title           String   @default("")
+  externalIds     String?  // JSON object of normalized TMDB/TVDB identifier arrays
+
+  snapshot        ProviderNativeInventorySnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@unique([snapshotId, nativeId])
+  @@index([snapshotId, mediaType])
+  @@map("provider_native_inventory_items")
+}
+
+model ProviderObservationUnit {
+  id                  String   @id @default(cuid())
+  runId               String
+  ordinal             Int
+  scopeKey            String
+  scopeDigest         String
+  // JSON identifiers only; never returned by routes or written to logs.
+  scopePayload        String?
+  phase               String
+  expectedTargets     Int
+  cursor              Int      @default(0)
+  expectedRawCount    Int?
+  observedRawCount    Int      @default(0)
+  state               String
+  claimToken          String?
+  attemptCount        Int      @default(0)
+  nextAttemptAt       DateTime?
+  lastReasonCode      String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  completedAt         DateTime?
+  run                 ProviderObservationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  plexEpisodeRows     PlexEpisodeObservationStage[]
+  jellyfinEpisodeRows JellyfinEpisodeObservationStage[]
+  jellyfinEpisodeExclusions JellyfinEpisodeObservationExclusion[]
+
+  @@unique([runId, ordinal])
+  @@unique([runId, scopeKey])
+  @@unique([runId, id])
+  @@index([runId, state, nextAttemptAt, ordinal])
+  @@map("provider_observation_units")
+}
+
+model PlexEpisodeObservationStage {
+  id                String   @id @default(cuid())
+  runId             String
+  unitId            String
+  showTmdbId        Int
+  parentRatingKey   String
+  seasonNumber      Int
+  episodeNumber     Int
+  ratingKey         String
+  title             String
+  watched           Boolean
+  watchedByUsers    String
+  lastWatchedAt     DateTime?
+  watchCount        Int
+  refreshedAt       DateTime
+  sourceFingerprint String
+  unit              ProviderObservationUnit @relation(fields: [runId, unitId], references: [runId, id], onDelete: Cascade)
+
+  @@unique([runId, parentRatingKey, seasonNumber, episodeNumber])
+  @@index([runId, unitId])
+  @@map("plex_episode_observation_stage")
+}
+
+model JellyfinEpisodeObservationStage {
+  id            String   @id @default(cuid())
+  runId         String
+  unitId        String
+  userKeyDigest String
+  pass          String
+  jellyfinId    String
+  seriesId      String
+  seasonNumber  Int
+  episodeNumber Int
+  title         String
+  played        Boolean
+  playCount     Int?
+  lastPlayedAt  DateTime?
+  userName      String
+  unit          ProviderObservationUnit @relation(fields: [runId, unitId], references: [runId, id], onDelete: Cascade)
+
+  @@unique([runId, pass, userKeyDigest, jellyfinId])
+  @@index([runId, unitId])
+  @@index([runId, seriesId])
+  @@map("jellyfin_episode_observation_stage")
+}
+
+model JellyfinEpisodeObservationExclusion {
+  id            String   @id @default(cuid())
+  runId         String
+  unitId        String
+  userKeyDigest String
+  pass          String
+  jellyfinId    String
+  reason        String
+  unit          ProviderObservationUnit @relation(fields: [runId, unitId], references: [runId, id], onDelete: Cascade)
+
+  @@unique([runId, pass, userKeyDigest, jellyfinId])
+  @@index([runId, unitId])
+  @@map("jellyfin_episode_observation_exclusions")
+}
+
 // ============================================================================
 // Session Snapshots
 // Periodic snapshots of Plex session data for trend analytics
@@ -1911,9 +2145,50 @@ model LabelSyncRule {
   updatedAt      DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mutationAttempts LabelSyncMutationAttempt[]
 
   @@index([userId])
   @@map("label_sync_rules")
+}
+
+/// Durable, inert desired-state mutation ledger for Jellyfin and Emby label
+/// synchronization. Provider execution is intentionally owned by later tasks.
+model LabelSyncMutationAttempt {
+  id                    String   @id @default(cuid())
+  userId                String
+  ruleId                String
+  destinationInstanceId String
+  provider              String
+  mediaType             String
+  tmdbId                Int
+  connectionGeneration  Int
+  identityGeneration    Int
+  targetItemId          String
+  libraryId             String
+  intentFingerprint     String
+  ruleFingerprint       String
+  destinationTag        String
+  activeOperationKey    String?  @unique
+  claimToken            String?
+  sendAttemptCount      Int      @default(0)
+  reconcileAttemptCount Int      @default(0)
+  requestStartedAt      DateTime?
+  lastObservedAt        DateTime?
+  completedAt           DateTime?
+  status                String
+  reasonCode            String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  owner       User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  rule        LabelSyncRule   @relation(fields: [ruleId], references: [id], onDelete: Restrict)
+  destination ServiceInstance @relation(fields: [destinationInstanceId], references: [id], onDelete: Restrict)
+
+  @@index([userId, status])
+  @@index([ruleId, status])
+  @@index([destinationInstanceId, status])
+  @@index([userId, updatedAt])
+  @@map("label_sync_mutation_attempts")
 }
 
 /// Auto-tagger rule — applies a tag to LibraryCache items matching the criteria DSL.

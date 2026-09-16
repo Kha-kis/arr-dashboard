@@ -16,9 +16,16 @@ import type {
 	LabelSyncService,
 	LabelSyncSourceService,
 } from "@arr/shared";
+import { getLabelSyncDestinationMutationCapability } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { executeLabelSyncRule } from "../lib/label-sync/execute-rule.js";
+import { createJellyfinMutationRepository } from "../lib/label-sync/jellyfin-mutation-repository.js";
+import {
+	LABEL_SYNC_RULE_CHANGED_CODE,
+	LABEL_SYNC_RULE_CHANGED_MESSAGE,
+	persistLabelSyncRunResult,
+} from "../lib/label-sync/persist-run-result.js";
 import { triggerLabelSyncForItem } from "../lib/label-sync/trigger-for-item.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
@@ -78,6 +85,7 @@ function toDto(row: {
 		destService: row.destService as LabelSyncDestService,
 		destInstanceId: row.destInstanceId,
 		destTagName: row.destTagName,
+		destinationMutationCapability: getLabelSyncDestinationMutationCapability(row.destService),
 		lastRunAt: row.lastRunAt?.toISOString() ?? null,
 		lastRunStatus: (row.lastRunStatus ?? null) as LabelSyncRunStatus | null,
 		lastRunMessage: row.lastRunMessage ?? null,
@@ -161,6 +169,13 @@ export async function registerLabelSyncRoutes(app: FastifyInstance, _opts: Fasti
 
 	app.post("/rules", async (request, reply) => {
 		const body = validateRequest(createRuleBody, request.body);
+		const destinationCapability = getLabelSyncDestinationMutationCapability(body.destService);
+		if (!destinationCapability.supported) {
+			return reply.status(409).send({
+				error: destinationCapability.message,
+				code: destinationCapability.code,
+			});
+		}
 		const userId = request.currentUser!.id;
 		await assertInstanceOwnership(app, userId, {
 			sourceService: body.sourceService,
@@ -208,6 +223,27 @@ export async function registerLabelSyncRoutes(app: FastifyInstance, _opts: Fasti
 			(body.destService as LabelSyncDestService | undefined) ??
 			(existing.destService as LabelSyncDestService);
 		const nextDestInstanceId = body.destInstanceId ?? existing.destInstanceId;
+		const nextDestTagName = body.destTagName ?? existing.destTagName;
+		const existingDestinationCapability = getLabelSyncDestinationMutationCapability(
+			existing.destService,
+		);
+		const nextDestinationCapability = getLabelSyncDestinationMutationCapability(nextDestService);
+		const destinationTupleUnchanged =
+			existing.destService === nextDestService &&
+			existing.destInstanceId === nextDestInstanceId &&
+			existing.destTagName === nextDestTagName;
+		const nextEnabled = body.enabled ?? existing.enabled;
+		if (
+			!nextDestinationCapability.supported &&
+			(existingDestinationCapability.supported ||
+				!destinationTupleUnchanged ||
+				(!existing.enabled && nextEnabled))
+		) {
+			return reply.status(409).send({
+				error: nextDestinationCapability.message,
+				code: nextDestinationCapability.code,
+			});
+		}
 
 		await assertInstanceOwnership(app, userId, {
 			sourceService: nextSourceService,
@@ -216,19 +252,23 @@ export async function registerLabelSyncRoutes(app: FastifyInstance, _opts: Fasti
 			destInstanceId: nextDestInstanceId,
 		});
 
-		const updated = await app.prisma.labelSyncRule.update({
-			where: { id },
-			data: {
-				name: body.name,
-				enabled: body.enabled,
-				sourceService: body.sourceService,
-				sourceInstanceId: body.sourceInstanceId,
-				sourceTagName: body.sourceTagName,
-				destService: body.destService,
-				destInstanceId: body.destInstanceId,
-				destTagName: body.destTagName,
-			},
-		});
+		const updated = await createJellyfinMutationRepository(app.prisma).withGuardedRuleUpdate(
+			{ userId, ruleId: id },
+			async (tx) =>
+				tx.labelSyncRule.update({
+					where: { id, userId },
+					data: {
+						name: body.name,
+						enabled: body.enabled,
+						sourceService: body.sourceService,
+						sourceInstanceId: body.sourceInstanceId,
+						sourceTagName: body.sourceTagName,
+						destService: body.destService,
+						destInstanceId: body.destInstanceId,
+						destTagName: body.destTagName,
+					},
+				}),
+		);
 
 		const response: LabelSyncRuleResponse = { rule: toDto(updated) };
 		return reply.send(response);
@@ -246,7 +286,7 @@ export async function registerLabelSyncRoutes(app: FastifyInstance, _opts: Fasti
 			return reply.status(404).send({ error: "Rule not found" });
 		}
 
-		await app.prisma.labelSyncRule.delete({ where: { id } });
+		await createJellyfinMutationRepository(app.prisma).deleteRuleGuarded({ userId, ruleId: id });
 		return reply.status(204).send();
 	});
 
@@ -287,14 +327,18 @@ export async function registerLabelSyncRoutes(app: FastifyInstance, _opts: Fasti
 			log: request.log,
 		});
 
-		const updated = await app.prisma.labelSyncRule.update({
-			where: { id },
-			data: {
-				lastRunAt: new Date(),
-				lastRunStatus: result.status,
-				lastRunMessage: result.message,
-			},
-		});
+		const updated = await persistLabelSyncRunResult(app.prisma, rule, result);
+
+		if (!updated) {
+			return reply.status(409).send({
+				error: LABEL_SYNC_RULE_CHANGED_MESSAGE,
+				code: LABEL_SYNC_RULE_CHANGED_CODE,
+				execution: {
+					status: result.status,
+					totals: result.totals,
+				},
+			});
+		}
 
 		const response: LabelSyncRuleResponse = { rule: toDto(updated) };
 		return reply.send(response);

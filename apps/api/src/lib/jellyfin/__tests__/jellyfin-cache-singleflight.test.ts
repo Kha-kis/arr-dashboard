@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import type { OwnedProviderPublicationSnapshot } from "../../services/provider-identity-guard.js";
+import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
+import type { ProviderPublicationAuthority } from "../../services/provider-identity-guard.js";
 import {
 	clearJellyfinCacheRefreshSingleFlightsForTests,
 	runJellyfinCacheRefreshSingleFlight,
+	runJellyfinCacheRefreshSingleFlightWithAttempt,
 } from "../jellyfin-cache-singleflight.js";
 
 function deferred<T>() {
@@ -15,34 +16,18 @@ function deferred<T>() {
 	return { promise, resolve, reject };
 }
 
-type CacheRefreshResult = {
-	upserted: number;
-	errors: number;
-	errorMessages: string[];
-	complete: boolean;
-	completedAt?: Date;
-	superseded?: boolean;
-};
+type RefreshResult = { complete: boolean; upserted: number };
 
-const completeResult: CacheRefreshResult = {
-	upserted: 1,
-	errors: 0,
-	errorMessages: [],
-	complete: true,
-	completedAt: new Date(),
-};
+const completeResult: RefreshResult = { complete: true, upserted: 1 };
 
-function publicationSnapshot(
-	overrides: Partial<OwnedProviderPublicationSnapshot> = {},
-): OwnedProviderPublicationSnapshot {
+function authority(
+	overrides: Partial<ProviderPublicationAuthority> = {},
+): ProviderPublicationAuthority {
 	return {
 		id: "instance-1",
 		userId: "user-1",
 		service: "JELLYFIN",
-		label: "Jellyfin",
 		baseUrl: "https://jellyfin.example.com",
-		apiKey: "decrypted-key",
-		httpAuthHeaders: {},
 		enabled: true,
 		encryptedApiKey: "encrypted-key",
 		encryptionIv: "key-iv",
@@ -56,51 +41,118 @@ function publicationSnapshot(
 	};
 }
 
-function makeObserver(current = publicationSnapshot()) {
-	const upsert = vi.fn().mockResolvedValue({});
-	const warn = vi.fn();
-	const tx = {
-		libraryCleanupConfig: {
-			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
-			findUnique: vi.fn().mockResolvedValue({ runClaimToken: null }),
-		},
-		serviceInstance: {
-			findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
-				Object.entries(where).every(
-					([key, value]) => current[key as keyof OwnedProviderPublicationSnapshot] === value,
-				)
-					? { id: current.id }
-					: null,
-			),
-		},
-		cacheRefreshStatus: { findUnique: vi.fn().mockResolvedValue(null), upsert },
-	};
-	return {
-		observer: {
-			prisma: {
-				$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
-					callback(tx),
-				),
-			} as never,
-			log: { warn },
-		},
-		upsert,
-	};
-}
-
 afterEach(() => clearJellyfinCacheRefreshSingleFlightsForTests());
 
 describe("runJellyfinCacheRefreshSingleFlight", () => {
-	it("does not coalesce an identity-only replacement with an older attempt", async () => {
-		const gate = deferred<CacheRefreshResult>();
+	it("coalesces concurrent calls with the exact authority and cache type", async () => {
+		const gate = deferred<RefreshResult>();
 		const refresh = vi.fn(() => gate.promise);
-		const { observer } = makeObserver();
+		const first = runJellyfinCacheRefreshSingleFlight(authority(), "jellyfin", refresh);
+		const second = runJellyfinCacheRefreshSingleFlight(authority(), "jellyfin", refresh);
 
-		const first = runJellyfinCacheRefreshSingleFlight(publicationSnapshot(), refresh, observer);
-		const second = runJellyfinCacheRefreshSingleFlight(
-			publicationSnapshot({ identityGeneration: 4 }),
+		expect(first).toBe(second);
+		expect(refresh).not.toHaveBeenCalled();
+		await Promise.resolve();
+		expect(refresh).toHaveBeenCalledOnce();
+		gate.resolve(completeResult);
+		expect(await first).toBe(completeResult);
+	});
+
+	it.each([
+		["id", { id: "instance-2" }],
+		["userId", { userId: "user-2" }],
+		["service", { service: "EMBY" as const }],
+		["enabled", { enabled: false }],
+		["expectedIdentity", { expectedIdentity: "server-b" }],
+		["identityStatus", { identityStatus: "MISMATCH" as const }],
+		["connectionGeneration", { connectionGeneration: 8 }],
+		["identityGeneration", { identityGeneration: 4 }],
+		["baseUrl", { baseUrl: "https://other.example.com" }],
+		["encryptedApiKey", { encryptedApiKey: "encrypted-other" }],
+		["encryptionIv", { encryptionIv: "other-iv" }],
+		["encryptedHttpAuthCredentials", { encryptedHttpAuthCredentials: "http-other" }],
+		["httpAuthEncryptionIv", { httpAuthEncryptionIv: "http-other-iv" }],
+	] as const)("partitions on authority field %s", async (_field, change) => {
+		const gate = deferred<RefreshResult>();
+		const refresh = vi.fn(() => gate.promise);
+		const first = runJellyfinCacheRefreshSingleFlight(authority(), "jellyfin", refresh);
+		const second = runJellyfinCacheRefreshSingleFlight(authority(change), "jellyfin", refresh);
+
+		expect(first).not.toBe(second);
+		await Promise.resolve();
+		expect(refresh).toHaveBeenCalledTimes(2);
+		gate.resolve(completeResult);
+		await Promise.all([first, second]);
+	});
+
+	it("partitions on cache type and cleanup authority", async () => {
+		const gate = deferred<RefreshResult>();
+		const refresh = vi.fn(() => gate.promise);
+		const instance = authority();
+		const library = runJellyfinCacheRefreshSingleFlight(instance, "jellyfin", refresh);
+		const episode = runJellyfinCacheRefreshSingleFlight(instance, "jellyfin_episode", refresh);
+		const cleanup = runJellyfinCacheRefreshSingleFlight(instance, "jellyfin", refresh, "cleanup-1");
+
+		expect(new Set([library, episode, cleanup]).size).toBe(3);
+		await Promise.resolve();
+		expect(refresh).toHaveBeenCalledTimes(3);
+		gate.resolve(completeResult);
+		await Promise.all([library, episode, cleanup]);
+	});
+
+	it("clears settled flights and preserves exact callback resolution and rejection", async () => {
+		const refresh = vi.fn().mockResolvedValue(completeResult);
+		const first = await runJellyfinCacheRefreshSingleFlight(authority(), "jellyfin", refresh);
+		const second = await runJellyfinCacheRefreshSingleFlight(authority(), "jellyfin", refresh);
+
+		expect(first).toBe(completeResult);
+		expect(second).toBe(completeResult);
+		expect(refresh).toHaveBeenCalledTimes(2);
+
+		const failure = new Error("exact rejection");
+		const rejected = vi.fn().mockRejectedValueOnce(failure).mockResolvedValue(completeResult);
+		await expect(
+			runJellyfinCacheRefreshSingleFlight(authority(), "jellyfin", rejected),
+		).rejects.toBe(failure);
+		await expect(
+			runJellyfinCacheRefreshSingleFlight(authority(), "jellyfin", rejected),
+		).resolves.toBe(completeResult);
+	});
+
+	it("accepts no plaintext-capable input and performs no status or observer writes", async () => {
+		const refresh = vi.fn().mockResolvedValue({ complete: false, upserted: 0 });
+		const input = authority();
+		expect(input).not.toHaveProperty("apiKey");
+		expect(input).not.toHaveProperty("httpAuthHeaders");
+		await expect(
+			runJellyfinCacheRefreshSingleFlight(input, "jellyfin_episode", refresh),
+		).resolves.toEqual({ complete: false, upserted: 0 });
+		expect(refresh).toHaveBeenCalledOnce();
+	});
+
+	it("partitions preclaimed flights by the exact opaque attempt marker", async () => {
+		const gate = deferred<RefreshResult>();
+		const refresh = vi.fn(() => gate.promise);
+		const firstAttempt = {
+			attemptedAt: new Date("2026-08-20T12:00:00.000Z"),
+			resultMarker: "in_progress:11111111-1111-4111-8111-111111111111",
+		};
+		const secondAttempt = {
+			...firstAttempt,
+			resultMarker: "in_progress:22222222-2222-4222-8222-222222222222",
+		};
+
+		const first = runJellyfinCacheRefreshSingleFlightWithAttempt(
+			authority(),
+			"jellyfin",
+			firstAttempt,
 			refresh,
-			observer,
+		);
+		const second = runJellyfinCacheRefreshSingleFlightWithAttempt(
+			authority(),
+			"jellyfin",
+			secondAttempt,
+			refresh,
 		);
 
 		expect(first).not.toBe(second);
@@ -110,132 +162,12 @@ describe("runJellyfinCacheRefreshSingleFlight", () => {
 		await Promise.all([first, second]);
 	});
 
-	it("coalesces concurrent callers with the exact same authority", async () => {
-		const gate = deferred<CacheRefreshResult>();
-		const refresh = vi.fn(() => gate.promise);
-		const { observer } = makeObserver();
-		const instance = publicationSnapshot();
-
-		const first = runJellyfinCacheRefreshSingleFlight(instance, refresh, observer);
-		const second = runJellyfinCacheRefreshSingleFlight(instance, refresh, observer);
-
-		expect(first).toBe(second);
-		await Promise.resolve();
-		expect(refresh).toHaveBeenCalledOnce();
-		gate.resolve(completeResult);
-		await Promise.all([first, second]);
+	it("exposes exactly the plaintext-free authority type as its first parameter", () => {
+		expectTypeOf<
+			Parameters<typeof runJellyfinCacheRefreshSingleFlight>[0]
+		>().toEqualTypeOf<ProviderPublicationAuthority>();
+		// @ts-expect-error Plaintext credentials are intentionally excluded from authority.
+		const invalidAuthority: ProviderPublicationAuthority = { ...authority(), apiKey: "secret" };
+		void invalidAuthority;
 	});
-
-	it("does not coalesce scheduler work with cleanup-owned publication", async () => {
-		const gate = deferred<CacheRefreshResult>();
-		const refresh = vi.fn(() => gate.promise);
-		const { observer } = makeObserver();
-		const instance = publicationSnapshot();
-
-		const scheduler = runJellyfinCacheRefreshSingleFlight(instance, refresh, observer);
-		const cleanup = runJellyfinCacheRefreshSingleFlight(instance, refresh, observer, {
-			cleanupRunClaimToken: "cleanup-run",
-		});
-
-		expect(scheduler).not.toBe(cleanup);
-		await Promise.resolve();
-		expect(refresh).toHaveBeenCalledTimes(2);
-		gate.resolve(completeResult);
-		await Promise.all([scheduler, cleanup]);
-	});
-
-	it("allows a new attempt after the previous refresh settles", async () => {
-		const refresh = vi.fn().mockResolvedValue(completeResult);
-		const { observer } = makeObserver();
-		const instance = publicationSnapshot();
-
-		await runJellyfinCacheRefreshSingleFlight(instance, refresh, observer);
-		await Promise.resolve();
-		await runJellyfinCacheRefreshSingleFlight(instance, refresh, observer);
-
-		expect(refresh).toHaveBeenCalledTimes(2);
-	});
-
-	it("records one dual-generation failure for coalesced incomplete callers", async () => {
-		const gate = deferred<CacheRefreshResult>();
-		const refresh = vi.fn(() => gate.promise);
-		const { observer, upsert } = makeObserver();
-		const instance = publicationSnapshot();
-		const first = runJellyfinCacheRefreshSingleFlight(instance, refresh, observer);
-		const second = runJellyfinCacheRefreshSingleFlight(instance, refresh, observer);
-
-		gate.resolve({
-			...completeResult,
-			errors: 1,
-			errorMessages: ["Jellyfin request timed out"],
-			complete: false,
-			completedAt: undefined,
-		});
-		await Promise.all([first, second]);
-
-		expect(upsert).toHaveBeenCalledOnce();
-		expect(upsert).toHaveBeenCalledWith(
-			expect.objectContaining({
-				create: expect.objectContaining({ connectionGeneration: 7, identityGeneration: 3 }),
-			}),
-		);
-	});
-
-	it("preserves a thrown refresh rejection after recording failure", async () => {
-		const failure = new Error("upstream connection reset");
-		const refresh = vi.fn().mockRejectedValue(failure);
-		const { observer, upsert } = makeObserver();
-
-		await expect(
-			runJellyfinCacheRefreshSingleFlight(publicationSnapshot(), refresh, observer),
-		).rejects.toBe(failure);
-		expect(upsert).toHaveBeenCalledOnce();
-	});
-
-	it("does not record a superseded result as a failure", async () => {
-		const refresh = vi.fn().mockResolvedValue({
-			...completeResult,
-			complete: false,
-			completedAt: undefined,
-			superseded: true,
-		});
-		const { observer, upsert } = makeObserver();
-
-		await runJellyfinCacheRefreshSingleFlight(publicationSnapshot(), refresh, observer);
-
-		expect(upsert).not.toHaveBeenCalled();
-	});
-
-	it.each(["incomplete", "rejected"] as const)(
-		"does not let an old-identity %s degrade a newer success",
-		async (outcome) => {
-			const oldGate = deferred<CacheRefreshResult>();
-			const oldRefresh = vi.fn(() => oldGate.promise);
-			const newRefresh = vi.fn().mockResolvedValue(completeResult);
-			const newer = publicationSnapshot({ identityGeneration: 4 });
-			const { observer, upsert } = makeObserver(newer);
-
-			const oldAttempt = runJellyfinCacheRefreshSingleFlight(
-				publicationSnapshot(),
-				oldRefresh,
-				observer,
-			);
-			await runJellyfinCacheRefreshSingleFlight(newer, newRefresh, observer);
-			if (outcome === "incomplete") {
-				oldGate.resolve({
-					...completeResult,
-					errors: 1,
-					errorMessages: ["old endpoint timed out"],
-					complete: false,
-					completedAt: undefined,
-				});
-				await oldAttempt;
-			} else {
-				oldGate.reject(new Error("old endpoint reset"));
-				await expect(oldAttempt).rejects.toThrow("old endpoint reset");
-			}
-
-			expect(upsert).not.toHaveBeenCalled();
-		},
-	);
 });

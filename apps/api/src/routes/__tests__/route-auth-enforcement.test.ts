@@ -49,7 +49,7 @@ function createPrismaStub() {
 		}
 	>();
 
-	return {
+	const prisma = {
 		_sessions: sessions,
 		session: {
 			create: vi.fn(async ({ data }: any) => {
@@ -96,6 +96,12 @@ function createPrismaStub() {
 		serviceInstance: {
 			findMany: vi.fn().mockResolvedValue([]),
 		},
+	};
+	return {
+		...prisma,
+		$transaction: vi.fn(async (callback: (tx: typeof prisma) => Promise<unknown>) =>
+			callback(prisma),
+		),
 	};
 }
 

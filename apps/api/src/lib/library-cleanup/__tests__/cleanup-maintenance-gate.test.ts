@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { withTimeout } from "../../utils/delay.js";
 import {
 	acquireCleanupOperationGuard,
+	acquireIndependentCleanupOperationGuard,
 	CleanupMaintenanceConflictError,
-	withIndependentCleanupOperationGuard,
 	withCleanupMaintenanceGuard,
 	withCleanupOperationGuard,
 	withExclusiveCleanupOperationGuard,
+	withIndependentCleanupOperationGuard,
 } from "../cleanup-maintenance-gate.js";
-import { withTimeout } from "../../utils/delay.js";
 
 describe.sequential("cleanup maintenance gate", () => {
 	it("rejects restore while a cleanup-sensitive operation is active", async () => {
@@ -81,6 +82,18 @@ describe.sequential("cleanup maintenance gate", () => {
 		releaseChild();
 		await child;
 		await expect(withCleanupMaintenanceGuard(async () => "restored")).resolves.toBe("restored");
+	});
+
+	it("supports a synchronously acquired independent lease for deferred work", async () => {
+		const release = acquireIndependentCleanupOperationGuard();
+
+		await expect(withCleanupMaintenanceGuard(async () => undefined)).rejects.toBeInstanceOf(
+			CleanupMaintenanceConflictError,
+		);
+
+		release();
+		release();
+		await expect(withCleanupMaintenanceGuard(async () => "available")).resolves.toBe("available");
 	});
 
 	it("retains an independent lease when a non-cancelling timeout loses the race", async () => {
