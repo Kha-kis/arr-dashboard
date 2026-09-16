@@ -64,13 +64,21 @@ export const groupHistoryItems = (
 		if (!key) ungrouped.push(item);
 		else groups.set(key, [...(groups.get(key) ?? []), item]);
 	}
+	for (const group of groups.values())
+		group.sort((a, b) => Date.parse(b.eventAt) - Date.parse(a.eventAt));
 	return [
 		...Array.from(groups.values()).map((group) => ({
 			items: group,
 			downloadId: group[0]?.downloadId,
 		})),
 		...ungrouped.map((item) => ({ items: [item], downloadId: item.downloadId })),
-	];
+	].sort((a, b) => {
+		const newestA = a.items[0];
+		const newestB = b.items[0];
+		return (
+			(newestB ? Date.parse(newestB.eventAt) : 0) - (newestA ? Date.parse(newestA.eventAt) : 0)
+		);
+	});
 };
 export const buildHistoryExternalLink = (
 	item: HistoryItemV2,

@@ -65,4 +65,43 @@ describe("History v2 composition", () => {
 		expect(groups).toHaveLength(1);
 		expect(groups[0]?.items).toHaveLength(2);
 	});
+
+	it("keeps grouped and ungrouped events in newest-first order", () => {
+		const groups = groupHistoryItems(
+			[
+				item("newest", "2026-09-02T12:00:00.000Z"),
+				item("import", "2026-09-02T11:00:00.000Z", { downloadId: "download-a" }),
+				item("middle", "2026-09-02T10:00:00.000Z", { downloadId: " " }),
+				item("grab", "2026-09-02T09:00:00.000Z", { downloadId: "download-a" }),
+				item("older", "2026-09-01T12:00:00.000Z", { downloadId: "download-b" }),
+				item("oldest", "2026-09-01T11:00:00.000Z"),
+			],
+			true,
+		);
+		expect(groups.map((group) => group.items.map(({ id }) => id))).toEqual([
+			["newest"],
+			["import", "grab"],
+			["middle"],
+			["older"],
+			["oldest"],
+		]);
+	});
+
+	it("orders each group by its newest event without reordering the source", () => {
+		const items = [
+			item("grab", "2026-09-02T09:00:00.000Z", { downloadId: "download-a" }),
+			item("middle", "2026-09-02T10:00:00.000Z"),
+			item("import", "2026-09-02T11:00:00.000Z", { downloadId: "download-a" }),
+		];
+		expect(groupHistoryItems(items, true).map((group) => group.items.map(({ id }) => id))).toEqual([
+			["import", "grab"],
+			["middle"],
+		]);
+		expect(items.map(({ id }) => id)).toEqual(["grab", "middle", "import"]);
+		expect(groupHistoryItems(items, false).map((group) => group.items[0]?.id)).toEqual([
+			"grab",
+			"middle",
+			"import",
+		]);
+	});
 });
