@@ -2604,8 +2604,11 @@ async function loadOwnedEpisodeGenerationObservation(
 		const parentBefore = await loadOwnedPublishedGenerationObservation(prisma, instance, options);
 		if (!parentBefore.available) return unavailable("parent_generation_unavailable");
 		parentProviderStatus = parentBefore.providerStatus;
-		if (hasCurrentPositiveEpisodeReaderParentAuthority(parentBefore)) {
-			const positive = await loadPositiveEpisodeEvidence(prisma, {
+		// Health observations retain validated last-known data during parent work.
+		// The display reader preserves unavailable mutation authority and avoids
+		// treating a positive envelope as malformed authoritative metadata.
+		if (hasCurrentPositiveEpisodeReaderParentAuthority(parentBefore, true)) {
+			const positive = await loadPositiveEpisodeDisplayEvidence(prisma, {
 				...input,
 				userId: instance.userId,
 				instanceId: instance.id,

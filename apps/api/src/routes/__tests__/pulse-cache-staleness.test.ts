@@ -1006,21 +1006,24 @@ describe("GET /pulse — cache.refresh action emission", () => {
 		expect(JSON.stringify(item)).not.toContain(token);
 	});
 
-	it("does not let an older Plex in-progress marker hide a newer current publication", async () => {
-		const publishedAt = new Date();
-		cacheStatuses = [
-			makeRow({
-				id: "older-in-progress",
-				lastRefreshedAt: publishedAt,
-				lastAttemptAt: new Date(publishedAt.getTime() - 1),
-				lastAttemptResult: "in_progress",
-			}),
-		];
+	it.each(["in_progress", "in_progress:older-private-attempt"])(
+		"does not let older Plex marker %s hide a newer current publication",
+		async (lastAttemptResult) => {
+			const publishedAt = new Date();
+			cacheStatuses = [
+				makeRow({
+					id: "older-in-progress",
+					lastRefreshedAt: publishedAt,
+					lastAttemptAt: new Date(publishedAt.getTime() - 1),
+					lastAttemptResult,
+				}),
+			];
 
-		const body = JSON.parse((await injectAuthenticated("GET", "/pulse")).payload);
+			const body = JSON.parse((await injectAuthenticated("GET", "/pulse")).payload);
 
-		expect(body.items).toEqual([]);
-	});
+			expect(body.items).toEqual([]);
+		},
+	);
 
 	it("excludes Tautulli from raw status rows and reads each owned instance once", async () => {
 		cacheStatuses = [makeRow({ id: "taut-row", cacheType: "tautulli", instanceId: "inst-taut" })];
@@ -1321,6 +1324,42 @@ describe("GET /pulse — cache.refresh action emission", () => {
 			label: "Refresh now",
 		});
 	});
+
+	it.each([0, 1000])(
+		"reports a current opaque episode attempt as collecting with unavailable parent evidence (age %s)",
+		async (elapsed) => {
+			const started = new Date();
+			const token = "in_progress:private-episode-attempt";
+			cacheStatuses = [
+				makeRow({
+					id: "waiting-episode",
+					cacheType: "plex_episode",
+					lastRefreshedAt: new Date(started.getTime() - elapsed),
+					lastAttemptAt: started,
+					lastAttemptResult: token,
+				}),
+			];
+			evidenceMocks.getPublishedEpisodeGenerationObservation.mockResolvedValueOnce({
+				available: false,
+				instanceId: "inst-1",
+				evidence: {
+					availability: "unavailable",
+					authority: "unavailable",
+					attemptState: "unknown",
+					publicationLevel: "unavailable",
+					completeness: "unknown",
+					reasonCodes: ["parent_generation_unavailable"],
+				},
+			});
+			const body = JSON.parse((await injectAuthenticated("GET", "/pulse")).payload);
+			const item = body.items.find((candidate: { id: string }) =>
+				candidate.id.endsWith("waiting-episode"),
+			);
+			expect(item).toMatchObject({ id: "cache-refreshing-waiting-episode", severity: "info" });
+			expect(item.action).toBeUndefined();
+			expect(JSON.stringify(item)).not.toContain(token);
+		},
+	);
 
 	it("reports a successful-looking episode status as unavailable when its parent is unavailable", async () => {
 		cacheStatuses = [

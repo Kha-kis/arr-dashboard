@@ -2,6 +2,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+	nativeRefresh: vi.fn(),
 	beginAttempt: vi.fn(),
 	finishAttempt: vi.fn(),
 	createSnapshot: vi.fn(),
@@ -18,6 +19,10 @@ const mocks = vi.hoisted(() => ({
 	readParents: vi.fn(),
 	readUnit: vi.fn(),
 	guardPublication: vi.fn(),
+}));
+
+vi.mock("../provider-observation/native-inventory-refresh.js", () => ({
+	refreshNativeInventory: mocks.nativeRefresh,
 }));
 
 vi.mock("../services/provider-cache-status.js", () => ({
@@ -133,6 +138,7 @@ let latestRunTargetDigest = "d".repeat(64);
 let latestRunAuthorityKey = "uninitialized";
 
 beforeEach(() => {
+	mocks.nativeRefresh.mockReset().mockResolvedValue({ status: "published" });
 	mocks.beginAttempt.mockReset().mockResolvedValue(attempt);
 	mocks.finishAttempt.mockReset().mockResolvedValue("recorded");
 	mocks.createSnapshot.mockReset().mockReturnValue(snapshot);
@@ -329,6 +335,37 @@ describe("Plex refresh preparation authority", () => {
 });
 
 describe("Plex episode durable orchestration", () => {
+	it.each([
+		{ exhausted: false, finish: "recorded", retains: true },
+		{ exhausted: true, finish: "recorded", retains: false },
+		{ exhausted: true, finish: "superseded", retains: false },
+		{ exhausted: true, finish: "failed", retains: true },
+	])(
+		"retains ownership after a unit failure only while the attempt remains live: %j",
+		async ({ exhausted, finish, retains }) => {
+			mocks.collect.mockResolvedValue({ complete: false, reasonCode: "provider-unavailable" });
+			mocks.hasExhaustedRetries.mockResolvedValue(exhausted);
+			mocks.finishAttempt.mockResolvedValue(finish);
+			const prisma = {
+				serviceInstance: { findFirst: vi.fn().mockResolvedValue(instance) },
+				providerObservationUnit: { findFirst: mocks.readUnit },
+				providerObservationRun: {
+					findUnique: vi.fn().mockResolvedValue({
+						state: "failed",
+						completedUnits: 0,
+						totalUnits: 2,
+						completedWork: 0,
+						totalWork: 2,
+						lastReasonCode: "provider-unavailable",
+					}),
+				},
+			};
+			const result = await runNextPlexEpisodeWorkItem({ ...context, prisma: prisma as never });
+			expect(mocks.failUnit).toHaveBeenCalledOnce();
+			expect(result.continuationAttempt).toEqual(retains ? attempt : undefined);
+		},
+	);
+
 	it("uses the production runner factory seam without replacing durable claim or stage mechanics", async () => {
 		const createClient = vi.fn(() => ({ getEpisodes: vi.fn().mockResolvedValue([]) }) as never);
 		const createParentAuthority = vi.fn(() => ({ readPositiveEpisodeParents: mocks.readParents }));
@@ -348,7 +385,7 @@ describe("Plex episode durable orchestration", () => {
 			},
 		};
 
-		await runner({ ...context, prisma: prisma as never });
+		const result = await runner({ ...context, prisma: prisma as never });
 
 		expect(createParentAuthority).toHaveBeenCalledWith({ prisma, log: context.log });
 		expect(createClient).toHaveBeenCalledOnce();
@@ -356,6 +393,31 @@ describe("Plex episode durable orchestration", () => {
 		expect(mocks.claimUnit).toHaveBeenCalledOnce();
 		expect(mocks.stage).toHaveBeenCalledOnce();
 		expect(mocks.stage.mock.calls[0]?.[0]).toEqual({ transaction: true });
+		expect(result).toMatchObject({ continuationAttempt: attempt });
+	});
+
+	it("does not finish a foreign attempt when its borrowed run has exhausted retries", async () => {
+		mocks.claimAttempt.mockResolvedValue({ status: "already-running", attempt });
+		mocks.collect.mockResolvedValue({ complete: false, reasonCode: "provider-unavailable" });
+		mocks.hasExhaustedRetries.mockResolvedValue(true);
+		const prisma = {
+			serviceInstance: { findFirst: vi.fn().mockResolvedValue(instance) },
+			providerObservationUnit: { findFirst: mocks.readUnit },
+			providerObservationRun: {
+				findUnique: vi.fn().mockResolvedValue({
+					state: "failed",
+					completedUnits: 0,
+					totalUnits: 2,
+					completedWork: 0,
+					totalWork: 2,
+					lastReasonCode: "provider-unavailable",
+				}),
+			},
+		};
+		const result = await runNextPlexEpisodeWorkItem({ ...context, prisma: prisma as never });
+		expect(mocks.failUnit).toHaveBeenCalledOnce();
+		expect(mocks.finishAttempt).not.toHaveBeenCalled();
+		expect(result.continuationAttempt).toBeUndefined();
 	});
 
 	it("re-reads the current owned service before decrypt/I/O and finalizes a no-claim restart", async () => {
@@ -572,8 +634,10 @@ describe("Plex episode durable orchestration", () => {
 
 		expect(result).toMatchObject({
 			complete: false,
-			errors: 1,
+			errors: 0,
+			coverageIncomplete: true,
 			retryCategory: "parent-refresh-in-progress",
+			continuationAttempt: attempt,
 		});
 	});
 
@@ -613,43 +677,55 @@ describe("Plex episode durable orchestration", () => {
 		);
 	});
 
-	it("settles and bounds a retry when live identity is temporarily unavailable at finalization", async () => {
-		mocks.claimUnit.mockResolvedValue(null);
-		mocks.guardPublication.mockRejectedValue(
-			new ProviderIdentityGuardError("IDENTITY_UNAVAILABLE", "generic unavailable"),
-		);
-		const prisma = {
-			serviceInstance: { findFirst: vi.fn().mockResolvedValue(instance) },
-			providerObservationRun: {
-				findUnique: vi.fn().mockResolvedValue({
-					state: "running",
-					completedUnits: 1,
-					totalUnits: 1,
-					completedWork: 1,
-					totalWork: 1,
-					lastReasonCode: null,
-				}),
-			},
-		};
+	it.each([true, false])(
+		"bounds an unavailable finalization identity and settles only an owned attempt (owned=%s)",
+		async (owned) => {
+			mocks.claimAttempt.mockResolvedValue({
+				status: owned ? "acquired" : "already-running",
+				attempt,
+			});
+			mocks.claimUnit.mockResolvedValue(null);
+			mocks.guardPublication.mockRejectedValue(
+				new ProviderIdentityGuardError("IDENTITY_UNAVAILABLE", "generic unavailable"),
+			);
+			const prisma = {
+				serviceInstance: { findFirst: vi.fn().mockResolvedValue(instance) },
+				providerObservationRun: {
+					findUnique: vi.fn().mockResolvedValue({
+						state: "running",
+						completedUnits: 1,
+						totalUnits: 1,
+						completedWork: 1,
+						totalWork: 1,
+						lastReasonCode: null,
+					}),
+				},
+			};
 
-		const result = await refreshOwnedPlexEpisodeCache({ ...context, prisma: prisma as never });
+			const result = await refreshOwnedPlexEpisodeCache({ ...context, prisma: prisma as never });
 
-		expect(result).toMatchObject({
-			complete: false,
-			errors: 1,
-			retryCategory: "identity-unavailable",
-		});
-		expect(mocks.finishAttempt).toHaveBeenCalledWith(
-			prisma,
-			"plex_episode",
-			"provider-unavailable",
-			authority,
-			attempt,
-			context.log,
-			{},
-			expect.any(Function),
-		);
-	});
+			expect(result).toMatchObject({
+				complete: false,
+				errors: 1,
+				retryCategory: "identity-unavailable",
+			});
+			if (!owned) {
+				expect(mocks.finishAttempt).not.toHaveBeenCalled();
+				expect(result.continuationAttempt).toBeUndefined();
+				return;
+			}
+			expect(mocks.finishAttempt).toHaveBeenCalledWith(
+				prisma,
+				"plex_episode",
+				"provider-unavailable",
+				authority,
+				attempt,
+				context.log,
+				{},
+				expect.any(Function),
+			);
+		},
+	);
 
 	it("does not retain a claimed unit after the live identity guard supersedes collection", async () => {
 		mocks.guardPublication.mockRejectedValue(
@@ -703,7 +779,68 @@ describe("Plex episode durable orchestration", () => {
 		expect(result).toMatchObject({ complete: false, superseded: true });
 	});
 
-	it("terminalizes only an acquired attempt when parent authority is unavailable", async () => {
+	it("keeps an acquired attempt in progress while a valid current parent refresh runs", async () => {
+		mocks.readParents.mockResolvedValue({
+			available: false,
+			evidence: {
+				availability: "last-known",
+				authority: "unavailable",
+				attemptState: "in_progress",
+				publicationLevel: "unavailable",
+				completeness: "unknown",
+				reasonCodes: ["latest_attempt_in_progress"],
+				publishedGeneration: {
+					generationId: "parent-generation",
+					publicationLevel: "authoritative",
+					publishedAt: "2026-08-20T11:00:00.000Z",
+					itemCount: 1,
+				},
+			},
+		});
+		const result = await refreshOwnedPlexEpisodeCache(context);
+		expect(mocks.finishAttempt).not.toHaveBeenCalled();
+		expect(mocks.failUnit).not.toHaveBeenCalled();
+		expect(mocks.createRun).not.toHaveBeenCalled();
+		expect(mocks.collect).not.toHaveBeenCalled();
+		expect(mocks.stage).not.toHaveBeenCalled();
+		expect(result).toMatchObject({ errors: 0, coverageIncomplete: true });
+		expect(result).toMatchObject({
+			retryCategory: "parent-refresh-in-progress",
+		});
+		expect(result).toMatchObject({ continuationAttempt: attempt });
+	});
+
+	it("does not grant a losing already-running caller continuation ownership", async () => {
+		mocks.claimAttempt.mockResolvedValue({ status: "already-running", attempt });
+		mocks.readParents.mockResolvedValue({
+			available: false,
+			evidence: {
+				availability: "last-known",
+				authority: "unavailable",
+				attemptState: "in_progress",
+				publicationLevel: "unavailable",
+				completeness: "unknown",
+				reasonCodes: ["latest_attempt_in_progress"],
+				publishedGeneration: {
+					generationId: "parent-generation",
+					publicationLevel: "authoritative",
+					publishedAt: "2026-08-20T11:00:00.000Z",
+					itemCount: 1,
+				},
+			},
+		});
+
+		const result = await runNextPlexEpisodeWorkItem(context);
+
+		expect(result).toMatchObject({
+			state: "running",
+			retryCategory: "parent-refresh-in-progress",
+		});
+		expect(result).not.toHaveProperty("continuationAttempt");
+		expect(mocks.finishAttempt).not.toHaveBeenCalled();
+	});
+
+	it("keeps bounded failure behavior for malformed parent in-progress evidence", async () => {
 		mocks.readParents.mockResolvedValue({
 			available: false,
 			evidence: { attemptState: "in_progress" },
@@ -718,7 +855,10 @@ describe("Plex episode durable orchestration", () => {
 			context.log,
 			{},
 		);
-		expect(result).toMatchObject({ retryCategory: "parent-refresh-in-progress" });
+		expect(result).toMatchObject({
+			state: "failed",
+			retryCategory: "parent-refresh-unavailable",
+		});
 	});
 
 	it("retries unavailable parent evidence while the parent scheduler can recover", async () => {
@@ -773,5 +913,37 @@ describe("Plex episode durable orchestration", () => {
 			}),
 		);
 		expect(mocks.finalize).toHaveBeenCalledWith(expect.objectContaining({ attempt }));
+	});
+});
+
+describe("native Plex inventory companion", () => {
+	it("publishes presence before an unavailable canonical watch refresh", async () => {
+		mocks.refreshCacheWithAttempt.mockResolvedValue({
+			complete: false,
+			upserted: 0,
+			errors: 1,
+			errorMessages: ["provider-unavailable"],
+		});
+		const result = await refreshOwnedPlexCacheWithAttempt(context, attempt);
+		expect(result).toMatchObject({ complete: false, nativeInventoryStatus: "published" });
+		expect(mocks.nativeRefresh).toHaveBeenCalledWith(
+			expect.objectContaining({
+				instance: snapshot,
+				cacheType: "plex",
+				attempt,
+				domains: ["library", "episode"],
+			}),
+		);
+		expect(mocks.nativeRefresh.mock.invocationCallOrder[0]).toBeLessThan(
+			mocks.refreshCacheWithAttempt.mock.invocationCallOrder[0]!,
+		);
+	});
+	it("retains canonical success while exposing a native failure for recovery", async () => {
+		mocks.nativeRefresh.mockResolvedValue({ status: "failed" });
+		expect(await refreshOwnedPlexCache(context)).toMatchObject({
+			complete: true,
+			upserted: 1,
+			nativeInventoryStatus: "failed",
+		});
 	});
 });

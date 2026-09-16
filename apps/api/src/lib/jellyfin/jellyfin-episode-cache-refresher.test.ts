@@ -532,7 +532,9 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 				clientVersion: "test",
 			});
 			if (kind === "status")
-				vi.mocked(state.prisma.cacheRefreshStatus.findUnique).mockRejectedValueOnce(error);
+				vi.mocked(state.prisma.cacheRefreshStatus.findUnique)
+					.mockRejectedValueOnce(error)
+					.mockRejectedValueOnce(error);
 			else vi.mocked(state.prisma.jellyfinCache.findMany).mockRejectedValueOnce(error);
 			const result = await refreshOwnedJellyfinEpisodeCache({
 				prisma: state.prisma,
@@ -711,6 +713,117 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		});
 		expect(client.getLibraries).toHaveBeenCalled();
 		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledTimes(2);
+		expect(durable.finalize).toHaveBeenCalledOnce();
+	});
+
+	it("defers admission while the current parent library refresh is in progress", async () => {
+		const state = ownedFixture("JELLYFIN");
+		configureDurableRun(state);
+		state.parentStatus.lastAttemptAt = new Date("2026-09-08T12:00:00.000Z");
+		state.parentStatus.lastAttemptResult = "in_progress:00000000-0000-4000-8000-000000000001";
+		const client = publication.client!;
+
+		const result = await refreshOwnedJellyfinEpisodeCache({
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+			now: new Date("2026-09-08T12:01:00.000Z"),
+		});
+
+		expect(result).toMatchObject({
+			complete: false,
+			errors: 0,
+			progressed: false,
+			parentRefreshPending: true,
+		});
+		expect(durable.finishFailure).not.toHaveBeenCalled();
+		expect(
+			(client as unknown as { getUsers: ReturnType<typeof vi.fn> }).getUsers,
+		).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"malformed marker",
+		"future timestamp",
+		"changed generation",
+		"disabled owner",
+		"changed owner",
+	])("does not defer for a %s parent status", async (scenario) => {
+		const state = ownedFixture("JELLYFIN");
+		configureDurableRun(state);
+		state.parentStatus.lastAttemptAt = new Date(
+			scenario === "future timestamp" ? "2026-09-08T12:02:00.000Z" : "2026-09-08T12:00:00.000Z",
+		);
+		state.parentStatus.lastAttemptResult =
+			scenario === "malformed marker"
+				? "in_progress:not-a-uuid"
+				: "in_progress:00000000-0000-4000-8000-000000000001";
+		if (scenario === "changed generation") state.parentStatus.connectionGeneration = 8;
+		if (scenario === "disabled owner" || scenario === "changed owner")
+			(state.prisma.serviceInstance.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+		const result = await refreshOwnedJellyfinEpisodeCache({
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+			now: new Date("2026-09-08T12:01:00.000Z"),
+		});
+
+		expect(result.parentRefreshPending).toBeUndefined();
+	});
+
+	it("retains a staged run when the parent starts refreshing during final verification", async () => {
+		const state = ownedFixture("JELLYFIN");
+		configureDurableRun(state, 0);
+		state.parentStatus.lastRefreshedAt = new Date("2026-09-08T12:00:00.000Z");
+		state.parentStatus.lastAttemptAt = new Date("2026-09-08T12:00:00.000Z");
+		const parentPendingStatus = {
+			...state.parentStatus,
+			lastAttemptAt: new Date("2026-09-08T12:00:00.000Z"),
+			lastAttemptResult: "in_progress:00000000-0000-4000-8000-000000000001",
+		};
+		let statusReads = 0;
+		vi.mocked(state.prisma.cacheRefreshStatus.findUnique).mockImplementation((async () => {
+			statusReads += 1;
+			return (statusReads === 7 ? parentPendingStatus : state.parentStatus) as never;
+		}) as never);
+		const context = {
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+			now: new Date("2026-09-08T12:01:00.000Z"),
+		};
+
+		await refreshOwnedJellyfinEpisodeCache(context);
+		await refreshOwnedJellyfinEpisodeCache(context);
+		const result = await refreshOwnedJellyfinEpisodeCache(context);
+
+		expect(result).toMatchObject({
+			complete: false,
+			errors: 0,
+			progressed: false,
+			parentRefreshPending: true,
+		});
+		expect(durable.finalize).not.toHaveBeenCalled();
+		expect(durable.invalidate).not.toHaveBeenCalled();
+		expect(durable.run).toMatchObject({ state: "running", completedUnits: 2, totalUnits: 2 });
+		expect(durable.finishFailure).toHaveBeenCalledWith(
+			state.prisma,
+			"jellyfin_episode",
+			"collection-deferred",
+			expect.anything(),
+			expect.anything(),
+			log,
+			expect.anything(),
+		);
+
+		await expect(refreshOwnedJellyfinEpisodeCache(context)).resolves.toMatchObject({
+			complete: true,
+			errors: 0,
+		});
 		expect(durable.finalize).toHaveBeenCalledOnce();
 	});
 

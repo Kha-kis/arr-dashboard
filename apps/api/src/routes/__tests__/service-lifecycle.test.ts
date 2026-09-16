@@ -244,9 +244,14 @@ function createPrismaStub() {
 		plexCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		plexEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		tautulliCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		providerNativeInventorySnapshot: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		cacheRefreshStatus: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		labelSyncMutationAttempt: {
+			findMany: vi.fn().mockResolvedValue([]),
+			deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+		},
 		historyObservation,
 		historySourceStatus,
 		historyCollectionLease: {

@@ -159,6 +159,7 @@ vi.mock("../library-content", () => ({
 }));
 vi.mock("../library-header", () => ({ LibraryHeader: () => null }));
 vi.mock("../library-insights-section", () => ({ LibraryInsightsSection: () => null }));
+vi.mock("../provider-native-inventory-panel", () => ({ ProviderNativeInventoryPanel: () => null }));
 
 import { LibraryClient } from "../library-client";
 
@@ -272,7 +273,7 @@ function progressResponse(
 	progress: SeriesProgressResponse["progress"] = {},
 	providerStatus?: ProviderObservationStatusEnvelope,
 ): Record<string, unknown> {
-	return { data: { progress, providerStatus }, error: null, isError: false };
+	return { data: { configured: true, progress, providerStatus }, error: null, isError: false };
 }
 
 beforeEach(() => {
@@ -457,7 +458,7 @@ describe("Library provider observation", () => {
 		queryState.libraryItem = seriesLibraryItem;
 		setQueries({
 			jellyfinProgress: progressResponse(
-				{ 202: { watched: 2, total: 4, percent: 50 } },
+				{ 202: { status: "exact", watched: 2, total: 4, percent: 50, watchedSemantics: "exact" } },
 				status("last-known"),
 			),
 		});
@@ -466,7 +467,7 @@ describe("Library provider observation", () => {
 
 		expect(screen.getByText(/Showing last-known media-server data/i)).toBeInTheDocument();
 		expect(queryState.contentProps?.seriesProgressMap).toMatchObject({
-			202: { watched: 2, total: 4, percent: 50 },
+			202: { jellyfin: { status: "exact", watched: 2, total: 4, percent: 50 } },
 		});
 		expect(queryState.progressHook).toHaveBeenCalledWith([202]);
 	});
@@ -536,8 +537,12 @@ describe("Library provider observation", () => {
 					labels: [],
 				},
 			}),
-			jellyfinProgress: progressResponse({ 202: { watched: 1, total: 2, percent: 50 } }),
-			plexProgress: progressResponse({ 202: { watched: 2, total: 2, percent: 100 } }),
+			jellyfinProgress: progressResponse({
+				202: { status: "exact", watched: 1, total: 2, percent: 50, watchedSemantics: "exact" },
+			}),
+			plexProgress: progressResponse({
+				202: { status: "exact", watched: 2, total: 2, percent: 100, watchedSemantics: "exact" },
+			}),
 		});
 
 		render(<LibraryClient />);
@@ -552,7 +557,10 @@ describe("Library provider observation", () => {
 			},
 		});
 		expect(queryState.contentProps?.seriesProgressMap).toMatchObject({
-			202: { watched: 2, percent: 100 },
+			202: {
+				plex: { status: "exact", watched: 2, percent: 100 },
+				jellyfin: { status: "exact", watched: 1, percent: 50 },
+			},
 		});
 		expect(queryState.progressHook).toHaveBeenCalledWith([202]);
 		expect(queryState.plexProgressHook).toHaveBeenCalledWith([202]);

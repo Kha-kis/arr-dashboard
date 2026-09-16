@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
 	getPublishedGenerationObservation: vi.fn(),
 	loadUserGenerationObservations: vi.fn().mockResolvedValue([]),
 	getPublishedEpisodeGenerationObservation: vi.fn(),
+	recovery: { admit: vi.fn(), arm: vi.fn() },
 }));
 
 vi.mock("../../../lib/plex/plex-refresh-orchestration.js", () => ({
@@ -109,6 +110,7 @@ describe("POST /api/plex/cache/:instanceId/refresh publication authority", () =>
 			providerObservationRun: { findMany: vi.fn().mockResolvedValue([]) },
 		} as never);
 		app.decorate("encryptor", { decrypt: vi.fn() } as never);
+		app.decorate("libraryRefreshRecovery", mocks.recovery as never);
 		await app.register(registerCacheRoutes, { prefix: "/api/plex" });
 		await app.ready();
 	});
@@ -158,6 +160,16 @@ describe("POST /api/plex/cache/:instanceId/refresh publication authority", () =>
 		expect(mocks.refreshWithAttempt.mock.calls[0]).not.toContainEqual({
 			server: "caller-controlled",
 		});
+		expect(mocks.start.mock.calls[0]?.[0]).toEqual(
+			expect.objectContaining({
+				recovery: expect.objectContaining({
+					provider: "plex",
+					userId: "user-1",
+					instanceId: instance.id,
+					handoff: mocks.recovery,
+				}),
+			}),
+		);
 	});
 
 	it("returns before a deferred producer settles", async () => {

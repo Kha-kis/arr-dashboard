@@ -80,8 +80,8 @@ export const LabelSyncClient = () => {
 						</h1>
 						<p className="text-muted-foreground max-w-xl">
 							Auto-apply tags and labels across supported services. Sources: Sonarr, Radarr, Plex,
-							Jellyfin, Emby. Destinations: Sonarr, Radarr, or Plex; Jellyfin and Emby are
-							temporarily unavailable.
+							Jellyfin, Emby. Destinations: Sonarr, Radarr, Plex, or Jellyfin; Emby is temporarily
+							unavailable.
 						</p>
 					</div>
 					<Button onClick={openCreate} className="shrink-0">
@@ -128,8 +128,8 @@ const EmptyState = ({ onCreateClick }: { onCreateClick: () => void }) => (
 		</div>
 		<h3 className="text-base font-semibold">No label-sync rules yet</h3>
 		<p className="text-sm text-muted-foreground max-w-sm">
-			Create a rule to mirror a tag to a Sonarr, Radarr, or Plex destination. Jellyfin and Emby can
-			remain sources while destination mutations are temporarily unavailable.
+			Create a rule to mirror a tag to a Sonarr, Radarr, Plex, or Jellyfin destination. Emby is
+			available as a source.
 		</p>
 		<Button onClick={onCreateClick} variant="secondary" className="mt-2">
 			<Plus className="h-4 w-4 mr-2" /> Create your first rule

@@ -12,6 +12,10 @@ import { loadGenerationObservationsForOwnedInstances } from "../lib/plex/plex-pe
 import { refreshOwnedPlexCache } from "../lib/plex/plex-refresh-orchestration.js";
 import { evaluateProviderCoverageReceipt } from "../lib/provider-observation/coverage-receipt.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
+import {
+	ensureLibraryRefreshRecovery,
+	isRetryableLibraryRefreshResult,
+} from "../lib/services/library-refresh-recovery.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const STARTUP_DELAY_MS = 30_000; // 30 seconds — staggers with tautulli (2min), episode (5min), snapshot (60s)
@@ -126,16 +130,23 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 		let retryHandle: ReturnType<typeof setTimeout> | null = null;
 		let closed = false;
 		let isRunning = false;
-		const retries = new Map<string, { attempts: number; dueAt: number }>();
+		const retries = new Map<string, { attempts: number; dueAt: number; userId?: string }>();
 
-		function recordFailure(instanceId: string, retryOnly: boolean) {
-			const attempts = retryOnly ? (retries.get(instanceId)?.attempts ?? 0) : 0;
+		function recordFailure(instanceId: string, retryOnly: boolean, userId?: string) {
+			const existing = retries.get(instanceId);
+			const attempts = retryOnly ? (existing?.attempts ?? 0) : 0;
 			const delay = FAILURE_RETRY_DELAYS_MS[attempts];
 			if (closed || delay === undefined) {
 				retries.delete(instanceId);
 				return;
 			}
-			retries.set(instanceId, { attempts: attempts + 1, dueAt: Date.now() + delay });
+			retries.set(instanceId, {
+				attempts: attempts + 1,
+				dueAt: Date.now() + delay,
+				...(userId === undefined && existing?.userId === undefined
+					? {}
+					: { userId: userId ?? existing?.userId }),
+			});
 		}
 
 		function scheduleRetry() {
@@ -179,7 +190,28 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 						},
 					});
 					const instances = retryOnly
-						? enabledInstances.filter((instance) => retryIds.includes(instance.id))
+						? (
+								await Promise.all(
+									enabledInstances
+										.filter((instance) => retryIds.includes(instance.id))
+										.map(async (instance) => {
+											const retry = retries.get(instance.id);
+											if (!retry?.userId) return instance;
+											return await app.prisma.serviceInstance.findFirst({
+												where: {
+													id: instance.id,
+													userId: retry.userId,
+													service: "PLEX",
+													enabled: true,
+													identityStatus: "VERIFIED",
+													expectedIdentity: { not: null },
+												},
+											});
+										}),
+								)
+							).filter(
+								(instance): instance is (typeof enabledInstances)[number] => instance !== null,
+							)
 						: enabledInstances;
 					for (const id of retryIds) {
 						if (!instances.some((instance) => instance.id === id)) retries.delete(id);
@@ -210,19 +242,7 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 						} catch {
 							thrown = true;
 						}
-						const refresh = result as
-							| {
-									complete?: boolean;
-									superseded?: boolean;
-									receipt?: unknown;
-							  }
-							| undefined;
-						const coverage = evaluateProviderCoverageReceipt(refresh?.receipt);
-						const failed =
-							thrown ||
-							(!refresh?.superseded &&
-								refresh?.complete !== true &&
-								(!coverage.valid || coverage.evidence === "unknown"));
+						const failed = isRetryableLibraryRefreshResult("plex", result, thrown);
 						if (failed) recordFailure(instance.id, retryOnly);
 						else retries.delete(instance.id);
 
@@ -314,6 +334,41 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 			}
 		}
 
+		const recovery = ensureLibraryRefreshRecovery(app);
+		const unregisterRecovery = recovery.libraryRefreshRecovery.register("plex", async (request) => {
+			if (closed) return { status: "unavailable" };
+			try {
+				const instance = await app.prisma.serviceInstance.findFirst({
+					where: {
+						id: request.instanceId,
+						userId: request.userId,
+						service: "PLEX",
+						enabled: true,
+						identityStatus: "VERIFIED",
+						expectedIdentity: { not: null },
+					},
+				});
+				if (!instance) return { status: "ineligible" };
+				if (closed) return { status: "unavailable" };
+				const existing = retries.get(instance.id);
+				if (existing) {
+					if (existing.userId === undefined) existing.userId = request.userId;
+					return { status: "accepted" };
+				}
+				const delay = FAILURE_RETRY_DELAYS_MS[0];
+				if (delay === undefined) return { status: "unavailable" };
+				retries.set(instance.id, {
+					attempts: 1,
+					dueAt: Date.now() + delay,
+					userId: request.userId,
+				});
+				scheduleRetry();
+				return { status: "accepted" };
+			} catch {
+				return { status: "unavailable" };
+			}
+		});
+
 		app.addHook("onReady", async () => {
 			app.log.info(
 				{ provider: "plex", outcome: "initialized" },
@@ -354,6 +409,7 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 
 		app.addHook("onClose", async () => {
 			closed = true;
+			unregisterRecovery();
 			retries.clear();
 			if (retryHandle) clearTimeout(retryHandle);
 			if (timeoutHandle) clearTimeout(timeoutHandle);

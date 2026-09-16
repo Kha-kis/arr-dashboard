@@ -344,6 +344,16 @@ export type CacheRefreshStatus = Prisma.CacheRefreshStatusModel
  */
 export type ProviderObservationRun = Prisma.ProviderObservationRunModel
 /**
+ * Model ProviderNativeInventorySnapshot
+ * Generation-bound native provider presence, independent of TMDB and watch data.
+ */
+export type ProviderNativeInventorySnapshot = Prisma.ProviderNativeInventorySnapshotModel
+/**
+ * Model ProviderNativeInventoryItem
+ * 
+ */
+export type ProviderNativeInventoryItem = Prisma.ProviderNativeInventoryItemModel
+/**
  * Model ProviderObservationUnit
  * 
  */

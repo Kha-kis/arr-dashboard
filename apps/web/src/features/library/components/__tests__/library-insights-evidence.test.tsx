@@ -265,4 +265,114 @@ describe("LibraryInsightsSection Plex trust rendering", () => {
 		).toBeInTheDocument();
 		expect(screen.getByText(/Media-server data is unavailable/i)).toBeInTheDocument();
 	});
+
+	it("keeps an unknown-only disk result visible without a recommendation count", () => {
+		queryState.diskWaste = {
+			data: {
+				data: {
+					items: [],
+					unknownItems: [
+						{
+							arrItemId: 101,
+							instanceId: "private-disk-instance",
+							instanceName: "Private Disk Instance",
+							service: "radarr",
+							title: "Private Disk Title",
+							year: null,
+							sizeOnDisk: 1,
+							addedDaysAgo: 31,
+							monitored: true,
+							qualityProfileName: null,
+							watchState: "unknown",
+						},
+					],
+					totalWastedBytes: null,
+					hasPlexData: false,
+					hasWatchData: false,
+					watchStatus: "unavailable",
+					limited: false,
+				},
+			},
+			isLoading: false,
+			isError: false,
+			error: null,
+		};
+
+		render(<LibraryInsightsSection />);
+
+		expect(screen.getByText("Library Insights")).toBeInTheDocument();
+		expect(screen.queryByText(/0 items? need attention/i)).not.toBeInTheDocument();
+	});
+
+	it.each([
+		["unavailable", "Request evidence is unavailable; requested candidates remain unconfirmed."],
+		["not-configured", "Seerr is not configured for requested item evidence."],
+	] as const)(
+		"explains request status %s without claiming an empty result",
+		(requestStatus, copy) => {
+			queryState.requested = {
+				data: {
+					success: true,
+					data: {
+						items: [],
+						unknownItems: [],
+						hasSeerrData: requestStatus !== "not-configured",
+						hasPlexData: false,
+						hasWatchData: false,
+						watchStatus: "unavailable",
+						requestStatus,
+						limited: false,
+					},
+				},
+				isLoading: false,
+				isError: false,
+				error: null,
+			};
+
+			render(<LibraryInsightsSection />);
+			expect(screen.getByText(copy)).toBeInTheDocument();
+			expect(screen.queryByText(/0 items? need attention/i)).not.toBeInTheDocument();
+		},
+	);
+
+	it("keeps bounded and unavailable status hints independent", () => {
+		queryState.diskWaste = {
+			data: {
+				success: true,
+				data: {
+					items: [],
+					unknownItems: [],
+					totalWastedBytes: null,
+					hasPlexData: false,
+					hasWatchData: false,
+					watchStatus: "unavailable",
+					limited: true,
+				},
+			},
+			isLoading: false,
+			isError: false,
+			error: null,
+		};
+
+		render(<LibraryInsightsSection />);
+
+		expect(screen.getByText(/Disk insight results are bounded/i)).toBeInTheDocument();
+		expect(screen.getByText(/Disk watch status is unavailable/i)).toBeInTheDocument();
+	});
+
+	it("keeps a settled healthy panel visible while a peer query is pending", () => {
+		queryState.diskWaste = {
+			data: { data: { items: [{ arrItemId: 1 }], unknownItems: [] } },
+			isLoading: false,
+			isError: false,
+			error: null,
+		};
+		queryState.watched = { data: { data: { items: [] } }, isLoading: false, isError: false };
+		queryState.requested = { data: undefined, isLoading: true, isError: false, error: null };
+
+		render(<LibraryInsightsSection />);
+
+		expect(screen.getByText("Library Insights")).toBeInTheDocument();
+		expect(screen.getByText("Disk fixture panel")).toBeInTheDocument();
+	});
 });

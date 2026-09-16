@@ -76,12 +76,14 @@ export type JellyfinEpisodeRefreshResult = {
 	errorMessages?: string[];
 	completedAt?: Date;
 	superseded?: boolean;
-	/** The exact invalid plan and its attempt were settled; fresh discovery is needed. */
+	/** The owned run was settled but complete coverage needs fresh discovery. */
 	replanRequired?: true;
 	/** Automatic renewal stopped; only a validated future deadline may schedule recovery. */
 	renewalDeferred?: true;
 	renewalDeadline?: Date;
 	retryablePreRenewalFailure?: true;
+	/** A valid current parent library refresh owns admission temporarily. */
+	parentRefreshPending?: true;
 };
 
 export type JellyfinEpisodePublicationContext = {
@@ -125,6 +127,7 @@ type JellyfinEpisodeWorkProgress = ObservationRunProgress & {
 	renewalDeferred?: true;
 	renewalDeadline?: Date;
 	retryablePreRenewalFailure?: true;
+	parentRefreshPending?: true;
 };
 
 type JellyfinEpisodePageFailureCategory =
@@ -233,11 +236,12 @@ export async function refreshOwnedJellyfinEpisodeCache(
 	context: JellyfinEpisodePublicationContext,
 ): Promise<JellyfinEpisodeRefreshResult> {
 	const progress = await runNextJellyfinEpisodeWorkItem(context);
-	const complete = progress.state === "complete";
+	const complete = progress.state === "complete" && !progress.replanRequired;
 	return {
 		upserted: progress.publishedItemCount ?? 0,
 		errors:
 			progress.retryableDependencyFailure ||
+			progress.replanRequired ||
 			progress.state === "failed" ||
 			progress.state === "invalidated"
 				? 1
@@ -250,6 +254,7 @@ export async function refreshOwnedJellyfinEpisodeCache(
 		...(progress.renewalDeferred ? { renewalDeferred: true as const } : {}),
 		...(progress.renewalDeadline ? { renewalDeadline: progress.renewalDeadline } : {}),
 		...(progress.retryablePreRenewalFailure ? { retryablePreRenewalFailure: true as const } : {}),
+		...(progress.parentRefreshPending ? { parentRefreshPending: true as const } : {}),
 		...(complete ? { completedAt: context.now ?? new Date() } : {}),
 	};
 }
@@ -263,6 +268,14 @@ function emptyEpisodeProgress(): JellyfinEpisodeWorkProgress {
 		totalWork: 0,
 		reasonCode: "no-publication",
 		progressed: false,
+	};
+}
+
+function parentRefreshPendingProgress(): JellyfinEpisodeWorkProgress {
+	return {
+		...emptyEpisodeProgress(),
+		state: "running",
+		parentRefreshPending: true,
 	};
 }
 
@@ -321,6 +334,33 @@ export function createJellyfinEpisodeWorkItemRunner(
 			logJellyfinEpisodePrePageFailure(context.log, "current-authority-failed");
 			return emptyEpisodeProgress();
 		}
+		// A parent library refresh keeps the last published generation intact while
+		// it owns the provider status marker. Check that dependency before claiming
+		// an episode attempt so waiting does not create a failure or consume a retry.
+		try {
+			if (await hasCurrentJellyfinLibraryRefreshPending(context.prisma, context.instance, now)) {
+				const currentForParentAdmission = await context.prisma.serviceInstance.findFirst({
+					where: {
+						id: context.instance.id,
+						userId: context.instance.userId,
+						service: { in: ["JELLYFIN", "EMBY"] },
+						enabled: true,
+					},
+				});
+				if (
+					currentForParentAdmission &&
+					sameProviderPublicationAuthority(
+						createProviderPublicationAuthority(currentForParentAdmission),
+						authority,
+					)
+				) {
+					return parentRefreshPendingProgress();
+				}
+			}
+		} catch {
+			// Preserve the existing admission path when this advisory early check is
+			// unavailable; it still performs the authoritative parent read below.
+		}
 		let outer: Awaited<ReturnType<typeof claimProviderCacheRefreshAttempt>>;
 		try {
 			outer = await claimProviderCacheRefreshAttempt(
@@ -373,6 +413,20 @@ export function createJellyfinEpisodeWorkItemRunner(
 			}
 			return emptyEpisodeProgress();
 		};
+		const deferForParentRefresh = async (): Promise<JellyfinEpisodeWorkProgress> => {
+			if (canFinishAttempt) {
+				await finishProviderCacheRefreshAttemptFailure(
+					context.prisma,
+					"jellyfin_episode",
+					"collection-deferred",
+					authority,
+					attempt,
+					context.log,
+					guardOptions,
+				);
+			}
+			return parentRefreshPendingProgress();
+		};
 		const current = await context.prisma.serviceInstance.findFirst({
 			where: {
 				id: context.instance.id,
@@ -404,6 +458,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 			candidateV2State !== false,
 			context.automaticRenewal !== undefined,
 		);
+		if (isParentRefreshPending(parent)) return await deferForParentRefresh();
 		if (!parent) {
 			logJellyfinEpisodePrePageFailure(context.log, "parent-admission-failed");
 			return await failAttempt("coverage-incomplete");
@@ -720,11 +775,13 @@ export function createJellyfinEpisodeWorkItemRunner(
 			// that intentionally invalidates stale authority inside its transaction.
 			const finalNow = context.now ?? new Date();
 			const finalParent = await readAuthoritativeLibraryParent(context.prisma, snapshot, finalNow);
+			if (isParentRefreshPending(finalParent)) return await deferForParentRefresh();
 			if (!finalParent) {
 				const lastGood =
 					savedPlan?.kind === "valid"
 						? await readAuthoritativeLibraryParent(context.prisma, snapshot, finalNow, true)
 						: null;
+				if (isParentRefreshPending(lastGood)) return await deferForParentRefresh();
 				if (
 					lastGood?.temporaryUnavailable &&
 					(activeCatalog
@@ -1058,6 +1115,57 @@ type LibraryParent = {
 	catalogProvenance?: JellyfinEpisodeCatalogProvenance;
 	temporaryUnavailable?: true;
 };
+type LibraryParentRead = LibraryParent | { parentRefreshPending: true };
+
+function isParentRefreshPending(
+	value: LibraryParentRead | null,
+): value is { parentRefreshPending: true } {
+	return value !== null && "parentRefreshPending" in value && value.parentRefreshPending === true;
+}
+
+const JELLYFIN_PARENT_REFRESH_MARKER =
+	/^in_progress:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isCurrentJellyfinLibraryRefreshStatus(
+	status: {
+		lastAttemptAt: Date | null;
+		lastAttemptResult: string | null;
+		connectionGeneration: number | null;
+		identityGeneration: number | null;
+	},
+	authority: Pick<OwnedProviderPublicationSnapshot, "connectionGeneration" | "identityGeneration">,
+	now: Date,
+): boolean {
+	return (
+		status.lastAttemptAt instanceof Date &&
+		Number.isFinite(status.lastAttemptAt.getTime()) &&
+		status.lastAttemptAt.getTime() <= now.getTime() &&
+		typeof status.lastAttemptResult === "string" &&
+		JELLYFIN_PARENT_REFRESH_MARKER.test(status.lastAttemptResult) &&
+		status.connectionGeneration === authority.connectionGeneration &&
+		status.identityGeneration === authority.identityGeneration
+	);
+}
+
+async function hasCurrentJellyfinLibraryRefreshPending(
+	prisma: Pick<PrismaClient, "cacheRefreshStatus">,
+	authority: Pick<
+		OwnedProviderPublicationSnapshot,
+		"id" | "connectionGeneration" | "identityGeneration"
+	>,
+	now: Date,
+): Promise<boolean> {
+	const status = await prisma.cacheRefreshStatus.findUnique({
+		where: { instanceId_cacheType: { instanceId: authority.id, cacheType: "jellyfin" } },
+		select: {
+			lastAttemptAt: true,
+			lastAttemptResult: true,
+			connectionGeneration: true,
+			identityGeneration: true,
+		},
+	});
+	return status ? isCurrentJellyfinLibraryRefreshStatus(status, authority, now) : false;
+}
 
 async function readAuthoritativeLibraryParent(
 	prisma: Pick<PrismaClient, "cacheRefreshStatus" | "jellyfinCache">,
@@ -1068,7 +1176,7 @@ async function readAuthoritativeLibraryParent(
 	now = new Date(),
 	allowCompatibleLastGoodForV2 = false,
 	throwTransientAdmissionFailure = false,
-): Promise<LibraryParent | null> {
+): Promise<LibraryParentRead | null> {
 	try {
 		const [status, rawRows] = await Promise.all([
 			prisma.cacheRefreshStatus.findUnique({
@@ -1111,6 +1219,9 @@ async function readAuthoritativeLibraryParent(
 			}),
 		]);
 		if (!status) return null;
+		if (isCurrentJellyfinLibraryRefreshStatus(status, authority, now)) {
+			return { parentRefreshPending: true };
+		}
 		const compatibleTemporaryFailure =
 			allowCompatibleLastGoodForV2 &&
 			status.lastResult === "success" &&

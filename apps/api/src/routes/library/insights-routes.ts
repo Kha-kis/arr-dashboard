@@ -10,18 +10,33 @@
  * - requested_unwatched: Seerr-requested items available but never watched
  */
 
-import type { FastifyPluginCallback } from "fastify";
+import type {
+	DiskWasteItem,
+	DiskWasteInsightsResponse,
+	RequestedUnwatchedItem,
+	RequestedUnwatchedInsightsResponse,
+	WatchInsightAvailability,
+} from "@arr/shared";
+import type { FastifyBaseLogger, FastifyInstance, FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import type { JellyfinDisplayInstance } from "../../lib/jellyfin/jellyfin-display-evidence.js";
+import {
+	readOwnedJellyfinLibraryDisplaySources,
+	type JellyfinDisplayInstance,
+} from "../../lib/jellyfin/jellyfin-display-evidence.js";
 import {
 	type JellyfinInsightWatchEvidence,
 	readOwnedJellyfinInsightWatchEvidence,
 } from "../../lib/library-insights/watch-evidence.js";
 import {
-	hasAuthoritativePlexEvidence,
 	PlexAuthorityService,
 	summarizePlexEvidence,
 } from "../../lib/plex/plex-authority-service.js";
+import {
+	createWatchInsightDisplay,
+	insightTarget,
+	type InsightTarget,
+	type InsightWatchSource,
+} from "../../lib/library-insights/watch-insight-display.js";
 import { authorizeProviderEvidenceUse } from "../../lib/provider-observation/evidence-capabilities.js";
 import { projectWatchDisplayEvidence } from "../../lib/provider-observation/watch-display-evidence.js";
 import { SeerrClient } from "../../lib/seerr/seerr-client.js";
@@ -31,32 +46,6 @@ import { validateRequest } from "../../lib/utils/validate.js";
 // ============================================================================
 // Types
 // ============================================================================
-
-interface DiskWasteItem {
-	arrItemId: number;
-	instanceId: string;
-	instanceName: string;
-	service: string;
-	title: string;
-	year: number | null;
-	sizeOnDisk: number;
-	addedDaysAgo: number;
-	monitored: boolean;
-	qualityProfileName: string | null;
-}
-
-interface RequestedUnwatchedItem {
-	arrItemId: number;
-	instanceId: string;
-	instanceName: string;
-	service: string;
-	title: string;
-	year: number | null;
-	sizeOnDisk: number;
-	addedDaysAgo: number;
-	requestedBy: string;
-	requestedAt: string;
-}
 
 interface WatchedMonitoredItem {
 	arrItemId: number;
@@ -121,18 +110,61 @@ function mergeInsightRows(watchData: WatchData, rows: JellyfinInsightWatchEviden
 	}
 }
 
-function mergeInsightCountRows(
-	watchCounts: Map<string, number>,
-	rows: JellyfinInsightWatchEvidence["rows"],
-) {
-	for (const row of rows) {
-		const key = `${row.mediaType}:${row.tmdbId}`;
-		watchCounts.set(key, (watchCounts.get(key) ?? 0) + row.watchCount);
-	}
-}
-
 function providerStatusResponse(evidence: JellyfinInsightWatchEvidence) {
 	return evidence.providerStatus ? { providerStatus: evidence.providerStatus } : {};
+}
+
+async function readWatchDisplay(
+	app: FastifyInstance,
+	userId: string,
+	log: FastifyBaseLogger,
+	targets: InsightTarget[],
+) {
+	const uniqueTargets = [
+		...new Map(targets.map((target) => [`${target.mediaType}:${target.tmdbId}`, target])).values(),
+	];
+	const [plex, instances] = await Promise.all([
+		new PlexAuthorityService({
+			prisma: app.prisma,
+			encryptor: app.encryptor,
+			log,
+		}).readUserSelectedDisplay({
+			userId,
+			selection: { kind: "targets", targets: uniqueTargets },
+			domains: ["membership", "watch"],
+		}),
+		app.prisma.serviceInstance.findMany({
+			where: { userId, enabled: true, service: { in: ["JELLYFIN", "EMBY"] } },
+			select: { id: true, label: true, service: true },
+		}),
+	]);
+	const jellyfin = await readOwnedJellyfinLibraryDisplaySources({
+		prisma: app.prisma,
+		userId,
+		instances: instances as JellyfinDisplayInstance[],
+	});
+	const sources: InsightWatchSource[] = plex.map((source) => ({
+		provider: "plex",
+		status: source.providerStatus,
+		rows: source.available ? source.rows : [],
+	}));
+	for (const instance of instances) {
+		const statuses =
+			jellyfin.providerStatus?.sources.filter(
+				(source) => source.instanceId === instance.id && source.cacheType === "jellyfin",
+			) ?? [];
+		const entries = jellyfin.sources.filter((source) => source.instanceId === instance.id);
+		sources.push({
+			provider: "jellyfin",
+			status: statuses.length === 1 ? statuses[0]!.status : undefined,
+			rows: entries.length === 1 ? entries[0]!.rows : [],
+		});
+	}
+	return {
+		...createWatchInsightDisplay(sources),
+		evidence: plex.length > 0 ? summarizePlexEvidence(plex) : undefined,
+		providerStatus: jellyfin.providerStatus,
+	};
 }
 
 // ============================================================================
@@ -158,143 +190,79 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 		const instanceMap = new Map(userInstances.map((i) => [i.id, i]));
 		const instanceIds = userInstances.map((i) => i.id);
 
-		if (instanceIds.length === 0) {
-			return reply.send({ success: true, data: { items: [], totalWastedBytes: 0 } });
-		}
-
-		// Get user's media server instances to load watch data
-		const plexWatchCounts = new Map<string, number>();
-		const [plexEvidence, jellyfinInstances] = await Promise.all([
-			new PlexAuthorityService({
-				prisma: app.prisma,
-				encryptor: app.encryptor,
-				log: request.log,
-			}).scanUserPolicy({
-				userId,
-				domains: ["membership", "watch"],
-				onBatch: ({ rows }) => {
-					for (const row of rows) {
-						const key = `${row.mediaType}:${row.tmdbId}`;
-						plexWatchCounts.set(key, (plexWatchCounts.get(key) ?? 0) + row.watchCount);
-					}
-				},
-			}),
-			app.prisma.serviceInstance.findMany({
-				where: { userId, enabled: true, service: { in: ["JELLYFIN", "EMBY"] } },
-				select: { id: true, label: true, service: true },
-			}),
-		]);
-		if (plexEvidence.length > 0 && !hasAuthoritativePlexEvidence(plexEvidence)) {
-			return reply.status(503).send({
-				error: "Plex cache evidence is unavailable",
-				evidence: summarizePlexEvidence(plexEvidence),
-			});
-		}
-
-		const hasPlexAuthority = hasAuthoritativePlexEvidence(plexEvidence);
-		const jellyfinWatchEvidence = await readOwnedJellyfinInsightWatchEvidence({
-			prisma: app.prisma,
+		const bound = params.limit * 3;
+		const candidates =
+			instanceIds.length === 0
+				? []
+				: await app.prisma.libraryCache.findMany({
+						where: {
+							instanceId: { in: instanceIds },
+							instance: { userId },
+							hasFile: true,
+							sizeOnDisk: { gte: minSizeBytes },
+							arrAddedAt: { lte: cutoffDate },
+						},
+						orderBy: [{ sizeOnDisk: "desc" }, { id: "asc" }],
+						take: bound + 1,
+					});
+		const selected = candidates.slice(0, bound);
+		const watch = await readWatchDisplay(
+			app,
 			userId,
-			instances: jellyfinInstances as JellyfinDisplayInstance[],
-		});
-		if (!hasPlexAuthority && !jellyfinWatchEvidence.configured) {
-			return reply.send({
-				success: true,
-				data: {
-					items: [],
-					totalWastedBytes: 0,
-					hasPlexData: false,
-					hasWatchData: false,
-				},
-			});
-		}
-		if (jellyfinWatchEvidence.configured && !jellyfinWatchEvidence.negativeClaimsAuthoritative) {
-			return reply.send({
-				success: true,
-				data: {
-					items: [],
-					totalWastedBytes: 0,
-					hasPlexData: hasPlexAuthority,
-					hasWatchData: false,
-				},
-				...providerStatusResponse(jellyfinWatchEvidence),
-			});
-		}
-		const watchCounts = new Map<string, number>();
-		if (hasPlexAuthority) {
-			for (const [key, count] of plexWatchCounts) {
-				watchCounts.set(key, count);
+			request.log,
+			selected.flatMap((item) => {
+				const target = insightTarget(item);
+				return target ? [target] : [];
+			}),
+		);
+		const items: DiskWasteItem[] = [];
+		const unknownItems: DiskWasteItem[] = [];
+		let limited = candidates.length > bound;
+		let hasUnknown = false;
+		for (const item of selected) {
+			const watchState = watch.classify(insightTarget(item));
+			if (watchState === "watched") continue;
+			if (watchState === "unknown") hasUnknown = true;
+			const destination = watchState === "unknown" ? unknownItems : items;
+			if (destination.length >= params.limit) {
+				limited = true;
+				continue;
 			}
-		}
-		mergeInsightCountRows(watchCounts, jellyfinWatchEvidence.rows);
-
-		// Fetch candidate library items: has file, large, old enough
-		const candidates = await app.prisma.libraryCache.findMany({
-			where: {
-				instanceId: { in: instanceIds },
-				hasFile: true,
-				sizeOnDisk: { gte: minSizeBytes },
-				arrAddedAt: { lte: cutoffDate },
-			},
-			orderBy: { sizeOnDisk: "desc" },
-			take: params.limit * 3, // Over-fetch to account for Plex-watched filtering
-		});
-
-		// Filter to items with zero Plex plays
-		const now = Date.now();
-		const results: DiskWasteItem[] = [];
-
-		for (const item of candidates) {
-			if (results.length >= params.limit) break;
-
-			// Extract tmdbId from the data blob
-			const parsed = safeJsonParse(item.data) as Record<string, unknown> | null;
-			if (!parsed) continue;
-
-			const remoteIds = parsed.remoteIds as Record<string, unknown> | undefined;
-			const tmdbId = remoteIds?.tmdbId;
-
-			// Skip items without tmdbId — we can't verify watch status without it
-			if (!tmdbId) continue;
-
-			// Build Plex lookup key — PlexCache stores "movie" | "series"
-			const mediaType = item.itemType === "movie" ? "movie" : "series";
-			const watchCount = watchCounts.get(`${mediaType}:${tmdbId}`) ?? 0;
-
-			// Only include items with zero watches
-			if (watchCount > 0) continue;
-
 			const inst = instanceMap.get(item.instanceId);
-			const addedDaysAgo = item.arrAddedAt
-				? Math.floor((now - item.arrAddedAt.getTime()) / (24 * 60 * 60 * 1000))
-				: 0;
-
-			results.push({
+			if (!inst) continue;
+			destination.push({
 				arrItemId: item.arrItemId,
 				instanceId: item.instanceId,
-				instanceName: inst?.label ?? "Unknown",
-				service: (inst?.service ?? "UNKNOWN").toLowerCase(),
+				instanceName: inst.label,
+				service: inst.service.toLowerCase(),
 				title: item.title,
 				year: item.year,
 				sizeOnDisk: Number(item.sizeOnDisk),
-				addedDaysAgo,
+				addedDaysAgo: item.arrAddedAt
+					? Math.floor((Date.now() - item.arrAddedAt.getTime()) / 86400000)
+					: 0,
 				monitored: item.monitored,
 				qualityProfileName: item.qualityProfileName,
+				watchState,
 			});
 		}
-
-		const totalWastedBytes = results.reduce((sum, r) => sum + r.sizeOnDisk, 0);
-
-		return reply.send({
+		const watchStatus = watch.status(hasUnknown);
+		const response: DiskWasteInsightsResponse = {
 			success: true,
 			data: {
-				items: results,
-				totalWastedBytes,
-				hasPlexData: hasPlexAuthority,
-				hasWatchData: hasPlexAuthority || jellyfinWatchEvidence.hasPositiveEvidence,
+				items,
+				unknownItems,
+				totalWastedBytes:
+					watchStatus === "complete" ? items.reduce((sum, item) => sum + item.sizeOnDisk, 0) : null,
+				hasPlexData: watch.hasPlexData,
+				hasWatchData: watch.hasWatchData,
+				watchStatus,
+				limited,
 			},
-			...providerStatusResponse(jellyfinWatchEvidence),
-		});
+			evidence: watch.evidence,
+			providerStatus: watch.providerStatus,
+		};
+		return reply.send(response);
 	});
 
 	/**
@@ -462,7 +430,7 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 
 		// Find Seerr instance
 		const seerrInstance = await app.prisma.serviceInstance.findFirst({
-			where: { userId, service: "SEERR" },
+			where: { userId, enabled: true, service: "SEERR" },
 			select: {
 				id: true,
 				baseUrl: true,
@@ -475,225 +443,120 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 			},
 		});
 
-		if (!seerrInstance) {
-			return reply.send({
-				success: true,
-				data: { items: [], hasSeerrData: false, hasPlexData: false, hasWatchData: false },
-			});
-		}
-
-		// Get media server watch data — Plex + Jellyfin/Emby
-		const plexWatchCounts = new Map<string, number>();
-		const [plexEvidence, jellyfinInstances] = await Promise.all([
-			new PlexAuthorityService({
-				prisma: app.prisma,
-				encryptor: app.encryptor,
-				log: request.log,
-			}).scanUserPolicy({
-				userId,
-				domains: ["membership", "watch"],
-				onBatch: ({ rows }) => {
-					for (const row of rows) {
-						const key = `${row.mediaType}:${row.tmdbId}`;
-						plexWatchCounts.set(key, (plexWatchCounts.get(key) ?? 0) + row.watchCount);
-					}
-				},
-			}),
-			app.prisma.serviceInstance.findMany({
-				where: { userId, enabled: true, service: { in: ["JELLYFIN", "EMBY"] } },
-				select: { id: true, label: true, service: true },
-			}),
-		]);
-		if (plexEvidence.length > 0 && !hasAuthoritativePlexEvidence(plexEvidence)) {
-			return reply.status(503).send({
-				error: "Plex cache evidence is unavailable",
-				evidence: summarizePlexEvidence(plexEvidence),
-			});
-		}
-
-		const hasPlexAuthority = hasAuthoritativePlexEvidence(plexEvidence);
-		const jellyfinWatchEvidence = await readOwnedJellyfinInsightWatchEvidence({
-			prisma: app.prisma,
-			userId,
-			instances: jellyfinInstances as JellyfinDisplayInstance[],
-		});
-		if (jellyfinWatchEvidence.configured && !jellyfinWatchEvidence.negativeClaimsAuthoritative) {
-			return reply.send({
-				success: true,
-				data: {
-					items: [],
-					hasSeerrData: false,
-					hasPlexData: hasPlexAuthority,
-					hasWatchData: false,
-				},
-				...providerStatusResponse(jellyfinWatchEvidence),
-			});
-		}
-		const watchCounts = new Map<string, number>();
-		if (hasPlexAuthority) {
-			for (const [key, count] of plexWatchCounts) watchCounts.set(key, count);
-		}
-		mergeInsightCountRows(watchCounts, jellyfinWatchEvidence.rows);
-
-		// Fetch Seerr requests — build map of tmdbId → request info
-		const seerrRequests: Array<{
-			tmdbId: number;
-			type: "movie" | "tv";
-			requestedBy: string;
-			createdAt: string;
-		}> = [];
-
-		try {
-			const client = new SeerrClient(app.arrClientFactory, seerrInstance, request.log);
-			const take = 50;
-			let skip = 0;
-			const maxPages = 20;
-
-			for (let page = 0; page < maxPages; page++) {
-				const result = await client.getRequests({ take, skip, filter: "available" });
-				for (const req of result.results) {
-					seerrRequests.push({
-						tmdbId: req.media.tmdbId,
-						type: req.type,
-						requestedBy: req.requestedBy.displayName,
-						createdAt: req.createdAt,
-					});
-				}
-				if (result.results.length < take) break;
-				skip += take;
-			}
-		} catch (error) {
-			request.log.warn(
-				{ err: error },
-				"Failed to fetch Seerr requests for insights — skipping requested-unwatched signal",
-			);
-			return reply.send({
-				success: true,
-				data: {
-					items: [],
-					hasSeerrData: false,
-					hasPlexData: hasPlexAuthority,
-					hasWatchData: hasPlexAuthority || jellyfinWatchEvidence.hasPositiveEvidence,
-				},
-				...providerStatusResponse(jellyfinWatchEvidence),
-			});
-		}
-
-		if (!hasPlexAuthority && !jellyfinWatchEvidence.hasPositiveEvidence) {
-			return reply.send({
-				success: true,
-				data: { items: [], hasSeerrData: true, hasPlexData: false, hasWatchData: false },
-				...providerStatusResponse(jellyfinWatchEvidence),
-			});
-		}
-
-		if (seerrRequests.length === 0) {
-			return reply.send({
-				success: true,
-				data: {
-					items: [],
-					hasSeerrData: true,
-					hasPlexData: hasPlexAuthority,
-					hasWatchData: hasPlexAuthority || jellyfinWatchEvidence.hasPositiveEvidence,
-				},
-				...providerStatusResponse(jellyfinWatchEvidence),
-			});
-		}
-
-		// Build Seerr lookup: tmdbId → request info (Seerr uses "movie" | "tv")
+		// Request coverage and watch coverage are independent; keep known requests even if either source is partial.
 		const seerrMap = new Map<string, { requestedBy: string; createdAt: string }>();
-		for (const req of seerrRequests) {
-			const key = `${req.type}:${req.tmdbId}`;
-			if (!seerrMap.has(key)) {
-				seerrMap.set(key, { requestedBy: req.requestedBy, createdAt: req.createdAt });
+		let requestStatus: WatchInsightAvailability = seerrInstance ? "partial" : "not-configured";
+		let requestPages = 0;
+		if (seerrInstance) {
+			try {
+				const client = new SeerrClient(app.arrClientFactory, seerrInstance, request.log);
+				const take = 50;
+				for (let page = 0; page < 20; page++) {
+					const result = await client.getRequests({ take, skip: page * take, filter: "available" });
+					requestPages++;
+					for (const req of result.results) {
+						const key = `${req.type}:${req.media.tmdbId}`;
+						if (!seerrMap.has(key))
+							seerrMap.set(key, {
+								requestedBy: req.requestedBy.displayName,
+								createdAt: req.createdAt,
+							});
+					}
+					if (result.results.length < take) {
+						requestStatus = "complete";
+						break;
+					}
+				}
+			} catch {
+				request.log.warn("Seerr request evidence is incomplete for requested-unwatched insights");
+				requestStatus = requestPages > 0 ? "partial" : "unavailable";
 			}
 		}
-
-		// Get user's library instances
 		const userInstances = await app.prisma.serviceInstance.findMany({
 			where: { userId, enabled: true, service: { in: ["SONARR", "RADARR"] } },
 			select: { id: true, label: true, service: true },
 		});
-		const instanceMap = new Map(userInstances.map((i) => [i.id, i]));
-		const instanceIds = userInstances.map((i) => i.id);
-
-		if (instanceIds.length === 0) {
-			return reply.send({
-				success: true,
-				data: {
-					items: [],
-					hasSeerrData: true,
-					hasPlexData: hasPlexAuthority,
-					hasWatchData: hasPlexAuthority || jellyfinWatchEvidence.hasPositiveEvidence,
-				},
-				...providerStatusResponse(jellyfinWatchEvidence),
-			});
-		}
-
-		const cutoffDate = new Date(Date.now() - params.minAgeDays * 24 * 60 * 60 * 1000);
-
-		// Fetch library items with files
-		const candidates = await app.prisma.libraryCache.findMany({
-			where: {
-				instanceId: { in: instanceIds },
-				hasFile: true,
-				arrAddedAt: { lte: cutoffDate },
-			},
-			orderBy: { arrAddedAt: "desc" },
-			take: params.limit * 5,
-		});
-
-		const now = Date.now();
-		const results: RequestedUnwatchedItem[] = [];
-
-		for (const item of candidates) {
-			if (results.length >= params.limit) break;
-
-			const parsed = safeJsonParse(item.data) as Record<string, unknown> | null;
-			if (!parsed) continue;
-
-			const remoteIds = parsed.remoteIds as Record<string, unknown> | undefined;
-			const tmdbId = remoteIds?.tmdbId;
-			if (!tmdbId) continue;
-
-			// Seerr uses "movie" | "tv" for keys
-			const seerrMediaType = item.itemType === "movie" ? "movie" : "tv";
-			const seerrInfo = seerrMap.get(`${seerrMediaType}:${tmdbId}`);
-			if (!seerrInfo) continue; // Not a Seerr-requested item
-
-			const mediaType = item.itemType === "movie" ? "movie" : "series";
-			const watchCount = watchCounts.get(`${mediaType}:${tmdbId}`) ?? 0;
-			if (watchCount > 0) continue; // Has been watched — not a candidate
-
+		const instanceMap = new Map(userInstances.map((instance) => [instance.id, instance]));
+		const bound = params.limit * 5;
+		const candidates =
+			userInstances.length === 0 || seerrMap.size === 0
+				? []
+				: await app.prisma.libraryCache.findMany({
+						where: {
+							instanceId: { in: userInstances.map((instance) => instance.id) },
+							instance: { userId },
+							hasFile: true,
+							arrAddedAt: { lte: new Date(Date.now() - params.minAgeDays * 86400000) },
+						},
+						orderBy: [{ arrAddedAt: "desc" }, { id: "asc" }],
+						take: bound + 1,
+					});
+		const selected = candidates.slice(0, bound);
+		const watch = await readWatchDisplay(
+			app,
+			userId,
+			request.log,
+			selected.flatMap((item) => {
+				const target = insightTarget(item);
+				return target ? [target] : [];
+			}),
+		);
+		const items: RequestedUnwatchedItem[] = [];
+		const unknownItems: RequestedUnwatchedItem[] = [];
+		let limited = candidates.length > bound || requestStatus === "partial";
+		let hasUnknown = false;
+		for (const item of selected) {
+			const target = insightTarget(item);
+			if (!target) {
+				limited = true;
+				continue;
+			} // No safe way to correlate this ARR file to a Seerr request.
+			const seerrInfo = seerrMap.get(
+				`${target.mediaType === "movie" ? "movie" : "tv"}:${target.tmdbId}`,
+			);
+			if (!seerrInfo) continue;
+			const watchState = watch.classify(target);
+			if (watchState === "watched") continue;
+			if (watchState === "unknown") hasUnknown = true;
+			const destination = watchState === "unknown" ? unknownItems : items;
+			if (destination.length >= params.limit) {
+				limited = true;
+				continue;
+			}
 			const inst = instanceMap.get(item.instanceId);
-			const addedDaysAgo = item.arrAddedAt
-				? Math.floor((now - item.arrAddedAt.getTime()) / (24 * 60 * 60 * 1000))
-				: 0;
-
-			results.push({
+			if (!inst) continue;
+			destination.push({
 				arrItemId: item.arrItemId,
 				instanceId: item.instanceId,
-				instanceName: inst?.label ?? "Unknown",
-				service: (inst?.service ?? "UNKNOWN").toLowerCase(),
+				instanceName: inst.label,
+				service: inst.service.toLowerCase(),
 				title: item.title,
 				year: item.year,
 				sizeOnDisk: Number(item.sizeOnDisk),
-				addedDaysAgo,
+				addedDaysAgo: item.arrAddedAt
+					? Math.floor((Date.now() - item.arrAddedAt.getTime()) / 86400000)
+					: 0,
 				requestedBy: seerrInfo.requestedBy,
 				requestedAt: seerrInfo.createdAt,
+				watchState,
 			});
 		}
-
-		return reply.send({
+		const response: RequestedUnwatchedInsightsResponse = {
 			success: true,
 			data: {
-				items: results,
-				hasSeerrData: true,
-				hasPlexData: hasPlexAuthority,
-				hasWatchData: hasPlexAuthority || jellyfinWatchEvidence.hasPositiveEvidence,
+				items,
+				unknownItems,
+				hasSeerrData: requestPages > 0,
+				hasPlexData: watch.hasPlexData,
+				hasWatchData: watch.hasWatchData,
+				watchStatus: watch.status(hasUnknown),
+				requestStatus,
+				limited,
 			},
-			...providerStatusResponse(jellyfinWatchEvidence),
-		});
+			evidence: watch.evidence,
+			providerStatus: watch.providerStatus,
+		};
+		return reply.send(response);
 	});
 
 	done();

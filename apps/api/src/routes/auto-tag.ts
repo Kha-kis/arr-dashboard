@@ -302,9 +302,26 @@ export async function registerAutoTagRoutes(app: FastifyInstance, _opts: Fastify
 	});
 
 	/**
-	 * POST /api/auto-tag/rules/:id/run — execute on demand. Walks the rule
-	 * end-to-end and persists the result on the rule's lastRunAt/Status/Message.
+	 * GET /api/auto-tag/rules/:id/preview — read-only candidate evaluation.
 	 */
+	app.get("/rules/:id/preview", async (request, reply) => {
+		const { id } = validateRequest(ruleParams, request.params);
+		const userId = request.currentUser!.id;
+		const rule = await app.prisma.autoTagRule.findFirst({ where: { id, userId } });
+		if (!rule) return reply.status(404).send({ error: "Rule not found" });
+		const result = await executeAutoTagRule({
+			rule: toDto(rule),
+			prisma: app.prisma,
+			arrClientFactory: app.arrClientFactory,
+			encryptor: app.encryptor,
+			log: request.log,
+			dryRun: true,
+		});
+		if (!result.preview) return reply.status(400).send({ error: result.message });
+		return result.preview;
+	});
+
+	/** Execute on demand, then persist the confirmed outcome. */
 	app.post("/rules/:id/run", async (request, reply) => {
 		const { id } = validateRequest(ruleParams, request.params);
 		const userId = request.currentUser!.id;

@@ -36,6 +36,7 @@ import type {
 	EpisodeRefreshProvider,
 	FastifyWithEpisodeRefreshScheduler,
 } from "../services/episode-refresh-scheduler-bridge.js";
+import type { FastifyWithLibraryRefreshRecovery } from "../services/library-refresh-recovery.js";
 import {
 	claimProviderCacheRefreshAttempt,
 	type ProviderCacheRefreshAttempt,
@@ -186,6 +187,7 @@ async function dispatchCacheRefresh(
 			throw new AppValidationError("Instance is not a Plex service");
 		}
 		const authority = createProviderPublicationAuthority(instance);
+		const recovery = (app as FastifyWithLibraryRefreshRecovery).libraryRefreshRecovery;
 		const admission = await startProviderCacheRefreshInBackground({
 			cacheType: "plex",
 			claim: () => claimProviderCacheRefreshAttempt(app.prisma, "plex", authority),
@@ -200,6 +202,9 @@ async function dispatchCacheRefresh(
 					attempt,
 				),
 			log,
+			...(recovery
+				? { recovery: { provider: "plex" as const, userId, instanceId, handoff: recovery } }
+				: {}),
 		});
 		log.info({ cacheType, settlement: "accepted" }, "pulse-action: cache refresh accepted");
 		return { status: "ok", backgroundTask: admission.backgroundTask };
@@ -211,6 +216,7 @@ async function dispatchCacheRefresh(
 			throw new AppValidationError("Instance is not a Jellyfin or Emby service");
 		}
 		const authority = createProviderPublicationAuthority(instance);
+		const recovery = (app as FastifyWithLibraryRefreshRecovery).libraryRefreshRecovery;
 		const admission = await startProviderCacheRefreshInBackground({
 			cacheType: "jellyfin",
 			claim: () => claimProviderCacheRefreshAttempt(app.prisma, "jellyfin", authority),
@@ -227,6 +233,9 @@ async function dispatchCacheRefresh(
 					),
 				),
 			log,
+			...(recovery
+				? { recovery: { provider: "jellyfin" as const, userId, instanceId, handoff: recovery } }
+				: {}),
 		});
 		log.info({ cacheType, settlement: "accepted" }, "pulse-action: cache refresh accepted");
 		return { status: "ok", backgroundTask: admission.backgroundTask };

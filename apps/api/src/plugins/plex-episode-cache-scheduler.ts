@@ -12,6 +12,7 @@ import { getPublishedEpisodeGenerationObservation } from "../lib/plex/plex-persi
 import { refreshOwnedPlexEpisodeCache } from "../lib/plex/plex-refresh-orchestration.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { ensureEpisodeRefreshScheduler } from "../lib/services/episode-refresh-scheduler-bridge.js";
+import type { PlexCacheRefreshAttempt } from "../lib/services/provider-cache-status.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const STARTUP_DELAY_MS = 5 * 60_000; // 5 minutes — staggered well after plex-cache (30s) + tautulli (2min) to avoid overlapping memory peaks
@@ -39,6 +40,7 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 		const pendingInstanceIds = new Set<string>();
 		const continuationHandles = new Set<ReturnType<typeof setTimeout>>();
 		const admittedPageTasks = new Set<Promise<void>>();
+		const retainedAttempts = new Map<string, PlexCacheRefreshAttempt>();
 
 		async function refreshInstance(
 			instance: Awaited<ReturnType<typeof app.prisma.serviceInstance.findMany>>[number],
@@ -49,14 +51,23 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 				return;
 			runningInstances.add(instance.id);
 			try {
-				const result = await refreshOwnedPlexEpisodeCache({
-					prisma: app.prisma,
-					encryptor: app.encryptor,
-					instance,
-					log: app.log,
-					resumeFailed,
-				});
+				const retainedAttempt = retainedAttempts.get(instance.id);
+				const result = await refreshOwnedPlexEpisodeCache(
+					{
+						prisma: app.prisma,
+						encryptor: app.encryptor,
+						instance,
+						log: app.log,
+						resumeFailed,
+					},
+					retainedAttempt,
+				);
 				if (closed) return;
+				if (result.continuationAttempt) {
+					retainedAttempts.set(instance.id, result.continuationAttempt);
+				} else {
+					retainedAttempts.delete(instance.id);
+				}
 				app.log.info(
 					{
 						category: "plex-episode-cache-refresh-completed",
@@ -68,6 +79,10 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 					"Plex episode cache refresh completed",
 				);
 				if (result.superseded) return;
+				if (result.retryCategory === "parent-refresh-in-progress") {
+					scheduleContinuation(instance, DEPENDENCY_RETRY_DELAYS_MS[0], 0);
+					return;
+				}
 				if (result.retryCategory) {
 					const dependencyRetryDelay = DEPENDENCY_RETRY_DELAYS_MS[dependencyRetry];
 					if (dependencyRetryDelay !== undefined) {
@@ -254,6 +269,7 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			if (intervalHandle) clearInterval(intervalHandle);
 			for (const handle of continuationHandles) clearTimeout(handle);
 			continuationHandles.clear();
+			retainedAttempts.clear();
 			pendingInstanceIds.clear();
 			await Promise.allSettled([...admittedPageTasks]);
 			app.log.info("Plex episode cache scheduler stopped");

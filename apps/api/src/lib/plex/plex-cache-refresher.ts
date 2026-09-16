@@ -226,6 +226,7 @@ export interface PlexPublicationContext {
 }
 
 export interface PlexCacheRefreshResult {
+	nativeInventoryStatus?: "published" | "failed" | "superseded";
 	upserted: number;
 	errors: number;
 	errorMessages: string[];

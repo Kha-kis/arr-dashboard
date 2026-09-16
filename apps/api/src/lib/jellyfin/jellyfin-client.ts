@@ -9,8 +9,14 @@ import type { FastifyBaseLogger } from "fastify";
 import type { z } from "zod";
 import type { ClientInstanceData } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
+import {
+	hasNativeInventoryExternalIds,
+	type NativeInventoryExternalIds,
+	normalizeNativeExternalId,
+	normalizeNativeInventoryExternalIds,
+} from "../provider-observation/native-inventory.js";
 import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
-import { parseUpstreamOrThrow } from "../validation/parse-upstream.js";
+import { parseUpstreamOrThrow, UpstreamValidationError } from "../validation/parse-upstream.js";
 import {
 	jellyfinEpisodeItemsPageSchema,
 	jellyfinItemDetailSchema,
@@ -19,9 +25,14 @@ import {
 	jellyfinMutationAncestorsSchema,
 	jellyfinMutationItemSchema,
 	jellyfinMutationServerInfoSchema,
+	jellyfinMutationUsersSchema,
+	jellyfinNativeEpisodeItemsResponseSchema,
+	jellyfinNativeLibraryItemsResponseSchema,
+	jellyfinNativeMediaFoldersResponseSchema,
 	jellyfinPublicInfoSchema,
 	jellyfinServerInfoSchema,
 	jellyfinSessionsResponseSchema,
+	jellyfinTargetWatchItemSchema,
 	jellyfinUsersResponseSchema,
 } from "./jellyfin-schemas.js";
 
@@ -59,6 +70,25 @@ export interface JellyfinItem {
 	isFavorite: boolean;
 	dateCreated?: string;
 	imageTags?: Record<string, string>;
+}
+
+export type JellyfinNativeLibraryItemType = "Movie" | "Series" | "BoxSet";
+export type JellyfinNativeLibraryIncludeItemTypes = "Movie" | "Series" | "Movie,Series";
+
+export interface JellyfinNativeLibraryItem {
+	id: string;
+	type: JellyfinNativeLibraryItemType;
+	name: string;
+	externalIds?: NativeInventoryExternalIds;
+}
+
+export interface JellyfinNativeEpisodeItem {
+	id: string;
+	type: "Episode";
+	name: string;
+	seriesId?: string;
+	seasonNumber?: number;
+	episodeNumber?: number;
 }
 
 export interface JellyfinUser {
@@ -100,9 +130,42 @@ const DEVICE_ID = "arr-dashboard-server";
 const CLIENT_NAME = "Arr Control Center";
 const COMPLETE_ITEMS_PAGE_SIZE = 1000;
 const COMPLETE_ITEMS_MAX = 100_000;
+const NATIVE_PAGE_RETRY_DELAYS_MS = [1000, 2000] as const;
+
+function jellyfinExternalIds(
+	providerIds: Readonly<Record<string, string>> | undefined,
+): NativeInventoryExternalIds {
+	const tmdb: unknown[] = [];
+	const tvdb: unknown[] = [];
+	for (const [key, value] of Object.entries(providerIds ?? {})) {
+		if (key.toLowerCase() !== "tmdb" && key.toLowerCase() !== "tvdb") continue;
+		const id = normalizeNativeExternalId(value);
+		if (id === undefined) continue;
+		(key.toLowerCase() === "tmdb" ? tmdb : tvdb).push(id);
+	}
+	return normalizeNativeInventoryExternalIds({ tmdb, tvdb });
+}
 
 export interface JellyfinCompleteItemsResult {
 	items: JellyfinItem[];
+	expectedRawCount: number | null;
+	pagesAttempted: number;
+	pagesCompleted: number;
+	rawObserved: number;
+	reason: "page-failure" | null;
+}
+
+export interface JellyfinNativeLibraryCoverageResult {
+	items: JellyfinNativeLibraryItem[];
+	expectedRawCount: number | null;
+	pagesAttempted: number;
+	pagesCompleted: number;
+	rawObserved: number;
+	reason: "page-failure" | null;
+}
+
+export interface JellyfinNativeEpisodeCoverageResult {
+	items: JellyfinNativeEpisodeItem[];
 	expectedRawCount: number | null;
 	pagesAttempted: number;
 	pagesCompleted: number;
@@ -149,10 +212,20 @@ export interface JellyfinMutationTargetSnapshot {
 	readonly ancestorIds: readonly string[];
 }
 
+export interface JellyfinTargetWatchRead {
+	readonly serverId: string;
+	readonly itemId: string;
+	readonly mediaType: "movie" | "series";
+	readonly tmdbId: number;
+	readonly libraryId: string;
+	readonly observedValue: number;
+}
+
 type JellyfinMutationItemDto = z.infer<typeof jellyfinMutationItemSchema>;
 
 interface StoredMutationTarget {
 	dto: JellyfinMutationItemDto;
+	userId: string;
 	serverId: string;
 	itemId: string;
 	mediaType: "movie" | "series";
@@ -163,8 +236,16 @@ interface StoredMutationTarget {
 
 type JellyfinRawItem = z.infer<typeof jellyfinItemsResponseSchema>["Items"][number];
 
-interface JellyfinRawItemsResult {
-	items: JellyfinRawItem[];
+interface JellyfinItemsEnvelope {
+	Items: Array<{ Id: string }>;
+	StartIndex?: number;
+	TotalRecordCount: number;
+}
+
+type JellyfinPageValidator<T> = (page: T, requestedStartIndex: number) => string | undefined;
+
+interface JellyfinRawItemsResult<T extends { Id: string } = JellyfinRawItem> {
+	items: T[];
 	expectedRawCount: number | null;
 	pagesAttempted: number;
 	pagesCompleted: number;
@@ -256,6 +337,39 @@ export class JellyfinClient {
 		}));
 	}
 
+	/** Get the server's complete native media-folder inventory. */
+	async getNativeMediaFolders(options?: {
+		mutationValidation?: boolean;
+	}): Promise<JellyfinLibrary[]> {
+		const data = options?.mutationValidation
+			? await this.mutationRequest("/Library/MediaFolders", {
+					schema: jellyfinNativeMediaFoldersResponseSchema,
+				})
+			: await this.request("/Library/MediaFolders", {
+					schema: jellyfinNativeMediaFoldersResponseSchema,
+				});
+		if (data.Items.length !== data.TotalRecordCount) {
+			throw new Error("Jellyfin native media-folder inventory was not returned completely");
+		}
+		if (
+			data.StartIndex !== undefined &&
+			(!Number.isSafeInteger(data.StartIndex) || data.StartIndex !== 0)
+		) {
+			throw new Error("Jellyfin native media-folder cursor is invalid");
+		}
+		const ids = new Set<string>();
+		return data.Items.map((folder) => {
+			if (ids.has(folder.Id))
+				throw new Error("Jellyfin native media folders contain duplicate IDs");
+			ids.add(folder.Id);
+			return {
+				id: folder.Id,
+				name: folder.Name,
+				collectionType: folder.CollectionType ?? folder.Type,
+			};
+		});
+	}
+
 	/**
 	 * Get all items in a library with TMDB IDs and user data.
 	 */
@@ -285,6 +399,109 @@ export class JellyfinClient {
 		const result = await this.getLibraryItemsWithRawCoverage(userId, libraryId, options);
 		return {
 			items: result.reason === null ? result.items.map(mapItem) : [],
+			expectedRawCount: result.expectedRawCount,
+			pagesAttempted: result.pagesAttempted,
+			pagesCompleted: result.pagesCompleted,
+			rawObserved: result.rawObserved,
+			reason: result.reason,
+		};
+	}
+
+	/**
+	 * Get the complete native movie, series, and box-set inventory for one
+	 * native library. Native rows request provider IDs while omitting watch and
+	 * image metadata, so presence remains independent of those optional projections.
+	 */
+	async getNativeLibraryItemsWithCoverage(
+		libraryId: string,
+		options?: {
+			includeItemTypes?: JellyfinNativeLibraryIncludeItemTypes;
+			mutationValidation?: boolean;
+		},
+	): Promise<JellyfinNativeLibraryCoverageResult> {
+		const params = new URLSearchParams({
+			ParentId: libraryId,
+			IncludeItemTypes: options?.includeItemTypes ?? "Movie,Series,BoxSet",
+			Recursive: "true",
+			CollapseBoxSetItems: "false",
+			EnableUserData: "false",
+			EnableImages: "false",
+			Fields: "ProviderIds",
+		});
+
+		const result = await this.getNativeCompleteItemsWithCoverage(
+			`/Items?${params.toString()}`,
+			jellyfinNativeLibraryItemsResponseSchema,
+			(page, requestedStartIndex) =>
+				Number.isSafeInteger(page.StartIndex) &&
+				page.StartIndex >= 0 &&
+				page.StartIndex === requestedStartIndex
+					? undefined
+					: "Jellyfin native library page cursor is invalid",
+			options?.mutationValidation,
+		);
+		return {
+			items:
+				result.reason === null
+					? result.items.map((item) => {
+							const externalIds = jellyfinExternalIds(item.ProviderIds);
+							return {
+								id: item.Id,
+								type: item.Type,
+								name: item.Name,
+								...(hasNativeInventoryExternalIds(externalIds) ? { externalIds } : {}),
+							};
+						})
+					: [],
+			expectedRawCount: result.expectedRawCount,
+			pagesAttempted: result.pagesAttempted,
+			pagesCompleted: result.pagesCompleted,
+			rawObserved: result.rawObserved,
+			reason: result.reason,
+		};
+	}
+
+	/**
+	 * Get the complete native Episode inventory for one native library. This
+	 * request deliberately does not request user-data or provider mapping
+	 * fields, so native presence remains independent of watch state and TMDB
+	 * matching.
+	 */
+	async getNativeEpisodeItemsWithCoverage(
+		libraryId: string,
+	): Promise<JellyfinNativeEpisodeCoverageResult> {
+		const params = new URLSearchParams({
+			ParentId: libraryId,
+			IncludeItemTypes: "Episode",
+			Recursive: "true",
+			CollapseBoxSetItems: "false",
+			EnableUserData: "false",
+			EnableImages: "false",
+		});
+		const result = await this.getNativeCompleteItemsWithCoverage(
+			`/Items?${params.toString()}`,
+			jellyfinNativeEpisodeItemsResponseSchema,
+			(page, requestedStartIndex) =>
+				Number.isSafeInteger(page.StartIndex) &&
+				page.StartIndex >= 0 &&
+				page.StartIndex === requestedStartIndex
+					? undefined
+					: "Jellyfin native episode page cursor is invalid",
+		);
+		return {
+			items:
+				result.reason === null
+					? result.items.map((item) => ({
+							id: item.Id,
+							type: item.Type,
+							name: item.Name,
+							...(item.SeriesId ? { seriesId: item.SeriesId } : {}),
+							...(item.ParentIndexNumber !== undefined
+								? { seasonNumber: item.ParentIndexNumber }
+								: {}),
+							...(item.IndexNumber !== undefined ? { episodeNumber: item.IndexNumber } : {}),
+						}))
+					: [],
 			expectedRawCount: result.expectedRawCount,
 			pagesAttempted: result.pagesAttempted,
 			pagesCompleted: result.pagesCompleted,
@@ -562,7 +779,9 @@ export class JellyfinClient {
 	}
 
 	/**
-	 * Read the exact, system-scoped identity required for a future tag update.
+	 * Read the exact identity required for a future tag update. API keys do not
+	 * carry a user ID, so Jellyfin 10.11 requires an explicit enabled admin
+	 * context for both item detail and its translated library ancestors.
 	 * The returned handle is intentionally smaller than the validated item DTO;
 	 * the latter remains private to this client for the one-shot update.
 	 */
@@ -574,16 +793,26 @@ export class JellyfinClient {
 			const server = await this.mutationRequest("/System/Info", {
 				schema: jellyfinMutationServerInfoSchema,
 			});
+			const users = await this.mutationRequest("/Users", { schema: jellyfinMutationUsersSchema });
+			const userId = users
+				.filter((user) => user.Policy.IsAdministrator && !user.Policy.IsDisabled)
+				.map((user) => user.Id)
+				.sort()[0];
+			if (!userId) throw new Error("mutation user context unavailable");
+			const userQuery = `?userId=${encodeURIComponent(userId)}`;
 			const encodedItemId = encodeURIComponent(itemId);
-			const item = await this.mutationRequest(`/Items/${encodedItemId}`, {
+			const item = await this.mutationRequest(`/Items/${encodedItemId}${userQuery}`, {
 				schema: jellyfinMutationItemSchema,
 			});
 			if (item.Id !== itemId) throw new Error("item identity mismatch");
 			const tmdbId = getCanonicalMutationTmdbId(item.ProviderIds);
 
-			const ancestors = await this.mutationRequest(`/Items/${encodedItemId}/Ancestors`, {
-				schema: jellyfinMutationAncestorsSchema,
-			});
+			const ancestors = await this.mutationRequest(
+				`/Items/${encodedItemId}/Ancestors${userQuery}`,
+				{
+					schema: jellyfinMutationAncestorsSchema,
+				},
+			);
 			const ancestorIds = ancestors.map((ancestor) => ancestor.Id);
 			if (new Set(ancestorIds).size !== ancestorIds.length) {
 				throw new Error("duplicate ancestor identity");
@@ -601,6 +830,7 @@ export class JellyfinClient {
 			});
 			this.mutationTargets.set(snapshot, {
 				dto: item,
+				userId,
 				serverId: snapshot.serverId,
 				itemId: snapshot.itemId,
 				mediaType: snapshot.mediaType,
@@ -611,6 +841,106 @@ export class JellyfinClient {
 			return snapshot;
 		} catch {
 			throw new Error("Jellyfin mutation target read failed");
+		}
+	}
+
+	/**
+	 * Read one native item and its per-user watch state using GET requests only.
+	 * A positive result is the maximum safe PlayCount among users whose item
+	 * response explicitly says Played. Missing UserData is never interpreted as
+	 * zero. Every user is read so a positive subset remains independently bound
+	 * to the current Jellyfin user identities.
+	 */
+	async readTargetWatchCount(options: {
+		itemId: string;
+		mediaType: "movie" | "series";
+		tmdbId: number;
+		libraryId: string;
+	}): Promise<JellyfinTargetWatchRead> {
+		if (
+			!isMutationIdentifier(options.itemId) ||
+			!isMutationIdentifier(options.libraryId) ||
+			!Number.isSafeInteger(options.tmdbId) ||
+			options.tmdbId <= 0
+		) {
+			throw new Error("Jellyfin target watch read failed");
+		}
+		try {
+			const server = await this.mutationRequest("/System/Info", {
+				schema: jellyfinMutationServerInfoSchema,
+			});
+			const users = await this.mutationRequest("/Users", {
+				schema: jellyfinMutationUsersSchema,
+			});
+			if (users.length === 0) throw new Error("target watch users unavailable");
+			const adminUserId = users
+				.filter((user) => user.Policy.IsAdministrator && !user.Policy.IsDisabled)
+				.map((user) => user.Id)
+				.sort()[0];
+			if (!adminUserId) throw new Error("target watch admin unavailable");
+			const encodedItemId = encodeURIComponent(options.itemId);
+			const userItemResults = await Promise.allSettled(
+				users.map((user) =>
+					this.mutationRequest(
+						`/Users/${encodeURIComponent(user.Id)}/Items/${encodedItemId}?Fields=ProviderIds,UserData`,
+						{ schema: jellyfinTargetWatchItemSchema },
+					),
+				),
+			);
+			const userItems = userItemResults
+				.filter(
+					(
+						result,
+					): result is PromiseFulfilledResult<z.infer<typeof jellyfinTargetWatchItemSchema>> =>
+						result.status === "fulfilled",
+				)
+				.map((result) => result.value);
+			if (userItems.length === 0) throw new Error("target watch item unavailable");
+			const expectedType = options.mediaType === "movie" ? "Movie" : "Series";
+			for (const item of userItems) {
+				if (item.Id !== options.itemId || item.Type !== expectedType) {
+					throw new Error("target watch item identity mismatch");
+				}
+				if (getCanonicalMutationTmdbId(item.ProviderIds ?? {}) !== options.tmdbId) {
+					throw new Error("target watch TMDb identity mismatch");
+				}
+			}
+			const ancestors = await this.mutationRequest(
+				`/Items/${encodedItemId}/Ancestors?userId=${encodeURIComponent(adminUserId)}`,
+				{ schema: jellyfinMutationAncestorsSchema },
+			);
+			const ancestorIds = ancestors.map((ancestor) => ancestor.Id);
+			if (
+				new Set(ancestorIds).size !== ancestorIds.length ||
+				!ancestorIds.includes(options.libraryId)
+			) {
+				throw new Error("target watch library identity mismatch");
+			}
+			let observedValue = 0;
+			for (const item of userItems) {
+				const userData = item.UserData;
+				if (
+					userData?.PlayCount !== undefined &&
+					userData.PlayCount !== null &&
+					(!Number.isSafeInteger(userData.PlayCount) || userData.PlayCount < 0)
+				) {
+					throw new Error("target watch count is invalid");
+				}
+				if (userData?.Played !== true) continue;
+				if (userData?.PlayCount !== undefined && userData.PlayCount !== null) {
+					observedValue = Math.max(observedValue, userData.PlayCount);
+				}
+			}
+			return Object.freeze({
+				serverId: server.Id,
+				itemId: options.itemId,
+				mediaType: options.mediaType,
+				tmdbId: options.tmdbId,
+				libraryId: options.libraryId,
+				observedValue,
+			});
+		} catch {
+			throw new Error("Jellyfin target watch read failed");
 		}
 	}
 
@@ -682,8 +1012,21 @@ export class JellyfinClient {
 		return result.items;
 	}
 
-	private async getCompleteItemsWithCoverage(path: string): Promise<JellyfinRawItemsResult> {
-		const items: JellyfinRawItem[] = [];
+	private async getCompleteItemsWithCoverage(
+		path: string,
+	): Promise<JellyfinRawItemsResult<JellyfinRawItem>>;
+	private async getCompleteItemsWithCoverage<T extends JellyfinItemsEnvelope>(
+		path: string,
+		schema: z.ZodType<T>,
+		validatePage?: JellyfinPageValidator<T>,
+	): Promise<JellyfinRawItemsResult<T["Items"][number]>>;
+	private async getCompleteItemsWithCoverage<T extends JellyfinItemsEnvelope>(
+		path: string,
+		schema: z.ZodType<T> = jellyfinItemsResponseSchema as unknown as z.ZodType<T>,
+		validatePage?: JellyfinPageValidator<T>,
+		mutationValidation = false,
+	): Promise<JellyfinRawItemsResult<T["Items"][number]>> {
+		const items: T["Items"][number][] = [];
 		const seenIds = new Set<string>();
 		let expectedTotal: number | null = null;
 		let startIndex = 0;
@@ -696,13 +1039,18 @@ export class JellyfinClient {
 			const pageUrl = new URL(path, "http://jellyfin.invalid");
 			pageUrl.searchParams.set("StartIndex", String(startIndex));
 			pageUrl.searchParams.set("Limit", String(COMPLETE_ITEMS_PAGE_SIZE));
-			let data: z.infer<typeof jellyfinItemsResponseSchema>;
+			let data: T;
 			try {
-				data = await this.request(`${pageUrl.pathname}${pageUrl.search}`, {
-					schema: jellyfinItemsResponseSchema,
-				});
+				data = mutationValidation
+					? await this.mutationRequest(`${pageUrl.pathname}${pageUrl.search}`, { schema })
+					: await this.request(`${pageUrl.pathname}${pageUrl.search}`, { schema });
 			} catch {
 				failureMessage = "Jellyfin item page request failed";
+				break;
+			}
+			const pageValidationFailure = validatePage?.(data, startIndex);
+			if (pageValidationFailure) {
+				failureMessage = pageValidationFailure;
 				break;
 			}
 
@@ -773,6 +1121,126 @@ export class JellyfinClient {
 			rawObserved: items.length,
 			reason: null,
 		};
+	}
+
+	private async getNativeCompleteItemsWithCoverage<T extends JellyfinItemsEnvelope>(
+		path: string,
+		schema: z.ZodType<T>,
+		validatePage?: JellyfinPageValidator<T>,
+		mutationValidation = false,
+	): Promise<JellyfinRawItemsResult<T["Items"][number]>> {
+		let pagesAttempted = 0;
+		let pagesCompleted = 0;
+
+		for (let restartCount = 0; restartCount <= 1; restartCount++) {
+			pagesAttempted = 0;
+			pagesCompleted = 0;
+			const items: T["Items"][number][] = [];
+			const seenIds = new Set<string>();
+			let expectedTotal: number | null = null;
+			let startIndex = 0;
+			let restartReason: string | undefined;
+			let failureMessage: string | undefined;
+
+			while (expectedTotal === null || startIndex < expectedTotal) {
+				pagesAttempted++;
+				const pageUrl = new URL(path, "http://jellyfin.invalid");
+				pageUrl.searchParams.set("StartIndex", String(startIndex));
+				pageUrl.searchParams.set("Limit", String(COMPLETE_ITEMS_PAGE_SIZE));
+				let data: T | undefined;
+				for (let attempt = 0; attempt < NATIVE_PAGE_RETRY_DELAYS_MS.length + 1; attempt++) {
+					try {
+						data = mutationValidation
+							? await this.mutationRequest(`${pageUrl.pathname}${pageUrl.search}`, { schema })
+							: await this.request(`${pageUrl.pathname}${pageUrl.search}`, { schema });
+						break;
+					} catch (error) {
+						if (
+							mutationValidation ||
+							error instanceof UpstreamValidationError ||
+							attempt >= NATIVE_PAGE_RETRY_DELAYS_MS.length
+						) {
+							failureMessage = "Jellyfin native item page request failed";
+							break;
+						}
+						await new Promise<void>((resolve) =>
+							setTimeout(resolve, NATIVE_PAGE_RETRY_DELAYS_MS[attempt]),
+						);
+					}
+				}
+				if (!data) break;
+
+				const pageValidationFailure = validatePage?.(data, startIndex);
+				if (pageValidationFailure) {
+					failureMessage = pageValidationFailure;
+					break;
+				}
+				if (
+					!Number.isSafeInteger(data.TotalRecordCount) ||
+					data.TotalRecordCount < 0 ||
+					data.TotalRecordCount > COMPLETE_ITEMS_MAX
+				) {
+					failureMessage = `Jellyfin native item inventory contains ${data.TotalRecordCount} rows, exceeding the safe ${COMPLETE_ITEMS_MAX}-row limit`;
+					break;
+				}
+				if (expectedTotal === null) {
+					expectedTotal = data.TotalRecordCount;
+				} else if (data.TotalRecordCount !== expectedTotal) {
+					restartReason = "Jellyfin native item inventory changed while it was being paged";
+					break;
+				}
+				if (
+					data.Items.length > COMPLETE_ITEMS_PAGE_SIZE ||
+					startIndex + data.Items.length > expectedTotal
+				) {
+					failureMessage = "Jellyfin native item pagination exceeded its declared total";
+					break;
+				}
+				if (data.Items.length === 0 && startIndex < expectedTotal) {
+					failureMessage = "Jellyfin native item pagination stopped before the declared total";
+					break;
+				}
+
+				const pageIds = new Set<string>();
+				for (const item of data.Items) {
+					if (!item.Id.trim() || pageIds.has(item.Id) || seenIds.has(item.Id)) {
+						restartReason = "Jellyfin native item pagination returned a duplicate item";
+						break;
+					}
+					pageIds.add(item.Id);
+				}
+				if (restartReason) break;
+				for (const item of data.Items) {
+					seenIds.add(item.Id);
+					items.push(item);
+				}
+				pagesCompleted++;
+				startIndex += data.Items.length;
+			}
+
+			if (restartReason && restartCount === 0) continue;
+			if (restartReason) failureMessage = restartReason;
+			if (failureMessage || expectedTotal === null || items.length !== expectedTotal) {
+				return {
+					items: [],
+					expectedRawCount: expectedTotal,
+					pagesAttempted,
+					pagesCompleted,
+					rawObserved: items.length,
+					reason: "page-failure",
+					...(failureMessage ? { failureMessage } : {}),
+				};
+			}
+			return {
+				items,
+				expectedRawCount: expectedTotal,
+				pagesAttempted,
+				pagesCompleted,
+				rawObserved: items.length,
+				reason: null,
+			};
+		}
+		throw new Error("Jellyfin native item pagination exhausted its restart budget");
 	}
 
 	private authHeaders(): Record<string, string> {
@@ -861,6 +1329,7 @@ export class JellyfinClient {
 				method: options.method ?? "GET",
 				headers,
 				signal: AbortSignal.timeout(this.timeout),
+				redirect: "error",
 			};
 			if (options.body) {
 				headers["Content-Type"] = "application/json";
@@ -894,6 +1363,7 @@ export class JellyfinClient {
 				headers,
 				body: JSON.stringify(body),
 				signal: AbortSignal.timeout(this.timeout),
+				redirect: "error",
 			});
 			if (response.status < 200 || response.status >= 300) {
 				throw new Error("provider update failed");

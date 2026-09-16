@@ -61,7 +61,12 @@ function cacheStatusForUi(
 		attemptState === "error" ||
 		status.lastAttemptResult === "error" ||
 		status.lastResult === "error";
-	const running = attemptState === "in_progress" || status.lastAttemptResult === "in_progress";
+	const running =
+		attemptState === "in_progress" ||
+		(normalizePlexAttemptState(status.lastAttemptResult) === "in_progress" &&
+			(status.lastAttemptAt != null
+				? status.lastAttemptAt.getTime() >= status.lastRefreshedAt.getTime()
+				: status.lastAttemptResult === "in_progress"));
 	const positiveOnly = evidence?.publicationLevel === "positive-only";
 	const boundedCoverage = positiveOnly || evidence?.completeness === "partial";
 	return {

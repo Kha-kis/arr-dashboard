@@ -1,5 +1,10 @@
 import type { FastifyBaseLogger } from "fastify";
 import { acquireIndependentCleanupOperationGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
+import {
+	isRetryableLibraryRefreshResult,
+	type LibraryRefreshRecoveryHandoff,
+	type LibraryRefreshRecoveryProvider,
+} from "../services/library-refresh-recovery.js";
 import type {
 	ProviderCacheRefreshAttempt,
 	ProviderCacheRefreshClaim,
@@ -43,6 +48,12 @@ export type StartProviderCacheRefreshOptions<TResult> = {
 	claim: () => Promise<ProviderCacheRefreshClaim>;
 	produce: (attempt: ProviderCacheRefreshAttempt) => Promise<TResult>;
 	log: Pick<FastifyBaseLogger, "info" | "warn">;
+	recovery?: {
+		provider: LibraryRefreshRecoveryProvider;
+		userId: string;
+		instanceId: string;
+		handoff: LibraryRefreshRecoveryHandoff;
+	};
 };
 
 /**
@@ -89,20 +100,45 @@ export async function startProviderCacheRefreshInBackground<TResult>(
 		release();
 		return { accepted: true, backgroundTask: Promise.resolve() };
 	}
+	const recoveryRequest = options.recovery
+		? {
+				provider: options.recovery.provider,
+				userId: options.recovery.userId,
+				instanceId: options.recovery.instanceId,
+				attempt: claim.attempt,
+			}
+		: undefined;
+	if (recoveryRequest) {
+		try {
+			options.recovery?.handoff.admit(recoveryRequest);
+		} catch {
+			// A failed in-process handoff must not strand the cleanup lease.
+		}
+	}
 
 	const backgroundTask = Promise.resolve()
-		.then(() => options.produce(claim.attempt))
-		.then((result) => {
+		.then(async () => {
+			let result: TResult | undefined;
+			let thrown = false;
+			try {
+				result = await options.produce(claim.attempt);
+			} catch {
+				thrown = true;
+			}
+			const settlement = thrown ? "failed" : classifyProviderRefreshSettlement(result);
 			emit(
 				options.log,
-				"info",
+				thrown ? "warn" : "info",
 				options.cacheType,
-				classifyProviderRefreshSettlement(result),
+				settlement,
 				"Provider cache refresh settled",
 			);
-		})
-		.catch(() => {
-			emit(options.log, "warn", options.cacheType, "failed", "Provider cache refresh settled");
+			if (
+				recoveryRequest &&
+				isRetryableLibraryRefreshResult(options.recovery!.provider, result, thrown)
+			) {
+				await options.recovery!.handoff.arm(recoveryRequest).catch(() => undefined);
+			}
 		})
 		.finally(release);
 
@@ -113,6 +149,8 @@ export async function startProviderCacheRefreshInBackground<TResult>(
 export function classifyProviderRefreshSettlement(value: unknown): ProviderRefreshSettlement {
 	if (!isRecord(value)) return "unpublished";
 	if (value.superseded === true) return "superseded";
+	if (value.nativeInventoryStatus === "superseded") return "superseded";
+	if (value.nativeInventoryStatus === "failed") return "failed";
 	const completedAt = value.completedAt;
 	const hasCompletionTimestamp =
 		completedAt instanceof Date && Number.isFinite(completedAt.getTime());

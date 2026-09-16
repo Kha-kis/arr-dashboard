@@ -32,6 +32,19 @@ vi.mock("../../lib/plex/plex-authority-service.js", async (importOriginal) => ({
 vi.mock("../../lib/library-insights/watch-evidence.js", () => ({
 	readOwnedJellyfinInsightWatchEvidence: mocks.readInsightWatchEvidence,
 }));
+vi.mock("../../lib/jellyfin/jellyfin-display-evidence.js", async (original) => ({
+	...(await original<typeof import("../../lib/jellyfin/jellyfin-display-evidence.js")>()),
+	readOwnedJellyfinLibraryDisplaySources: async (input: unknown) => {
+		const result = await mocks.readInsightWatchEvidence(input);
+		return {
+			sources: (result.providerStatus?.sources ?? []).map((source: { instanceId: string }) => ({
+				instanceId: source.instanceId,
+				rows: result.rows,
+			})),
+			providerStatus: result.providerStatus,
+		};
+	},
+}));
 vi.mock("../../lib/seerr/seerr-client.js", () => ({
 	SeerrClient: class {
 		constructor(...args: unknown[]) {
@@ -61,11 +74,32 @@ const unavailableEvidence = {
 	},
 } as const;
 
+function exactWatchStatus() {
+	return {
+		availability: "current",
+		evidence: "complete",
+		observedAt: "2026-09-15T00:00:00.000Z",
+		ageSeconds: 0,
+		latestAttempt: "successful",
+		reasonCodes: [],
+		domains: [
+			{
+				domain: "watch-count",
+				availability: "current",
+				evidence: "complete",
+				valueSemantics: "exact",
+				reasonCodes: [],
+			},
+		],
+	};
+}
+
 const authoritativePlexEvidence = [
 	{
 		available: true,
 		instanceId: "plex-1",
 		rows: [],
+		providerStatus: exactWatchStatus(),
 		evidence: {
 			availability: "current",
 			authority: "authoritative",
@@ -83,6 +117,7 @@ const jellyfinInstances = [
 ] as const;
 
 const currentStatus = {
+	domains: exactWatchStatus().domains,
 	availability: "current",
 	evidence: "complete",
 	observedAt: "2026-09-03T00:00:00.000Z",
@@ -163,6 +198,16 @@ function candidateItem(overrides: Record<string, unknown> = {}) {
 }
 
 const statusWith = (availability: string, evidence: string) => ({
+	domains: [
+		{
+			domain: "watch-count",
+			availability: availability === "partial" ? "current" : availability,
+			evidence,
+			valueSemantics:
+				evidence === "complete" ? "exact" : evidence === "unknown" ? "unknown" : "lower-bound",
+			reasonCodes: [],
+		},
+	],
 	availability,
 	evidence,
 	observedAt: availability === "unavailable" ? null : "2026-09-01T00:00:00.000Z",
@@ -217,6 +262,7 @@ describe("library insight Plex authority contracts", () => {
 	let app: FastifyInstance;
 
 	beforeEach(async () => {
+		vi.resetAllMocks();
 		const evidence = [
 			{
 				available: true,
@@ -284,13 +330,13 @@ describe("library insight Plex authority contracts", () => {
 			const response = await createInjectAuthenticated(app)("GET", url);
 			const body = response.json();
 
-			expect(response.statusCode).toBe(503);
-			expect(body).toEqual({
-				error: "Plex cache evidence is unavailable",
+			expect(response.statusCode).toBe(200);
+			expect(body).toMatchObject({
+				success: true,
+				data: { items: [], unknownItems: [], hasWatchData: false },
 				evidence: unavailableEvidence,
 			});
-			expect(body).not.toHaveProperty("data");
-			expect(body).not.toHaveProperty(field);
+			if (field === "totalWastedBytes") expect(body.data.totalWastedBytes).toBeNull();
 			expect(JSON.stringify(body)).not.toContain("in_progress:");
 		},
 	);
@@ -488,7 +534,7 @@ describe("library insight Plex authority contracts", () => {
 		});
 	});
 
-	it("withholds disk-waste conclusions for a degraded owned Jellyfin topology before candidates", async () => {
+	it("withholds disk-waste conclusions for a degraded owned Jellyfin topology while reading candidates", async () => {
 		mocks.scanUserPolicyEvidence.mockResolvedValue([]);
 		mocks.readInsightWatchEvidence.mockResolvedValueOnce({
 			configured: true,
@@ -507,6 +553,15 @@ describe("library insight Plex authority contracts", () => {
 							ageSeconds: 3600,
 							latestAttempt: "successful",
 							reasonCodes: [],
+							domains: [
+								{
+									domain: "watch-count",
+									availability: "last-known",
+									evidence: "complete",
+									valueSemantics: "exact",
+									reasonCodes: [],
+								},
+							],
 						},
 					},
 				],
@@ -531,11 +586,11 @@ describe("library insight Plex authority contracts", () => {
 		expect(response.statusCode).toBe(200);
 		expect(response.json()).toMatchObject({
 			success: true,
-			data: { items: [], totalWastedBytes: 0, hasPlexData: false, hasWatchData: false },
+			data: { items: [], totalWastedBytes: null, hasPlexData: false, hasWatchData: true },
 			providerStatus: { availability: "partial" },
 		});
 		expect(mocks.readInsightWatchEvidence).toHaveBeenCalledTimes(1);
-		expect(libraryFindMany).not.toHaveBeenCalled();
+		expect(libraryFindMany).toHaveBeenCalled();
 		expect(serviceInstanceFindMany).toHaveBeenCalledWith({
 			where: { userId: expect.any(String), enabled: true, service: { in: ["JELLYFIN", "EMBY"] } },
 			select: { id: true, label: true, service: true },
@@ -587,7 +642,7 @@ describe("library insight Plex authority contracts", () => {
 	});
 
 	it.each(degradedTopologies)(
-		"blocks degraded %s disk-waste conclusions before candidates, even with Plex authority",
+		"blocks degraded %s disk-waste conclusions while retaining candidate access, even with Plex authority",
 		async (_name, statuses, positive, availability) => {
 			const serviceInstanceFindMany = app.prisma.serviceInstance.findMany as ReturnType<
 				typeof vi.fn
@@ -612,16 +667,16 @@ describe("library insight Plex authority contracts", () => {
 			expect(response.statusCode).toBe(200);
 			expect(body).toMatchObject({
 				success: true,
-				data: { items: [], totalWastedBytes: 0, hasPlexData: true, hasWatchData: false },
+				data: { items: [], totalWastedBytes: null, hasPlexData: true, hasWatchData: true },
 				providerStatus: { availability },
 			});
 			expect(body).not.toHaveProperty("data.items[0]");
-			expect(app.prisma.libraryCache.findMany).not.toHaveBeenCalled();
+			expect(app.prisma.libraryCache.findMany).toHaveBeenCalled();
 		},
 	);
 
 	it.each(degradedTopologies)(
-		"blocks degraded %s requested-unwatched before Seerr and candidates",
+		"blocks degraded %s requested-unwatched while retaining Seerr request access",
 		async (_name, statuses, positive, availability) => {
 			const serviceInstanceFindMany = app.prisma.serviceInstance.findMany as ReturnType<
 				typeof vi.fn
@@ -646,11 +701,11 @@ describe("library insight Plex authority contracts", () => {
 			expect(response.statusCode).toBe(200);
 			expect(body).toMatchObject({
 				success: true,
-				data: { items: [], hasSeerrData: false, hasPlexData: true, hasWatchData: false },
+				data: { items: [], hasSeerrData: true, hasPlexData: true, hasWatchData: true },
 				providerStatus: { availability },
 			});
-			expect(mocks.seerrConstructed).not.toHaveBeenCalled();
-			expect(mocks.seerrGetRequests).not.toHaveBeenCalled();
+			expect(mocks.seerrConstructed).toHaveBeenCalledTimes(1);
+			expect(mocks.seerrGetRequests).toHaveBeenCalledTimes(1);
 			expect(app.prisma.libraryCache.findMany).not.toHaveBeenCalled();
 		},
 	);
@@ -665,7 +720,7 @@ describe("library insight Plex authority contracts", () => {
 		expect(response.statusCode).toBe(200);
 		expect(response.json()).toMatchObject({
 			success: true,
-			data: { items: [], totalWastedBytes: 0, hasPlexData: false, hasWatchData: false },
+			data: { items: [], totalWastedBytes: null, hasPlexData: false, hasWatchData: false },
 		});
 		expect(response.json()).not.toHaveProperty("providerStatus");
 	});
@@ -689,7 +744,7 @@ describe("library insight Plex authority contracts", () => {
 	it.each([
 		["positive watch row", [privateWatchRow], 0],
 		["verified zero watch row", [zeroWatchRow], 1],
-		["missing watch row", [], 1],
+		["missing watch row", [], 0],
 	] as const)(
 		"evaluates disk-waste candidates with current-complete evidence: %s",
 		async (_name, rows, expectedItems) => {
@@ -721,14 +776,15 @@ describe("library insight Plex authority contracts", () => {
 
 			expect(response.statusCode).toBe(200);
 			expect(response.json().data.items).toHaveLength(expectedItems);
-			expect(libraryFindMany).toHaveBeenCalledWith(expect.objectContaining({ take: 150 }));
+			expect(response.json().data.unknownItems).toHaveLength(_name === "missing watch row" ? 1 : 0);
+			expect(libraryFindMany).toHaveBeenCalledWith(expect.objectContaining({ take: 151 }));
 		},
 	);
 
 	it.each([
 		["positive watch row", [privateWatchRow], 0],
 		["verified zero watch row", [zeroWatchRow], 1],
-		["missing watch row", [], 1],
+		["missing watch row", [], 0],
 	] as const)(
 		"evaluates requested-unwatched candidates with current-complete evidence: %s",
 		async (_name, rows, expectedItems) => {
@@ -770,7 +826,8 @@ describe("library insight Plex authority contracts", () => {
 
 			expect(response.statusCode).toBe(200);
 			expect(response.json().data.items).toHaveLength(expectedItems);
-			expect(libraryFindMany).toHaveBeenCalledWith(expect.objectContaining({ take: 125 }));
+			expect(response.json().data.unknownItems).toHaveLength(_name === "missing watch row" ? 1 : 0);
+			expect(libraryFindMany).toHaveBeenCalledWith(expect.objectContaining({ take: 126 }));
 			expect(mocks.seerrGetRequests).toHaveBeenCalledWith({
 				take: 50,
 				skip: 0,
@@ -986,6 +1043,7 @@ describe("library insight Plex authority contracts", () => {
 
 		expect(response.statusCode).toBe(200);
 		expect(mocks.seerrGetRequests).toHaveBeenCalledTimes(20);
+		expect(response.json().data).toMatchObject({ requestStatus: "partial", limited: true });
 		expect(mocks.seerrGetRequests).toHaveBeenNthCalledWith(1, {
 			take: 50,
 			skip: 0,

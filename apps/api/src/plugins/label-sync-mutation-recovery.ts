@@ -1,10 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { recoverLabelSyncMutationAttempts } from "../lib/label-sync/jellyfin-mutation-repository.js";
+import {
+	type LabelSyncMutationAdmission,
+	registerLabelSyncMutationAdmission,
+} from "../lib/label-sync/mutation-admission.js";
 
-export type LabelSyncMutationAdmission = {
-	readonly isOpen: () => boolean;
-};
+export type { LabelSyncMutationAdmission } from "../lib/label-sync/mutation-admission.js";
 
 declare module "fastify" {
 	interface FastifyInstance {
@@ -17,6 +19,11 @@ const labelSyncMutationRecoveryPlugin = fastifyPlugin(
 		let open = false;
 		const admission: LabelSyncMutationAdmission = Object.freeze({ isOpen: () => open });
 		app.decorate("labelSyncMutationAdmission", admission);
+		const unregister = registerLabelSyncMutationAdmission(app.prisma, admission);
+		app.addHook("onClose", async () => {
+			open = false;
+			unregister();
+		});
 
 		app.addHook("onReady", async () => {
 			try {

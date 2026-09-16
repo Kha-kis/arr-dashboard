@@ -75,7 +75,175 @@ afterEach(async () => {
 	}
 });
 
+async function physicalFixture(prisma: Awaited<ReturnType<typeof database>>, otherOwner = false) {
+	const destination = await prisma.serviceInstance.findUniqueOrThrow({
+		where: { id: baseInput.destinationInstanceId },
+	});
+	await prisma.serviceInstance.update({
+		where: { id: destination.id },
+		data: {
+			expectedIdentity: "physical-server",
+			identityStatus: "VERIFIED",
+			identityKind: "JELLYFIN_SERVER_ID",
+		},
+	});
+	const userId = otherOwner ? "another-owner" : baseInput.userId;
+	if (otherOwner) await prisma.user.create({ data: { id: userId, username: userId } });
+	const alias = {
+		...baseInput,
+		userId,
+		ruleId: "alias-rule",
+		destinationInstanceId: "alias-destination",
+		destinationTag: "different-tag",
+	};
+	await prisma.serviceInstance.create({
+		data: {
+			...destination,
+			id: alias.destinationInstanceId,
+			userId,
+			expectedIdentity: "physical-server",
+			identityStatus: "VERIFIED",
+			identityKind: "JELLYFIN_SERVER_ID",
+		},
+	});
+	await prisma.labelSyncRule.create({
+		data: {
+			id: alias.ruleId,
+			userId,
+			name: "alias rule",
+			sourceService: "radarr",
+			sourceTagName: "source",
+			destService: "jellyfin",
+			destInstanceId: alias.destinationInstanceId,
+			destTagName: alias.destinationTag,
+		},
+	});
+	return alias;
+}
+
 describe("JellyfinMutationRepository SQLite lifecycle", () => {
+	it("guards a caller-owned destination transaction and cleans terminal attempts only during deletion", async () => {
+		const prisma = await database();
+		const repo = new JellyfinMutationRepository(prisma);
+		const claim = await repo.claim(baseInput);
+		if (claim.kind !== "acquired") throw new Error("expected claim");
+		await expect(
+			prisma.$transaction(async (tx) => {
+				await repo.guardDestinationInTransaction(tx, {
+					userId: baseInput.userId,
+					destinationInstanceId: baseInput.destinationInstanceId,
+				});
+				await tx.serviceInstance.update({
+					where: { id: baseInput.destinationInstanceId },
+					data: { label: "changed" },
+				});
+			}),
+		).rejects.toThrow();
+		expect(
+			(
+				await prisma.serviceInstance.findUniqueOrThrow({
+					where: { id: baseInput.destinationInstanceId },
+				})
+			).label,
+		).toBe("repo-destination");
+		await repo.completePreSend({
+			id: claim.id,
+			userId: baseInput.userId,
+			ruleId: baseInput.ruleId,
+			destinationInstanceId: baseInput.destinationInstanceId,
+			activeOperationKey: claim.activeOperationKey,
+			claimToken: claim.claimToken,
+			sendAttemptCount: 0,
+			status: "noop",
+			reasonCode: "already_applied",
+			lastObservedAt: new Date(),
+		});
+		await prisma.$transaction(async (tx) => {
+			await repo.guardDestinationInTransaction(tx, {
+				userId: baseInput.userId,
+				destinationInstanceId: baseInput.destinationInstanceId,
+			});
+			await tx.serviceInstance.update({
+				where: { id: baseInput.destinationInstanceId },
+				data: { label: "allowed" },
+			});
+		});
+		expect(await prisma.labelSyncMutationAttempt.count()).toBe(1);
+		await prisma.$transaction(async (tx) => {
+			await repo.guardDestinationInTransaction(tx, {
+				userId: baseInput.userId,
+				destinationInstanceId: baseInput.destinationInstanceId,
+				deleteTerminalRows: true,
+			});
+			await tx.serviceInstance.delete({ where: { id: baseInput.destinationInstanceId } });
+		});
+		expect(await prisma.labelSyncMutationAttempt.count()).toBe(0);
+	}, 120_000);
+
+	it.each([false, true])(
+		"blocks a competing physical target across rules/connections (other owner %s)",
+		async (otherOwner) => {
+			const prisma = await database();
+			const alias = await physicalFixture(prisma, otherOwner);
+			const repo = new JellyfinMutationRepository(prisma);
+			const claim = await repo.claimPhysicalTarget(baseInput, "physical-server");
+			expect(claim.kind).toBe("acquired");
+			if (claim.kind !== "acquired") throw new Error("expected claim");
+			expect(await repo.claimPhysicalTarget(alias, "physical-server")).toEqual({
+				kind: "target-busy",
+			});
+			const envelope = {
+				id: claim.id,
+				userId: baseInput.userId,
+				ruleId: baseInput.ruleId,
+				destinationInstanceId: baseInput.destinationInstanceId,
+				activeOperationKey: claim.activeOperationKey,
+				claimToken: claim.claimToken,
+			};
+			await repo.markSending({ ...envelope, sendAttemptCount: 0 });
+			await recoverLabelSyncMutationAttempts(prisma);
+			expect(await repo.claimPhysicalTarget(alias, "physical-server")).toEqual({
+				kind: "target-busy",
+			});
+			expect(await prisma.labelSyncMutationAttempt.count()).toBe(1);
+			const { claimToken: _sendToken, ...reconcileEnvelope } = envelope;
+			const reconciliation = await repo.acquireReconciliation(reconcileEnvelope);
+			if (reconciliation.kind !== "acquired") throw new Error("expected reconciliation");
+			await repo.completeReconciliation({
+				...envelope,
+				claimToken: reconciliation.claimToken,
+				reconcileAttemptCount: reconciliation.reconcileAttemptCount,
+				outcome: { status: "verified", reasonCode: "applied" },
+				lastObservedAt: new Date(),
+			});
+			expect((await repo.claimPhysicalTarget(alias, "physical-server")).kind).toBe("acquired");
+		},
+		120_000,
+	);
+
+	it("rechecks verified physical identity and separates servers with colliding item ids", async () => {
+		const prisma = await database();
+		const alias = await physicalFixture(prisma);
+		const repo = new JellyfinMutationRepository(prisma);
+		await expect(repo.claimPhysicalTarget(baseInput, "wrong-server")).rejects.toThrow();
+		await prisma.serviceInstance.update({
+			where: { id: baseInput.destinationInstanceId },
+			data: { identityStatus: "MISMATCH" },
+		});
+		await expect(repo.claimPhysicalTarget(baseInput, "physical-server")).rejects.toThrow();
+		expect(await prisma.labelSyncMutationAttempt.count()).toBe(0);
+		await prisma.serviceInstance.update({
+			where: { id: baseInput.destinationInstanceId },
+			data: { identityStatus: "VERIFIED" },
+		});
+		expect((await repo.claimPhysicalTarget(baseInput, "physical-server")).kind).toBe("acquired");
+		await prisma.serviceInstance.update({
+			where: { id: alias.destinationInstanceId },
+			data: { expectedIdentity: "different-server" },
+		});
+		expect((await repo.claimPhysicalTarget(alias, "different-server")).kind).toBe("acquired");
+	}, 120_000);
+
 	it("claims once, performs exact CAS lifecycle, and blocks resend after unknown", async () => {
 		const prisma = await database();
 		const repository = new JellyfinMutationRepository(prisma, {

@@ -374,40 +374,77 @@ describe("Plex episode scheduler continuations", () => {
 		expect(mocks.refresh).toHaveBeenCalledTimes(4);
 	});
 
-	it.each(["parent-refresh-in-progress", "parent-refresh-unavailable"])(
-		"retries %s three times with bounded backoff",
-		async (retryCategory) => {
-			(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
-				{ id: "a", label: "A" },
-			]);
-			mocks.refresh.mockResolvedValue({
-				complete: false,
-				errors: 1,
-				upserted: 0,
-				refreshedShows: 0,
-				capacityDegraded: false,
-				retryCategory,
-			});
+	it("retries parent-refresh-unavailable three times with bounded backoff", async () => {
+		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ id: "a", label: "A" },
+		]);
+		mocks.refresh.mockResolvedValue({
+			complete: false,
+			errors: 1,
+			upserted: 0,
+			refreshedShows: 0,
+			capacityDegraded: false,
+			retryCategory: "parent-refresh-unavailable",
+		});
 
-			await app.ready();
-			await vi.advanceTimersByTimeAsync(5 * 60_000);
-			expect(mocks.refresh).toHaveBeenCalledTimes(1);
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(2);
+		await vi.advanceTimersByTimeAsync(120_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(3);
+		await vi.advanceTimersByTimeAsync(600_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(4);
+		await vi.advanceTimersByTimeAsync(600_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(4);
+		expect(mocks.refresh.mock.calls.map(([input]) => input.resumeFailed)).toEqual([
+			true,
+			false,
+			false,
+			false,
+		]);
+	});
+
+	it("continues a valid parent-refresh wait beyond bounded backoff and resumes automatically", async () => {
+		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ id: "a", label: "A" },
+		]);
+		const continuationAttempt = {
+			attemptedAt: new Date("2026-09-15T12:00:00.000Z"),
+			resultMarker: "in_progress:parent-wait-test",
+		};
+		const pending = {
+			complete: false,
+			errors: 0,
+			upserted: 0,
+			refreshedShows: 0,
+			capacityDegraded: false,
+			retryCategory: "parent-refresh-in-progress" as const,
+			continuationAttempt,
+		};
+		const complete = {
+			complete: true,
+			errors: 0,
+			upserted: 1,
+			refreshedShows: 1,
+			capacityDegraded: false,
+		};
+		mocks.refresh.mockImplementation(async () =>
+			mocks.refresh.mock.calls.length < 25 ? pending : complete,
+		);
+
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(1);
+		expect(mocks.refresh.mock.calls[0]?.[1]).toBeUndefined();
+		for (let retry = 0; retry < 24; retry += 1) {
 			await vi.advanceTimersByTimeAsync(30_000);
-			expect(mocks.refresh).toHaveBeenCalledTimes(2);
-			await vi.advanceTimersByTimeAsync(120_000);
-			expect(mocks.refresh).toHaveBeenCalledTimes(3);
-			await vi.advanceTimersByTimeAsync(600_000);
-			expect(mocks.refresh).toHaveBeenCalledTimes(4);
-			await vi.advanceTimersByTimeAsync(600_000);
-			expect(mocks.refresh).toHaveBeenCalledTimes(4);
-			expect(mocks.refresh.mock.calls.map(([input]) => input.resumeFailed)).toEqual([
-				true,
-				false,
-				false,
-				false,
-			]);
-		},
-	);
+		}
+		expect(mocks.refresh).toHaveBeenCalledTimes(25);
+		expect(mocks.refresh.mock.calls[1]?.[1]).toEqual(continuationAttempt);
+		expect(mocks.refresh.mock.calls.at(-1)?.[0].resumeFailed).toBe(false);
+	});
 
 	it("retries temporary live identity unavailability three times with bounded backoff", async () => {
 		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([

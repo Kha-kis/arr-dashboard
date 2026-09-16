@@ -1,6 +1,7 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { Encryptor } from "../auth/encryption.js";
 import type { PrismaClient, ServiceInstance } from "../prisma.js";
+import { refreshNativeInventory } from "../provider-observation/native-inventory-refresh.js";
 import {
 	claimObservationUnit,
 	createOrLoadObservationRun,
@@ -41,6 +42,7 @@ import {
 	finalizePlexEpisodeRun,
 	stagePlexEpisodeUnitInTransaction,
 } from "./plex-episode-refresh-repository.js";
+import { collectPlexNativeInventory } from "./plex-native-inventory.js";
 import { plexConnectionFingerprint } from "./service-instance-fingerprint.js";
 
 export type OwnedPlexRefreshContext = {
@@ -61,7 +63,14 @@ type PlexEpisodeRunProgress = ObservationRunProgress & {
 	superseded?: true;
 	publishedItemCount?: number;
 	completedAt?: Date;
+	continuationAttempt?: PlexCacheRefreshAttempt;
 };
+
+type PlexEpisodeRefreshResultWithContinuation = PlexEpisodeRefreshResult & {
+	continuationAttempt?: PlexCacheRefreshAttempt;
+};
+
+type PlexParentReadResult = Awaited<ReturnType<PlexAuthorityService["readPositiveEpisodeParents"]>>;
 
 /**
  * Production composition seam for the durable episode runner.  The runner
@@ -179,8 +188,7 @@ export async function refreshOwnedPlexCache(
 	return await refreshWithOwnedPlexAttempt(
 		context,
 		"plex",
-		async (publicationContext, attempt) =>
-			await refreshPlexCacheWithAttempt(publicationContext, attempt),
+		refreshPlexLibraryWithNativeInventory,
 		plexPreparationFailure,
 		plexPreparationSuperseded,
 	);
@@ -198,19 +206,43 @@ export async function refreshOwnedPlexCacheWithAttempt(
 	return await refreshWithOwnedPlexAttempt(
 		context,
 		"plex",
-		async (publicationContext, exactAttempt) =>
-			await refreshPlexCacheWithAttempt(publicationContext, exactAttempt),
+		refreshPlexLibraryWithNativeInventory,
 		plexPreparationFailure,
 		plexPreparationSuperseded,
 		attempt,
 	);
 }
 
+async function refreshPlexLibraryWithNativeInventory(
+	context: PlexPublicationContext,
+	attempt: PlexCacheRefreshAttempt,
+): Promise<PlexCacheRefreshResult> {
+	const native = await refreshNativeInventory({
+		...context,
+		cacheType: "plex",
+		attempt,
+		domains: ["library", "episode"],
+		collect: async (instance) =>
+			await collectPlexNativeInventory(
+				new PlexClient(
+					instance.baseUrl,
+					instance.apiKey,
+					context.log,
+					undefined,
+					instance.httpAuthHeaders,
+				),
+			),
+	});
+	const canonical = await refreshPlexCacheWithAttempt(context, attempt);
+	return { ...canonical, nativeInventoryStatus: native.status };
+}
+
 /** Refresh episode evidence after revoking authority before credential preparation. */
 export async function refreshOwnedPlexEpisodeCache(
 	context: OwnedPlexRefreshContext,
-): Promise<PlexEpisodeRefreshResult> {
-	const progress = await runNextPlexEpisodeWorkItem(context);
+	preclaimedAttempt?: PlexCacheRefreshAttempt,
+): Promise<PlexEpisodeRefreshResultWithContinuation> {
+	const progress = await runNextPlexEpisodeWorkItem(context, preclaimedAttempt);
 	return {
 		upserted: progress.publishedItemCount ?? 0,
 		errors:
@@ -227,6 +259,7 @@ export async function refreshOwnedPlexEpisodeCache(
 		...(progress.completedAt ? { completedAt: progress.completedAt } : {}),
 		...(progress.superseded ? { superseded: true } : {}),
 		...(progress.retryCategory ? { retryCategory: progress.retryCategory } : {}),
+		...(progress.continuationAttempt ? { continuationAttempt: progress.continuationAttempt } : {}),
 	};
 }
 
@@ -234,7 +267,7 @@ export async function refreshOwnedPlexEpisodeCache(
 export async function refreshOwnedPlexEpisodeCacheWithAttempt(
 	context: OwnedPlexRefreshContext,
 	attempt: PlexCacheRefreshAttempt,
-): Promise<PlexEpisodeRefreshResult> {
+): Promise<PlexEpisodeRefreshResultWithContinuation> {
 	const progress = await runNextPlexEpisodeWorkItem(context, attempt);
 	return {
 		upserted: progress.publishedItemCount ?? 0,
@@ -252,6 +285,7 @@ export async function refreshOwnedPlexEpisodeCacheWithAttempt(
 		...(progress.completedAt ? { completedAt: progress.completedAt } : {}),
 		...(progress.superseded ? { superseded: true } : {}),
 		...(progress.retryCategory ? { retryCategory: progress.retryCategory } : {}),
+		...(progress.continuationAttempt ? { continuationAttempt: progress.continuationAttempt } : {}),
 	};
 }
 
@@ -267,6 +301,40 @@ function emptyEpisodeProgress(
 		reasonCode: "no-publication",
 		...(retryCategory ? { retryCategory } : {}),
 	};
+}
+
+function parentRefreshPendingProgress(): PlexEpisodeRunProgress {
+	return {
+		state: "running",
+		completedUnits: 0,
+		totalUnits: 0,
+		completedWork: 0,
+		totalWork: 0,
+		reasonCode: "coverage-incomplete",
+		retryCategory: "parent-refresh-in-progress",
+	};
+}
+
+function isCurrentParentRefreshPending(parents: PlexParentReadResult): boolean {
+	if (parents.available || !parents.evidence) return false;
+	const { evidence } = parents;
+	const publishedGeneration = evidence.publishedGeneration;
+	return (
+		evidence.availability === "last-known" &&
+		evidence.authority === "unavailable" &&
+		evidence.attemptState === "in_progress" &&
+		evidence.publicationLevel === "unavailable" &&
+		evidence.completeness === "unknown" &&
+		evidence.reasonCodes.length === 1 &&
+		evidence.reasonCodes[0] === "latest_attempt_in_progress" &&
+		publishedGeneration !== undefined &&
+		publishedGeneration.generationId.trim() !== "" &&
+		(publishedGeneration.publicationLevel === "authoritative" ||
+			publishedGeneration.publicationLevel === "positive-only") &&
+		Number.isFinite(Date.parse(publishedGeneration.publishedAt)) &&
+		Number.isSafeInteger(publishedGeneration.itemCount) &&
+		publishedGeneration.itemCount >= 0
+	);
 }
 
 async function runProgress(prisma: PrismaClient, runId: string): Promise<PlexEpisodeRunProgress> {
@@ -351,9 +419,19 @@ export function createPlexEpisodeWorkItemRunner(
 			attempt = attemptClaim.attempt;
 			acquired = attemptClaim.status === "acquired";
 		}
+		const ownsAttempt = acquired || preclaimedAttempt !== undefined;
+		let attemptSettled = false;
+		const retainOwnedAttempt = (progress: PlexEpisodeRunProgress): PlexEpisodeRunProgress =>
+			ownsAttempt &&
+			!attemptSettled &&
+			(progress.state === "running" || progress.state === "failed") &&
+			!progress.attemptFailed &&
+			!progress.superseded
+				? { ...progress, continuationAttempt: attempt }
+				: progress;
 		const terminateAcquired = async () => {
-			if (!acquired) return;
-			await finishPlexCacheRefreshAttemptFailure(
+			if (!acquired && !preclaimedAttempt) return "not-owned" as const;
+			const finished = await finishPlexCacheRefreshAttemptFailure(
 				context.prisma,
 				"plex_episode",
 				"coverage-incomplete",
@@ -362,6 +440,7 @@ export function createPlexEpisodeWorkItemRunner(
 				context.log,
 				attemptOptions(context),
 			);
+			return finished;
 		};
 		const parentAuthority = deps.createParentAuthority({
 			prisma: context.prisma,
@@ -372,14 +451,14 @@ export function createPlexEpisodeWorkItemRunner(
 			instanceId: context.instance.id,
 		});
 		if (!parents.available || !("targets" in parents) || parents.targets.length === 0) {
-			await terminateAcquired();
-			return emptyEpisodeProgress(
-				!parents.available
-					? parents.evidence?.attemptState === "in_progress"
-						? "parent-refresh-in-progress"
-						: "parent-refresh-unavailable"
-					: undefined,
-			);
+			if (isCurrentParentRefreshPending(parents))
+				return retainOwnedAttempt(parentRefreshPendingProgress());
+			const terminated = await terminateAcquired();
+			if (terminated === "superseded") return { ...emptyEpisodeProgress(), superseded: true };
+			return {
+				...emptyEpisodeProgress(!parents.available ? "parent-refresh-unavailable" : undefined),
+				...(terminated === "failed" && ownsAttempt ? { continuationAttempt: attempt } : {}),
+			};
 		}
 		const targets = parents.targets.map((target) => ({
 			instanceId: target.instanceId,
@@ -428,7 +507,7 @@ export function createPlexEpisodeWorkItemRunner(
 			run.connectionGeneration === runAuthority.connectionGeneration &&
 			run.identityGeneration === runAuthority.identityGeneration;
 		const finishAttemptIfExhausted = async () => {
-			if (!runOwnsAttempt) return;
+			if (!ownsAttempt || !runOwnsAttempt) return;
 			if (
 				!(await hasExhaustedObservationRunRetries(context.prisma, {
 					runId: run.id,
@@ -436,7 +515,7 @@ export function createPlexEpisodeWorkItemRunner(
 				}))
 			)
 				return;
-			await finishPlexCacheRefreshAttemptFailure(
+			const finished = await finishPlexCacheRefreshAttemptFailure(
 				context.prisma,
 				"plex_episode",
 				"provider-unavailable",
@@ -450,6 +529,7 @@ export function createPlexEpisodeWorkItemRunner(
 						authorityKey: run.authorityKey,
 					}),
 			);
+			attemptSettled = finished === "recorded" || finished === "superseded";
 		};
 		const failClaim = async (
 			claim: ObservationUnitClaim,
@@ -461,7 +541,7 @@ export function createPlexEpisodeWorkItemRunner(
 				now: new Date(),
 			});
 			if (failed) await finishAttemptIfExhausted();
-			return await runProgress(context.prisma, run.id);
+			return retainOwnedAttempt(await runProgress(context.prisma, run.id));
 		};
 		const finalizeIfComplete = async (
 			progress: PlexEpisodeRunProgress,
@@ -471,7 +551,7 @@ export function createPlexEpisodeWorkItemRunner(
 				progress.completedUnits !== progress.totalUnits ||
 				progress.completedWork !== progress.totalWork
 			)
-				return progress;
+				return retainOwnedAttempt(progress);
 			const current = await currentOwnedPlexInstance(context);
 			if (!current) return { ...progress, superseded: true };
 			let currentAuthority: ProviderPublicationAuthority;
@@ -510,6 +590,9 @@ export function createPlexEpisodeWorkItemRunner(
 				);
 			} catch (error) {
 				if (error instanceof ProviderIdentityGuardError && error.code === "IDENTITY_UNAVAILABLE") {
+					if (!ownsAttempt) {
+						return { ...progress, attemptFailed: true, retryCategory: "identity-unavailable" };
+					}
 					const finished = await finishPlexCacheRefreshAttemptFailure(
 						context.prisma,
 						"plex_episode",
@@ -535,7 +618,14 @@ export function createPlexEpisodeWorkItemRunner(
 					);
 					return finished === "recorded"
 						? { ...progress, attemptFailed: true, retryCategory: "identity-unavailable" }
-						: { ...progress, superseded: true };
+						: finished === "failed"
+							? {
+									...progress,
+									attemptFailed: true,
+									retryCategory: "identity-unavailable",
+									...(ownsAttempt ? { continuationAttempt: attempt } : {}),
+								}
+							: { ...progress, superseded: true };
 				}
 				if (error instanceof ProviderIdentityGuardError) {
 					return { ...(await runProgress(context.prisma, run.id)), superseded: true };
@@ -551,13 +641,12 @@ export function createPlexEpisodeWorkItemRunner(
 			}
 			switch (finalized.outcome) {
 				case "incomplete":
-					return progress;
+					return retainOwnedAttempt(progress);
 				case "parent-refresh-in-progress":
-					return {
+					return retainOwnedAttempt({
 						...progress,
-						attemptFailed: true,
 						retryCategory: "parent-refresh-in-progress",
-					};
+					});
 				case "terminal-no-publication":
 					return { ...(await runProgress(context.prisma, run.id)), attemptFailed: true };
 				case "superseded":
@@ -695,7 +784,7 @@ export function createPlexEpisodeWorkItemRunner(
 		}
 		if (!guardedUnit.collected.complete)
 			return await failClaim(claim, guardedUnit.collected.reasonCode);
-		if (!guardedUnit.staged) return await runProgress(context.prisma, run.id);
+		if (!guardedUnit.staged) return retainOwnedAttempt(await runProgress(context.prisma, run.id));
 		return await finalizeIfComplete(await runProgress(context.prisma, run.id));
 	};
 }

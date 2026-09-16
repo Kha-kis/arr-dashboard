@@ -1,6 +1,7 @@
 import type { LabelSyncRule, ServiceInstanceSummary } from "@arr/shared";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
 import { RuleDialog } from "../rule-dialog";
 
 const mocks = vi.hoisted(() => ({
@@ -30,7 +31,7 @@ const blockedCapability = {
 	supported: false,
 	code: "destination_mutation_authority_unavailable",
 	message:
-		"Jellyfin and Emby label destinations are temporarily unavailable because the provider cannot yet be re-authorized safely at execution time.",
+		"Emby label destinations are temporarily unavailable because the provider cannot yet be re-authorized safely at execution time.",
 } as const;
 
 function makeService(
@@ -49,8 +50,8 @@ function makeRule(overrides: Partial<LabelSyncRule> = {}): LabelSyncRule {
 		sourceService: "sonarr",
 		sourceInstanceId: "sonarr-1",
 		sourceTagName: "kids",
-		destService: "jellyfin",
-		destInstanceId: "jellyfin-1",
+		destService: "emby",
+		destInstanceId: "emby-1",
 		destTagName: "Kids",
 		destinationMutationCapability: blockedCapability,
 		lastRunAt: null,
@@ -73,23 +74,31 @@ beforeEach(() => {
 });
 
 describe("label-sync destination capability UI", () => {
-	it("keeps configured Jellyfin and Emby enabled as source choices but disables them as destinations", () => {
-		render(<RuleDialog rule={null} onClose={vi.fn()} />);
+	it("enables Jellyfin destinations while retaining Emby containment", () => {
+		render(
+			<IncognitoProvider>
+				<RuleDialog rule={null} onClose={vi.fn()} />
+			</IncognitoProvider>,
+		);
 
 		const source = screen.getByLabelText("Source service") as HTMLSelectElement;
 		const destination = screen.getByLabelText("Destination service") as HTMLSelectElement;
 		expect(source.querySelector('option[value="jellyfin"]')).not.toBeDisabled();
 		expect(source.querySelector('option[value="emby"]')).not.toBeDisabled();
-		expect(destination.querySelector('option[value="jellyfin"]')).toBeDisabled();
+		expect(destination.querySelector('option[value="jellyfin"]')).not.toBeDisabled();
 		expect(destination.querySelector('option[value="emby"]')).toBeDisabled();
-		expect(destination.querySelector('option[value="jellyfin"]')).toHaveAttribute(
+		expect(destination.querySelector('option[value="emby"]')).toHaveAttribute(
 			"title",
 			blockedCapability.message,
 		);
 	});
 
 	it("warns when editing an existing blocked destination", () => {
-		render(<RuleDialog rule={makeRule()} onClose={vi.fn()} />);
+		render(
+			<IncognitoProvider>
+				<RuleDialog rule={makeRule()} onClose={vi.fn()} />
+			</IncognitoProvider>,
+		);
 
 		expect(screen.getByRole("alert")).toHaveTextContent(blockedCapability.message);
 	});
@@ -97,11 +106,15 @@ describe("label-sync destination capability UI", () => {
 	it("shows blocked capability and disables Run for an existing rule", async () => {
 		mocks.rules = [makeRule()];
 		const { LabelSyncClient } = await import("../label-sync-client");
-		render(<LabelSyncClient />);
+		render(
+			<IncognitoProvider>
+				<LabelSyncClient />
+			</IncognitoProvider>,
+		);
 
 		expect(screen.getByText("Mutation unavailable")).toBeInTheDocument();
 		expect(screen.getByText(/Sources: Sonarr, Radarr, Plex, Jellyfin, Emby/)).toBeInTheDocument();
-		expect(screen.getByText(/Destinations: Sonarr, Radarr, or Plex/)).toBeInTheDocument();
+		expect(screen.getByText(/Destinations: Sonarr, Radarr, Plex, or Jellyfin/)).toBeInTheDocument();
 		expect(screen.queryByText(/any destination service/i)).not.toBeInTheDocument();
 		const run = screen.getByRole("button", { name: "Run rule unavailable" });
 		expect(run).toBeDisabled();
@@ -109,4 +122,22 @@ describe("label-sync destination capability UI", () => {
 		fireEvent.click(run);
 		expect(mocks.run).not.toHaveBeenCalled();
 	});
+});
+
+it("allows running a supported Jellyfin rule", async () => {
+	mocks.rules = [
+		makeRule({
+			destService: "jellyfin",
+			destInstanceId: "jellyfin-1",
+			destinationMutationCapability: { supported: true },
+		}),
+	];
+	const { LabelSyncClient } = await import("../label-sync-client");
+	render(
+		<IncognitoProvider>
+			<LabelSyncClient />
+		</IncognitoProvider>,
+	);
+	expect(screen.queryByText("Mutation unavailable")).not.toBeInTheDocument();
+	expect(screen.getByRole("button", { name: "Run rule now" })).not.toBeDisabled();
 });

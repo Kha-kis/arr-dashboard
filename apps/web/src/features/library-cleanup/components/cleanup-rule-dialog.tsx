@@ -508,6 +508,111 @@ function expressionConditions(
 	return result;
 }
 
+function isTautulliRule(ruleType: CleanupRuleType): boolean {
+	return ruleType.startsWith("tautulli_");
+}
+
+function getConditionParamsForAvailability(
+	ruleType: Exclude<CleanupRuleType, "composite">,
+	positiveTautulliOnly: boolean,
+): Record<string, unknown> {
+	const params = getDefaultConditionParams(ruleType);
+	if (positiveTautulliOnly && ruleType === "tautulli_watch_count") {
+		return { ...params, operator: "greater_than" };
+	}
+	return params;
+}
+
+function expressionHasLegacyTautulliPredicate(node: CleanupRuleExpression): boolean {
+	if (node.type === "condition") {
+		return node.ruleType === "tautulli_watch_count" && node.parameters.operator === "less_than";
+	}
+	if (node.type === "not") return expressionHasLegacyTautulliPredicate(node.child);
+	return node.children.some(expressionHasLegacyTautulliPredicate);
+}
+
+function templateHasLegacyTautulliPredicate(
+	templateData: CreateCleanupRule | null | undefined,
+): boolean {
+	if (!templateData) return false;
+	if (
+		templateData.ruleType === "tautulli_watch_count" &&
+		templateData.parameters?.operator === "less_than"
+	) {
+		return true;
+	}
+	if (
+		templateData.conditions?.some(
+			(condition) =>
+				condition.ruleType === "tautulli_watch_count" &&
+				condition.parameters?.operator === "less_than",
+		)
+	) {
+		return true;
+	}
+	return templateData.expression
+		? expressionHasLegacyTautulliPredicate(templateData.expression.root)
+		: false;
+}
+
+interface PositiveTautulliWatchCountFieldsProps {
+	params: Record<string, unknown>;
+	onParamsChange: (params: Record<string, unknown>) => void;
+	allowLegacyOperator: boolean;
+	inputClass: string;
+	labelClass: string;
+}
+
+function PositiveTautulliWatchCountFields({
+	params,
+	onParamsChange,
+	allowLegacyOperator,
+	inputClass,
+	labelClass,
+}: PositiveTautulliWatchCountFieldsProps) {
+	const operator = String(params.operator ?? "greater_than");
+	const count = typeof params.count === "number" ? params.count : 1;
+	const set = (key: string, value: unknown) => onParamsChange({ ...params, [key]: value });
+	const isLegacyNegative = operator === "less_than";
+
+	return (
+		<div className="space-y-2">
+			<div className="flex gap-2">
+				<label className="block flex-1">
+					<span className={labelClass}>Operator</span>
+					<select
+						value={operator}
+						onChange={(event) => set("operator", event.target.value)}
+						className={inputClass}
+					>
+						{allowLegacyOperator && <option value="less_than">Less than</option>}
+						<option value="greater_than">Greater than</option>
+					</select>
+				</label>
+				<label className="block w-24">
+					<span className={labelClass}>Count</span>
+					<input
+						type="number"
+						value={count}
+						onChange={(event) => set("count", Number(event.target.value))}
+						min={0}
+						className={inputClass}
+					/>
+				</label>
+			</div>
+			<p className="text-xs text-muted-foreground">
+				Matches only when verified positive plays exceed the count. Unknown history does not match.
+			</p>
+			{allowLegacyOperator && isLegacyNegative && (
+				<p className="text-xs text-muted-foreground">
+					The saved legacy predicate Less than is unsupported with current positive-only Tautulli
+					evidence and is preserved until you change it.
+				</p>
+			)}
+		</div>
+	);
+}
+
 function getEditableExpressionError(
 	nodes: EditableExpressionNode[],
 	preserveSingleRoot: boolean,
@@ -541,6 +646,8 @@ interface ExpressionNodeEditorProps {
 	onRemove: () => void;
 	fieldOptions: CleanupFieldOptionsResponse | undefined;
 	fieldOptionsLoading: boolean;
+	positiveTautulliOnly: boolean;
+	preserveLegacyTautulliOperator: boolean;
 	inputClass: string;
 	labelClass: string;
 	displayLabel?: string;
@@ -553,11 +660,25 @@ function ExpressionNodeEditor({
 	onRemove,
 	fieldOptions,
 	fieldOptionsLoading,
+	positiveTautulliOnly,
+	preserveLegacyTautulliOperator,
 	inputClass,
 	labelClass,
 	displayLabel,
 }: ExpressionNodeEditorProps) {
 	if (node.type === "condition") {
+		const availableRuleTypes = RULE_TYPES.filter(
+			(ruleType) => ruleType.value !== "composite",
+		).filter((ruleType) => {
+			if (!isTautulliRule(ruleType.value)) return true;
+			if (fieldOptions?.hasTautulli) return true;
+			if (positiveTautulliOnly && ruleType.value === "tautulli_watch_count") return true;
+			return preserveLegacyTautulliOperator && ruleType.value === node.ruleType;
+		});
+		const showPositiveTautulliFields =
+			positiveTautulliOnly && node.ruleType === "tautulli_watch_count";
+		const allowLegacyTautulliOperator =
+			showPositiveTautulliFields && node.params.operator === "less_than";
 		return (
 			<div className="rounded-lg border border-border/50 bg-card/20 p-3 space-y-2">
 				<div className="flex items-center justify-between">
@@ -580,12 +701,12 @@ function ExpressionNodeEditor({
 						onChange({
 							...node,
 							ruleType,
-							params: getDefaultConditionParams(ruleType),
+							params: getConditionParamsForAvailability(ruleType, positiveTautulliOnly),
 						});
 					}}
 					className={inputClass}
 				>
-					{RULE_TYPES.filter((ruleType) => ruleType.value !== "composite").map((ruleType) => (
+					{availableRuleTypes.map((ruleType) => (
 						<option key={ruleType.value} value={ruleType.value}>
 							{ruleType.label}
 						</option>
@@ -594,15 +715,25 @@ function ExpressionNodeEditor({
 				<p className="text-xs text-muted-foreground">
 					{RULE_TYPE_MAP.get(node.ruleType)?.desc ?? ""}
 				</p>
-				<ConditionParamsFields
-					ruleType={node.ruleType}
-					params={node.params}
-					onParamsChange={(params) => onChange({ ...node, params })}
-					fieldOptions={fieldOptions}
-					fieldOptionsLoading={fieldOptionsLoading}
-					inputClass={inputClass}
-					labelClass={labelClass}
-				/>
+				{showPositiveTautulliFields ? (
+					<PositiveTautulliWatchCountFields
+						params={node.params}
+						onParamsChange={(params) => onChange({ ...node, params })}
+						allowLegacyOperator={allowLegacyTautulliOperator}
+						inputClass={inputClass}
+						labelClass={labelClass}
+					/>
+				) : (
+					<ConditionParamsFields
+						ruleType={node.ruleType}
+						params={node.params}
+						onParamsChange={(params) => onChange({ ...node, params })}
+						fieldOptions={fieldOptions}
+						fieldOptionsLoading={fieldOptionsLoading}
+						inputClass={inputClass}
+						labelClass={labelClass}
+					/>
+				)}
 			</div>
 		);
 	}
@@ -658,6 +789,8 @@ function ExpressionNodeEditor({
 					onRemove={() => onChange({ ...node, child: createConditionNode() })}
 					fieldOptions={fieldOptions}
 					fieldOptionsLoading={fieldOptionsLoading}
+					positiveTautulliOnly={positiveTautulliOnly}
+					preserveLegacyTautulliOperator={preserveLegacyTautulliOperator}
 					inputClass={inputClass}
 					labelClass={labelClass}
 				/>
@@ -716,6 +849,8 @@ function ExpressionNodeEditor({
 						}
 						fieldOptions={fieldOptions}
 						fieldOptionsLoading={fieldOptionsLoading}
+						positiveTautulliOnly={positiveTautulliOnly}
+						preserveLegacyTautulliOperator={preserveLegacyTautulliOperator}
 						inputClass={inputClass}
 						labelClass={labelClass}
 					/>
@@ -807,6 +942,9 @@ export function CleanupRuleDialog({
 		() => (allServices ?? []).some((s) => s.service === "seerr"),
 		[allServices],
 	);
+	const positiveTautulliOnly =
+		!fieldOptions?.hasTautulli && fieldOptions?.hasTautulliPositiveWatchCount === true;
+	const preserveLegacyTautulliOperator = isEdit || templateHasLegacyTautulliPredicate(templateData);
 
 	// ── Basic fields ────────────────────────────────────────────────
 	const [name, setName] = useState("");
@@ -1318,7 +1456,7 @@ export function CleanupRuleDialog({
 			// Tautulli defaults
 			setTautulliLastWatchedOp("older_than");
 			setTautulliLastWatchedDays(90);
-			setTautulliWatchCountOp("less_than");
+			setTautulliWatchCountOp(positiveTautulliOnly ? "greater_than" : "less_than");
 			setTautulliWatchCount(1);
 			setTautulliWatchedByOp("includes_any");
 			setSelectedTautulliUsers([]);
@@ -1425,6 +1563,12 @@ export function CleanupRuleDialog({
 					}
 					const p = templateData.parameters ?? {};
 					switch (templateData.ruleType) {
+						case "tautulli_watch_count":
+							setTautulliWatchCountOp(
+								(p.operator as string) ?? (positiveTautulliOnly ? "greater_than" : "less_than"),
+							);
+							setTautulliWatchCount((p.count as number) ?? 1);
+							break;
 						case "staleness_score":
 						case "plex_episode_completion":
 						case "jellyfin_episode_completion":
@@ -1449,7 +1593,7 @@ export function CleanupRuleDialog({
 				}
 			}
 		}
-	}, [open, editRule, templateData]);
+	}, [open, editRule, templateData, positiveTautulliOnly]);
 
 	// ── Build parameters (delegates to extracted pure function) ─────
 	const buildParamsState: BuildParamsState = {
@@ -2059,6 +2203,8 @@ export function CleanupRuleDialog({
 										}
 										fieldOptions={fieldOptions}
 										fieldOptionsLoading={fieldOptionsLoading}
+										positiveTautulliOnly={positiveTautulliOnly}
+										preserveLegacyTautulliOperator={preserveLegacyTautulliOperator}
 										inputClass={inputClass}
 										labelClass={labelClass}
 										displayLabel={node.type === "condition" ? `Condition ${index + 1}` : undefined}
@@ -2136,7 +2282,12 @@ export function CleanupRuleDialog({
 								<div className="space-y-1.5">
 									{RULE_CATEGORIES.filter((cat) => {
 										if (cat.requires === "plex" && !fieldOptions?.hasPlex) return false;
-										if (cat.requires === "tautulli" && !fieldOptions?.hasTautulli) return false;
+										if (
+											cat.requires === "tautulli" &&
+											!fieldOptions?.hasTautulli &&
+											!positiveTautulliOnly
+										)
+											return false;
 										if (cat.requires === "jellyfin" && !fieldOptions?.hasJellyfin) return false;
 										if (cat.requires === "plex+seerr" && (!fieldOptions?.hasPlex || !hasSeerr))
 											return false;
@@ -2150,6 +2301,12 @@ export function CleanupRuleDialog({
 										const CatIcon = cat.icon;
 										const isExpanded = expandedCategories.has(cat.id);
 										const hasSelected = cat.types.includes(ruleType);
+										const visibleTypes =
+											cat.id === "tautulli" && positiveTautulliOnly
+												? (cat.types.filter(
+														(type) => type === "tautulli_watch_count",
+													) as CleanupRuleType[])
+												: cat.types;
 										return (
 											<div
 												key={cat.id}
@@ -2176,7 +2333,7 @@ export function CleanupRuleDialog({
 												</button>
 												{isExpanded && (
 													<div className="grid grid-cols-2 gap-1.5 px-2 pb-2">
-														{cat.types.map((typeValue) => {
+														{visibleTypes.map((typeValue) => {
 															const ruleInfo = RULE_TYPE_MAP.get(typeValue);
 															if (!ruleInfo) return null;
 															const isSelected = ruleType === typeValue;
@@ -2187,6 +2344,12 @@ export function CleanupRuleDialog({
 																	onClick={() => {
 																		const nextType = typeValue as CleanupRuleType;
 																		setRuleType(nextType);
+																		if (
+																			positiveTautulliOnly &&
+																			nextType === "tautulli_watch_count"
+																		) {
+																			setTautulliWatchCountOp("greater_than");
+																		}
 																		setBehaviorParams(
 																			getDefaultConditionParams(
 																				nextType as Exclude<CleanupRuleType, "composite">,
@@ -2407,6 +2570,7 @@ export function CleanupRuleDialog({
 								setBehaviorParams={setBehaviorParams}
 								fieldOptions={fieldOptions}
 								fieldOptionsLoading={fieldOptionsLoading}
+								positiveTautulliOnly={positiveTautulliOnly}
 								inputClass={inputClass}
 								labelClass={labelClass}
 							/>
@@ -2699,6 +2863,7 @@ interface ParamsFieldsProps {
 	seerrModifiedByUsers: string;
 	setSeerrModifiedByUsers: (v: string) => void;
 	// Tautulli
+	positiveTautulliOnly: boolean;
 	tautulliLastWatchedOp: string;
 	setTautulliLastWatchedOp: (v: string) => void;
 	tautulliLastWatchedDays: number;
@@ -2974,6 +3139,7 @@ function ParamsFields(props: ParamsFieldsProps) {
 		setBehaviorParams,
 		fieldOptions,
 		fieldOptionsLoading,
+		positiveTautulliOnly,
 		inputClass,
 		labelClass,
 	} = props;
@@ -3550,7 +3716,10 @@ function ParamsFields(props: ParamsFieldsProps) {
 					</p>
 				</div>
 			);
-		case "tautulli_watch_count":
+		case "tautulli_watch_count": {
+			const allowLegacyOperator = positiveTautulliOnly && tautulliWatchCountOp === "less_than";
+			const positiveOnly = positiveTautulliOnly && !allowLegacyOperator;
+			const legacyNegative = allowLegacyOperator;
 			return (
 				<div className="space-y-2">
 					<div className="flex gap-2">
@@ -3561,7 +3730,7 @@ function ParamsFields(props: ParamsFieldsProps) {
 								onChange={(e) => setTautulliWatchCountOp(e.target.value)}
 								className={inputClass}
 							>
-								<option value="less_than">Less than</option>
+								{!positiveOnly && <option value="less_than">Less than</option>}
 								<option value="greater_than">Greater than</option>
 							</select>
 						</label>
@@ -3577,10 +3746,19 @@ function ParamsFields(props: ParamsFieldsProps) {
 						</label>
 					</div>
 					<p className="text-xs text-muted-foreground">
-						Flag items by total play count from Tautulli.
+						{positiveTautulliOnly
+							? "Matches only when verified positive plays exceed the count. Unknown history does not match."
+							: "Flag items by total play count from Tautulli."}
 					</p>
+					{positiveTautulliOnly && legacyNegative && (
+						<p className="text-xs text-muted-foreground">
+							The saved legacy predicate Less than is unsupported with current positive-only
+							Tautulli evidence and is preserved until you change it.
+						</p>
+					)}
 				</div>
 			);
+		}
 		case "tautulli_watched_by":
 			return (
 				<div className="space-y-2">

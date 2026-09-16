@@ -2,11 +2,17 @@
  * Auto-Tagger React Query Hooks
  */
 
-import type { AutoTagRule, CreateAutoTagRuleRequest, UpdateAutoTagRuleRequest } from "@arr/shared";
+import type {
+	AutoTagPreviewResponse,
+	AutoTagRule,
+	CreateAutoTagRuleRequest,
+	UpdateAutoTagRuleRequest,
+} from "@arr/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	createAutoTagRule,
 	deleteAutoTagRule,
+	fetchAutoTagRulePreview,
 	fetchAutoTagRules,
 	runAutoTagRule,
 	updateAutoTagRule,
@@ -61,3 +67,14 @@ export const useRunAutoTagRule = () => {
 		},
 	});
 };
+
+export const useAutoTagRulePreview = (id: string | null) =>
+	useQuery<AutoTagPreviewResponse>({
+		queryKey: autoTagKeys.preview(id ?? ""),
+		queryFn: () => {
+			if (!id) throw new Error("An auto-tag rule is required");
+			return fetchAutoTagRulePreview(id);
+		},
+		enabled: Boolean(id),
+		staleTime: 0,
+	});

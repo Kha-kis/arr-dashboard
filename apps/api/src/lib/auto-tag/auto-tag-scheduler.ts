@@ -20,7 +20,7 @@ import {
 	passthroughTickWrapper,
 	type TickWrapper,
 } from "../scheduler-registry/scheduler-registry.js";
-import { executeAutoTagRule } from "./execute-rule.js";
+import { executeAutoTagRule, type AutoTagRunResult } from "./execute-rule.js";
 import { runRuleWithLock } from "./run-with-lock.js";
 
 const TICK_INTERVAL_MS = 5 * 60 * 1000; // Wake every 5 minutes
@@ -97,6 +97,7 @@ export class AutoTagScheduler {
 			let skipped = 0;
 
 			for (const rule of dueRules) {
+				let confirmedResult: AutoTagRunResult | undefined;
 				try {
 					// Skip if an on-demand "Run now" is currently executing this same
 					// rule — prevents two concurrent series/movie.update calls from
@@ -138,6 +139,7 @@ export class AutoTagScheduler {
 					}
 
 					const result = lockResult.result;
+					confirmedResult = result;
 					await this.prisma.autoTagRule.update({
 						where: { id: rule.id },
 						data: {
@@ -151,19 +153,24 @@ export class AutoTagScheduler {
 					else if (result.status === "partial") partial++;
 					else failed++;
 				} catch (err) {
-					failed++;
+					if (confirmedResult) partial++;
+					else failed++;
 					const message = err instanceof Error ? err.message : String(err);
 					this.log.warn(
 						{ err, ruleId: rule.id },
-						"Auto-tag rule execution threw — recording as failure",
+						confirmedResult
+							? "Auto-tag result save failed; retaining a retryable outcome"
+							: "Auto-tag rule execution threw — recording as failure",
 					);
 					await this.prisma.autoTagRule
 						.update({
 							where: { id: rule.id },
 							data: {
-								lastRunAt: new Date(),
-								lastRunStatus: "failed",
-								lastRunMessage: `Scheduler exception: ${message}`,
+								lastRunAt: confirmedResult ? null : new Date(),
+								lastRunStatus: confirmedResult ? "partial" : "failed",
+								lastRunMessage: confirmedResult
+									? `Execution returned ${confirmedResult.status}, but saving the result failed. Upstream changes may already be applied; the next tick will recheck them before writing.`
+									: `Scheduler exception: ${message}`,
 							},
 						})
 						.catch((updateErr: unknown) => {

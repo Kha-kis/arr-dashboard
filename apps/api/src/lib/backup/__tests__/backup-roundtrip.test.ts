@@ -663,6 +663,21 @@ async function seedDurableSource(prisma: PrismaClient): Promise<void> {
 			deployedAt: coordinationCreatedAt,
 		},
 	});
+	await prisma.providerNativeInventorySnapshot.create({
+		data: {
+			instanceId: jellyfinInstanceId,
+			domain: "episode",
+			generationId: "native-backup-fixture",
+			items: {
+				create: {
+					nativeId: "private-native-backup-item",
+					mediaType: "episode",
+					libraryIds: "[]",
+					title: "private-native-backup-title",
+				},
+			},
+		},
+	});
 	const observationRun = await prisma.providerObservationRun.create({
 		data: {
 			id: "issue815-observation-run",
@@ -828,6 +843,8 @@ const MODEL_EXPORTS = [
 			expect(JSON.stringify(exported)).not.toContain("private-catalog-source-series");
 			expect(JSON.stringify(exported)).not.toContain("catalogProvenance");
 			expect(JSON.stringify(exported)).not.toContain("providerObservationRuns");
+			expect(JSON.stringify(exported)).not.toContain("private-native-backup");
+			expect(JSON.stringify(exported)).not.toContain("providerNativeInventory");
 			expect(JSON.stringify(exported)).not.toContain("providerObservationUnits");
 			expect(JSON.stringify(exported)).not.toContain("plexEpisodeObservationStages");
 			expect(JSON.stringify(exported)).not.toContain("jellyfinEpisodeObservationStages");
@@ -894,6 +911,8 @@ const MODEL_EXPORTS = [
 
 			await restoreDatabase(target.prisma, backup.data);
 			expect(await target.prisma.providerObservationRun.count()).toBe(0);
+			expect(await target.prisma.providerNativeInventorySnapshot.count()).toBe(0);
+			expect(await target.prisma.providerNativeInventoryItem.count()).toBe(0);
 			expect(await target.prisma.providerObservationUnit.count()).toBe(0);
 			expect(await target.prisma.plexEpisodeObservationStage.count()).toBe(0);
 			expect(await target.prisma.jellyfinEpisodeObservationStage.count()).toBe(0);

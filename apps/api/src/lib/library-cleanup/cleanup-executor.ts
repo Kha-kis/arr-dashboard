@@ -77,6 +77,13 @@ import { createTmdbV3Client } from "../tmdb/list-client.js";
 import { createTraktClient } from "../trakt/list-client.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { safeJsonParse } from "../utils/json.js";
+import {
+	applyTargetWatchReadWarning,
+	loadAdditionalTargetWatchFacts,
+	positiveTargetWatchRuleTypes,
+	revalidateMatchedTargetWatchFacts,
+	withTargetWatchReadBudget,
+} from "./additional-target-watch-policy.js";
 import { arrPolicyEvidenceFromRaw } from "./arr-policy-evidence.js";
 import {
 	approvalRecordToAuditSnapshot,
@@ -266,6 +273,7 @@ interface MatchedRuleProviderAuthority {
 	complete: boolean;
 	boundedPositiveOnly: boolean;
 	providerFactGrantDigest?: string;
+	targetScopedDependencies?: ProviderCacheType[];
 }
 
 interface BoundedPositiveEpisodeAuthority {
@@ -2634,6 +2642,16 @@ export async function executeCleanupPreview(
 	deps: CleanupExecutorDeps,
 	userId: string,
 ): Promise<CleanupRunResultWithProviderEvidence> {
+	const operationDeps = withTargetWatchReadBudget(deps);
+	const result = await executeCleanupPreviewWithBudget(operationDeps, userId);
+	applyTargetWatchReadWarning(operationDeps, result);
+	return result;
+}
+
+async function executeCleanupPreviewWithBudget(
+	deps: CleanupExecutorDeps,
+	userId: string,
+): Promise<CleanupRunResultWithProviderEvidence> {
 	const startTime = Date.now();
 	const { prisma, log } = deps;
 
@@ -2820,7 +2838,12 @@ export async function executeCleanupRun(
 	deps: CleanupExecutorDeps,
 	userId: string,
 ): Promise<CleanupRunResult> {
-	return await withCleanupOperationGuard(() => executeCleanupRunGuarded(deps, userId));
+	const operationDeps = withTargetWatchReadBudget(deps);
+	const result = await withCleanupOperationGuard(() =>
+		executeCleanupRunGuarded(operationDeps, userId),
+	);
+	applyTargetWatchReadWarning(operationDeps, result);
+	return result;
 }
 
 async function executeConfiguredCleanupDryRun(
@@ -3110,9 +3133,12 @@ export async function executeApprovedItems(
 	approvalIds: string[],
 	approvalRequestToken?: string,
 ): Promise<{ removed: number; failed: number; errors: string[]; warnings?: string[] }> {
-	return await withCleanupOperationGuard(() =>
-		executeApprovedItemsGuarded(deps, userId, approvalIds, approvalRequestToken),
+	const operationDeps = withTargetWatchReadBudget(deps);
+	const result = await withCleanupOperationGuard(() =>
+		executeApprovedItemsGuarded(operationDeps, userId, approvalIds, approvalRequestToken),
 	);
+	applyTargetWatchReadWarning(operationDeps, result);
+	return result;
 }
 
 async function executeApprovedItemsGuarded(
@@ -4271,11 +4297,19 @@ export async function assertCurrentSeriesMutationAuthority(
 		const targetScopedPlexFacts = await loadTargetScopedPlexWatchCountFacts(deps, userId, [
 			authoritativeLiveItem,
 		]);
+		const additionalTargetFacts = await loadAdditionalTargetWatchFacts(
+			deps,
+			userId,
+			[authoritativeLiveItem],
+			positiveTargetWatchRuleTypes(policySnapshot.rules),
+			currentPublishedSnapshot.ctx.providerWatchCountFacts,
+			{ readPhase: "validation" },
+		);
 		currentPolicyCtx = {
 			...currentPublishedSnapshot.ctx,
 			providerWatchCountFacts: mergeProviderWatchCountFacts(
 				currentPublishedSnapshot.ctx.providerWatchCountFacts,
-				targetScopedPlexFacts,
+				mergeProviderWatchCountFacts(targetScopedPlexFacts, additionalTargetFacts) ?? new Map(),
 			),
 		};
 		currentFailedSources = currentPublishedSnapshot.failedSources;
@@ -4294,44 +4328,42 @@ export async function assertCurrentSeriesMutationAuthority(
 		) {
 			throw new Error("The exact matched cleanup policy is no longer authoritative");
 		}
-		if (expectedRule.providerDependencies !== undefined) {
-			const currentRule = policySnapshot.rules.find(
-				(rule) => rule.id === expectedRule.matchedRuleId,
-			);
-			if (!currentRule) {
-				throw new Error("The matched cleanup rule disappeared during policy revalidation");
-			}
-			const expectedProviderDependencies = new Set(expectedRule.providerDependencies);
-			const currentProviderDependencies = providerDependenciesForMatchedEvidence(
-				currentRule,
-				policy.evidenceConditions,
-			);
-			if (
-				[...currentProviderDependencies].some(
-					(dependency) => !expectedProviderDependencies.has(dependency),
-				)
-			) {
-				throw new Error(
-					"The current cleanup match requires provider evidence that was not bound to the durable selection",
-				);
-			}
-		}
+
 		const currentRule = policySnapshot.rules.find((rule) => rule.id === expectedRule.matchedRuleId);
 		if (!currentRule) {
 			throw new Error("The matched cleanup rule disappeared during grant revalidation");
 		}
-		const currentGrantDigest = buildMatchedProviderAuthority(
+		const currentAuthority = buildMatchedProviderAuthority(
 			currentRule,
 			policy.evidenceConditions,
 			new Map(),
 			{ cacheItem: authoritativeLiveItem },
 			currentPolicyCtx,
-		).providerFactGrantDigest;
+		);
+		const currentGrantDigest = currentAuthority.providerFactGrantDigest;
 		if (!providerFactGrantDigestsMatch(expectedProviderFactGrantDigest, currentGrantDigest)) {
 			if (!expectedProviderFactGrantDigest) {
 				throw new Error("The durable cleanup intent lacked its provider fact grant digest");
 			}
 			throw new Error("Current provider fact grant did not match the durable cleanup intent");
+		}
+		assertMatchedProviderDependenciesBound(
+			expectedRule,
+			currentRule,
+			policy.evidenceConditions,
+			currentAuthority,
+			expectedProviderFactGrantDigest,
+		);
+		if (
+			!(await revalidateMatchedTargetWatchFacts(
+				deps,
+				userId,
+				authoritativeLiveItem,
+				policy.evidenceConditions,
+				currentPolicyCtx,
+			))
+		) {
+			throw new Error("Current target watch evidence could not re-prove the cleanup threshold");
 		}
 		await assertCurrentJellyfinMutationAuthority(deps, userId, policySnapshot);
 		const finalRawItem =
@@ -4352,6 +4384,12 @@ export async function assertCurrentSeriesMutationAuthority(
 		);
 		authoritativeRawItem = finalRawItem;
 		authoritativeLiveItem = finalLiveItem;
+		if (additionalTargetFacts.size > 0)
+			await assertTargetWatchTopologyUnchanged(
+				deps,
+				userId,
+				policySnapshot.providerTopologyFingerprint,
+			);
 		await assertCurrentSeriesPolicySnapshotUnchanged(deps, userId, expectedRule, policySnapshot);
 		return {
 			snapshot: policySnapshot,
@@ -4433,11 +4471,19 @@ async function assertCurrentSeriesPostStepMutationAuthority(
 		const targetScopedPlexFacts = await loadTargetScopedPlexWatchCountFacts(deps, userId, [
 			liveItem,
 		]);
+		const additionalTargetFacts = await loadAdditionalTargetWatchFacts(
+			deps,
+			userId,
+			[liveItem],
+			positiveTargetWatchRuleTypes(currentSnapshot.rules),
+			currentSnapshot.ctx.providerWatchCountFacts,
+			{ readPhase: "validation" },
+		);
 		const currentCtx: EvalContext = {
 			...currentSnapshot.ctx,
 			providerWatchCountFacts: mergeProviderWatchCountFacts(
 				currentSnapshot.ctx.providerWatchCountFacts,
-				targetScopedPlexFacts,
+				mergeProviderWatchCountFacts(targetScopedPlexFacts, additionalTargetFacts) ?? new Map(),
 			),
 		};
 		assertExpectedSeriesArrTransition(
@@ -4483,17 +4529,36 @@ async function assertCurrentSeriesPostStepMutationAuthority(
 			(rule) => rule.id === expectedRule.matchedRuleId,
 		);
 		if (!matchedRule) throw new Error("The matched cleanup rule disappeared after the first write");
-		const currentGrantDigest = buildMatchedProviderAuthority(
+		const currentAuthority = buildMatchedProviderAuthority(
 			matchedRule,
 			cleanupPolicy.evidenceConditions,
 			new Map(),
 			{ cacheItem: liveItem },
 			currentCtx,
-		).providerFactGrantDigest;
+		);
+		const currentGrantDigest = currentAuthority.providerFactGrantDigest;
 		if (
 			!providerFactGrantDigestsMatch(authorizedPolicy.providerFactGrantDigest, currentGrantDigest)
 		) {
 			throw new Error("Current provider fact grant changed after the first write");
+		}
+		assertMatchedProviderDependenciesBound(
+			expectedRule,
+			matchedRule,
+			cleanupPolicy.evidenceConditions,
+			currentAuthority,
+			authorizedPolicy.providerFactGrantDigest,
+		);
+		if (
+			!(await revalidateMatchedTargetWatchFacts(
+				deps,
+				userId,
+				liveItem,
+				cleanupPolicy.evidenceConditions,
+				currentCtx,
+			))
+		) {
+			throw new Error("Current target watch evidence changed after the first write");
 		}
 		await assertCurrentJellyfinMutationAuthority(deps, userId, currentSnapshot);
 		const finalRawItem =
@@ -4512,6 +4577,14 @@ async function assertCurrentSeriesPostStepMutationAuthority(
 			finalLiveItem,
 			transition,
 		);
+		if (additionalTargetFacts.size > 0) {
+			await assertTargetWatchTopologyUnchanged(
+				deps,
+				userId,
+				currentSnapshot.providerTopologyFingerprint,
+			);
+			await assertCurrentSeriesPolicySnapshotUnchanged(deps, userId, expectedRule, currentSnapshot);
+		}
 	} catch (error) {
 		deps.log.warn(
 			{ err: error, instanceId: instance.id, arrItemId, ruleId: expectedRule.matchedRuleId },
@@ -6143,6 +6216,30 @@ export function providerCacheTypesForEvidence(
 	return cacheTypes;
 }
 
+/** A matching digest binds only its exact positive watch predicates, never another condition. */
+function assertMatchedProviderDependenciesBound(
+	expected: ExpectedCleanupRule,
+	rule: LibraryCleanupRule,
+	conditions: RuleEvidenceCondition[],
+	authority: MatchedRuleProviderAuthority,
+	expectedDigest: string | undefined,
+): void {
+	if (expected.providerDependencies === undefined) return;
+	const bound = new Set(expected.providerDependencies);
+	if (expectedDigest && authority.providerFactGrantDigest === expectedDigest) {
+		for (const dependency of authority.targetScopedDependencies ?? []) bound.add(dependency);
+	}
+	if (
+		[...providerDependenciesForMatchedEvidence(rule, conditions)].some(
+			(dependency) => !bound.has(dependency),
+		)
+	) {
+		throw new Error(
+			"The current cleanup match requires provider evidence that was not bound to the durable selection",
+		);
+	}
+}
+
 function buildMatchedProviderAuthority(
 	rule: LibraryCleanupRule,
 	evidenceConditions: RuleEvidenceCondition[],
@@ -6162,7 +6259,8 @@ function buildMatchedProviderAuthority(
 		requiredCacheTypes.size === 1 &&
 		requiredCacheTypes.has("plex_episode");
 	const grants: ProviderFactGrant[] = [];
-	let targetScopedPlexGrantCount = 0;
+	let targetScopedGrantCount = 0;
+	const targetScopedCacheTypes = new Set<ProviderCacheType>();
 	let providerFactGrantRequiredCount = 0;
 	const tmdbId = flaggedItem ? extractSeriesTmdbId(flaggedItem.cacheItem.data) : null;
 	const targetKey =
@@ -6176,7 +6274,9 @@ function buildMatchedProviderAuthority(
 					? "PLEX"
 					: condition.ruleType === "jellyfin_watch_count"
 						? "JELLYFIN"
-						: null;
+						: condition.ruleType === "tautulli_watch_count"
+							? "TAUTULLI"
+							: null;
 			if (!provider) continue;
 			if (
 				ctx.providerWatchCountFacts.get(targetKey)?.some((fact) => fact.provider === provider) !==
@@ -6201,25 +6301,35 @@ function buildMatchedProviderAuthority(
 			if (decision.kind !== "known" || !decision.matched || !decision.grant) continue;
 			grants.push(decision.grant);
 			if (
-				provider === "PLEX" &&
 				ctx.providerWatchCountFacts
 					.get(targetKey)
 					?.some(
 						(fact) =>
+							fact.provider === provider &&
 							fact.targetScoped === true &&
 							fact.instanceId === decision.grant?.instanceId &&
 							fact.coordinate === decision.grant?.coordinate,
 					) === true
 			) {
-				targetScopedPlexGrantCount++;
+				targetScopedGrantCount++;
+				targetScopedCacheTypes.add(decision.grant.cacheType);
 			}
 		}
 	}
-	const targetScopedWatchCountOnly =
-		providerFactGrantRequiredCount > 0 &&
-		evidenceConditions.length === providerFactGrantRequiredCount &&
-		evidenceConditions.every((condition) => condition.ruleType === "plex_watch_count") &&
-		targetScopedPlexGrantCount === providerFactGrantRequiredCount;
+	const targetScopedDependencies = [...targetScopedCacheTypes].filter((cacheType) =>
+		evidenceConditions
+			.filter((condition) => providerCacheTypesForEvidence(rule, [condition]).has(cacheType))
+			.every(
+				(condition) =>
+					condition.ruleType === `${cacheType}_watch_count` &&
+					condition.parameters.operator === "greater_than",
+			),
+	);
+	const everyRequiredCacheCovered = [...requiredCacheTypes].every(
+		(cacheType) =>
+			snapshotsByCacheType.has(cacheType) || targetScopedDependencies.includes(cacheType),
+	);
+
 	return {
 		evidence: createSanitizedProviderEvidence(
 			matchedSnapshots.flatMap((snapshot) => snapshot.evidence.dependencies),
@@ -6229,12 +6339,11 @@ function buildMatchedProviderAuthority(
 		),
 		authorities: matchedSnapshots.map((snapshot) => snapshot.authority),
 		complete:
-			(matchedSnapshots.length === requiredCacheTypes.size ||
-				boundedPositiveOnly ||
-				targetScopedWatchCountOnly) &&
+			(everyRequiredCacheCovered || boundedPositiveOnly) &&
 			grants.length === providerFactGrantRequiredCount,
 		boundedPositiveOnly,
-		...(targetScopedWatchCountOnly && grants.length > 0
+		targetScopedDependencies,
+		...(targetScopedGrantCount > 0 && grants.length > 0
 			? { providerFactGrantDigest: providerFactGrantDigest(grants) }
 			: {}),
 	};
@@ -7271,8 +7380,8 @@ async function evaluateAllItems(
 	const seerrResult = hasSeerrRules ? await prefetchSeerrRequests(deps, config.userId) : undefined;
 	const seerrMap = hasSeerrRules ? seerrResult : undefined;
 
-	// B1 containment: Tautulli-dependent cleanup stays UNKNOWN until the later
-	// mutation-authority track is explicitly implemented.
+	// Complete Tautulli history remains unavailable; positive watch thresholds
+	// use the separately bound target reader during evaluation and execution.
 	const TAUTULLI_RULE_TYPES = [
 		"tautulli_last_watched",
 		"tautulli_watch_count",
@@ -7284,7 +7393,7 @@ async function evaluateAllItems(
 	const tautulliMap: TautulliWatchMap | undefined = undefined;
 	if (hasTautulliRules) {
 		warnings.push(
-			"Tautulli-dependent cleanup rules are unavailable and were evaluated as unknown.",
+			"Complete Tautulli history is unavailable. Positive watch-count rules verify individual items; other Tautulli conditions remain unknown.",
 		);
 	}
 
@@ -7499,11 +7608,18 @@ async function evaluateAllItems(
 		const targetScopedPlexFacts = activeTypes.has("plex_watch_count")
 			? await loadTargetScopedPlexWatchCountFacts(deps, config.userId, batch)
 			: new Map<string, ProviderWatchCountFact[]>();
+		const additionalTargetFacts = await loadAdditionalTargetWatchFacts(
+			deps,
+			config.userId,
+			batch,
+			positiveTargetWatchRuleTypes(seriesRules),
+			ctx.providerWatchCountFacts,
+		);
 		const batchCtx: EvalContext = {
 			...ctx,
 			providerWatchCountFacts: mergeProviderWatchCountFacts(
 				ctx.providerWatchCountFacts,
-				targetScopedPlexFacts,
+				mergeProviderWatchCountFacts(targetScopedPlexFacts, additionalTargetFacts) ?? new Map(),
 			),
 		};
 
@@ -7516,6 +7632,19 @@ async function evaluateAllItems(
 				useCachedQuiSeedingGate && isQuiSeedingState(item.torrentState)
 					? { kind: "no_match" as const }
 					: evaluateItemPolicyState(item, seriesRules, instanceService, batchCtx, failedSources);
+			if (
+				policy.kind === "cleanup" &&
+				!(await revalidateMatchedTargetWatchFacts(
+					deps,
+					config.userId,
+					item,
+					policy.evidenceConditions,
+					batchCtx,
+					"discovery",
+				))
+			) {
+				continue;
+			}
 			const match = policy.kind === "cleanup" ? policy.match : null;
 			if (policy.kind === "cleanup") {
 				const flaggedItem: FlaggedItem = {
@@ -10747,6 +10876,22 @@ function completeMutationConfigFingerprint(config: {
 	return mutationConfigFingerprint(config as Parameters<typeof mutationConfigFingerprint>[0]);
 }
 
+async function assertTargetWatchTopologyUnchanged(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	expectedFingerprint: string,
+): Promise<void> {
+	const current = await loadProviderInstances(deps, userId, [
+		"PLEX",
+		"TAUTULLI",
+		"JELLYFIN",
+		"EMBY",
+		"SEERR",
+	]);
+	if (providerTopologyFingerprint(current) !== expectedFingerprint)
+		throw new Error("Provider topology changed during target watch revalidation");
+}
+
 function providerTopologyFingerprint(instances: ServiceInstance[]): string {
 	return evidenceFingerprint(
 		instances.map((instance) => ({
@@ -11906,6 +12051,7 @@ async function createRunLog(
 	configId: string,
 	result: Omit<CleanupRunResult, "error"> & { error?: string },
 ): Promise<void> {
+	applyTargetWatchReadWarning(deps, result);
 	const runLogId = randomUUID();
 	try {
 		await deps.prisma.libraryCleanupLog.create({

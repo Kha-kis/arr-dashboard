@@ -11,7 +11,7 @@
  * Label Sync optionally propagates them. See `memory/auto-tagger-arc.md`.
  */
 
-import type { DataSourceDependency } from "@arr/shared";
+import type { AutoTagPreviewResponse, DataSourceDependency } from "@arr/shared";
 import { ArrError } from "arr-sdk";
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClient, ArrClientFactory } from "../arr/client-factory.js";
@@ -24,9 +24,16 @@ import {
 } from "../library-cleanup/rule-evaluators.js";
 import type { CacheItemForEval, EvalContext } from "../library-cleanup/types.js";
 import type { PrismaClient, ServiceInstance } from "../prisma.js";
+import {
+	collectNativePresenceInstances,
+	loadNativePresenceContext,
+	type NativePresenceContext,
+} from "../provider-observation/native-presence-evidence.js";
 import { safeJsonParse } from "../utils/json.js";
 import { loadCompleteListEvidence } from "./list-evidence-loader.js";
 import { adaptLiveArrItemForAutoTag } from "./live-arr-evidence.js";
+import { acquireAutoTagTargetLock } from "./target-lock.js";
+import { AutoTagAuthorityChangedError, isCurrentAutoTagTarget } from "./target-authorization.js";
 
 export interface AutoTagRuleInput {
 	id: string;
@@ -45,6 +52,7 @@ export interface AutoTagRuleInput {
 }
 
 export interface AutoTagRunResult {
+	preview?: AutoTagPreviewResponse;
 	status: "success" | "partial" | "failed";
 	message: string;
 	totals: {
@@ -53,10 +61,13 @@ export interface AutoTagRunResult {
 		itemsMatched: number;
 		tagsApplied: number;
 		failures: number;
+		itemsSkipped?: number;
 	};
 }
 
 interface ExecuteOpts {
+	/** Read-only candidate evaluation; never creates tags, writes ARR, or records a run. */
+	dryRun?: boolean;
 	rule: AutoTagRuleInput;
 	prisma: PrismaClient;
 	arrClientFactory: ArrClientFactory;
@@ -107,6 +118,11 @@ export async function executeAutoTagRule(opts: ExecuteOpts): Promise<AutoTagRunR
 	});
 
 	if (instances.length === 0) {
+		if (opts.dryRun)
+			return {
+				...failure("No enabled Sonarr/Radarr instances match the rule scope."),
+				preview: { itemsScanned: 0, itemsMatched: 0, itemsUnknown: 0, items: [], truncated: false },
+			};
 		return failure("No enabled Sonarr/Radarr instances match the rule scope.");
 	}
 
@@ -128,9 +144,13 @@ export async function executeAutoTagRule(opts: ExecuteOpts): Promise<AutoTagRunR
 	let totalMatched = 0;
 	let totalApplied = 0;
 	let totalFailures = 0;
+	let totalSkipped = 0;
+	const previewItems: AutoTagPreviewResponse["items"] = [];
 
 	for (const instance of instances) {
 		const result = await processInstance({
+			dryRun: opts.dryRun,
+			previewItems,
 			rule,
 			instance,
 			prisma,
@@ -145,6 +165,7 @@ export async function executeAutoTagRule(opts: ExecuteOpts): Promise<AutoTagRunR
 		totalMatched += result.matched;
 		totalApplied += result.applied;
 		totalFailures += result.failures;
+		totalSkipped += result.skipped ?? 0;
 	}
 
 	const totals = {
@@ -153,7 +174,29 @@ export async function executeAutoTagRule(opts: ExecuteOpts): Promise<AutoTagRunR
 		itemsMatched: totalMatched,
 		tagsApplied: totalApplied,
 		failures: totalFailures,
+		...(totalSkipped > 0 ? { itemsSkipped: totalSkipped } : {}),
 	};
+	if (opts.dryRun) {
+		return {
+			status: "success",
+			message: "Read-only rule preview",
+			totals,
+			preview: {
+				itemsScanned: totalScanned,
+				itemsMatched: totalMatched,
+				itemsUnknown: totalSkipped,
+				items: previewItems,
+				truncated: totalMatched + totalSkipped > previewItems.length,
+			},
+		};
+	}
+	if (totalSkipped > 0) {
+		return {
+			status: totalApplied > 0 ? "partial" : "failed",
+			message: `Applied ${totalApplied} tags; skipped ${totalSkipped} items because their rule evidence could not be verified. ${totalFailures} tag applications failed. Check the selected provider's inventory and item connections.`,
+			totals,
+		};
+	}
 
 	if (totalMatched === 0 && totalFailures === 0) {
 		return {
@@ -187,6 +230,8 @@ export async function executeAutoTagRule(opts: ExecuteOpts): Promise<AutoTagRunR
 }
 
 interface ProcessInstanceArgs {
+	dryRun?: boolean;
+	previewItems: AutoTagPreviewResponse["items"];
 	rule: AutoTagRuleInput;
 	instance: ServiceInstance;
 	prisma: PrismaClient;
@@ -203,6 +248,7 @@ interface ProcessInstanceResult {
 	matched: number;
 	applied: number;
 	failures: number;
+	skipped?: number;
 }
 
 async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstanceResult> {
@@ -218,8 +264,11 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 		log,
 	} = args;
 
-	const matched: Array<{ item: CacheItemForEval; existingTags: number[] }> = [];
+	// Retain only target coordinates; full ARR payloads are fetched again before writing.
+	const matched: Array<{ item: Pick<CacheItemForEval, "arrItemId" | "itemType"> }> = [];
+	const usesNativePresence = collectNativePresenceInstances([rule]).length > 0;
 	let totalScanned = 0;
+	let skipped = 0;
 	let cursor: string | undefined;
 
 	// Cursor-paginate to bound peak heap. The full library can be 100k+ items
@@ -227,7 +276,7 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 	// the 768 MB container heap cap, especially under webhook concurrency.
 	while (true) {
 		const batch = await prisma.libraryCache.findMany({
-			where: { instanceId: instance.id },
+			where: { instanceId: instance.id, instance: { userId: rule.userId, enabled: true } },
 			select: {
 				id: true,
 				instanceId: true,
@@ -262,18 +311,33 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 
 			const cacheItem = item as CacheItemForEval;
 			const state = evaluateAgainstRule(cacheItem, rule, instance.service, evalCtx, failedSources);
-			if (state === "true") matched.push({ item: cacheItem, existingTags });
+			if (state === "true")
+				matched.push({ item: { arrItemId: item.arrItemId, itemType: item.itemType } });
+			if (state === "unknown" && (args.dryRun || usesNativePresence)) skipped++;
+			if (args.dryRun && state !== "false" && args.previewItems.length < 200) {
+				args.previewItems.push({
+					instanceId: item.instanceId,
+					arrItemId: item.arrItemId,
+					itemType: item.itemType,
+					title: item.title,
+					state,
+					reason:
+						state === "true"
+							? "Matches the rule using the latest available observations"
+							: "Required evidence is missing, stale, or ambiguous",
+				});
+			}
 		}
 
 		cursor = batch[batch.length - 1]!.id;
 		if (batch.length < AUTO_TAG_BATCH_SIZE) break;
 	}
 
-	if (matched.length === 0) {
-		return { scanned: totalScanned, matched: 0, applied: 0, failures: 0 };
+	if (args.dryRun || matched.length === 0) {
+		return { scanned: totalScanned, matched: matched.length, applied: 0, failures: 0, skipped };
 	}
 
-	// Group write phase: build one ArrClient + ensureTag once for the whole instance.
+	// Build one ARR client; create the destination tag lazily after target revalidation.
 	let arrClient: ArrClient;
 	try {
 		arrClient = arrClientFactory.create({
@@ -293,26 +357,16 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 			matched: matched.length,
 			applied: 0,
 			failures: matched.length,
+			skipped,
 		};
 	}
 
-	let tagId: number;
-	try {
-		tagId = await ensureTag(arrClient, rule.tagName);
-	} catch (err) {
-		const reason = err instanceof ArrError ? err.message : String(err);
-		log.warn({ err: reason, tag: rule.tagName }, "Failed to get-or-create tag");
-		return {
-			scanned: totalScanned,
-			matched: matched.length,
-			applied: 0,
-			failures: matched.length,
-		};
-	}
+	let tagId: number | undefined;
 
 	let applied = 0;
 	let failures = 0;
 	for (const { item } of matched) {
+		const releaseTarget = await acquireAutoTagTargetLock(instance, item.arrItemId);
 		try {
 			if (item.itemType !== "movie" && item.itemType !== "series") {
 				throw new Error("Auto-tag target is not a Radarr movie or Sonarr series");
@@ -340,6 +394,7 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 				arrClientFactory,
 				encryptor,
 				log,
+				previousNativePresence: evalCtx.nativePresence,
 			});
 			if (
 				evaluateAgainstRule(
@@ -350,8 +405,41 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 					latestEvidence.failedSources,
 				) !== "true"
 			) {
+				if (usesNativePresence) skipped++;
 				continue;
 			}
+			if (usesNativePresence && !(await isCurrentAutoTagTarget(prisma, rule.userId, instance))) {
+				skipped++;
+				continue;
+			}
+			const assertNativeAuthority = async () => {
+				const boundaryEvidence = await buildRuleEvalContext({
+					rule,
+					prisma,
+					arrClientFactory,
+					encryptor,
+					log,
+					previousNativePresence: latestEvidence.ctx.nativePresence,
+				});
+				if (
+					evaluateAgainstRule(
+						latestItem,
+						rule,
+						instance.service,
+						boundaryEvidence.ctx,
+						boundaryEvidence.failedSources,
+					) !== "true" ||
+					!(await isCurrentAutoTagTarget(prisma, rule.userId, instance))
+				)
+					throw new AutoTagAuthorityChangedError();
+			};
+			// The callback runs after the remote tag listing, immediately before creation.
+			tagId ??= await ensureTag(
+				arrClient,
+				rule.tagName,
+				usesNativePresence ? assertNativeAuthority : undefined,
+			);
+			if (usesNativePresence) await assertNativeAuthority();
 			if (latestTags.includes(tagId)) {
 				applied++;
 				continue;
@@ -391,13 +479,19 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 				);
 			}
 		} catch (err) {
+			if (err instanceof AutoTagAuthorityChangedError) {
+				skipped++;
+				continue;
+			}
 			const reason = err instanceof ArrError ? err.message : String(err);
 			log.warn({ err: reason, arrItemId: item.arrItemId }, "Failed to apply tag to item");
 			failures++;
+		} finally {
+			releaseTarget();
 		}
 	}
 
-	return { scanned: totalScanned, matched: matched.length, applied, failures };
+	return { scanned: totalScanned, matched: matched.length, applied, failures, skipped };
 }
 
 /**
@@ -492,10 +586,15 @@ function extractTagIds(parsed: unknown): number[] {
 	return tags.filter((t): t is number => typeof t === "number");
 }
 
-async function ensureTag(client: ArrClient, label: string): Promise<number> {
+async function ensureTag(
+	client: ArrClient,
+	label: string,
+	beforeCreate?: () => Promise<void>,
+): Promise<number> {
 	const tags = (await client.tag.getAll()) as Array<{ id: number; label: string }>;
 	const existing = tags.find((t) => t.label === label);
 	if (existing) return existing.id;
+	await beforeCreate?.();
 	// biome-ignore lint/suspicious/noExplicitAny: SDK Tag union typing requires the cast
 	const created = (await (client.tag as any).create({ label })) as { id: number; label: string };
 	return created.id;
@@ -528,6 +627,7 @@ async function buildRuleEvalContext(args: {
 	arrClientFactory: ArrClientFactory;
 	encryptor: Encryptor;
 	log: FastifyBaseLogger;
+	previousNativePresence?: NativePresenceContext;
 }): Promise<{ ctx: EvalContext; failedSources: Set<DataSourceDependency> }> {
 	const { rule, prisma, arrClientFactory, encryptor, log } = args;
 	let ctx: EvalContext;
@@ -576,6 +676,15 @@ async function buildRuleEvalContext(args: {
 			ctx.traktListMemberships = undefined;
 			failedSources.add("trakt");
 		}
+	}
+	const nativeInstances = collectNativePresenceInstances([rule]);
+	if (nativeInstances.length > 0) {
+		ctx.nativePresence = await loadNativePresenceContext(
+			prisma,
+			rule.userId,
+			nativeInstances,
+			args.previousNativePresence,
+		);
 	}
 	return { ctx, failedSources };
 }

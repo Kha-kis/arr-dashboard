@@ -17,6 +17,7 @@ import {
 import { refreshOwnedJellyfinCacheWithAttempt } from "../../lib/jellyfin/jellyfin-cache-refresher.js";
 import { runJellyfinCacheRefreshSingleFlightWithAttempt } from "../../lib/jellyfin/jellyfin-cache-singleflight.js";
 import { startProviderCacheRefreshInBackground } from "../../lib/provider-observation/background-cache-refresh.js";
+import type { FastifyWithLibraryRefreshRecovery } from "../../lib/services/library-refresh-recovery.js";
 import { claimProviderCacheRefreshAttempt } from "../../lib/services/provider-cache-status.js";
 import { createProviderPublicationAuthority } from "../../lib/services/provider-identity-guard.js";
 import { validateRequest } from "../../lib/utils/validate.js";
@@ -73,6 +74,7 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 				throw new AppValidationError("Instance is not a Jellyfin or Emby service");
 			}
 			const authority = createProviderPublicationAuthority(instance);
+			const recovery = (app as FastifyWithLibraryRefreshRecovery).libraryRefreshRecovery;
 
 			await startProviderCacheRefreshInBackground({
 				cacheType: "jellyfin",
@@ -85,6 +87,9 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 						),
 					),
 				log,
+				...(recovery
+					? { recovery: { provider: "jellyfin" as const, userId, instanceId, handoff: recovery } }
+					: {}),
 			});
 
 			const response: ProviderObservationAcceptedResponse = {

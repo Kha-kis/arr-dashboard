@@ -408,6 +408,7 @@ export type ServiceInstanceWhereInput = {
   inodeIndexCache?: Prisma.XOR<Prisma.InodeIndexCacheNullableScalarRelationFilter, Prisma.InodeIndexCacheWhereInput> | null
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptListRelationFilter
   providerObservationRuns?: Prisma.ProviderObservationRunListRelationFilter
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotListRelationFilter
 }
 
 export type ServiceInstanceOrderByWithRelationInput = {
@@ -471,6 +472,7 @@ export type ServiceInstanceOrderByWithRelationInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheOrderByWithRelationInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptOrderByRelationAggregateInput
   providerObservationRuns?: Prisma.ProviderObservationRunOrderByRelationAggregateInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotOrderByRelationAggregateInput
 }
 
 export type ServiceInstanceWhereUniqueInput = Prisma.AtLeast<{
@@ -537,6 +539,7 @@ export type ServiceInstanceWhereUniqueInput = Prisma.AtLeast<{
   inodeIndexCache?: Prisma.XOR<Prisma.InodeIndexCacheNullableScalarRelationFilter, Prisma.InodeIndexCacheWhereInput> | null
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptListRelationFilter
   providerObservationRuns?: Prisma.ProviderObservationRunListRelationFilter
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotListRelationFilter
 }, "id">
 
 export type ServiceInstanceOrderByWithAggregationInput = {
@@ -661,6 +664,7 @@ export type ServiceInstanceCreateInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateInput = {
@@ -723,6 +727,7 @@ export type ServiceInstanceUncheckedCreateInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUpdateInput = {
@@ -785,6 +790,7 @@ export type ServiceInstanceUpdateInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateInput = {
@@ -847,6 +853,7 @@ export type ServiceInstanceUncheckedUpdateInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateManyInput = {
@@ -1488,6 +1495,20 @@ export type ServiceInstanceUpdateOneRequiredWithoutProviderObservationRunsNested
   update?: Prisma.XOR<Prisma.XOR<Prisma.ServiceInstanceUpdateToOneWithWhereWithoutProviderObservationRunsInput, Prisma.ServiceInstanceUpdateWithoutProviderObservationRunsInput>, Prisma.ServiceInstanceUncheckedUpdateWithoutProviderObservationRunsInput>
 }
 
+export type ServiceInstanceCreateNestedOneWithoutNativeInventorySnapshotsInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutNativeInventorySnapshotsInput, Prisma.ServiceInstanceUncheckedCreateWithoutNativeInventorySnapshotsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutNativeInventorySnapshotsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+}
+
+export type ServiceInstanceUpdateOneRequiredWithoutNativeInventorySnapshotsNestedInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutNativeInventorySnapshotsInput, Prisma.ServiceInstanceUncheckedCreateWithoutNativeInventorySnapshotsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutNativeInventorySnapshotsInput
+  upsert?: Prisma.ServiceInstanceUpsertWithoutNativeInventorySnapshotsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ServiceInstanceUpdateToOneWithWhereWithoutNativeInventorySnapshotsInput, Prisma.ServiceInstanceUpdateWithoutNativeInventorySnapshotsInput>, Prisma.ServiceInstanceUncheckedUpdateWithoutNativeInventorySnapshotsInput>
+}
+
 export type ServiceInstanceCreateNestedOneWithoutSessionSnapshotsInput = {
   create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutSessionSnapshotsInput, Prisma.ServiceInstanceUncheckedCreateWithoutSessionSnapshotsInput>
   connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutSessionSnapshotsInput
@@ -1647,6 +1668,7 @@ export type ServiceInstanceCreateWithoutUserInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutUserInput = {
@@ -1708,6 +1730,7 @@ export type ServiceInstanceUncheckedCreateWithoutUserInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutUserInput = {
@@ -1824,6 +1847,7 @@ export type ServiceInstanceCreateWithoutHistoryObservationsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutHistoryObservationsInput = {
@@ -1885,6 +1909,7 @@ export type ServiceInstanceUncheckedCreateWithoutHistoryObservationsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutHistoryObservationsInput = {
@@ -1962,6 +1987,7 @@ export type ServiceInstanceUpdateWithoutHistoryObservationsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutHistoryObservationsInput = {
@@ -2023,6 +2049,7 @@ export type ServiceInstanceUncheckedUpdateWithoutHistoryObservationsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutHistorySourceStatusInput = {
@@ -2084,6 +2111,7 @@ export type ServiceInstanceCreateWithoutHistorySourceStatusInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutHistorySourceStatusInput = {
@@ -2145,6 +2173,7 @@ export type ServiceInstanceUncheckedCreateWithoutHistorySourceStatusInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutHistorySourceStatusInput = {
@@ -2222,6 +2251,7 @@ export type ServiceInstanceUpdateWithoutHistorySourceStatusInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutHistorySourceStatusInput = {
@@ -2283,6 +2313,7 @@ export type ServiceInstanceUncheckedUpdateWithoutHistorySourceStatusInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutInodeIndexCacheInput = {
@@ -2344,6 +2375,7 @@ export type ServiceInstanceCreateWithoutInodeIndexCacheInput = {
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutInodeIndexCacheInput = {
@@ -2405,6 +2437,7 @@ export type ServiceInstanceUncheckedCreateWithoutInodeIndexCacheInput = {
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutInodeIndexCacheInput = {
@@ -2482,6 +2515,7 @@ export type ServiceInstanceUpdateWithoutInodeIndexCacheInput = {
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutInodeIndexCacheInput = {
@@ -2543,6 +2577,7 @@ export type ServiceInstanceUncheckedUpdateWithoutInodeIndexCacheInput = {
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutTagsInput = {
@@ -2604,6 +2639,7 @@ export type ServiceInstanceCreateWithoutTagsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutTagsInput = {
@@ -2665,6 +2701,7 @@ export type ServiceInstanceUncheckedCreateWithoutTagsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutTagsInput = {
@@ -2742,6 +2779,7 @@ export type ServiceInstanceUpdateWithoutTagsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutTagsInput = {
@@ -2803,6 +2841,7 @@ export type ServiceInstanceUncheckedUpdateWithoutTagsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutTrashSyncHistoryInput = {
@@ -2864,6 +2903,7 @@ export type ServiceInstanceCreateWithoutTrashSyncHistoryInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutTrashSyncHistoryInput = {
@@ -2925,6 +2965,7 @@ export type ServiceInstanceUncheckedCreateWithoutTrashSyncHistoryInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutTrashSyncHistoryInput = {
@@ -3002,6 +3043,7 @@ export type ServiceInstanceUpdateWithoutTrashSyncHistoryInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutTrashSyncHistoryInput = {
@@ -3063,6 +3105,7 @@ export type ServiceInstanceUncheckedUpdateWithoutTrashSyncHistoryInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutTrashBackupsInput = {
@@ -3124,6 +3167,7 @@ export type ServiceInstanceCreateWithoutTrashBackupsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutTrashBackupsInput = {
@@ -3185,6 +3229,7 @@ export type ServiceInstanceUncheckedCreateWithoutTrashBackupsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutTrashBackupsInput = {
@@ -3262,6 +3307,7 @@ export type ServiceInstanceUpdateWithoutTrashBackupsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutTrashBackupsInput = {
@@ -3323,6 +3369,7 @@ export type ServiceInstanceUncheckedUpdateWithoutTrashBackupsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutTrashSchedulesInput = {
@@ -3384,6 +3431,7 @@ export type ServiceInstanceCreateWithoutTrashSchedulesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutTrashSchedulesInput = {
@@ -3445,6 +3493,7 @@ export type ServiceInstanceUncheckedCreateWithoutTrashSchedulesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutTrashSchedulesInput = {
@@ -3522,6 +3571,7 @@ export type ServiceInstanceUpdateWithoutTrashSchedulesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutTrashSchedulesInput = {
@@ -3583,6 +3633,7 @@ export type ServiceInstanceUncheckedUpdateWithoutTrashSchedulesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutQualityProfileMappingsInput = {
@@ -3644,6 +3695,7 @@ export type ServiceInstanceCreateWithoutQualityProfileMappingsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutQualityProfileMappingsInput = {
@@ -3705,6 +3757,7 @@ export type ServiceInstanceUncheckedCreateWithoutQualityProfileMappingsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutQualityProfileMappingsInput = {
@@ -3782,6 +3835,7 @@ export type ServiceInstanceUpdateWithoutQualityProfileMappingsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutQualityProfileMappingsInput = {
@@ -3843,6 +3897,7 @@ export type ServiceInstanceUncheckedUpdateWithoutQualityProfileMappingsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutQualityProfileOverridesInput = {
@@ -3904,6 +3959,7 @@ export type ServiceInstanceCreateWithoutQualityProfileOverridesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutQualityProfileOverridesInput = {
@@ -3965,6 +4021,7 @@ export type ServiceInstanceUncheckedCreateWithoutQualityProfileOverridesInput = 
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutQualityProfileOverridesInput = {
@@ -4042,6 +4099,7 @@ export type ServiceInstanceUpdateWithoutQualityProfileOverridesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutQualityProfileOverridesInput = {
@@ -4103,6 +4161,7 @@ export type ServiceInstanceUncheckedUpdateWithoutQualityProfileOverridesInput = 
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutDeploymentHistoryInput = {
@@ -4164,6 +4223,7 @@ export type ServiceInstanceCreateWithoutDeploymentHistoryInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutDeploymentHistoryInput = {
@@ -4225,6 +4285,7 @@ export type ServiceInstanceUncheckedCreateWithoutDeploymentHistoryInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutDeploymentHistoryInput = {
@@ -4302,6 +4363,7 @@ export type ServiceInstanceUpdateWithoutDeploymentHistoryInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutDeploymentHistoryInput = {
@@ -4363,6 +4425,7 @@ export type ServiceInstanceUncheckedUpdateWithoutDeploymentHistoryInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutStandaloneCFDeploymentsInput = {
@@ -4424,6 +4487,7 @@ export type ServiceInstanceCreateWithoutStandaloneCFDeploymentsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutStandaloneCFDeploymentsInput = {
@@ -4485,6 +4549,7 @@ export type ServiceInstanceUncheckedCreateWithoutStandaloneCFDeploymentsInput = 
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutStandaloneCFDeploymentsInput = {
@@ -4562,6 +4627,7 @@ export type ServiceInstanceUpdateWithoutStandaloneCFDeploymentsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutStandaloneCFDeploymentsInput = {
@@ -4623,6 +4689,7 @@ export type ServiceInstanceUncheckedUpdateWithoutStandaloneCFDeploymentsInput = 
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutQualitySizeMappingInput = {
@@ -4684,6 +4751,7 @@ export type ServiceInstanceCreateWithoutQualitySizeMappingInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutQualitySizeMappingInput = {
@@ -4745,6 +4813,7 @@ export type ServiceInstanceUncheckedCreateWithoutQualitySizeMappingInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutQualitySizeMappingInput = {
@@ -4822,6 +4891,7 @@ export type ServiceInstanceUpdateWithoutQualitySizeMappingInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutQualitySizeMappingInput = {
@@ -4883,6 +4953,7 @@ export type ServiceInstanceUncheckedUpdateWithoutQualitySizeMappingInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutHuntConfigInput = {
@@ -4944,6 +5015,7 @@ export type ServiceInstanceCreateWithoutHuntConfigInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutHuntConfigInput = {
@@ -5005,6 +5077,7 @@ export type ServiceInstanceUncheckedCreateWithoutHuntConfigInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutHuntConfigInput = {
@@ -5082,6 +5155,7 @@ export type ServiceInstanceUpdateWithoutHuntConfigInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutHuntConfigInput = {
@@ -5143,6 +5217,7 @@ export type ServiceInstanceUncheckedUpdateWithoutHuntConfigInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutHuntLogsInput = {
@@ -5204,6 +5279,7 @@ export type ServiceInstanceCreateWithoutHuntLogsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutHuntLogsInput = {
@@ -5265,6 +5341,7 @@ export type ServiceInstanceUncheckedCreateWithoutHuntLogsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutHuntLogsInput = {
@@ -5342,6 +5419,7 @@ export type ServiceInstanceUpdateWithoutHuntLogsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutHuntLogsInput = {
@@ -5403,6 +5481,7 @@ export type ServiceInstanceUncheckedUpdateWithoutHuntLogsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutLibraryCacheInput = {
@@ -5464,6 +5543,7 @@ export type ServiceInstanceCreateWithoutLibraryCacheInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutLibraryCacheInput = {
@@ -5525,6 +5605,7 @@ export type ServiceInstanceUncheckedCreateWithoutLibraryCacheInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutLibraryCacheInput = {
@@ -5602,6 +5683,7 @@ export type ServiceInstanceUpdateWithoutLibraryCacheInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutLibraryCacheInput = {
@@ -5663,6 +5745,7 @@ export type ServiceInstanceUncheckedUpdateWithoutLibraryCacheInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutEpisodeFileCacheInput = {
@@ -5724,6 +5807,7 @@ export type ServiceInstanceCreateWithoutEpisodeFileCacheInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutEpisodeFileCacheInput = {
@@ -5785,6 +5869,7 @@ export type ServiceInstanceUncheckedCreateWithoutEpisodeFileCacheInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutEpisodeFileCacheInput = {
@@ -5862,6 +5947,7 @@ export type ServiceInstanceUpdateWithoutEpisodeFileCacheInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutEpisodeFileCacheInput = {
@@ -5923,6 +6009,7 @@ export type ServiceInstanceUncheckedUpdateWithoutEpisodeFileCacheInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutLibrarySyncStatusInput = {
@@ -5984,6 +6071,7 @@ export type ServiceInstanceCreateWithoutLibrarySyncStatusInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutLibrarySyncStatusInput = {
@@ -6045,6 +6133,7 @@ export type ServiceInstanceUncheckedCreateWithoutLibrarySyncStatusInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutLibrarySyncStatusInput = {
@@ -6122,6 +6211,7 @@ export type ServiceInstanceUpdateWithoutLibrarySyncStatusInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutLibrarySyncStatusInput = {
@@ -6183,6 +6273,7 @@ export type ServiceInstanceUncheckedUpdateWithoutLibrarySyncStatusInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutQueueCleanerConfigInput = {
@@ -6244,6 +6335,7 @@ export type ServiceInstanceCreateWithoutQueueCleanerConfigInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutQueueCleanerConfigInput = {
@@ -6305,6 +6397,7 @@ export type ServiceInstanceUncheckedCreateWithoutQueueCleanerConfigInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutQueueCleanerConfigInput = {
@@ -6382,6 +6475,7 @@ export type ServiceInstanceUpdateWithoutQueueCleanerConfigInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerConfigInput = {
@@ -6443,6 +6537,7 @@ export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerConfigInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutQueueCleanerLogsInput = {
@@ -6504,6 +6599,7 @@ export type ServiceInstanceCreateWithoutQueueCleanerLogsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutQueueCleanerLogsInput = {
@@ -6565,6 +6661,7 @@ export type ServiceInstanceUncheckedCreateWithoutQueueCleanerLogsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutQueueCleanerLogsInput = {
@@ -6642,6 +6739,7 @@ export type ServiceInstanceUpdateWithoutQueueCleanerLogsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerLogsInput = {
@@ -6703,6 +6801,7 @@ export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerLogsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutQueueCleanerStrikesInput = {
@@ -6764,6 +6863,7 @@ export type ServiceInstanceCreateWithoutQueueCleanerStrikesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutQueueCleanerStrikesInput = {
@@ -6825,6 +6925,7 @@ export type ServiceInstanceUncheckedCreateWithoutQueueCleanerStrikesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutQueueCleanerStrikesInput = {
@@ -6902,6 +7003,7 @@ export type ServiceInstanceUpdateWithoutQueueCleanerStrikesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerStrikesInput = {
@@ -6963,6 +7065,7 @@ export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerStrikesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutPlexCachesInput = {
@@ -7024,6 +7127,7 @@ export type ServiceInstanceCreateWithoutPlexCachesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutPlexCachesInput = {
@@ -7085,6 +7189,7 @@ export type ServiceInstanceUncheckedCreateWithoutPlexCachesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutPlexCachesInput = {
@@ -7162,6 +7267,7 @@ export type ServiceInstanceUpdateWithoutPlexCachesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutPlexCachesInput = {
@@ -7223,6 +7329,7 @@ export type ServiceInstanceUncheckedUpdateWithoutPlexCachesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutPlexGenerationTargetsInput = {
@@ -7284,6 +7391,7 @@ export type ServiceInstanceCreateWithoutPlexGenerationTargetsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutPlexGenerationTargetsInput = {
@@ -7345,6 +7453,7 @@ export type ServiceInstanceUncheckedCreateWithoutPlexGenerationTargetsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutPlexGenerationTargetsInput = {
@@ -7422,6 +7531,7 @@ export type ServiceInstanceUpdateWithoutPlexGenerationTargetsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutPlexGenerationTargetsInput = {
@@ -7483,6 +7593,7 @@ export type ServiceInstanceUncheckedUpdateWithoutPlexGenerationTargetsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutPlexEpisodeCachesInput = {
@@ -7544,6 +7655,7 @@ export type ServiceInstanceCreateWithoutPlexEpisodeCachesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutPlexEpisodeCachesInput = {
@@ -7605,6 +7717,7 @@ export type ServiceInstanceUncheckedCreateWithoutPlexEpisodeCachesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutPlexEpisodeCachesInput = {
@@ -7682,6 +7795,7 @@ export type ServiceInstanceUpdateWithoutPlexEpisodeCachesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutPlexEpisodeCachesInput = {
@@ -7743,6 +7857,7 @@ export type ServiceInstanceUncheckedUpdateWithoutPlexEpisodeCachesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutJellyfinCachesInput = {
@@ -7804,6 +7919,7 @@ export type ServiceInstanceCreateWithoutJellyfinCachesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutJellyfinCachesInput = {
@@ -7865,6 +7981,7 @@ export type ServiceInstanceUncheckedCreateWithoutJellyfinCachesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutJellyfinCachesInput = {
@@ -7942,6 +8059,7 @@ export type ServiceInstanceUpdateWithoutJellyfinCachesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutJellyfinCachesInput = {
@@ -8003,6 +8121,7 @@ export type ServiceInstanceUncheckedUpdateWithoutJellyfinCachesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutJellyfinEpisodeCachesInput = {
@@ -8064,6 +8183,7 @@ export type ServiceInstanceCreateWithoutJellyfinEpisodeCachesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutJellyfinEpisodeCachesInput = {
@@ -8125,6 +8245,7 @@ export type ServiceInstanceUncheckedCreateWithoutJellyfinEpisodeCachesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutJellyfinEpisodeCachesInput = {
@@ -8202,6 +8323,7 @@ export type ServiceInstanceUpdateWithoutJellyfinEpisodeCachesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutJellyfinEpisodeCachesInput = {
@@ -8263,6 +8385,7 @@ export type ServiceInstanceUncheckedUpdateWithoutJellyfinEpisodeCachesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutTautulliCachesInput = {
@@ -8324,6 +8447,7 @@ export type ServiceInstanceCreateWithoutTautulliCachesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutTautulliCachesInput = {
@@ -8385,6 +8509,7 @@ export type ServiceInstanceUncheckedCreateWithoutTautulliCachesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutTautulliCachesInput = {
@@ -8462,6 +8587,7 @@ export type ServiceInstanceUpdateWithoutTautulliCachesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutTautulliCachesInput = {
@@ -8523,6 +8649,7 @@ export type ServiceInstanceUncheckedUpdateWithoutTautulliCachesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutCacheRefreshStatusesInput = {
@@ -8584,6 +8711,7 @@ export type ServiceInstanceCreateWithoutCacheRefreshStatusesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutCacheRefreshStatusesInput = {
@@ -8645,6 +8773,7 @@ export type ServiceInstanceUncheckedCreateWithoutCacheRefreshStatusesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutCacheRefreshStatusesInput = {
@@ -8722,6 +8851,7 @@ export type ServiceInstanceUpdateWithoutCacheRefreshStatusesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutCacheRefreshStatusesInput = {
@@ -8783,6 +8913,7 @@ export type ServiceInstanceUncheckedUpdateWithoutCacheRefreshStatusesInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutProviderObservationRunsInput = {
@@ -8844,6 +8975,7 @@ export type ServiceInstanceCreateWithoutProviderObservationRunsInput = {
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutProviderObservationRunsInput = {
@@ -8905,6 +9037,7 @@ export type ServiceInstanceUncheckedCreateWithoutProviderObservationRunsInput = 
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutProviderObservationRunsInput = {
@@ -8982,6 +9115,7 @@ export type ServiceInstanceUpdateWithoutProviderObservationRunsInput = {
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutProviderObservationRunsInput = {
@@ -9043,6 +9177,271 @@ export type ServiceInstanceUncheckedUpdateWithoutProviderObservationRunsInput = 
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+}
+
+export type ServiceInstanceCreateWithoutNativeInventorySnapshotsInput = {
+  id?: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  user: Prisma.UserCreateNestedOneWithoutServiceInstancesInput
+  historyObservations?: Prisma.HistoryObservationCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+}
+
+export type ServiceInstanceUncheckedCreateWithoutNativeInventorySnapshotsInput = {
+  id?: string
+  userId: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagUncheckedCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupUncheckedCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigUncheckedCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+}
+
+export type ServiceInstanceCreateOrConnectWithoutNativeInventorySnapshotsInput = {
+  where: Prisma.ServiceInstanceWhereUniqueInput
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutNativeInventorySnapshotsInput, Prisma.ServiceInstanceUncheckedCreateWithoutNativeInventorySnapshotsInput>
+}
+
+export type ServiceInstanceUpsertWithoutNativeInventorySnapshotsInput = {
+  update: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutNativeInventorySnapshotsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutNativeInventorySnapshotsInput>
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutNativeInventorySnapshotsInput, Prisma.ServiceInstanceUncheckedCreateWithoutNativeInventorySnapshotsInput>
+  where?: Prisma.ServiceInstanceWhereInput
+}
+
+export type ServiceInstanceUpdateToOneWithWhereWithoutNativeInventorySnapshotsInput = {
+  where?: Prisma.ServiceInstanceWhereInput
+  data: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutNativeInventorySnapshotsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutNativeInventorySnapshotsInput>
+}
+
+export type ServiceInstanceUpdateWithoutNativeInventorySnapshotsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  user?: Prisma.UserUpdateOneRequiredWithoutServiceInstancesNestedInput
+  historyObservations?: Prisma.HistoryObservationUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+}
+
+export type ServiceInstanceUncheckedUpdateWithoutNativeInventorySnapshotsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutSessionSnapshotsInput = {
@@ -9104,6 +9503,7 @@ export type ServiceInstanceCreateWithoutSessionSnapshotsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutSessionSnapshotsInput = {
@@ -9165,6 +9565,7 @@ export type ServiceInstanceUncheckedCreateWithoutSessionSnapshotsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutSessionSnapshotsInput = {
@@ -9242,6 +9643,7 @@ export type ServiceInstanceUpdateWithoutSessionSnapshotsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutSessionSnapshotsInput = {
@@ -9303,6 +9705,7 @@ export type ServiceInstanceUncheckedUpdateWithoutSessionSnapshotsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutNamingConfigInput = {
@@ -9364,6 +9767,7 @@ export type ServiceInstanceCreateWithoutNamingConfigInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutNamingConfigInput = {
@@ -9425,6 +9829,7 @@ export type ServiceInstanceUncheckedCreateWithoutNamingConfigInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutNamingConfigInput = {
@@ -9502,6 +9907,7 @@ export type ServiceInstanceUpdateWithoutNamingConfigInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutNamingConfigInput = {
@@ -9563,6 +9969,7 @@ export type ServiceInstanceUncheckedUpdateWithoutNamingConfigInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutNamingDeployHistoryInput = {
@@ -9624,6 +10031,7 @@ export type ServiceInstanceCreateWithoutNamingDeployHistoryInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutNamingDeployHistoryInput = {
@@ -9685,6 +10093,7 @@ export type ServiceInstanceUncheckedCreateWithoutNamingDeployHistoryInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutNamingDeployHistoryInput = {
@@ -9762,6 +10171,7 @@ export type ServiceInstanceUpdateWithoutNamingDeployHistoryInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutNamingDeployHistoryInput = {
@@ -9823,6 +10233,7 @@ export type ServiceInstanceUncheckedUpdateWithoutNamingDeployHistoryInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutSeerrActionLogsInput = {
@@ -9884,6 +10295,7 @@ export type ServiceInstanceCreateWithoutSeerrActionLogsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutSeerrActionLogsInput = {
@@ -9945,6 +10357,7 @@ export type ServiceInstanceUncheckedCreateWithoutSeerrActionLogsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutSeerrActionLogsInput = {
@@ -10022,6 +10435,7 @@ export type ServiceInstanceUpdateWithoutSeerrActionLogsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutSeerrActionLogsInput = {
@@ -10083,6 +10497,7 @@ export type ServiceInstanceUncheckedUpdateWithoutSeerrActionLogsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutLabelSyncMutationAttemptsInput = {
@@ -10144,6 +10559,7 @@ export type ServiceInstanceCreateWithoutLabelSyncMutationAttemptsInput = {
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutLabelSyncMutationAttemptsInput = {
@@ -10205,6 +10621,7 @@ export type ServiceInstanceUncheckedCreateWithoutLabelSyncMutationAttemptsInput 
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutLabelSyncMutationAttemptsInput = {
@@ -10282,6 +10699,7 @@ export type ServiceInstanceUpdateWithoutLabelSyncMutationAttemptsInput = {
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutLabelSyncMutationAttemptsInput = {
@@ -10343,6 +10761,7 @@ export type ServiceInstanceUncheckedUpdateWithoutLabelSyncMutationAttemptsInput 
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutQuiActionLogsInput = {
@@ -10404,6 +10823,7 @@ export type ServiceInstanceCreateWithoutQuiActionLogsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutQuiActionLogsInput = {
@@ -10465,6 +10885,7 @@ export type ServiceInstanceUncheckedCreateWithoutQuiActionLogsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutQuiActionLogsInput = {
@@ -10542,6 +10963,7 @@ export type ServiceInstanceUpdateWithoutQuiActionLogsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutQuiActionLogsInput = {
@@ -10603,6 +11025,7 @@ export type ServiceInstanceUncheckedUpdateWithoutQuiActionLogsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutQuiEventLogsInput = {
@@ -10664,6 +11087,7 @@ export type ServiceInstanceCreateWithoutQuiEventLogsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutQuiEventLogsInput = {
@@ -10725,6 +11149,7 @@ export type ServiceInstanceUncheckedCreateWithoutQuiEventLogsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutQuiEventLogsInput = {
@@ -10802,6 +11227,7 @@ export type ServiceInstanceUpdateWithoutQuiEventLogsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutQuiEventLogsInput = {
@@ -10863,6 +11289,7 @@ export type ServiceInstanceUncheckedUpdateWithoutQuiEventLogsInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateManyUserInput = {
@@ -10950,6 +11377,7 @@ export type ServiceInstanceUpdateWithoutUserInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutUserInput = {
@@ -11011,6 +11439,7 @@ export type ServiceInstanceUncheckedUpdateWithoutUserInput = {
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateManyWithoutUserInput = {
@@ -11073,6 +11502,7 @@ export type ServiceInstanceCountOutputType = {
   quiEventLogs: number
   labelSyncMutationAttempts: number
   providerObservationRuns: number
+  nativeInventorySnapshots: number
 }
 
 export type ServiceInstanceCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -11104,6 +11534,7 @@ export type ServiceInstanceCountOutputTypeSelect<ExtArgs extends runtime.Types.E
   quiEventLogs?: boolean | ServiceInstanceCountOutputTypeCountQuiEventLogsArgs
   labelSyncMutationAttempts?: boolean | ServiceInstanceCountOutputTypeCountLabelSyncMutationAttemptsArgs
   providerObservationRuns?: boolean | ServiceInstanceCountOutputTypeCountProviderObservationRunsArgs
+  nativeInventorySnapshots?: boolean | ServiceInstanceCountOutputTypeCountNativeInventorySnapshotsArgs
 }
 
 /**
@@ -11312,6 +11743,13 @@ export type ServiceInstanceCountOutputTypeCountProviderObservationRunsArgs<ExtAr
   where?: Prisma.ProviderObservationRunWhereInput
 }
 
+/**
+ * ServiceInstanceCountOutputType without action
+ */
+export type ServiceInstanceCountOutputTypeCountNativeInventorySnapshotsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ProviderNativeInventorySnapshotWhereInput
+}
+
 
 export type ServiceInstanceSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -11374,6 +11812,7 @@ export type ServiceInstanceSelect<ExtArgs extends runtime.Types.Extensions.Inter
   inodeIndexCache?: boolean | Prisma.ServiceInstance$inodeIndexCacheArgs<ExtArgs>
   labelSyncMutationAttempts?: boolean | Prisma.ServiceInstance$labelSyncMutationAttemptsArgs<ExtArgs>
   providerObservationRuns?: boolean | Prisma.ServiceInstance$providerObservationRunsArgs<ExtArgs>
+  nativeInventorySnapshots?: boolean | Prisma.ServiceInstance$nativeInventorySnapshotsArgs<ExtArgs>
   _count?: boolean | Prisma.ServiceInstanceCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["serviceInstance"]>
 
@@ -11498,6 +11937,7 @@ export type ServiceInstanceInclude<ExtArgs extends runtime.Types.Extensions.Inte
   inodeIndexCache?: boolean | Prisma.ServiceInstance$inodeIndexCacheArgs<ExtArgs>
   labelSyncMutationAttempts?: boolean | Prisma.ServiceInstance$labelSyncMutationAttemptsArgs<ExtArgs>
   providerObservationRuns?: boolean | Prisma.ServiceInstance$providerObservationRunsArgs<ExtArgs>
+  nativeInventorySnapshots?: boolean | Prisma.ServiceInstance$nativeInventorySnapshotsArgs<ExtArgs>
   _count?: boolean | Prisma.ServiceInstanceCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type ServiceInstanceIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -11546,6 +11986,7 @@ export type $ServiceInstancePayload<ExtArgs extends runtime.Types.Extensions.Int
     inodeIndexCache: Prisma.$InodeIndexCachePayload<ExtArgs> | null
     labelSyncMutationAttempts: Prisma.$LabelSyncMutationAttemptPayload<ExtArgs>[]
     providerObservationRuns: Prisma.$ProviderObservationRunPayload<ExtArgs>[]
+    nativeInventorySnapshots: Prisma.$ProviderNativeInventorySnapshotPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -12002,6 +12443,7 @@ export interface Prisma__ServiceInstanceClient<T, Null = never, ExtArgs extends 
   inodeIndexCache<T extends Prisma.ServiceInstance$inodeIndexCacheArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$inodeIndexCacheArgs<ExtArgs>>): Prisma.Prisma__InodeIndexCacheClient<runtime.Types.Result.GetResult<Prisma.$InodeIndexCachePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   labelSyncMutationAttempts<T extends Prisma.ServiceInstance$labelSyncMutationAttemptsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$labelSyncMutationAttemptsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LabelSyncMutationAttemptPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   providerObservationRuns<T extends Prisma.ServiceInstance$providerObservationRunsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$providerObservationRunsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ProviderObservationRunPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  nativeInventorySnapshots<T extends Prisma.ServiceInstance$nativeInventorySnapshotsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$nativeInventorySnapshotsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ProviderNativeInventorySnapshotPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -13256,6 +13698,30 @@ export type ServiceInstance$providerObservationRunsArgs<ExtArgs extends runtime.
   take?: number
   skip?: number
   distinct?: Prisma.ProviderObservationRunScalarFieldEnum | Prisma.ProviderObservationRunScalarFieldEnum[]
+}
+
+/**
+ * ServiceInstance.nativeInventorySnapshots
+ */
+export type ServiceInstance$nativeInventorySnapshotsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ProviderNativeInventorySnapshot
+   */
+  select?: Prisma.ProviderNativeInventorySnapshotSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the ProviderNativeInventorySnapshot
+   */
+  omit?: Prisma.ProviderNativeInventorySnapshotOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ProviderNativeInventorySnapshotInclude<ExtArgs> | null
+  where?: Prisma.ProviderNativeInventorySnapshotWhereInput
+  orderBy?: Prisma.ProviderNativeInventorySnapshotOrderByWithRelationInput | Prisma.ProviderNativeInventorySnapshotOrderByWithRelationInput[]
+  cursor?: Prisma.ProviderNativeInventorySnapshotWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ProviderNativeInventorySnapshotScalarFieldEnum | Prisma.ProviderNativeInventorySnapshotScalarFieldEnum[]
 }
 
 /**

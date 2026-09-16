@@ -9,7 +9,10 @@ import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { runJellyfinCacheRefreshSingleFlight } from "../lib/jellyfin/jellyfin-cache-singleflight.js";
 import { refreshOwnedJellyfinEpisodeCache } from "../lib/jellyfin/jellyfin-episode-cache-refresher.js";
-import { JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS } from "../lib/jellyfin/jellyfin-episode-refresh-policy.js";
+import {
+	JELLYFIN_EPISODE_PARENT_REFRESH_CONTINUATION_DELAY_MS,
+	JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS,
+} from "../lib/jellyfin/jellyfin-episode-refresh-policy.js";
 import type { ServiceInstance } from "../lib/prisma.js";
 import type { AutomaticObservationRenewalMode } from "../lib/provider-observation/observation-run-repository.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
@@ -108,6 +111,16 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 						transientDelay,
 						transientIdentityRetry + 1,
 						catalogReplans,
+					);
+					return;
+				}
+				if (result.parentRefreshPending) {
+					scheduleContinuation(
+						instance,
+						JELLYFIN_EPISODE_PARENT_REFRESH_CONTINUATION_DELAY_MS,
+						transientIdentityRetry,
+						catalogReplans,
+						automaticRenewal,
 					);
 					return;
 				}

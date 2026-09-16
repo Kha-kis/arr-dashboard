@@ -7,6 +7,7 @@
 import { randomUUID } from "node:crypto";
 import {
 	bulkApprovalSchema,
+	type CleanupFieldOptionsResponse,
 	type CleanupRuleExpression,
 	cleanupExplainRequestSchema,
 	cleanupRuleRequiresRadarrRatings,
@@ -23,6 +24,10 @@ import {
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { decodeJellyfinLibraryGenerationMetadata } from "../lib/jellyfin/jellyfin-generation-metadata.js";
+import {
+	loadAdditionalTargetWatchFacts,
+	positiveTargetWatchRuleTypes,
+} from "../lib/library-cleanup/additional-target-watch-policy.js";
 import {
 	approvalRecordToAuditSnapshot,
 	cleanupAuditEnabled,
@@ -390,7 +395,7 @@ function fingerprintJellyfinAuthority(
 // Field options cache: userId → { data, expiresAt }
 const fieldOptionsCache = new Map<
 	string,
-	{ data: unknown; expiresAt: number; jellyfinAuthorityFingerprint: string }
+	{ data: CleanupFieldOptionsResponse; expiresAt: number; jellyfinAuthorityFingerprint: string }
 >();
 const FIELD_OPTIONS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const CLEANUP_ACTIVITY_EVENTS_PER_TIMELINE = 200;
@@ -571,6 +576,15 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			};
 		};
 		const initialJellyfinSnapshot = await readJellyfinAuthoritySnapshot();
+		// Rule availability is configuration, not evidence authorizing execution.
+		// Recheck even on a cache hit so connecting/disabling a provider is reflected immediately.
+		const positiveWatchInstances = await app.prisma.serviceInstance.findMany({
+			where: { userId, enabled: true, service: { in: ["TAUTULLI", "PLEX"] } },
+			select: { service: true },
+		});
+		const hasTautulliPositiveWatchCount =
+			positiveWatchInstances.some((instance) => instance.service === "TAUTULLI") &&
+			positiveWatchInstances.some((instance) => instance.service === "PLEX");
 		const jellyfinInstances = initialJellyfinSnapshot.instances;
 		const jellyfinStatuses = initialJellyfinSnapshot.statuses;
 		const initialJellyfinAuthorityFingerprint = initialJellyfinSnapshot.fingerprint;
@@ -585,7 +599,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			cached.expiresAt > Date.now() &&
 			cached.jellyfinAuthorityFingerprint === initialJellyfinAuthorityFingerprint
 		) {
-			return reply.send(cached.data);
+			return reply.send({ ...cached.data, hasTautulliPositiveWatchCount });
 		}
 
 		// Get user's Sonarr + Radarr instances (full fields for client creation)
@@ -673,8 +687,8 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			}
 		};
 
-		// B1 containment: do not offer Tautulli-dependent rule values while
-		// Tautulli is deliberately non-actionable for cleanup.
+		// Generic Tautulli history remains non-authoritative. The separate positive
+		// watch-count option uses target-specific live proof and does not need user lists.
 		const tautulliUsers = new Set<string>();
 
 		// Extract distinct Plex users / libraries / collections / labels in
@@ -816,6 +830,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			arrTags,
 			hasPlex: plexEvidence.length > 0,
 			hasTautulli: false,
+			hasTautulliPositiveWatchCount,
 			hasJellyfin: jellyfinInstancesForResult.length > 0,
 			...(plexEvidence.length > 0 ? { plexEvidence: summarizePlexEvidence(plexEvidence) } : {}),
 		};
@@ -2285,16 +2300,27 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 					[cacheItem as unknown as CacheItemForEval],
 				)
 			: new Map();
-		const explainCtx =
-			targetScopedPlexFacts.size === 0
-				? ctx
-				: {
-						...ctx,
-						providerWatchCountFacts: new Map(
-							[...(ctx.providerWatchCountFacts ?? [])].map(([key, facts]) => [key, [...facts]]),
-						),
-					};
-		for (const [key, facts] of targetScopedPlexFacts) {
+		const additionalTargetFacts = await loadAdditionalTargetWatchFacts(
+			{
+				prisma: app.prisma,
+				arrClientFactory: app.arrClientFactory,
+				encryptor: app.encryptor,
+				traktClientId: process.env.TRAKT_CLIENT_ID ?? null,
+				log: request.log,
+			},
+			userId,
+			[cacheItem as unknown as CacheItemForEval],
+			positiveTargetWatchRuleTypes(config.rules),
+			ctx.providerWatchCountFacts,
+			{ verifyPositiveCounts: true },
+		);
+		const explainCtx = {
+			...ctx,
+			providerWatchCountFacts: new Map(
+				[...(ctx.providerWatchCountFacts ?? [])].map(([key, facts]) => [key, [...facts]]),
+			),
+		};
+		for (const [key, facts] of [...targetScopedPlexFacts, ...additionalTargetFacts]) {
 			explainCtx.providerWatchCountFacts!.set(key, [
 				...(explainCtx.providerWatchCountFacts!.get(key) ?? []),
 				...facts,

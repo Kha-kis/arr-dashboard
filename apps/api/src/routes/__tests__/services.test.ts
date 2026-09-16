@@ -69,6 +69,7 @@ vi.mock("../../lib/services/service-identity.js", () => ({
 
 import Fastify from "fastify";
 import { InstanceNotFoundError } from "../../lib/errors.js";
+import { deriveActiveOperationKey } from "../../lib/label-sync/jellyfin-mutation-repository.js";
 import { acquireCleanupOperationGuard } from "../../lib/library-cleanup/cleanup-maintenance-gate.js";
 import {
 	createDeploymentConnectionStateToken,
@@ -157,7 +158,11 @@ function createMockPrisma() {
 		},
 		serviceInstance: {
 			findMany: vi.fn().mockResolvedValue([]),
-			findFirst: vi.fn().mockResolvedValue(null),
+			findFirst: vi
+				.fn()
+				.mockImplementation(({ where }: { where?: { OR?: unknown } }) =>
+					where?.OR ? null : makeInstance(),
+				),
 			create: vi.fn().mockImplementation(({ data }: any) => ({
 				id: "inst-new",
 				...data,
@@ -186,12 +191,17 @@ function createMockPrisma() {
 		},
 		trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
 		templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+		providerNativeInventorySnapshot: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		plexCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		plexEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		tautulliCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		cacheRefreshStatus: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		labelSyncMutationAttempt: {
+			findMany: vi.fn().mockResolvedValue([]),
+			deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+		},
 		historyCollectionLease: { update: vi.fn(), delete: vi.fn(), deleteMany: vi.fn() },
 		historyObservation: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		historySourceStatus: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
@@ -416,6 +426,48 @@ describe("POST /services", () => {
 // ===========================================================================
 
 describe("PUT /services/:id", () => {
+	it("blocks an explicit update while a mutation attempt is pending", async () => {
+		const input = {
+			userId: "user-1",
+			ruleId: "rule-1",
+			destinationInstanceId: "inst-1",
+			provider: "jellyfin" as const,
+			mediaType: "movie" as const,
+			tmdbId: 42,
+			connectionGeneration: 0,
+			identityGeneration: 0,
+			targetItemId: "item-1",
+			libraryId: "library-1",
+			intentFingerprint: "intent",
+			ruleFingerprint: "rule",
+			destinationTag: "tag",
+		};
+		mockPrisma.labelSyncMutationAttempt.findMany.mockResolvedValueOnce([
+			{
+				id: "attempt-1",
+				...input,
+				activeOperationKey: deriveActiveOperationKey(input),
+				claimToken: "claim-token",
+				sendAttemptCount: 0,
+				reconcileAttemptCount: 0,
+				requestStartedAt: null,
+				lastObservedAt: null,
+				completedAt: null,
+				status: "claimed",
+				reasonCode: null,
+				createdAt: new Date("2026-09-01T00:00:00Z"),
+				updatedAt: new Date("2026-09-01T00:00:00Z"),
+			},
+		]);
+
+		const res = await injectAuthenticated("PUT", "/services/inst-1", {
+			body: { label: "blocked" },
+		});
+
+		expect(res.statusCode).toBe(409);
+		expect(mockPrisma.serviceInstance.updateMany).not.toHaveBeenCalled();
+	});
+
 	it("calls buildUpdateData and updates the instance", async () => {
 		mockBuildUpdateData.mockReturnValue({ label: "Updated Label" });
 		mockPrisma.serviceInstance.findFirst.mockResolvedValue(
@@ -1048,6 +1100,9 @@ describe("PUT /services/:id", () => {
 			expect(mockPrisma.jellyfinEpisodeCache.deleteMany).toHaveBeenCalledWith({
 				where: { instanceId: "inst-1" },
 			});
+			expect(mockPrisma.providerNativeInventorySnapshot.deleteMany).toHaveBeenCalledWith({
+				where: { instanceId: "inst-1" },
+			});
 			expect(mockPrisma.cacheRefreshStatus.deleteMany).toHaveBeenCalledWith({
 				where: { instanceId: "inst-1" },
 			});
@@ -1438,7 +1493,9 @@ describe("DELETE /services/:id", () => {
 		});
 		mockRequireInstance.mockResolvedValue(source);
 		mockPrisma.serviceInstance.findMany.mockResolvedValue([source, survivor]);
-		mockPrisma.serviceInstance.findFirst.mockResolvedValueOnce(source);
+		mockPrisma.serviceInstance.findFirst
+			.mockResolvedValueOnce(source)
+			.mockResolvedValueOnce(source);
 		mockPrisma.templateDeploymentHistory.findMany.mockResolvedValue([
 			{
 				id: "deployment-1",

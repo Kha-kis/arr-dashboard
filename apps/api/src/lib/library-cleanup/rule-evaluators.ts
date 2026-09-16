@@ -63,6 +63,7 @@ import type {
 	YearRangeRuleParams,
 } from "@arr/shared";
 import {
+	cleanupRuleUsesNativePresence,
 	type DataSourceDependency,
 	isRegexSafe,
 	isVersionedCleanupRuleExpression,
@@ -74,6 +75,7 @@ import {
 	authorizeProviderEvidenceUse,
 	authorizeTargetScopedWatchCountMutation,
 } from "../provider-observation/evidence-capabilities.js";
+import { resolveNativePresence } from "../provider-observation/native-presence-evidence.js";
 import { safeJsonParse } from "../utils/json.js";
 import {
 	type EpisodePlexWatchEvidence,
@@ -127,7 +129,7 @@ export function decideProviderWatchCountFact(
 	item: CacheItemForEval,
 	params: { operator: "greater_than" | "less_than" | "equals"; count: number },
 	ctx: EvalContext,
-	provider: "PLEX" | "JELLYFIN",
+	provider: ProviderWatchCountFact["provider"],
 	plexLibraryFilter?: unknown,
 ): ProviderWatchCountFactDecision {
 	const targetKey = itemProviderKey(item);
@@ -139,18 +141,68 @@ export function decideProviderWatchCountFact(
 	const eligibleFacts = facts.filter(
 		(fact) =>
 			fact.provider === provider &&
+			fact.targetKey === targetKey &&
 			fact.observedValue >= 0 &&
 			(filter === null || (fact.sectionTitle !== undefined && filter.includes(fact.sectionTitle))),
 	);
-	const scopedFacts =
-		provider === "PLEX" ? eligibleFacts.filter((fact) => fact.targetScoped === true) : [];
-	if (scopedFacts.length > 0) {
+	const scopedFacts = eligibleFacts.filter((fact) => fact.targetScoped === true);
+	// These adapters bind native identity and positive watch evidence for one
+	// target. Execution must re-read the same proof and its live threshold;
+	// an aggregate observation cannot opt into this path.
+	if (provider !== "PLEX" && scopedFacts.length > 0) {
+		if (scopedFacts.length !== 1 || params.operator !== "greater_than") return { kind: "unknown" };
+		const fact = scopedFacts[0]!;
+		if (!Number.isSafeInteger(fact.observedValue) || fact.observedValue <= 0)
+			return { kind: "unknown" };
+		const sameTargetAuthority = (candidate: ProviderWatchCountFact) =>
+			candidate.userId === fact.userId &&
+			candidate.provider === fact.provider &&
+			candidate.cacheType === fact.cacheType &&
+			candidate.instanceId === fact.instanceId &&
+			candidate.generationId === fact.generationId &&
+			candidate.targetKey === fact.targetKey &&
+			candidate.observedValue === fact.observedValue;
+		if (!eligibleFacts.every((candidate) => sameTargetAuthority(candidate)))
+			return { kind: "unknown" };
+		const decision = authorizeProviderEvidenceUse(fact.status, {
+			domain: "watch-count",
+			use: provider === "JELLYFIN" ? "positive-predicate" : "mutation",
+			field: "watch-count",
+			operator: "greater_than",
+			threshold: params.count,
+			observedValue: fact.observedValue,
+			targetObserved: true,
+		});
+		if (!decision.authorized) return { kind: "unknown" };
+		return {
+			kind: "known",
+			matched: true,
+			grant: {
+				userId: fact.userId,
+				provider,
+				cacheType: fact.cacheType,
+				instanceId: fact.instanceId,
+				generationId: fact.generationId,
+				targetKey,
+				coordinate: fact.coordinate,
+				domain: "watch-count",
+				field: "watch-count",
+				operator: "greater_than",
+				threshold: params.count,
+				observedValue: fact.observedValue,
+				basis: decision.basis,
+			},
+		};
+	}
+	if (provider === "TAUTULLI") return { kind: "unknown" };
+	const plexScopedFacts = provider === "PLEX" ? scopedFacts : [];
+	if (plexScopedFacts.length > 0) {
 		// A V6 target proof is deliberately merged with the generic fact for the
 		// same published authority. It can be preferred only when every companion
 		// fact is that exact same authority; independent instances/generations or
 		// conflicting observations remain ambiguous and closed.
-		if (scopedFacts.length !== 1) return { kind: "unknown" };
-		const fact = scopedFacts[0]!;
+		if (plexScopedFacts.length !== 1) return { kind: "unknown" };
+		const fact = plexScopedFacts[0]!;
 		const sameAuthority = (candidate: ProviderWatchCountFact) =>
 			candidate.instanceId === fact.instanceId &&
 			candidate.generationId === fact.generationId &&
@@ -232,7 +284,7 @@ export function decideProviderWatchCountFact(
 	} as const;
 	const decision = authorizeProviderEvidenceUse(fact.status, request);
 	if (!decision.authorized) return { kind: "unknown" };
-	// Jellyfin has no target-scoped live reproof adapter for lower bounds.
+	// Generic Jellyfin observations cannot borrow the target reader's live proof.
 	if (provider === "JELLYFIN" && decision.basis === "observed-lower-bound") {
 		return { kind: "unknown" };
 	}
@@ -257,10 +309,11 @@ export function decideProviderWatchCountFact(
 	};
 }
 
-function hasTargetScopedPlexWatchCountEvidence(
+function hasTargetScopedWatchCountEvidence(
 	item: CacheItemForEval,
 	parameters: Record<string, unknown>,
 	ctx: EvalContext,
+	provider: ProviderWatchCountFact["provider"],
 	plexLibraryFilter?: unknown,
 ): boolean {
 	const operator = parameters.operator;
@@ -275,14 +328,14 @@ function hasTargetScopedPlexWatchCountEvidence(
 		!targetKey ||
 		ctx.providerWatchCountFacts
 			?.get(targetKey)
-			?.some((fact) => fact.provider === "PLEX" && fact.targetScoped === true) !== true
+			?.some((fact) => fact.provider === provider && fact.targetScoped === true) !== true
 	)
 		return false;
 	const decision = decideProviderWatchCountFact(
 		item,
 		{ operator, count },
 		ctx,
-		"PLEX",
+		provider,
 		plexLibraryFilter,
 	);
 	return decision.kind === "known";
@@ -1161,6 +1214,16 @@ function evaluateTautulliWatchCount(
 	params: TautulliWatchCountParams,
 	ctx: EvalContext,
 ): string | null {
+	const targetKey = itemProviderKey(item);
+	if (
+		targetKey &&
+		ctx.providerWatchCountFacts?.get(targetKey)?.some((fact) => fact.provider === "TAUTULLI")
+	) {
+		const decision = decideProviderWatchCountFact(item, params, ctx, "TAUTULLI");
+		return decision.kind === "known" && decision.matched && decision.grant
+			? `Tautulli play count: at least ${decision.grant.observedValue} (threshold: > ${params.count})`
+			: null;
+	}
 	const watch = lookupTautulliWatch(item, ctx.tautulliMap);
 	if (!watch) return null;
 	const count = watch.watchCount;
@@ -2433,6 +2496,10 @@ export function evaluateSingleCondition(
 			return evaluateTautulliWatchedBy(item, params as TautulliWatchedByParams, ctx);
 
 		// ── Plex rules ─────────────────────────────────────────────
+		case "media_server_presence":
+			return nativePresenceMatches(item, params, ctx)
+				? "Present at the last complete media-server scan"
+				: null;
 		case "plex_last_watched":
 			return evaluatePlexLastWatched(item, params as PlexLastWatchedParams, ctx, plexLibFilter);
 		case "plex_watch_count":
@@ -2740,6 +2807,24 @@ function hasPathEvidence(item: CacheItemForEval, parameters: Record<string, unkn
  * Establish whether a condition has enough evidence to produce a real boolean.
  * Evaluator `null` remains a definitive false only after this boundary succeeds.
  */
+function nativePresenceMatches(
+	item: CacheItemForEval,
+	parameters: Record<string, unknown>,
+	ctx: EvalContext,
+): boolean {
+	if (
+		(item.itemType !== "movie" && item.itemType !== "series") ||
+		typeof parameters.instanceId !== "string"
+	)
+		return false;
+	return (
+		resolveNativePresence(
+			{ ...item, itemType: item.itemType },
+			ctx.nativePresence?.get(parameters.instanceId),
+		) === "present"
+	);
+}
+
 function conditionEvidenceAvailable(
 	ruleType: string,
 	parameters: Record<string, unknown>,
@@ -2750,15 +2835,24 @@ function conditionEvidenceAvailable(
 	evidenceAvailability?: ConditionEvidenceAvailability,
 ): boolean {
 	if (evidenceAvailability && !evidenceAvailability(ruleType, parameters)) return false;
+	if (ruleType === "media_server_presence") return nativePresenceMatches(item, parameters, ctx);
 	const requesterRule =
 		ruleType === "seerr_requester_watched" || ruleType === "seerr_requester_not_watched";
-	const targetScopedPlexWatchCount =
-		ruleType === "plex_watch_count" &&
-		hasTargetScopedPlexWatchCountEvidence(item, parameters, ctx, plexLibFilter);
+	const watchProvider =
+		ruleType === "plex_watch_count"
+			? "PLEX"
+			: ruleType === "jellyfin_watch_count"
+				? "JELLYFIN"
+				: ruleType === "tautulli_watch_count"
+					? "TAUTULLI"
+					: null;
+	const targetScopedWatchCount =
+		watchProvider !== null &&
+		hasTargetScopedWatchCountEvidence(item, parameters, ctx, watchProvider, plexLibFilter);
 	if (
 		failedSources &&
 		(!requesterRule || failedSources.has("seerr")) &&
-		!targetScopedPlexWatchCount &&
+		!targetScopedWatchCount &&
 		shouldSkipRuleType(ruleType, JSON.stringify(parameters), failedSources)
 	) {
 		return false;
@@ -2849,6 +2943,20 @@ function conditionEvidenceAvailable(
 			return ctx.seerrMap !== undefined && seerrKey !== null;
 
 		case "tautulli_watch_count":
+			if (
+				providerKey !== null &&
+				ctx.providerWatchCountFacts?.get(providerKey)?.some((fact) => fact.provider === "TAUTULLI")
+			) {
+				return (
+					decideProviderWatchCountFact(
+						item,
+						parameters as TautulliWatchCountParams,
+						ctx,
+						"TAUTULLI",
+					).kind === "known"
+				);
+			}
+			return providerKey !== null && tautulliWatch !== null;
 		case "tautulli_watched_by":
 			return providerKey !== null && tautulliWatch !== null;
 		case "tautulli_last_watched":
@@ -3151,6 +3259,8 @@ export function evaluateRuleState(
 
 	const expression = normalizeStoredCleanupRuleExpression(rule);
 	if (!expression) return { state: "unknown", match: null, evidenceConditions: [] };
+	if (cleanupRuleUsesNativePresence({ expression }))
+		return { state: "unknown", match: null, evidenceConditions: [] };
 	const plexLibFilter = safeJsonParse(rule.plexLibraryFilter) as string[] | null;
 	const result = evaluateExpressionNode(
 		expression.root,

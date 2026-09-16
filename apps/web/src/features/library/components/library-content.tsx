@@ -17,6 +17,11 @@ import { buildJellyfinUrl, buildPlexUrl } from "../lib/library-utils";
 /**
  * Props for LibraryCard component (passthrough)
  */
+export type SeriesProgressByProvider = {
+	plex?: SeriesProgressItem;
+	jellyfin?: SeriesProgressItem;
+};
+
 interface LibraryCardProps {
 	item: LibraryItem;
 	onToggleMonitor: (item: LibraryItem) => void;
@@ -43,7 +48,7 @@ interface LibraryCardProps {
 	lastWatchedAt?: string | null;
 	watchedByUsers?: string[];
 	plexUserRating?: number | null;
-	seriesProgress?: { watched: number; total: number; percent: number } | null;
+	seriesProgress?: SeriesProgressByProvider | null;
 	plexUrl?: string | null;
 	/** Label for the media server link (e.g., "Plex", "Jellyfin", "Emby") */
 	mediaServerLabel?: string;
@@ -122,8 +127,8 @@ interface LibraryContentProps {
 	enrichmentMap?: Record<string, LibraryEnrichmentItem> | null;
 	/** Watch enrichment map keyed by "movie:{tmdbId}" or "series:{tmdbId}" (merged from Plex + Jellyfin/Emby) */
 	watchEnrichmentMap?: Record<string, WatchEnrichmentItem> | null;
-	/** Series progress map keyed by TMDB ID (merged from Plex + Jellyfin/Emby) */
-	seriesProgressMap?: Record<number, SeriesProgressItem> | null;
+	/** Series progress map keyed by TMDB ID, preserving each provider's evidence */
+	seriesProgressMap?: Record<number, SeriesProgressByProvider> | null;
 	/** Map of Plex instanceId → machineId for building deep links */
 	plexMachineIdMap?: Map<string, string>;
 	/** Map of Jellyfin/Emby instanceId → server info for building deep links */

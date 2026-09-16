@@ -22,6 +22,83 @@ function logger() {
 }
 
 describe.sequential("claim-first provider cache background refresh", () => {
+	it("hands native-only producer failure to the provider scheduler recovery queue", async () => {
+		const recovery = {
+			admit: vi.fn(),
+			arm: vi.fn().mockResolvedValue({ status: "accepted" }),
+		};
+		const admission = await startProviderCacheRefreshInBackground({
+			cacheType: "plex",
+			claim: async () => ({ status: "acquired" as const, attempt }),
+			produce: async () => ({ complete: true, nativeInventoryStatus: "failed" as const }),
+			log: logger(),
+			recovery: {
+				provider: "plex" as const,
+				userId: "user-1",
+				instanceId: "plex-1",
+				handoff: recovery,
+			},
+		});
+
+		await admission.backgroundTask;
+		expect(recovery.admit).toHaveBeenCalledWith({
+			provider: "plex",
+			userId: "user-1",
+			instanceId: "plex-1",
+			attempt,
+		});
+		expect(recovery.arm).toHaveBeenCalledWith({
+			provider: "plex",
+			userId: "user-1",
+			instanceId: "plex-1",
+			attempt,
+		});
+	});
+
+	it("does not arm recovery for an honest partial publication", async () => {
+		const recovery = { admit: vi.fn(), arm: vi.fn() };
+		const admission = await startProviderCacheRefreshInBackground({
+			cacheType: "jellyfin",
+			claim: async () => ({ status: "acquired" as const, attempt }),
+			produce: async () => ({ complete: false, errors: 0, completedAt: attempt.attemptedAt }),
+			log: logger(),
+			recovery: {
+				provider: "jellyfin" as const,
+				userId: "user-1",
+				instanceId: "jellyfin-1",
+				handoff: recovery,
+			},
+		});
+
+		await admission.backgroundTask;
+		expect(recovery.admit).toHaveBeenCalledOnce();
+		expect(recovery.arm).not.toHaveBeenCalled();
+	});
+
+	it("arms recovery when the deferred producer throws", async () => {
+		const recovery = {
+			admit: vi.fn(),
+			arm: vi.fn().mockResolvedValue({ status: "accepted" }),
+		};
+		const admission = await startProviderCacheRefreshInBackground({
+			cacheType: "jellyfin",
+			claim: async () => ({ status: "acquired" as const, attempt }),
+			produce: async () => {
+				throw new Error("private provider response");
+			},
+			log: logger(),
+			recovery: {
+				provider: "jellyfin" as const,
+				userId: "user-1",
+				instanceId: "jellyfin-1",
+				handoff: recovery,
+			},
+		});
+
+		await admission.backgroundTask;
+		expect(recovery.arm).toHaveBeenCalledOnce();
+	});
+
 	it("claims under an independent lease and holds it through the exact deferred producer", async () => {
 		let resolveClaim!: (value: { status: "acquired"; attempt: typeof attempt }) => void;
 		const claim = new Promise<{ status: "acquired"; attempt: typeof attempt }>((resolve) => {

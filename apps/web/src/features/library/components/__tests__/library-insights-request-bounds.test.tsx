@@ -104,11 +104,15 @@ describe("LibraryInsightsSection request bounds", () => {
 								addedDaysAgo: 45,
 								monitored: true,
 								qualityProfileName: null,
+								watchState: "unwatched",
 							},
 						],
+						unknownItems: [],
 						totalWastedBytes: 1.5 * 1024 * 1024 * 1024,
 						hasPlexData: true,
 						hasWatchData: true,
+						watchStatus: "complete",
+						limited: false,
 					},
 				});
 			}
@@ -128,11 +132,16 @@ describe("LibraryInsightsSection request bounds", () => {
 								addedDaysAgo: 12,
 								requestedBy: "requester-fixture",
 								requestedAt: "2026-01-01T00:00:00.000Z",
+								watchState: "unwatched",
 							},
 						],
+						unknownItems: [],
 						hasSeerrData: true,
 						hasPlexData: true,
 						hasWatchData: true,
+						watchStatus: "complete",
+						requestStatus: "complete",
+						limited: false,
 					},
 				});
 			}

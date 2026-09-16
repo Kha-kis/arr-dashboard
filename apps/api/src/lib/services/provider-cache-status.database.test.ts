@@ -350,7 +350,7 @@ async function exerciseRecoverableEpisodeAttempt(
 		},
 	});
 
-	expect(await reconcileInterruptedProviderCacheRefreshAttempts(client)).toBe(0);
+	expect(await reconcileInterruptedProviderCacheRefreshAttempts(client)).toBe(1);
 	await client.$transaction([
 		client.providerObservationUnit.update({
 			where: { id: unit.id },
@@ -399,7 +399,7 @@ async function exerciseRecoverableEpisodeAttempt(
 			},
 		}),
 	]);
-	expect(await reconcileInterruptedProviderCacheRefreshAttempts(client)).toBe(1);
+	expect(await reconcileInterruptedProviderCacheRefreshAttempts(client)).toBe(0);
 	await expect(
 		client.cacheRefreshStatus.findUniqueOrThrow({
 			where: {
@@ -416,7 +416,7 @@ async function exerciseRecoverableEpisodeAttempt(
 }
 
 describe("provider cache status SQLite takeover contract", () => {
-	it("atomically rotates the outer marker before releasing its inherited unit claim", async () => {
+	it("retires the outer marker before releasing its inherited unit claim", async () => {
 		const client = await createDatabase();
 		await seedAuthority(client);
 		const run = await createOrLoadObservationRun(client, {
@@ -477,10 +477,10 @@ describe("provider cache status SQLite takeover contract", () => {
 			itemCount: 7,
 			generationId: "published-generation",
 			generationMetadata: "published-metadata",
-			lastAttemptAt: new Date("2026-08-20T12:00:00.000Z"),
+			lastAttemptAt: started,
 		});
-		expect(status.lastAttemptResult).toMatch(/^in_progress:/);
-		expect(status.lastAttemptResult).not.toBe(marker);
+		expect(status.lastAttemptResult).toBe("error");
+		expect(status.lastAttemptErrorMessage).toBe("unknown-failure");
 		expect(
 			await client.providerObservationUnit.findUniqueOrThrow({ where: { id: claim!.unitId } }),
 		).toMatchObject({ state: "pending", claimToken: null, cursor: 0, attemptCount: 0 });
@@ -661,7 +661,7 @@ describe("provider cache status SQLite takeover contract", () => {
 		});
 	}, 30_000);
 
-	it("retains a bound episode attempt across pending and failed runs, then settles terminal work", async () => {
+	it("retires an interrupted Plex episode attempt while retaining pending and failed work", async () => {
 		const client = await createDatabase();
 		await seedAuthority(client);
 		await exerciseRecoverableEpisodeAttempt(client, authority);

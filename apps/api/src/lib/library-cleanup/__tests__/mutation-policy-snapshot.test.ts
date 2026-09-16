@@ -41,6 +41,16 @@ const refreshMocks = vi.hoisted(() => ({
 	jellyfinSingleFlight: vi.fn(),
 }));
 
+const targetPolicyMocks = vi.hoisted(() => ({
+	load: vi.fn(async () => new Map()),
+	verify: vi.fn(async () => true),
+}));
+vi.mock("../additional-target-watch-policy.js", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../additional-target-watch-policy.js")>()),
+	loadAdditionalTargetWatchFacts: targetPolicyMocks.load,
+	revalidateMatchedTargetWatchFacts: targetPolicyMocks.verify,
+}));
+
 vi.mock("../../plex/plex-cache-refresher.js", () => ({
 	collectPlexCacheLiveEvidence: refreshMocks.plex,
 }));
@@ -625,6 +635,138 @@ function makeDeps(
 }
 
 describe("authoritative mutation policy snapshots", () => {
+	it.each([
+		["JELLYFIN", "jellyfin", false],
+		["TAUTULLI", "tautulli", false],
+		["JELLYFIN", "jellyfin", true],
+		["TAUTULLI", "tautulli", true],
+	] as const)(
+		"revalidates a positive %s target before authorizing a current ARR action (%s composite %s)",
+		async (provider, cacheType, composite) => {
+			const providerRule = {
+				...rule(`${cacheType}_watch_count`),
+				parameters: JSON.stringify({ operator: "greater_than", count: 2 }),
+				targetScope: "series",
+				...(composite
+					? {
+							ruleType: "composite",
+							operator: "AND",
+							conditions: JSON.stringify([
+								{
+									ruleType: `${cacheType}_watch_count`,
+									parameters: { operator: "greater_than", count: 2 },
+								},
+								{ ruleType: "monitored", parameters: {} },
+							]),
+						}
+					: {}),
+			};
+			const { deps, findInstances } = makeDeps([providerRule], [instance(provider)], {
+				unavailableInstanceId: instance(provider).id,
+			});
+			const rawItem = {
+				id: 101,
+				tmdbId: 42,
+				title: "Verified watch target",
+				path: "/media/verified",
+				monitored: true,
+				status: "released",
+				qualityProfileId: 1,
+				sizeOnDisk: 2000,
+				added: "2025-01-01T00:00:00.000Z",
+				statistics: { movieFileCount: 1, sizeOnDisk: 2000 },
+			};
+			deps.arrClientFactory = {
+				create: vi.fn(() => ({ movie: { getById: vi.fn(async () => rawItem) } })),
+			} as never;
+			const radarr = { ...instance("PLEX"), id: "radarr-1", service: "RADARR" };
+			const fact = {
+				userId: "user-1",
+				provider,
+				cacheType,
+				instanceId: instance(provider).id,
+				generationId: "positive-generation",
+				targetKey: "movie:42",
+				coordinate: "positive-binding",
+				observedValue: 3,
+				targetScoped: true as const,
+				status: {
+					availability: "current",
+					evidence: "positive-only",
+					reasonCodes: [],
+					domains: [
+						{
+							domain: "watch-count",
+							availability: "current",
+							evidence: "positive-only",
+							valueSemantics: "lower-bound",
+							reasonCodes: [],
+						},
+					],
+				},
+			};
+			const digest = providerFactGrantDigest([
+				{
+					userId: fact.userId,
+					provider,
+					cacheType,
+					instanceId: fact.instanceId,
+					generationId: fact.generationId,
+					targetKey: fact.targetKey,
+					coordinate: fact.coordinate,
+					domain: "watch-count",
+					field: "watch-count",
+					operator: "greater_than",
+					threshold: 2,
+					observedValue: 3,
+					basis: "observed-lower-bound",
+				},
+			]);
+			targetPolicyMocks.load.mockResolvedValue(new Map([[fact.targetKey, [fact]]]));
+			targetPolicyMocks.verify.mockResolvedValue(true);
+			try {
+				const snapshot = await createMutationPolicySnapshotGetter(deps, "user-1")();
+				const expected = {
+					matchedRuleId: providerRule.id,
+					action: "delete" as const,
+					scanMediaServerAfterDelete: false,
+					providerDependencies: [cacheType],
+				};
+				const check = (expectedDigest: string | undefined) =>
+					assertCurrentSeriesMutationAuthority(
+						deps,
+						"user-1",
+						radarr as never,
+						101,
+						expected,
+						snapshot,
+						undefined,
+						expectedDigest,
+					);
+				const authorized = await check(digest);
+				expect(authorized.rawItem).toEqual(rawItem);
+				expect(authorized.providerFactGrantDigest).toBe(digest);
+				expect(targetPolicyMocks.verify).toHaveBeenCalled();
+				await expect(check(undefined)).rejects.toThrow(/provider evidence could not re-authorize/i);
+				fact.coordinate = "changed-native-binding";
+				await expect(check(digest)).rejects.toThrow(/provider evidence could not re-authorize/i);
+				fact.coordinate = "positive-binding";
+				targetPolicyMocks.verify.mockResolvedValue(false);
+				await expect(check(digest)).rejects.toThrow(/provider evidence could not re-authorize/i);
+				targetPolicyMocks.verify.mockImplementation(async () => {
+					findInstances.mockResolvedValue([
+						instance(provider),
+						{ ...instance(provider), id: "added-provider" },
+					]);
+					return true;
+				});
+				await expect(check(digest)).rejects.toThrow(/provider evidence could not re-authorize/i);
+			} finally {
+				targetPolicyMocks.load.mockResolvedValue(new Map());
+				targetPolicyMocks.verify.mockResolvedValue(true);
+			}
+		},
+	);
 	it.each([
 		[undefined, "current-grant", false],
 		["expected-grant", undefined, false],

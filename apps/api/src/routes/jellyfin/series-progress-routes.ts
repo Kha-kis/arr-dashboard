@@ -9,7 +9,6 @@ import type { SeriesProgressResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import {
-	isArithmeticAuthoritativeProviderObservationStatus,
 	type JellyfinDisplayInstance,
 	readOwnedJellyfinEpisodeDisplaySources,
 } from "../../lib/jellyfin/jellyfin-display-evidence.js";
@@ -28,16 +27,15 @@ export async function registerSeriesProgressRoutes(
 ) {
 	app.get("/", async (request, reply) => {
 		const { tmdbIds: tmdbIdsRaw } = validateRequest(progressQuery, request.query);
-		const tmdbIds = tmdbIdsRaw
-			.split(",")
-			.map(Number)
-			.filter((id) => Number.isFinite(id) && id > 0);
+		const tmdbIds = [
+			...new Set(
+				tmdbIdsRaw
+					.split(",")
+					.map(Number)
+					.filter((id) => Number.isSafeInteger(id) && id > 0),
+			),
+		];
 		const userId = request.currentUser!.id;
-
-		if (tmdbIds.length === 0) {
-			const response: SeriesProgressResponse = { progress: {} };
-			return reply.send(response);
-		}
 
 		if (tmdbIds.length > MAX_BATCH_SIZE) {
 			return reply.status(400).send({ error: `Max ${MAX_BATCH_SIZE} items per request` });
@@ -49,7 +47,7 @@ export async function registerSeriesProgressRoutes(
 		});
 
 		if (jellyfinInstances.length === 0) {
-			const response: SeriesProgressResponse = { progress: {} };
+			const response: SeriesProgressResponse = { configured: false, progress: {} };
 			return reply.send(response);
 		}
 
@@ -63,25 +61,35 @@ export async function registerSeriesProgressRoutes(
 			userId,
 			instances: displayInstances,
 		});
-		const progressMap = isArithmeticAuthoritativeProviderObservationStatus(
-			displayEvidence.providerStatus,
-		)
-			? aggregateSeriesProgress(
-					displayEvidence.sources
-						.flatMap((source) => source.rows)
-						.filter((episode) => tmdbIds.includes(episode.showTmdbId))
-						.sort(
-							(left, right) =>
-								left.showTmdbId - right.showTmdbId ||
-								left.instanceId.localeCompare(right.instanceId) ||
-								left.seasonNumber - right.seasonNumber ||
-								left.episodeNumber - right.episodeNumber ||
-								left.id.localeCompare(right.id),
-						),
-				)
-			: {};
+		const statuses = displayEvidence.providerStatus?.sources ?? [];
+		const sources = displayInstances.map((instance) => {
+			const statusEntries = statuses.filter(
+				(source) => source.instanceId === instance.id && source.cacheType === "jellyfin_episode",
+			);
+			const rowsEntries = displayEvidence.sources.filter(
+				(source) => source.instanceId === instance.id,
+			);
+			const status = statusEntries.length === 1 ? statusEntries[0]!.status : undefined;
+			const admitted =
+				status &&
+				["current", "last-known", "partial"].includes(status.availability) &&
+				["complete", "positive-only"].includes(status.evidence) &&
+				rowsEntries.length === 1;
+			return {
+				complete: Boolean(
+					admitted && status.availability === "current" && status.evidence === "complete",
+				),
+				rows: admitted ? rowsEntries[0]!.rows : [],
+			};
+		});
+		const progressMap = aggregateSeriesProgress(
+			sources.flatMap((source) => source.rows),
+			tmdbIds,
+			sources.every((source) => source.complete),
+		);
 
 		const response: SeriesProgressResponse = {
+			configured: true,
 			progress: progressMap,
 			providerStatus: displayEvidence.providerStatus,
 		};

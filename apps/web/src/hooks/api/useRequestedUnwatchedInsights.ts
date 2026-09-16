@@ -1,30 +1,9 @@
-import type { ProviderObservationStatusEnvelope } from "@arr/shared";
+import type { RequestedUnwatchedInsightsResponse } from "@arr/shared";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../../lib/api-client/base";
 
-export interface RequestedUnwatchedItem {
-	arrItemId: number;
-	instanceId: string;
-	instanceName: string;
-	service: string;
-	title: string;
-	year: number | null;
-	sizeOnDisk: number;
-	addedDaysAgo: number;
-	requestedBy: string;
-	requestedAt: string;
-}
-
-export interface RequestedUnwatchedResponse {
-	success: boolean;
-	providerStatus?: ProviderObservationStatusEnvelope;
-	data: {
-		items: RequestedUnwatchedItem[];
-		hasSeerrData: boolean;
-		hasPlexData: boolean;
-		hasWatchData: boolean;
-	};
-}
+export type { RequestedUnwatchedInsightsResponse, RequestedUnwatchedItem } from "@arr/shared";
+export type RequestedUnwatchedResponse = RequestedUnwatchedInsightsResponse;
 
 function fetchRequestedUnwatched(params: {
 	minAgeDays?: number;

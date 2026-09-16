@@ -14,6 +14,7 @@ vi.mock("../../lib/jellyfin/jellyfin-cache-singleflight.js", () => ({
 	runJellyfinCacheRefreshSingleFlight: mocks.runSingleFlight,
 }));
 
+import type { FastifyWithLibraryRefreshRecovery } from "../../lib/services/library-refresh-recovery.js";
 import jellyfinCacheSchedulerPlugin, {
 	refreshScheduledJellyfinCacheInstance,
 } from "../jellyfin-cache-scheduler.js";
@@ -112,6 +113,18 @@ describe("refreshScheduledJellyfinCacheInstance", () => {
 		expect(state.log.error).toHaveBeenCalledWith(
 			{ instanceId: stored.id, category: "refresh-failed" },
 			"Jellyfin cache refresh failed for instance",
+		);
+	});
+
+	it("retries a failed native inventory despite a successful canonical cache", async () => {
+		mocks.refresh.mockResolvedValue({
+			complete: true,
+			upserted: 2,
+			errors: 0,
+			nativeInventoryStatus: "failed",
+		});
+		expect(await refreshScheduledJellyfinCacheInstance(app() as never, instance() as never)).toBe(
+			"retryable",
 		);
 	});
 
@@ -244,6 +257,56 @@ describe("Jellyfin cache scheduler lifecycle", () => {
 		await vi.advanceTimersByTimeAsync(600_000);
 		expect(mocks.refresh).toHaveBeenCalledTimes(4);
 		expect(findFirst).toHaveBeenCalledTimes(3);
+	});
+
+	it("arms the existing 30-second recovery queue for a manual native-only failure", async () => {
+		const stored = instance();
+		findMany.mockResolvedValue([stored]);
+		findFirst.mockResolvedValue(stored);
+		await app.register(jellyfinCacheSchedulerPlugin);
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(45_000);
+		mocks.refresh.mockClear();
+
+		const recovery = (app as FastifyWithLibraryRefreshRecovery).libraryRefreshRecovery;
+		const request = {
+			provider: "jellyfin" as const,
+			userId: stored.userId,
+			instanceId: stored.id,
+			attempt: {
+				attemptedAt: new Date("2026-09-14T12:00:00.000Z"),
+				resultMarker: "in_progress:00000000-0000-4000-8000-000000000001",
+			},
+		};
+		recovery.admit(request);
+		expect(await recovery.arm(request)).toEqual({ status: "accepted" });
+		await vi.advanceTimersByTimeAsync(29_999);
+		expect(mocks.refresh).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(1);
+		expect(mocks.refresh).toHaveBeenCalledOnce();
+	});
+
+	it("does not refresh after shutdown while a recovery lookup is pending", async () => {
+		const stored = instance();
+		findMany.mockResolvedValue([stored]);
+		mocks.refresh.mockResolvedValueOnce({ complete: false, errors: 1, upserted: 0 });
+		let resolveLookup!: (value: typeof stored) => void;
+		findFirst.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					resolveLookup = resolve;
+				}),
+		);
+		await app.register(jellyfinCacheSchedulerPlugin);
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(45_000 + 30_000);
+		expect(findFirst).toHaveBeenCalledOnce();
+		expect(mocks.refresh).toHaveBeenCalledOnce();
+
+		await app.close();
+		resolveLookup(stored);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(mocks.refresh).toHaveBeenCalledOnce();
 	});
 
 	it("reloads current connection authority and stops the ladder after recovery succeeds", async () => {

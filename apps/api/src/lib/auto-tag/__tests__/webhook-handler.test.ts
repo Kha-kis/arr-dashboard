@@ -541,7 +541,7 @@ describe("processWebhook", () => {
 			payload: { eventType: "Download", movie: { id: 100 } },
 		});
 
-		expect(result.message).toMatch(/no rules matched/i);
+		expect(result.message).toMatch(/unresolved evidence/i);
 		expect(arrClient.movie.update).not.toHaveBeenCalled();
 	});
 

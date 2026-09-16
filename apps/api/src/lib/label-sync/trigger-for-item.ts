@@ -25,6 +25,7 @@ import type { Encryptor } from "../auth/encryption.js";
 import type { LibraryItemType, PrismaClient, ServiceType } from "../prisma.js";
 import { getLabelSyncDestinationMutationCapability } from "./destination-capability.js";
 import { executeLabelSyncRule, type LabelSyncRunResult } from "./execute-rule.js";
+import { isLabelSyncMutationAdmitted } from "./mutation-admission.js";
 
 export interface TriggerLabelSyncForItemArgs {
 	userId: string;
@@ -140,7 +141,9 @@ export async function triggerLabelSyncForItem(
 	const indexedRules = rules.map((rule, index) => ({
 		rule,
 		index,
-		blocked: !getLabelSyncDestinationMutationCapability(rule.destService).supported,
+		blocked:
+			!getLabelSyncDestinationMutationCapability(rule.destService).supported ||
+			(rule.destService === "jellyfin" && !isLabelSyncMutationAdmitted(args.prisma)),
 	}));
 	const results: Array<TriggerLabelSyncForItemResult["results"][number] & { index: number }> = [];
 	let labelsApplied = 0;

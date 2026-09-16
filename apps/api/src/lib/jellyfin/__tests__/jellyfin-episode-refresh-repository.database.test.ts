@@ -20,6 +20,11 @@ import {
 	evaluateProviderDomainCoverageMap,
 } from "../../provider-observation/coverage-receipt.js";
 import {
+	beginNativeInventoryAttempt,
+	publishNativeInventoriesInTransaction,
+	readNativeInventoryPage,
+} from "../../provider-observation/native-inventory.js";
+import {
 	claimObservationUnit,
 	createOrLoadObservationRun,
 	recoverAbandonedObservationRuns,
@@ -61,6 +66,148 @@ import {
 
 const databases: Array<{ directory: string; prisma: ReturnType<typeof createTestPrismaClient> }> =
 	[];
+
+describe("native inventory independence from Jellyfin watch finalization", {
+	timeout: 30_000,
+}, () => {
+	it.each([
+		["normal", true],
+		["overlap", true],
+		["watch-drift", true],
+		["catalog-growth", true],
+		["scope-drift", true],
+		["superseded", true],
+		["transaction-failure", true],
+		["normal", false],
+	] as const)(
+		"preserves native publication during %s with existing inventory=%s",
+		async (scenario, existingInventory) => {
+			const prisma = await database();
+			const seed = await completeFinalizerFixture(prisma);
+			await bindV3Fixture(prisma, seed.run.id);
+			const instance = await prisma.serviceInstance.update({
+				where: { id: "jellyfin-1" },
+				data: { identityStatus: "VERIFIED", expectedIdentity: "native-server" },
+			});
+			if (existingInventory) {
+				const observedAt = new Date(seed.attempt.attemptedAt.getTime() - 1_000);
+				const begun = await beginNativeInventoryAttempt(prisma, {
+					userId: "user-1",
+					instance,
+					domains: ["episode"],
+					now: observedAt,
+				});
+				if (begun.status !== "acquired") throw new Error("native fixture claim failed");
+				await prisma.$transaction((tx) =>
+					publishNativeInventoriesInTransaction(tx, {
+						userId: "user-1",
+						authority: begun.authority,
+						attempt: begun.attempt,
+						snapshots: [
+							{
+								domain: "episode",
+								scopeKeys: ["native-scope"],
+								rows: ["episode-1", "unmatched-native"].map((nativeId) => ({
+									nativeId,
+									mediaType: "episode" as const,
+									libraryIds: ["library-1"],
+									parentNativeId: null,
+									seasonNumber: null,
+									episodeNumber: null,
+									title: "Native episode",
+								})),
+							},
+						],
+						now: observedAt,
+					}),
+				);
+			}
+			const beforeSnapshots = await prisma.providerNativeInventorySnapshot.findMany();
+			const beforeItems = await prisma.providerNativeInventoryItem.findMany({
+				orderBy: { nativeId: "asc" },
+			});
+			if (scenario === "overlap") {
+				// The provider added an item before the next offset: one repeated
+				// observation is usable watch evidence, but is not a complete inventory.
+				await prisma.providerObservationUnit.updateMany({
+					where: { runId: seed.run.id, phase: "collect" },
+					data: {
+						cursor: { increment: 1 },
+						expectedRawCount: { increment: 1 },
+						observedRawCount: { increment: 1 },
+					},
+				});
+			}
+			if (scenario === "watch-drift") {
+				await prisma.jellyfinEpisodeObservationStage.updateMany({
+					where: { runId: seed.run.id, pass: "verify" },
+					data: { played: false, playCount: 0, lastPlayedAt: null },
+				});
+			}
+			if (scenario === "catalog-growth") {
+				const parent = await prisma.jellyfinCache.findFirstOrThrow({
+					where: { instanceId: instance.id },
+				});
+				await prisma.jellyfinCache.create({
+					data: { ...parent, id: "new-parent", jellyfinId: "new-series", tmdbId: 43 },
+				});
+				await rewriteAuthoritativeParent(prisma);
+			}
+			if (scenario === "superseded") {
+				await prisma.cacheRefreshStatus.updateMany({
+					where: { instanceId: instance.id, cacheType: "jellyfin_episode" },
+					data: { lastAttemptResult: "in_progress:replacement" },
+				});
+			}
+			const finalization = finalizeJellyfinEpisodeRun({
+				prisma,
+				userId: "user-1",
+				instance,
+				runId: seed.run.id,
+				scopes: scenario === "scope-drift" ? [] : seed.scopes,
+				attempt: seed.attempt,
+				now: seed.attempt.attemptedAt,
+				...(scenario === "transaction-failure"
+					? {
+							testHooks: {
+								afterPublish: () => {
+									throw new Error("injected transaction failure");
+								},
+							},
+						}
+					: {}),
+			});
+			if (scenario === "transaction-failure") {
+				await expect(finalization).rejects.toThrow("injected transaction failure");
+				expect(
+					await prisma.jellyfinEpisodeCache.findFirst({ where: { instanceId: instance.id } }),
+				).toMatchObject({ jellyfinId: "old" });
+			} else {
+				const result = await finalization;
+				expect(result.published).toBe(scenario !== "scope-drift" && scenario !== "superseded");
+				expect(result).not.toHaveProperty("nativeInventoryRetryRequired");
+			}
+			expect(await prisma.providerNativeInventorySnapshot.findMany()).toEqual(beforeSnapshots);
+			expect(
+				await prisma.providerNativeInventoryItem.findMany({ orderBy: { nativeId: "asc" } }),
+			).toEqual(beforeItems);
+			const inventory = await readNativeInventoryPage(prisma, {
+				userId: "user-1",
+				instanceId: instance.id,
+				domain: "episode",
+				now: seed.attempt.attemptedAt,
+			});
+			if (existingInventory)
+				expect(inventory).toMatchObject({
+					status: "available",
+					freshness: "current",
+					complete: true,
+					itemCount: 2,
+				});
+			else expect(inventory.status).toBe("unavailable");
+		},
+	);
+});
 
 describe("saved V2 scope plan validation", () => {
 	function fixture() {
@@ -578,7 +725,11 @@ async function bindV2Fixture(
 async function bindV3Fixture(
 	prisma: Awaited<ReturnType<typeof database>>,
 	runId: string,
-	options: { extraVerify?: boolean; watchDrift?: boolean } = {},
+	options: {
+		extraVerify?: boolean;
+		watchDrift?: boolean;
+		episodeScopes?: Array<{ userId: string; userName: string; libraryId: string }>;
+	} = {},
 ) {
 	await bindV2Fixture(prisma, runId, [
 		{ userId: "user-1", userName: "Current User", libraryId: "library-1" },
@@ -600,7 +751,9 @@ async function bindV3Fixture(
 		[{ userId: "user-1", libraryId: "library-1" }],
 	);
 	if (!catalog) throw new Error("fixture catalog provenance is invalid");
-	const scopes = [{ userId: "user-1", userName: "Current User", libraryId: "library-1" }];
+	const scopes = options.episodeScopes ?? [
+		{ userId: "user-1", userName: "Current User", libraryId: "library-1" },
+	];
 	const plan = buildJellyfinEpisodeScopePlan(scopes, {
 		parentLibraryGenerationId: parent.generationId!,
 		parentLibraryMetadataFingerprint: fingerprintJellyfinLibraryGenerationMetadata(
@@ -2003,7 +2156,10 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 			attempt: seed.attempt,
 			now: seed.attempt.attemptedAt,
 		});
-		expect(result, drift).toEqual({ published: version === 3, itemCount: version === 3 ? 1 : 0 });
+		expect(result, drift).toEqual({
+			published: version === 3,
+			itemCount: version === 3 ? 1 : 0,
+		});
 		if (version === 2) {
 			await expectInvalidatedWithPublishedCachePreserved(prisma, seed.run.id);
 			return;
@@ -5199,7 +5355,10 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 				attempt: seed.attempt,
 				now: new Date(firstNow.getTime() + 32_000),
 			});
-			expect(published).toEqual({ published: true, itemCount: 1 });
+			expect(published).toEqual({
+				published: true,
+				itemCount: 1,
+			});
 			const state = await finalizerState(prisma, seed.run.id);
 			expect(state.rows).toEqual([
 				expect.objectContaining({ jellyfinId: "episode-1", watched: true, episodeNumber: 1 }),

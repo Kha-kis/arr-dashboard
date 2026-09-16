@@ -2,6 +2,7 @@
 
 import type {
 	AutoTagRule,
+	CleanupFieldOptionsResponse,
 	CompositeOperator,
 	Condition,
 	CreateAutoTagRuleRequest,
@@ -23,6 +24,7 @@ import { Input } from "../../../components/ui/input";
 import { useCreateAutoTagRule, useUpdateAutoTagRule } from "../../../hooks/api/useAutoTag";
 import { useCleanupFieldOptions } from "../../../hooks/api/useLibraryCleanup";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import {
 	ConditionParamsFields,
 	getDefaultConditionParams,
@@ -85,6 +87,7 @@ const inputClass =
 const labelClass = "text-sm font-medium";
 
 const RULE_TYPE_OPTIONS: Array<{ value: SingleRuleType; label: string; group: string }> = [
+	{ value: "media_server_presence", label: "Media server presence", group: "Media server" },
 	{ value: "genre", label: "Genre", group: "Metadata" },
 	{ value: "year_range", label: "Year (range)", group: "Metadata" },
 	{ value: "rating", label: "TMDB rating", group: "Metadata" },
@@ -131,18 +134,104 @@ function makeBlankCondition(): Condition {
 	};
 }
 
+function defaultParamsForRule(ruleType: SingleRuleType): Record<string, unknown> {
+	return ruleType === "media_server_presence"
+		? { instanceId: "" }
+		: getDefaultConditionParams(ruleType);
+}
+
+interface RuleParamsFieldsProps {
+	ruleType: SingleRuleType;
+	params: Record<string, unknown>;
+	onParamsChange: (params: Record<string, unknown>) => void;
+	mediaServerInstances: ServiceInstanceSummary[];
+	incognitoMode: boolean;
+	fieldOptions: CleanupFieldOptionsResponse | undefined;
+	fieldOptionsLoading: boolean;
+	inputClass: string;
+	labelClass: string;
+}
+
+function RuleParamsFields({
+	ruleType,
+	params,
+	onParamsChange,
+	mediaServerInstances,
+	incognitoMode,
+	fieldOptions,
+	fieldOptionsLoading,
+	inputClass,
+	labelClass,
+}: RuleParamsFieldsProps) {
+	if (ruleType === "media_server_presence") {
+		const selectedId = typeof params.instanceId === "string" ? params.instanceId : "";
+		return (
+			<div className="space-y-2">
+				<label className="block">
+					<span className={labelClass}>Media server</span>
+					<select
+						aria-label="Media server"
+						value={selectedId}
+						disabled={mediaServerInstances.length === 0}
+						onChange={(event) => onParamsChange({ ...params, instanceId: event.target.value })}
+						className={inputClass}
+					>
+						<option value="">
+							{mediaServerInstances.length === 0
+								? "No enabled Plex or Jellyfin instances"
+								: "Select a media server"}
+						</option>
+						{mediaServerInstances.map((service) => (
+							<option value={service.id} key={service.id}>
+								{incognitoMode ? getLinuxInstanceName(service.label) : service.label} (
+								{service.service})
+							</option>
+						))}
+					</select>
+				</label>
+				<p className="text-xs text-muted-foreground">
+					Matches items positively observed on a complete scan. Missing or ambiguous evidence is
+					skipped.
+				</p>
+			</div>
+		);
+	}
+
+	return (
+		<ConditionParamsFields
+			ruleType={ruleType as Exclude<SingleRuleType, "media_server_presence">}
+			params={params}
+			onParamsChange={onParamsChange}
+			fieldOptions={fieldOptions}
+			fieldOptionsLoading={fieldOptionsLoading}
+			inputClass={inputClass}
+			labelClass={labelClass}
+		/>
+	);
+}
+
 export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 	const isEdit = rule !== null;
 	const [form, setForm] = useState<FormState>(initialForm(rule));
 	const [submitError, setSubmitError] = useState<string | null>(null);
 
 	const { data: services = [] } = useServicesQuery();
+	const [incognitoMode] = useIncognitoMode();
 	const arrInstances = useMemo(
 		() =>
 			(services as ServiceInstanceSummary[]).filter(
 				(s) =>
 					s.enabled &&
 					(s.service.toLowerCase() === "sonarr" || s.service.toLowerCase() === "radarr"),
+			),
+		[services],
+	);
+	const mediaServerInstances = useMemo(
+		() =>
+			(services as ServiceInstanceSummary[]).filter(
+				(s) =>
+					s.enabled &&
+					(s.service.toLowerCase() === "plex" || s.service.toLowerCase() === "jellyfin"),
 			),
 		[services],
 	);
@@ -162,7 +251,7 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 		setForm((prev) => ({
 			...prev,
 			ruleType: next,
-			parameters: getDefaultConditionParams(next),
+			parameters: defaultParamsForRule(next),
 		}));
 		setSubmitError(null);
 	};
@@ -178,7 +267,7 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 	const onConditionRuleTypeChange = (index: number, next: SingleRuleType) => {
 		updateCondition(index, {
 			ruleType: next,
-			parameters: getDefaultConditionParams(next),
+			parameters: defaultParamsForRule(next),
 		});
 	};
 
@@ -205,6 +294,22 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 		}
 		if (form.mode === "composite" && form.conditions.length === 0) {
 			setSubmitError("Composite rules must have at least one condition.");
+			return;
+		}
+		const presenceParams =
+			form.mode === "single"
+				? [form.ruleType === "media_server_presence" ? form.parameters : null]
+				: form.conditions
+						.filter((condition) => condition.ruleType === "media_server_presence")
+						.map((condition) => condition.parameters);
+		if (
+			presenceParams.some(
+				(params) =>
+					params !== null &&
+					(typeof params.instanceId !== "string" || params.instanceId.trim().length === 0),
+			)
+		) {
+			setSubmitError("Select an enabled Plex or Jellyfin instance for media server presence.");
 			return;
 		}
 
@@ -260,7 +365,7 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 					<DialogTitle>{isEdit ? "Edit Auto-Tag Rule" : "New Auto-Tag Rule"}</DialogTitle>
 					<DialogDescription>
 						Apply a tag to Sonarr/Radarr items matching the criteria. Auto-tagging seeds the source
-						tag — pair with a Label Sync rule to mirror it onto Plex/Jellyfin labels.
+						tag. Plex label sync is supported; Jellyfin destination writes are currently disabled.
 					</DialogDescription>
 				</DialogHeader>
 
@@ -390,10 +495,12 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 
 							{/* Per-rule-type params */}
 							<div className="rounded-md border border-border/50 bg-muted/10 p-3 space-y-3">
-								<ConditionParamsFields
+								<RuleParamsFields
 									ruleType={form.ruleType}
 									params={form.parameters}
 									onParamsChange={(p) => update("parameters", p)}
+									mediaServerInstances={mediaServerInstances}
+									incognitoMode={incognitoMode}
 									fieldOptions={fieldOptionsQuery.data}
 									fieldOptionsLoading={fieldOptionsQuery.isLoading}
 									inputClass={inputClass}
@@ -464,10 +571,12 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 												</button>
 											)}
 										</div>
-										<ConditionParamsFields
+										<RuleParamsFields
 											ruleType={cond.ruleType}
 											params={cond.parameters}
 											onParamsChange={(p) => updateCondition(index, { parameters: p })}
+											mediaServerInstances={mediaServerInstances}
+											incognitoMode={incognitoMode}
 											fieldOptions={fieldOptionsQuery.data}
 											fieldOptionsLoading={fieldOptionsQuery.isLoading}
 											inputClass={inputClass}

@@ -10,11 +10,12 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import {
 	hasCompleteAuthoritativePlexEvidence,
+	isCurrentAuthoritativePlexEvidence,
 	summarizePlexEvidence,
 } from "../../lib/plex/plex-authority-service.js";
 import { PlexAuthorityService } from "../../lib/plex/plex-authority-service.js";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { aggregateSeriesProgress } from "./lib/series-progress-helpers.js";
+import { aggregateSeriesProgress, type EpisodeInput } from "./lib/series-progress-helpers.js";
 
 const progressQuery = z.object({
 	tmdbIds: z.string().min(1),
@@ -43,11 +44,6 @@ export async function registerSeriesProgressRoutes(
 		];
 		const userId = request.currentUser!.id;
 
-		if (tmdbIds.length === 0) {
-			const response: SeriesProgressResponse = { progress: {} };
-			return reply.send(response);
-		}
-
 		if (tmdbIds.length > MAX_BATCH_SIZE) {
 			return reply.status(400).send({ error: `Max ${MAX_BATCH_SIZE} items per request` });
 		}
@@ -59,37 +55,44 @@ export async function registerSeriesProgressRoutes(
 		});
 
 		if (plexInstances.length === 0) {
-			const response: SeriesProgressResponse = { progress: {} };
+			const response: SeriesProgressResponse = { configured: false, progress: {} };
 			return reply.send(response);
 		}
 
 		const evidence = [];
+		const episodes: EpisodeInput[] = [];
 		const authority = new PlexAuthorityService({
 			prisma: app.prisma,
 			encryptor: app.encryptor,
 			log: request.log,
 		});
 		for (const instance of plexInstances) {
-			evidence.push(
-				await authority.readInstanceSelectedEpisodes({
+			const exact = await authority.readInstanceSelectedEpisodes({
+				userId,
+				instanceId: instance.id,
+				showTmdbIds: tmdbIds,
+			});
+			evidence.push(exact);
+			if (exact.available && isCurrentAuthoritativePlexEvidence(exact.evidence)) {
+				episodes.push(...exact.rows);
+			} else {
+				const positive = await authority.readPositiveEpisodeDisplayEvidence({
 					userId,
 					instanceId: instance.id,
-					showTmdbIds: tmdbIds,
-				}),
-			);
+				});
+				if (positive.available)
+					episodes.push(...positive.rows.filter((row) => row.watched === true));
+			}
 		}
 		const summary = summarizePlexEvidence(evidence);
-		if (!hasCompleteAuthoritativePlexEvidence(evidence)) {
-			return reply
-				.status(503)
-				.send({ error: "Plex cache evidence is unavailable", evidence: summary });
-		}
-		const episodes = evidence.flatMap((entry) => (entry.available ? entry.rows : []));
-
-		// Aggregate per show using extracted pure helper
-		const progressMap = aggregateSeriesProgress(episodes);
+		const progressMap = aggregateSeriesProgress(
+			episodes,
+			tmdbIds,
+			hasCompleteAuthoritativePlexEvidence(evidence),
+		);
 
 		const response: SeriesProgressResponse = {
+			configured: true,
 			progress: progressMap,
 			evidence: summary,
 		};

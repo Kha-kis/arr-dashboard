@@ -11,6 +11,10 @@ import { refreshOwnedJellyfinCache } from "../lib/jellyfin/jellyfin-cache-refres
 import { runJellyfinCacheRefreshSingleFlight } from "../lib/jellyfin/jellyfin-cache-singleflight.js";
 import type { ServiceInstance } from "../lib/prisma.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
+import {
+	ensureLibraryRefreshRecovery,
+	isRetryableLibraryRefreshResult,
+} from "../lib/services/library-refresh-recovery.js";
 import { createProviderPublicationAuthority } from "../lib/services/provider-identity-guard.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -46,6 +50,7 @@ export async function refreshScheduledJellyfinCacheInstance(
 			"Jellyfin cache refresh completed for instance",
 		);
 		if (result.superseded) return "superseded";
+		if (isRetryableLibraryRefreshResult("jellyfin", result)) return "retryable";
 		if (result.complete) return "complete";
 		return result.errors > 0 ? "retryable" : "settled";
 	} catch {
@@ -64,16 +69,20 @@ const jellyfinCacheSchedulerPlugin = fastifyPlugin(
 		let isRunning = false;
 		let closing = false;
 		const recoveryHandles = new Map<string, ReturnType<typeof setTimeout>>();
+		const recoveryOwners = new Map<string, string>();
+		const runningRecoveryInstances = new Set<string>();
 
 		function clearRecovery(instanceId: string) {
 			const handle = recoveryHandles.get(instanceId);
 			if (handle) clearTimeout(handle);
 			recoveryHandles.delete(instanceId);
+			recoveryOwners.delete(instanceId);
 		}
 
-		function scheduleRecovery(instanceId: string, retryIndex: number) {
+		function scheduleRecovery(instanceId: string, retryIndex: number, userId?: string) {
 			const delay = RECOVERY_RETRY_DELAYS_MS[retryIndex];
 			if (closing || delay === undefined || recoveryHandles.has(instanceId)) return;
+			if (userId !== undefined) recoveryOwners.set(instanceId, userId);
 			const handle = setTimeout(() => {
 				recoveryHandles.delete(instanceId);
 				void retryCurrentInstance(instanceId, retryIndex + 1);
@@ -82,18 +91,20 @@ const jellyfinCacheSchedulerPlugin = fastifyPlugin(
 		}
 
 		async function retryCurrentInstance(instanceId: string, nextRetryIndex: number) {
-			if (closing) return;
+			if (closing || runningRecoveryInstances.has(instanceId)) return;
+			runningRecoveryInstances.add(instanceId);
 			try {
 				const current = await app.prisma.serviceInstance.findFirst({
 					where: {
 						id: instanceId,
+						...(recoveryOwners.has(instanceId) ? { userId: recoveryOwners.get(instanceId) } : {}),
 						service: { in: ["JELLYFIN", "EMBY"] },
 						enabled: true,
 						identityStatus: "VERIFIED",
 						expectedIdentity: { not: null },
 					},
 				});
-				if (!current?.expectedIdentity?.trim()) return;
+				if (closing || !current?.expectedIdentity?.trim()) return;
 				const outcome = await refreshScheduledJellyfinCacheInstance(app, current);
 				if (outcome === "retryable") scheduleRecovery(instanceId, nextRetryIndex);
 				else clearRecovery(instanceId);
@@ -103,6 +114,8 @@ const jellyfinCacheSchedulerPlugin = fastifyPlugin(
 					"Jellyfin cache recovery refresh failed",
 				);
 				scheduleRecovery(instanceId, nextRetryIndex);
+			} finally {
+				runningRecoveryInstances.delete(instanceId);
 			}
 		}
 
@@ -139,6 +152,35 @@ const jellyfinCacheSchedulerPlugin = fastifyPlugin(
 			}
 		}
 
+		const recovery = ensureLibraryRefreshRecovery(app);
+		const unregisterRecovery = recovery.libraryRefreshRecovery.register(
+			"jellyfin",
+			async (request) => {
+				if (closing) return { status: "unavailable" };
+				try {
+					const instance = await app.prisma.serviceInstance.findFirst({
+						where: {
+							id: request.instanceId,
+							userId: request.userId,
+							service: { in: ["JELLYFIN", "EMBY"] },
+							enabled: true,
+							identityStatus: "VERIFIED",
+							expectedIdentity: { not: null },
+						},
+					});
+					if (!instance) return { status: "ineligible" };
+					if (closing) return { status: "unavailable" };
+					recoveryOwners.set(instance.id, request.userId);
+					if (recoveryHandles.has(instance.id) || runningRecoveryInstances.has(instance.id))
+						return { status: "accepted" };
+					scheduleRecovery(instance.id, 0, request.userId);
+					return { status: "accepted" };
+				} catch {
+					return { status: "unavailable" };
+				}
+			},
+		);
+
 		app.addHook("onReady", async () => {
 			// Stagger startup, then run on interval after earlier recovery hooks settle.
 			timeoutHandle = setTimeout(() => {
@@ -161,10 +203,12 @@ const jellyfinCacheSchedulerPlugin = fastifyPlugin(
 
 		app.addHook("onClose", () => {
 			closing = true;
+			unregisterRecovery();
 			if (timeoutHandle) clearTimeout(timeoutHandle);
 			if (intervalHandle) clearInterval(intervalHandle);
 			for (const handle of recoveryHandles.values()) clearTimeout(handle);
 			recoveryHandles.clear();
+			recoveryOwners.clear();
 		});
 
 		app.log.info(

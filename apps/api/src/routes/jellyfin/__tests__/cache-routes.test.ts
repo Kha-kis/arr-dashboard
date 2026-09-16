@@ -12,6 +12,7 @@ const routeMocks = vi.hoisted(() => ({
 	singleflightWithAttempt: vi.fn(),
 	claim: vi.fn(),
 	start: vi.fn(),
+	recovery: { admit: vi.fn(), arm: vi.fn() },
 }));
 
 vi.mock("../../../lib/jellyfin/jellyfin-cache-health.js", () => ({
@@ -185,6 +186,7 @@ describe("POST /api/jellyfin/cache/:instanceId/refresh", () => {
 			},
 		} as never);
 		app.decorate("encryptor", {} as never);
+		app.decorate("libraryRefreshRecovery", routeMocks.recovery as never);
 		registerTestErrorHandler(app);
 		await app.register(registerCacheRoutes, { prefix: "/api/jellyfin" });
 		await app.ready();
@@ -229,6 +231,16 @@ describe("POST /api/jellyfin/cache/:instanceId/refresh", () => {
 		expect(routeMocks.singleflightWithAttempt.mock.calls[0]?.[0]).not.toHaveProperty("apiKey");
 		expect(routeMocks.singleflightWithAttempt.mock.calls[0]?.[0]).not.toHaveProperty(
 			"httpAuthHeaders",
+		);
+		expect(routeMocks.start.mock.calls[0]?.[0]).toEqual(
+			expect.objectContaining({
+				recovery: expect.objectContaining({
+					provider: "jellyfin",
+					userId: "user-1",
+					instanceId: storedInstance.id,
+					handoff: routeMocks.recovery,
+				}),
+			}),
 		);
 	});
 

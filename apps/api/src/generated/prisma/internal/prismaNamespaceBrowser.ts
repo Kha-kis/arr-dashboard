@@ -107,6 +107,8 @@ export const ModelName = {
   TautulliCache: 'TautulliCache',
   CacheRefreshStatus: 'CacheRefreshStatus',
   ProviderObservationRun: 'ProviderObservationRun',
+  ProviderNativeInventorySnapshot: 'ProviderNativeInventorySnapshot',
+  ProviderNativeInventoryItem: 'ProviderNativeInventoryItem',
   ProviderObservationUnit: 'ProviderObservationUnit',
   PlexEpisodeObservationStage: 'PlexEpisodeObservationStage',
   JellyfinEpisodeObservationStage: 'JellyfinEpisodeObservationStage',
@@ -1266,6 +1268,43 @@ export const ProviderObservationRunScalarFieldEnum = {
 } as const
 
 export type ProviderObservationRunScalarFieldEnum = (typeof ProviderObservationRunScalarFieldEnum)[keyof typeof ProviderObservationRunScalarFieldEnum]
+
+
+export const ProviderNativeInventorySnapshotScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  domain: 'domain',
+  generationId: 'generationId',
+  observedAt: 'observedAt',
+  connectionGeneration: 'connectionGeneration',
+  identityGeneration: 'identityGeneration',
+  scopeDigest: 'scopeDigest',
+  contentDigest: 'contentDigest',
+  itemCount: 'itemCount',
+  scopeCount: 'scopeCount',
+  lastAttemptAt: 'lastAttemptAt',
+  lastAttemptToken: 'lastAttemptToken',
+  lastAttemptResult: 'lastAttemptResult',
+  lastAttemptReason: 'lastAttemptReason'
+} as const
+
+export type ProviderNativeInventorySnapshotScalarFieldEnum = (typeof ProviderNativeInventorySnapshotScalarFieldEnum)[keyof typeof ProviderNativeInventorySnapshotScalarFieldEnum]
+
+
+export const ProviderNativeInventoryItemScalarFieldEnum = {
+  id: 'id',
+  snapshotId: 'snapshotId',
+  nativeId: 'nativeId',
+  mediaType: 'mediaType',
+  libraryIds: 'libraryIds',
+  parentNativeId: 'parentNativeId',
+  seasonNumber: 'seasonNumber',
+  episodeNumber: 'episodeNumber',
+  title: 'title',
+  externalIds: 'externalIds'
+} as const
+
+export type ProviderNativeInventoryItemScalarFieldEnum = (typeof ProviderNativeInventoryItemScalarFieldEnum)[keyof typeof ProviderNativeInventoryItemScalarFieldEnum]
 
 
 export const ProviderObservationUnitScalarFieldEnum = {

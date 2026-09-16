@@ -5,6 +5,7 @@
  */
 
 import type {
+	AutoTagPreviewResponse,
 	AutoTagRule,
 	AutoTagRuleResponse,
 	AutoTagRulesResponse,
@@ -46,4 +47,8 @@ export async function runAutoTagRule(id: string): Promise<AutoTagRule> {
 		method: "POST",
 	});
 	return data.rule;
+}
+
+export async function fetchAutoTagRulePreview(id: string): Promise<AutoTagPreviewResponse> {
+	return apiRequest<AutoTagPreviewResponse>(`/api/auto-tag/rules/${id}/preview`);
 }

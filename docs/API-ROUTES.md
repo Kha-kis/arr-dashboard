@@ -43,7 +43,7 @@ for the full rationale.
 | `/api/notifications` | stable | Channels, subscriptions, rules, delivery aggregation |
 | `/api/services` | stable | ARR instance CRUD + connection testing |
 | `/api/dashboard` | stable | Queue, history, calendar, statistics aggregates |
-| `/api/library` | stable | Movies/series listing, episodes, monitor, search |
+| `/api/library` | stable | Movies/series listing, episodes, provider inventory, monitor, search |
 | `/api/search` | stable | Prowlarr indexer search + grab |
 | `/api/manual-import` | stable | Manual import candidates and submission |
 | `/api/hunting` | internal | Auto-search configuration and execution |
@@ -53,7 +53,7 @@ for the full rationale.
 | `/api/jellyfin` | stable | Jellyfin activity and library data |
 | `/api/tautulli` | stable | Activity, watch history enrichment, statistics |
 | `/api/label-sync` | experimental | Generic any-to-any media-service tag/label sync rules (issue #384). Sub-arc 1 ships Sonarr/Radarr → Plex. |
-| `/api/auto-tag` | experimental | Criteria-based auto-tagger — applies tags to LibraryCache items matching the rule's criteria DSL (genre, year, codec, watch state, …). Companion to Label Sync. Webhook config (secret read/rotate) lives here under session auth. |
+| `/api/auto-tag` | experimental | Criteria-based auto-tagger — applies tags to ARR items matching criteria, including positive Plex/Jellyfin presence at the last complete scan. `GET /rules/:id/preview` evaluates candidates without writing tags or recording a run; execution rechecks current evidence. Companion to Label Sync. Webhook config (secret read/rotate) lives here under session auth. |
 | `/api/auto-tag/webhook` | experimental | Inbound Sonarr/Radarr Connect webhook for real-time auto-tagging. **Public route** (no session cookie); authenticates via per-user Bearer token (SHA-256 hash of the user's webhook secret). |
 | `/api/pulse` | internal | System Pulse health signals + attention items |
 | `/api/qui` | experimental | Federated peer integration with autobrr/qui (qBittorrent UI) — read-only torrent state, trackers, cross-seed siblings; powers the Torrent Health panel. |
@@ -178,8 +178,36 @@ truthful cache evidence through the corresponding health/status GET endpoints.
 |-------|---------|
 | `/library` | Movies/series list |
 | `/library/episodes` | Series episodes |
+| `/library/provider-inventory` | Owned Plex/Jellyfin/Emby native movie, series, or episode inventory |
 | `/library/monitor` | Toggle monitoring |
 | `/library/search` | Search for content |
+
+`GET /api/library/provider-inventory` reads a published native snapshot without contacting the provider. Supply `instanceId` and `domain=library|episode`; `limit` defaults to 100 and is capped at 200. Continue with both `afterNativeId` and the first page's `generationId` as `expectedGenerationId`. A replaced snapshot returns `status: "unavailable", reason: "snapshot-changed"`; restart at the first page.
+
+Available responses include the native item total, observation time, refresh state, and a bounded page. `complete` describes the latest confirmed inventory of supported movies/series or episodes; `freshness: "last-known"` retains the previous snapshot while current coverage is unconfirmed. Unavailable responses omit counts. Native presence includes unmatched items and does not establish watched state, ARR correspondence, absence, or permission to mutate media.
+
+
+### Watch insight and series progress contracts
+
+`GET /api/library/insights/disk-waste` and
+`GET /api/library/insights/requested-unwatched` return supported library facts
+with HTTP 200 when media-server watch evidence is incomplete. `data.items`
+contains confirmed unwatched candidates; `data.unknownItems` contains candidates
+whose watch status is unknown. Each row includes `watchState`. Missing provider
+rows or mappings never establish zero plays. `data.watchStatus` distinguishes
+`complete`, `partial`, `unavailable`, and `not-configured`; `limited` marks a
+bounded candidate/result scan. `totalWastedBytes` is nullable and summarizes only
+returned confirmed items when watch conclusions are complete. Requested insights
+also expose independent `requestStatus` and retain requests collected before a
+later request-page failure. Unknown watch status grants no cleanup authority.
+
+`GET /api/plex/series-progress` and `GET /api/jellyfin/series-progress` expose
+`configured` and one progress entry for each valid requested series ID when a
+provider is configured. `status: exact` includes numeric `total`, `watched`, and
+`percent`. `status: partial` includes a watched lower bound with null total and
+percent. `status: unknown` has null counts and percent. `watchedSemantics` is
+`exact`, `lower-bound`, or `unknown` respectively. Episode coordinates are
+deduplicated across connections. The UI displays each provider separately.
 
 ## TRaSH Guides (`/api/trash-guides`)
 

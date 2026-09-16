@@ -230,6 +230,30 @@ function makeArrClient(): MockArrClient {
 }
 
 describe("executeAutoTagRule (orchestration)", () => {
+	it("previews the same candidates without creating tags or writing ARR resources", async () => {
+		const arrClient = makeArrClient();
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([makeInstance()]) },
+			libraryCache: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([makeCacheItem({ id: "cache", arrItemId: 1, itemType: "movie" })]),
+			},
+		};
+		const result = await executeAutoTagRule({
+			rule: makeRule(),
+			prisma: prisma as never,
+			arrClientFactory: { create: () => arrClient } as never,
+			encryptor: {} as never,
+			log,
+			dryRun: true,
+		});
+		expect(result.totals).toMatchObject({ itemsMatched: 1, tagsApplied: 0 });
+		expect(result.preview?.items).toMatchObject([{ arrItemId: 1, state: "true" }]);
+		expect(arrClient.tag.create).not.toHaveBeenCalled();
+		expect(arrClient.movie.update).not.toHaveBeenCalled();
+		expect(arrClient.series.update).not.toHaveBeenCalled();
+	});
 	beforeEach(async () => {
 		mockState.evaluateReason = "matched";
 		mockState.evaluateCalls = 0;

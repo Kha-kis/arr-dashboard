@@ -1,30 +1,9 @@
-import type { ProviderObservationStatusEnvelope } from "@arr/shared";
+import type { DiskWasteInsightsResponse } from "@arr/shared";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../../lib/api-client/base";
 
-export interface DiskWasteItem {
-	arrItemId: number;
-	instanceId: string;
-	instanceName: string;
-	service: string;
-	title: string;
-	year: number | null;
-	sizeOnDisk: number;
-	addedDaysAgo: number;
-	monitored: boolean;
-	qualityProfileName: string | null;
-}
-
-export interface DiskWasteResponse {
-	success: boolean;
-	providerStatus?: ProviderObservationStatusEnvelope;
-	data: {
-		items: DiskWasteItem[];
-		totalWastedBytes: number;
-		hasPlexData: boolean;
-		hasWatchData: boolean;
-	};
-}
+export type { DiskWasteItem, DiskWasteInsightsResponse } from "@arr/shared";
+export type DiskWasteResponse = DiskWasteInsightsResponse;
 
 function fetchDiskWaste(params: {
 	minSizeGb?: number;

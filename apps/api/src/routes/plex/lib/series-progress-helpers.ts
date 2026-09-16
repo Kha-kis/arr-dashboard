@@ -1,43 +1,67 @@
-/**
- * Series Progress Aggregation Helpers
- *
- * Pure function for aggregating PlexEpisodeCache entries into per-series
- * progress percentages. Extracted from series-progress-routes.ts for testability.
- */
-
 import type { SeriesProgressItem } from "@arr/shared";
 
-/** Minimal episode shape needed for aggregation */
+/** Coordinates identify an episode across connections to the same library. */
 export interface EpisodeInput {
 	showTmdbId: number;
+	seasonNumber: number;
+	episodeNumber: number;
 	watched: boolean;
 }
 
-/**
- * Aggregate episode watch data into per-series progress percentages.
- *
- * Groups episodes by showTmdbId and computes watched/total/percent for each.
- */
 export function aggregateSeriesProgress(
 	episodes: EpisodeInput[],
+	requestedIds: readonly number[] = [...new Set(episodes.map((episode) => episode.showTmdbId))],
+	complete = true,
 ): Record<number, SeriesProgressItem> {
-	const counters = new Map<number, { total: number; watched: number }>();
-
-	for (const ep of episodes) {
-		const counter = counters.get(ep.showTmdbId) ?? { total: 0, watched: 0 };
-		counter.total++;
-		if (ep.watched) counter.watched++;
-		counters.set(ep.showTmdbId, counter);
+	const selected = new Set(requestedIds);
+	const coordinates = new Map<number, Map<string, boolean>>();
+	const malformed = new Set<number>();
+	for (const episode of episodes) {
+		if (!selected.has(episode.showTmdbId)) continue;
+		if (
+			!Number.isSafeInteger(episode.seasonNumber) ||
+			episode.seasonNumber < 0 ||
+			!Number.isSafeInteger(episode.episodeNumber) ||
+			episode.episodeNumber < 0 ||
+			typeof episode.watched !== "boolean"
+		) {
+			malformed.add(episode.showTmdbId);
+			continue;
+		}
+		const show = coordinates.get(episode.showTmdbId) ?? new Map<string, boolean>();
+		const key = `${episode.seasonNumber}:${episode.episodeNumber}`;
+		show.set(key, show.get(key) === true || episode.watched);
+		coordinates.set(episode.showTmdbId, show);
 	}
-
-	const progressMap: Record<number, SeriesProgressItem> = {};
-	for (const [tmdbId, counter] of counters) {
-		progressMap[tmdbId] = {
-			total: counter.total,
-			watched: counter.watched,
-			percent: counter.total > 0 ? Math.round((counter.watched / counter.total) * 100) : 0,
-		};
+	const progress: Record<number, SeriesProgressItem> = {};
+	for (const tmdbId of requestedIds) {
+		const show = coordinates.get(tmdbId);
+		const watched = show ? [...show.values()].filter(Boolean).length : 0;
+		if (complete && !malformed.has(tmdbId) && show && show.size > 0) {
+			progress[tmdbId] = {
+				status: "exact",
+				total: show.size,
+				watched,
+				percent: Math.round((watched / show.size) * 100),
+				watchedSemantics: "exact",
+			};
+		} else if (watched > 0) {
+			progress[tmdbId] = {
+				status: "partial",
+				total: null,
+				watched,
+				percent: null,
+				watchedSemantics: "lower-bound",
+			};
+		} else {
+			progress[tmdbId] = {
+				status: "unknown",
+				total: null,
+				watched: null,
+				percent: null,
+				watchedSemantics: "unknown",
+			};
+		}
 	}
-
-	return progressMap;
+	return progress;
 }

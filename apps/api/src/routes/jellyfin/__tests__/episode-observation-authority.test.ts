@@ -323,7 +323,15 @@ describe("Jellyfin episode observation routes", () => {
 		});
 		const progress = await request("GET", "/api/jellyfin/series-progress?tmdbIds=42");
 		expect(progress.statusCode).toBe(200);
-		expect(progress.json().progress).toEqual({});
+		expect(progress.json().progress).toEqual({
+			42: {
+				status: "partial",
+				total: null,
+				watched: 1,
+				percent: null,
+				watchedSemantics: "lower-bound",
+			},
+		});
 		const completion = await request(
 			"GET",
 			"/api/jellyfin/analytics/episode-completion?tmdbIds=42",
@@ -337,7 +345,7 @@ describe("Jellyfin episode observation routes", () => {
 
 	describe("series progress", () => {
 		it.each(["current", "last-known"] as const)(
-			"computes totals for uniform %s-complete sources across instances",
+			"shows exact current progress or lower bounds for %s-complete sources",
 			async (state) => {
 				configuredInstances = [primary, secondary];
 				findMany.mockResolvedValue(configuredInstances);
@@ -357,8 +365,26 @@ describe("Jellyfin episode observation routes", () => {
 				expect(response.statusCode).toBe(200);
 				expect(response.json()).toMatchObject({
 					progress: {
-						42: { total: 2, watched: 1, percent: 50 },
-						99: { total: 1, watched: 1, percent: 100 },
+						42:
+							state === "current"
+								? { status: "exact", watchedSemantics: "exact", total: 1, watched: 1, percent: 100 }
+								: {
+										status: "partial",
+										total: null,
+										watched: 1,
+										percent: null,
+										watchedSemantics: "lower-bound",
+									},
+						99:
+							state === "current"
+								? { status: "exact", watchedSemantics: "exact", total: 1, watched: 1, percent: 100 }
+								: {
+										status: "partial",
+										total: null,
+										watched: 1,
+										percent: null,
+										watchedSemantics: "lower-bound",
+									},
 					},
 					providerStatus: { availability: state },
 				});
@@ -382,7 +408,16 @@ describe("Jellyfin episode observation routes", () => {
 			);
 			expect(response.statusCode).toBe(200);
 			expect(response.json()).toEqual({
-				progress: {},
+				configured: true,
+				progress: {
+					42: {
+						status: "unknown",
+						total: null,
+						watched: null,
+						percent: null,
+						watchedSemantics: "unknown",
+					},
+				},
 				providerStatus: evidenceFor(configuredInstances, state).providerStatus,
 			});
 		});
@@ -394,7 +429,7 @@ describe("Jellyfin episode observation routes", () => {
 				"GET",
 				"/api/jellyfin/series-progress?tmdbIds=42",
 			);
-			expect(response.json()).toEqual({ progress: {} });
+			expect(response.json()).toEqual({ configured: false, progress: {} });
 			expect(mocks.readEpisodes).not.toHaveBeenCalled();
 		});
 
@@ -407,9 +442,15 @@ describe("Jellyfin episode observation routes", () => {
 				);
 				expect(response.statusCode).toBe(tmdbIds === "abc" ? 200 : 400);
 				expect(response.json()).toEqual(
-					tmdbIds === "abc" ? { progress: {} } : { error: "Max 200 items per request" },
+					tmdbIds === "abc"
+						? {
+								configured: true,
+								progress: {},
+								providerStatus: evidenceFor([primary], "current").providerStatus,
+							}
+						: { error: "Max 200 items per request" },
 				);
-				expect(mocks.readEpisodes).not.toHaveBeenCalled();
+				if (tmdbIds !== "abc") expect(mocks.readEpisodes).not.toHaveBeenCalled();
 			},
 		);
 	});

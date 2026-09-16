@@ -201,6 +201,7 @@ model ServiceInstance {
   inodeIndexCache         InodeIndexCache?
   labelSyncMutationAttempts LabelSyncMutationAttempt[]
   providerObservationRuns ProviderObservationRun[]
+  nativeInventorySnapshots ProviderNativeInventorySnapshot[]
 
   @@index([service])
   @@index([userId])
@@ -1864,6 +1865,51 @@ model ProviderObservationRun {
   @@index([authorityKey, createdAt])
   @@index([instanceId, cacheType, state, nextAttemptAt])
   @@map("provider_observation_runs")
+}
+
+/// Generation-bound native provider presence, independent of TMDB and watch data.
+model ProviderNativeInventorySnapshot {
+  id                    String    @id @default(cuid())
+  instanceId            String
+  domain                String    // "library" | "episode"
+  generationId          String?
+  observedAt            DateTime?
+  connectionGeneration  Int?
+  identityGeneration    Int?
+  scopeDigest           String?
+  contentDigest         String?
+  itemCount             Int       @default(0)
+  scopeCount            Int       @default(0)
+  lastAttemptAt         DateTime?
+  lastAttemptToken      String?
+  lastAttemptResult     String    @default("unknown")
+  lastAttemptReason     String?
+
+  instance              ServiceInstance             @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  items                 ProviderNativeInventoryItem[]
+
+  @@unique([instanceId, domain])
+  @@index([instanceId, domain, generationId])
+  @@map("provider_native_inventory_snapshots")
+}
+
+model ProviderNativeInventoryItem {
+  id              String   @id @default(cuid())
+  snapshotId      String
+  nativeId        String
+  mediaType       String   // "movie" | "series" | "episode"
+  libraryIds      String   // JSON array of provider-native library ids
+  parentNativeId  String?
+  seasonNumber    Int?
+  episodeNumber   Int?
+  title           String   @default("")
+  externalIds     String?  // JSON object of normalized TMDB/TVDB identifier arrays
+
+  snapshot        ProviderNativeInventorySnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@unique([snapshotId, nativeId])
+  @@index([snapshotId, mediaType])
+  @@map("provider_native_inventory_items")
 }
 
 model ProviderObservationUnit {

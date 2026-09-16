@@ -9,6 +9,15 @@ const authorityMock = vi.hoisted(() => ({
 	positiveEpisodeEvidence: new Map<string, unknown>(),
 }));
 
+const additionalWatchMocks = vi.hoisted(() => ({ read: vi.fn(async () => new Map()) }));
+vi.mock("../../lib/library-cleanup/additional-target-watch-policy.js", async (importOriginal) => ({
+	...(await importOriginal<
+		typeof import("../../lib/library-cleanup/additional-target-watch-policy.js")
+	>()),
+	loadAdditionalTargetWatchFacts: additionalWatchMocks.read,
+	revalidateMatchedTargetWatchFacts: vi.fn(async () => true),
+}));
+
 const cleanupExecutorOverrides = vi.hoisted(() => ({
 	buildEvalContextWithHealth: undefined as ((...args: unknown[]) => Promise<unknown>) | undefined,
 	loadTargetScopedPlexWatchCountFacts: undefined as
@@ -361,6 +370,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+	additionalWatchMocks.read.mockReset().mockResolvedValue(new Map());
 	authorityMock.positiveEpisodeEvidence.clear();
 	cleanupExecutorOverrides.buildEvalContextWithHealth = undefined;
 	cleanupExecutorOverrides.loadTargetScopedPlexWatchCountFacts = undefined;
@@ -368,6 +378,77 @@ afterEach(async () => {
 });
 
 describe("POST /library-cleanup/explain episode scope", () => {
+	it.each(["jellyfin", "tautulli"] as const)(
+		"explains current positive %s target proof when aggregate evidence is unavailable",
+		async (family) => {
+			libraryCleanupConfigFindUnique.mockResolvedValue({
+				id: "cleanup-config",
+				rules: [
+					{
+						...episodeRule(0),
+						id: "positive-rule",
+						ruleType: `${family}_watch_count`,
+						parameters: JSON.stringify({ operator: "greater_than", count: 2 }),
+						targetScope: "series",
+					},
+				],
+			});
+			cleanupExecutorOverrides.buildEvalContextWithHealth = async () => ({
+				ctx: { now: NOW },
+				failedSources: new Set([family]),
+			});
+			additionalWatchMocks.read.mockResolvedValue(
+				new Map([
+					[
+						"series:12345",
+						[
+							{
+								userId: USER_ID,
+								provider: family.toUpperCase(),
+								cacheType: family,
+								instanceId: `${family}-1`,
+								generationId: "g",
+								targetKey: "series:12345",
+								coordinate: "bound-proof",
+								observedValue: 3,
+								targetScoped: true,
+								status: {
+									availability: "current",
+									evidence: "positive-only",
+									reasonCodes: [],
+									domains: [
+										{
+											domain: "watch-count",
+											availability: "current",
+											evidence: "positive-only",
+											valueSemantics: "lower-bound",
+											reasonCodes: [],
+										},
+									],
+								},
+							},
+						],
+					],
+				]),
+			);
+			const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/explain", {
+				body: { instanceId: SONARR_INSTANCE_ID, arrItemId: 101 },
+			});
+			expect(response.statusCode).toBe(200);
+			expect(JSON.parse(response.payload)).toMatchObject({
+				results: [{ ruleId: "positive-rule", matched: true, filteredBy: null }],
+			});
+			expect(additionalWatchMocks.read).toHaveBeenCalledWith(
+				expect.anything(),
+				USER_ID,
+				[expect.objectContaining({ arrItemId: 101 })],
+				expect.any(Set),
+				undefined,
+				{ verifyPositiveCounts: true },
+			);
+		},
+	);
+
 	it("preserves same-key Jellyfin and target-scoped Plex facts in a series explanation", async () => {
 		const exactStatus = {
 			availability: "current",

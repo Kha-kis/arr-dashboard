@@ -27,8 +27,11 @@ const labelSyncMutationAttemptRelations = [
 ] as const;
 const providerObservationRelations = [
 	["ServiceInstance", "providerObservationRuns ProviderObservationRun[]"],
+	["ServiceInstance", "nativeInventorySnapshots ProviderNativeInventorySnapshot[]"],
 ] as const;
 const providerObservationModels = [
+	"ProviderNativeInventorySnapshot",
+	"ProviderNativeInventoryItem",
 	"ProviderObservationRun",
 	"ProviderObservationUnit",
 	"PlexEpisodeObservationStage",

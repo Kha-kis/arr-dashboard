@@ -292,7 +292,6 @@ describe("Plex value route evidence contracts", () => {
 		["collections", "/api/plex/plex-1/collections", "collections"],
 		["labels", "/api/plex/plex-1/labels", "labels"],
 		["collection statistics", "/api/plex/collection-stats", "collections"],
-		["series progress", "/api/plex/series-progress?tmdbIds=1", "progress"],
 		["episode status", "/api/plex/episodes?instanceId=plex-1&showTmdbId=1", "episodes"],
 		["episode completion", "/api/plex/user-episode-completion?tmdbIds=1", "shows"],
 	] as const)("withholds %s values when the latest attempt failed", async (_name, url, field) => {
@@ -312,7 +311,6 @@ describe("Plex value route evidence contracts", () => {
 		["collections", "/api/plex/plex-1/collections", "collections"],
 		["labels", "/api/plex/plex-1/labels", "labels"],
 		["collection statistics", "/api/plex/collection-stats", "collections"],
-		["series progress", "/api/plex/series-progress?tmdbIds=1", "progress"],
 		["episode status", "/api/plex/episodes?instanceId=plex-1&showTmdbId=1", "episodes"],
 		["episode completion", "/api/plex/user-episode-completion?tmdbIds=1", "shows"],
 	] as const)(
@@ -500,7 +498,19 @@ describe("Plex value route evidence contracts", () => {
 		[
 			"series progress",
 			"/api/plex/series-progress?tmdbIds=1",
-			{ progress: {}, evidence: authoritativeEvidence },
+			{
+				configured: true,
+				progress: {
+					1: {
+						status: "unknown",
+						total: null,
+						watched: null,
+						percent: null,
+						watchedSemantics: "unknown",
+					},
+				},
+				evidence: authoritativeEvidence,
+			},
 		],
 		[
 			"episode status",
@@ -570,14 +580,14 @@ describe("Plex value route evidence contracts", () => {
 				input.instanceId === "plex-1"
 					? {
 							...currentEpisodes,
-							rows: [{ showTmdbId: 1, watched: true }],
+							rows: [{ showTmdbId: 1, seasonNumber: 1, episodeNumber: 1, watched: true }],
 						}
 					: {
 							...currentEpisodes,
 							instanceId: "plex-2",
 							rows: [
-								{ showTmdbId: 1, watched: false },
-								{ showTmdbId: 2, watched: true },
+								{ showTmdbId: 1, seasonNumber: 1, episodeNumber: 2, watched: false },
+								{ showTmdbId: 2, seasonNumber: 1, episodeNumber: 1, watched: true },
 							],
 						},
 		);
@@ -589,9 +599,10 @@ describe("Plex value route evidence contracts", () => {
 
 		expect(response.statusCode).toBe(200);
 		expect(response.json()).toEqual({
+			configured: true,
 			progress: {
-				1: { total: 2, watched: 1, percent: 50 },
-				2: { total: 1, watched: 1, percent: 100 },
+				1: { status: "exact", watchedSemantics: "exact", total: 2, watched: 1, percent: 50 },
+				2: { status: "exact", watchedSemantics: "exact", total: 1, watched: 1, percent: 100 },
 			},
 			evidence: authoritativeEvidence,
 		});

@@ -58,6 +58,7 @@ const singleflightJellyfin = vi.fn();
 const runNextPlexEpisodeWorkItem = vi.fn();
 const runNextJellyfinEpisodeWorkItem = vi.fn();
 const episodeRefreshSchedulerRetry = vi.fn();
+const libraryRefreshRecovery = { admit: vi.fn(), arm: vi.fn() };
 vi.mock("../../plex/plex-refresh-orchestration.js", () => ({
 	refreshOwnedPlexCacheWithAttempt: (...args: unknown[]) => refreshOwnedPlexCache(...args),
 	runNextPlexEpisodeWorkItem: (...args: unknown[]) => runNextPlexEpisodeWorkItem(...args),
@@ -151,6 +152,7 @@ const fakeApp = {
 	episodeRefreshScheduler: {
 		retry: (...args: unknown[]) => episodeRefreshSchedulerRetry(...args),
 	},
+	libraryRefreshRecovery,
 } as unknown as FastifyInstance;
 
 beforeEach(() => {
@@ -201,6 +203,8 @@ beforeEach(() => {
 	markEnabled.mockReset();
 	cacheStatusUpsert.mockReset();
 	cacheStatusUpsert.mockResolvedValue({});
+	libraryRefreshRecovery.admit.mockReset();
+	libraryRefreshRecovery.arm.mockReset();
 	fakeLogInfo.mockReset();
 	fakeLogWarn.mockReset();
 	fakeLogError.mockReset();
@@ -378,6 +382,16 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		// don't yet know the upsert count at return time.
 		expect(result.status).toBe("ok");
 		expect(result.detail).toBeUndefined();
+		expect(startProviderCacheRefreshInBackground.mock.calls[0]?.[0]).toEqual(
+			expect.objectContaining({
+				recovery: expect.objectContaining({
+					provider: "plex",
+					userId: "user-1",
+					instanceId: plexInstance.id,
+					handoff: libraryRefreshRecovery,
+				}),
+			}),
+		);
 		expect(findOwnedEnabledTautulliInstance).not.toHaveBeenCalled();
 
 		// Await the background task so the rest of the assertions see the

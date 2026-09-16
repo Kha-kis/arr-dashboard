@@ -21,6 +21,7 @@ import {
 } from "../../lib/plex/plex-persisted-observation-repository.js";
 import { refreshOwnedPlexCacheWithAttempt } from "../../lib/plex/plex-refresh-orchestration.js";
 import { startProviderCacheRefreshInBackground } from "../../lib/provider-observation/background-cache-refresh.js";
+import type { FastifyWithLibraryRefreshRecovery } from "../../lib/services/library-refresh-recovery.js";
 import { claimProviderCacheRefreshAttempt } from "../../lib/services/provider-cache-status.js";
 import { createProviderPublicationAuthority } from "../../lib/services/provider-identity-guard.js";
 import { validateRequest } from "../../lib/utils/validate.js";
@@ -91,6 +92,7 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 				throw new AppValidationError("Instance is not a Plex service");
 			}
 			const authority = createProviderPublicationAuthority(instance);
+			const recovery = (app as FastifyWithLibraryRefreshRecovery).libraryRefreshRecovery;
 			await startProviderCacheRefreshInBackground({
 				cacheType: "plex",
 				claim: () => claimProviderCacheRefreshAttempt(app.prisma, "plex", authority),
@@ -100,6 +102,9 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 						attempt,
 					),
 				log,
+				...(recovery
+					? { recovery: { provider: "plex" as const, userId, instanceId, handoff: recovery } }
+					: {}),
 			});
 			const response: ProviderObservationAcceptedResponse = {
 				status: "accepted",

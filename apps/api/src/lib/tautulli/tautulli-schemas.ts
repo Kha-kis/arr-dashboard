@@ -66,6 +66,44 @@ export const tautulliHistoryDataSchema = z.looseObject({
 	recordsTotal: z.number(),
 });
 
+const positiveHistoryIdSchema = z.coerce.number().int().positive().refine(Number.isSafeInteger);
+const positiveHistoryStringSchema = z.preprocess(
+	(value) => (typeof value === "string" ? value : null),
+	z.string().trim().min(1),
+);
+const historyKeySchema = z.union([
+	positiveHistoryStringSchema,
+	z.number().int().positive().refine(Number.isSafeInteger).transform(String),
+]);
+const optionalHistoryAncestorSchema = z.preprocess(
+	(value) => (value === null || value === "" ? undefined : value),
+	historyKeySchema.optional(),
+);
+
+/**
+ * get_history shape used by the target-watch adapter.  The legacy history
+ * reader intentionally remains tolerant; this boundary is strict because a
+ * row without stable identity or a provider GUID cannot prove a play.
+ */
+export const tautulliTargetHistoryDataSchema = z.looseObject({
+	data: z.array(
+		z.looseObject({
+			row_id: positiveHistoryIdSchema,
+			reference_id: historyKeySchema,
+			rating_key: historyKeySchema,
+			parent_rating_key: optionalHistoryAncestorSchema,
+			grandparent_rating_key: optionalHistoryAncestorSchema,
+			guid: positiveHistoryStringSchema,
+			stopped: z.coerce.number().int().nonnegative().refine(Number.isSafeInteger),
+			// get_history filters by section_id but does not echo it in standard rows.
+			section_id: historyKeySchema.optional(),
+			media_type: positiveHistoryStringSchema,
+		}),
+	),
+	recordsFiltered: z.coerce.number().int().nonnegative().refine(Number.isSafeInteger),
+	recordsTotal: z.coerce.number().int().nonnegative().refine(Number.isSafeInteger),
+});
+
 /** get_activity — inner data */
 export const tautulliActivityDataSchema = z.looseObject({
 	// Tautulli omits sessions/bandwidth fields entirely when there are no active streams.

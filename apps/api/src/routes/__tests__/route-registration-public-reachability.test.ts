@@ -46,7 +46,7 @@ const SESSION_PROTECTION_MESSAGE = "Authentication required";
 function createPrismaStub() {
 	const empty = vi.fn().mockResolvedValue([]);
 	const single = vi.fn().mockResolvedValue(null);
-	return {
+	const prisma = {
 		session: {
 			findUnique: single,
 			create: vi.fn(),
@@ -59,6 +59,12 @@ function createPrismaStub() {
 		serviceInstance: { findMany: empty, findFirst: single },
 		oIDCProvider: { findUnique: single, findMany: empty },
 		webAuthnCredential: { findMany: empty, findFirst: single },
+	};
+	return {
+		...prisma,
+		$transaction: vi.fn(async (callback: (tx: typeof prisma) => Promise<unknown>) =>
+			callback(prisma),
+		),
 	};
 }
 

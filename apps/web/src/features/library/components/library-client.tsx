@@ -1,6 +1,12 @@
 "use client";
 
-import type { LibraryItem, ProviderObservationDomain, WatchEnrichmentItem } from "@arr/shared";
+import type {
+	LibraryItem,
+	ProviderObservationDomain,
+	SeriesProgressItem,
+	SeriesProgressResponse,
+	WatchEnrichmentItem,
+} from "@arr/shared";
 import { useSearchParams } from "next/navigation";
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PlexQueryEvidenceNotice } from "../../../components/presentational/plex-evidence-notice";
@@ -22,9 +28,10 @@ import { AlbumBreakdownModal } from "./album-breakdown-modal";
 import { BookBreakdownModal } from "./book-breakdown-modal";
 import { ItemDetailsModal } from "./item-details-modal";
 import { LibraryCard } from "./library-card";
-import { LibraryContent } from "./library-content";
+import { LibraryContent, type SeriesProgressByProvider } from "./library-content";
 import { LibraryHeader } from "./library-header";
 import { LibraryInsightsSection } from "./library-insights-section";
+import { ProviderNativeInventoryPanel } from "./provider-native-inventory-panel";
 
 const EnrichedDetailModal = React.lazy(() =>
 	import("./enriched-detail-modal").then((m) => ({ default: m.EnrichedDetailModal })),
@@ -42,6 +49,25 @@ const TAUTULLI_REQUIRED_DOMAINS = [
 ] as const satisfies readonly ProviderObservationDomain[];
 
 type LibraryWatchItem = WatchEnrichmentItem & { episodeProvider: "plex" | "jellyfin" };
+
+function groupSeriesProgress(
+	plex: SeriesProgressResponse | undefined,
+	jellyfin: SeriesProgressResponse | undefined,
+): Record<number, SeriesProgressByProvider> | null {
+	const grouped: Record<number, SeriesProgressByProvider> = {};
+	for (const [provider, response] of [
+		["plex", plex],
+		["jellyfin", jellyfin],
+	] as const) {
+		if (!response || response.configured === false) continue;
+		for (const [tmdbId, progress] of Object.entries(response.progress ?? {})) {
+			const id = Number(tmdbId);
+			if (!Number.isFinite(id) || !progress || typeof progress.status !== "string") continue;
+			grouped[id] = { ...grouped[id], [provider]: progress as SeriesProgressItem };
+		}
+	}
+	return Object.keys(grouped).length > 0 ? grouped : null;
+}
 
 function mergeWatchItems(left: LibraryWatchItem, right: LibraryWatchItem): LibraryWatchItem {
 	const countContributors = [left, right].filter(
@@ -210,10 +236,7 @@ export const LibraryClient: React.FC = () => {
 	const plexProgressQuery = useSeriesProgress(seriesTmdbIds);
 	const jellyfinProgressQuery = useJellyfinSeriesProgress(seriesTmdbIds);
 	const seriesProgressMap = useMemo(() => {
-		const plexProgress = plexProgressQuery.data?.progress;
-		const jfProgress = jellyfinProgressQuery.data?.progress;
-		if (!plexProgress && !jfProgress) return null;
-		return { ...jfProgress, ...plexProgress };
+		return groupSeriesProgress(plexProgressQuery.data, jellyfinProgressQuery.data);
 	}, [plexProgressQuery.data, jellyfinProgressQuery.data]);
 
 	// hasQui gates UI surfaces that only make sense with a qui instance configured
@@ -392,6 +415,8 @@ export const LibraryClient: React.FC = () => {
 				isError={jellyfinWatchQuery.isError || jellyfinProgressQuery.isError}
 				label="Library watch and progress values"
 			/>
+
+			<ProviderNativeInventoryPanel />
 
 			<LibraryInsightsSection />
 

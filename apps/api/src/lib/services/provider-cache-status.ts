@@ -444,18 +444,29 @@ export async function reconcileInterruptedProviderCacheRefreshAttempts(
 				isValidDate(attemptAt) &&
 				attemptAt.getTime() <= recoveryAt.getTime() &&
 				isValidAttemptMarker(marker);
-			if (recoverableRun && reusableAttempt && !recoverableRun.hasInheritedClaim) continue;
+			if (
+				recoverableRun &&
+				reusableAttempt &&
+				!recoverableRun.hasInheritedClaim &&
+				status.cacheType !== "plex_episode"
+			)
+				continue;
 			if (recoverableRun) {
 				if (recoverableRun.hasInheritedClaim && !reusableAttempt) {
 					throw new Error("Provider cache recovery marker is not reusable");
 				}
 				const updated = await tx.cacheRefreshStatus.updateMany({
 					where: statusClaimWhere(status, status.instanceId, status.cacheType),
-					data: {
-						lastAttemptAt: recoveryAt,
-						lastAttemptResult: `in_progress:${randomUUID()}`,
-						lastAttemptErrorMessage: null,
-					},
+					// Startup owns interrupted work. Retire Plex's process-owned attempt
+					// before releasing unit claims; the saved run remains resumable.
+					data:
+						status.cacheType === "plex_episode"
+							? { lastAttemptResult: "error", lastAttemptErrorMessage: "unknown-failure" }
+							: {
+									lastAttemptAt: recoveryAt,
+									lastAttemptResult: `in_progress:${randomUUID()}`,
+									lastAttemptErrorMessage: null,
+								},
 				});
 				if (updated.count !== 1) {
 					throw new Error("Provider cache recovery marker CAS lost");

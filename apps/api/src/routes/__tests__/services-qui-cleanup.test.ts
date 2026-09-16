@@ -148,7 +148,11 @@ function createMockPrisma() {
 		},
 		serviceInstance: {
 			findMany: vi.fn().mockResolvedValue([]),
-			findFirst: vi.fn().mockResolvedValue(null),
+			findFirst: vi
+				.fn()
+				.mockImplementation(({ where }: { where?: { OR?: unknown } }) =>
+					where?.OR ? null : makeQuiInstance(),
+				),
 			create: vi.fn(),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 			delete: vi.fn().mockResolvedValue(undefined),
@@ -162,11 +166,16 @@ function createMockPrisma() {
 		plexCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		plexEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		tautulliCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		providerNativeInventorySnapshot: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		historyObservation: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		historySourceStatus: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		cacheRefreshStatus: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		labelSyncMutationAttempt: {
+			findMany: vi.fn().mockResolvedValue([]),
+			deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+		},
 		instanceQualityProfileOverride: {
 			findMany: vi.fn().mockResolvedValue([]),
 		},
@@ -289,7 +298,7 @@ describe("DELETE /services/:id — qui-cache cleanup", () => {
 		const res = await injectAuthenticated("DELETE", "/services/sonarr-instance-1");
 
 		expect(res.statusCode).toBe(204);
-		expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+		expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
 		expect(mockPrisma.libraryCache.updateMany).not.toHaveBeenCalled();
 		expect(mockPrisma.episodeFileCache.updateMany).not.toHaveBeenCalled();
 		// Both still fire — they're a no-op for non-key ids.
@@ -443,7 +452,7 @@ describe("PUT /services/:id — qUI topology cleanup", () => {
 		});
 
 		expect(res.statusCode).toBe(200);
-		expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+		expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
 		expect(mockPrisma.libraryCache.updateMany).not.toHaveBeenCalled();
 		expect(mockPrisma.episodeFileCache.updateMany).not.toHaveBeenCalled();
 		expect(mockInvalidateTorrentListCache).not.toHaveBeenCalled();
@@ -461,7 +470,7 @@ describe("PUT /services/:id — qUI topology cleanup", () => {
 		});
 
 		expect(res.statusCode).toBe(200);
-		expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+		expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
 		expect(mockPrisma.libraryCache.updateMany).not.toHaveBeenCalled();
 		expect(mockPrisma.episodeFileCache.updateMany).not.toHaveBeenCalled();
 		expect(mockInvalidateTorrentListCache).not.toHaveBeenCalled();

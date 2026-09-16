@@ -939,6 +939,18 @@ export async function finalizeJellyfinEpisodeRun(
 		)
 			return await invalidate();
 		if (!input.scopes || !input.attempt) return await invalidate();
+		const status = await tx.cacheRefreshStatus.findUnique({
+			where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "jellyfin_episode" } },
+		});
+		if (
+			!status ||
+			status.lastAttemptAt?.getTime() !== input.attempt.attemptedAt.getTime() ||
+			status.lastAttemptResult !== input.attempt.resultMarker
+		)
+			// Attempt settlement is intentionally separate from durable run authority.
+			// A newer marker may own the same plan-bound run; a stale caller must not
+			// invalidate its staged work, but cannot publish because its exact CAS lost.
+			return { published: false, itemCount: 0 };
 		const runParentGenerationId = run.parentGenerationId;
 		if (typeof runParentGenerationId !== "string" || runParentGenerationId.trim() === "")
 			return await invalidate();
@@ -1087,47 +1099,6 @@ export async function finalizeJellyfinEpisodeRun(
 			invalidStageCardinality
 		)
 			return await invalidate();
-		// V3 cannot publish unwatched rows. Their omission or duplicate coordinates
-		// must not turn unrelated, verified positive observations into an outage.
-		// Retain every staged row for raw coverage accounting below.
-		const positivePublicationCandidates = isV3Run
-			? collect.filter((row) => row.played && !excludedIds.has(row.jellyfinId))
-			: collect;
-		const itemIds = new Set<string>();
-		const coordinates = new Set<string>();
-		const sourceCoordinateByItemId = new Map<string, string>();
-		if (isV3Run) {
-			const positiveItemIds = new Set(positivePublicationCandidates.map((row) => row.jellyfinId));
-			// A published item's identity must remain consistent across users and
-			// passes, including conflicting observations whose watched flag is false.
-			for (const row of stages) {
-				if (!positiveItemIds.has(row.jellyfinId)) continue;
-				const coordinate = `${row.seriesId}\u0000${row.seasonNumber}\u0000${row.episodeNumber}`;
-				const prior = sourceCoordinateByItemId.get(row.jellyfinId);
-				if (prior !== undefined && prior !== coordinate) return await invalidate();
-				sourceCoordinateByItemId.set(row.jellyfinId, coordinate);
-			}
-		}
-		for (const row of positivePublicationCandidates) {
-			const key = `${row.userKeyDigest}\u0000${row.jellyfinId}`;
-			const coordinate = `${row.userKeyDigest}\u0000${row.seriesId}\u0000${row.seasonNumber}\u0000${row.episodeNumber}`;
-			const sourceCoordinate = `${row.seriesId}\u0000${row.seasonNumber}\u0000${row.episodeNumber}`;
-			const priorCoordinate = sourceCoordinateByItemId.get(row.jellyfinId);
-			if (itemIds.has(key) || coordinates.has(coordinate)) return await invalidate();
-			if (priorCoordinate !== undefined && priorCoordinate !== sourceCoordinate)
-				return await invalidate();
-			itemIds.add(key);
-			coordinates.add(coordinate);
-			sourceCoordinateByItemId.set(row.jellyfinId, sourceCoordinate);
-		}
-		if (
-			isV3Run
-				? !hasV3StableCoordinateSuperset(positivePublicationCandidates, verify)
-				: collect.length !== verify.length ||
-					JSON.stringify(canonicalStageRows(collect, false)) !==
-						JSON.stringify(canonicalStageRows(verify, false))
-		)
-			return await invalidate();
 		const parentRows = await tx.jellyfinCache.findMany({
 			where: {
 				instanceId: instance.id,
@@ -1209,6 +1180,64 @@ export async function finalizeJellyfinEpisodeRun(
 						: null;
 				})()
 			: null;
+		const exactCurrentV3Catalog =
+			originalCatalog !== null &&
+			currentCatalog !== null &&
+			JSON.stringify(originalCatalog) === JSON.stringify(currentCatalog) &&
+			(() => {
+				try {
+					const currentScopes = jellyfinEpisodeCatalogScopesFromReceipt(
+						parent.metadata.coverageReceipt,
+					);
+					return (
+						currentScopes !== null &&
+						JSON.stringify(currentScopes) === JSON.stringify(originalCatalog.scopes)
+					);
+				} catch {
+					return false;
+				}
+			})();
+		// V3 cannot publish unwatched rows. Their omission or duplicate coordinates
+		// must not turn unrelated, verified positive observations into an outage.
+		// Retain every staged row for raw coverage accounting below.
+		const positivePublicationCandidates = isV3Run
+			? collect.filter((row) => row.played && !excludedIds.has(row.jellyfinId))
+			: collect;
+		const itemIds = new Set<string>();
+		const coordinates = new Set<string>();
+		const sourceCoordinateByItemId = new Map<string, string>();
+		if (isV3Run) {
+			const positiveItemIds = new Set(positivePublicationCandidates.map((row) => row.jellyfinId));
+			// A published item's identity must remain consistent across users and
+			// passes, including conflicting observations whose watched flag is false.
+			for (const row of stages) {
+				if (!positiveItemIds.has(row.jellyfinId)) continue;
+				const coordinate = `${row.seriesId}\u0000${row.seasonNumber}\u0000${row.episodeNumber}`;
+				const prior = sourceCoordinateByItemId.get(row.jellyfinId);
+				if (prior !== undefined && prior !== coordinate) return await invalidate();
+				sourceCoordinateByItemId.set(row.jellyfinId, coordinate);
+			}
+		}
+		for (const row of positivePublicationCandidates) {
+			const key = `${row.userKeyDigest}\u0000${row.jellyfinId}`;
+			const coordinate = `${row.userKeyDigest}\u0000${row.seriesId}\u0000${row.seasonNumber}\u0000${row.episodeNumber}`;
+			const sourceCoordinate = `${row.seriesId}\u0000${row.seasonNumber}\u0000${row.episodeNumber}`;
+			const priorCoordinate = sourceCoordinateByItemId.get(row.jellyfinId);
+			if (itemIds.has(key) || coordinates.has(coordinate)) return await invalidate();
+			if (priorCoordinate !== undefined && priorCoordinate !== sourceCoordinate)
+				return await invalidate();
+			itemIds.add(key);
+			coordinates.add(coordinate);
+			sourceCoordinateByItemId.set(row.jellyfinId, sourceCoordinate);
+		}
+		if (
+			isV3Run
+				? !hasV3StableCoordinateSuperset(positivePublicationCandidates, verify)
+				: collect.length !== verify.length ||
+					JSON.stringify(canonicalStageRows(collect, false)) !==
+						JSON.stringify(canonicalStageRows(verify, false))
+		)
+			return await invalidate();
 		const mapped = new Map<string, number | null>();
 		const originalBindings = new Map<string, number>();
 		for (const binding of originalCatalog?.bindings ?? []) {
@@ -1302,24 +1331,7 @@ export async function finalizeJellyfinEpisodeRun(
 			hasAuthoritativeJellyfinLibraryReceipt(parent.metadata.coverageReceipt) &&
 			typeof parentStatus.generationId === "string" &&
 			parentStatus.generationId.trim() !== "" &&
-			originalCatalog !== null &&
-			currentCatalog !== null &&
-			JSON.stringify(originalCatalog) === JSON.stringify(currentCatalog) &&
-			(() => {
-				try {
-					const currentScopes = jellyfinEpisodeCatalogScopesFromReceipt(
-						parent.metadata.coverageReceipt,
-					);
-					const requestedScopes = canonicalScopes(input.scopes);
-					return (
-						currentScopes !== null &&
-						JSON.stringify(currentScopes) === JSON.stringify(originalCatalog!.scopes) &&
-						JSON.stringify(currentScopes) === JSON.stringify(requestedScopes)
-					);
-				} catch {
-					return false;
-				}
-			})();
+			exactCurrentV3Catalog;
 		const exactV3Cardinality =
 			exactV3Catalog &&
 			exclusions.length === 0 &&
@@ -1414,18 +1426,6 @@ export async function finalizeJellyfinEpisodeRun(
 		const publishedCoordinates = new Set(
 			publishedRows.map((row) => `${row.showTmdbId}\0${row.seasonNumber}\0${row.episodeNumber}`),
 		);
-		const status = await tx.cacheRefreshStatus.findUnique({
-			where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "jellyfin_episode" } },
-		});
-		if (
-			!status ||
-			status.lastAttemptAt?.getTime() !== input.attempt.attemptedAt.getTime() ||
-			status.lastAttemptResult !== input.attempt.resultMarker
-		)
-			// Attempt settlement is intentionally separate from durable run authority.
-			// A newer marker may own the same plan-bound run; a stale caller must not
-			// invalidate its staged work, but cannot publish because its exact CAS lost.
-			return { published: false, itemCount: 0 };
 		const hasMissingMappings = [...coverageByUnit.values()].some(
 			(coverage) => coverage.missingMappings > 0,
 		);
@@ -1600,7 +1600,10 @@ export async function finalizeJellyfinEpisodeRun(
 		if (completed.count !== 1) throw new Error("Jellyfin episode finalization was superseded");
 		await tx.jellyfinEpisodeObservationExclusion.deleteMany({ where: { runId: run.id } });
 		await tx.jellyfinEpisodeObservationStage.deleteMany({ where: { runId: run.id } });
-		return { published: true, itemCount: publishedRows.length };
+		return {
+			published: true,
+			itemCount: publishedRows.length,
+		};
 	};
 	if (input.transaction) return await finalize(input.transaction);
 	return await input.prisma.$transaction(finalize);

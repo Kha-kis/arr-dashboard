@@ -13,6 +13,7 @@ import type { PlexClient } from "../plex/plex-client.js";
 import type { LibraryItemType, PrismaClient, ServiceInstance } from "../prisma.js";
 import type { QuiClient } from "../qui/client-factory.js";
 import type { SeerrClient } from "../seerr/seerr-client.js";
+import type { TargetWatchReadBudget } from "../tautulli/target-watch-read-budget.js";
 import type { TautulliClient } from "../tautulli/tautulli-client.js";
 import type { TmdbListItem } from "../tmdb/list-client.js";
 import type { TraktListItem } from "../trakt/list-client.js";
@@ -27,6 +28,8 @@ export interface CompleteQuiFileHashIndex {
 }
 
 export interface CleanupExecutorDeps {
+	/** Shared only within one cleanup/preview/approval operation, never a global cache. */
+	targetWatchReadBudget?: TargetWatchReadBudget;
 	prisma: PrismaClient;
 	arrClientFactory: ArrClientFactory;
 	/** Audit attribution for configured runs; scheduler/system is the default. */
@@ -185,8 +188,8 @@ export type JellyfinWatchMap = Map<string, JellyfinWatchInfo>;
  */
 export interface ProviderWatchCountFact {
 	userId: string;
-	provider: "PLEX" | "JELLYFIN";
-	cacheType: "plex" | "jellyfin";
+	provider: "PLEX" | "JELLYFIN" | "TAUTULLI";
+	cacheType: "plex" | "jellyfin" | "tautulli";
 	instanceId: string;
 	generationId: string;
 	targetKey: string;
@@ -195,14 +198,14 @@ export interface ProviderWatchCountFact {
 	sectionTitle?: string;
 	observedValue: number;
 	status: ProviderObservationStatus;
-	/** Only the V6 target reader may set this; it is never an aggregate map fact. */
+	/** Set only by a provider's target-proof reader; never by an aggregate map. */
 	targetScoped?: true;
 }
 
 export interface ProviderFactGrant {
 	userId: string;
-	provider: "PLEX" | "JELLYFIN";
-	cacheType: "plex" | "jellyfin";
+	provider: "PLEX" | "JELLYFIN" | "TAUTULLI";
+	cacheType: "plex" | "jellyfin" | "tautulli";
 	instanceId: string;
 	generationId: string;
 	targetKey: string;
@@ -246,6 +249,8 @@ export function listMembershipKey(
  */
 export interface EvalContext {
 	now: Date;
+	/** Positive native inventory evidence, supplied only by auto-tag workflows. */
+	nativePresence?: import("../provider-observation/native-presence-evidence.js").NativePresenceContext;
 	seerrMap?: SeerrRequestMap;
 	tautulliMap?: TautulliWatchMap;
 	plexMap?: PlexWatchMap;

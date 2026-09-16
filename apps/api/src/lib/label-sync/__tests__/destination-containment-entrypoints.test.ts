@@ -8,7 +8,7 @@ import { LabelSyncScheduler } from "../label-sync-scheduler.js";
 import { triggerLabelSyncForItem } from "../trigger-for-item.js";
 
 const UNAVAILABLE_MESSAGE =
-	"Jellyfin and Emby label destinations are temporarily unavailable because the provider cannot yet be re-authorized safely at execution time.";
+	"Emby label destinations are temporarily unavailable because the provider cannot yet be re-authorized safely at execution time.";
 
 const PRIVATE = {
 	ruleId: "CANARY_RULE_ID_836",
@@ -159,6 +159,7 @@ function makePrisma(
 	} = {},
 ) {
 	const rule = { ...makeRule(destService), ...options.rule };
+	const currentRule = { ...rule };
 	const sourceInstance = makeInstance(
 		PRIVATE.sourceInstanceId,
 		"SONARR",
@@ -173,11 +174,19 @@ function makePrisma(
 		const persistedData = Object.fromEntries(
 			Object.entries(data).filter(([, value]) => value !== undefined),
 		);
+		Object.assign(currentRule, persistedData);
+		currentRule.updatedAt = new Date("2026-08-31T00:01:00.000Z");
 		return Promise.resolve({
-			...rule,
-			...persistedData,
-			updatedAt: new Date("2026-08-31T00:01:00.000Z"),
+			...currentRule,
 		});
+	});
+	const updateMany = vi.fn().mockImplementation(({ data }) => {
+		const persistedData = Object.fromEntries(
+			Object.entries(data).filter(([, value]) => value !== undefined),
+		);
+		Object.assign(currentRule, persistedData);
+		currentRule.updatedAt = new Date("2026-08-31T00:01:00.000Z");
+		return Promise.resolve({ count: 1 });
 	});
 	const create = vi.fn().mockImplementation(({ data }) =>
 		Promise.resolve({
@@ -189,7 +198,7 @@ function makePrisma(
 			lastRunMessage: null,
 		}),
 	);
-	return {
+	const prisma = {
 		serviceInstance: {
 			findMany: vi.fn().mockResolvedValue([sourceInstance]),
 			findFirst: vi
@@ -199,10 +208,15 @@ function makePrisma(
 				),
 		},
 		labelSyncRule: {
-			findMany: vi.fn().mockResolvedValue([rule]),
-			findFirst: vi.fn().mockResolvedValue(rule),
+			findMany: vi.fn().mockResolvedValue([currentRule]),
+			findFirst: vi.fn().mockResolvedValue(currentRule),
 			create,
 			update,
+			updateMany,
+		},
+		labelSyncMutationAttempt: {
+			findMany: vi.fn().mockResolvedValue([]),
+			deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
 		},
 		libraryCache: { findFirst: vi.fn().mockResolvedValue(null) },
 		jellyfinCache: {
@@ -217,6 +231,9 @@ function makePrisma(
 			]),
 		},
 	};
+	return Object.assign(prisma, {
+		$transaction: vi.fn(async (work: (tx: typeof prisma) => Promise<unknown>) => work(prisma)),
+	});
 }
 
 async function buildManualApp(
@@ -244,200 +261,212 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 });
 
-describe.each([
-	["Jellyfin", "jellyfin", "JELLYFIN"],
-	["Emby", "emby", "EMBY"],
-] as const)("%s destination entrypoints", (_label, destService, prismaDestService) => {
-	it("keeps existing rules visible and editable without provider I/O or destination rewrites", async () => {
-		const requests: Array<{ path: string; method: string }> = [];
-		installUnsafeProviderCapture(requests);
-		const prisma = makePrisma(destService, prismaDestService);
-		const app = await buildManualApp(prisma, makeArrClientFactory(), createPinoCapture().log);
+describe.each([["Emby", "emby", "EMBY"]] as const)(
+	"%s destination entrypoints",
+	(_label, destService, prismaDestService) => {
+		it("keeps existing rules visible and editable without provider I/O or destination rewrites", async () => {
+			const requests: Array<{ path: string; method: string }> = [];
+			installUnsafeProviderCapture(requests);
+			const prisma = makePrisma(destService, prismaDestService);
+			const app = await buildManualApp(prisma, makeArrClientFactory(), createPinoCapture().log);
 
-		try {
-			const listed = await app.inject({ method: "GET", url: "/api/label-sync/rules" });
-			const updated = await app.inject({
-				method: "PATCH",
-				url: `/api/label-sync/rules/${PRIVATE.ruleId}`,
-				payload: { name: "Updated contained rule" },
-			});
-			const listedBody = JSON.parse(listed.payload) as {
-				rules: Array<{ id: string; destService: string; destinationMutationCapability: unknown }>;
-			};
-			const updatedBody = JSON.parse(updated.payload) as {
-				rule: { name: string; destService: string; destInstanceId: string };
-			};
+			try {
+				const listed = await app.inject({ method: "GET", url: "/api/label-sync/rules" });
+				const updated = await app.inject({
+					method: "PATCH",
+					url: `/api/label-sync/rules/${PRIVATE.ruleId}`,
+					payload: { name: "Updated contained rule" },
+				});
+				const listedBody = JSON.parse(listed.payload) as {
+					rules: Array<{ id: string; destService: string; destinationMutationCapability: unknown }>;
+				};
+				const updatedBody = JSON.parse(updated.payload) as {
+					rule: { name: string; destService: string; destInstanceId: string };
+				};
 
-			expect(listed.statusCode).toBe(200);
-			expect(listedBody.rules).toEqual([
-				expect.objectContaining({ id: PRIVATE.ruleId, destService }),
-			]);
-			expect(updated.statusCode).toBe(200);
-			expect(updatedBody.rule).toEqual(
-				expect.objectContaining({
-					name: "Updated contained rule",
-					destService,
-					destInstanceId: PRIVATE.destInstanceId,
-				}),
+				expect(listed.statusCode).toBe(200);
+				expect(listedBody.rules).toEqual([
+					expect.objectContaining({ id: PRIVATE.ruleId, destService }),
+				]);
+				expect(updated.statusCode).toBe(200);
+				expect(updatedBody.rule).toEqual(
+					expect.objectContaining({
+						name: "Updated contained rule",
+						destService,
+						destInstanceId: PRIVATE.destInstanceId,
+					}),
+				);
+				expect(listedBody.rules[0]?.destinationMutationCapability).toEqual({
+					supported: false,
+					code: "destination_mutation_authority_unavailable",
+					message: UNAVAILABLE_MESSAGE,
+				});
+				expect(prisma.labelSyncRule.update).toHaveBeenCalledWith({
+					where: { id: PRIVATE.ruleId, userId: "user-836" },
+					data: expect.objectContaining({
+						name: "Updated contained rule",
+						destService: undefined,
+						destInstanceId: undefined,
+						destTagName: undefined,
+					}),
+				});
+				expect(requests).toEqual([]);
+			} finally {
+				await app.close();
+			}
+		});
+
+		it("rejects new blocked destinations before ownership lookup or storage", async () => {
+			const requests: Array<{ path: string; method: string }> = [];
+			installUnsafeProviderCapture(requests);
+			const prisma = makePrisma(destService, prismaDestService);
+			const app = await buildManualApp(prisma, makeArrClientFactory(), createPinoCapture().log);
+
+			try {
+				const response = await app.inject({
+					method: "POST",
+					url: "/api/label-sync/rules",
+					payload: {
+						name: "Stored contained destination",
+						sourceService: "sonarr",
+						sourceInstanceId: PRIVATE.sourceInstanceId,
+						sourceTagName: PRIVATE.sourceTag,
+						destService,
+						destInstanceId: PRIVATE.destInstanceId,
+						destTagName: PRIVATE.destTag,
+					},
+				});
+
+				expect(response.statusCode).toBe(409);
+				expect(JSON.parse(response.payload)).toEqual({
+					error: UNAVAILABLE_MESSAGE,
+					code: "destination_mutation_authority_unavailable",
+				});
+				expect(prisma.serviceInstance.findFirst).not.toHaveBeenCalled();
+				expect(prisma.labelSyncRule.create).not.toHaveBeenCalled();
+				expect(requests).toEqual([]);
+			} finally {
+				await app.close();
+			}
+		});
+
+		it("manual execution persists and returns a bounded failed result before provider I/O", async () => {
+			const requests: Array<{ path: string; method: string }> = [];
+			installUnsafeProviderCapture(requests);
+			const capture = createPinoCapture();
+			const prisma = makePrisma(destService, prismaDestService);
+			const app = await buildManualApp(prisma, makeArrClientFactory(), capture.log);
+
+			try {
+				const response = await app.inject({
+					method: "POST",
+					url: `/api/label-sync/rules/${PRIVATE.ruleId}/run`,
+				});
+				const body = JSON.parse(response.payload) as {
+					rule: { lastRunStatus: string; lastRunMessage: string };
+				};
+
+				expect(response.statusCode).toBe(200);
+				expect(requests).toEqual([]);
+				expect(body.rule.lastRunStatus).toBe("failed");
+				expect(body.rule.lastRunMessage).toBe(UNAVAILABLE_MESSAGE);
+				expect(prisma.labelSyncRule.updateMany).toHaveBeenCalledWith({
+					where: expect.objectContaining({
+						id: PRIVATE.ruleId,
+						userId: "user-836",
+						name: PRIVATE.ruleName,
+						enabled: true,
+						sourceService: "sonarr",
+						sourceInstanceId: PRIVATE.sourceInstanceId,
+						sourceTagName: PRIVATE.sourceTag,
+						destService,
+						destInstanceId: PRIVATE.destInstanceId,
+						destTagName: PRIVATE.destTag,
+						updatedAt: expect.any(Date),
+					}),
+					data: {
+						lastRunAt: expect.any(Date),
+						lastRunStatus: "failed",
+						lastRunMessage: UNAVAILABLE_MESSAGE,
+					},
+				});
+				expectNoSensitiveCanary(body.rule.lastRunMessage);
+				expectNoSensitiveCanary(capture.serialized());
+			} finally {
+				await app.close();
+			}
+		});
+
+		it("scheduled execution records failure and never retries a provider mutation", async () => {
+			const requests: Array<{ path: string; method: string }> = [];
+			installUnsafeProviderCapture(requests);
+			const capture = createPinoCapture();
+			const prisma = makePrisma(destService, prismaDestService);
+			const scheduler = new LabelSyncScheduler(
+				prisma as never,
+				makeArrClientFactory() as never,
+				encryptor,
+				capture.log,
 			);
-			expect(listedBody.rules[0]?.destinationMutationCapability).toEqual({
-				supported: false,
-				code: "destination_mutation_authority_unavailable",
-				message: UNAVAILABLE_MESSAGE,
-			});
-			expect(prisma.labelSyncRule.update).toHaveBeenCalledWith({
-				where: { id: PRIVATE.ruleId },
-				data: expect.objectContaining({
-					name: "Updated contained rule",
-					destService: undefined,
-					destInstanceId: undefined,
-					destTagName: undefined,
-				}),
-			});
+
+			await (scheduler as unknown as { tick(): Promise<void> }).tick();
+			await (scheduler as unknown as { tick(): Promise<void> }).tick();
+
 			expect(requests).toEqual([]);
-		} finally {
-			await app.close();
-		}
-	});
-
-	it("rejects new blocked destinations before ownership lookup or storage", async () => {
-		const requests: Array<{ path: string; method: string }> = [];
-		installUnsafeProviderCapture(requests);
-		const prisma = makePrisma(destService, prismaDestService);
-		const app = await buildManualApp(prisma, makeArrClientFactory(), createPinoCapture().log);
-
-		try {
-			const response = await app.inject({
-				method: "POST",
-				url: "/api/label-sync/rules",
-				payload: {
-					name: "Stored contained destination",
-					sourceService: "sonarr",
-					sourceInstanceId: PRIVATE.sourceInstanceId,
-					sourceTagName: PRIVATE.sourceTag,
-					destService,
-					destInstanceId: PRIVATE.destInstanceId,
-					destTagName: PRIVATE.destTag,
-				},
-			});
-
-			expect(response.statusCode).toBe(409);
-			expect(JSON.parse(response.payload)).toEqual({
-				error: UNAVAILABLE_MESSAGE,
-				code: "destination_mutation_authority_unavailable",
-			});
-			expect(prisma.serviceInstance.findFirst).not.toHaveBeenCalled();
-			expect(prisma.labelSyncRule.create).not.toHaveBeenCalled();
-			expect(requests).toEqual([]);
-		} finally {
-			await app.close();
-		}
-	});
-
-	it("manual execution persists and returns a bounded failed result before provider I/O", async () => {
-		const requests: Array<{ path: string; method: string }> = [];
-		installUnsafeProviderCapture(requests);
-		const capture = createPinoCapture();
-		const prisma = makePrisma(destService, prismaDestService);
-		const app = await buildManualApp(prisma, makeArrClientFactory(), capture.log);
-
-		try {
-			const response = await app.inject({
-				method: "POST",
-				url: `/api/label-sync/rules/${PRIVATE.ruleId}/run`,
-			});
-			const body = JSON.parse(response.payload) as {
-				rule: { lastRunStatus: string; lastRunMessage: string };
-			};
-
-			expect(response.statusCode).toBe(200);
-			expect(requests).toEqual([]);
-			expect(body.rule.lastRunStatus).toBe("failed");
-			expect(body.rule.lastRunMessage).toBe(UNAVAILABLE_MESSAGE);
-			expect(prisma.labelSyncRule.update).toHaveBeenCalledWith({
-				where: { id: PRIVATE.ruleId },
-				data: {
+			expect(prisma.labelSyncRule.updateMany).toHaveBeenCalledTimes(2);
+			for (const call of prisma.labelSyncRule.updateMany.mock.calls) {
+				expect(call[0]?.data).toEqual({
 					lastRunAt: expect.any(Date),
 					lastRunStatus: "failed",
 					lastRunMessage: UNAVAILABLE_MESSAGE,
+				});
+			}
+			expectNoSensitiveCanary(capture.serialized());
+		});
+
+		it("event-triggered execution is acknowledged before TMDb resolution or provider I/O", async () => {
+			const requests: Array<{ path: string; method: string }> = [];
+			installUnsafeProviderCapture(requests);
+			const capture = createPinoCapture();
+			const prisma = makePrisma(destService, prismaDestService);
+
+			const result = await triggerLabelSyncForItem({
+				userId: "user-836",
+				sourceService: "SONARR",
+				sourceInstanceId: PRIVATE.sourceInstanceId,
+				arrItemId: 836,
+				itemType: "series",
+				tagName: PRIVATE.sourceTag,
+				prisma: prisma as never,
+				arrClientFactory: makeArrClientFactory() as never,
+				encryptor,
+				log: capture.log,
+			});
+
+			expect(requests).toEqual([]);
+			expect(prisma.libraryCache.findFirst).not.toHaveBeenCalled();
+			expect(result.rulesFired).toBe(1);
+			expect(result.totals).toEqual({ labelsApplied: 0, failures: 0 });
+			expect(result.results[0]?.outcome).toEqual({
+				status: "failed",
+				message: UNAVAILABLE_MESSAGE,
+				totals: {
+					sourceInstancesScanned: 0,
+					taggedItemsFound: 0,
+					destMatchesFound: 0,
+					labelsApplied: 0,
+					failures: 0,
 				},
 			});
-			expectNoSensitiveCanary(body.rule.lastRunMessage);
+			expectNoSensitiveCanary(result.results[0]?.outcome.message ?? "");
 			expectNoSensitiveCanary(capture.serialized());
-		} finally {
-			await app.close();
-		}
-	});
-
-	it("scheduled execution records failure and never retries a provider mutation", async () => {
-		const requests: Array<{ path: string; method: string }> = [];
-		installUnsafeProviderCapture(requests);
-		const capture = createPinoCapture();
-		const prisma = makePrisma(destService, prismaDestService);
-		const scheduler = new LabelSyncScheduler(
-			prisma as never,
-			makeArrClientFactory() as never,
-			encryptor,
-			capture.log,
-		);
-
-		await (scheduler as unknown as { tick(): Promise<void> }).tick();
-		await (scheduler as unknown as { tick(): Promise<void> }).tick();
-
-		expect(requests).toEqual([]);
-		expect(prisma.labelSyncRule.update).toHaveBeenCalledTimes(2);
-		for (const call of prisma.labelSyncRule.update.mock.calls) {
-			expect(call[0]?.data).toEqual({
-				lastRunAt: expect.any(Date),
-				lastRunStatus: "failed",
-				lastRunMessage: UNAVAILABLE_MESSAGE,
-			});
-		}
-		expectNoSensitiveCanary(capture.serialized());
-	});
-
-	it("event-triggered execution is acknowledged before TMDb resolution or provider I/O", async () => {
-		const requests: Array<{ path: string; method: string }> = [];
-		installUnsafeProviderCapture(requests);
-		const capture = createPinoCapture();
-		const prisma = makePrisma(destService, prismaDestService);
-
-		const result = await triggerLabelSyncForItem({
-			userId: "user-836",
-			sourceService: "SONARR",
-			sourceInstanceId: PRIVATE.sourceInstanceId,
-			arrItemId: 836,
-			itemType: "series",
-			tagName: PRIVATE.sourceTag,
-			prisma: prisma as never,
-			arrClientFactory: makeArrClientFactory() as never,
-			encryptor,
-			log: capture.log,
 		});
-
-		expect(requests).toEqual([]);
-		expect(prisma.libraryCache.findFirst).not.toHaveBeenCalled();
-		expect(result.rulesFired).toBe(1);
-		expect(result.totals).toEqual({ labelsApplied: 0, failures: 0 });
-		expect(result.results[0]?.outcome).toEqual({
-			status: "failed",
-			message: UNAVAILABLE_MESSAGE,
-			totals: {
-				sourceInstancesScanned: 0,
-				taggedItemsFound: 0,
-				destMatchesFound: 0,
-				labelsApplied: 0,
-				failures: 0,
-			},
-		});
-		expectNoSensitiveCanary(result.results[0]?.outcome.message ?? "");
-		expectNoSensitiveCanary(capture.serialized());
-	});
-});
+	},
+);
 
 describe("destination capability PATCH compatibility", () => {
 	it("allows an enabled blocked rule's full-payload no-op edit", async () => {
-		const prisma = makePrisma("jellyfin", "JELLYFIN");
+		const prisma = makePrisma("emby", "EMBY");
 		const app = await buildManualApp(prisma, makeArrClientFactory(), createPinoCapture().log);
 		try {
 			const response = await app.inject({
@@ -449,7 +478,7 @@ describe("destination capability PATCH compatibility", () => {
 					sourceService: "sonarr",
 					sourceInstanceId: PRIVATE.sourceInstanceId,
 					sourceTagName: PRIVATE.sourceTag,
-					destService: "jellyfin",
+					destService: "emby",
 					destInstanceId: PRIVATE.destInstanceId,
 					destTagName: PRIVATE.destTag,
 				},
@@ -462,7 +491,7 @@ describe("destination capability PATCH compatibility", () => {
 	});
 
 	it("allows disabling an existing blocked rule", async () => {
-		const prisma = makePrisma("jellyfin", "JELLYFIN");
+		const prisma = makePrisma("emby", "EMBY");
 		const app = await buildManualApp(prisma, makeArrClientFactory(), createPinoCapture().log);
 		try {
 			const response = await app.inject({
@@ -483,7 +512,7 @@ describe("destination capability PATCH compatibility", () => {
 		["a material blocked-destination tuple change", { destTagName: "changed" }],
 		["re-enabling a disabled blocked rule", { enabled: true }],
 	] as const)("rejects %s before update", async (_caseName, payload) => {
-		const prisma = makePrisma("jellyfin", "JELLYFIN", {
+		const prisma = makePrisma("emby", "EMBY", {
 			rule: "enabled" in payload ? { enabled: false } : undefined,
 		});
 		const app = await buildManualApp(prisma, makeArrClientFactory(), createPinoCapture().log);
@@ -507,14 +536,14 @@ describe("destination capability PATCH compatibility", () => {
 	it("rejects a supported-to-blocked destination transition", async () => {
 		const prisma = makePrisma("plex", "PLEX", {
 			rule: { destService: "plex" },
-			destinationInstanceService: "JELLYFIN",
+			destinationInstanceService: "EMBY",
 		});
 		const app = await buildManualApp(prisma, makeArrClientFactory(), createPinoCapture().log);
 		try {
 			const response = await app.inject({
 				method: "PATCH",
 				url: `/api/label-sync/rules/${PRIVATE.ruleId}`,
-				payload: { destService: "jellyfin" },
+				payload: { destService: "emby" },
 			});
 			expect(response.statusCode).toBe(409);
 			expect(prisma.labelSyncRule.update).not.toHaveBeenCalled();
@@ -524,7 +553,7 @@ describe("destination capability PATCH compatibility", () => {
 	});
 
 	it("allows an existing blocked rule to move to a supported destination", async () => {
-		const prisma = makePrisma("jellyfin", "JELLYFIN", {
+		const prisma = makePrisma("emby", "EMBY", {
 			destinationInstanceService: "PLEX",
 		});
 		const app = await buildManualApp(prisma, makeArrClientFactory(), createPinoCapture().log);
@@ -540,6 +569,54 @@ describe("destination capability PATCH compatibility", () => {
 			expect(response.statusCode).toBe(200);
 			expect(body.rule.destinationMutationCapability).toEqual({ supported: true });
 			expect(prisma.labelSyncRule.update).toHaveBeenCalledTimes(1);
+		} finally {
+			await app.close();
+		}
+	});
+});
+
+describe("Jellyfin destination activation", () => {
+	it("allows an owned configured destination without making a provider write", async () => {
+		const requests: Array<{ path: string; method: string }> = [];
+		installUnsafeProviderCapture(requests);
+		const prisma = makePrisma("jellyfin", "JELLYFIN");
+		const app = await buildManualApp(prisma, makeArrClientFactory(), createPinoCapture().log);
+		try {
+			const response = await app.inject({
+				method: "POST",
+				url: "/api/label-sync/rules",
+				payload: {
+					name: "Jellyfin rule",
+					sourceService: "sonarr",
+					sourceInstanceId: PRIVATE.sourceInstanceId,
+					sourceTagName: PRIVATE.sourceTag,
+					destService: "jellyfin",
+					destInstanceId: PRIVATE.destInstanceId,
+					destTagName: PRIVATE.destTag,
+				},
+			});
+			expect(response.statusCode).toBe(201);
+			expect(response.json().rule.destinationMutationCapability).toEqual({ supported: true });
+			expect(prisma.labelSyncRule.create).toHaveBeenCalledOnce();
+			expect(requests).toEqual([]);
+		} finally {
+			await app.close();
+		}
+	});
+	it("keeps manual runs closed until startup recovery finishes", async () => {
+		const requests: Array<{ path: string; method: string }> = [];
+		installUnsafeProviderCapture(requests);
+		const prisma = makePrisma("jellyfin", "JELLYFIN");
+		const app = await buildManualApp(prisma, makeArrClientFactory(), createPinoCapture().log);
+		try {
+			const response = await app.inject({
+				method: "POST",
+				url: `/api/label-sync/rules/${PRIVATE.ruleId}/run`,
+			});
+			expect(response.statusCode).toBe(200);
+			expect(response.json().rule.lastRunStatus).toBe("failed");
+			expect(response.json().rule.lastRunMessage).toMatch(/mutation recovery/);
+			expect(requests).toEqual([]);
 		} finally {
 			await app.close();
 		}

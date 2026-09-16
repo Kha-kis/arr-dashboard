@@ -11,6 +11,7 @@ vi.mock("../../lib/label-sync/jellyfin-mutation-repository.js", () => ({
 	recoverLabelSyncMutationAttempts: recover,
 }));
 
+import { isLabelSyncMutationAdmitted } from "../../lib/label-sync/mutation-admission.js";
 import labelSyncMutationRecoveryPlugin from "../label-sync-mutation-recovery.js";
 import labelSyncSchedulerPlugin from "../label-sync-scheduler.js";
 
@@ -40,6 +41,9 @@ function createApp() {
 }
 
 describe("label-sync mutation recovery plugin", () => {
+	it("rejects callers without a recovered application context", () => {
+		expect(isLabelSyncMutationAdmitted({})).toBe(false);
+	});
 	it("keeps admission closed until full recovery resolves", async () => {
 		let release!: () => void;
 		recover.mockReturnValue(
@@ -51,9 +55,13 @@ describe("label-sync mutation recovery plugin", () => {
 		const ready = app.ready();
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		expect(app.labelSyncMutationAdmission.isOpen()).toBe(false);
+		expect(isLabelSyncMutationAdmitted(app.prisma)).toBe(false);
 		release();
 		await ready;
 		expect(app.labelSyncMutationAdmission.isOpen()).toBe(true);
+		expect(isLabelSyncMutationAdmitted(app.prisma)).toBe(true);
+		await app.close();
+		expect(isLabelSyncMutationAdmitted(app.prisma)).toBe(false);
 	});
 
 	it("contains recovery failure and leaves admission closed", async () => {
@@ -63,6 +71,7 @@ describe("label-sync mutation recovery plugin", () => {
 		const error = vi.spyOn(app.log, "error");
 		await app.ready();
 		expect(app.labelSyncMutationAdmission.isOpen()).toBe(false);
+		expect(isLabelSyncMutationAdmitted(app.prisma)).toBe(false);
 		expect(error).toHaveBeenCalledWith(
 			{ category: "label-sync-mutation-recovery-failed" },
 			expect.any(String),

@@ -43,7 +43,10 @@ import {
 } from "../jellyfin/jellyfin-cache-health.js";
 import { createJellyfinClient } from "../jellyfin/jellyfin-client.js";
 import { createPlexClient } from "../plex/plex-client.js";
-import { decodePlexGenerationMetadata } from "../plex/plex-generation-metadata.js";
+import {
+	decodePlexGenerationMetadata,
+	normalizePlexAttemptState,
+} from "../plex/plex-generation-metadata.js";
 import {
 	getPublishedEpisodeGenerationObservation,
 	loadUserGenerationObservations,
@@ -651,9 +654,9 @@ function plexCacheUiCondition(
 ) {
 	const running =
 		evidence?.attemptState === "in_progress" ||
-		(cacheStatus.lastAttemptResult === "in_progress" &&
+		(normalizePlexAttemptState(cacheStatus.lastAttemptResult) === "in_progress" &&
 			cacheStatus.lastAttemptAt != null &&
-			cacheStatus.lastAttemptAt.getTime() > cacheStatus.lastRefreshedAt.getTime());
+			cacheStatus.lastAttemptAt.getTime() >= cacheStatus.lastRefreshedAt.getTime());
 	const failed =
 		evidence?.attemptState === "error" || cacheStatus.lastResult === "error" || newerFailedAttempt;
 	const status: ProviderObservationStatus = running

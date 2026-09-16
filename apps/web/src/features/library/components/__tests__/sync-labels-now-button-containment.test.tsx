@@ -36,7 +36,7 @@ describe("SyncLabelsNowButton containment feedback", () => {
 					ruleName: "Contained destination",
 					status: "failed",
 					message:
-						"Jellyfin and Emby label destinations are temporarily unavailable because the provider cannot yet be re-authorized safely at execution time.",
+						"Emby label destinations are temporarily unavailable because the provider cannot yet be re-authorized safely at execution time.",
 					labelsApplied: 0,
 				},
 			],

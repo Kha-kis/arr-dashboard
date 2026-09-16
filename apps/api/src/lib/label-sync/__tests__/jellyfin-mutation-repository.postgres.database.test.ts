@@ -112,10 +112,12 @@ pgDescribe("JellyfinMutationRepository PostgreSQL serializable races", () => {
 			onTransactionStart?: () => void;
 			onParentLock?: () => Promise<void>;
 			onUnknownRead?: () => Promise<void>;
+			onPhysicalCount?: () => Promise<void>;
 		},
 	) => {
 		let parentLockUsed = false;
 		let unknownReadUsed = false;
+		let physicalCountUsed = false;
 		return {
 			$transaction: (
 				work: (tx: any) => Promise<any>,
@@ -141,6 +143,16 @@ pgDescribe("JellyfinMutationRepository PostgreSQL serializable races", () => {
 							return new Proxy(delegate, {
 								get(delegateTarget, delegateProperty, delegateReceiver) {
 									const method = Reflect.get(delegateTarget, delegateProperty, delegateReceiver);
+									if (delegateProperty === "count" && typeof method === "function") {
+										return async (...args: unknown[]) => {
+											const result = await Reflect.apply(method, delegateTarget, args);
+											if (!physicalCountUsed && options.onPhysicalCount) {
+												physicalCountUsed = true;
+												await options.onPhysicalCount();
+											}
+											return result;
+										};
+									}
 									if (delegateProperty !== "findFirst" || typeof method !== "function")
 										return method;
 									return async (...args: unknown[]) => {
@@ -304,6 +316,49 @@ pgDescribe("JellyfinMutationRepository PostgreSQL serializable races", () => {
 			await second.$disconnect();
 		}
 	});
+
+	it("serializes empty physical-target reads across owners and connection aliases", async () => {
+		const first = createClient();
+		const second = createClient();
+		const suffix = `physical_${Date.now()}`;
+		const leftInput = makeInput(`${suffix}_left`, 501);
+		const rightInput = { ...makeInput(`${suffix}_right`, 502), destinationTag: "other" };
+		await seedFixture(first, leftInput);
+		await seedFixture(first, rightInput);
+		const expectedIdentity = `physical-server-${suffix}`;
+		await first.serviceInstance.updateMany({
+			where: { id: { in: [leftInput.destinationInstanceId, rightInput.destinationInstanceId] } },
+			data: { expectedIdentity, identityKind: "JELLYFIN_SERVER_ID", identityStatus: "VERIFIED" },
+		});
+		let arrived = 0;
+		let release!: () => void;
+		const barrier = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const onPhysicalCount = async () => {
+			if (++arrived === 2) release();
+			await barrier;
+		};
+		const left = new JellyfinMutationRepository(stageClient(first, { onPhysicalCount }), {
+			databaseProvider: "postgresql",
+		});
+		const right = new JellyfinMutationRepository(stageClient(second, { onPhysicalCount }), {
+			databaseProvider: "postgresql",
+		});
+		const results = await Promise.all([
+			left.claimPhysicalTarget(leftInput, expectedIdentity),
+			right.claimPhysicalTarget(rightInput, expectedIdentity),
+		]);
+		expect(results.map((result) => result.kind).sort()).toEqual(["acquired", "target-busy"]);
+		expect(results.find((result) => result.kind === "target-busy")).toEqual({
+			kind: "target-busy",
+		});
+		expect(
+			await first.labelSyncMutationAttempt.count({
+				where: { userId: { in: [leftInput.userId, rightInput.userId] } },
+			}),
+		).toBe(1);
+	}, 30_000);
 
 	it("serializes delayed reconcilers and fences parent deletion", async () => {
 		if (!schemaUrl) return;

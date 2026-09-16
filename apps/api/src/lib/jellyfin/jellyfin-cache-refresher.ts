@@ -30,6 +30,7 @@ import type {
 	ProviderCoverageReceiptV2,
 	ProviderCoverageUnitV1,
 } from "../provider-observation/coverage-receipt.js";
+import { refreshNativeInventory } from "../provider-observation/native-inventory-refresh.js";
 import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import type { ProviderCacheRefreshAttempt } from "../services/provider-cache-status.js";
 import {
@@ -44,6 +45,8 @@ import {
 	fingerprintJellyfinLibraryRows,
 	type JellyfinLibraryGenerationMetadataV1,
 } from "./jellyfin-generation-metadata.js";
+import { collectJellyfinNativeEpisodeInventory } from "./jellyfin-native-episode-inventory.js";
+import { collectJellyfinNativeLibraryInventory } from "./jellyfin-native-inventory.js";
 
 export const JELLYFIN_STALE_EVICTION_CHUNK_SIZE = 500;
 /** Bound Prisma's cached createMany query plans for production-sized libraries. */
@@ -120,6 +123,7 @@ export interface JellyfinPublicationContext {
 }
 
 export interface JellyfinCacheRefreshResult {
+	nativeInventoryStatus?: "published" | "failed" | "superseded";
 	upserted: number;
 	errors: number;
 	errorMessages: string[];
@@ -247,6 +251,7 @@ async function runOwnedJellyfinCacheAttempt(
 	},
 	claimedAttempt?: ProviderCacheRefreshAttempt,
 ): Promise<JellyfinCacheRefreshResult> {
+	let nativeInventoryStatus: JellyfinCacheRefreshResult["nativeInventoryStatus"];
 	try {
 		const authority = createProviderPublicationAuthority(context.instance);
 		const provider = authority.service === "EMBY" ? "emby" : "jellyfin";
@@ -261,6 +266,29 @@ async function runOwnedJellyfinCacheAttempt(
 			log: context.log,
 			prepare: () => createOwnedJellyfinPublicationSnapshot(context.encryptor, context.instance),
 			collect: async (prepared, attempt) => {
+				const nativeResults = [];
+				for (const [domain, collect] of [
+					["library", collectJellyfinNativeLibraryInventory],
+					["episode", collectJellyfinNativeEpisodeInventory],
+				] as const) {
+					const result = await refreshNativeInventory({
+						prisma: context.prisma,
+						instance: prepared,
+						log: context.log,
+						cacheType: "jellyfin",
+						attempt,
+						domains: [domain],
+						cleanupRunClaimToken: context.cleanupRunClaimToken,
+						collect: async (instance) =>
+							await collect(jellyfinClientForSnapshot(instance, context.log)),
+					});
+					nativeResults.push(result.status);
+				}
+				nativeInventoryStatus = nativeResults.includes("failed")
+					? "failed"
+					: nativeResults.includes("superseded")
+						? "superseded"
+						: "published";
 				const collected = await collectJellyfinCacheLiveEvidence(
 					jellyfinClientForSnapshot(prepared, context.log),
 					prepared.id,
@@ -345,9 +373,10 @@ async function runOwnedJellyfinCacheAttempt(
 				timeout: JELLYFIN_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS,
 			},
 		};
-		return claimedAttempt
+		const result = claimedAttempt
 			? await runClaimedProviderObservationAttempt(input, claimedAttempt)
 			: await runProviderObservationAttempt(input);
+		return { ...result, ...(nativeInventoryStatus ? { nativeInventoryStatus } : {}) };
 	} catch (error) {
 		context.log.error({ category: "publication-rejected" }, "Jellyfin cache publication rejected");
 		if (
@@ -357,6 +386,7 @@ async function runOwnedJellyfinCacheAttempt(
 			return { upserted: 0, errors: 0, errorMessages: [], complete: false, superseded: true };
 		}
 		return {
+			...(nativeInventoryStatus ? { nativeInventoryStatus } : {}),
 			upserted: 0,
 			errors: 1,
 			errorMessages: [

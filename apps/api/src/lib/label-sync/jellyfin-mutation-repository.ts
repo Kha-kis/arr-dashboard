@@ -51,6 +51,8 @@ export type MutationClaimResult =
 			snapshot: StoredMutationSnapshot;
 	  };
 
+export type PhysicalMutationClaimResult = MutationClaimResult | { kind: "target-busy" };
+
 export type StoredMutationSnapshot = {
 	id: string;
 	userId: string;
@@ -113,6 +115,7 @@ export type RepositoryOptions = {
 };
 
 export class MutationRepositoryError extends Error {
+	readonly statusCode: number;
 	readonly category!:
 		| "invalid-input"
 		| "conflict"
@@ -131,6 +134,7 @@ export class MutationRepositoryError extends Error {
 					: "Mutation repository dependency failure",
 	) {
 		super(message);
+		this.statusCode = category === "conflict" || category === "already-active" ? 409 : 503;
 		this.category = category;
 		this.name = "MutationRepositoryError";
 	}
@@ -322,6 +326,14 @@ function errorCode(error: unknown): string | undefined {
 function retryable(error: unknown): boolean {
 	const code = errorCode(error);
 	if (code === "P2034" || code === "P2002") return true;
+	// Prisma's driver adapter can report a commit-time SSI conflict directly,
+	// with the SQLSTATE in cause rather than a Prisma code or message.
+	if (typeof error === "object" && error !== null && "cause" in error) {
+		const cause = error.cause;
+		if (typeof cause === "object" && cause !== null && "originalCode" in cause) {
+			if (["40001", "40P01", "SQLITE_BUSY"].includes(String(cause.originalCode))) return true;
+		}
+	}
 	if (!(error instanceof Error)) return false;
 	return /SQLITE_BUSY|database is locked|could not serialize|deadlock detected|serialization failure/i.test(
 		error.message,
@@ -545,11 +557,39 @@ export class JellyfinMutationRepository {
 	}
 
 	async claim(rawInput: unknown): Promise<MutationClaimResult> {
+		return this.claimInternal(rawInput) as Promise<MutationClaimResult>;
+	}
+
+	/** Production send admission; the logical claim API alone does not fence aliases. */
+	async claimPhysicalTarget(
+		rawInput: unknown,
+		expectedServerIdentity: string,
+	): Promise<PhysicalMutationClaimResult> {
+		return this.claimInternal(rawInput, text(expectedServerIdentity));
+	}
+
+	private async claimInternal(
+		rawInput: unknown,
+		expectedServerIdentity?: string,
+	): Promise<PhysicalMutationClaimResult> {
 		const input = validateMutationClaimInput(rawInput);
 		const activeOperationKey = deriveActiveOperationKey(input);
 		return await this.transaction(async (tx) => {
 			await this.lockParents(tx, input);
 			await this.authorize(tx, input);
+			if (expectedServerIdentity !== undefined) {
+				const destination = await tx.serviceInstance.findFirst({
+					where: {
+						id: input.destinationInstanceId,
+						userId: input.userId,
+						expectedIdentity: expectedServerIdentity,
+						identityStatus: "VERIFIED",
+						identityKind: input.provider === "jellyfin" ? "JELLYFIN_SERVER_ID" : "EMBY_SERVER_ID",
+					},
+					select: { id: true },
+				});
+				if (!destination) throw new MutationRepositoryError("conflict");
+			}
 			const existingRaw = await tx.labelSyncMutationAttempt.findFirst({
 				where: { userId: input.userId, activeOperationKey },
 			});
@@ -572,6 +612,24 @@ export class JellyfinMutationRepository {
 				if (existing.status === "claimed" || existing.status === "sending")
 					return { kind: "already-active", id: existing.id, status: existing.status };
 				throw new MutationRepositoryError("invalid-state");
+			}
+			if (expectedServerIdentity !== undefined) {
+				// This existence-only predicate is internal global concurrency control:
+				// two owners may enroll the same server. Resource authorization above
+				// remains owner scoped; no other owner's row or identifier is returned.
+				// Keep the predicate and insert inside this Serializable transaction so
+				// PostgreSQL SSI (or SQLite's writer lock) fences simultaneous empty reads.
+				const aliases = await tx.labelSyncMutationAttempt.count({
+					where: {
+						provider: input.provider,
+						targetItemId: input.targetItemId,
+						status: { in: ["claimed", "sending", "unknown"] },
+						destination: { expectedIdentity: expectedServerIdentity },
+					},
+				});
+				if (!Number.isSafeInteger(aliases) || aliases < 0)
+					throw new MutationRepositoryError("invalid-state");
+				if (aliases > 0) return { kind: "target-busy" };
 			}
 			const claimToken = this.token();
 			const timestamp = now(this.clock);
@@ -1122,6 +1180,23 @@ export class JellyfinMutationRepository {
 	}
 
 	/** Transaction-scoped seam for callers that need to perform their own destination write. */
+	async guardDestinationInTransaction(
+		tx: any,
+		input: { userId: string; destinationInstanceId: string; deleteTerminalRows?: boolean },
+	): Promise<void> {
+		await this.lockParents(tx, input);
+		if (
+			!(await tx.serviceInstance.findFirst({
+				where: { id: input.destinationInstanceId, userId: input.userId },
+			}))
+		)
+			throw new MutationRepositoryError("conflict");
+		const scope = { destinationInstanceId: input.destinationInstanceId };
+		if (input.deleteTerminalRows) await this.deleteTerminalRows(tx, input.userId, scope);
+		else await this.blockers(tx, input.userId, scope);
+	}
+
+	/** Open a transaction when the caller does not already own one. */
 	async withGuardedDestinationUpdate<T>(
 		input: { userId: string; destinationInstanceId: string },
 		callback: (tx: any) => Promise<T>,

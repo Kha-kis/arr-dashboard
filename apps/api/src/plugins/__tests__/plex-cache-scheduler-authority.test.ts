@@ -18,6 +18,7 @@ vi.mock("../../lib/plex/plex-evidence-repository.js", () => ({
 	getPublishedEpisodeGenerationObservation: mocks.getPublishedEpisodeGenerationObservation,
 }));
 
+import type { FastifyWithLibraryRefreshRecovery } from "../../lib/services/library-refresh-recovery.js";
 import plexCacheSchedulerPlugin from "../plex-cache-scheduler.js";
 import plexEpisodeCacheSchedulerPlugin from "../plex-episode-cache-scheduler.js";
 
@@ -85,7 +86,10 @@ describe("Plex scheduler publication authority", () => {
 			fastifyPlugin(
 				async (server) => {
 					server.decorate("prisma", {
-						serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+						serviceInstance: {
+							findMany: vi.fn().mockResolvedValue([instance]),
+							findFirst: vi.fn().mockResolvedValue(instance),
+						},
 						cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue([]) },
 					} as never);
 				},
@@ -205,13 +209,16 @@ describe("Plex scheduler publication authority", () => {
 			instance,
 			log: app.log,
 		});
-		expect(mocks.refreshEpisodes).toHaveBeenCalledWith({
-			prisma: app.prisma,
-			encryptor: app.encryptor,
-			instance,
-			log: app.log,
-			resumeFailed: true,
-		});
+		expect(mocks.refreshEpisodes).toHaveBeenCalledWith(
+			{
+				prisma: app.prisma,
+				encryptor: app.encryptor,
+				instance,
+				log: app.log,
+				resumeFailed: true,
+			},
+			undefined,
+		);
 
 		await vi.advanceTimersByTimeAsync(385 * 60_000);
 
@@ -282,6 +289,62 @@ describe("Plex scheduler publication authority", () => {
 
 		expect(mocks.refreshLibrary).toHaveBeenCalledTimes(2);
 		expect(mocks.refreshEpisodes).toHaveBeenCalledOnce();
+	});
+
+	it("retries native inventory failure even when canonical evidence published", async () => {
+		mocks.refreshLibrary.mockResolvedValueOnce({
+			complete: true,
+			upserted: 1,
+			errors: 0,
+			nativeInventoryStatus: "failed",
+		});
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(mocks.refreshLibrary).toHaveBeenCalledTimes(2);
+		await vi.advanceTimersByTimeAsync(20 * 60_000);
+		expect(mocks.refreshLibrary).toHaveBeenCalledTimes(2);
+	});
+
+	it("arms the existing 30-second queue for a manual native-only failure", async () => {
+		await vi.advanceTimersByTimeAsync(30_000);
+		mocks.refreshLibrary.mockClear();
+		const recovery = (app as FastifyWithLibraryRefreshRecovery).libraryRefreshRecovery;
+		const request = {
+			provider: "plex" as const,
+			userId: "user-1",
+			instanceId: instance.id,
+			attempt: {
+				attemptedAt: new Date("2026-09-14T12:00:00.000Z"),
+				resultMarker: "in_progress:00000000-0000-4000-8000-000000000001",
+			},
+		};
+		recovery.admit(request);
+		expect(await recovery.arm(request)).toEqual({ status: "accepted" });
+		await vi.advanceTimersByTimeAsync(29_999);
+		expect(mocks.refreshLibrary).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(1);
+		expect(mocks.refreshLibrary).toHaveBeenCalledOnce();
+	});
+
+	it("drops a manually armed retry when the owner is replaced before execution", async () => {
+		await vi.advanceTimersByTimeAsync(30_000);
+		mocks.refreshLibrary.mockClear();
+		const findFirst = app.prisma.serviceInstance.findFirst as ReturnType<typeof vi.fn>;
+		const recovery = (app as FastifyWithLibraryRefreshRecovery).libraryRefreshRecovery;
+		const request = {
+			provider: "plex" as const,
+			userId: "user-1",
+			instanceId: instance.id,
+			attempt: {
+				attemptedAt: new Date("2026-09-14T12:00:00.000Z"),
+				resultMarker: "in_progress:00000000-0000-4000-8000-000000000002",
+			},
+		};
+		recovery.admit(request);
+		findFirst.mockResolvedValue(instance);
+		expect(await recovery.arm(request)).toEqual({ status: "accepted" });
+		findFirst.mockResolvedValueOnce(null);
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(mocks.refreshLibrary).not.toHaveBeenCalled();
 	});
 
 	it("bounds parent refresh retries and cancels them after close", async () => {

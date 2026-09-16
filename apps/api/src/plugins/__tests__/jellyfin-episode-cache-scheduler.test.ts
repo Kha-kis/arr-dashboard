@@ -1,7 +1,10 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS } from "../../lib/jellyfin/jellyfin-episode-refresh-policy.js";
+import {
+	JELLYFIN_EPISODE_PARENT_REFRESH_CONTINUATION_DELAY_MS,
+	JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS,
+} from "../../lib/jellyfin/jellyfin-episode-refresh-policy.js";
 
 const mocks = vi.hoisted(() => ({
 	refresh: vi.fn(),
@@ -269,6 +272,28 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 			false,
 			false,
 		]);
+	});
+
+	it("rechecks a parent refresh wait after 30 seconds and completes automatically", async () => {
+		findInstances.mockResolvedValue([instance("JELLYFIN")]);
+		mocks.refresh
+			.mockResolvedValueOnce({
+				complete: false,
+				errors: 0,
+				progressed: false,
+				parentRefreshPending: true,
+			})
+			.mockResolvedValueOnce({ complete: true, errors: 0, upserted: 16, progressed: false });
+		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+		await app.ready();
+
+		await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
+		expect(mocks.refresh).toHaveBeenCalledOnce();
+		expect(findFailedRun).not.toHaveBeenCalled();
+
+		await vi.advanceTimersByTimeAsync(JELLYFIN_EPISODE_PARENT_REFRESH_CONTINUATION_DELAY_MS);
+		expect(mocks.refresh).toHaveBeenCalledTimes(2);
+		expect(mocks.refresh.mock.calls[1]![0]).toMatchObject({ resumeFailed: false });
 	});
 
 	it("retries one unexpected refresh rejection through the bounded continuation chain", async () => {

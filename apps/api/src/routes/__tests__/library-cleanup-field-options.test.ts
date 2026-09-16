@@ -245,6 +245,66 @@ afterEach(async () => {
 });
 
 describe("GET /library-cleanup/field-options — cursor pagination (issue #427)", () => {
+	it.each([
+		[[], false],
+		[["TAUTULLI"], false],
+		[["PLEX"], false],
+		[["TAUTULLI", "PLEX"], true],
+	])(
+		"advertises only configured positive Tautulli watch support: %j",
+		async (services, expected) => {
+			serviceInstanceFindMany.mockImplementation(({ where }) => {
+				if (Array.isArray(where.service?.in) && where.service.in.includes("TAUTULLI")) {
+					expect(where).toEqual({
+						userId: currentUserId,
+						enabled: true,
+						service: { in: ["TAUTULLI", "PLEX"] },
+					});
+					return Promise.resolve((services as string[]).map((service) => ({ service })));
+				}
+				return Promise.resolve([]);
+			});
+
+			const response = await createInjectAuthenticated(app)(
+				"GET",
+				"/library-cleanup/field-options",
+			);
+			expect(response.statusCode).toBe(200);
+			expect(response.json()).toMatchObject({
+				hasTautulli: false,
+				hasTautulliPositiveWatchCount: expected,
+				tautulliUsers: [],
+			});
+			expect(tautulliCacheFindMany).not.toHaveBeenCalled();
+		},
+	);
+
+	it("rechecks positive Tautulli configuration when returning cached field options", async () => {
+		let configured = true;
+		serviceInstanceFindMany.mockImplementation(({ where }) =>
+			Promise.resolve(
+				configured && Array.isArray(where.service?.in) && where.service.in.includes("TAUTULLI")
+					? [{ service: "TAUTULLI" }, { service: "PLEX" }]
+					: [],
+			),
+		);
+		const inject = createInjectAuthenticated(app);
+		expect((await inject("GET", "/library-cleanup/field-options")).json()).toHaveProperty(
+			"hasTautulliPositiveWatchCount",
+			true,
+		);
+		configured = false;
+		expect((await inject("GET", "/library-cleanup/field-options")).json()).toHaveProperty(
+			"hasTautulliPositiveWatchCount",
+			false,
+		);
+		configured = true;
+		expect((await inject("GET", "/library-cleanup/field-options")).json()).toHaveProperty(
+			"hasTautulliPositiveWatchCount",
+			true,
+		);
+	});
+
 	it("walks libraryCache via cursor across multiple batches and aggregates values from BOTH", async () => {
 		// One Sonarr instance — only the libraryCache scan kicks in. The
 		// other cache scans are gated behind their own `findMany` for

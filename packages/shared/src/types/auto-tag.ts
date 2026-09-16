@@ -25,6 +25,22 @@ import {
 
 export type AutoTagRunStatus = "success" | "partial" | "failed";
 
+export interface AutoTagPreviewItem {
+	instanceId: string;
+	arrItemId: number;
+	itemType: string;
+	title: string;
+	state: "true" | "false" | "unknown";
+	reason: string;
+}
+export interface AutoTagPreviewResponse {
+	itemsScanned: number;
+	itemsMatched: number;
+	itemsUnknown: number;
+	items: AutoTagPreviewItem[];
+	truncated: boolean;
+}
+
 // ============================================================================
 // Wire shape (returned by GET /api/auto-tag/rules)
 // ============================================================================

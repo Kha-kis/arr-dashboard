@@ -5,6 +5,7 @@ import { requireInstance } from "../lib/arr/instance-helpers.js";
 import { AppValidationError, ConflictError } from "../lib/errors.js";
 import { clearDurableHistoryObservationState } from "../lib/history/history-observation-lifecycle.js";
 import { isHistoryServiceType } from "../lib/history/history-source-contract.js";
+import { createJellyfinMutationRepository } from "../lib/label-sync/jellyfin-mutation-repository.js";
 import {
 	withCleanupTopologyMutationLease,
 	withExclusiveCleanupTopologyMutationLease,
@@ -249,6 +250,7 @@ async function clearDurableQuiObservations(
 }
 
 const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
+	const mutationRepository = createJellyfinMutationRepository(app.prisma);
 	async function deleteArrAliasWithStateMigration(
 		userId: string,
 		existing: ServiceInstance,
@@ -275,6 +277,11 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				}
 
 				await app.prisma.$transaction(async (tx) => {
+					await mutationRepository.guardDestinationInTransaction(tx, {
+						userId,
+						destinationInstanceId: current.id,
+						deleteTerminalRows: true,
+					});
 					const aliases = await tx.serviceInstance.findMany({
 						where: { userId, service: current.service },
 					});
@@ -779,6 +786,10 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			if (quiTopologyChanged) {
 				await withQuiObservationTopologyGuard(userId, async () => {
 					await app.prisma.$transaction(async (tx) => {
+						await mutationRepository.guardDestinationInTransaction(tx, {
+							userId,
+							destinationInstanceId: id,
+						});
 						await resetOtherDefaults(tx);
 						await tx.serviceInstance.updateMany({
 							where: { id, userId },
@@ -803,6 +814,10 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				});
 			} else if (providerConnectionChanged || serviceTypeChanged || historyConnectionChanged) {
 				await app.prisma.$transaction(async (tx) => {
+					await mutationRepository.guardDestinationInTransaction(tx, {
+						userId,
+						destinationInstanceId: id,
+					});
 					await resetOtherDefaults(tx);
 					await tx.serviceInstance.updateMany({
 						where: { id, userId },
@@ -819,14 +834,18 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 					}
 				});
 			} else {
-				await resetOtherDefaults(app.prisma);
-				await app.prisma.serviceInstance.updateMany({
-					where: { id, userId },
-					data: updateDataWithResetProviderIdentity,
+				await app.prisma.$transaction(async (tx) => {
+					await mutationRepository.guardDestinationInTransaction(tx, {
+						userId,
+						destinationInstanceId: id,
+					});
+					await resetOtherDefaults(tx);
+					await tx.serviceInstance.updateMany({
+						where: { id, userId },
+						data: updateDataWithResetProviderIdentity,
+					});
+					if (payload.tags !== undefined) await updateInstanceTags(tx, id, payload.tags);
 				});
-				if (payload.tags !== undefined) {
-					await updateInstanceTags(app.prisma, id, payload.tags);
-				}
 			}
 			if (providerConnectionChanged || serviceTypeChanged) {
 				invalidatePulseCache(userId);
@@ -941,6 +960,10 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 				const verified = verifiedIdentityData(existing, observation);
 				const updated = await app.prisma.$transaction(async (tx) => {
+					await mutationRepository.guardDestinationInTransaction(tx, {
+						userId,
+						destinationInstanceId: id,
+					});
 					const result = await tx.serviceInstance.updateMany({
 						where: {
 							id,
@@ -1051,6 +1074,10 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 					candidate.service ?? existing.service
 				).toUpperCase() as ServiceType;
 				const replaced = await app.prisma.$transaction(async (tx) => {
+					await mutationRepository.guardDestinationInTransaction(tx, {
+						userId,
+						destinationInstanceId: id,
+					});
 					const updated = await tx.serviceInstance.updateMany({
 						where: {
 							id,
@@ -1112,6 +1139,11 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				} else if (existing.service === "QUI") {
 					await withQuiObservationTopologyGuard(userId, async () => {
 						await app.prisma.$transaction(async (tx) => {
+							await mutationRepository.guardDestinationInTransaction(tx, {
+								userId,
+								destinationInstanceId: id,
+								deleteTerminalRows: true,
+							});
 							await tx.serviceInstance.delete({ where: { id, userId } });
 							await clearDurableQuiObservations(tx, userId);
 						});
@@ -1119,7 +1151,14 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 						clearFileIdIndexCache(id);
 					});
 				} else {
-					await app.prisma.serviceInstance.delete({ where: { id, userId } });
+					await app.prisma.$transaction(async (tx) => {
+						await mutationRepository.guardDestinationInTransaction(tx, {
+							userId,
+							destinationInstanceId: id,
+							deleteTerminalRows: true,
+						});
+						await tx.serviceInstance.delete({ where: { id, userId } });
+					});
 					invalidateTorrentListCache(id);
 					clearFileIdIndexCache(id);
 				}

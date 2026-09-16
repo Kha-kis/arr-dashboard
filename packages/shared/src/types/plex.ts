@@ -515,13 +515,19 @@ export interface CacheHealthResponse {
 // Series Progress (F14)
 // ============================================================================
 
-export interface SeriesProgressItem {
-	total: number;
-	watched: number;
-	percent: number;
-}
+export type SeriesProgressItem =
+	| { status: "exact"; total: number; watched: number; percent: number; watchedSemantics: "exact" }
+	| {
+			status: "partial";
+			total: null;
+			watched: number;
+			percent: null;
+			watchedSemantics: "lower-bound";
+	  }
+	| { status: "unknown"; total: null; watched: null; percent: null; watchedSemantics: "unknown" };
 
 export interface SeriesProgressResponse {
+	configured: boolean;
 	progress: Record<number, SeriesProgressItem>;
 	evidence?: PlexEvidenceSummary;
 	providerStatus?: ProviderObservationStatusEnvelope;

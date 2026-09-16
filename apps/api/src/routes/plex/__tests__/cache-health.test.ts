@@ -330,6 +330,38 @@ describe("buildCacheHealthItems", () => {
 		expect(JSON.stringify(items[0])).not.toContain(token);
 	});
 
+	it("reports an opaque episode attempt as collecting while its renewed parent invalidates old evidence", () => {
+		const token = "in_progress:private-attempt";
+		const evidence = {
+			availability: "unavailable",
+			authority: "unavailable",
+			attemptState: "unknown",
+			publicationLevel: "unavailable",
+			completeness: "unknown",
+			reasonCodes: ["parent_generation_unavailable"],
+		} satisfies PlexEvidenceSummary;
+		const [item] = buildCacheHealthItems(
+			[
+				makeRow({
+					cacheType: "plex_episode",
+					lastAttemptAt: new Date(baseDateMs),
+					lastRefreshedAt: new Date(baseDateMs - 1000),
+					lastAttemptResult: token,
+				}),
+			],
+			instanceNameMap,
+			baseDateMs,
+			new Map([["inst-1:plex_episode", evidence]]),
+		);
+		expect(item).toMatchObject({
+			lastResult: "in_progress",
+			uiCondition: "collecting",
+			itemCount: null,
+			evidence,
+		});
+		expect(JSON.stringify(item)).not.toContain(token);
+	});
+
 	it("projects a bounded active episode run as collecting without leaking work identity", () => {
 		const [item] = buildCacheHealthItems(
 			[makeRow({ cacheType: "plex_episode", lastAttemptResult: "in_progress" })],
