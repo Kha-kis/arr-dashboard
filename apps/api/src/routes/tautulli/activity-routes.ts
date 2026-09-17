@@ -5,7 +5,7 @@
  * Provides LAN/WAN bandwidth breakdown, resolution, and codec info.
  */
 
-import type { TautulliActivityResponse, TautulliSession } from "@arr/shared";
+import type { SessionAvailability, TautulliActivityResponse, TautulliSession } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { executeOnTautulliInstances } from "../../lib/tautulli/tautulli-helpers.js";
 
@@ -19,6 +19,10 @@ export async function registerActivityRoutes(app: FastifyInstance, _opts: Fastif
 	app.get("/", async (request, reply) => {
 		const userId = request.currentUser!.id;
 
+		const configured = await app.prisma.serviceInstance.findMany({
+			where: { userId, service: "TAUTULLI", enabled: true },
+			select: { id: true },
+		});
 		const result = await executeOnTautulliInstances(app, userId, async (client, instance) => {
 			const activity = await client.getActivity();
 
@@ -55,6 +59,25 @@ export async function registerActivityRoutes(app: FastifyInstance, _opts: Fastif
 				),
 			};
 		});
+		const configuredIds = new Set(configured.map(({ id }) => id));
+		const availableSources = result.instances.filter(
+			(instance) => instance.success && configuredIds.has(instance.instanceId),
+		).length;
+		const availability: SessionAvailability = {
+			status:
+				configured.length === 0
+					? "not-configured"
+					: availableSources === 0
+						? "unavailable"
+						: availableSources === configured.length
+							? "complete"
+							: "partial",
+			configuredSources: configured.length,
+			availableSources,
+		};
+		if (availability.status === "unavailable") {
+			return reply.status(503).send({ error: "Tautulli activity is unavailable", availability });
+		}
 
 		const sessions: TautulliSession[] = [];
 		let totalStreamCount = 0;
@@ -62,7 +85,7 @@ export async function registerActivityRoutes(app: FastifyInstance, _opts: Fastif
 		let lanBandwidth = 0;
 		let wanBandwidth = 0;
 		for (const instanceResult of result.instances) {
-			if (!instanceResult.success) continue;
+			if (!instanceResult.success || !configuredIds.has(instanceResult.instanceId)) continue;
 			sessions.push(...instanceResult.data.sessions);
 			totalStreamCount += instanceResult.data.streamCount;
 			totalBandwidth += instanceResult.data.totalBandwidth;
@@ -76,6 +99,7 @@ export async function registerActivityRoutes(app: FastifyInstance, _opts: Fastif
 			totalBandwidth,
 			lanBandwidth,
 			wanBandwidth,
+			availability,
 		};
 
 		return reply.send(response);

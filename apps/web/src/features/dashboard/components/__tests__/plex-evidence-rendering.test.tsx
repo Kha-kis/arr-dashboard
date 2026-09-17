@@ -170,6 +170,24 @@ function failedQuery(evidence: PlexEvidenceSummary) {
 	};
 }
 
+function warmFailedQuery(error: Error = new Error("private upstream URL and token")) {
+	return {
+		data: { items: [plexItem()], evidence: authoritativeEvidence },
+		isLoading: false,
+		isError: true,
+		error,
+	};
+}
+
+function warmFailedQueryWithEvidence(evidence: PlexEvidenceSummary) {
+	return warmFailedQuery(
+		new ApiError("Plex cache evidence is unavailable", 503, {
+			error: "Plex cache evidence is unavailable",
+			evidence,
+		} as never),
+	);
+}
+
 function disabledQuery() {
 	return { data: undefined, isLoading: false, isError: false, error: null };
 }
@@ -278,6 +296,122 @@ describe("dashboard Plex evidence rendering", () => {
 
 		expect(screen.getByText(/Media-server refresh needs attention/i)).toBeInTheDocument();
 		expect(screen.queryByText(/no recent additions|none|0 items?/i)).not.toBeInTheDocument();
+	});
+
+	it("discloses a warm On Deck Plex refetch failure without hiding cached rows", () => {
+		queryState.plexOnDeck = warmFailedQuery();
+
+		renderWithIncognito(<OnDeckWidget hasPlexInstances={true} hasJellyfinInstances={false} />);
+
+		expect(screen.getByText("Synthetic Plex Movie")).toBeInTheDocument();
+		expect(screen.getByText(/Media-server data is unavailable/i)).toBeInTheDocument();
+		expect(
+			screen.getByText(/Showing available items; provider coverage is bounded/i),
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText(/Showing current mapped data|1 item on deck/i),
+		).not.toBeInTheDocument();
+		expect(screen.queryByText(/private upstream URL and token/i)).not.toBeInTheDocument();
+	});
+
+	it("discloses a warm Recently Added Plex refetch failure without hiding cached rows", () => {
+		queryState.plexRecentlyAdded = warmFailedQuery();
+
+		renderWithIncognito(
+			<RecentlyAddedWidget hasPlexInstances={true} hasJellyfinInstances={false} />,
+		);
+
+		expect(screen.getByText("Synthetic Plex Movie")).toBeInTheDocument();
+		expect(screen.getByText(/Media-server data is unavailable/i)).toBeInTheDocument();
+		expect(
+			screen.getByText(/Showing available items; provider coverage is bounded/i),
+		).toBeInTheDocument();
+		expect(screen.queryByText(/Showing current mapped data/i)).not.toBeInTheDocument();
+		expect(screen.queryByText(/private upstream URL and token/i)).not.toBeInTheDocument();
+	});
+
+	it("uses typed Plex refetch evidence instead of stale On Deck evidence", () => {
+		queryState.plexOnDeck = warmFailedQueryWithEvidence(unavailableEvidence("error"));
+
+		renderWithIncognito(<OnDeckWidget hasPlexInstances={true} hasJellyfinInstances={false} />);
+
+		expect(screen.getByText("Synthetic Plex Movie")).toBeInTheDocument();
+		expect(screen.getByText(/Media-server refresh needs attention/i)).toBeInTheDocument();
+		expect(
+			screen.queryByText(/Showing current mapped data|1 item on deck/i),
+		).not.toBeInTheDocument();
+	});
+
+	it("uses typed Plex refetch evidence instead of stale Recently Added evidence", () => {
+		queryState.plexRecentlyAdded = warmFailedQueryWithEvidence(unavailableEvidence("error"));
+
+		renderWithIncognito(
+			<RecentlyAddedWidget hasPlexInstances={true} hasJellyfinInstances={false} />,
+		);
+
+		expect(screen.getByText("Synthetic Plex Movie")).toBeInTheDocument();
+		expect(screen.getByText(/Media-server refresh needs attention/i)).toBeInTheDocument();
+		expect(screen.queryByText(/Showing current mapped data/i)).not.toBeInTheDocument();
+	});
+
+	it("reports a failed Plex refetch alongside healthy Jellyfin rows", () => {
+		queryState.plexOnDeck = warmFailedQuery();
+		queryState.jellyfinOnDeck = {
+			data: { items: [jellyfinItem()], providerStatus: jellyfinCurrentStatus },
+			isLoading: false,
+			isError: false,
+			error: null,
+		};
+
+		renderWithIncognito(<OnDeckWidget hasPlexInstances={true} hasJellyfinInstances={true} />);
+
+		expect(screen.getByText("Synthetic Plex Movie")).toBeInTheDocument();
+		expect(screen.getByText("Synthetic Jellyfin Movie")).toBeInTheDocument();
+		expect(screen.getByText(/Media-server data is unavailable/i)).toBeInTheDocument();
+		expect(screen.queryByText(/Showing current mapped data/i)).not.toBeInTheDocument();
+	});
+
+	it("reports a warm Jellyfin refetch failure while retaining its rows", () => {
+		queryState.jellyfinOnDeck = {
+			data: { items: [jellyfinItem()], providerStatus: jellyfinCurrentStatus },
+			isLoading: false,
+			isError: true,
+			error: new Error("private upstream URL and token"),
+		};
+
+		renderWithIncognito(<OnDeckWidget hasPlexInstances={false} hasJellyfinInstances={true} />);
+
+		expect(screen.getByText("Synthetic Jellyfin Movie")).toBeInTheDocument();
+		expect(screen.getByText(/Media-server data is incomplete/i)).toBeInTheDocument();
+		expect(screen.queryByText(/1 item on deck/i)).not.toBeInTheDocument();
+		expect(screen.queryByText(/private upstream URL and token/i)).not.toBeInTheDocument();
+	});
+
+	it("clears the warm Plex failure notice after a successful On Deck recovery", () => {
+		queryState.plexOnDeck = warmFailedQuery();
+		const view = renderWithIncognito(
+			<OnDeckWidget hasPlexInstances={true} hasJellyfinInstances={false} />,
+		);
+
+		expect(screen.getByText(/Media-server data is unavailable/i)).toBeInTheDocument();
+
+		queryState.plexOnDeck = {
+			data: { items: [plexItem()], evidence: authoritativeEvidence },
+			isLoading: false,
+			isError: false,
+			error: null,
+		};
+		view.rerender(
+			<IncognitoProvider>
+				<OnDeckWidget hasPlexInstances={true} hasJellyfinInstances={false} />
+			</IncognitoProvider>,
+		);
+
+		expect(screen.getByText("1 item on deck")).toBeInTheDocument();
+		expect(screen.queryByRole("status")).not.toBeInTheDocument();
+		expect(
+			screen.queryByText(/Media-server data is unavailable|coverage is bounded/i),
+		).not.toBeInTheDocument();
 	});
 
 	it("keeps authoritative on-deck values unchanged", () => {
@@ -397,6 +531,92 @@ describe("dashboard Plex evidence rendering", () => {
 		expect(
 			screen.queryByText(/Media-server data is incomplete|unavailable|last-known/i),
 		).not.toBeInTheDocument();
+	});
+
+	it("does not request an image for a Jellyfin On Deck row without a cached thumbnail", () => {
+		queryState.jellyfinOnDeck = {
+			data: {
+				items: [jellyfinItem({ jellyfinId: "missing-art-item", thumb: null })],
+				providerStatus: jellyfinCurrentStatus,
+			},
+			isLoading: false,
+			isError: false,
+			error: null,
+		};
+
+		renderWithIncognito(<OnDeckWidget hasPlexInstances={false} hasJellyfinInstances={true} />);
+
+		expect(screen.queryByRole("img")).not.toBeInTheDocument();
+		expect(screen.getByText("Synthetic Jellyfin Movie")).toBeInTheDocument();
+	});
+
+	it("uses the cached Jellyfin thumbnail for a Recently Added row when present", () => {
+		queryState.jellyfinRecentlyAdded = {
+			data: {
+				items: [
+					jellyfinItem({
+						jellyfinId: "present-art-item",
+						thumb: "/Items/present-art-item/Images/Primary",
+					}),
+				],
+				providerStatus: jellyfinCurrentStatus,
+			},
+			isLoading: false,
+			isError: false,
+			error: null,
+		};
+
+		renderWithIncognito(
+			<RecentlyAddedWidget hasPlexInstances={false} hasJellyfinInstances={true} />,
+		);
+
+		expect(screen.getByRole("img")).toHaveAttribute(
+			"src",
+			expect.stringContaining("/api/jellyfin/thumb/jellyfin-fixture?itemId=present-art-item"),
+		);
+	});
+
+	it("does not request an image for a Jellyfin Recently Added row without a cached thumbnail", () => {
+		queryState.jellyfinRecentlyAdded = {
+			data: {
+				items: [jellyfinItem({ jellyfinId: "missing-art-item", thumb: null })],
+				providerStatus: jellyfinCurrentStatus,
+			},
+			isLoading: false,
+			isError: false,
+			error: null,
+		};
+
+		renderWithIncognito(
+			<RecentlyAddedWidget hasPlexInstances={false} hasJellyfinInstances={true} />,
+		);
+
+		expect(screen.queryByRole("img")).not.toBeInTheDocument();
+		expect(screen.getByText("Synthetic Jellyfin Movie")).toBeInTheDocument();
+	});
+
+	it("uses the cached Jellyfin thumbnail for an On Deck row when present", () => {
+		queryState.jellyfinOnDeck = {
+			data: {
+				items: [
+					jellyfinItem({
+						jellyfinId: "present-art-item",
+						thumb: "/Items/present-art-item/Images/Primary",
+					}),
+				],
+				providerStatus: jellyfinCurrentStatus,
+			},
+			isLoading: false,
+			isError: false,
+			error: null,
+		};
+
+		renderWithIncognito(<OnDeckWidget hasPlexInstances={false} hasJellyfinInstances={true} />);
+
+		expect(screen.getByRole("img")).toHaveAttribute(
+			"src",
+			expect.stringContaining("/api/jellyfin/thumb/jellyfin-fixture?itemId=present-art-item"),
+		);
 	});
 
 	it("keeps On Deck usable when unrelated Jellyfin watch count evidence is unavailable", () => {

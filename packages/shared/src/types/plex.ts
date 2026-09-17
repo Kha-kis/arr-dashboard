@@ -11,6 +11,7 @@ import type {
 	ProviderObservationStatusEnvelope,
 	ProviderUiCondition,
 } from "./provider-observation";
+import type { SessionAvailability } from "./session";
 
 // ============================================================================
 // Published cache evidence
@@ -356,6 +357,7 @@ export interface PlexSession {
 export interface PlexNowPlayingResponse {
 	sessions: PlexSession[];
 	totalBandwidth: number;
+	availability: SessionAvailability;
 }
 
 // ============================================================================

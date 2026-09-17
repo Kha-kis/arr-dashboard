@@ -169,13 +169,32 @@ export const tautulliHomeStatSchema = z.looseObject({
 	),
 });
 
-/** get_user_watch_time_stats — array item */
-export const tautulliUserWatchTimeStatsSchema = z.looseObject({
-	user_id: z.number(),
-	friendly_name: z.string(),
-	total_plays: z.number(),
-	total_duration: z.number(),
-});
+const tautulliUserIdSchema = z.union([
+	z.number().int().nonnegative().refine(Number.isSafeInteger),
+	z.string().trim().min(1).regex(/^\d+$/).transform(Number).refine(Number.isSafeInteger),
+]);
+
+const tautulliFiniteNonnegativeNumberSchema = z.number().finite().nonnegative();
+
+/** get_home_stats(stat_id=top_users) row */
+export const tautulliUserStatsRowSchema = z
+	.object({
+		user_id: tautulliUserIdSchema,
+		user: z.string().nullable().optional(),
+		friendly_name: z.string().nullable().optional(),
+		total_plays: tautulliFiniteNonnegativeNumberSchema,
+		total_duration: tautulliFiniteNonnegativeNumberSchema,
+	})
+	.strip();
+
+/** get_home_stats(stat_id=top_users) — one object per page */
+export const tautulliUserStatsSchema = z
+	.object({
+		stat_id: z.string(),
+		stat_title: z.string(),
+		rows: z.array(tautulliUserStatsRowSchema),
+	})
+	.strip();
 
 /** get_metadata — inner data
  *

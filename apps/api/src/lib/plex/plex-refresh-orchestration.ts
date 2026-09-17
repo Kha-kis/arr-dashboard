@@ -231,6 +231,7 @@ async function refreshPlexLibraryWithNativeInventory(
 					undefined,
 					instance.httpAuthHeaders,
 				),
+				context.log,
 			),
 	});
 	const canonical = await refreshPlexCacheWithAttempt(context, attempt);

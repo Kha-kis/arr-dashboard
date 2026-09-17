@@ -1,5 +1,8 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
+import pino from "pino";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { PlexClient } from "../../../lib/plex/plex-client.js";
+import { collectPlexNativeInventory } from "../../../lib/plex/plex-native-inventory.js";
 import { createInjectAuthenticated, setupAuthInjection } from "../../__tests__/test-helpers.js";
 
 const mocks = vi.hoisted(() => ({
@@ -50,6 +53,7 @@ import { registerCacheRoutes } from "../cache-routes.js";
 
 describe("POST /api/plex/cache/:instanceId/refresh publication authority", () => {
 	let app: FastifyInstance;
+	let logLines: string[];
 	const instance = { id: "plex-1", service: "PLEX", connectionGeneration: 4 };
 
 	beforeEach(async () => {
@@ -98,8 +102,17 @@ describe("POST /api/plex/cache/:instanceId/refresh publication authority", () =>
 		mocks.loadUserGenerationObservations.mockReset().mockResolvedValue([]);
 		mocks.getPublishedEpisodeGenerationObservation.mockReset();
 
-		app = Fastify({ logger: false });
+		logLines = [];
+		app = Fastify({
+			loggerInstance: pino(
+				{ base: null, timestamp: false },
+				{ write: (line: string) => logLines.push(line) },
+			) as FastifyBaseLogger,
+		});
 		setupAuthInjection(app);
+		app.addHook("preHandler", async (request) => {
+			request.log = request.log.child({ userId: "private-user-canary" });
+		});
 		app.decorate("prisma", {
 			plexCache: { count: vi.fn() },
 			serviceInstance: {
@@ -117,6 +130,31 @@ describe("POST /api/plex/cache/:instanceId/refresh publication authority", () =>
 
 	afterEach(async () => {
 		await app.close();
+	});
+
+	it("emits cache diagnostics through the application logger without authenticated user bindings", async () => {
+		mocks.refreshWithAttempt.mockImplementation(async ({ log }) =>
+			collectPlexNativeInventory(
+				{
+					getActivities: async () => [{ type: "library.update.item.metadata" }],
+					getLibrarySettlementSections: async () => [],
+				} as unknown as PlexClient,
+				log,
+			),
+		);
+		const response = await createInjectAuthenticated(app)("POST", "/api/plex/cache/plex-1/refresh");
+		expect(response.statusCode).toBe(202);
+		await mocks.refreshWithAttempt.mock.results[0]?.value;
+		const diagnostics = logLines
+			.map((line) => JSON.parse(line))
+			.filter((event) => event.category === "plex-native-collection-rejected");
+		expect(diagnostics).toEqual([
+			expect.objectContaining({
+				stage: "start-probe",
+				reason: "plex_metadata_refresh_in_progress",
+			}),
+		]);
+		expect(JSON.stringify(diagnostics)).not.toContain("private-user-canary");
 	});
 
 	it("fences health status and progress reads by the authenticated owner", async () => {

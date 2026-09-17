@@ -1,10 +1,13 @@
+import type { PlexCoverageReasonCode } from "@arr/shared";
+import type { FastifyBaseLogger } from "fastify";
 import {
 	hasNativeInventoryExternalIds,
-	reconcileNativeInventoryIdentifiers,
 	type NativeInventoryDomain,
 	type NativeInventoryRow,
+	reconcileNativeInventoryIdentifiers,
 } from "../provider-observation/native-inventory.js";
 import type { PlexClient, PlexCompletePageResult, PlexSettlementLibrary } from "./plex-client.js";
+import { logPlexCollectionRejection } from "./plex-collection-diagnostics.js";
 import { evaluatePlexLiveSettlement } from "./plex-live-settlement.js";
 
 export interface CollectedNativeInventory {
@@ -17,14 +20,47 @@ export type PlexNativeInventoryResult =
 	| { complete: true; snapshots: CollectedNativeInventory[] }
 	| { complete: false; reason: "coverage-incomplete" | "provider-unavailable" };
 
-class IncompleteNativeInventory extends Error {}
+type PlexNativeInventoryDiagnosticStage =
+	| "start-probe"
+	| "first-library"
+	| "first-episodes"
+	| "between-probe"
+	| "catalog-comparison"
+	| "second-library"
+	| "second-episodes"
+	| "end-probe"
+	| "inventory-comparison";
+
+type PlexNativeInventoryDiagnosticReason =
+	| PlexCoverageReasonCode
+	| "invalid-id"
+	| "duplicate-id"
+	| "unexpected-item-type"
+	| "incomplete-page"
+	| "catalog-changed"
+	| "inventory-changed"
+	| "provider-read-failed";
+
+class NativeInventoryCollectionFailure extends Error {
+	constructor(
+		readonly stage: PlexNativeInventoryDiagnosticStage,
+		readonly diagnosticReason: PlexNativeInventoryDiagnosticReason,
+	) {
+		super("Plex native inventory collection rejected");
+		this.name = "NativeInventoryCollectionFailure";
+	}
+}
 
 function validKey(value: unknown): value is string {
 	return typeof value === "string" && value.trim().length > 0 && !value.includes("\0");
 }
 
-function requireCompletePage<T>(page: PlexCompletePageResult<T>): T[] {
-	if (page.reason !== null) throw new Error("Native inventory request failed");
+function requireCompletePage<T>(
+	page: PlexCompletePageResult<T>,
+	stage: PlexNativeInventoryDiagnosticStage,
+): T[] {
+	if (page.reason !== null)
+		throw new NativeInventoryCollectionFailure(stage, "provider-read-failed");
 	if (
 		!Array.isArray(page.items) ||
 		!Number.isSafeInteger(page.expectedRawCount) ||
@@ -34,29 +70,46 @@ function requireCompletePage<T>(page: PlexCompletePageResult<T>): T[] {
 		page.pagesAttempted < 1 ||
 		page.pagesCompleted !== page.pagesAttempted
 	)
-		throw new IncompleteNativeInventory();
+		throw new NativeInventoryCollectionFailure(stage, "incomplete-page");
 	return page.items;
 }
 
-async function probe(client: PlexClient): Promise<PlexSettlementLibrary[]> {
-	const [activities, sections] = await Promise.all([
-		client.getActivities({ uncached: true }),
-		client.getLibrarySettlementSections({ uncached: true }),
-	]);
+async function probe(
+	client: PlexClient,
+	stage: Extract<PlexNativeInventoryDiagnosticStage, "start-probe" | "between-probe" | "end-probe">,
+): Promise<PlexSettlementLibrary[]> {
+	let activities: Awaited<ReturnType<PlexClient["getActivities"]>>;
+	let sections: Awaited<ReturnType<PlexClient["getLibrarySettlementSections"]>>;
+	try {
+		[activities, sections] = await Promise.all([
+			client.getActivities({ uncached: true }),
+			client.getLibrarySettlementSections({ uncached: true }),
+		]);
+	} catch {
+		throw new NativeInventoryCollectionFailure(stage, "provider-read-failed");
+	}
 	const selected = sections.filter(
 		(section) => section.type === "movie" || section.type === "show",
 	);
+	if (selected.some((s) => !validKey(s.key) || !validKey(s.uuid))) {
+		throw new NativeInventoryCollectionFailure(stage, "invalid-id");
+	}
 	if (
-		selected.some((s) => !validKey(s.key) || !validKey(s.uuid)) ||
 		new Set(selected.map((s) => s.key)).size !== selected.length ||
-		new Set(selected.map((s) => s.uuid)).size !== selected.length ||
-		!evaluatePlexLiveSettlement({
-			activities,
-			sections,
-			selectedSectionKeys: selected.map((s) => s.key),
-		}).settled
+		new Set(selected.map((s) => s.uuid)).size !== selected.length
 	) {
-		throw new IncompleteNativeInventory();
+		throw new NativeInventoryCollectionFailure(stage, "duplicate-id");
+	}
+	const settlement = evaluatePlexLiveSettlement({
+		activities,
+		sections,
+		selectedSectionKeys: selected.map((s) => s.key),
+	});
+	if (!settlement.settled) {
+		throw new NativeInventoryCollectionFailure(
+			stage,
+			settlement.reasonCodes[0] ?? "plex_section_state_unavailable",
+		);
 	}
 	return selected.sort((a, b) => a.key.localeCompare(b.key));
 }
@@ -87,23 +140,33 @@ function inventoryIdentity(snapshots: readonly CollectedNativeInventory[]): stri
 async function collectPass(
 	client: PlexClient,
 	sections: readonly PlexSettlementLibrary[],
+	libraryStage: Extract<PlexNativeInventoryDiagnosticStage, "first-library" | "second-library">,
+	episodeStage: Extract<PlexNativeInventoryDiagnosticStage, "first-episodes" | "second-episodes">,
 ): Promise<CollectedNativeInventory[]> {
 	const library: CollectedNativeInventory = { domain: "library", scopeKeys: [], rows: [] };
 	const episode: CollectedNativeInventory = { domain: "episode", scopeKeys: [], rows: [] };
 	const seen = new Set<string>();
-	const admitKey = (key: string) => {
-		if (!validKey(key) || seen.has(key)) throw new IncompleteNativeInventory();
+	const admitKey = (key: string, stage: PlexNativeInventoryDiagnosticStage) => {
+		if (!validKey(key)) throw new NativeInventoryCollectionFailure(stage, "invalid-id");
+		if (seen.has(key)) throw new NativeInventoryCollectionFailure(stage, "duplicate-id");
 		seen.add(key);
 	};
 	for (const section of sections) {
 		const scopeKey = JSON.stringify([section.key, section.uuid, section.type]);
 		library.scopeKeys.push(scopeKey);
-		const items = requireCompletePage(await client.getNativeLibraryItemsWithCoverage(section.key));
+		let libraryPage: Awaited<ReturnType<PlexClient["getNativeLibraryItemsWithCoverage"]>>;
+		try {
+			libraryPage = await client.getNativeLibraryItemsWithCoverage(section.key);
+		} catch {
+			throw new NativeInventoryCollectionFailure(libraryStage, "provider-read-failed");
+		}
+		const items = requireCompletePage(libraryPage, libraryStage);
 		for (const item of items) {
-			admitKey(item.ratingKey);
+			admitKey(item.ratingKey, libraryStage);
 			// Plex may include collection containers in /all. They are not movie/series items.
 			if (item.type === "collection") continue;
-			if (item.type !== section.type) throw new IncompleteNativeInventory();
+			if (item.type !== section.type)
+				throw new NativeInventoryCollectionFailure(libraryStage, "unexpected-item-type");
 			const externalIds = item.externalIds;
 			library.rows.push({
 				nativeId: item.ratingKey,
@@ -118,12 +181,17 @@ async function collectPass(
 		}
 		if (section.type !== "show") continue;
 		episode.scopeKeys.push(scopeKey);
-		const episodes = requireCompletePage(
-			await client.getNativeEpisodeItemsWithCoverage(section.key),
-		);
+		let episodePage: Awaited<ReturnType<PlexClient["getNativeEpisodeItemsWithCoverage"]>>;
+		try {
+			episodePage = await client.getNativeEpisodeItemsWithCoverage(section.key);
+		} catch {
+			throw new NativeInventoryCollectionFailure(episodeStage, "provider-read-failed");
+		}
+		const episodes = requireCompletePage(episodePage, episodeStage);
 		for (const item of episodes) {
-			admitKey(item.ratingKey);
-			if (item.type !== "episode") throw new IncompleteNativeInventory();
+			admitKey(item.ratingKey, episodeStage);
+			if (item.type !== "episode")
+				throw new NativeInventoryCollectionFailure(episodeStage, "unexpected-item-type");
 			episode.rows.push({
 				nativeId: item.ratingKey,
 				mediaType: "episode",
@@ -145,19 +213,28 @@ async function collectPass(
  */
 export async function collectPlexNativeInventory(
 	client: PlexClient,
+	log?: FastifyBaseLogger,
 ): Promise<PlexNativeInventoryResult> {
+	let stage: PlexNativeInventoryDiagnosticStage = "start-probe";
 	try {
-		const before = await probe(client);
-		const first = await collectPass(client, before);
-		const between = await probe(client);
-		if (catalogIdentity(before) !== catalogIdentity(between)) throw new IncompleteNativeInventory();
-		const second = await collectPass(client, between);
-		const after = await probe(client);
-		if (
-			catalogIdentity(between) !== catalogIdentity(after) ||
-			inventoryIdentity(first) !== inventoryIdentity(second)
-		)
-			throw new IncompleteNativeInventory();
+		const before = await probe(client, "start-probe");
+		stage = "first-library";
+		const first = await collectPass(client, before, "first-library", "first-episodes");
+		stage = "between-probe";
+		const between = await probe(client, "between-probe");
+		stage = "catalog-comparison";
+		if (catalogIdentity(before) !== catalogIdentity(between))
+			throw new NativeInventoryCollectionFailure(stage, "catalog-changed");
+		stage = "second-library";
+		const second = await collectPass(client, between, "second-library", "second-episodes");
+		stage = "end-probe";
+		const after = await probe(client, "end-probe");
+		stage = "catalog-comparison";
+		if (catalogIdentity(between) !== catalogIdentity(after))
+			throw new NativeInventoryCollectionFailure(stage, "catalog-changed");
+		stage = "inventory-comparison";
+		if (inventoryIdentity(first) !== inventoryIdentity(second))
+			throw new NativeInventoryCollectionFailure(stage, "inventory-changed");
 		return {
 			complete: true,
 			snapshots: second.map((snapshot) => ({
@@ -169,10 +246,21 @@ export async function collectPlexNativeInventory(
 			})),
 		};
 	} catch (error) {
+		const failure =
+			error instanceof NativeInventoryCollectionFailure
+				? error
+				: new NativeInventoryCollectionFailure(stage, "provider-read-failed");
+		logPlexCollectionRejection(log, {
+			category: "plex-native-collection-rejected",
+			stage: failure.stage,
+			reason: failure.diagnosticReason,
+		});
 		return {
 			complete: false,
 			reason:
-				error instanceof IncompleteNativeInventory ? "coverage-incomplete" : "provider-unavailable",
+				failure.diagnosticReason === "provider-read-failed"
+					? "provider-unavailable"
+					: "coverage-incomplete",
 		};
 	}
 }

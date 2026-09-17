@@ -251,6 +251,35 @@ function extractRatingKey(path: string | undefined): string | undefined {
 	return match?.[1];
 }
 
+export type PlexReadPhase =
+	| "identity"
+	| "activities"
+	| "sections"
+	| "accounts"
+	| "library"
+	| "history"
+	| "on-deck"
+	| "metadata"
+	| "other";
+
+export type PlexReadContext = {
+	signal: AbortSignal;
+	onRequest: (phase: PlexReadPhase) => void;
+};
+
+function readPhase(path: string): PlexReadPhase {
+	const pathname = path.split("?")[0];
+	if (pathname === "/identity") return "identity";
+	if (pathname === "/activities") return "activities";
+	if (pathname === "/library/sections") return "sections";
+	if (pathname === "/accounts") return "accounts";
+	if (pathname?.startsWith("/library/sections/")) return "library";
+	if (pathname?.startsWith("/status/sessions/history/")) return "history";
+	if (pathname === "/library/onDeck") return "on-deck";
+	if (pathname?.startsWith("/library/metadata/")) return "metadata";
+	return "other";
+}
+
 export class PlexClient {
 	private readonly baseUrl: string;
 	private readonly token: string;
@@ -264,6 +293,7 @@ export class PlexClient {
 		log: FastifyBaseLogger,
 		timeout = DEFAULT_TIMEOUT,
 		httpAuthHeaders: Record<string, string> = {},
+		private readonly readContext?: PlexReadContext,
 	) {
 		this.baseUrl = baseUrl.replace(/\/$/, "");
 		this.token = token;
@@ -1157,6 +1187,8 @@ export class PlexClient {
 		path: string,
 		options?: { method?: string; body?: Record<string, unknown>; schema?: z.ZodType<T> },
 	): Promise<T> {
+		this.readContext?.signal.throwIfAborted();
+		this.readContext?.onRequest(readPhase(path));
 		const url = new URL(`${this.baseUrl}${path}`);
 
 		const headers: Record<string, string> = {
@@ -1168,7 +1200,9 @@ export class PlexClient {
 		const fetchOptions: RequestInit = {
 			method: options?.method ?? "GET",
 			headers,
-			signal: AbortSignal.timeout(this.timeout),
+			signal: this.readContext
+				? AbortSignal.any([this.readContext.signal, AbortSignal.timeout(this.timeout)])
+				: AbortSignal.timeout(this.timeout),
 		};
 
 		if (options?.body) {

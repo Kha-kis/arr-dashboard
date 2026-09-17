@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { Prisma, PrismaClient, ServiceInstance } from "../prisma.js";
+import { setImmediate as yieldToEventLoop } from "node:timers/promises";
+import { Prisma, type PrismaClient, type ServiceInstance } from "../prisma.js";
 import {
 	createProviderPublicationAuthority,
 	ProviderIdentityGuardError,
@@ -257,21 +258,27 @@ export async function publishNativeInventoriesInTransaction(
 		await tx.providerNativeInventoryItem.deleteMany({ where: { snapshotId } });
 		for (let offset = 0; offset < snapshot.rows.length; offset += WRITE_CHUNK_SIZE) {
 			const chunk = snapshot.rows.slice(offset, offset + WRITE_CHUNK_SIZE);
-			await tx.providerNativeInventoryItem.createMany({
-				data: chunk.map((item) => ({
-					snapshotId,
-					nativeId: item.nativeId,
-					mediaType: item.mediaType,
-					libraryIds: JSON.stringify(item.libraryIds),
-					parentNativeId: item.parentNativeId,
-					seasonNumber: item.seasonNumber,
-					episodeNumber: item.episodeNumber,
-					title: item.title,
-					externalIds: hasNativeInventoryExternalIds(item.externalIds)
-						? JSON.stringify(item.externalIds)
-						: null,
-				})),
-			});
+			// Keep replacement atomic, but avoid per-row Prisma compilation and
+			// microtask starvation with the synchronous SQLite driver. Values stay
+			// parameterized; 500 rows also stay below both database bind limits.
+			const values = chunk.map(
+				(item) => Prisma.sql`(
+				${randomUUID()}, ${snapshotId}, ${item.nativeId}, ${item.mediaType},
+				${JSON.stringify(item.libraryIds)}, ${item.parentNativeId},
+				${item.seasonNumber}, ${item.episodeNumber}, ${item.title},
+				${hasNativeInventoryExternalIds(item.externalIds) ? JSON.stringify(item.externalIds) : null}
+			)`,
+			);
+			const inserted = await tx.$executeRaw(Prisma.sql`
+				INSERT INTO "provider_native_inventory_items"
+				("id", "snapshotId", "nativeId", "mediaType", "libraryIds", "parentNativeId",
+				 "seasonNumber", "episodeNumber", "title", "externalIds")
+				VALUES ${Prisma.join(values)}
+			`);
+			if (inserted !== chunk.length) {
+				throw new NativeInventoryInputError("Native inventory row insertion was incomplete");
+			}
+			await yieldToEventLoop();
 		}
 		const updated = await tx.providerNativeInventorySnapshot.updateMany({
 			where: {

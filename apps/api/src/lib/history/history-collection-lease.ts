@@ -426,7 +426,15 @@ function findSafeRetryCode(error: unknown): string | undefined {
 				return code;
 			}
 		}
-		for (const key of ["cause", "original", "originalError", "error", "errors", "meta"]) {
+		for (const key of [
+			"cause",
+			"original",
+			"originalError",
+			"error",
+			"errors",
+			"meta",
+			"driverAdapterError",
+		]) {
 			const nested = record[key];
 			if (Array.isArray(nested)) pending.push(...nested);
 			else if (nested && typeof nested === "object") pending.push(nested);
@@ -456,7 +464,15 @@ function isRetryableError(error: unknown): boolean {
 				message,
 			);
 		if (retryableMessage && !negatedRetryableMessage) return true;
-		for (const key of ["cause", "original", "originalError", "error", "errors", "meta"]) {
+		for (const key of [
+			"cause",
+			"original",
+			"originalError",
+			"error",
+			"errors",
+			"meta",
+			"driverAdapterError",
+		]) {
 			const nested = record[key];
 			if (Array.isArray(nested)) pending.push(...nested);
 			else if (nested && typeof nested === "object") pending.push(nested);

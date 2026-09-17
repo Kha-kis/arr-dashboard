@@ -197,7 +197,8 @@ async function dispatchCacheRefresh(
 						prisma: app.prisma,
 						encryptor: app.encryptor,
 						instance,
-						log,
+						// Request logging stays bound; provider diagnostics use the application logger.
+						log: app.log,
 					},
 					attempt,
 				),

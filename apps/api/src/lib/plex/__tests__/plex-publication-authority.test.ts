@@ -3,10 +3,16 @@ import pino from "pino";
 import { beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import type { PrismaClient } from "../../prisma.js";
 import { evaluateProviderCoverageReceipt } from "../../provider-observation/coverage-receipt.js";
+import {
+	authorizeProviderEvidenceUse,
+	authorizeTargetScopedWatchCountMutation,
+} from "../../provider-observation/evidence-capabilities.js";
 import type { OwnedProviderPublicationSnapshot } from "../../services/provider-identity-guard.js";
-import { refreshPlexCache } from "../plex-cache-refresher.js";
+import { UpstreamValidationError } from "../../validation/parse-upstream.js";
+import { collectSettledPlexCacheLiveEvidence, refreshPlexCache } from "../plex-cache-refresher.js";
 import { publishPositivePlexCacheGeneration } from "../plex-cache-storage.js";
 import type { PlexClient } from "../plex-client.js";
+import { classifyPlexCatalogChanges } from "../plex-collection-diagnostics.js";
 import { refreshPlexEpisodeCache } from "../plex-episode-cache-refresher.js";
 import {
 	decodePlexGenerationMetadata,
@@ -365,6 +371,341 @@ describe("Plex publication authority", () => {
 		vi.stubEnv("DATABASE_URL", "file:test.db");
 	});
 
+	it.each([
+		[1, "start-probe"],
+		[2, "end-probe"],
+		[3, "final-probe"],
+		[4, "terminal-probe"],
+		[5, "terminal-post-probe"],
+	] as const)(
+		"reports a safe rejection stage for settlement probe %i",
+		async (failedProbe, stage) => {
+			const lines: string[] = [];
+			const captured = pino(
+				{ base: null, timestamp: false },
+				{ write: (line: string) => lines.push(line) },
+			);
+			const fixture = prisma();
+			fixture.rows.push({ generation: "previous" });
+			const client = dataClient();
+			let probes = 0;
+			client.getActivities = vi.fn(async () =>
+				++probes === failedProbe
+					? [
+							{
+								type: "library.update.item.metadata",
+								Context: { librarySectionID: "private-section-canary" },
+							},
+						]
+					: [],
+			);
+			authority.client = client;
+			const result = await refreshPlexCache({
+				prisma: fixture.db,
+				instance: ownedSnapshot(),
+				log: captured,
+			});
+			expect(result).toMatchObject({ kind: "unpublished", complete: false });
+			expect(fixture.rows).toEqual([{ generation: "previous" }]);
+			const events = lines
+				.map((line) => JSON.parse(line))
+				.filter((event) => event.category === "plex-canonical-collection-rejected");
+			expect(events).toEqual([
+				expect.objectContaining({ stage, reason: "plex_metadata_refresh_in_progress" }),
+			]);
+			expect(lines.join("")).not.toContain("private-section-canary");
+			client.getActivities = vi.fn(async () => []);
+			await expect(
+				refreshPlexCache({ prisma: fixture.db, instance: ownedSnapshot(), log: captured }),
+			).resolves.toMatchObject({ complete: true, upserted: 1 });
+		},
+	);
+
+	it.each([
+		["getActivities", "activity-read-failed"],
+		["getLibrarySettlementSections", "section-read-failed"],
+	] as const)("does not serialize rejected %s payloads", async (method, reason) => {
+		const lines: string[] = [];
+		const captured = pino(
+			{ base: null, timestamp: false },
+			{ write: (line: string) => lines.push(line) },
+		);
+		const client = dataClient();
+		vi.mocked(client[method]).mockRejectedValue(
+			new Error("https://private.invalid/title?token=secret-canary"),
+		);
+		const result = await collectSettledPlexCacheLiveEvidence(
+			client,
+			"private-instance-canary",
+			captured,
+		);
+		expect(result).toMatchObject({ kind: "unpublished", errorMessages: [], complete: false });
+		expect(lines.map((line) => JSON.parse(line))).toEqual([
+			expect.objectContaining({
+				category: "plex-canonical-collection-rejected",
+				stage: "start-probe",
+				reason,
+			}),
+		]);
+		expect(lines.join("")).not.toMatch(/private|secret-canary|token=/);
+	});
+
+	it("retains fail-closed settlement results even when the diagnostic sink throws", async () => {
+		const client = dataClient();
+		client.getActivities = vi.fn(async () => [{ type: "library.update.item.metadata" }]);
+		await expect(
+			collectSettledPlexCacheLiveEvidence(client, "private-instance", {
+				...log,
+				warn: () => {
+					throw new Error("sink failure");
+				},
+			}),
+		).resolves.toMatchObject({ kind: "unpublished", complete: false, errorMessages: [] });
+	});
+
+	it("does not emit a new diagnostic through an authenticated request logger's private bindings", async () => {
+		const lines: string[] = [];
+		const root = pino(
+			{ base: null, timestamp: false },
+			{ write: (line: string) => lines.push(line) },
+		);
+		const bound = root.child({ reqId: "request-1", userId: "private-user-canary" });
+		const client = dataClient();
+		client.getActivities = vi.fn(async () => [{ type: "library.update.item.metadata" }]);
+		await expect(
+			collectSettledPlexCacheLiveEvidence(client, "instance", bound),
+		).resolves.toMatchObject({ kind: "unpublished", complete: false });
+		expect(lines).toEqual([]);
+	});
+
+	it.each([
+		["getActivities", "activity-schema-invalid"],
+		["getLibrarySettlementSections", "section-schema-invalid"],
+	] as const)(
+		"distinguishes malformed %s responses without reading validation details",
+		async (method, reason) => {
+			const client = dataClient();
+			const failure = new UpstreamValidationError(
+				"private-message",
+				"private-provider",
+				"private-url",
+				["private-issue"],
+			);
+			vi.mocked(client[method]).mockRejectedValue(failure);
+			const lines: string[] = [];
+			const captured = pino(
+				{ base: null, timestamp: false },
+				{ write: (line: string) => lines.push(line) },
+			);
+			await expect(
+				collectSettledPlexCacheLiveEvidence(client, "private-instance", captured),
+			).resolves.toMatchObject({ kind: "unpublished", complete: false, errorMessages: [] });
+			expect(lines.map((line) => JSON.parse(line))).toEqual([
+				expect.objectContaining({
+					category: "plex-canonical-collection-rejected",
+					stage: "start-probe",
+					reason,
+				}),
+			]);
+			expect(lines.join("")).not.toContain("private-");
+		},
+	);
+
+	it.each([
+		[2, "end-probe"],
+		[3, "final-probe"],
+		[4, "terminal-probe"],
+		[5, "terminal-post-probe"],
+	] as const)(
+		"distinguishes catalog drift at probe %i from a failed request",
+		async (changedProbe, stage) => {
+			const client = dataClient();
+			const sections = await client.getLibrarySettlementSections();
+			let probes = 0;
+			client.getLibrarySettlementSections = vi.fn(async () =>
+				++probes >= changedProbe
+					? sections.map((section) => ({ ...section, uuid: "private-replacement-canary" }))
+					: sections,
+			);
+			const warning = vi.fn();
+			const result = await collectSettledPlexCacheLiveEvidence(client, "instance", {
+				...log,
+				warn: warning,
+			});
+			expect(result).toMatchObject({ kind: "unpublished", complete: false });
+			expect(warning).toHaveBeenCalledWith(
+				{
+					category: "plex-canonical-collection-rejected",
+					stage,
+					reason: "catalog-changed",
+					catalogChanges: ["identity"],
+				},
+				expect.any(String),
+			);
+			expect(JSON.stringify(warning.mock.calls)).not.toContain("private-replacement-canary");
+		},
+	);
+
+	it.each([
+		["scannedAt", 1_777_000_001, "scan-revision"],
+		["updatedAt", 1_777_000_101, "update-revision"],
+		["title", "private-renamed-library", "display-name"],
+		["uuid", "private-replaced-uuid", "identity"],
+		["key", "private-replaced-key", "section-membership"],
+	] as const)(
+		"reports only the catalog category for changed %s",
+		async (field, value, category) => {
+			const client = dataClient();
+			const sections = await client.getLibrarySettlementSections();
+			let probes = 0;
+			client.getLibrarySettlementSections = vi.fn(async () =>
+				++probes === 1 ? sections : sections.map((section) => ({ ...section, [field]: value })),
+			);
+			const lines: string[] = [];
+			const captured = pino(
+				{ base: null, timestamp: false },
+				{ write: (line: string) => lines.push(line) },
+			);
+			const result = await collectSettledPlexCacheLiveEvidence(
+				client,
+				"private-instance",
+				captured,
+			);
+			expect(result).toMatchObject({ kind: "unpublished", complete: false });
+			const events = lines
+				.map((line) => JSON.parse(line))
+				.filter((event) => event.category === "plex-canonical-collection-rejected");
+			expect(events).toEqual([
+				expect.objectContaining({
+					stage: "end-probe",
+					reason: "catalog-changed",
+					catalogChanges: [category],
+				}),
+			]);
+			expect(lines.join("")).not.toContain("private-");
+		},
+	);
+
+	it("classifies simultaneous catalog differences without treating order as membership", async () => {
+		const sections = await dataClient().getLibrarySettlementSections();
+		const before = [...sections, { ...sections[0]!, key: "other", uuid: "other-uuid" }];
+		expect(classifyPlexCatalogChanges(before, [...before].reverse())).toEqual([]);
+		expect(
+			classifyPlexCatalogChanges(
+				before,
+				before.map((section) => ({ ...section, type: "show", scannedAt: 3, updatedAt: 4 })),
+			),
+		).toEqual(["media-type", "scan-revision", "update-revision"]);
+		expect(classifyPlexCatalogChanges(before, [before[0]!, before[0]!])).toEqual(["unknown"]);
+		const throwing = {
+			...before[0]!,
+			get uuid(): string {
+				throw new Error("private-diagnostic-failure");
+			},
+		};
+		expect(classifyPlexCatalogChanges([throwing], before)).toEqual(["unknown"]);
+	});
+
+	it.each([
+		["Plex history changed while it was being paged", "history-pagination-changed"],
+		[
+			"Plex history changed before its complete snapshot could be verified",
+			"history-verification-changed",
+		],
+		["private-upstream-error", "unclassified"],
+	] as const)("reports a fixed read-failure category for %s", async (message, reason) => {
+		const client = dataClient();
+		client.verifyHistorySnapshot = vi.fn().mockRejectedValue(new Error(message));
+		const lines: string[] = [];
+		const captured = pino(
+			{ base: null, timestamp: false },
+			{ write: (line: string) => lines.push(line) },
+		);
+		const result = await collectSettledPlexCacheLiveEvidence(client, "private-instance", captured);
+		expect(result).toMatchObject({
+			kind: reason === "unclassified" ? "unpublished" : "positive-observation",
+			complete: false,
+		});
+		const failures = lines
+			.map((line) => JSON.parse(line))
+			.filter((event) => event.category === "plex-cache-refresh-failed");
+		expect(failures).toEqual(
+			reason === "unclassified" ? [expect.objectContaining({ reason })] : [],
+		);
+		expect(lines.join("")).not.toContain("private-");
+	});
+
+	it.each([
+		[1, "preliminary-collection"],
+		[3, "terminal-collection"],
+	] as const)(
+		"reports which collection could not complete its pages",
+		async (failedRead, stage) => {
+			const client = dataClient();
+			const complete = await client.getLibraryItemsWithCoverage("movies");
+			let reads = 0;
+			client.getLibraryItemsWithCoverage = vi.fn(async () =>
+				++reads >= failedRead
+					? { ...complete, items: [], reason: "page-failure" as const }
+					: complete,
+			);
+			const warning = vi.fn();
+			const result = await collectSettledPlexCacheLiveEvidence(client, "instance", {
+				...log,
+				warn: warning,
+			});
+			expect(result).toMatchObject({ kind: "unpublished", complete: false });
+			expect(warning).toHaveBeenCalledWith(
+				{
+					category: "plex-canonical-collection-rejected",
+					stage,
+					reason: "collection-incomplete",
+				},
+				expect.any(String),
+			);
+		},
+	);
+
+	it("settles a stalled canonical collection without publishing its late result and allows retry", async () => {
+		vi.useFakeTimers();
+		const fixture = prisma();
+		fixture.rows.push({ generation: "previous" });
+		let release!: (value: Awaited<ReturnType<PlexClient["getAccounts"]>>) => void;
+		authority.client = dataClient();
+		vi.mocked(authority.client.getAccounts).mockReturnValueOnce(
+			new Promise((resolve) => {
+				release = resolve;
+			}),
+		);
+		let settled = false;
+		const running = refreshPlexCache({ prisma: fixture.db, instance: ownedSnapshot(), log }).then(
+			(result) => {
+				settled = true;
+				return result;
+			},
+		);
+		try {
+			await vi.advanceTimersByTimeAsync(10 * 60 * 1000 + 1);
+			expect(settled).toBe(true);
+			const result = await running;
+			expect(result).toMatchObject({ complete: false, upserted: 0 });
+			expect(authority.events).toContain("failure");
+			expect(fixture.rows).toEqual([{ generation: "previous" }]);
+			release([{ id: 1, name: "Synthetic account" }]);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(fixture.rows).toEqual([{ generation: "previous" }]);
+			expect(authority.events).not.toContain("create");
+			authority.client = dataClient();
+			await expect(
+				refreshPlexCache({ prisma: fixture.db, instance: ownedSnapshot(), log }),
+			).resolves.toMatchObject({ complete: true, errors: 0, upserted: 1 });
+		} finally {
+			release?.([{ id: 1, name: "Synthetic account" }]);
+			await running;
+			vi.useRealTimers();
+		}
+	});
+
 	it("serializes both publication-rejected boundaries without provider canaries", async () => {
 		const canaries = [
 			"https://private.invalid/Private-Title?token=secret",
@@ -424,7 +765,17 @@ describe("Plex publication authority", () => {
 			targetDigest: expect.stringMatching(/^[0-9a-f]{64}$/),
 		});
 		expect(authority.clientConnections).toEqual([
-			[instance.baseUrl, instance.apiKey, log, undefined, instance.httpAuthHeaders],
+			[
+				instance.baseUrl,
+				instance.apiKey,
+				log,
+				undefined,
+				instance.httpAuthHeaders,
+				expect.objectContaining({
+					signal: expect.any(AbortSignal),
+					onRequest: expect.any(Function),
+				}),
+			],
 		]);
 		expect(authority.identityReads).toEqual([instance, instance]);
 		expect(authority.events).toEqual([
@@ -721,6 +1072,98 @@ describe("Plex publication authority", () => {
 		},
 	);
 
+	it.each([
+		"inventory",
+		"Plex history changed while it was being paged",
+		"Plex history changed before its complete snapshot could be verified",
+	])(
+		"publishes stable inventory during %s drift without permitting watch predicates or mutation",
+		async (drift) => {
+			const fixture = prisma();
+			const client = dataClient();
+			let read = 0;
+			if (drift !== "inventory") {
+				client.verifyHistorySnapshot = vi.fn().mockRejectedValue(new Error(drift));
+			} else
+				client.getLibraryItemsWithCoverage = vi.fn(async () => ({
+					items: [
+						{
+							ratingKey: "movie-1",
+							title: "Movie 1",
+							type: "movie",
+							viewCount: read++,
+							Guid: [{ id: "tmdb://42" }],
+						},
+					],
+					expectedRawCount: 1,
+					pagesAttempted: 1,
+					pagesCompleted: 1,
+					rawObserved: 1,
+					reason: null,
+				}));
+			authority.client = client;
+			const result = await refreshPlexCache({ prisma: fixture.db, instance: ownedSnapshot(), log });
+			expect(result).toMatchObject({ kind: "positive-observation", complete: false, upserted: 1 });
+			const persistedData = fixture.tx.cacheRefreshStatus.updateMany.mock.calls.find(
+				([call]) => typeof call.data.generationMetadata === "string",
+			)?.[0].data;
+			expect(persistedData).toBeDefined();
+			const published = evaluatePublishedPlexGeneration(
+				{ ...fixture.status, ...persistedData } as never,
+				{ now: new Date() },
+			);
+			expect(published).toMatchObject({
+				available: true,
+				providerStatus: {
+					domains: expect.arrayContaining([
+						expect.objectContaining({
+							domain: "library-inventory",
+							availability: "current",
+							valueSemantics: "exact",
+						}),
+						expect.objectContaining({
+							domain: "watch-count",
+							availability: "unavailable",
+							valueSemantics: "unknown",
+						}),
+					]),
+				},
+			});
+			if (!published.providerStatus) throw new Error("Expected receipt-backed provider status");
+			for (const use of [
+				"display",
+				"arithmetic",
+				"positive-predicate",
+				"negative-predicate",
+				"mutation",
+			] as const) {
+				expect(
+					authorizeProviderEvidenceUse(published.providerStatus, {
+						domain: "watch-count",
+						field: "watch-count",
+						use,
+						operator: "greater_than",
+						threshold: 0,
+						observedValue: 2,
+						targetObserved: true,
+					}).authorized,
+				).toBe(false);
+			}
+			expect(
+				authorizeTargetScopedWatchCountMutation(published.providerStatus, {
+					domain: "watch-count",
+					field: "watch-count",
+					use: "mutation",
+					operator: "greater_than",
+					threshold: 0,
+					observedValue: 2,
+					targetObserved: true,
+				}).authorized,
+			).toBe(false);
+			expect(fixture.rows).toHaveLength(1);
+		},
+	);
+
 	it("persists account failure as attribution-only degradation", async () => {
 		const fixture = prisma();
 		const client = positiveDataClient();
@@ -819,7 +1262,10 @@ describe("Plex publication authority", () => {
 		);
 	});
 
-	it("does not publish when the post-end final canonical pass changes", async () => {
+	it.each([
+		["positive", "observed-targets-changed"],
+		["exact", "projection-changed"],
+	] as const)("does not publish when the post-end %s collection changes", async (kind, reason) => {
 		const fixture = prisma();
 		const client = dataClient();
 		const first = {
@@ -827,6 +1273,7 @@ describe("Plex publication authority", () => {
 			title: "Movie 1",
 			type: "movie",
 			Guid: [{ id: "tmdb://42" }],
+			...(kind === "exact" ? { viewCount: 0 } : {}),
 		};
 		const changed = { ...first, title: "Changed after end probe" };
 		client.getLibraryItemsWithCoverage = vi
@@ -870,6 +1317,14 @@ describe("Plex publication authority", () => {
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
 		expect(result.block?.reasons).toContain("settlement-unavailable");
 		expect(result.errorMessages).toEqual([]);
+		expect(log.warn).toHaveBeenCalledWith(
+			{
+				category: "plex-canonical-collection-rejected",
+				stage: "collection-comparison",
+				reason,
+			},
+			expect.any(String),
+		);
 		expect(fixture.tx.plexCache.deleteMany).not.toHaveBeenCalled();
 	});
 

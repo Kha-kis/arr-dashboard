@@ -5,7 +5,7 @@
  * Aggregates across all user's Plex instances.
  */
 
-import type { PlexNowPlayingResponse, PlexSession } from "@arr/shared";
+import type { PlexNowPlayingResponse, PlexSession, SessionAvailability } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { executeOnPlexInstances } from "../../lib/plex/plex-helpers.js";
 import { computeTotalBandwidth } from "./lib/now-playing-helpers.js";
@@ -43,6 +43,23 @@ export async function registerNowPlayingRoutes(app: FastifyInstance, _opts: Fast
 				}),
 			);
 		});
+		const configuredSources = result.instances.length;
+		const availableSources = result.instances.filter((instance) => instance.success).length;
+		const availability: SessionAvailability = {
+			status:
+				configuredSources === 0
+					? "not-configured"
+					: availableSources === 0
+						? "unavailable"
+						: availableSources === configuredSources
+							? "complete"
+							: "partial",
+			configuredSources,
+			availableSources,
+		};
+		if (availability.status === "unavailable") {
+			return reply.status(503).send({ error: "Plex now-playing is unavailable", availability });
+		}
 
 		// aggregated is flattened by executeOnPlexInstances (uses flatMap)
 		const sessions = result.aggregated as unknown as PlexSession[];
@@ -51,6 +68,7 @@ export async function registerNowPlayingRoutes(app: FastifyInstance, _opts: Fast
 		const response: PlexNowPlayingResponse = {
 			sessions,
 			totalBandwidth,
+			availability,
 		};
 
 		return reply.send(response);

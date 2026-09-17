@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PlexClient } from "../plex-client.js";
+import { classifyPlexHistoryFailure } from "../plex-collection-diagnostics.js";
 
 const log = { warn: vi.fn() } as never;
 
@@ -378,6 +379,24 @@ describe("PlexClient authoritative inventory completeness", () => {
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 	});
 
+	it("classifies real history-total drift without returning the changed payload", async () => {
+		const first = Array.from({ length: 200 }, (_, index) => historyItem(index));
+		vi.stubGlobal(
+			"fetch",
+			vi
+				.fn()
+				.mockResolvedValueOnce(response({ offset: 0, size: 200, totalSize: 201, Metadata: first }))
+				.mockResolvedValueOnce(
+					response({ offset: 200, size: 1, totalSize: 202, Metadata: [historyItem(200)] }),
+				),
+		);
+		const client = new PlexClient("http://plex.test", "token", log);
+		const failure = await client
+			.getHistory({ maxResults: 100_000, requireComplete: true })
+			.catch((error: unknown) => error);
+		expect(classifyPlexHistoryFailure(failure)).toBe("history-pagination-changed");
+	});
+
 	it("accepts distinct same-second plays and verifies the newest page before publishing", async () => {
 		const history = Array.from({ length: 201 }, (_, index) => ({
 			historyKey: `/status/sessions/history/${index}`,
@@ -445,9 +464,11 @@ describe("PlexClient authoritative inventory completeness", () => {
 		const client = new PlexClient("http://plex.test", "token", log);
 
 		const snapshot = await client.getHistory({ maxResults: 100_000, requireComplete: true });
-		await expect(client.verifyHistorySnapshot(snapshot)).rejects.toThrow(
-			/changed before.*snapshot/i,
-		);
+		const verification = client.verifyHistorySnapshot(snapshot);
+		await expect(verification).rejects.toThrow(/changed before.*snapshot/i);
+		await verification.catch((error: unknown) => {
+			expect(classifyPlexHistoryFailure(error)).toBe("history-verification-changed");
+		});
 	});
 
 	it("rejects a librarySectionID change between collection and verification", async () => {

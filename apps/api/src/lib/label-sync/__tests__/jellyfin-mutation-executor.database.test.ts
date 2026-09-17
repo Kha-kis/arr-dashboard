@@ -33,7 +33,8 @@ const ADMIN_ID = "fixture-admin";
 const LIBRARY_ID = "fixture-library";
 const ITEM_ID = "fixture-movie";
 const TMDB_ID = 4242;
-const NOW = new Date("2026-09-15T12:00:00.000Z");
+// The real HTTP executor uses the wall clock to enforce inventory freshness.
+const NOW = new Date();
 const encryptor = new Encryptor("01234567890123456789012345678901");
 const log = pino({ level: "silent" });
 

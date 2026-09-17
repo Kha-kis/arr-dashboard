@@ -93,7 +93,10 @@ export const RecentlyAddedWidget = ({
 				sectionTitle: item.libraryName,
 				addedAt: item.addedAt,
 				instanceId: item.instanceId,
-				thumbUrl: item.jellyfinId ? getJellyfinThumbUrl(item.instanceId, item.jellyfinId) : null,
+				thumbUrl:
+					item.thumb && item.jellyfinId
+						? getJellyfinThumbUrl(item.instanceId, item.jellyfinId)
+						: null,
 			});
 		}
 		// Sort by addedAt descending (most recent first)
@@ -106,9 +109,11 @@ export const RecentlyAddedWidget = ({
 	}, [plexQuery.data, jellyfinQuery.data]);
 
 	const isLoading = plexQuery.isLoading || jellyfinQuery.isLoading;
-	const plexEvidence = plexQuery.data?.evidence ?? getPlexEvidenceFromError(plexQuery.error);
+	const plexEvidenceFromError = getPlexEvidenceFromError(plexQuery.error);
+	const plexEvidence = plexEvidenceFromError ?? plexQuery.data?.evidence;
 	const plexProviderStatus = providerObservationStatusFromPlexEvidence(plexEvidence);
-	const plexTransportError = plexQuery.isError && plexEvidence === undefined;
+	const plexTransportError =
+		hasPlexInstances && plexQuery.isError && plexEvidenceFromError === undefined;
 	const providerStatus = [
 		hasPlexInstances ? plexProviderStatus : undefined,
 		hasJellyfinInstances ? jellyfinQuery.data?.providerStatus : undefined,

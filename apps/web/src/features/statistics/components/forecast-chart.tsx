@@ -50,7 +50,13 @@ const ForecastLine = ({
 	const foreLine = forePoints.map((p) => `${p.x},${p.y}`).join(" L");
 
 	return (
-		<svg width={width} height={height} className="overflow-visible">
+		<svg
+			width="100%"
+			height={height}
+			viewBox={`0 0 ${width} ${height}`}
+			preserveAspectRatio="none"
+			className="block max-w-full overflow-visible"
+		>
 			{/* Historical area + line */}
 			<path d={histArea} fill={historicalColor} opacity={0.1} />
 			<path

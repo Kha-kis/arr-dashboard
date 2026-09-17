@@ -8,6 +8,7 @@
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import { JellyfinImageNotFoundError } from "../../lib/jellyfin/jellyfin-client.js";
 import { requireJellyfinClient } from "../../lib/jellyfin/jellyfin-helpers.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
@@ -58,7 +59,18 @@ export async function registerImageProxyRoutes(app: FastifyInstance, _opts: Fast
 
 		const { client } = await requireJellyfinClient(app, userId, instanceId);
 
-		const imageResponse = await client.fetchImage(itemId, imageType, maxWidth);
+		let imageResponse: Response;
+		try {
+			imageResponse = await client.fetchImage(itemId, imageType, maxWidth);
+		} catch (error) {
+			if (error instanceof JellyfinImageNotFoundError) {
+				return reply
+					.header("Cache-Control", "no-store")
+					.status(404)
+					.send({ error: "Image not found" });
+			}
+			throw error;
+		}
 
 		const contentType = imageResponse.headers.get("content-type") ?? "image/jpeg";
 

@@ -19,12 +19,13 @@ import { useNowPlaying } from "../../../hooks/api/usePlex";
 import { useTautulliActivity } from "../../../hooks/api/useTautulli";
 import {
 	getLinuxDevice,
-	getLinuxIsoName,
 	getLinuxInstanceName,
+	getLinuxIsoName,
 	getLinuxUsername,
 	useIncognitoMode,
 } from "../../../lib/incognito";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { summarizeSessionQueries } from "../lib/session-availability";
 
 // ============================================================================
 // Normalized Session Type
@@ -169,32 +170,13 @@ function mergeSessions(
 	tautulliSessions: TautulliSession[],
 	jellyfinSessions: JellyfinSessionInfo[] = [],
 ): NowPlayingSession[] {
-	// Prefer Tautulli when same session appears in both sources.
-	// Dedup key includes instanceId to avoid collisions across Plex servers.
-	const merged: NowPlayingSession[] = [];
-
-	// Add all Tautulli sessions first (richer data)
-	for (const s of tautulliSessions) {
-		merged.push(normalizeTautulliSession(s));
-	}
-
-	// Add Plex sessions not covered by Tautulli
-	for (const s of plexSessions) {
-		// Match by ratingKey within the same logical server (Tautulli monitors one Plex)
-		const hasMatch = tautulliSessions.some(
-			(t) => t.ratingKey === s.ratingKey && t.sessionKey === s.sessionKey,
-		);
-		if (!hasMatch) {
-			merged.push(normalizePlexSession(s));
-		}
-	}
-
-	// Add Jellyfin sessions (separate server, no overlap with Plex/Tautulli)
-	for (const s of jellyfinSessions) {
-		merged.push(normalizeJellyfinSession(s));
-	}
-
-	return merged;
+	// The caller chooses native Plex OR its Tautulli fallback, never an
+	// unverified cross-provider match on server-local session/rating keys.
+	return [
+		...plexSessions.map(normalizePlexSession),
+		...tautulliSessions.map(normalizeTautulliSession),
+		...jellyfinSessions.map(normalizeJellyfinSession),
+	];
 }
 
 function formatDuration(ms: number): string {
@@ -358,13 +340,20 @@ export const NowPlayingWidget = ({
 	variant = "compact",
 }: NowPlayingWidgetProps) => {
 	const [incognitoMode] = useIncognitoMode();
+	// Native Plex is primary; do not guess identity across overlapping Tautulli sources.
+	const useTautulliFallback = hasTautulliInstances && !hasPlexInstances;
 	const plexQuery = useNowPlaying(hasPlexInstances);
-	const tautulliQuery = useTautulliActivity(hasTautulliInstances);
+	const tautulliQuery = useTautulliActivity(useTautulliFallback);
 	const jellyfinQuery = useJellyfinNowPlaying(hasJellyfinInstances);
 
-	const plexSessions = plexQuery.data?.sessions ?? [];
-	const tautulliSessions = tautulliQuery.data?.sessions ?? [];
-	const jellyfinSessions = jellyfinQuery.data?.sessions ?? [];
+	const plexSessions = hasPlexInstances ? (plexQuery.data?.sessions ?? []) : [];
+	const tautulliSessions = useTautulliFallback ? (tautulliQuery.data?.sessions ?? []) : [];
+	const jellyfinSessions = hasJellyfinInstances ? (jellyfinQuery.data?.sessions ?? []) : [];
+	const coverage = summarizeSessionQueries([
+		{ enabled: hasPlexInstances, query: plexQuery },
+		{ enabled: useTautulliFallback, query: tautulliQuery },
+		{ enabled: hasJellyfinInstances, query: jellyfinQuery },
+	]);
 
 	const rawSessions = mergeSessions(plexSessions, tautulliSessions, jellyfinSessions);
 	const sessions = incognitoMode
@@ -378,28 +367,24 @@ export const NowPlayingWidget = ({
 				instanceName: getLinuxInstanceName(s.instanceName),
 			}))
 		: rawSessions;
-	// Tautulli provides more accurate bandwidth (LAN/WAN split); prefer it for Plex.
-	// Jellyfin bandwidth is always additive (separate server).
-	const plexBandwidth = tautulliQuery.data?.totalBandwidth ?? plexQuery.data?.totalBandwidth ?? 0;
-	const totalBandwidth = plexBandwidth + (jellyfinQuery.data?.totalBandwidth ?? 0);
-	const lanBandwidth = tautulliQuery.data?.lanBandwidth ?? 0;
-	const wanBandwidth = tautulliQuery.data?.wanBandwidth ?? 0;
+	const plexBandwidth = hasPlexInstances
+		? (plexQuery.data?.totalBandwidth ?? 0)
+		: useTautulliFallback
+			? (tautulliQuery.data?.totalBandwidth ?? 0)
+			: 0;
+	const totalBandwidth = coverage.exact
+		? plexBandwidth + (hasJellyfinInstances ? (jellyfinQuery.data?.totalBandwidth ?? 0) : 0)
+		: 0;
+	const lanBandwidth = useTautulliFallback ? (tautulliQuery.data?.lanBandwidth ?? 0) : 0;
+	const wanBandwidth = useTautulliFallback ? (tautulliQuery.data?.wanBandwidth ?? 0) : 0;
+	const summary = coverage.exact
+		? `${sessions.length} active stream${sessions.length !== 1 ? "s" : ""}`
+		: `${sessions.length} session observation${sessions.length !== 1 ? "s" : ""}`;
 
-	const isLoading = plexQuery.isLoading || tautulliQuery.isLoading || jellyfinQuery.isLoading;
-	// Only consider enabled sources for error state
-	const enabledErrors = [
-		hasPlexInstances && plexQuery.isError,
-		hasTautulliInstances && tautulliQuery.isError,
-		hasJellyfinInstances && jellyfinQuery.isError,
-	].filter(Boolean).length;
-	const enabledSources = [hasPlexInstances, hasTautulliInstances, hasJellyfinInstances].filter(
-		Boolean,
-	).length;
-	const hasError = enabledSources > 0 && enabledErrors === enabledSources;
+	if (!hasPlexInstances && !hasTautulliInstances && !hasJellyfinInstances) return null;
+	if (coverage.loading && sessions.length === 0) return null;
 
-	if (isLoading && sessions.length === 0) return null;
-
-	if (hasError) {
+	if (!coverage.complete && sessions.length === 0) {
 		return (
 			<div
 				className="animate-in fade-in slide-in-from-bottom-4 duration-500"
@@ -424,7 +409,9 @@ export const NowPlayingWidget = ({
 						</div>
 						<div>
 							<h3 className="text-sm font-semibold text-foreground">Now Playing</h3>
-							<p className="text-xs text-muted-foreground">Could not load session data</p>
+							<p role="status" className="text-xs text-muted-foreground">
+								{coverage.notice}
+							</p>
 						</div>
 					</div>
 				</div>
@@ -460,13 +447,18 @@ export const NowPlayingWidget = ({
 								<div>
 									<h3 className="text-sm font-semibold text-foreground">Now Playing</h3>
 									<p className="text-xs text-muted-foreground">
-										{sessions.length} active stream{sessions.length !== 1 ? "s" : ""}
+										{summary}
 										{totalBandwidth > 0 ? ` · ${formatBandwidth(totalBandwidth)}` : ""}
 									</p>
 								</div>
 							</div>
 							<ChevronRight className="h-4 w-4 text-muted-foreground" />
 						</div>
+						{coverage.notice && (
+							<p role="status" className="mt-3 text-xs text-muted-foreground">
+								{coverage.notice}
+							</p>
+						)}
 
 						{sessions.length > 0 && (
 							<div className="mt-3 space-y-3">
@@ -511,13 +503,16 @@ export const NowPlayingWidget = ({
 	// Full variant — detailed session cards for Activity tab
 	return (
 		<div className="space-y-4">
+			{coverage.notice && (
+				<p role="status" className="text-xs text-muted-foreground">
+					{coverage.notice}
+				</p>
+			)}
 			{/* Header stats */}
 			<div className="flex items-center gap-4">
 				<div className="flex items-center gap-2">
 					<Radio className="h-4 w-4" style={{ color: plexGradient.from }} />
-					<span className="text-sm font-semibold text-foreground">
-						{sessions.length} Active Stream{sessions.length !== 1 ? "s" : ""}
-					</span>
+					<span className="text-sm font-semibold text-foreground">{summary}</span>
 				</div>
 				{totalBandwidth > 0 && (
 					<div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -537,7 +532,7 @@ export const NowPlayingWidget = ({
 				)}
 			</div>
 
-			{sessions.length === 0 && (
+			{coverage.exact && sessions.length === 0 && (
 				<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 					<p className="text-sm text-muted-foreground text-center py-4">
 						No active streams right now

@@ -4,10 +4,18 @@
  * Watch trends, per-user stats, and leaderboards from Tautulli.
  */
 
-import type { TautulliPlaysByDateResponse, TautulliStatsResponse } from "@arr/shared";
+import type {
+	TautulliPlaysByDateResponse,
+	TautulliStatisticsAvailability,
+	TautulliStatsResponse,
+} from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { executeOnTautulliInstances } from "../../lib/tautulli/tautulli-helpers.js";
+import type { TautulliClient } from "../../lib/tautulli/tautulli-client.js";
+import {
+	executeOnTautulliInstances,
+	type TautulliInstanceResult,
+} from "../../lib/tautulli/tautulli-helpers.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 const statsQuery = z.object({
@@ -20,6 +28,43 @@ const statsQuery = z.object({
 		}),
 });
 
+async function collectStatistics<T>(
+	app: FastifyInstance,
+	userId: string,
+	operation: (client: TautulliClient) => Promise<T>,
+) {
+	// Include enabled but unverified sources in coverage, without granting them
+	// permission to perform provider reads. The existing helper retains its
+	// before/after identity checks and discards authority-rejected observations.
+	const configured = await app.prisma.serviceInstance.findMany({
+		where: { userId, service: "TAUTULLI", enabled: true },
+		select: { id: true },
+	});
+	const result = await executeOnTautulliInstances(app, userId, operation);
+	const successful = new Map(
+		result.instances
+			.filter((entry): entry is TautulliInstanceResult<T> => entry.success)
+			.map((entry) => [entry.instanceId, entry]),
+	);
+	const instances = configured.flatMap(({ id }) => {
+		const entry = successful.get(id);
+		return entry ? [entry] : [];
+	});
+	const availability: TautulliStatisticsAvailability = {
+		status:
+			configured.length === 0
+				? "not-configured"
+				: instances.length === 0
+					? "unavailable"
+					: instances.length === configured.length
+						? "complete"
+						: "partial",
+		configuredSources: configured.length,
+		availableSources: instances.length,
+	};
+	return { instances, availability };
+}
+
 export async function registerStatsRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	/**
 	 * GET /api/tautulli/stats?timeRange=30
@@ -30,13 +75,18 @@ export async function registerStatsRoutes(app: FastifyInstance, _opts: FastifyPl
 		const { timeRange } = validateRequest(statsQuery, request.query);
 		const userId = request.currentUser!.id;
 
-		const result = await executeOnTautulliInstances(app, userId, async (client) => {
+		const result = await collectStatistics(app, userId, async (client) => {
 			const [homeStats, userStats] = await Promise.all([
 				client.getHomeStats(timeRange),
-				client.getUserWatchTimeStats(),
+				client.getUserStats(timeRange),
 			]);
 			return { homeStats, userStats };
 		});
+		if (result.availability.status === "unavailable") {
+			return reply
+				.status(503)
+				.send({ error: "Tautulli statistics are unavailable", availability: result.availability });
+		}
 
 		// Merge home stats by statId (same stat from multiple instances → merge rows)
 		const homeStatsMap = new Map<
@@ -121,6 +171,7 @@ export async function registerStatsRoutes(app: FastifyInstance, _opts: FastifyPl
 			homeStats: mergedHomeStats,
 			userStats: mergedUserStats,
 			timeRange,
+			availability: result.availability,
 		};
 
 		return reply.send(response);
@@ -135,9 +186,14 @@ export async function registerStatsRoutes(app: FastifyInstance, _opts: FastifyPl
 		const { timeRange } = validateRequest(statsQuery, request.query);
 		const userId = request.currentUser!.id;
 
-		const result = await executeOnTautulliInstances(app, userId, async (client) => {
+		const result = await collectStatistics(app, userId, async (client) => {
 			return client.getPlaysByDate(timeRange);
 		});
+		if (result.availability.status === "unavailable") {
+			return reply
+				.status(503)
+				.send({ error: "Tautulli statistics are unavailable", availability: result.availability });
+		}
 
 		// Merge play-by-date data from all instances
 		const mergedCategories = new Set<string>();
@@ -172,6 +228,7 @@ export async function registerStatsRoutes(app: FastifyInstance, _opts: FastifyPl
 			categories: sortedCategories,
 			series: mergedSeries,
 			timeRange,
+			availability: result.availability,
 		};
 
 		return reply.send(response);

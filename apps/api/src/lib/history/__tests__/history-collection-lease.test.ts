@@ -405,6 +405,71 @@ describe("owner-global History collection lease", { timeout: 30_000 }, () => {
 		expect(lookalikeAttempts).toBe(1);
 	});
 
+	it("retries Prisma adapter serialization conflicts with rollback and sanitized exhaustion", async () => {
+		const { prisma } = await createDatabase();
+		await createUser(prisma, "owner-adapter-retry");
+		const claim = await acquireHistoryCollectionLease(prisma, "owner-adapter-retry", {
+			dialect: "sqlite",
+		});
+		if (!claim) throw new Error("expected claim");
+		const adapterError = (code: string) => ({
+			code: "P2010",
+			message: "private query and parameters",
+			meta: { driverAdapterError: { cause: { originalCode: code } } },
+		});
+		let attempts = 0;
+		await expect(
+			withHistoryCollectionLeaseAuthority(
+				prisma,
+				claim,
+				async (tx) => {
+					attempts += 1;
+					await tx.user.update({
+						where: { id: claim.userId },
+						data: { username: `adapter-attempt-${attempts}` },
+					});
+					if (attempts === 1) throw adapterError("40001");
+					return "committed";
+				},
+				{ dialect: "sqlite" },
+			),
+		).resolves.toEqual({ matched: true, value: "committed" });
+		expect(attempts).toBe(2);
+		for (const [code, expectedAttempts] of [
+			["40001", 3],
+			["23505", 1],
+		] as const) {
+			let failedAttempts = 0;
+			let rejected: unknown;
+			try {
+				await withHistoryCollectionLeaseAuthority(
+					prisma,
+					claim,
+					async (tx) => {
+						failedAttempts += 1;
+						await tx.user.update({
+							where: { id: claim.userId },
+							data: { username: "must-roll-back" },
+						});
+						throw adapterError(code);
+					},
+					{ dialect: "sqlite" },
+				);
+			} catch (error) {
+				rejected = error;
+			}
+			expect(rejected).toBeInstanceOf(Error);
+			expect(String(rejected)).not.toContain("private query");
+			expect(rejected).toHaveProperty("code", code === "40001" ? code : undefined);
+			expect(failedAttempts).toBe(expectedAttempts);
+			await expect(
+				prisma.user.findUniqueOrThrow({ where: { id: claim.userId } }),
+			).resolves.toMatchObject({
+				username: "adapter-attempt-2",
+			});
+		}
+	});
+
 	it("never converts exhausted or arbitrary transaction errors into success", async () => {
 		const { prisma } = await createDatabase();
 		await createUser(prisma, "owner-errors");
