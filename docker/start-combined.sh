@@ -354,46 +354,20 @@ if [ "$CURRENT_PROVIDER" != "$DB_PROVIDER" ]; then
         fi
         exit 1
     fi
-
-    # Patch the bundled dist/index.js to match the new provider.
-    # tsup inlines the Prisma-generated config (activeProvider, inlineSchema, and
-    # WASM query compiler import paths) at build time. Since the image always builds
-    # with SQLite, the bundle has "sqlite" baked in three places:
-    #   1. "activeProvider": "sqlite"        → Prisma runtime provider selection
-    #   2. provider = "sqlite"               → inlineSchema datasource block
-    #   3. query_compiler_fast_bg.sqlite.*   → WASM query compiler module paths
-    # Without this patch, the Prisma runtime loads the SQLite query compiler and
-    # generates SQLite-dialect SQL, causing a silent crash with PostgreSQL.
-    echo "  - Patching bundled Prisma config in dist/index.js..."
-    if [ -f dist/index.js ]; then
-        if ! sed -i 's/"activeProvider": "sqlite"/"activeProvider": "'"$DB_PROVIDER"'"/' dist/index.js \
-           || ! sed -i 's/provider = "sqlite"/provider = "'"$DB_PROVIDER"'"/' dist/index.js \
-           || ! sed -i 's/query_compiler_fast_bg\.sqlite\./query_compiler_fast_bg.'"$DB_PROVIDER"'./g' dist/index.js; then
-            echo "ERROR: Failed to patch dist/index.js for $DB_PROVIDER" >&2
-            if [ "$ROOTLESS" = true ]; then
-                echo "  In rootless mode, ensure /app/api/dist is writable by UID:$PUID" >&2
-            fi
-            exit 1
-        fi
-        echo "  - Bundle patched for $DB_PROVIDER"
-
-        # Verify the patch was actually applied (sed returns 0 even when matching nothing)
-        echo "  - Verifying patch..."
-        echo "    activeProvider: $(grep -o '"activeProvider": "[^"]*"' dist/index.js)"
-        echo "    WASM paths: $(grep -c "query_compiler_fast_bg.$DB_PROVIDER." dist/index.js) references"
-
-        if grep -q '"activeProvider": "sqlite"' dist/index.js && [ "$DB_PROVIDER" = "postgresql" ]; then
-            echo "ERROR: dist/index.js still contains sqlite provider after patching" >&2
-            echo "  The bundle format may have changed — rebuild the image" >&2
-            exit 1
-        fi
-    else
-        echo "WARNING: dist/index.js not found, skipping bundle patch" >&2
-    fi
-
-    echo "  - Provider switched successfully"
 else
     echo "  - Prisma provider already set to $DB_PROVIDER (no change needed)"
+fi
+
+# tsup may place Prisma's generated config in a split chunk rather than the
+# entrypoint. Require one complete Prisma config module and verify it on every
+# startup so a failed provider switch is safe to retry.
+echo "  - Verifying bundled Prisma config for $DB_PROVIDER..."
+if ! /app/patch-prisma-provider-bundles.sh /app/api/dist "$DB_PROVIDER"; then
+    echo "ERROR: Failed to prepare bundled Prisma config for $DB_PROVIDER" >&2
+    if [ "$ROOTLESS" = true ]; then
+        echo "  In rootless mode, ensure /app/api/dist is writable by UID:$PUID" >&2
+    fi
+    exit 1
 fi
 
 # Prisma 7 opens the schema with write access while loading prisma.config.ts

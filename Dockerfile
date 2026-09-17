@@ -49,7 +49,7 @@ RUN --mount=type=cache,id=turbo,target=/app/.turbo \
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm --filter @arr/api --prod deploy /app/deploy-api && \
     cd /app/deploy-api && \
-    cp -r /app/apps/api/dist ./dist && \
+    cp -r /app/apps/api/dist/. ./dist && \
     cp -r /app/apps/api/prisma ./prisma && \
     node -e "const p=require('/app/package.json'); console.log(JSON.stringify({version:p.version,name:p.name,commitSha:process.env.COMMIT_SHA||'unknown'}))" > ./version.json && \
     # Remove non-Linux native module prebuilds to reduce image size (~1MB)
@@ -129,6 +129,7 @@ RUN chown root:root /app/web \
 
 # Copy startup scripts and fix line endings (single layer)
 COPY --chown=abc:abc docker/start-combined.sh ./
+COPY --chown=abc:abc docker/patch-prisma-provider-bundles.sh ./
 COPY --chown=abc:abc docker/read-base-path.cjs ./api/
 COPY --chown=abc:abc docker/sync-postgresql-schema.cjs ./api/
 COPY --chown=abc:abc docker/validate-runtime.sh ./api/
@@ -136,7 +137,7 @@ COPY --chown=abc:abc docker/validate-runtime.sh ./api/
 # users can run `docker exec <container> dump-heap` without needing to
 # know the API's internal process layout.
 COPY --chown=root:root docker/dump-heap.sh /usr/local/bin/dump-heap
-RUN sed -i 's/\r$//' ./start-combined.sh && chmod +x ./start-combined.sh \
+RUN sed -i 's/\r$//' ./start-combined.sh ./patch-prisma-provider-bundles.sh && chmod +x ./start-combined.sh ./patch-prisma-provider-bundles.sh \
     && mv start-combined.sh start.sh \
     && chmod +x ./api/validate-runtime.sh \
     && sed -i 's/\r$//' /usr/local/bin/dump-heap && chmod +x /usr/local/bin/dump-heap
