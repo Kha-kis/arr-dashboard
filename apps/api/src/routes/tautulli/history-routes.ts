@@ -4,7 +4,11 @@
  * Recent watch history aggregated from all Tautulli instances.
  */
 
-import type { TautulliWatchHistoryItem, TautulliWatchHistoryResponse } from "@arr/shared";
+import type {
+	SessionAvailability,
+	TautulliWatchHistoryItem,
+	TautulliWatchHistoryResponse,
+} from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { executeOnTautulliInstances } from "../../lib/tautulli/tautulli-helpers.js";
@@ -36,15 +40,38 @@ export async function registerHistoryRoutes(app: FastifyInstance, _opts: Fastify
 	app.get("/", async (request, reply) => {
 		const { length, start } = validateRequest(historyQuery, request.query);
 		const userId = request.currentUser!.id;
+		const configured = await app.prisma.serviceInstance.findMany({
+			where: { userId, service: "TAUTULLI", enabled: true },
+			select: { id: true },
+		});
 
 		const result = await executeOnTautulliInstances(app, userId, async (client) => {
-			return client.getHistory({ length, start });
+			return client.getHistory({ length, start, include_activity: 0 });
 		});
+		const configuredIds = new Set(configured.map(({ id }) => id));
+		const acceptedInstances = result.instances.filter(
+			(instance): instance is Extract<(typeof result.instances)[number], { success: true }> =>
+				instance.success && configuredIds.has(instance.instanceId),
+		);
+		const availability: SessionAvailability = {
+			status:
+				configured.length === 0
+					? "not-configured"
+					: acceptedInstances.length === 0
+						? "unavailable"
+						: acceptedInstances.length === configured.length
+							? "complete"
+							: "partial",
+			configuredSources: configured.length,
+			availableSources: acceptedInstances.length,
+		};
+		if (availability.status === "unavailable") {
+			return reply.status(503).send({ error: "Tautulli history is unavailable", availability });
+		}
 
 		const items: TautulliWatchHistoryItem[] = [];
 
-		for (const instanceResult of result.instances) {
-			if (!instanceResult.success) continue;
+		for (const instanceResult of acceptedInstances) {
 			const { data: historyItems } = instanceResult.data;
 
 			for (const raw of historyItems) {
@@ -71,6 +98,7 @@ export async function registerHistoryRoutes(app: FastifyInstance, _opts: Fastify
 		const response: TautulliWatchHistoryResponse = {
 			history: paged,
 			totalCount: items.length,
+			availability,
 		};
 
 		return reply.send(response);

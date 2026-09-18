@@ -4,6 +4,8 @@
  * Minimal types for Tautulli integration — response shapes and cache data.
  */
 
+import type { SessionAvailability } from "./session";
+
 /** Tautulli server info (from get_tautulli_info) */
 export interface TautulliInfo {
 	tautulli_version: string;
@@ -67,6 +69,7 @@ export interface TautulliActivityResponse {
 	totalBandwidth: number;
 	lanBandwidth: number;
 	wanBandwidth: number;
+	availability: SessionAvailability;
 }
 
 // ============================================================================
@@ -95,10 +98,14 @@ export interface TautulliHomeStat {
 	rows: TautulliHomeStatRow[];
 }
 
+/** Informational source coverage for this read, not provider mutation authority. */
+export type TautulliStatisticsAvailability = SessionAvailability;
+
 export interface TautulliStatsResponse {
 	homeStats: TautulliHomeStat[];
 	userStats: TautulliUserStat[];
 	timeRange: number;
+	availability: TautulliStatisticsAvailability;
 }
 
 export interface TautulliPlaysByDateSeries {
@@ -110,6 +117,7 @@ export interface TautulliPlaysByDateResponse {
 	categories: string[];
 	series: TautulliPlaysByDateSeries[];
 	timeRange: number;
+	availability: TautulliStatisticsAvailability;
 }
 
 export type TautulliHomeStatsResponse = Pick<TautulliStatsResponse, "homeStats">;
@@ -136,4 +144,5 @@ export interface TautulliWatchHistoryItem {
 export interface TautulliWatchHistoryResponse {
 	history: TautulliWatchHistoryItem[];
 	totalCount: number;
+	availability: SessionAvailability;
 }

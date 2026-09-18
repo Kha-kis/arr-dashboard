@@ -4,6 +4,8 @@
  * Types for Jellyfin integration — sessions, now-playing, cache health.
  */
 
+import type { SessionAvailability } from "./session";
+
 // ============================================================================
 // Now Playing / Sessions
 // ============================================================================
@@ -32,4 +34,5 @@ export interface JellyfinSessionInfo {
 export interface JellyfinNowPlayingResponse {
 	sessions: JellyfinSessionInfo[];
 	totalBandwidth: number;
+	availability: SessionAvailability;
 }

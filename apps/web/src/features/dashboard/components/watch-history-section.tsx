@@ -100,6 +100,14 @@ export const WatchHistorySection = ({ enabled }: WatchHistorySectionProps) => {
 	const query = useWatchHistory(pageSize, 0, enabled);
 	const items = query.data?.history ?? [];
 	const totalCount = query.data?.totalCount ?? 0;
+	const complete = !query.isError && query.data?.availability?.status === "complete";
+	const hasCoverageNotice =
+		query.isError ||
+		(query.data !== undefined &&
+			query.data.availability?.status !== "complete" &&
+			query.data.availability?.status !== "not-configured");
+
+	if (!enabled) return null;
 
 	if (query.isLoading) {
 		return (
@@ -120,7 +128,32 @@ export const WatchHistorySection = ({ enabled }: WatchHistorySectionProps) => {
 		);
 	}
 
-	if (!enabled || items.length === 0) return null;
+	if (query.isError && items.length === 0) {
+		return (
+			<div className="mt-6 flex items-center gap-2 text-sm text-muted-foreground" role="status">
+				<History className="h-4 w-4 shrink-0" style={{ color: plexGradient.from }} />
+				<span>Watch history is unavailable right now.</span>
+			</div>
+		);
+	}
+
+	if (items.length === 0) {
+		if (!hasCoverageNotice) return null;
+		return (
+			<div className="mt-6 text-sm text-muted-foreground" role="status">
+				Watch history coverage is incomplete. No available observations are shown; the complete
+				history is unknown.
+			</div>
+		);
+	}
+
+	const notice = query.isError
+		? query.data?.availability?.status === "complete"
+			? "Watch history refresh is unavailable. Showing retained observations; they may be stale."
+			: "Watch history refresh is unavailable. Retained observations may be stale and coverage is incomplete; the complete history is unknown."
+		: hasCoverageNotice
+			? "Watch history coverage is incomplete. Showing available observations; the complete history is unknown."
+			: undefined;
 
 	return (
 		<div className="mt-6">
@@ -128,14 +161,19 @@ export const WatchHistorySection = ({ enabled }: WatchHistorySectionProps) => {
 				<div className="flex items-center gap-2">
 					<History className="h-4 w-4" style={{ color: plexGradient.from }} />
 					<span className="text-sm font-semibold text-foreground">Recent Watch History</span>
-					{totalCount > 0 && (
-						<span className="text-xs text-muted-foreground">({totalCount} total)</span>
+					{complete && totalCount > 0 && (
+						<span className="text-xs text-muted-foreground">({totalCount} loaded)</span>
 					)}
 				</div>
 				{query.isRefetching && (
 					<span className="text-xs text-muted-foreground animate-pulse">Updating...</span>
 				)}
 			</div>
+			{notice && (
+				<div className="mb-3 text-xs text-muted-foreground" role="status">
+					{notice}
+				</div>
+			)}
 
 			<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10 divide-y divide-border/30">
 				{items.map((item, index) => (
@@ -147,10 +185,10 @@ export const WatchHistorySection = ({ enabled }: WatchHistorySectionProps) => {
 				))}
 			</div>
 
-			{totalCount > pageSize && (
+			{complete && totalCount > pageSize && (
 				<div className="flex justify-center mt-3">
 					<Button variant="secondary" size="sm" onClick={() => query.refetch()} className="text-xs">
-						Showing {items.length} of {totalCount}
+						Showing {items.length} loaded observations
 					</Button>
 				</div>
 			)}

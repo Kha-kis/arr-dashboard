@@ -24,7 +24,7 @@ import {
 	tautulliServerInfoSchema,
 	tautulliServersInfoSchema,
 	tautulliTargetHistoryDataSchema,
-	tautulliUserWatchTimeStatsSchema,
+	tautulliUserStatsSchema,
 } from "./tautulli-schemas.js";
 
 // ============================================================================
@@ -105,7 +105,7 @@ export interface TautulliPlaysByDateData {
 	}>;
 }
 
-export interface TautulliUserWatchTimeStats {
+export interface TautulliUserStats {
 	user_id: number;
 	friendly_name: string;
 	total_plays: number;
@@ -135,6 +135,8 @@ export interface TautulliServerIdentity {
 // ============================================================================
 
 const DEFAULT_TIMEOUT = 10_000;
+const USER_STATS_PAGE_SIZE = 100;
+const USER_STATS_MAX_PAGES = 100;
 
 function normalizeDisplayName(value: string | undefined): string | undefined {
 	const displayName = value?.trim();
@@ -315,16 +317,57 @@ export class TautulliClient {
 	}
 
 	/**
-	 * Get watch time statistics per user.
+	 * Get complete watch statistics per user through the paged top-users home stat.
+	 * Tautulli returns one object when stat_id is supplied, so each page is
+	 * validated independently and a short page is required to prove completion.
 	 */
-	async getUserWatchTimeStats(userId?: string): Promise<TautulliUserWatchTimeStats[]> {
-		return this.command(
-			"get_user_watch_time_stats",
-			{
-				user_id: userId,
-			},
-			z.array(tautulliUserWatchTimeStatsSchema),
-		);
+	async getUserStats(timeRange?: number): Promise<TautulliUserStats[]> {
+		const deadlineSignal = AbortSignal.timeout(Math.min(DEFAULT_TIMEOUT, this.timeout));
+		const users: TautulliUserStats[] = [];
+		const seenUserIds = new Set<number>();
+
+		for (let page = 0; page < USER_STATS_MAX_PAGES; page++) {
+			deadlineSignal.throwIfAborted();
+			const stat = await this.command(
+				"get_home_stats",
+				{
+					time_range: timeRange ?? 30,
+					stat_id: "top_users",
+					stats_type: "plays",
+					stats_count: USER_STATS_PAGE_SIZE,
+					stats_start: page * USER_STATS_PAGE_SIZE,
+				},
+				tautulliUserStatsSchema,
+				deadlineSignal,
+			);
+
+			deadlineSignal.throwIfAborted();
+			if (stat.stat_id !== "top_users") {
+				throw new Error("Tautulli API returned the wrong user statistics set");
+			}
+			if (stat.rows.length > USER_STATS_PAGE_SIZE) {
+				throw new Error(
+					"Tautulli API returned a user statistics page larger than the requested page size",
+				);
+			}
+
+			for (const row of stat.rows) {
+				if (seenUserIds.has(row.user_id)) {
+					throw new Error("Tautulli API returned duplicate user statistics");
+				}
+				seenUserIds.add(row.user_id);
+				users.push({
+					user_id: row.user_id,
+					friendly_name: row.friendly_name?.trim() || row.user?.trim() || "Unknown user",
+					total_plays: row.total_plays,
+					total_duration: row.total_duration,
+				});
+			}
+
+			if (stat.rows.length < USER_STATS_PAGE_SIZE) return users;
+		}
+
+		throw new Error("Tautulli API user statistics exceeded the pagination cap");
 	}
 
 	/**

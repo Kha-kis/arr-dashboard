@@ -101,7 +101,13 @@ const TrendSparkline = ({
 	const areaPath = `${linePath} L${width},${height} L0,${height} Z`;
 
 	return (
-		<svg width={width} height={height} className="overflow-visible">
+		<svg
+			width="100%"
+			height={height}
+			viewBox={`0 0 ${width} ${height}`}
+			preserveAspectRatio="none"
+			className="block max-w-full overflow-visible"
+		>
 			<path d={areaPath} fill={color} opacity={0.15} />
 			<path
 				d={linePath}

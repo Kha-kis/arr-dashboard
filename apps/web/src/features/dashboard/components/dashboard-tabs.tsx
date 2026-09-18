@@ -11,6 +11,7 @@ interface DashboardTabsProps {
 	activeTab: DashboardTab;
 	onTabChange: (tab: DashboardTab) => void;
 	queueCount: number;
+	hasMediaServer: boolean;
 	sessionCount?: number;
 	themeGradient?: { from: string; to: string; glow: string };
 }
@@ -23,6 +24,7 @@ export const DashboardTabs = ({
 	activeTab,
 	onTabChange,
 	queueCount,
+	hasMediaServer,
 	sessionCount,
 	themeGradient,
 }: DashboardTabsProps) => {
@@ -34,7 +36,7 @@ export const DashboardTabs = ({
 	}> = [
 		{ id: "overview", label: "Overview", icon: LayoutGrid },
 		{ id: "queue", label: "Active Queue", icon: ListOrdered, badge: queueCount },
-		...(sessionCount !== undefined
+		...(hasMediaServer
 			? [{ id: "activity" as const, label: "Activity", icon: Activity, badge: sessionCount }]
 			: []),
 	];

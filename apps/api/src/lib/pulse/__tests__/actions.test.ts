@@ -9,7 +9,10 @@
 
 import type { PulseAction } from "@arr/shared";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
+import pino from "pino";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { PlexClient } from "../../plex/plex-client.js";
+import { collectPlexNativeInventory } from "../../plex/plex-native-inventory.js";
 
 // -----------------------------------------------------------------------------
 // Module mocks — declared before the dispatcher import so vi can hoist them.
@@ -117,6 +120,7 @@ const cacheStatusUpsert = vi.fn();
 const tautulliInstance = { service: "TAUTULLI" as const, connectionGeneration: 11 };
 
 const fakeApp = {
+	log: fakeLog,
 	prisma: {
 		serviceInstance: {
 			findFirst: vi.fn().mockResolvedValue(plexInstance),
@@ -305,6 +309,41 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		label: "Refresh now",
 		destructive: false,
 	};
+
+	it("keeps authenticated user bindings out of Plex background collection diagnostics", async () => {
+		const lines: string[] = [];
+		const root = pino(
+			{ base: null, timestamp: false },
+			{ write: (line: string) => lines.push(line) },
+		);
+		const app = { ...fakeApp, log: root } as FastifyInstance;
+		refreshOwnedPlexCache.mockImplementation(async ({ log }) =>
+			collectPlexNativeInventory(
+				{
+					getActivities: async () => [{ type: "library.update.item.metadata" }],
+					getLibrarySettlementSections: async () => [],
+				} as unknown as PlexClient,
+				log,
+			),
+		);
+		const result = await dispatchPulseAction(
+			app,
+			"user-1",
+			plexAction,
+			root.child({ userId: "private-user-canary" }),
+		);
+		await result.backgroundTask;
+		const diagnostics = lines
+			.map((line) => JSON.parse(line))
+			.filter((event) => event.category === "plex-native-collection-rejected");
+		expect(diagnostics).toEqual([
+			expect.objectContaining({
+				stage: "start-probe",
+				reason: "plex_metadata_refresh_in_progress",
+			}),
+		]);
+		expect(JSON.stringify(diagnostics)).not.toContain("private-user-canary");
+	});
 	const tautulliAction: PulseAction = {
 		...plexAction,
 		target: { instanceId: "inst-tautulli-1", cacheType: "tautulli" },

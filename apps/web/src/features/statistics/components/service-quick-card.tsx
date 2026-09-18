@@ -2,7 +2,7 @@
 
 import type { LucideIcon } from "lucide-react";
 import { Button } from "../../../components/ui/button";
-import type { ServiceGradient } from "../../../lib/theme-gradients";
+import { SEMANTIC_COLORS, type ServiceGradient } from "../../../lib/theme-gradients";
 
 export interface ServiceQuickStat {
 	label: string;
@@ -16,6 +16,7 @@ interface ServiceQuickCardProps {
 	icon: LucideIcon;
 	gradient: ServiceGradient;
 	stats: ServiceQuickStat[];
+	statusMessage?: string;
 	onViewDetails: () => void;
 }
 
@@ -29,6 +30,7 @@ export const ServiceQuickCard = ({
 	icon: Icon,
 	gradient,
 	stats,
+	statusMessage,
 	onViewDetails,
 }: ServiceQuickCardProps) => {
 	return (
@@ -65,6 +67,20 @@ export const ServiceQuickCard = ({
 						</div>
 					))}
 				</div>
+				{statusMessage && (
+					<p
+						role="status"
+						aria-live="polite"
+						className="mt-3 rounded-lg border p-3 text-sm"
+						style={{
+							color: SEMANTIC_COLORS.warning.text,
+							backgroundColor: SEMANTIC_COLORS.warning.bg,
+							borderColor: SEMANTIC_COLORS.warning.border,
+						}}
+					>
+						{statusMessage}
+					</p>
+				)}
 				<Button
 					variant="ghost"
 					size="sm"

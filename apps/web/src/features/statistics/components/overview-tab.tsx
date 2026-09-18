@@ -108,31 +108,63 @@ export const OverviewTab = ({
 	const [storageBreakdownOpen, setStorageBreakdownOpen] = useState(false);
 
 	// Fetch Plex summary data when Tautulli is available
-	const { data: tautulliStats } = useTautulliStats(30, hasTautulli);
-	const { data: tautulliPlays } = useTautulliPlaysByDate(30, hasTautulli);
+	const { data: tautulliStats, isError: statsError } = useTautulliStats(30, hasTautulli);
+	const { data: tautulliPlays, isError: playsError } = useTautulliPlaysByDate(30, hasTautulli);
+	const statsStatus = tautulliStats?.availability?.status;
+	const playsStatus = tautulliPlays?.availability?.status;
+	const statsPartial = statsStatus === "partial";
+	const playsPartial = playsStatus === "partial";
+	const sourceUnavailable =
+		(tautulliStats && statsStatus !== "complete" && statsStatus !== "partial") ||
+		(tautulliPlays && playsStatus !== "complete" && playsStatus !== "partial");
 
 	const plexSummary = useMemo(() => {
-		if (!tautulliStats?.userStats && !tautulliPlays?.series) return null;
+		const users =
+			tautulliStats?.availability?.status === "complete" ||
+			tautulliStats?.availability?.status === "partial"
+				? tautulliStats.userStats
+				: undefined;
+		const series =
+			tautulliPlays?.availability?.status === "complete" ||
+			tautulliPlays?.availability?.status === "partial"
+				? tautulliPlays.series
+				: undefined;
+		if (!users && !series) return null;
 		// Total plays from plays-by-date (matches Plex tab calculation)
-		const totalPlays = tautulliPlays?.series
-			? tautulliPlays.series.reduce(
+		const totalPlays = series
+			? series.reduce(
 					(acc: number, s: { data: number[] }) =>
 						acc + s.data.reduce((a: number, b: number) => a + b, 0),
 					0,
 				)
-			: 0;
-		const totalDuration = tautulliStats?.userStats
-			? tautulliStats.userStats.reduce(
-					(acc: number, u: { totalDuration: number }) => acc + u.totalDuration,
-					0,
-				)
-			: 0;
+			: null;
+		const totalDuration = users
+			? users.reduce((acc: number, u: { totalDuration: number }) => acc + u.totalDuration, 0)
+			: null;
 		return {
-			activeUsers: tautulliStats?.userStats?.length ?? 0,
-			totalPlays,
-			totalDuration,
+			// Empty results from only some sources cannot establish an overall zero.
+			activeUsers:
+				tautulliStats?.availability?.status === "partial" && users?.length === 0
+					? null
+					: (users?.length ?? null),
+			totalPlays:
+				tautulliPlays?.availability?.status === "partial" && totalPlays === 0 ? null : totalPlays,
+			totalDuration:
+				tautulliStats?.availability?.status === "partial" && totalDuration === 0
+					? null
+					: totalDuration,
 		};
 	}, [tautulliStats, tautulliPlays]);
+	const plexStatusMessage =
+		statsError || playsError
+			? plexSummary
+				? "Statistics refresh failed. Available values may be stale; missing values are unavailable."
+				: "Statistics are unavailable."
+			: sourceUnavailable
+				? "Statistics are unavailable for one or more sources. Available values exclude missing data."
+				: statsPartial || playsPartial
+					? "Statistics are incomplete. Showing available sources only; missing values are unavailable."
+					: undefined;
 
 	return (
 		<div className="flex flex-col gap-8">
@@ -418,6 +450,7 @@ export const OverviewTab = ({
 						name="Plex"
 						icon={Activity}
 						gradient={SERVICE_GRADIENTS.plex}
+						statusMessage={plexStatusMessage}
 						onViewDetails={() => onSwitchTab("plex")}
 						stats={[
 							{ label: "Total Plays", value: plexSummary?.totalPlays ?? "—" },
@@ -428,7 +461,10 @@ export const OverviewTab = ({
 							},
 							{
 								label: "Watch Time",
-								value: plexSummary ? formatDuration(plexSummary.totalDuration) : "—",
+								value:
+									plexSummary?.totalDuration != null
+										? formatDuration(plexSummary.totalDuration)
+										: "—",
 							},
 							{ label: "Period", value: "30 days" },
 						]}

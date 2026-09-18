@@ -529,8 +529,8 @@ pgDescribe("provider observation PostgreSQL CAS parity", () => {
 			itemCount: 7,
 			generationId: "published-generation",
 		});
-		expect(recoveredStatus.lastAttemptResult).toMatch(/^in_progress:/);
-		expect(recoveredStatus.lastAttemptResult).not.toBe(marker);
+		expect(recoveredStatus.lastAttemptResult).toBe("error");
+		expect(recoveredStatus.lastAttemptErrorMessage).toBe("unknown-failure");
 		expect(await reconcileInterruptedProviderCacheRefreshAttempts(client)).toBe(0);
 		expect(await recoverAbandonedObservationRuns(client)).toBe(0);
 		expect(
@@ -607,7 +607,18 @@ pgDescribe("provider observation PostgreSQL CAS parity", () => {
 			},
 		});
 
-		expect(await reconcileInterruptedProviderCacheRefreshAttempts(client)).toBe(0);
+		expect(await reconcileInterruptedProviderCacheRefreshAttempts(client)).toBe(1);
+		await expect(
+			client.providerObservationUnit.findUniqueOrThrow({ where: { id: unit.id } }),
+		).resolves.toMatchObject({ state: "pending", cursor: 0, attemptCount: 0 });
+		await expect(
+			client.cacheRefreshStatus.findUniqueOrThrow({
+				where: { instanceId_cacheType: { instanceId, cacheType: "plex_episode" } },
+			}),
+		).resolves.toMatchObject({
+			lastAttemptResult: "error",
+			lastAttemptErrorMessage: "unknown-failure",
+		});
 		await client.$transaction([
 			client.providerObservationUnit.update({
 				where: { id: unit.id },
@@ -655,7 +666,7 @@ pgDescribe("provider observation PostgreSQL CAS parity", () => {
 				},
 			}),
 		]);
-		expect(await reconcileInterruptedProviderCacheRefreshAttempts(client)).toBe(1);
+		expect(await reconcileInterruptedProviderCacheRefreshAttempts(client)).toBe(0);
 		await expect(
 			client.cacheRefreshStatus.findUniqueOrThrow({
 				where: { instanceId_cacheType: { instanceId, cacheType: "plex_episode" } },

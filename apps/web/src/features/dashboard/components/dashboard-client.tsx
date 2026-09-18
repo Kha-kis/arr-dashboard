@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Suspense, lazy, useCallback, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { PremiumSkeleton } from "../../../components/layout/premium-components";
 import { springs } from "../../../components/motion";
 import { QueueFilters, ServiceInstancesTable } from "../../../components/presentational";
@@ -43,13 +43,17 @@ import { anonymizeHealthMessage, getLinuxUsername, useIncognitoMode } from "../.
 import { POLLING_REALTIME, POLLING_STANDARD } from "../../../lib/polling-intervals";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
+
 const ManualImportModal = lazy(() => import("../../manual-import/components/manual-import-modal"));
+
 import { useQueueGrouping } from "../hooks";
 import { useDashboardData } from "../hooks/useDashboardData";
 import { useDashboardFilters } from "../hooks/useDashboardFilters";
 import { useDashboardQueue } from "../hooks/useDashboardQueue";
-import { NeedsAttentionPanel } from "./needs-attention-panel";
+import { summarizeSessionQueries } from "../lib/session-availability";
+import type { InstanceUrlMap } from "../types";
 import { type DashboardTab, DashboardTabs } from "./dashboard-tabs";
+import { NeedsAttentionPanel } from "./needs-attention-panel";
 import { NowPlayingWidget } from "./now-playing-widget";
 import { OnDeckWidget } from "./on-deck-widget";
 import { PlexServerInfoWidget } from "./plex-server-info-widget";
@@ -57,8 +61,6 @@ import { QueueTable } from "./queue-table";
 import { RecentlyAddedWidget } from "./recently-added-widget";
 import { SeerrRequestsWidget } from "./seerr-requests-widget";
 import { WatchHistorySection } from "./watch-history-section";
-
-import type { InstanceUrlMap } from "../types";
 
 /**
  * Service-specific config combining imported gradients with icons
@@ -388,21 +390,18 @@ export const DashboardClient = () => {
 		isMediaTab ? POLLING_REALTIME : POLLING_STANDARD,
 	);
 	const tautulliActivity = useTautulliActivity(
-		hasTautulliInstances,
+		hasTautulliInstances && !hasPlexInstances,
 		isMediaTab ? POLLING_REALTIME : POLLING_STANDARD,
 	);
 	const jellyfinNowPlaying = useJellyfinNowPlaying(
 		hasJellyfinInstances,
 		isMediaTab ? POLLING_REALTIME : POLLING_STANDARD,
 	);
-	const sessionCount = useMemo(() => {
-		if (!hasMediaServer) return undefined;
-		const plexCount = plexNowPlaying.data?.sessions?.length ?? 0;
-		const tautulliCount = tautulliActivity.data?.sessions?.length ?? 0;
-		const jellyfinCount = jellyfinNowPlaying.data?.sessions?.length ?? 0;
-		// Use max for Plex/Tautulli (they overlap), then add Jellyfin (separate server)
-		return Math.max(plexCount, tautulliCount) + jellyfinCount;
-	}, [hasMediaServer, plexNowPlaying.data, tautulliActivity.data, jellyfinNowPlaying.data]);
+	const sessionCount = summarizeSessionQueries([
+		{ enabled: hasPlexInstances, query: plexNowPlaying },
+		{ enabled: hasTautulliInstances && !hasPlexInstances, query: tautulliActivity },
+		{ enabled: hasJellyfinInstances, query: jellyfinNowPlaying },
+	]).exactCount;
 
 	// Build instanceId → externalUrl (or baseUrl fallback) map
 	const instanceUrlMap = useMemo<InstanceUrlMap>(() => {
@@ -597,6 +596,7 @@ export const DashboardClient = () => {
 				activeTab={activeTab}
 				onTabChange={setActiveTab}
 				queueCount={totalQueueItems}
+				hasMediaServer={hasMediaServer}
 				sessionCount={sessionCount}
 				themeGradient={themeGradient}
 			/>
@@ -738,7 +738,7 @@ export const DashboardClient = () => {
 									{seerrInstance && (
 										<SeerrRequestsWidget instanceId={seerrInstance.id} animationDelay={400} />
 									)}
-									{hasMediaServer && sessionCount !== undefined && sessionCount > 0 && (
+									{hasMediaServer && (
 										<NowPlayingWidget
 											hasPlexInstances={hasPlexInstances}
 											hasTautulliInstances={hasTautulliInstances}

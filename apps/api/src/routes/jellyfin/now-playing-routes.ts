@@ -5,7 +5,11 @@
  * Aggregates across all user's Jellyfin instances.
  */
 
-import type { JellyfinNowPlayingResponse, JellyfinSessionInfo } from "@arr/shared";
+import type {
+	JellyfinNowPlayingResponse,
+	JellyfinSessionInfo,
+	SessionAvailability,
+} from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { executeOnJellyfinInstances } from "../../lib/jellyfin/jellyfin-helpers.js";
 
@@ -49,6 +53,23 @@ export async function registerNowPlayingRoutes(app: FastifyInstance, _opts: Fast
 				};
 			});
 		});
+		const configuredSources = result.instances.length;
+		const availableSources = result.instances.filter((instance) => instance.success).length;
+		const availability: SessionAvailability = {
+			status:
+				configuredSources === 0
+					? "not-configured"
+					: availableSources === 0
+						? "unavailable"
+						: availableSources === configuredSources
+							? "complete"
+							: "partial",
+			configuredSources,
+			availableSources,
+		};
+		if (availability.status === "unavailable") {
+			return reply.status(503).send({ error: "Jellyfin now-playing is unavailable", availability });
+		}
 
 		const sessions = result.aggregated as unknown as JellyfinSessionInfo[];
 		let totalBandwidth = 0;
@@ -59,6 +80,7 @@ export async function registerNowPlayingRoutes(app: FastifyInstance, _opts: Fast
 		const response: JellyfinNowPlayingResponse = {
 			sessions,
 			totalBandwidth,
+			availability,
 		};
 
 		return reply.send(response);

@@ -578,7 +578,7 @@ describe("collectPlexCacheLiveEvidence", () => {
 		["missing to zero", undefined, 0],
 		["zero to missing", 0, undefined],
 	] as const)(
-		"rejects terminal view-count drift (%s)",
+		"preserves inventory but withdraws watch authority on terminal view-count drift (%s)",
 		async (_label, initialCount, terminalCount) => {
 			const initial = {
 				ratingKey: "movie-drift",
@@ -616,8 +616,27 @@ describe("collectPlexCacheLiveEvidence", () => {
 
 			const capture = pinoCapture();
 			const result = await collectPlexCacheLiveEvidence(client, "inst-1", capture.log);
-			expect(result.kind).toBe("unpublished");
-			expect(result.errors).toBeGreaterThan(0);
+			expect(result.kind).toBe("positive-observation");
+			expect(result.errors).toBe(0);
+			expect(result.receipt.domains).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						domain: "library-inventory",
+						evidence: "complete",
+						valueSemantics: "exact",
+					}),
+					expect.objectContaining({
+						domain: "watch-count",
+						evidence: "unknown",
+						valueSemantics: "unknown",
+					}),
+					expect.objectContaining({
+						domain: "watch-attribution",
+						evidence: "unknown",
+						valueSemantics: "unknown",
+					}),
+				]),
+			);
 			const drift = capture
 				.serialized()
 				.split("\n")
@@ -630,6 +649,80 @@ describe("collectPlexCacheLiveEvidence", () => {
 				domains: ["watch"],
 				msg: "Plex inventory changed during observation",
 			});
+		},
+	);
+
+	it.each([
+		["between passes", [0, 0, 1, 1]],
+		["within both passes", [0, 1, 1, 2]],
+		["only first pass", [0, 1, 1, 1]],
+		["only final pass", [0, 0, 0, 1]],
+	] as const)("settles non-watch domains when watch state changes %s", async (_label, counts) => {
+		const client = receiptCollectionClient({
+			sections: [{ key: "movies", title: "Movies", type: "movie" }],
+			itemsBySection: { movies: [] },
+		});
+		let read = 0;
+		client.getLibraryItemsWithCoverage = vi.fn(async () =>
+			completeCoverage([
+				{
+					ratingKey: "movie-1",
+					title: "Synthetic movie",
+					type: "movie",
+					Guid: [{ id: "tmdb://42" }],
+					viewCount: counts[read++] ?? 2,
+				},
+			]),
+		);
+		const result = await collectSettledPlexCacheLiveEvidence(client, "inst-1", silentLog);
+		expect(result).toMatchObject({ kind: "positive-observation", complete: false, errors: 0 });
+		expect(result.completedAt).toBeInstanceOf(Date);
+		expect(result.receipt.domains).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					domain: "library-inventory",
+					evidence: "complete",
+					valueSemantics: "exact",
+				}),
+				expect.objectContaining({
+					domain: "watch-count",
+					evidence: "unknown",
+					valueSemantics: "unknown",
+				}),
+				expect.objectContaining({
+					domain: "watch-attribution",
+					evidence: "unknown",
+					valueSemantics: "unknown",
+				}),
+			]),
+		);
+		expect(result).not.toHaveProperty("snapshot");
+	});
+
+	it.each(["title", "membership", "labels", "collections"])(
+		"still rejects %s changes accompanying watch drift",
+		async (field) => {
+			const client = receiptCollectionClient({
+				sections: [{ key: "movies", title: "Movies", type: "movie" }],
+				itemsBySection: { movies: [] },
+			});
+			let read = 0;
+			client.getLibraryItemsWithCoverage = vi.fn(async () => {
+				const changed = read++ >= 2;
+				return completeCoverage([
+					{
+						ratingKey: changed && field === "membership" ? "movie-2" : "movie-1",
+						title: changed && field === "title" ? "Changed" : "Synthetic movie",
+						type: "movie",
+						Guid: [{ id: "tmdb://42" }],
+						viewCount: changed ? 1 : 0,
+						Label: changed && field === "labels" ? [{ tag: "Changed" }] : [],
+						Collection: changed && field === "collections" ? [{ tag: "Changed" }] : [],
+					},
+				]);
+			});
+			const result = await collectSettledPlexCacheLiveEvidence(client, "inst-1", silentLog);
+			expect(result.kind).toBe("unpublished");
 		},
 	);
 
@@ -674,6 +767,34 @@ describe("collectPlexCacheLiveEvidence", () => {
 			availability: "unavailable",
 			valueSemantics: "unknown",
 		});
+	});
+
+	it.each([
+		"Plex history changed while it was being paged",
+		"Plex history changed before its complete snapshot could be verified",
+	])("isolates late history drift without granting watch authority: %s", async (message) => {
+		for (const failedVerification of [1, 2, 3, 4]) {
+			const client = positiveObservationClient({});
+			let reads = 0;
+			client.verifyHistorySnapshot = vi.fn(async () => {
+				if (++reads === failedVerification) throw new Error(message);
+			});
+			const result = await collectSettledPlexCacheLiveEvidence(client, "inst-1", silentLog);
+			expect(result).toMatchObject({ kind: "positive-observation", complete: false, errors: 0 });
+			expect(result.completedAt).toBeInstanceOf(Date);
+			expect(result).not.toHaveProperty("snapshot");
+			const evaluation = evaluateProviderCoverageReceipt(receiptFrom(result));
+			expect(evaluation.domains?.get("library-inventory")).toMatchObject({
+				availability: "current",
+				valueSemantics: "exact",
+			});
+			for (const domain of ["watch-count", "watch-attribution"] as const) {
+				expect(evaluation.domains?.get(domain)).toMatchObject({
+					availability: "unavailable",
+					valueSemantics: "unknown",
+				});
+			}
+		}
 	});
 
 	it("keeps mixed resolved and unresolved history as a lower-bound attribution", async () => {

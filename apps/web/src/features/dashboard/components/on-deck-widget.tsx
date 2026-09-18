@@ -81,17 +81,22 @@ export const OnDeckWidget = ({
 				mediaType: item.mediaType,
 				sectionTitle: item.libraryName,
 				instanceId: item.instanceId,
-				thumbUrl: item.jellyfinId ? getJellyfinThumbUrl(item.instanceId, item.jellyfinId) : null,
+				thumbUrl:
+					item.thumb && item.jellyfinId
+						? getJellyfinThumbUrl(item.instanceId, item.jellyfinId)
+						: null,
 			});
 		}
 		return result;
 	}, [plexQuery.data, jellyfinQuery.data]);
 
 	const isLoading = plexQuery.isLoading || jellyfinQuery.isLoading;
-	// Only error if all enabled sources failed
-	const plexEvidence = plexQuery.data?.evidence ?? getPlexEvidenceFromError(plexQuery.error);
+	// Keep retained rows, but disclose the latest failed refetch.
+	const plexEvidenceFromError = getPlexEvidenceFromError(plexQuery.error);
+	const plexEvidence = plexEvidenceFromError ?? plexQuery.data?.evidence;
 	const plexProviderStatus = providerObservationStatusFromPlexEvidence(plexEvidence);
-	const plexTransportError = plexQuery.isError && plexEvidence === undefined;
+	const plexTransportError =
+		hasPlexInstances && plexQuery.isError && plexEvidenceFromError === undefined;
 	const providerStatus = [
 		hasPlexInstances ? plexProviderStatus : undefined,
 		hasJellyfinInstances ? jellyfinQuery.data?.providerStatus : undefined,

@@ -265,6 +265,7 @@ const NavContent = ({
 													<Link
 														key={item.href}
 														href={item.href}
+														prefetch={false}
 														onClick={() => setMobileMenuOpen(false)}
 														aria-current={isActive ? "page" : undefined}
 														className={cn(

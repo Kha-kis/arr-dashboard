@@ -15,6 +15,11 @@ describe("Tautulli activity authority", () => {
 	beforeEach(async () => {
 		mocks.executeOnTautulliInstances.mockReset();
 		app = Fastify({ logger: false });
+		app.decorate("prisma", {
+			serviceInstance: {
+				findMany: vi.fn().mockResolvedValue([{ id: "tautulli-1" }]),
+			},
+		} as never);
 		app.addHook("preHandler", async (request) => {
 			request.currentUser = { id: "user-1" } as never;
 		});
@@ -51,13 +56,14 @@ describe("Tautulli activity authority", () => {
 
 		const response = await app.inject({ method: "GET", url: "/" });
 
-		expect(response.statusCode).toBe(200);
+		expect(response.statusCode).toBe(503);
 		expect(response.json()).toEqual({
-			sessions: [],
-			streamCount: 0,
-			totalBandwidth: 0,
-			lanBandwidth: 0,
-			wanBandwidth: 0,
+			error: "Tautulli activity is unavailable",
+			availability: {
+				status: "unavailable",
+				configuredSources: 1,
+				availableSources: 0,
+			},
 		});
 	});
 });

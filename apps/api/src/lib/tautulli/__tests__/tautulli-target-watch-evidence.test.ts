@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Encryptor } from "../../auth/encryption.js";
 import type { PrismaClient } from "../../prisma.js";
 import { TargetWatchReadBudget } from "../target-watch-read-budget.js";
@@ -207,7 +207,14 @@ function setup() {
 	return { prisma, encryptor, fetchMock, findMany, cacheFindMany };
 }
 
+beforeEach(() => {
+	// Keep fixture freshness deterministic without replacing real request timers.
+	vi.useFakeTimers({ toFake: ["Date"] });
+	vi.setSystemTime(new Date("2026-09-15T12:00:00.000Z"));
+});
+
 afterEach(() => {
+	vi.useRealTimers();
 	vi.unstubAllGlobals();
 	vi.clearAllMocks();
 	fixtureMode.value = "movie";

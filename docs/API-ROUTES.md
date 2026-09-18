@@ -61,6 +61,13 @@ for the full rationale.
 | `/api/seerr` | stable | Request management, discovery, library enrichment |
 | `/api/trash-guides` | internal | TRaSH cache, templates, deployment, profiles |
 
+The Tautulli stats route reads per-user statistics through
+`get_home_stats(stat_id=top_users)` for the requested time range, using 100-row
+pages and a shared 10-second deadline. It requires a short terminal page;
+duplicates, invalid rows, page failures or the 100-page cap reject that source
+rather than publishing truncated totals. The single-user
+`get_user_watch_time_stats` endpoint is not an all-users statistics source.
+
 > When you add a new route group, add a manifest entry **and** a row above.
 > A contract test (`apps/api/src/routes/__tests__/route-manifest.test.ts`)
 > will fail loudly if either is missing.
@@ -111,6 +118,64 @@ for the full rationale.
 | DELETE | `/services/:id` | Remove instance |
 | POST | `/services/test-connection` | Test before saving |
 | POST | `/services/:id/test` | Test existing |
+
+## Tautulli statistics (`/api/tautulli/stats`)
+
+Authenticated read-only `GET /api/tautulli/stats` and
+`GET /api/tautulli/stats/plays-by-date` return an `availability` object alongside
+their existing data: `status`, `configuredSources`, and `availableSources`.
+Counts cover this user's enabled Tautulli sources. The existing identity checks
+still gate provider reads and exclude observations rejected after a read.
+
+- `complete`: every source configured at the beginning of this request returned
+  an accepted result. A genuinely empty successful result remains distinct from
+  failure. This describes source participation, not exact historical coverage.
+- `partial`: HTTP 200 retains results from successful sources, but the aggregate
+  excludes unavailable sources and must not be presented as a complete total.
+- `unavailable`: HTTP 503 with a generic error and availability metadata, when
+  configured sources exist but none returned an accepted result. No provider
+  errors, instance names, or credentials are included in the error response.
+- `not-configured`: HTTP 200 with empty arrays when no enabled source is
+  configured. Consumers should hide the optional feature or show unavailable,
+  rather than infer zero activity.
+
+This metadata is informational UI evidence, never cleanup or mutation authority.
+
+## Tautulli watch history (`/api/tautulli/history`)
+
+Authenticated read-only `GET /api/tautulli/history` requests return completed history
+rows with `include_activity=0`, so active sessions are not treated as completed
+plays. The response includes `availability` alongside `history` and
+`totalCount`; `totalCount` is the bounded number of observations gathered for
+this request, not an exhaustive provider-history total.
+
+- `complete`: every enabled Tautulli source configured at the start of the
+  request returned an accepted result. An accepted empty result remains
+  distinct from an unavailable source.
+- `partial`: HTTP 200 retains rows from accepted sources, while unavailable or
+  unverified sources are counted in `configuredSources` and excluded from the
+  rows. Consumers must not present the result as complete coverage.
+- `unavailable`: HTTP 503 with a generic error and availability metadata when
+  configured sources exist but none returned an accepted result. Provider
+  errors, instance names, and credentials are not included.
+- `not-configured`: HTTP 200 with an empty history when this user has no
+  enabled Tautulli source.
+
+Availability is informational display evidence only and never grants cleanup
+or mutation authority.
+
+## Live session availability (`/api/plex/now-playing`, `/api/jellyfin/now-playing`, `/api/tautulli/activity`)
+
+Each live-session response includes `availability` with `status`,
+`configuredSources`, and `availableSources`. Counts describe source reads for
+this request, not session totals. `complete` means every configured source
+returned successfully, including a healthy empty result; `partial` is HTTP 200
+with successful sessions retained while failed sources are excluded;
+`unavailable` is HTTP 503 with a generic error when configured sources exist
+but none returned an accepted result; and `not-configured` is HTTP 200 with an
+empty session set when no source is configured. Enabled but unverified
+Tautulli sources remain in the configured count and cannot provide a successful
+read. This metadata is informational only and never grants mutation authority.
 
 ## QUI Routes (`/api/qui`) — experimental
 

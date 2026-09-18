@@ -118,6 +118,88 @@ async function publish(
 }
 
 describe("native inventory storage on disposable SQLite", { timeout: 30_000 }, () => {
+	it("yields during multi-chunk publication without losing parameterized row values", async () => {
+		const { prisma, plex } = await database();
+		const rows = Array.from({ length: 1_201 }, (_, index) => ({
+			...libraryRows[0]!,
+			nativeId: `native-${index}`,
+			title: `Synthetic 'quoted' title; -- ${index} 日本語`,
+			externalIds: { tmdb: [index + 1] },
+		}));
+		const begun = await beginNativeInventoryAttempt(prisma, {
+			userId: plex.userId,
+			instance: plex,
+			domains: ["library"],
+			now: NOW,
+		});
+		if (begun.status !== "acquired") throw new Error("attempt not acquired");
+		let yielded = false;
+		const result = await prisma.$transaction(async (tx) => {
+			const heartbeat = setImmediate(() => {
+				yielded = true;
+			});
+			try {
+				const published = await publishNativeInventoriesInTransaction(tx, {
+					userId: plex.userId,
+					authority: begun.authority,
+					attempt: begun.attempt,
+					snapshots: [{ domain: "library", scopeKeys: ["movies"], rows }],
+					now: NOW,
+				});
+				return { published, yieldedDuringPublication: yielded };
+			} finally {
+				clearImmediate(heartbeat);
+			}
+		});
+		expect(result.published.status).toBe("published");
+		expect(result.yieldedDuringPublication).toBe(true);
+		expect(await prisma.providerNativeInventoryItem.count()).toBe(rows.length);
+		const stored = await prisma.providerNativeInventoryItem.findFirstOrThrow({
+			where: { nativeId: "native-1200" },
+		});
+		expect(stored.title).toBe(rows[1_200]!.title);
+		expect(stored.externalIds).toBe(JSON.stringify({ tmdb: [1_201] }));
+		expect(stored.parentNativeId).toBeNull();
+	});
+
+	it.each(["reject", "skip"])(
+		"rolls back earlier chunks when a later native insert must %s",
+		async (mode) => {
+			const { prisma, plex } = await database();
+			const previous = await publish(prisma, plex);
+			if (previous.published.status !== "published") throw new Error("publication failed");
+			if (mode === "skip") {
+				await prisma.$executeRaw`
+				CREATE TRIGGER reject_synthetic_native_row BEFORE INSERT ON provider_native_inventory_items
+				WHEN NEW.nativeId = 'reject-later-chunk'
+				BEGIN SELECT RAISE(IGNORE); END
+			`;
+			} else {
+				await prisma.$executeRaw`
+				CREATE TRIGGER reject_synthetic_native_row BEFORE INSERT ON provider_native_inventory_items
+				WHEN NEW.nativeId = 'reject-later-chunk'
+				BEGIN SELECT RAISE(ABORT, 'synthetic later chunk rejection'); END
+			`;
+			}
+			const rows = Array.from({ length: 1_001 }, (_, index) => ({
+				...libraryRows[0]!,
+				nativeId: index === 1_000 ? "reject-later-chunk" : `replacement-${index}`,
+			}));
+			await expect(publish(prisma, plex, rows)).rejects.toThrow();
+			const snapshot = await prisma.providerNativeInventorySnapshot.findUniqueOrThrow({
+				where: { instanceId_domain: { instanceId: plex.id, domain: "library" } },
+			});
+			expect(snapshot.generationId).toBe(previous.published.generationId);
+			expect(snapshot.itemCount).toBe(libraryRows.length);
+			const stored = await prisma.providerNativeInventoryItem.findMany({
+				where: { snapshotId: snapshot.id },
+				orderBy: { nativeId: "asc" },
+				select: { nativeId: true },
+			});
+			expect(stored.map((row) => row.nativeId)).toEqual(["movie-1", "show-1"]);
+		},
+	);
+
 	it("persists normalized native external identifier evidence and defaults legacy rows", async () => {
 		const { prisma, plex } = await database();
 		await publish(prisma, plex, [

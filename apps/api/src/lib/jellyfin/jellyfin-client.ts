@@ -254,6 +254,16 @@ interface JellyfinRawItemsResult<T extends { Id: string } = JellyfinRawItem> {
 	failureMessage?: string;
 }
 
+export class JellyfinImageNotFoundError extends Error {
+	readonly statusCode = 404;
+	readonly code = "JELLYFIN_IMAGE_NOT_FOUND";
+
+	constructor() {
+		super("Image not found");
+		this.name = "JellyfinImageNotFoundError";
+	}
+}
+
 export class JellyfinClient {
 	private readonly baseUrl: string;
 	private readonly apiKey: string;
@@ -993,6 +1003,9 @@ export class JellyfinClient {
 			signal: AbortSignal.timeout(this.timeout),
 		});
 		if (!response.ok) {
+			if (response.status === 404) {
+				throw new JellyfinImageNotFoundError();
+			}
 			throw new Error(`Jellyfin image fetch failed: HTTP ${response.status}`);
 		}
 		return response;

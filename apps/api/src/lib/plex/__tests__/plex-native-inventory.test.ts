@@ -1,3 +1,5 @@
+import type { FastifyBaseLogger } from "fastify";
+import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 import type { PlexClient, PlexSettlementLibrary } from "../plex-client.js";
 import { collectPlexNativeInventory } from "../plex-native-inventory.js";
@@ -21,7 +23,7 @@ function page<T>(items: T[]) {
 		rawObserved: items.length,
 		pagesAttempted: 1,
 		pagesCompleted: 1,
-		reason: null,
+		reason: null as "page-failure" | null,
 	};
 }
 
@@ -56,6 +58,7 @@ function fixture(sections = [section("movies", "movie"), section("shows", "show"
 		]),
 	);
 	const probe = vi.fn(async () => sections);
+	const activities = vi.fn<PlexClient["getActivities"]>(async () => []);
 	const history = vi.fn(() => {
 		throw new Error("Watch data is unavailable");
 	});
@@ -63,11 +66,11 @@ function fixture(sections = [section("movies", "movie"), section("shows", "show"
 		getNativeLibraryItemsWithCoverage: library,
 		getNativeEpisodeItemsWithCoverage: episodes,
 		getLibrarySettlementSections: probe,
-		getActivities: vi.fn(async () => []),
+		getActivities: activities,
 		getHistory: history,
 		getAccounts: history,
 	} as unknown as PlexClient;
-	return { client, library, episodes, probe, history };
+	return { client, library, episodes, probe, activities, history };
 }
 
 describe("Plex complete native inventory", () => {
@@ -263,5 +266,206 @@ describe("Plex complete native inventory", () => {
 			complete: false,
 			reason: "provider-unavailable",
 		});
+	});
+
+	it("emits one sanitized warning for a transport failure at the first episode read", async () => {
+		const lines: string[] = [];
+		const log = pino(
+			{ base: null, timestamp: false },
+			{ write: (line: string) => lines.push(line) },
+		);
+		const f = fixture();
+		f.episodes.mockRejectedValue(new Error("https://private.invalid/library/title?token=secret"));
+
+		expect(await collectPlexNativeInventory(f.client, log as unknown as FastifyBaseLogger)).toEqual(
+			{
+				complete: false,
+				reason: "provider-unavailable",
+			},
+		);
+		expect(lines.map((line) => JSON.parse(line))).toEqual([
+			expect.objectContaining({
+				category: "plex-native-collection-rejected",
+				stage: "first-episodes",
+				reason: "provider-read-failed",
+			}),
+		]);
+		expect(lines.join(" ")).not.toMatch(/private|secret|token=|title/);
+	});
+
+	it("keeps a page transport failure distinct from an incomplete page", async () => {
+		const warn = vi.fn();
+		const f = fixture();
+		f.episodes.mockResolvedValue({ ...page([]), reason: "page-failure" as const });
+
+		expect(
+			await collectPlexNativeInventory(f.client, { warn } as unknown as FastifyBaseLogger),
+		).toEqual({ complete: false, reason: "provider-unavailable" });
+		expect(warn).toHaveBeenCalledWith(
+			expect.objectContaining({
+				category: "plex-native-collection-rejected",
+				stage: "first-episodes",
+				reason: "provider-read-failed",
+			}),
+			"Plex native inventory collection rejected",
+		);
+	});
+
+	it("reports settlement reason codes without serializing provider payloads", async () => {
+		const warn = vi.fn();
+		const f = fixture();
+		f.activities.mockResolvedValue([
+			{ type: "library.update.item.metadata", Context: { librarySectionID: "private-section" } },
+		]);
+
+		expect(
+			await collectPlexNativeInventory(f.client, { warn } as unknown as FastifyBaseLogger),
+		).toEqual({ complete: false, reason: "coverage-incomplete" });
+		expect(warn).toHaveBeenCalledTimes(1);
+		expect(warn).toHaveBeenCalledWith(
+			{
+				category: "plex-native-collection-rejected",
+				stage: "start-probe",
+				reason: "plex_metadata_refresh_in_progress",
+			},
+			"Plex native inventory collection rejected",
+		);
+	});
+
+	it.each([
+		["between-probe", 2],
+		["end-probe", 3],
+	] as const)("reports a provider read failure at the %s", async (stage, read) => {
+		const warn = vi.fn();
+		const f = fixture();
+		f.activities.mockReset();
+		for (let i = 1; i < read; i++) f.activities.mockResolvedValueOnce([]);
+		f.activities.mockRejectedValueOnce(new Error("transport canary"));
+
+		expect(
+			await collectPlexNativeInventory(f.client, { warn } as unknown as FastifyBaseLogger),
+		).toMatchObject({ complete: false, reason: "provider-unavailable" });
+		expect(warn).toHaveBeenCalledWith(
+			expect.objectContaining({
+				category: "plex-native-collection-rejected",
+				stage,
+				reason: "provider-read-failed",
+			}),
+			"Plex native inventory collection rejected",
+		);
+	});
+
+	it.each([
+		["invalid section id", "invalid-id", () => [section("", "movie")]],
+		[
+			"duplicate section id",
+			"duplicate-id",
+			() => [section("same", "movie"), section("same", "show")],
+		],
+	] as const)("reports %s without exposing the identifier", async (_name, reason, sections) => {
+		const warn = vi.fn();
+		const f = fixture(sections());
+		expect(
+			await collectPlexNativeInventory(f.client, { warn } as unknown as FastifyBaseLogger),
+		).toMatchObject({ complete: false, reason: "coverage-incomplete" });
+		expect(warn).toHaveBeenCalledWith(
+			expect.objectContaining({
+				category: "plex-native-collection-rejected",
+				stage: "start-probe",
+				reason,
+			}),
+			"Plex native inventory collection rejected",
+		);
+	});
+
+	it("reports an unexpected provider item type at the library read", async () => {
+		const warn = vi.fn();
+		const f = fixture([section("movies", "movie")]);
+		f.library.mockResolvedValue(
+			page([{ ratingKey: "episode", type: "episode", title: "private title" }]),
+		);
+		expect(
+			await collectPlexNativeInventory(f.client, { warn } as unknown as FastifyBaseLogger),
+		).toMatchObject({ complete: false, reason: "coverage-incomplete" });
+		expect(warn).toHaveBeenCalledWith(
+			expect.objectContaining({
+				category: "plex-native-collection-rejected",
+				stage: "first-library",
+				reason: "unexpected-item-type",
+			}),
+			"Plex native inventory collection rejected",
+		);
+	});
+
+	it.each([
+		["incomplete page", "first-episodes", "incomplete-page"],
+		["changed catalog", "catalog-comparison", "catalog-changed"],
+		["same-count replacement", "inventory-comparison", "inventory-changed"],
+	] as const)("reports %s with a fixed reason", async (name, stage, reason) => {
+		const warn = vi.fn();
+		const f = fixture();
+		if (name === "incomplete page") {
+			f.episodes.mockResolvedValue({ ...page([]), expectedRawCount: 1 });
+		} else if (name === "changed catalog") {
+			f.probe
+				.mockResolvedValueOnce([section("shows", "show")])
+				.mockResolvedValue([{ ...section("shows", "show"), updatedAt: 11 }]);
+		} else {
+			const original = await f.episodes();
+			f.episodes
+				.mockReset()
+				.mockResolvedValueOnce(original)
+				.mockResolvedValueOnce({
+					...original,
+					items: original.items.map((r, i) => (i === 0 ? { ...r, ratingKey: "replacement" } : r)),
+				});
+		}
+
+		expect(
+			await collectPlexNativeInventory(f.client, { warn } as unknown as FastifyBaseLogger),
+		).toMatchObject({ complete: false });
+		expect(warn).toHaveBeenCalledWith(
+			expect.objectContaining({ category: "plex-native-collection-rejected", stage, reason }),
+			"Plex native inventory collection rejected",
+		);
+	});
+
+	it("keeps the fail-closed result when the diagnostic logger throws", async () => {
+		const f = fixture();
+		f.episodes.mockRejectedValue(new Error("private upstream details"));
+		const log = {
+			warn: vi.fn(() => {
+				throw new Error("logger failure");
+			}),
+		};
+
+		await expect(
+			collectPlexNativeInventory(f.client, log as unknown as FastifyBaseLogger),
+		).resolves.toEqual({ complete: false, reason: "provider-unavailable" });
+	});
+
+	it("does not emit diagnostics with inherited authenticated user bindings", async () => {
+		const lines: string[] = [];
+		const root = pino(
+			{ base: null, timestamp: false },
+			{ write: (line: string) => lines.push(line) },
+		);
+		const f = fixture();
+		f.episodes.mockRejectedValue(new Error("private upstream details"));
+		await expect(
+			collectPlexNativeInventory(f.client, root.child({ userId: "private-user-canary" })),
+		).resolves.toEqual({ complete: false, reason: "provider-unavailable" });
+		expect(lines).toEqual([]);
+	});
+
+	it("allows a successful recovery after a rejected collection", async () => {
+		const warn = vi.fn();
+		const f = fixture();
+		f.episodes.mockRejectedValueOnce(new Error("transport canary")).mockResolvedValue(page([]));
+		await expect(
+			collectPlexNativeInventory(f.client, { warn } as unknown as FastifyBaseLogger),
+		).resolves.toEqual({ complete: false, reason: "provider-unavailable" });
+		expect((await collectPlexNativeInventory(f.client)).complete).toBe(true);
+		expect(warn).toHaveBeenCalledTimes(1);
 	});
 });

@@ -169,8 +169,8 @@ export const StatisticsClient = () => {
 				className="relative animate-in fade-in slide-in-from-bottom-4 duration-500"
 				style={{ animationFillMode: "backwards" }}
 			>
-				<div className="flex items-start justify-between gap-4">
-					<div className="space-y-1">
+				<div className="flex flex-wrap items-start justify-between gap-4">
+					<div className="min-w-0 flex-1 space-y-1">
 						<div className="flex items-center gap-2 text-sm text-muted-foreground">
 							<BarChart3 className="h-4 w-4" />
 							<span>Systems Overview</span>
@@ -198,6 +198,7 @@ export const StatisticsClient = () => {
 						disabled={isFetching}
 						className={cn(
 							"relative overflow-hidden transition-all duration-300",
+							"shrink-0",
 							isRefreshing && "pointer-events-none",
 						)}
 					>
@@ -225,7 +226,7 @@ export const StatisticsClient = () => {
 				className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 				style={{ animationDelay: "100ms", animationFillMode: "backwards" }}
 			>
-				<div className="inline-flex rounded-xl bg-card/30 border border-border/50 p-1.5">
+				<div className="inline-flex max-w-full flex-wrap rounded-xl bg-card/30 border border-border/50 p-1.5">
 					{tabs.map((tab) => {
 						const Icon = tab.icon;
 						const isActive = activeTab === tab.id;
@@ -237,7 +238,7 @@ export const StatisticsClient = () => {
 								type="button"
 								onClick={() => setActiveTab(tab.id)}
 								className={cn(
-									"relative flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-300",
+									"relative flex shrink-0 items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-300",
 									isActive ? "text-white" : "text-muted-foreground hover:text-foreground",
 								)}
 							>

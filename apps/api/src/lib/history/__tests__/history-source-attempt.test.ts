@@ -1629,10 +1629,16 @@ postgresDescribe("guarded disposable PostgreSQL History source attempts", () => 
 		);
 		expect(second?.resultMarker).not.toBe(first.resultMarker);
 		if (!second) throw new Error("expected replacement attempt");
+		const started = await markHistorySourceAttemptProviderStarted(
+			prisma,
+			{ ...second, leaseClaim: replacement },
+			{ dialect: "postgresql" },
+		);
+		if (started.kind !== "started") throw new Error("expected started attempt");
 		expect(
 			await finishHistorySourceAttemptFailure(
 				prisma,
-				{ ...second, leaseClaim: replacement, reason: "provider-limit" },
+				{ ...started.attempt, leaseClaim: replacement, reason: "provider-limit" },
 				{ dialect: "postgresql" },
 			),
 		).toBe("recorded");
@@ -1665,11 +1671,17 @@ postgresDescribe("guarded disposable PostgreSQL History source attempts", () => 
 			{ dialect: "postgresql" },
 		);
 		if (!attempt) throw new Error("expected attempt");
+		const started = await markHistorySourceAttemptProviderStarted(
+			prisma,
+			{ ...attempt, leaseClaim: lease },
+			{ dialect: "postgresql" },
+		);
+		if (started.kind !== "started") throw new Error("expected started attempt");
 		const beforeFinish = await readStatus(prisma, instanceId);
 		expect(
 			await finishHistorySourceAttemptFailure(
 				withFinalFenceMiss(prisma),
-				{ ...attempt, leaseClaim: lease, reason: "provider-limit" },
+				{ ...started.attempt, leaseClaim: lease, reason: "provider-limit" },
 				{ dialect: "postgresql" },
 			),
 		).toBe("superseded");
