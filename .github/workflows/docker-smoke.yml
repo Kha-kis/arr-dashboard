@@ -2,7 +2,7 @@ name: Docker Smoke Test
 
 on:
   pull_request:
-    branches: [main, "feat/v2.9"]
+    branches: [main, "feat/v2.9", "fix/**"]
     paths-ignore:
       - "**.md"
       - "docs/**"

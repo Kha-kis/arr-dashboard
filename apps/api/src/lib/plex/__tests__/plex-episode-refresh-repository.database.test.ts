@@ -2,6 +2,8 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import Fastify from "fastify";
+import fastifyPlugin from "fastify-plugin";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const identityMocks = vi.hoisted(() => ({ readProviderIdentity: vi.fn() }));
@@ -12,6 +14,8 @@ vi.mock("../../services/service-identity.js", async (importOriginal) => ({
 }));
 
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
+import scheduler from "../../../plugins/plex-episode-cache-scheduler.js";
+import type { EpisodeRefreshSchedulerBridge } from "../../services/episode-refresh-scheduler-bridge.js";
 import {
 	claimObservationUnit,
 	createOrLoadObservationRun,
@@ -20,6 +24,7 @@ import {
 import { reconcileInterruptedProviderCacheRefreshAttempts } from "../../services/provider-cache-status.js";
 import { withGuardedProviderPublication } from "../../services/provider-identity-guard.js";
 import { PlexAuthorityService } from "../plex-authority-service.js";
+import { PlexClient } from "../plex-client.js";
 import { planPlexEpisodeRefresh } from "../plex-episode-refresh-plan.js";
 import {
 	finalizePlexEpisodeRun,
@@ -588,6 +593,179 @@ afterEach(async () => {
 });
 
 describe("plex episode refresh repository", { timeout: 30_000 }, () => {
+	it("resumes the same populated run after a scheduler exception without replacing completed work", async () => {
+		// Removing exception continuation must strand this real run at four units.
+		const prisma = await database();
+		const targets = Array.from({ length: 629 }, (_, index) => ({
+			instanceId: "plex-1",
+			generationId: "parent-1",
+			showTmdbId: index + 1,
+			sectionId: "shows",
+			sectionUuid: "shows-uuid",
+			mediaType: "series" as const,
+			tvdbId: index + 1,
+			ratingKey: `show-${index + 1}`,
+		}));
+		const seed = await completedFinalizerFixtureForTargets(prisma, { targets, stages: [] });
+		await prisma.providerObservationRun.delete({ where: { id: seed.run.id } });
+		await prisma.cacheRefreshStatus.update({
+			where: { instanceId_cacheType: { instanceId: "plex-1", cacheType: "plex_episode" } },
+			data: { lastAttemptResult: "success", lastAttemptErrorMessage: null },
+		});
+		let rejectParentRead = false;
+		let injectedFailures = 0;
+		const parents = vi
+			.spyOn(PlexAuthorityService.prototype, "readPositiveEpisodeParents")
+			.mockImplementation(async () => {
+				if (rejectParentRead) {
+					rejectParentRead = false;
+					injectedFailures++;
+					throw Object.assign(new Error("synthetic persistence interruption"), { code: "P2034" });
+				}
+				return {
+					available: true,
+					generationId: "parent-1",
+					connectionGeneration: 2,
+					identityGeneration: 3,
+					targets: targets.map(({ showTmdbId, ...target }) => ({ ...target, tmdbId: showTmdbId })),
+				} as never;
+			});
+		const episodes = vi
+			.spyOn(PlexClient.prototype, "getEpisodes")
+			.mockImplementation(async (key) => [
+				{
+					ratingKey: `episode-${key}`,
+					title: "Synthetic episode",
+					seasonNumber: 1,
+					episodeNumber: 1,
+					viewCount: 1,
+				},
+			]);
+		const app = Fastify({ logger: false });
+		try {
+			await app.register(
+				fastifyPlugin(
+					async (server) => {
+						server.decorate("prisma", prisma);
+					},
+					{ name: "prisma" },
+				),
+			);
+			await app.register(
+				fastifyPlugin(
+					async (server) => {
+						server.decorate("encryptor", { decrypt: () => "plaintext" } as never);
+					},
+					{ name: "security" },
+				),
+			);
+			await app.register(
+				fastifyPlugin(
+					async (server) => {
+						server.decorate("notificationService", { notify: async () => undefined } as never);
+					},
+					{ name: "notification-service" },
+				),
+			);
+			await app.register(
+				fastifyPlugin(
+					async (server) => {
+						server.decorate("schedulerRegistry", {
+							track: async (_id: string, run: () => Promise<unknown>) => await run(),
+						} as never);
+					},
+					{ name: "scheduler-registry" },
+				),
+			);
+			await app.register(scheduler);
+			vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+			await app.ready();
+			const admission = await app
+				.getDecorator<EpisodeRefreshSchedulerBridge>("episodeRefreshScheduler")
+				.retry("plex_episode", { userId: "user-1", instanceId: "plex-1" });
+			expect(admission.status).toBe("accepted");
+			if (admission.status !== "accepted") throw new Error("Synthetic refresh was not admitted");
+			await admission.backgroundTask;
+			const run = await prisma.providerObservationRun.findFirstOrThrow({
+				where: { instanceId: "plex-1", cacheType: "plex_episode" },
+			});
+			for (let completed = 2; completed <= 4; completed++) {
+				await vi.advanceTimersByTimeAsync(30_000);
+				await vi.waitFor(
+					async () =>
+						expect(
+							await prisma.providerObservationRun.findUniqueOrThrow({ where: { id: run.id } }),
+						).toMatchObject({ completedUnits: completed }),
+					{ timeout: 3_000 },
+				);
+			}
+			const savedRows = await prisma.plexEpisodeObservationStage.findMany({
+				where: { runId: run.id },
+				orderBy: { ratingKey: "asc" },
+			});
+			expect(savedRows).toHaveLength(200);
+			const savedAttempt = await prisma.cacheRefreshStatus.findUniqueOrThrow({
+				where: { instanceId_cacheType: { instanceId: "plex-1", cacheType: "plex_episode" } },
+			});
+			rejectParentRead = true;
+			await vi.advanceTimersByTimeAsync(30_000);
+			await vi.waitFor(() => expect(injectedFailures).toBe(1));
+			expect(
+				await prisma.providerObservationRun.findUniqueOrThrow({ where: { id: run.id } }),
+			).toMatchObject({ state: "running", completedUnits: 4, completedWork: 200, totalUnits: 13 });
+			expect(
+				await prisma.plexEpisodeObservationStage.findMany({
+					where: { runId: run.id },
+					orderBy: { ratingKey: "asc" },
+				}),
+			).toEqual(savedRows);
+			expect(
+				await prisma.cacheRefreshStatus.findUniqueOrThrow({
+					where: { instanceId_cacheType: { instanceId: "plex-1", cacheType: "plex_episode" } },
+				}),
+			).toEqual(savedAttempt);
+			for (let completed = 5; completed <= 13; completed++) {
+				await vi.advanceTimersByTimeAsync(30_000);
+				await vi.waitFor(
+					async () =>
+						expect(
+							await prisma.providerObservationRun.findUniqueOrThrow({ where: { id: run.id } }),
+						).toMatchObject({ completedUnits: completed }),
+					{ timeout: 3_000 },
+				);
+			}
+			expect(
+				await prisma.providerObservationRun.findMany({
+					where: { instanceId: "plex-1", cacheType: "plex_episode" },
+				}),
+			).toMatchObject([
+				{
+					id: run.id,
+					state: "complete",
+					completedUnits: 13,
+					completedWork: 629,
+					activeSlotKey: null,
+				},
+			]);
+			expect(await prisma.plexEpisodeCache.count({ where: { instanceId: "plex-1" } })).toBe(629);
+			// A complete positive-only episode collection does not grant exact watch authority.
+			expect(
+				await prisma.cacheRefreshStatus.findUniqueOrThrow({
+					where: { instanceId_cacheType: { instanceId: "plex-1", cacheType: "plex_episode" } },
+				}),
+			).toMatchObject({ lastResult: "success", lastAttemptResult: "partial", itemCount: 629 });
+			const published = await prisma.plexEpisodeCache.findMany({
+				where: { instanceId: "plex-1" },
+				select: { ratingKey: true },
+			});
+			expect(new Set(published.map((row) => row.ratingKey)).size).toBe(629);
+		} finally {
+			await app.close();
+			vi.useRealTimers();
+			parents.mockRestore();
+			episodes.mockRestore();
+		}
+	}, 120_000);
 	it("atomically closes the current attempt and invalidates only unpublished work on live mismatch", async () => {
 		const prisma = await database();
 		const { run } = await completedFinalizerFixture(prisma);

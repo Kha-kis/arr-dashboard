@@ -132,6 +132,252 @@ describe("plexEpisodeRefreshResultStatus", () => {
 });
 
 describe("Plex episode scheduler continuations", () => {
+	it("re-admits an unexpected runner failure and completes the instance", async () => {
+		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ id: "a", label: "A" },
+		]);
+		mocks.refresh
+			.mockRejectedValueOnce(new Error("runner temporarily failed"))
+			.mockResolvedValueOnce({
+				complete: true,
+				errors: 0,
+				upserted: 1,
+				refreshedShows: 1,
+				capacityDegraded: false,
+			});
+
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		expect(mocks.refresh).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(2);
+		expect(mocks.refresh.mock.calls[1]?.[0].resumeFailed).toBe(false);
+		expect(serializedLogs.join("\n")).toContain('"phase":"runner"');
+		expect(serializedLogs.join("\n")).toContain('"errorCategory":"unknown"');
+	});
+
+	it("stops unexpected exception retries after the bounded budget", async () => {
+		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ id: "a", label: "A" },
+		]);
+		mocks.refresh.mockRejectedValue(new Error("private runner failure"));
+
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		await vi.advanceTimersByTimeAsync(30_000);
+		await vi.advanceTimersByTimeAsync(2 * 60_000);
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+		expect(mocks.refresh).toHaveBeenCalledTimes(4);
+		const records = serializedLogs.join("\n");
+		expect(records).toContain("plex-episode-cache-refresh-retry-exhausted");
+		expect(records).not.toContain("private runner failure");
+	});
+
+	it("retains the exact continuation attempt across an exception retry", async () => {
+		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ id: "a", label: "A" },
+		]);
+		const continuationAttempt = {
+			attemptedAt: new Date("2026-09-15T12:00:00.000Z"),
+			resultMarker: "in_progress:exact-attempt",
+		};
+		mocks.refresh
+			.mockResolvedValueOnce({
+				complete: false,
+				errors: 0,
+				upserted: 0,
+				refreshedShows: 0,
+				capacityDegraded: false,
+				continuationAttempt,
+				retryCategory: "parent-refresh-in-progress",
+			})
+			.mockRejectedValueOnce(new Error("temporary runner failure"))
+			.mockResolvedValueOnce({
+				complete: true,
+				errors: 0,
+				upserted: 1,
+				refreshedShows: 1,
+				capacityDegraded: false,
+			});
+
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(mocks.refresh.mock.calls[1]?.[1]).toBe(continuationAttempt);
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(mocks.refresh.mock.calls[2]?.[1]).toBe(continuationAttempt);
+	});
+
+	it("carries the exception budget through dependency continuations", async () => {
+		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ id: "a", label: "A" },
+		]);
+		mocks.refresh
+			.mockRejectedValueOnce(new Error("first failure"))
+			.mockResolvedValueOnce({
+				complete: false,
+				errors: 1,
+				upserted: 0,
+				refreshedShows: 0,
+				capacityDegraded: false,
+				retryCategory: "parent-refresh-unavailable",
+			})
+			.mockRejectedValue(new Error("later failure"));
+
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		await vi.advanceTimersByTimeAsync(30_000);
+		await vi.advanceTimersByTimeAsync(30_000);
+		await vi.advanceTimersByTimeAsync(2 * 60_000);
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+		expect(mocks.refresh).toHaveBeenCalledTimes(5);
+	});
+
+	it("carries the exception budget through ordinary continuations", async () => {
+		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ id: "a", label: "A" },
+		]);
+		mocks.refresh
+			.mockRejectedValueOnce(new Error("first failure"))
+			.mockResolvedValueOnce({
+				complete: false,
+				errors: 0,
+				upserted: 0,
+				refreshedShows: 0,
+				capacityDegraded: false,
+			})
+			.mockRejectedValue(new Error("later failure"));
+
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		await vi.advanceTimersByTimeAsync(30_000);
+		await vi.advanceTimersByTimeAsync(30_000);
+		await vi.advanceTimersByTimeAsync(2 * 60_000);
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+		expect(mocks.refresh).toHaveBeenCalledTimes(5);
+	});
+
+	it("suppresses duplicate manual admissions while an exception retry is pending", async () => {
+		const instance = {
+			id: "a",
+			userId: "user-1",
+			service: "PLEX" as const,
+			enabled: true,
+			label: "A",
+		};
+		serviceInstanceFindFirst.mockResolvedValue(instance);
+		mocks.refresh
+			.mockRejectedValueOnce(new Error("temporary runner failure"))
+			.mockResolvedValueOnce({
+				complete: true,
+				errors: 0,
+				upserted: 1,
+				refreshedShows: 1,
+				capacityDegraded: false,
+			});
+		await app.ready();
+
+		const first = await (app as FastifyWithEpisodeRefreshScheduler).episodeRefreshScheduler.retry(
+			"plex_episode",
+			{ userId: instance.userId, instanceId: instance.id },
+		);
+		if (first.status !== "accepted") throw new Error("Synthetic refresh was not admitted");
+		await first.backgroundTask;
+		const [duplicateA, duplicateB] = await Promise.all([
+			(app as FastifyWithEpisodeRefreshScheduler).episodeRefreshScheduler.retry("plex_episode", {
+				userId: instance.userId,
+				instanceId: instance.id,
+			}),
+			(app as FastifyWithEpisodeRefreshScheduler).episodeRefreshScheduler.retry("plex_episode", {
+				userId: instance.userId,
+				instanceId: instance.id,
+			}),
+		]);
+		expect(duplicateA).toEqual({ status: "accepted" });
+		expect(duplicateB).toEqual({ status: "accepted" });
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(2);
+	});
+
+	it("starts a fresh exception budget for a manual retry after exhaustion", async () => {
+		const instance = {
+			id: "a",
+			userId: "user-1",
+			service: "PLEX" as const,
+			enabled: true,
+			label: "A",
+		};
+		serviceInstanceFindFirst.mockResolvedValue(instance);
+		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+		mocks.refresh.mockRejectedValue(new Error("always unavailable"));
+		await app.ready();
+
+		await (app as FastifyWithEpisodeRefreshScheduler).episodeRefreshScheduler.retry(
+			"plex_episode",
+			{
+				userId: instance.userId,
+				instanceId: instance.id,
+			},
+		);
+		await vi.advanceTimersByTimeAsync(30_000);
+		await vi.advanceTimersByTimeAsync(2 * 60_000);
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(4);
+
+		const fresh = await (app as FastifyWithEpisodeRefreshScheduler).episodeRefreshScheduler.retry(
+			"plex_episode",
+			{ userId: instance.userId, instanceId: instance.id },
+		);
+		expect(fresh.status).toBe("accepted");
+		expect(mocks.refresh).toHaveBeenCalledTimes(5);
+	});
+
+	it("cancels a pending exception retry during shutdown", async () => {
+		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ id: "a", label: "A" },
+		]);
+		mocks.refresh.mockRejectedValue(new Error("temporary runner failure"));
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		const closing = app.close();
+		await closing;
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(mocks.refresh).toHaveBeenCalledOnce();
+	});
+
+	it("keeps exception retry budgets independent between instances", async () => {
+		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ id: "a", label: "A" },
+			{ id: "b", label: "B" },
+		]);
+		mocks.refresh.mockImplementation(async ({ instance }: { instance: { id: string } }) => {
+			if (instance.id === "a") throw new Error("instance A failure");
+			return {
+				complete: true,
+				errors: 0,
+				upserted: 1,
+				refreshedShows: 1,
+				capacityDegraded: false,
+			};
+		});
+
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		await vi.advanceTimersByTimeAsync(30_000);
+		await vi.advanceTimersByTimeAsync(2 * 60_000);
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+		const callsFor = (id: string) =>
+			mocks.refresh.mock.calls.filter(([input]) => input.instance.id === id).length;
+		expect(callsFor("a")).toBe(4);
+		expect(callsFor("b")).toBe(1);
+	});
+
 	it("routes Pulse Retry through the full continuation chain and suppresses duplicates", async () => {
 		const instance = {
 			id: "a",
@@ -556,5 +802,24 @@ describe("Plex episode scheduler continuations", () => {
 		const records = serializedLogs.join("\n");
 		expect(records).toContain("plex-episode-cache-refresh-failed");
 		for (const canary of canaries) expect(records).not.toContain(canary);
+	});
+
+	it("treats a hostile error-code getter as an unknown safe category", async () => {
+		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ id: "private-instance-id", label: "Private Plex Label" },
+		]);
+		const canary = "private-error-code";
+		const hostileError = Object.defineProperty({}, "code", {
+			get() {
+				throw new Error(canary);
+			},
+		});
+		mocks.refresh.mockRejectedValue(hostileError);
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+		const records = serializedLogs.join("\n");
+		expect(records).toContain('"errorCategory":"unknown"');
+		expect(records).not.toContain(canary);
 	});
 });
