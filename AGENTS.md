@@ -1,8 +1,8 @@
 # AGENTS.md — arr-dashboard
 
-Read `docs/DEVELOPMENT.md` for the tracked architecture and pattern reference. If a local
-`AGENTS.local.md` exists, read it for machine-specific state and recent project
-history; do not assume it exists in a fresh clone.
+Use `docs/DEVELOPMENT.md` when architecture or pattern details are needed. If a
+local `AGENTS.local.md` exists, read it for machine-specific state and recent
+project history; do not assume it exists in a fresh clone.
 
 Keep durable contributor guidance tracked here. Personal agent definitions,
 reusable workflow skills, temporary execution plans, parity ledgers, worktree
