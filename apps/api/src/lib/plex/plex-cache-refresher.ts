@@ -1379,7 +1379,6 @@ export async function collectPlexCacheLiveEvidence(
 				unit.rawObserved = items.length;
 				for (const item of items) {
 					const viewCount = normalizePlexViewCount(item.viewCount);
-					totalLibraryItems++;
 					if (item.type === "collection") {
 						acceptCoverageSkip(unit, "known-container");
 						acceptCoverageSkip(libraryUnit, "known-container");
@@ -1390,6 +1389,7 @@ export async function collectPlexCacheLiveEvidence(
 						acceptCoverageSkip(libraryUnit, "unsupported-provider-object");
 						continue;
 					}
+					totalLibraryItems++;
 					libraryUnit.sourceBindings++;
 					mappingUnit.rawObserved++;
 					if (!item.ratingKey.trim()) {

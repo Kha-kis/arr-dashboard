@@ -916,6 +916,55 @@ describe("collectPlexCacheLiveEvidence", () => {
 		});
 	});
 
+	it("excludes twelve collection containers from the nine-movie library count (#870)", async () => {
+		const movies = Array.from({ length: 9 }, (_, index) => ({
+			ratingKey: `movie-${index + 1}`,
+			title: `Movie ${index + 1}`,
+			type: "movie",
+			Guid: [{ id: `tmdb://${index + 1}` }],
+		}));
+		const collections = Array.from({ length: 12 }, (_, index) => ({
+			ratingKey: `collection-${index + 1}`,
+			title: `Collection ${index + 1}`,
+			type: "collection",
+		}));
+		silentLogInfo.mockClear();
+
+		const result = await collectPlexCacheLiveEvidence(
+			receiptCollectionClient({
+				sections: [{ key: "1", title: "Movies", type: "movie" }],
+				itemsBySection: { 1: [...collections, ...movies] },
+			}),
+			"inst-1",
+			silentLog,
+		);
+
+		expect(result).toMatchObject({
+			kind: "authoritative-snapshot",
+			complete: true,
+			errors: 0,
+		});
+		const receipt = receiptFrom(result) as { units?: unknown[] } | undefined;
+		expect(receipt?.units).toEqual([
+			expect.objectContaining({
+				scopeKey: "section:1",
+				expectedRawCount: 21,
+				rawObserved: 21,
+				sourceBindings: 9,
+				canonicalEntities: 9,
+				acceptedSkips: [{ reason: "known-container", count: 12 }],
+			}),
+		]);
+		expect(silentLogInfo).toHaveBeenCalledWith(
+			expect.objectContaining({
+				totalLibraryItems: 9,
+				mappedLibraryItems: 9,
+				incompleteReasons: {},
+			}),
+			"Plex cache refresh complete",
+		);
+	});
+
 	it("keeps unmapped Movies and unknown items incomplete even with a valid GUID", async () => {
 		const result = await collectPlexCacheLiveEvidence(
 			receiptCollectionClient({
