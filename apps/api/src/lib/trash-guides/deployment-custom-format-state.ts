@@ -105,7 +105,7 @@ function decodeIntendedStateShape(encoded: string): IntendedStateShape | null {
 	}
 }
 
-function getDefaultableSonarrLanguageSpecificationIndexes(
+function getDefaultableLanguageSpecificationIndexes(
 	intended: Record<string, unknown>,
 ): number[] {
 	if (!Array.isArray(intended.specifications)) return [];
@@ -122,7 +122,7 @@ function getDefaultableSonarrLanguageSpecificationIndexes(
 	});
 }
 
-function removeMaterializedSonarrDefaults(actual: unknown, defaultableIndexes: number[]): unknown {
+function removeMaterializedLanguageDefaults(actual: unknown, defaultableIndexes: number[]): unknown {
 	if (!isRecord(actual) || !Array.isArray(actual.specifications)) return actual;
 	const defaultableIndexSet = new Set(defaultableIndexes);
 	return {
@@ -154,8 +154,9 @@ function removeMaterializedSonarrDefaults(actual: unknown, defaultableIndexes: n
 
 /**
  * Persist a versioned token in the same writable-state domain used by post-write verification.
- * The token records exactly which Sonarr LanguageSpecifications omitted exceptLanguage, so
- * recovery cannot apply Sonarr's false-default exception to Radarr or to an explicit value.
+ * The token records exactly which LanguageSpecifications omitted exceptLanguage.
+ * Recovery accepts one materialized exceptLanguage=false field for Sonarr and Radarr,
+ * and never an explicit value or any other extra field.
  */
 export function createIntendedCustomFormatPostStateToken(
 	intended: Record<string, unknown>,
@@ -164,8 +165,7 @@ export function createIntendedCustomFormatPostStateToken(
 	if (service !== "SONARR" && service !== "RADARR") {
 		throw new Error(`Unsupported Custom Format mutation service: ${service}`);
 	}
-	const defaultableIndexes =
-		service === "SONARR" ? getDefaultableSonarrLanguageSpecificationIndexes(intended) : [];
+	const defaultableIndexes = getDefaultableLanguageSpecificationIndexes(intended);
 	return [
 		intendedWritableStateTokenPrefix,
 		service,
@@ -212,9 +212,9 @@ export function matchesIntendedCustomFormatPostStateToken(
 		createUpstreamResourceStateToken(projectActualToShape(value, intendedShape)) === expectedHash;
 	if (matchesIntendedShape(actual)) return true;
 	return (
-		service === "SONARR" &&
+		(service === "SONARR" || service === "RADARR") &&
 		defaultableIndexes.length > 0 &&
-		matchesIntendedShape(removeMaterializedSonarrDefaults(actual, defaultableIndexes))
+		matchesIntendedShape(removeMaterializedLanguageDefaults(actual, defaultableIndexes))
 	);
 }
 

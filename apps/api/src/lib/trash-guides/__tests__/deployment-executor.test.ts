@@ -1468,12 +1468,34 @@ describe("DeploymentExecutorService - backup parity", () => {
 	});
 
 	it.each(["POST", "PUT"] as const)(
-		"keeps Radarr strict when exceptLanguage=false appears after %s",
+		"accepts Radarr's default false exceptLanguage field after %s",
 		async (method) => {
 			await expect(
 				runCustomFormatVerification(
 					method,
 					[sonarrLanguageReadbackSpecification],
+					[intendedLanguageSpecification],
+					"RADARR",
+				),
+			).resolves.toMatchObject(method === "POST" ? { created: 1 } : { updated: 1 });
+		},
+	);
+
+	it.each(["POST", "PUT"] as const)(
+		"rejects a true exceptLanguage readback on Radarr after %s",
+		async (method) => {
+			await expect(
+				runCustomFormatVerification(
+					method,
+					[
+						{
+							...sonarrLanguageReadbackSpecification,
+							fields: [
+								{ name: "value", value: 1 },
+								{ name: "exceptLanguage", value: true },
+							],
+						},
+					],
 					[intendedLanguageSpecification],
 					"RADARR",
 				),

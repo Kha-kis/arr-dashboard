@@ -421,11 +421,29 @@ describe("Custom Format intended post-state tokens", () => {
 		expect(matchesIntendedCustomFormatPostStateToken(metadataRichSonarrReadback, token)).toBe(true);
 	});
 
-	it("does not apply the Sonarr exception to a Radarr recovery token", () => {
+	it("recognizes Radarr's one omitted false default despite readback metadata", () => {
 		const token = createIntendedCustomFormatPostStateToken(intended, "RADARR");
+		expect(matchesIntendedCustomFormatPostStateToken(intended, token)).toBe(true);
 		expect(matchesIntendedCustomFormatPostStateToken(metadataRichSonarrReadback, token)).toBe(
-			false,
+			true,
 		);
+	});
+
+	it("rejects a true exceptLanguage readback on a Radarr recovery token", () => {
+		const token = createIntendedCustomFormatPostStateToken(intended, "RADARR");
+		const trueReadback = {
+			...metadataRichSonarrReadback,
+			specifications: [
+				{
+					...metadataRichSonarrReadback.specifications[0],
+					fields: [
+						metadataRichSonarrReadback.specifications[0]!.fields[0],
+						{ name: "exceptLanguage", value: true, type: "checkbox" },
+					],
+				},
+			],
+		};
+		expect(matchesIntendedCustomFormatPostStateToken(trueReadback, token)).toBe(false);
 	});
 
 	it.each([
