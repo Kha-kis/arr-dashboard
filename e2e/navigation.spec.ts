@@ -290,6 +290,102 @@ test.describe("Navigation - Mobile", () => {
 	});
 });
 
+test.describe("Navigation - Shell layout", () => {
+	test("desktop sidebar stays pinned and scrolls independently of the page", async ({ page }) => {
+		// Short viewport so both the page and the navigation list overflow it.
+		await page.setViewportSize({ width: 1280, height: 500 });
+		await page.goto(ROUTES.settings);
+
+		const sidebar = page.locator("aside[data-sidebar]:visible");
+		await expect(sidebar).toHaveCount(1);
+		const nav = sidebar.getByRole("navigation", { name: "Main navigation" });
+
+		await expect
+			.poll(() => page.evaluate(() => document.documentElement.scrollHeight > window.innerHeight))
+			.toBe(true);
+		await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+		await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+		const pinned = await sidebar.boundingBox();
+		if (!pinned) throw new Error("missing sidebar box");
+		expect(Math.abs(pinned.y)).toBeLessThanOrEqual(1);
+		expect(Math.abs(pinned.height - 500)).toBeLessThanOrEqual(1);
+
+		// Scrolling past the end of the navigation list must not scroll the page.
+		await page.evaluate(() => window.scrollTo(0, 0));
+		const navBox = await nav.boundingBox();
+		await page.mouse.move((navBox?.x ?? 0) + 20, (navBox?.y ?? 0) + 20);
+		for (let i = 0; i < 8; i++) await page.mouse.wheel(0, 600);
+		await expect
+			.poll(() => nav.evaluate((el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 1))
+			.toBe(true);
+		expect(await page.evaluate(() => window.scrollY)).toBe(0);
+	});
+
+	test.describe("mobile drawer", () => {
+		test.beforeEach(async ({ page }) => {
+			await page.setViewportSize({ width: 375, height: 667 });
+			await page.goto(ROUTES.dashboard);
+		});
+
+		test("menu button sits inside the top bar, vertically centered", async ({ page }) => {
+			const header = page.locator("header");
+			const menuButton = header.getByRole("button", { name: "Open menu" });
+			await expect(menuButton).toBeVisible();
+
+			const headerBox = await header.boundingBox();
+			const buttonBox = await menuButton.boundingBox();
+			if (!headerBox || !buttonBox) throw new Error("missing header or menu button box");
+			const headerCenter = headerBox.y + headerBox.height / 2;
+			const buttonCenter = buttonBox.y + buttonBox.height / 2;
+			expect(Math.abs(headerCenter - buttonCenter)).toBeLessThanOrEqual(1);
+		});
+
+		test("traps focus, closes on Escape, and restores focus to the menu button", async ({
+			page,
+		}) => {
+			const menuButton = page.getByRole("button", { name: "Open menu" });
+			await menuButton.focus();
+			await page.keyboard.press("Enter");
+
+			const drawer = page.getByRole("dialog", { name: "Navigation menu" });
+			await expect(drawer).toBeVisible();
+			await expect(drawer.getByRole("button", { name: "Close menu" })).toBeFocused();
+
+			for (let i = 0; i < 40; i++) await page.keyboard.press("Tab");
+			expect(await drawer.evaluate((el) => el.contains(document.activeElement))).toBe(true);
+
+			await page.keyboard.press("Escape");
+			await expect(drawer).toHaveCount(0);
+			await expect(menuButton).toBeFocused();
+		});
+
+		test("Escape in the command palette does not close the drawer underneath", async ({ page }) => {
+			await page.getByRole("button", { name: "Open menu" }).click();
+			const drawer = page.getByRole("dialog", { name: "Navigation menu" });
+			await expect(drawer).toBeVisible();
+
+			await page.keyboard.press("Control+k");
+			const paletteInput = page.getByPlaceholder("Type a command or search...");
+			await expect(paletteInput).toBeFocused();
+
+			await page.keyboard.press("Escape");
+			await expect(drawer).toBeVisible();
+		});
+
+		test("closes when the viewport grows to the desktop layout", async ({ page }) => {
+			await page.getByRole("button", { name: "Open menu" }).click();
+			const drawer = page.getByRole("dialog", { name: "Navigation menu" });
+			await expect(drawer).toBeVisible();
+
+			await page.setViewportSize({ width: 1280, height: 667 });
+			await expect(drawer).toHaveCount(0);
+
+			await page.setViewportSize({ width: 375, height: 667 });
+			await expect(drawer).toHaveCount(0);
+		});
+	});
+});
+
 test.describe("Navigation - 404 Handling", () => {
 	test("should handle invalid routes gracefully", async ({ page }) => {
 		// Navigate to non-existent page

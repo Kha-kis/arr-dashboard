@@ -1,6 +1,6 @@
 "use client";
 
-import { Command, Eye, EyeOff, Search } from "lucide-react";
+import { Command, Eye, EyeOff, Menu, Search } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCurrentUser, useLogoutMutation } from "../../hooks/api/useAuth";
@@ -10,9 +10,11 @@ import { NAVIGATION_ITEMS } from "./navigation";
 
 interface TopBarProps {
 	readonly onOpenCommandPalette: () => void;
+	readonly onOpenNavigation: () => void;
+	readonly navigationOpen: boolean;
 }
 
-export const TopBar = ({ onOpenCommandPalette }: TopBarProps) => {
+export const TopBar = ({ onOpenCommandPalette, onOpenNavigation, navigationOpen }: TopBarProps) => {
 	const { data: user } = useCurrentUser();
 	const pathname = usePathname();
 	const router = useRouter();
@@ -35,16 +37,29 @@ export const TopBar = ({ onOpenCommandPalette }: TopBarProps) => {
 
 	return (
 		<header className="sticky top-0 z-sticky flex min-h-16 items-center justify-between gap-4 border-b border-border/60 bg-background/85 px-4 py-3 backdrop-blur-xl sm:px-6 lg:px-8">
-			<div className="min-w-0 pl-12 lg:pl-0">
-				<p className="hidden text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:block">
-					Arr Control
-				</p>
-				<h2 className="truncate font-display text-lg font-semibold tracking-tight text-foreground">
-					{context.label}
-				</h2>
-				<p className="hidden truncate text-sm text-muted-foreground md:block">
-					{context.description}
-				</p>
+			<div className="flex min-w-0 items-center gap-3">
+				<Button
+					type="button"
+					variant="outline"
+					size="icon-sm"
+					onClick={onOpenNavigation}
+					className="shrink-0 cursor-pointer lg:hidden"
+					aria-label="Open menu"
+					aria-expanded={navigationOpen}
+				>
+					<Menu className="h-4 w-4" />
+				</Button>
+				<div className="min-w-0">
+					<p className="hidden text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:block">
+						Arr Control
+					</p>
+					<h2 className="truncate font-display text-lg font-semibold tracking-tight text-foreground">
+						{context.label}
+					</h2>
+					<p className="hidden truncate text-sm text-muted-foreground md:block">
+						{context.description}
+					</p>
+				</div>
 			</div>
 			<div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
 				<Button

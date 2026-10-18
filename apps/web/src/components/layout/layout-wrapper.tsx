@@ -21,6 +21,7 @@ export const LayoutWrapper = ({ children }: LayoutWrapperProps) => {
 	const { open: commandPaletteOpen, setOpen: setCommandPaletteOpen } = useCommandPalette();
 	const { colorTheme } = useColorTheme();
 	const [mounted, setMounted] = useState(false);
+	const [mobileNavOpen, setMobileNavOpen] = useState(false);
 	const showLayout = !ROUTES_WITHOUT_LAYOUT.has(pathname);
 
 	// Handle hydration - only check theme after mount to avoid SSR mismatch
@@ -59,9 +60,13 @@ export const LayoutWrapper = ({ children }: LayoutWrapperProps) => {
 				/>
 			)}
 
-			<Sidebar />
+			<Sidebar mobileOpen={mobileNavOpen} onMobileOpenChange={setMobileNavOpen} />
 			<div className="relative z-10 flex min-w-0 flex-1 flex-col">
-				<TopBar onOpenCommandPalette={() => setCommandPaletteOpen(true)} />
+				<TopBar
+					onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+					onOpenNavigation={() => setMobileNavOpen(true)}
+					navigationOpen={mobileNavOpen}
+				/>
 				<div className="min-w-0 flex-1 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
 					<TautulliProviderNotice />
 					{children}
