@@ -1,14 +1,16 @@
 "use client";
 
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
-import { ChevronDown, ChevronRight, LayoutDashboard, Menu, X } from "lucide-react";
+import { ChevronDown, ChevronRight, LayoutDashboard, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 import { useThemeGradient } from "../../hooks/useThemeGradient";
 import { cn } from "../../lib/utils";
 import { useColorTheme } from "../../providers/color-theme-provider";
 import { springs } from "../motion";
+import { Button } from "../ui/button";
 import { NAVIGATION_GROUPS } from "./navigation";
 
 const STORAGE_KEY = "sidebar-collapsed-groups";
@@ -53,6 +55,8 @@ interface NavContentProps {
 	collapsedGroups: Set<string>;
 	onToggleGroup: (groupId: string) => void;
 	setMobileMenuOpen: (open: boolean) => void;
+	/** Mobile drawer only: renders a close button in the brand row. */
+	onClose?: () => void;
 }
 
 const NavContent = ({
@@ -62,6 +66,7 @@ const NavContent = ({
 	collapsedGroups,
 	onToggleGroup,
 	setMobileMenuOpen,
+	onClose,
 }: NavContentProps) => (
 	<>
 		{/* Logo/Brand */}
@@ -110,6 +115,18 @@ const NavContent = ({
 						Media operations
 					</p>
 				</div>
+				{onClose && (
+					<Button
+						type="button"
+						variant="outline"
+						size="icon-sm"
+						onClick={onClose}
+						aria-label="Close menu"
+						className="ml-auto shrink-0 cursor-pointer"
+					>
+						<X className="h-4 w-4" />
+					</Button>
+				)}
 			</div>
 		</div>
 
@@ -117,7 +134,7 @@ const NavContent = ({
 		<LayoutGroup>
 			<nav
 				aria-label="Main navigation"
-				className="relative z-10 -mx-2 flex flex-1 flex-col gap-4 overflow-y-auto px-2"
+				className="relative z-10 -mx-2 flex flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-2"
 			>
 				{NAVIGATION_GROUPS.map((group) => {
 					const isCollapsed = collapsedGroups.has(group.id);
@@ -269,9 +286,13 @@ const NavContent = ({
 	</>
 );
 
-export const Sidebar = () => {
+interface SidebarProps {
+	readonly mobileOpen: boolean;
+	readonly onMobileOpenChange: (open: boolean) => void;
+}
+
+export const Sidebar = ({ mobileOpen, onMobileOpenChange }: SidebarProps) => {
 	const pathname = usePathname();
-	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 	const [mounted, setMounted] = useState(false);
 	const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 	const { gradient: themeGradient } = useThemeGradient();
@@ -311,6 +332,32 @@ export const Sidebar = () => {
 		});
 	}, []);
 
+	const closeMobileMenu = useCallback(() => onMobileOpenChange(false), [onMobileOpenChange]);
+
+	// Escape closes the drawer unless focus sits in an overlay opened on top of it
+	// (the command palette can be opened while the drawer is open).
+	const handleDrawerEscape = useCallback(() => {
+		const active = document.activeElement;
+		if (active && active !== document.body && !active.closest("[data-mobile-nav]")) return;
+		onMobileOpenChange(false);
+	}, [onMobileOpenChange]);
+
+	// Traps Tab inside the drawer, focuses its first control (the close button),
+	// and restores focus to the opener when the drawer closes.
+	const drawerRef = useFocusTrap<HTMLElement>(mobileOpen, handleDrawerEscape);
+
+	// The drawer only exists below the desktop breakpoint; close it if the viewport grows past it.
+	useEffect(() => {
+		if (!mobileOpen) return;
+		const desktop = window.matchMedia("(min-width: 1024px)");
+		const handleChange = () => {
+			if (desktop.matches) onMobileOpenChange(false);
+		};
+		handleChange();
+		desktop.addEventListener("change", handleChange);
+		return () => desktop.removeEventListener("change", handleChange);
+	}, [mobileOpen, onMobileOpenChange]);
+
 	// *arr Suite and qBittorrent themes use flat styling, not gradients
 	// Default to false (show gradient) until mounted to avoid hydration issues
 	const isArrTheme = mounted && colorTheme === "arr";
@@ -323,57 +370,12 @@ export const Sidebar = () => {
 
 	return (
 		<>
-			{/* Mobile menu button */}
-			<motion.button
-				onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-				className={cn(
-					"lg:hidden fixed top-4 left-4 z-modal p-2.5 rounded-xl border transition-colors duration-300",
-					mobileMenuOpen ? "bg-card border-border" : "bg-card/80 backdrop-blur-xl border-border/50",
-				)}
-				style={
-					mobileMenuOpen
-						? {
-								boxShadow: `0 4px 16px -4px ${themeGradient.glow}`,
-							}
-						: undefined
-				}
-				aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
-				aria-expanded={mobileMenuOpen}
-				whileHover={{ scale: 1.05 }}
-				whileTap={{ scale: 0.95 }}
-				transition={springs.quick}
-			>
-				<AnimatePresence mode="wait">
-					{mobileMenuOpen ? (
-						<motion.div
-							key="close"
-							initial={{ rotate: -90, opacity: 0 }}
-							animate={{ rotate: 0, opacity: 1 }}
-							exit={{ rotate: 90, opacity: 0 }}
-							transition={springs.quick}
-						>
-							<X className="h-5 w-5" style={{ color: themeGradient.from }} />
-						</motion.div>
-					) : (
-						<motion.div
-							key="menu"
-							initial={{ rotate: 90, opacity: 0 }}
-							animate={{ rotate: 0, opacity: 1 }}
-							exit={{ rotate: -90, opacity: 0 }}
-							transition={springs.quick}
-						>
-							<Menu className="h-5 w-5 text-foreground" />
-						</motion.div>
-					)}
-				</AnimatePresence>
-			</motion.button>
-
 			{/* Mobile menu overlay */}
 			<AnimatePresence>
-				{mobileMenuOpen && (
+				{mobileOpen && (
 					<motion.div
 						className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-modal-backdrop"
-						onClick={() => setMobileMenuOpen(false)}
+						onClick={closeMobileMenu}
 						aria-hidden="true"
 						initial={{ opacity: 0 }}
 						animate={{ opacity: 1 }}
@@ -385,9 +387,14 @@ export const Sidebar = () => {
 
 			{/* Mobile sidebar */}
 			<AnimatePresence>
-				{mobileMenuOpen && (
+				{mobileOpen && (
 					<motion.aside
+						ref={drawerRef}
 						data-sidebar
+						data-mobile-nav
+						role="dialog"
+						aria-modal="true"
+						aria-label="Navigation menu"
 						className="lg:hidden fixed inset-y-0 left-0 z-modal-backdrop w-72 flex flex-col border-r border-border/30 bg-background/95 backdrop-blur-xl p-6"
 						initial={{ x: "-100%" }}
 						animate={{ x: 0 }}
@@ -409,7 +416,8 @@ export const Sidebar = () => {
 							pathname={pathname}
 							collapsedGroups={collapsedGroups}
 							onToggleGroup={handleToggleGroup}
-							setMobileMenuOpen={setMobileMenuOpen}
+							setMobileMenuOpen={onMobileOpenChange}
+							onClose={closeMobileMenu}
 						/>
 					</motion.aside>
 				)}
@@ -418,7 +426,7 @@ export const Sidebar = () => {
 			{/* Desktop sidebar */}
 			<aside
 				data-sidebar
-				className="relative hidden w-64 shrink-0 flex-col overflow-hidden border-r border-border/60 bg-background/65 p-5 backdrop-blur-xl lg:flex"
+				className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col overflow-hidden border-r border-border/60 bg-background/65 p-5 backdrop-blur-xl lg:flex"
 			>
 				{/* Decorative gradient orb */}
 				<div
@@ -435,7 +443,7 @@ export const Sidebar = () => {
 					pathname={pathname}
 					collapsedGroups={collapsedGroups}
 					onToggleGroup={handleToggleGroup}
-					setMobileMenuOpen={setMobileMenuOpen}
+					setMobileMenuOpen={onMobileOpenChange}
 				/>
 			</aside>
 		</>

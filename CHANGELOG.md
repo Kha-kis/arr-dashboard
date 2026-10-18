@@ -58,6 +58,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changing upstream error text no longer causes a dismissed signal to reappear.
   Existing message-derived ARR-health dismissals are swept once after upgrade so
   the active issue resurfaces with its new stable identity.
+- The desktop sidebar now stays pinned to the viewport and scrolls its
+  navigation independently of the page, so long pages no longer scroll the
+  navigation out of view and a tall navigation list no longer stretches short
+  pages. Scrolling past either end of the navigation list no longer scrolls the
+  page behind it.
+- The mobile menu button now sits inside the top bar, aligned with the page
+  title and the bar's padding, instead of floating at a fixed offset that
+  overlapped the top bar and the open drawer's logo. The drawer is now an
+  accessible modal dialog with its own close button: keyboard focus stays
+  inside it, Escape closes it and returns focus to the menu button (unless the
+  command palette is open on top of it), and it closes automatically when the
+  window widens to the desktop layout.
 
 ## [3.0.0-beta.1] - 2026-07-16 — Trust layer beta
 
