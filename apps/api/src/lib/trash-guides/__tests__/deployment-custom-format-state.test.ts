@@ -415,35 +415,70 @@ describe("Custom Format intended post-state tokens", () => {
 		],
 	};
 
-	it("recognizes an exact state and Sonarr's one omitted false default despite readback metadata", () => {
-		const token = createIntendedCustomFormatPostStateToken(intended, "SONARR");
-		expect(matchesIntendedCustomFormatPostStateToken(intended, token)).toBe(true);
-		expect(matchesIntendedCustomFormatPostStateToken(metadataRichSonarrReadback, token)).toBe(true);
+	const services = ["SONARR", "RADARR"] as const;
+	const withExceptLanguageFields = (fields: Record<string, unknown>[]) => ({
+		...metadataRichSonarrReadback,
+		specifications: [
+			{
+				...metadataRichSonarrReadback.specifications[0],
+				fields: [metadataRichSonarrReadback.specifications[0]!.fields[0], ...fields],
+			},
+		],
 	});
 
-	it("recognizes Radarr's one omitted false default despite readback metadata", () => {
-		const token = createIntendedCustomFormatPostStateToken(intended, "RADARR");
-		expect(matchesIntendedCustomFormatPostStateToken(intended, token)).toBe(true);
-		expect(matchesIntendedCustomFormatPostStateToken(metadataRichSonarrReadback, token)).toBe(
-			true,
-		);
-	});
+	it.each(services)(
+		"recognizes an exact state and %s's one omitted false default despite readback metadata",
+		(service) => {
+			const token = createIntendedCustomFormatPostStateToken(intended, service);
+			expect(matchesIntendedCustomFormatPostStateToken(intended, token)).toBe(true);
+			expect(matchesIntendedCustomFormatPostStateToken(metadataRichSonarrReadback, token)).toBe(
+				true,
+			);
+		},
+	);
 
-	it("rejects a true exceptLanguage readback on a Radarr recovery token", () => {
-		const token = createIntendedCustomFormatPostStateToken(intended, "RADARR");
-		const trueReadback = {
-			...metadataRichSonarrReadback,
-			specifications: [
-				{
-					...metadataRichSonarrReadback.specifications[0],
-					fields: [
-						metadataRichSonarrReadback.specifications[0]!.fields[0],
-						{ name: "exceptLanguage", value: true, type: "checkbox" },
-					],
-				},
+	describe.each(services)("%s recovery token", (service) => {
+		it.each([
+			["true", [{ name: "exceptLanguage", value: true, type: "checkbox" }]],
+			["string false", [{ name: "exceptLanguage", value: "false", type: "checkbox" }]],
+			[
+				"duplicate false",
+				[
+					{ name: "exceptLanguage", value: false },
+					{ name: "exceptLanguage", value: false },
+				],
 			],
-		};
-		expect(matchesIntendedCustomFormatPostStateToken(trueReadback, token)).toBe(false);
+			[
+				"mixed false and true",
+				[
+					{ name: "exceptLanguage", value: false },
+					{ name: "exceptLanguage", value: true },
+				],
+			],
+			[
+				"false plus another extra field",
+				[
+					{ name: "exceptLanguage", value: false },
+					{ name: "unexpected", value: 1 },
+				],
+			],
+		])("rejects a %s exceptLanguage readback", (_label, fields) => {
+			const token = createIntendedCustomFormatPostStateToken(intended, service);
+			expect(
+				matchesIntendedCustomFormatPostStateToken(withExceptLanguageFields(fields), token),
+			).toBe(false);
+		});
+
+		it("keeps a token without defaultable indexes strict", () => {
+			const segments = createIntendedCustomFormatPostStateToken(intended, service).split(":");
+			expect(segments[2]).toBe("0");
+			segments[2] = "-";
+			const strictToken = segments.join(":");
+			expect(matchesIntendedCustomFormatPostStateToken(intended, strictToken)).toBe(true);
+			expect(
+				matchesIntendedCustomFormatPostStateToken(metadataRichSonarrReadback, strictToken),
+			).toBe(false);
+		});
 	});
 
 	it.each([
@@ -522,57 +557,75 @@ describe("Custom Format intended post-state tokens", () => {
 		expect(qualityProfileGetAll).not.toHaveBeenCalled();
 	});
 
-	it("does not remove a false field when the intent explicitly defines exceptLanguage=true", () => {
-		const explicitTrue = {
-			...intended,
-			specifications: [
-				{
-					...intended.specifications[0],
-					fields: [...intended.specifications[0]!.fields, { name: "exceptLanguage", value: true }],
-				},
-			],
-		};
-		const conflictingReadback = {
-			...explicitTrue,
-			specifications: [
-				{
-					...explicitTrue.specifications[0],
-					fields: [
-						{ name: "value", value: 1 },
-						{ name: "exceptLanguage", value: false },
-						{ name: "exceptLanguage", value: true },
-					],
-				},
-			],
-		};
-		const token = createIntendedCustomFormatPostStateToken(explicitTrue, "SONARR");
-		expect(matchesIntendedCustomFormatPostStateToken(conflictingReadback, token)).toBe(false);
-	});
+	it.each(services)(
+		"does not remove a false field when the %s intent explicitly defines exceptLanguage=true",
+		(service) => {
+			const explicitTrue = {
+				...intended,
+				specifications: [
+					{
+						...intended.specifications[0],
+						fields: [
+							...intended.specifications[0]!.fields,
+							{ name: "exceptLanguage", value: true },
+						],
+					},
+				],
+			};
+			const conflictingReadback = {
+				...explicitTrue,
+				specifications: [
+					{
+						...explicitTrue.specifications[0],
+						fields: [
+							{ name: "value", value: 1 },
+							{ name: "exceptLanguage", value: false },
+							{ name: "exceptLanguage", value: true },
+						],
+					},
+				],
+			};
+			const token = createIntendedCustomFormatPostStateToken(explicitTrue, service);
+			expect(matchesIntendedCustomFormatPostStateToken(conflictingReadback, token)).toBe(false);
+		},
+	);
 
-	it("rejects real writable drift even when server metadata is present", () => {
-		const token = createIntendedCustomFormatPostStateToken(intended, "SONARR");
-		const drifted = {
-			...metadataRichSonarrReadback,
-			specifications: [
-				{
-					...metadataRichSonarrReadback.specifications[0],
-					fields: [
-						{ name: "value", value: 2, order: 0, label: "Language", type: "select" },
-						metadataRichSonarrReadback.specifications[0]!.fields[1],
-					],
-				},
-			],
-		};
-		expect(matchesIntendedCustomFormatPostStateToken(drifted, token)).toBe(false);
-	});
+	it.each(services)(
+		"rejects real %s writable drift even when server metadata is present",
+		(service) => {
+			const token = createIntendedCustomFormatPostStateToken(intended, service);
+			const drifted = {
+				...metadataRichSonarrReadback,
+				specifications: [
+					{
+						...metadataRichSonarrReadback.specifications[0],
+						fields: [
+							{ name: "value", value: 2, order: 0, label: "Language", type: "select" },
+							metadataRichSonarrReadback.specifications[0]!.fields[1],
+						],
+					},
+				],
+			};
+			expect(matchesIntendedCustomFormatPostStateToken(drifted, token)).toBe(false);
+		},
+	);
 
-	it.each([
-		["implementationName", { implementationName: "Changed implementation" }, {}],
-		["field label", {}, { label: "Changed label" }],
-		["field type", {}, { type: "text" }],
-	])(
-		"rejects drift in an explicitly intended %s after Sonarr materializes a default",
-		(_label, specificationDrift, fieldDrift) => {
+	it.each(
+		services.flatMap((service) =>
+			(
+				[
+					["implementationName", { implementationName: "Changed implementation" }, {}],
+					["field label", {}, { label: "Changed label" }],
+					["field type", {}, { type: "text" }],
+				] as const
+			).map(
+				([label, specificationDrift, fieldDrift]) =>
+					[label, service, specificationDrift, fieldDrift] as const,
+			),
+		),
+	)(
+		"rejects drift in an explicitly intended %s after %s materializes a default",
+		(_label, service, specificationDrift, fieldDrift) => {
 			const intendedWithMetadata = {
 				...intended,
 				specifications: [
@@ -589,7 +642,7 @@ describe("Custom Format intended post-state tokens", () => {
 					},
 				],
 			};
-			const token = createIntendedCustomFormatPostStateToken(intendedWithMetadata, "SONARR");
+			const token = createIntendedCustomFormatPostStateToken(intendedWithMetadata, service);
 			const metadataRichReadback = {
 				...intendedWithMetadata,
 				specifications: [

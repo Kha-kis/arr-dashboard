@@ -105,9 +105,7 @@ function decodeIntendedStateShape(encoded: string): IntendedStateShape | null {
 	}
 }
 
-function getDefaultableLanguageSpecificationIndexes(
-	intended: Record<string, unknown>,
-): number[] {
+function getDefaultableLanguageSpecificationIndexes(intended: Record<string, unknown>): number[] {
 	if (!Array.isArray(intended.specifications)) return [];
 	return intended.specifications.flatMap((specification, index) => {
 		if (
@@ -122,7 +120,10 @@ function getDefaultableLanguageSpecificationIndexes(
 	});
 }
 
-function removeMaterializedLanguageDefaults(actual: unknown, defaultableIndexes: number[]): unknown {
+function removeMaterializedLanguageDefaults(
+	actual: unknown,
+	defaultableIndexes: number[],
+): unknown {
 	if (!isRecord(actual) || !Array.isArray(actual.specifications)) return actual;
 	const defaultableIndexSet = new Set(defaultableIndexes);
 	return {
