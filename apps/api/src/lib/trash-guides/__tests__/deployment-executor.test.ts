@@ -1415,15 +1415,20 @@ describe("DeploymentExecutorService - backup parity", () => {
 				},
 			],
 		],
-	])("rejects Custom Format drift in %s after Sonarr normalization", async (_label, readback) => {
-		for (const method of ["POST", "PUT"] as const) {
-			await expect(runCustomFormatVerification(method, readback)).rejects.toMatchObject({
-				deploymentResultUncertain: true,
-			});
-		}
-	});
+	])(
+		"rejects Custom Format drift in %s after language-default normalization",
+		async (_label, readback) => {
+			for (const service of ["SONARR", "RADARR"] as const) {
+				for (const method of ["POST", "PUT"] as const) {
+					await expect(
+						runCustomFormatVerification(method, readback, [intendedLanguageSpecification], service),
+					).rejects.toMatchObject({ deploymentResultUncertain: true });
+				}
+			}
+		},
+	);
 
-	it("rejects a changed regex after Sonarr normalization", async () => {
+	it("rejects a changed regex after language-default normalization", async () => {
 		const intendedRegexSpecification = {
 			name: "Release title",
 			implementation: "ReleaseTitleSpecification",
@@ -1436,18 +1441,21 @@ describe("DeploymentExecutorService - backup parity", () => {
 			fields: [{ name: "value", value: "changed-regex" }],
 		};
 
-		for (const method of ["POST", "PUT"] as const) {
-			await expect(
-				runCustomFormatVerification(
-					method,
-					[sonarrLanguageReadbackSpecification, changedRegexSpecification],
-					[intendedLanguageSpecification, intendedRegexSpecification],
-				),
-			).rejects.toMatchObject({ deploymentResultUncertain: true });
+		for (const service of ["SONARR", "RADARR"] as const) {
+			for (const method of ["POST", "PUT"] as const) {
+				await expect(
+					runCustomFormatVerification(
+						method,
+						[sonarrLanguageReadbackSpecification, changedRegexSpecification],
+						[intendedLanguageSpecification, intendedRegexSpecification],
+						service,
+					),
+				).rejects.toMatchObject({ deploymentResultUncertain: true });
+			}
 		}
 	});
 
-	it("rejects swapped specification association after Sonarr normalization", async () => {
+	it("rejects swapped specification association after language-default normalization", async () => {
 		const intendedRegexSpecification = {
 			name: "Release title",
 			implementation: "ReleaseTitleSpecification",
@@ -1456,19 +1464,22 @@ describe("DeploymentExecutorService - backup parity", () => {
 			fields: [{ name: "value", value: "original-regex" }],
 		};
 
-		for (const method of ["POST", "PUT"] as const) {
-			await expect(
-				runCustomFormatVerification(
-					method,
-					[intendedRegexSpecification, sonarrLanguageReadbackSpecification],
-					[intendedLanguageSpecification, intendedRegexSpecification],
-				),
-			).rejects.toMatchObject({ deploymentResultUncertain: true });
+		for (const service of ["SONARR", "RADARR"] as const) {
+			for (const method of ["POST", "PUT"] as const) {
+				await expect(
+					runCustomFormatVerification(
+						method,
+						[intendedRegexSpecification, sonarrLanguageReadbackSpecification],
+						[intendedLanguageSpecification, intendedRegexSpecification],
+						service,
+					),
+				).rejects.toMatchObject({ deploymentResultUncertain: true });
+			}
 		}
 	});
 
 	it.each(["POST", "PUT"] as const)(
-		"keeps Radarr strict when exceptLanguage=false appears after %s",
+		"accepts Radarr's default false exceptLanguage field after %s",
 		async (method) => {
 			await expect(
 				runCustomFormatVerification(
@@ -1477,7 +1488,7 @@ describe("DeploymentExecutorService - backup parity", () => {
 					[intendedLanguageSpecification],
 					"RADARR",
 				),
-			).rejects.toMatchObject({ deploymentResultUncertain: true });
+			).resolves.toMatchObject(method === "POST" ? { created: 1 } : { updated: 1 });
 		},
 	);
 
@@ -1505,10 +1516,12 @@ describe("DeploymentExecutorService - backup parity", () => {
 					{ name: "exceptLanguage", value: exceptLanguage },
 				],
 			};
-			for (const method of ["POST", "PUT"] as const) {
-				await expect(
-					runCustomFormatVerification(method, [intended], [intended]),
-				).resolves.toMatchObject(method === "POST" ? { created: 1 } : { updated: 1 });
+			for (const service of ["SONARR", "RADARR"] as const) {
+				for (const method of ["POST", "PUT"] as const) {
+					await expect(
+						runCustomFormatVerification(method, [intended], [intended], service),
+					).resolves.toMatchObject(method === "POST" ? { created: 1 } : { updated: 1 });
+				}
 			}
 		},
 	);
@@ -1517,22 +1530,28 @@ describe("DeploymentExecutorService - backup parity", () => {
 		["name", { name: "Changed CF" }],
 		["includeCustomFormatWhenRenaming", { includeCustomFormatWhenRenaming: true }],
 	] as const)("rejects top-level %s drift after POST and PUT", async (_label, overrides) => {
-		for (const method of ["POST", "PUT"] as const) {
-			await expect(
-				runCustomFormatVerification(
-					method,
-					[sonarrLanguageReadbackSpecification],
-					[intendedLanguageSpecification],
-					"SONARR",
-					overrides,
-				),
-			).rejects.toMatchObject({ deploymentResultUncertain: true });
+		for (const service of ["SONARR", "RADARR"] as const) {
+			for (const method of ["POST", "PUT"] as const) {
+				await expect(
+					runCustomFormatVerification(
+						method,
+						[sonarrLanguageReadbackSpecification],
+						[intendedLanguageSpecification],
+						service,
+						overrides,
+					),
+				).rejects.toMatchObject({ deploymentResultUncertain: true });
+			}
 		}
 	});
 
-	it.each(["POST", "PUT"] as const)(
-		"rejects exceptLanguage=false on a non-language specification after %s",
-		async (method) => {
+	it.each(
+		(["SONARR", "RADARR"] as const).flatMap((service) =>
+			(["POST", "PUT"] as const).map((method) => [service, method] as const),
+		),
+	)(
+		"rejects %s exceptLanguage=false on a non-language specification after %s",
+		async (service, method) => {
 			const intended = {
 				name: "Release title",
 				implementation: "ReleaseTitleSpecification",
@@ -1550,6 +1569,7 @@ describe("DeploymentExecutorService - backup parity", () => {
 						},
 					],
 					[intended],
+					service,
 				),
 			).rejects.toMatchObject({ deploymentResultUncertain: true });
 		},

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Radarr language custom formats** — A readback that adds `exceptLanguage: false`
+  to a TRaSH language condition is accepted, the same way Sonarr already is.
+  Any other value, a duplicate field, or a real specification change still
+  fails closed (#873).
+
 - **Native media-server inventory**: Plex and Jellyfin library views include
   movies, series, and episodes that have no ARR or TMDB match. The additive
   `ProviderNativeInventorySnapshot` and `ProviderNativeInventoryItem` models
