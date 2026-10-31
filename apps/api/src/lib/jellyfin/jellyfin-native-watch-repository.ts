@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { type JellyfinNativeWatchRow, Prisma, type PrismaClient } from "../prisma.js";
 import { JELLYFIN_EPISODE_PREPARATION_LEASE_MS } from "./jellyfin-episode-generation-repository.js";
 import { parseNativeWatchScopeDiagnostics } from "./jellyfin-native-watch-diagnostics.js";
@@ -14,6 +15,27 @@ const PUBLICATION_CHUNK_SIZE = 500;
 const ROW_WRITE_CHUNK_SIZE = 100;
 const CLEANUP_BATCH_SIZE = 5_000;
 const LEASE_CHECKPOINT_CHUNKS = 10;
+const ADMISSION_RETRY_DELAYS_MS = [10, 20, 40] as const;
+
+function isBusyAdmission(error: unknown): boolean {
+	const ownValue = (value: unknown, key: string): unknown => {
+		if (typeof value !== "object" || value === null) return undefined;
+		return Object.getOwnPropertyDescriptor(value, key)?.value;
+	};
+	try {
+		// Prisma maps a native busy start to P1008. A generic timeout is not
+		// enough: require the exact native cause without invoking accessors.
+		return (
+			ownValue(error, "code") === "P1008" &&
+			ownValue(
+				ownValue(ownValue(ownValue(error, "meta"), "driverAdapterError"), "cause"),
+				"originalCode",
+			) === "SQLITE_BUSY"
+		);
+	} catch {
+		return false;
+	}
+}
 
 export type NativeWatchPreparationStage =
 	| "lease-checkpoint"
@@ -53,17 +75,29 @@ async function preparationTransaction(
 			// Diagnostics cannot replace a transaction's result or original error.
 		}
 	};
+	// Share the admission budget across rolled-back snapshot retries as well.
+	let admissionRetries = 0;
 	await retryJellyfinSnapshotTransaction(async () => {
-		observe("requested");
-		try {
-			await prisma.$transaction((tx) => {
-				observe("callback-entered");
-				return operation(tx);
-			});
-			observe("succeeded");
-		} catch (error) {
-			observe("failed");
-			throw error;
+		for (;;) {
+			let callbackEntered = false;
+			observe("requested");
+			try {
+				await prisma.$transaction((tx) => {
+					callbackEntered = true;
+					observe("callback-entered");
+					return operation(tx);
+				});
+				observe("succeeded");
+				return;
+			} catch (error) {
+				observe("failed");
+				const wait = ADMISSION_RETRY_DELAYS_MS[admissionRetries];
+				// Only a refused start can replay the pending batch. Never replay a
+				// callback failure or an uncertain commit/acknowledgement.
+				if (callbackEntered || wait === undefined || !isBusyAdmission(error)) throw error;
+				admissionRetries++;
+				await delay(wait);
+			}
 		}
 	});
 }

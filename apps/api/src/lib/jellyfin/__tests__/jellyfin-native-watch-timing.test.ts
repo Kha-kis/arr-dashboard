@@ -9,10 +9,11 @@ function fixture(
 	options: {
 		failAt?: number;
 		failPhase?: "request" | "callback" | "commit";
+		failError?: unknown;
 		cleanupBatches?: number;
 	} = {},
 ) {
-	const error = { code: "P2028", message: "private synthetic failure" };
+	const error = options.failError ?? { code: "P2028", message: "private synthetic failure" };
 	const input = {
 		userId: "synthetic-owner",
 		instanceId: "synthetic-instance",
@@ -128,6 +129,192 @@ function fixture(
 	};
 	return { db, input, trace, error, rows, receipts, readSizes, renewalRows };
 }
+
+function busyAdmission() {
+	return {
+		code: "P1008",
+		meta: { driverAdapterError: { cause: { originalCode: "SQLITE_BUSY" } } },
+	};
+}
+
+describe("native-watch busy-start recovery", () => {
+	it.each([
+		[1, "lease-checkpoint"],
+		[2, "row-chunk"],
+		[3, "receipt-chunk"],
+	] as const)(
+		"recovers a refused %s transaction without entering its callback",
+		async (failAt, kind) => {
+			const f = fixture({ failAt, failPhase: "request", failError: busyAdmission() });
+			const events: unknown[] = [];
+			await prepareNativeWatchGeneration(f.db as never, f.input, undefined, (event) =>
+				events.push(event),
+			);
+			expect(events).toContainEqual({ kind, phase: "failed" });
+			expect(events.slice((failAt - 1) * 3, (failAt - 1) * 3 + 5)).toEqual([
+				{ kind, phase: "requested" },
+				{ kind, phase: "failed" },
+				{ kind, phase: "requested" },
+				{ kind, phase: "callback-entered" },
+				{ kind, phase: "succeeded" },
+			]);
+			expect(f.rows).toHaveLength(1);
+			expect(f.receipts).toHaveLength(1);
+		},
+	);
+
+	it("resumes the pending batch after 100 committed rows without resetting or duplicating prior work", async () => {
+		const f = fixture({ failAt: 3, failPhase: "request", failError: busyAdmission() });
+		f.input.candidates = Array.from({ length: 201 }, (_, index) => ({
+			...f.input.candidates[0]!,
+			jellyfinId: `episode-${String(index).padStart(3, "0")}`,
+		}));
+		f.input.receipts[0]!.expectedRawCount = 201;
+		f.input.receipts[0]!.observedRawCount = 201;
+		const failedRows: number[] = [];
+		await prepareNativeWatchGeneration(f.db as never, f.input, undefined, (event) => {
+			if (event.phase === "failed") failedRows.push(f.rows.length);
+		});
+		expect(failedRows).toEqual([100]);
+		expect(f.rows).toHaveLength(201);
+		expect(new Set(f.rows.map((row) => Reflect.get(row, "jellyfinId"))).size).toBe(201);
+		expect(f.receipts).toHaveLength(1);
+		expect(f.trace.filter((entry) => entry === "row-delete")).toHaveLength(1);
+		expect(f.trace.filter((entry) => entry === "receipt-delete")).toHaveLength(1);
+		expect(f.trace.filter((entry) => entry === "row-insert")).toHaveLength(3);
+	});
+
+	it("exhausts three admission retries and retains the actual final error and completed batch", async () => {
+		const f = fixture();
+		f.input.candidates = Array.from({ length: 201 }, (_, index) => ({
+			...f.input.candidates[0]!,
+			jellyfinId: `episode-${index}`,
+		}));
+		const transaction = f.db.$transaction;
+		const failures: unknown[] = [];
+		f.db.$transaction = async (...args) => {
+			if (f.rows.length === 100) {
+				const error = busyAdmission();
+				failures.push(error);
+				throw error;
+			}
+			return transaction(...args);
+		};
+		const result = await prepareNativeWatchGeneration(f.db as never, f.input).catch(
+			(error: unknown) => error,
+		);
+		expect(failures).toHaveLength(4);
+		expect(result).toBe(failures[3]);
+		expect(f.rows).toHaveLength(100);
+		expect(f.receipts).toHaveLength(0);
+		expect(f.trace.filter((entry) => entry === "row-delete")).toHaveLength(1);
+	});
+
+	it("shares the busy-start budget across snapshot retries instead of multiplying it", async () => {
+		const f = fixture();
+		const failures = [
+			busyAdmission(),
+			{ code: "SQLITE_BUSY_SNAPSHOT" },
+			busyAdmission(),
+			{ code: "SQLITE_BUSY_SNAPSHOT" },
+			busyAdmission(),
+			{ code: "SQLITE_BUSY_SNAPSHOT" },
+			busyAdmission(),
+		];
+		let attempts = 0;
+		f.db.$transaction = async () => {
+			throw failures[attempts++];
+		};
+		await expect(prepareNativeWatchGeneration(f.db as never, f.input)).rejects.toBe(failures[6]);
+		expect(attempts).toBe(7);
+		expect(f.rows).toHaveLength(0);
+	});
+
+	it.each(["callback", "commit"] as const)(
+		"does not replay a busy error after %s entry",
+		async (failPhase) => {
+			const error = busyAdmission();
+			const f = fixture({ failAt: 2, failPhase, failError: error });
+			await expect(prepareNativeWatchGeneration(f.db as never, f.input)).rejects.toBe(error);
+			expect(f.trace.filter((entry) => entry === "transaction-request")).toHaveLength(2);
+			expect(f.rows).toHaveLength(failPhase === "commit" ? 1 : 0);
+		},
+	);
+
+	it.each([
+		["generic timeout", { code: "P1008" }],
+		[
+			"other native code",
+			{ code: "P1008", meta: { driverAdapterError: { cause: { originalCode: "SQLITE_LOCKED" } } } },
+		],
+		["inherited error code", Object.create(busyAdmission())],
+		[
+			"inherited metadata",
+			Object.assign(Object.create({ meta: busyAdmission().meta }), { code: "P1008" }),
+		],
+		["nonprimitive error code", { ...busyAdmission(), code: { toString: (): string => "P1008" } }],
+		[
+			"nonprimitive native code",
+			{
+				code: "P1008",
+				meta: {
+					driverAdapterError: {
+						cause: { originalCode: { toString: (): string => "SQLITE_BUSY" } },
+					},
+				},
+			},
+		],
+	] as const)("does not grant retry permission for %s", async (_name, error) => {
+		const f = fixture({ failAt: 1, failPhase: "request", failError: error });
+		await expect(prepareNativeWatchGeneration(f.db as never, f.input)).rejects.toBe(error);
+		expect(f.trace.filter((entry) => entry === "transaction-request")).toHaveLength(1);
+	});
+
+	it.each(["code", "meta", "driverAdapterError", "cause", "originalCode"])(
+		"never invokes the %s accessor to decide permission",
+		async (key) => {
+			const error = busyAdmission();
+			const objects: Record<string, object> = {
+				code: error,
+				meta: error,
+				driverAdapterError: error.meta,
+				cause: error.meta.driverAdapterError,
+				originalCode: error.meta.driverAdapterError.cause,
+			};
+			let getters = 0;
+			Object.defineProperty(objects[key]!, key, {
+				get() {
+					getters++;
+					throw new Error("must not execute");
+				},
+			});
+			const f = fixture({ failAt: 1, failPhase: "request", failError: error });
+			const result = await prepareNativeWatchGeneration(f.db as never, f.input).catch(
+				(caught: unknown) => caught,
+			);
+			expect(result).toBe(error);
+			expect(getters).toBe(0);
+			expect(f.trace.filter((entry) => entry === "transaction-request")).toHaveLength(1);
+		},
+	);
+
+	it("rechecks the lease after admission recovery and refuses a revoked claim before writing", async () => {
+		const f = fixture({ failAt: 2, failPhase: "request", failError: busyAdmission() });
+		const events: unknown[] = [];
+		await expect(
+			prepareNativeWatchGeneration(f.db as never, f.input, undefined, (event) => {
+				events.push(event);
+				if (event.phase === "failed") f.db.$executeRaw = async () => 0;
+			}),
+		).rejects.toThrow("lease is unavailable");
+		expect(events.slice(-3)).toEqual([
+			{ kind: "row-chunk", phase: "requested" },
+			{ kind: "row-chunk", phase: "callback-entered" },
+			{ kind: "row-chunk", phase: "failed" },
+		]);
+		expect(f.rows).toHaveLength(0);
+	});
+});
 
 describe("native-watch preparation transaction observation", () => {
 	it.each([
