@@ -270,35 +270,31 @@ const StreamStatusBadge = ({ status }: { status: QuiEventStreamStatus }) => {
 const MyEventsView = () => {
 	const feed = useQuiEventLog({ limit: 50 });
 	const entries = useMemo(() => feed.data?.pages.flatMap((p) => p.entries) ?? [], [feed.data]);
+	const refresh = () => {
+		// Infinite-query refetch starts at the latest page and derives older
+		// cursors again, retaining known pages until the read succeeds.
+		void feed.refetch();
+	};
 
 	if (feed.isLoading) {
 		return <PremiumPageLoading cardCount={4} />;
 	}
 
-	if (feed.isError) {
-		return (
-			<Alert variant="danger">
-				<AlertDescription>
-					Failed to load webhook events: {getErrorMessage(feed.error)}
-				</AlertDescription>
-			</Alert>
-		);
-	}
-
-	if (entries.length === 0) {
-		return (
-			<PremiumEmptyState
-				icon={Webhook}
-				title="No webhook events yet"
-				description="Once qui is registered as a NotificationTarget (see Webhook tab), inbound events will appear here within seconds — proving the push pipeline works end-to-end."
-			/>
-		);
-	}
-
 	return (
 		<>
+			{feed.isError ? (
+				<Alert variant="danger">
+					<AlertDescription>
+						Failed to load webhook events: {getErrorMessage(feed.error)}
+						{entries.length > 0 ? " Showing last-known events." : ""}
+						<Button variant="secondary" disabled={feed.isFetching} onClick={refresh}>
+							Retry
+						</Button>
+					</AlertDescription>
+				</Alert>
+			) : null}
 			<div className="mb-4 flex items-center justify-end">
-				<Button variant="secondary" onClick={() => feed.refetch()} disabled={feed.isFetching}>
+				<Button variant="secondary" onClick={refresh} disabled={feed.isFetching}>
 					<RefreshCw
 						className={cn("mr-2 h-4 w-4", feed.isFetching ? "animate-spin" : "")}
 						aria-hidden
@@ -307,13 +303,23 @@ const MyEventsView = () => {
 				</Button>
 			</div>
 
-			<ul className="space-y-2">
-				{entries.map((entry, idx) => (
-					<EventLogRow key={entry.id} entry={entry} animationDelay={Math.min(idx, 12) * 30} />
-				))}
-			</ul>
+			{entries.length === 0 && !feed.isError ? (
+				<PremiumEmptyState
+					icon={Webhook}
+					title="No webhook events yet"
+					description="No retained inbound webhook events are available. Configure the receiver in the Webhook tab to receive events."
+				/>
+			) : null}
 
-			{feed.hasNextPage ? (
+			{entries.length > 0 ? (
+				<ul className="space-y-2">
+					{entries.map((entry, idx) => (
+						<EventLogRow key={entry.id} entry={entry} animationDelay={Math.min(idx, 12) * 30} />
+					))}
+				</ul>
+			) : null}
+
+			{feed.hasNextPage && !feed.isError ? (
 				<LoadMoreButton
 					isLoading={feed.isFetchingNextPage}
 					onClick={() => void feed.fetchNextPage()}

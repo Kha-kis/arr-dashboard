@@ -477,6 +477,16 @@ export function SystemTab() {
 								</Button>
 							</div>
 
+							{logFilesError && (
+								<div role="alert" className="space-y-1 text-sm text-destructive py-4 text-center">
+									<p>Failed to load log files</p>
+									{logFiles?.data && (
+										<p className="text-muted-foreground">
+											Showing the last known log files. They may have changed.
+										</p>
+									)}
+								</div>
+							)}
 							{logFiles?.data?.files && logFiles.data.files.length > 0 ? (
 								<div className="rounded-lg border border-border/50 overflow-hidden">
 									<table className="w-full text-sm">
@@ -535,13 +545,9 @@ export function SystemTab() {
 										</tbody>
 									</table>
 								</div>
-							) : logFilesError ? (
-								<p className="text-sm text-destructive py-4 text-center">
-									Failed to load log files
-								</p>
-							) : (
+							) : !logFilesError ? (
 								<p className="text-sm text-muted-foreground py-4 text-center">No log files found</p>
-							)}
+							) : null}
 						</div>
 					</div>
 				</div>

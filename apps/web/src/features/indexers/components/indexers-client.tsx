@@ -157,7 +157,7 @@ export const IndexersClient = () => {
 	// Data
 	const aggregated = useMemo(() => data?.aggregated ?? [], [data?.aggregated]);
 	const instances = useMemo(() => data?.instances ?? [], [data?.instances]);
-	const noInstances = !isLoading && instances.length === 0;
+	const noInstances = !isLoading && !error && data !== undefined && instances.length === 0;
 
 	const instanceOptions = useMemo(() => {
 		const opts = [{ value: "all", label: "All instances" }];
@@ -527,7 +527,7 @@ export const IndexersClient = () => {
 
 			{noInstances ? (
 				<EmptyIndexersCard />
-			) : (
+			) : data !== undefined ? (
 				<>
 					{/* Stats Ribbon */}
 					<IndexerStatsGrid stats={stats} />
@@ -720,7 +720,7 @@ export const IndexersClient = () => {
 						/>
 					)}
 				</>
-			)}
+			) : null}
 		</section>
 	);
 };
