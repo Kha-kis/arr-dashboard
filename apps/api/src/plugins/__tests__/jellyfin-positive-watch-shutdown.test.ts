@@ -138,6 +138,7 @@ async function boot(
 		forbidden: 0,
 		network: 0,
 	};
+	const signals: AbortSignal[] = [];
 	const selected: Array<{ id: string; userId: string }> = [],
 		lookupSequences: ServiceInstance[][] = [];
 	let held = false,
@@ -179,7 +180,15 @@ async function boot(
 		throw new Error("Fixture forbids network");
 	});
 	boundary.refresh.mockImplementation(async (context) => {
-		expect(Object.keys(context).sort()).toEqual(["encryptor", "instance", "log", "prisma"]);
+		expect(Object.keys(context).sort()).toEqual([
+			"encryptor",
+			"instance",
+			"log",
+			"prisma",
+			"signal",
+		]);
+		expect(context.signal).toBeInstanceOf(AbortSignal);
+		signals.push(context.signal);
 		expect(context.prisma).toBe(prisma);
 		expect(prisma).not.toBe(native.prisma);
 		expect(context.encryptor).toBe(native.encryptor);
@@ -335,6 +344,7 @@ async function boot(
 		counts,
 		state,
 		selected,
+		signals,
 		lookupSequences,
 		callback,
 		advance,
@@ -483,6 +493,23 @@ afterEach(async () => {
 });
 
 describe("Jellyfin positive-watch scheduler admission and accepted lifetime", () => {
+	it("aborts the owned read at preClose but still joins an accepted publication", async () => {
+		const gate = deferred();
+		const f = await boot({ hold: { phase: "page", gate: gate.promise } });
+		await f.start("startup");
+		expect(await f.waitUntilHeld()).toBe(true);
+		expect(f.signals).toHaveLength(1);
+		expect(f.signals[0]!.aborted).toBe(false);
+		const closing = await f.closePending();
+		expect(f.signals[0]!.aborted).toBe(true);
+		expect(closing.settled()).toBe(false);
+		expect(f.state.teardown).toBe(false);
+		gate.resolve();
+		await closing.promise;
+		expect(f.state.pendingAtTeardown).toBe(0);
+		expect(f.state.afterTeardown).toBe(0);
+	});
+
 	for (const origin of ["startup", "interval"] as const) {
 		for (const phase of ["lookup", "page"] as const)
 			for (const reject of [false, true]) {

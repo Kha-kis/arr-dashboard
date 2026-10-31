@@ -9,6 +9,28 @@ vi.mock("../../lib/jellyfin/jellyfin-positive-watch-refresher.js", () => ({
 import { refreshScheduledJellyfinPositiveWatchInstances } from "../jellyfin-positive-watch-scheduler.js";
 
 describe("Jellyfin positive watch scheduler", () => {
+	it("does not start an instance after the owned shutdown signal aborts", async () => {
+		refresh.mockReset();
+		const controller = new AbortController();
+		refresh.mockImplementationOnce(async () => {
+			controller.abort();
+			return { kind: "skipped", reason: "cancelled" };
+		});
+		const app = {
+			prisma: {} as never,
+			encryptor: {} as never,
+			log: { info: vi.fn(), error: vi.fn() } as never,
+		};
+		await refreshScheduledJellyfinPositiveWatchInstances(
+			app,
+			[{ id: "synthetic-one" }, { id: "synthetic-two" }] as ServiceInstance[],
+			() => false,
+			controller.signal,
+		);
+		expect(refresh).toHaveBeenCalledTimes(1);
+		expect(refresh.mock.calls[0]![0].signal).toBe(controller.signal);
+	});
+
 	it("continues to a second instance when the first refresh rejects", async () => {
 		refresh.mockReset();
 		refresh.mockRejectedValueOnce(new Error("synthetic private detail"));

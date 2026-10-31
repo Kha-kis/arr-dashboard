@@ -11,15 +11,17 @@ export async function refreshScheduledJellyfinPositiveWatchInstances(
 	app: Pick<FastifyInstance, "prisma" | "encryptor" | "log">,
 	instances: readonly ServiceInstance[],
 	shouldStop: () => boolean = () => false,
+	signal?: AbortSignal,
 ): Promise<void> {
 	for (const instance of instances) {
-		if (shouldStop()) break;
+		if (shouldStop() || signal?.aborted) break;
 		try {
 			const result = await refreshOwnedJellyfinPositiveWatch({
 				prisma: app.prisma,
 				encryptor: app.encryptor,
 				instance,
 				log: app.log,
+				signal,
 			});
 			app.log.info(
 				{
@@ -55,6 +57,7 @@ const jellyfinPositiveWatchSchedulerPlugin = fastifyPlugin(
 		let startupHandle: ReturnType<typeof setTimeout> | null = null;
 		let running: Promise<void> | null = null;
 		let closing = false;
+		const shutdown = new AbortController();
 
 		async function tick(): Promise<void> {
 			if (closing || running) return;
@@ -63,7 +66,12 @@ const jellyfinPositiveWatchSchedulerPlugin = fastifyPlugin(
 					const instances = await app.prisma.serviceInstance.findMany({
 						where: { service: "JELLYFIN", enabled: true, identityStatus: "VERIFIED" },
 					});
-					await refreshScheduledJellyfinPositiveWatchInstances(app, instances, () => closing);
+					await refreshScheduledJellyfinPositiveWatchInstances(
+						app,
+						instances,
+						() => closing,
+						shutdown.signal,
+					);
 				});
 			})()
 				.catch(() => {
@@ -90,6 +98,7 @@ const jellyfinPositiveWatchSchedulerPlugin = fastifyPlugin(
 		function closeAdmission() {
 			if (closing) return;
 			closing = true;
+			shutdown.abort();
 			if (startupHandle) clearTimeout(startupHandle);
 			if (intervalHandle) clearInterval(intervalHandle);
 			startupHandle = null;

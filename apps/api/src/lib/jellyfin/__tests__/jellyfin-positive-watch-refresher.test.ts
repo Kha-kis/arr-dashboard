@@ -73,6 +73,40 @@ beforeEach(() => {
 });
 
 describe("Jellyfin positive watch refresh runner", () => {
+	it("does not claim or read when shutdown was already requested", async () => {
+		const controller = new AbortController();
+		controller.abort(new Error("private shutdown reason"));
+		expect(await refreshOwnedJellyfinPositiveWatch({ ...app, signal: controller.signal })).toEqual({
+			kind: "skipped",
+			reason: "cancelled",
+		});
+		expect(mocks.claim).not.toHaveBeenCalled();
+		expect(mocks.getUsers).not.toHaveBeenCalled();
+		expect(mocks.publish).not.toHaveBeenCalled();
+	});
+
+	it("settles an owned cancelled read without publishing or blaming the provider", async () => {
+		const controller = new AbortController();
+		mocks.getUsers.mockImplementationOnce(async () => {
+			controller.abort(new Error("private shutdown reason"));
+			throw new Error("synthetic cancelled read");
+		});
+		expect(await refreshOwnedJellyfinPositiveWatch({ ...app, signal: controller.signal })).toEqual({
+			kind: "skipped",
+			reason: "cancelled",
+		});
+		expect(mocks.fail).toHaveBeenCalledWith(
+			app.prisma,
+			"jellyfin_episode_positive",
+			"refresh-cancelled",
+			instance,
+			expect.anything(),
+			app.log,
+		);
+		expect(mocks.getLibraries).not.toHaveBeenCalled();
+		expect(mocks.publish).not.toHaveBeenCalled();
+	});
+
 	it("uses the isolated attempt and guarded two-pass collector before publishing", async () => {
 		const result = await refreshOwnedJellyfinPositiveWatch(app);
 		expect(result).toMatchObject({ kind: "published", itemCount: 1, scopeCount: 1 });
