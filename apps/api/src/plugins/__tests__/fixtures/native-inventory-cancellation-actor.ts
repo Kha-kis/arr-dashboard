@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
+import { lstatSync } from "node:fs";
 import { createServer } from "node:http";
 import type { Socket } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, isAbsolute } from "node:path";
 import Fastify from "fastify";
 import fp from "fastify-plugin";
 import { createTestPrismaClient } from "../../../lib/__tests__/test-prisma.js";
@@ -17,16 +16,18 @@ import registry from "../../scheduler-registry.js";
 import { installRuntimeFixture } from "../runtime-fixture.js";
 
 const service = process.argv[2],
-	phase = process.argv[3];
+	phase = process.argv[3],
+	dbPath = process.argv[4];
 assert.ok(service === "PLEX" || service === "JELLYFIN" || service === "EMBY");
 assert.ok(phase === "identity" || phase === "discovery" || phase === "page");
-const directory = mkdtempSync(join(tmpdir(), "native-shutdown-actor-"));
-const dbPath = join(directory, "test.db");
-execFileSync("pnpm", ["exec", "prisma", "db", "push", "--schema", "prisma/schema.prisma"], {
-	cwd: process.cwd(),
-	env: { ...process.env, DATABASE_URL: `file:${dbPath}` },
-	stdio: "ignore",
-});
+assert.ok(dbPath && isAbsolute(dbPath), "Parent-owned synthetic database required");
+const directory = dirname(dbPath);
+assert.equal(dirname(directory), tmpdir());
+assert.match(basename(directory), /^native-shutdown-actor-[a-zA-Z0-9]+$/);
+assert.equal(basename(dbPath), "test.db");
+assert.ok(lstatSync(directory).isDirectory());
+const databaseFile = lstatSync(dbPath);
+assert.ok(databaseFile.isFile() && databaseFile.nlink === 1);
 const prisma = createTestPrismaClient(dbPath),
 	sockets = new Set<Socket>();
 let stalledClose: Promise<void> | undefined,
@@ -179,7 +180,6 @@ process.on("SIGTERM", () => {
 		await prisma.$disconnect();
 		for (const socket of sockets) socket.destroy();
 		await new Promise<void>((resolve) => server.close(() => resolve()));
-		rmSync(directory, { recursive: true, force: true });
 		process.stdout.write(
 			`${JSON.stringify({ service, phase, joined: true, yielded: true, failureCount: 0, snapshots: 0, noNextTick: true, elapsedMs: Math.round(performance.now() - startedAt) })}\n`,
 		);

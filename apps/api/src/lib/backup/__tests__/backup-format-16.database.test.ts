@@ -1,7 +1,7 @@
 import { chmod, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Encryptor } from "../../auth/encryption.js";
 import { createNotificationOutboxNativeFixture } from "../../notifications/__tests__/notification-outbox-native-fixture.js";
 import { NotificationDispatcher } from "../../notifications/notification-dispatcher.js";
@@ -939,29 +939,35 @@ describe("notification backup on actual owned native storage", () => {
 		});
 	});
 
-	it("native replacement conserves grouped lineage and every historical attempt", async () => {
-		const fixture = await boot();
-		await fixture.run(async () => {
-			const data = await completeGraph(fixture);
-			const prepared = await prepare(data, new Encryptor("a".repeat(64)), nativeDestination);
-			await restorePreparedDatabase(fixture.prisma, prepared, nativeDestination);
-			const actual = await nativeSnapshot(fixture);
-			expect(actual.events).toHaveLength(12);
-			expect(actual.deliveries).toHaveLength(12);
-			for (const row of actual.events)
-				expect(JSON.parse(JSON.stringify(row))).toEqual(
-					(prepared.records.notificationOutboxEvents as Record<string, unknown>[]).find(
-						(old) => old.id === row.id,
-					),
-				);
-			for (const row of actual.deliveries)
-				expect(JSON.parse(JSON.stringify(row))).toEqual(
-					(prepared.records.notificationOutboxDeliveries as Record<string, unknown>[]).find(
-						(old) => old.id === row.id,
-					),
-				);
-			expect(actual.events.filter((row) => row.stage === "grouped")).toHaveLength(2);
-			expect(actual.deliveries.filter((row) => row.state === "uncertain")).toHaveLength(2);
+	describe("native replacement of a complete historical graph", () => {
+		let fixture: Fixture;
+		let data: Awaited<ReturnType<typeof completeGraph>>;
+		beforeEach(async () => {
+			fixture = await boot();
+			data = await fixture.run(() => completeGraph(fixture));
+		});
+		it("native replacement conserves grouped lineage and every historical attempt", async () => {
+			await fixture.run(async () => {
+				const prepared = await prepare(data, new Encryptor("a".repeat(64)), nativeDestination);
+				await restorePreparedDatabase(fixture.prisma, prepared, nativeDestination);
+				const actual = await nativeSnapshot(fixture);
+				expect(actual.events).toHaveLength(12);
+				expect(actual.deliveries).toHaveLength(12);
+				for (const row of actual.events)
+					expect(JSON.parse(JSON.stringify(row))).toEqual(
+						(prepared.records.notificationOutboxEvents as Record<string, unknown>[]).find(
+							(old) => old.id === row.id,
+						),
+					);
+				for (const row of actual.deliveries)
+					expect(JSON.parse(JSON.stringify(row))).toEqual(
+						(prepared.records.notificationOutboxDeliveries as Record<string, unknown>[]).find(
+							(old) => old.id === row.id,
+						),
+					);
+				expect(actual.events.filter((row) => row.stage === "grouped")).toHaveLength(2);
+				expect(actual.deliveries.filter((row) => row.state === "uncertain")).toHaveLength(2);
+			});
 		});
 	});
 

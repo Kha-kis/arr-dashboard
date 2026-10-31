@@ -1094,7 +1094,7 @@ describe("Plex canonical cache scheduler lifetime", () => {
 		expect(f.counts.observation).toBe(1);
 		expect(f.state.afterTeardown).toBe(0);
 	});
-	it("retains finite real-failure retries and does not promote superseded results", async () => {
+	it("retains finite real-failure retries", async () => {
 		const f = await boot({ alwaysRetryable: true });
 		await f.advance(STARTUP_MS - 1);
 		expect(f.counts.refresh).toBe(0);
@@ -1110,11 +1110,15 @@ describe("Plex canonical cache scheduler lifetime", () => {
 		await vi.advanceTimersByTimeAsync(600_000);
 		expect(f.counts.refresh).toBe(4);
 		await f.dispose();
+	});
+	it("does not retry a superseded refresh result", async () => {
 		const superseded = await boot({ superseded: true });
 		await superseded.advance(STARTUP_MS);
 		await superseded.advance(20 * 60_000);
 		expect(superseded.counts.refresh).toBe(1);
 		await superseded.dispose();
+	});
+	it("does not retry a positive-only refresh result", async () => {
 		const positive = await boot({ positiveOnly: true });
 		await positive.advance(STARTUP_MS);
 		await positive.advance(20 * 60_000);

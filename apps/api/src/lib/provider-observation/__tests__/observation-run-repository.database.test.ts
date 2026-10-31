@@ -1,8 +1,8 @@
-import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { SqliteSchemaFixture } from "../../__tests__/sqlite-schema-fixture.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import {
 	advanceObservationUnit,
@@ -26,6 +26,10 @@ import {
 
 const databases: Array<{ directory: string; prisma: ReturnType<typeof createTestPrismaClient> }> =
 	[];
+const sqliteSchema = new SqliteSchemaFixture();
+
+beforeAll(() => sqliteSchema.initialize(), 60_000);
+
 const authority: ObservationRunAuthority = {
 	provider: "plex_episode",
 	cacheType: "plex_episode",
@@ -90,11 +94,7 @@ const renewalUnits: ObservationRunUnitSeed[] = [
 async function database() {
 	const directory = mkdtempSync(join(tmpdir(), "provider-observation-run-"));
 	const dbPath = join(directory, "test.db");
-	execFileSync("pnpm", ["exec", "prisma", "db", "push", "--schema", "prisma/schema.prisma"], {
-		cwd: process.cwd(),
-		env: { ...process.env, DATABASE_URL: `file:${dbPath}` },
-		stdio: "ignore",
-	});
+	sqliteSchema.copyTo(dbPath);
 	const prisma = createTestPrismaClient(dbPath);
 	databases.push({ directory, prisma });
 	await prisma.user.create({
@@ -171,6 +171,10 @@ afterEach(async () => {
 		await entry.prisma.$disconnect();
 		rmSync(entry.directory, { recursive: true, force: true });
 	}
+});
+
+afterAll(() => {
+	sqliteSchema.dispose();
 });
 
 describe("provider observation run repository SQLite lifecycle", { timeout: 30_000 }, () => {
