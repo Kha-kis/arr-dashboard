@@ -5,11 +5,11 @@ import {
 	createProviderPublicationAuthority,
 	sameProviderPublicationAuthority,
 } from "../services/provider-identity-guard.js";
+import type { DecodedPlexGenerationMetadata } from "./plex-generation-metadata.js";
 import {
 	loadGenerationObservationsForOwnedInstances,
 	summarizePlexEvidence,
-} from "./plex-evidence-repository.js";
-import type { DecodedPlexGenerationMetadata } from "./plex-generation-metadata.js";
+} from "./plex-persisted-observation-repository.js";
 
 type CatalogPrisma = Parameters<typeof loadGenerationObservationsForOwnedInstances>[0];
 type CatalogResponse = Required<Pick<PlexSectionsResponse, "sections" | "catalog">> & {
