@@ -1,38 +1,53 @@
-import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import Database from "better-sqlite3";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { PrismaClient, type Prisma } from "../../prisma.js";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { SqliteSchemaFixture } from "../../__tests__/sqlite-schema-fixture.js";
+import { type Prisma, PrismaClient } from "../../prisma.js";
 import { pruneNativeInventoryRetentionSlice } from "../native-inventory-retention.js";
+
+// Fixture setup must not depend on package-manager or schema-engine startup.
+// Preserve all other child-process exports used by imported production modules.
+vi.mock("node:child_process", async (importOriginal) => ({
+	...(await importOriginal<typeof import("node:child_process")>()),
+	execFileSync: () => {
+		throw new Error("Retention query fixture must initialize without package-manager commands");
+	},
+}));
 
 const OLD = new Date("2026-10-10T06:00:00Z");
 const NEWER = new Date("2026-10-11T06:00:00Z");
 const CUTOFF = new Date("2026-10-20T06:00:00Z");
 const cleanup: Array<() => Promise<void>> = [];
-let templateDirectory: string;
-let template: string;
-
-beforeAll(() => {
-	templateDirectory = mkdtempSync(join(tmpdir(), "native-query-template-"));
-	template = join(templateDirectory, "template.db");
-	execFileSync("pnpm", ["exec", "prisma", "db", "push", "--schema", "prisma/schema.prisma"], {
-		cwd: process.cwd(),
-		env: { ...process.env, DATABASE_URL: `file:${template}` },
-		stdio: "ignore",
-	});
+const schemaFixture = new SqliteSchemaFixture((path) => {
+	const db = new Database(path);
+	try {
+		const schema = readFileSync(
+			new URL("../../../../prisma/runtime-schema/sqlite-v1.sql", import.meta.url),
+			"utf8",
+		);
+		// A fresh fixture needs the current table/index atoms, not historical ALTERs.
+		db.transaction(() => {
+			for (const atom of schema.split(/-- arr-schema-atom [^\n]+\n/)) {
+				if (/^\s*CREATE (?:UNIQUE )?(?:TABLE|INDEX)\b/.test(atom)) db.exec(atom);
+			}
+		})();
+	} finally {
+		db.close();
+	}
 });
+beforeAll(() => schemaFixture.initialize());
 afterEach(async () => {
 	for (const close of cleanup.splice(0)) await close();
 });
-afterAll(() => rmSync(templateDirectory, { recursive: true, force: true }));
+afterAll(() => schemaFixture.dispose());
 
 async function fixture(mode: "DELETE" | "WAL", children = 601) {
 	const directory = mkdtempSync(join(tmpdir(), "native-query-shape-"));
 	const dbPath = join(directory, "fixture.db");
-	copyFileSync(template, dbPath);
+	schemaFixture.copyTo(dbPath);
 	const native = new Database(dbPath);
 	native.pragma(`journal_mode=${mode}`);
 	native.close();
