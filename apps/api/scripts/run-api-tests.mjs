@@ -82,7 +82,7 @@ try {
 			"--config",
 			sqliteConfig,
 			...argumentsForVitest,
-			"--maxWorkers=2",
+			"--maxWorkers=4",
 			...pgOnlySuites.flatMap((suite) => ["--exclude", suite]),
 			...nodeOnlySuites.flatMap((suite) => ["--exclude", suite]),
 		],
