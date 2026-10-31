@@ -22,13 +22,14 @@ import {
 	PremiumPageLoading,
 } from "../../../components/layout";
 import { Alert, AlertDescription, Button } from "../../../components/ui";
+import { useIncognitoMode } from "../../../contexts/IncognitoContext";
 import {
 	useCrossSeedAvailability,
 	useCrossSeedDiscovery,
 	useTrackerIcons,
 } from "../../../hooks/api/useQui";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
-import { getErrorMessage } from "../../../lib/error-utils";
+import { getLinuxInstanceName } from "../../../lib/incognito";
 import { CrossSeedBulkToolbar } from "./cross-seed-bulk-toolbar";
 import { CrossSeedItemCard } from "./cross-seed-item-card";
 
@@ -122,20 +123,39 @@ export const CrossSeedClient = () => {
 	const quiInstanceLabel =
 		discovery.data?.pages[0]?.quiInstanceLabel ?? isAvailable?.quiInstanceLabel ?? "";
 
-	const allScanned = !discovery.hasNextPage && !discovery.isFetching;
+	const pages = discovery.data?.pages ?? [];
+	const paginationExhausted = pages.length > 0 && pages[pages.length - 1]?.exhausted === true;
+	const inventoryVerified =
+		pages.length > 0 && pages.every((p) => p.torrentInventoryComplete === true);
+	const allScanned =
+		paginationExhausted &&
+		inventoryVerified &&
+		!discovery.isFetching &&
+		!discovery.isError &&
+		!availability.isError &&
+		aggregate.siblingFetchErrors === 0;
+	const retryNextBatch = discovery.isFetchNextPageError && discovery.hasNextPage;
 
 	if (availability.isLoading) {
 		return <PremiumPageLoading showHeader cardCount={3} />;
 	}
 
-	if (availability.isError) {
-		return (
-			<Alert variant="danger">
-				<AlertDescription>
-					Failed to load cross-seed availability: {getErrorMessage(availability.error)}
-				</AlertDescription>
-			</Alert>
-		);
+	const availabilityError = availability.isError ? (
+		<Alert variant="danger">
+			<AlertDescription>
+				Cross-seed availability could not be loaded. Retry to check availability.
+				<Button
+					variant="secondary"
+					onClick={() => void availability.refetch()}
+					disabled={availability.isFetching}
+				>
+					Retry availability
+				</Button>
+			</AlertDescription>
+		</Alert>
+	) : null;
+	if (availability.isError && !isAvailable) {
+		return availabilityError;
 	}
 
 	// Empty state: qui not configured at all.
@@ -187,6 +207,8 @@ export const CrossSeedClient = () => {
 	const noResultsYet =
 		isAvailable !== null &&
 		aggregate.items.length === 0 &&
+		!discovery.isError &&
+		!availability.isError &&
 		(discovery.isFetching || discovery.hasNextPage);
 
 	return (
@@ -197,6 +219,7 @@ export const CrossSeedClient = () => {
 				isRefreshing={discovery.isFetching}
 				quiOpenUrl={quiOpenUrl}
 			/>
+			{availabilityError}
 
 			<GlassmorphicCard padding="md" className="mb-6">
 				<div className="flex items-center justify-between gap-4 flex-wrap">
@@ -236,13 +259,15 @@ export const CrossSeedClient = () => {
 									{aggregate.itemsNeedingAttention.toLocaleString()}
 								</div>
 							</button>
-						) : aggregate.found > 0 ? (
+						) : aggregate.found > 0 &&
+							allScanned &&
+							!discovery.isError &&
+							aggregate.siblingFetchErrors === 0 ? (
 							<div>
 								<div className="flex items-center gap-1 text-emerald-400/90 text-xs uppercase tracking-wide">
 									<CheckCircle2 className="h-3 w-3" aria-hidden />
-									Healthy
+									No reported tracker problems
 								</div>
-								<div className="text-xl font-semibold text-emerald-400/90">All</div>
 							</div>
 						) : null}
 						{aggregate.siblingFetchErrors > 0 ? (
@@ -265,7 +290,7 @@ export const CrossSeedClient = () => {
 							</div>
 						) : null}
 					</div>
-					{!allScanned ? (
+					{discovery.isFetching || (discovery.hasNextPage && !discovery.isError) ? (
 						<Button
 							variant="secondary"
 							onClick={() => void discovery.fetchNextPage()}
@@ -283,14 +308,51 @@ export const CrossSeedClient = () => {
 							)}
 						</Button>
 					) : (
-						<span className="text-xs text-muted-foreground">Scan complete</span>
+						<span className="text-xs text-muted-foreground">
+							{allScanned
+								? "Scan complete"
+								: discovery.isError || availability.isError
+									? "Scan unavailable"
+									: aggregate.siblingFetchErrors > 0
+										? "Partial results"
+										: paginationExhausted
+											? "Coverage unverified"
+											: "Waiting for scan"}
+						</span>
 					)}
 				</div>
 			</GlassmorphicCard>
 
 			{discovery.isError ? (
 				<Alert variant="danger">
-					<AlertDescription>Failed to scan: {getErrorMessage(discovery.error)}</AlertDescription>
+					<AlertDescription>
+						Cross-seed discovery could not be loaded. Successful results remain available; coverage
+						is unverified.
+						<Button
+							variant="secondary"
+							disabled={discovery.isFetching}
+							onClick={() =>
+								void (retryNextBatch ? discovery.fetchNextPage() : discovery.refetch())
+							}
+						>
+							{retryNextBatch ? "Retry next batch" : "Retry scan"}
+						</Button>
+					</AlertDescription>
+				</Alert>
+			) : null}
+			{aggregate.siblingFetchErrors > 0 && !discovery.isError ? (
+				<Alert>
+					<AlertDescription>
+						Some sibling lookups failed. Successful results remain available; coverage is
+						unverified.
+						<Button
+							variant="secondary"
+							disabled={discovery.isFetching}
+							onClick={() => void discovery.refetch()}
+						>
+							Retry scan
+						</Button>
+					</AlertDescription>
 				</Alert>
 			) : null}
 
@@ -305,6 +367,12 @@ export const CrossSeedClient = () => {
 					icon={Network}
 					title="No cross-seed siblings found"
 					description={`Scanned ${aggregate.scanned.toLocaleString()} items with a backfilled infoHash. None of them currently have a cross-seed sibling in qui. This is fine — it just means qui hasn't found alternative trackers for your active torrents.`}
+				/>
+			) : aggregate.items.length === 0 ? (
+				<PremiumEmptyState
+					icon={Network}
+					title="Sibling coverage unverified"
+					description="The available results do not establish whether other siblings exist. Rescan to check again."
 				/>
 			) : (
 				<>
@@ -428,8 +496,11 @@ interface HeaderProps {
 }
 
 const Header = ({ quiInstanceLabel, onRefresh, isRefreshing, quiOpenUrl }: HeaderProps) => {
+	const [incognitoMode] = useIncognitoMode();
+	const instanceLabel =
+		incognitoMode && quiInstanceLabel ? getLinuxInstanceName(quiInstanceLabel) : quiInstanceLabel;
 	const description = quiInstanceLabel
-		? `Cross-seed siblings across your library via ${quiInstanceLabel}, with tracker-health problems surfaced first. Remediate in qui — siblings are read-only here.`
+		? `Cross-seed siblings across your library via ${instanceLabel}, with tracker-health problems surfaced first. Remediate in qui — siblings are read-only here.`
 		: "Surface qui's cross-seed sibling graph across your library and flag tracker-health problems.";
 
 	return (

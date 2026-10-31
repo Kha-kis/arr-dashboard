@@ -52,15 +52,13 @@ export const QuiWebhookConfigPanel = () => {
 		try {
 			await rotate.mutateAsync();
 		} catch (err) {
-			// A failed rotation looks identical to a successful one from
-			// the UI: spinner stops, but the operator has no way to know
-			// the request didn't land. Surface the error so they can
-			// distinguish "secret was rotated" from "rotation failed —
-			// previous secret still valid" — the security model depends
-			// on knowing which state you're in.
-			toast.error("Couldn't rotate the webhook secret. Previous secret is still valid.", {
-				description: getErrorMessage(err),
-			});
+			// A rejected response can follow a committed rotation.
+			toast.error(
+				"Webhook secret rotation was not confirmed. The previous secret may no longer work.",
+				{
+					description: getErrorMessage(err),
+				},
+			);
 		}
 	};
 

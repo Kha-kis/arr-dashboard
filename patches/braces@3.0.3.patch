@@ -1,0 +1,152 @@
+diff --git a/lib/compile.js b/lib/compile.js
+--- a/lib/compile.js
++++ b/lib/compile.js
+@@ -2,8 +2,10 @@
+ 
+ const fill = require('fill-range');
+ const utils = require('./utils');
++const depthGuard = require('./depth');
+ 
+ const compile = (ast, options = {}) => {
++  depthGuard.assertAstDepth(ast);
+   const walk = (node, parent = {}) => {
+     const invalidBlock = utils.isInvalidBrace(parent);
+     const invalidNode = node.invalid === true && options.escapeInvalid === true;
+diff --git a/lib/depth.js b/lib/depth.js
+new file mode 100644
+--- /dev/null
++++ b/lib/depth.js
+@@ -0,0 +1,47 @@
++'use strict';
++
++// Local security backport for braces3.0.3. Never raised or disabled by options.
++const MAX_DEPTH = 128;
++const fail = () => {
++  const error = new RangeError('Brace structure exceeds maximum depth of 128');
++  error.code = 'ERR_BRACES_MAX_DEPTH';
++  throw error;
++};
++
++exports.assertDepth = depth => {
++  if (depth > MAX_DEPTH) fail();
++};
++
++exports.assertArrayDepth = value => {
++  const pending = [{ value, depth: 0 }];
++  while (pending.length) {
++    const frame = pending.pop();
++    if (!Array.isArray(frame.value)) continue;
++    if (frame.depth > MAX_DEPTH) fail();
++    for (const child of frame.value) {
++      if (Array.isArray(child)) pending.push({ value: child, depth: frame.depth + 1 });
++    }
++  }
++};
++
++exports.assertAstDepth = ast => {
++  const pending = [{ node: ast, depth: 0 }];
++  while (pending.length) {
++    const { node, depth } = pending.pop();
++    if (depth > MAX_DEPTH) fail();
++    if (!node || typeof node !== 'object') continue;
++    const parents = new Set();
++    let parent = node;
++    let parentDepth = 0;
++    while (parent && typeof parent === 'object') {
++      if (parents.has(parent) || parentDepth > MAX_DEPTH) fail();
++      parents.add(parent);
++      parent = parent.parent;
++      parentDepth++;
++    }
++    exports.assertArrayDepth(node.value);
++    if (node.nodes) {
++      for (const child of node.nodes) pending.push({ node: child, depth: depth + 1 });
++    }
++  }
++};
+diff --git a/lib/expand.js b/lib/expand.js
+--- a/lib/expand.js
++++ b/lib/expand.js
+@@ -3,8 +3,11 @@
+ const fill = require('fill-range');
+ const stringify = require('./stringify');
+ const utils = require('./utils');
++const depthGuard = require('./depth');
+ 
+ const append = (queue = '', stash = '', enclose = false) => {
++  depthGuard.assertArrayDepth(queue);
++  depthGuard.assertArrayDepth(stash);
+   const result = [];
+ 
+   queue = [].concat(queue);
+@@ -31,6 +34,7 @@
+ };
+ 
+ const expand = (ast, options = {}) => {
++  depthGuard.assertAstDepth(ast);
+   const rangeLimit = options.rangeLimit === undefined ? 1000 : options.rangeLimit;
+ 
+   const walk = (node, parent = {}) => {
+diff --git a/lib/parse.js b/lib/parse.js
+--- a/lib/parse.js
++++ b/lib/parse.js
+@@ -1,6 +1,7 @@
+ 'use strict';
+ 
+ const stringify = require('./stringify');
++const depthGuard = require('./depth');
+ 
+ /**
+  * Constants
+@@ -143,6 +144,7 @@
+      */
+ 
+     if (value === CHAR_LEFT_PARENTHESES) {
++      depthGuard.assertDepth(stack.length + 1);
+       block = push({ type: 'paren', nodes: [] });
+       stack.push(block);
+       push({ type: 'text', value });
+@@ -195,6 +197,7 @@
+      */
+ 
+     if (value === CHAR_LEFT_CURLY_BRACE) {
++      depthGuard.assertDepth(stack.length + 1);
+       depth++;
+ 
+       const dollar = prev.value && prev.value.slice(-1) === '$' || block.dollar === true;
+diff --git a/lib/stringify.js b/lib/stringify.js
+--- a/lib/stringify.js
++++ b/lib/stringify.js
+@@ -1,8 +1,10 @@
+ 'use strict';
+ 
+ const utils = require('./utils');
++const depthGuard = require('./depth');
+ 
+ module.exports = (ast, options = {}) => {
++  depthGuard.assertAstDepth(ast);
+   const stringify = (node, parent = {}) => {
+     const invalidBlock = options.escapeInvalid && utils.isInvalidBrace(parent);
+     const invalidNode = node.invalid === true && options.escapeInvalid === true;
+@@ -29,4 +31,3 @@
+ 
+   return stringify(ast);
+ };
+-
+diff --git a/lib/utils.js b/lib/utils.js
+--- a/lib/utils.js
++++ b/lib/utils.js
+@@ -1,4 +1,5 @@
+ 'use strict';
++const depthGuard = require('./depth');
+ 
+ exports.isInteger = num => {
+   if (typeof num === 'number') {
+@@ -99,6 +100,7 @@
+  */
+ 
+ exports.flatten = (...args) => {
++  depthGuard.assertArrayDepth(args);
+   const result = [];
+ 
+   const flat = arr => {

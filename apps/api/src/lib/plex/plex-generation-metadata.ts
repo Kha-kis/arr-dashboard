@@ -41,6 +41,11 @@ export type DecodedPlexGenerationMetadata =
 	| PlexGenerationMetadataV5
 	| PlexGenerationMetadataV6;
 
+export type PlexAmbiguousTmdbCandidate = {
+	mediaType: "movie" | "series";
+	tmdbId: number;
+};
+
 type PlexGenerationMetadataV6Base = {
 	version: 6;
 	publicationLevel: PlexPublicationLevel;
@@ -69,6 +74,7 @@ export type PlexGenerationMetadataV6 =
 			completeness: "partial";
 			observedRoots: PlexGenerationDomainRoot[];
 			capabilities: PlexPositiveGenerationMetadataV4["capabilities"];
+			ambiguousTmdbCandidates: PlexAmbiguousTmdbCandidate[] | null;
 			roots?: never;
 			partialReasons: PlexPartialReason[];
 	  });
@@ -743,12 +749,69 @@ function decodeV6(e: Record<string, unknown>): PlexGenerationMetadataDecodeResul
 			},
 		};
 	}
+	const hasTypedCandidates = Object.hasOwn(e, "ambiguousTmdbCandidates");
+	const hasLegacyCandidateIds = Object.hasOwn(e, "ambiguousTmdbIds");
 	if (
 		e.publicationLevel !== "positive-only" ||
 		e.completeness !== "partial" ||
-		!hasExactObjectKeys(e, [...common, "observedRoots", "capabilities"])
+		(hasTypedCandidates && hasLegacyCandidateIds) ||
+		!hasExactObjectKeys(e, [
+			...common,
+			"observedRoots",
+			"capabilities",
+			...(hasTypedCandidates ? ["ambiguousTmdbCandidates"] : []),
+			...(hasLegacyCandidateIds ? ["ambiguousTmdbIds"] : []),
+		])
 	)
 		return { ok: false, reasonCode: "metadata_invalid" };
+	let ambiguousTmdbCandidates: PlexAmbiguousTmdbCandidate[] | null = null;
+	if (hasTypedCandidates) {
+		const rawCandidates = e.ambiguousTmdbCandidates;
+		if (
+			!Array.isArray(rawCandidates) ||
+			rawCandidates.length > 100_000 ||
+			rawCandidates.some((candidate, index) => {
+				if (
+					typeof candidate !== "object" ||
+					candidate === null ||
+					Array.isArray(candidate) ||
+					!hasExactObjectKeys(candidate as Record<string, unknown>, ["mediaType", "tmdbId"])
+				)
+					return true;
+				const typed = candidate as Record<string, unknown>;
+				if (
+					(typed.mediaType !== "movie" && typed.mediaType !== "series") ||
+					!Number.isSafeInteger(typed.tmdbId) ||
+					(typed.tmdbId as number) <= 0
+				)
+					return true;
+				const previous = rawCandidates[index - 1] as Record<string, unknown> | undefined;
+				return Boolean(
+					previous &&
+						((previous.mediaType as string) > (typed.mediaType as string) ||
+							(previous.mediaType === typed.mediaType &&
+								(previous.tmdbId as number) >= (typed.tmdbId as number))),
+				);
+			})
+		)
+			return { ok: false, reasonCode: "metadata_invalid" };
+		ambiguousTmdbCandidates = rawCandidates as PlexAmbiguousTmdbCandidate[];
+	} else if (hasLegacyCandidateIds) {
+		const legacyIds = e.ambiguousTmdbIds;
+		if (
+			!Array.isArray(legacyIds) ||
+			legacyIds.length > 50_000 ||
+			legacyIds.some(
+				(id, index) =>
+					!Number.isSafeInteger(id) || id <= 0 || (index > 0 && id <= legacyIds[index - 1]),
+			)
+		)
+			return { ok: false, reasonCode: "metadata_invalid" };
+		ambiguousTmdbCandidates = [
+			...(legacyIds as number[]).map((tmdbId) => ({ mediaType: "movie" as const, tmdbId })),
+			...(legacyIds as number[]).map((tmdbId) => ({ mediaType: "series" as const, tmdbId })),
+		];
+	}
 	const decodedV4 = decodeV4(
 		{
 			version: 4,
@@ -779,6 +842,7 @@ function decodeV6(e: Record<string, unknown>): PlexGenerationMetadataDecodeResul
 			observedRoots: (decodedV4.metadata as PlexPositiveGenerationMetadataV4).observedRoots,
 			capabilities: (decodedV4.metadata as PlexPositiveGenerationMetadataV4).capabilities,
 			...ledger.binding,
+			ambiguousTmdbCandidates,
 			partialReasons: [...(decodedV4.metadata as PlexPositiveGenerationMetadataV4).partialReasons],
 			coverageReceipt: e.coverageReceipt,
 		},
@@ -1042,9 +1106,13 @@ export function encodePositivePlexGenerationMetadata(input: {
 	observedRoots: PlexGenerationDomainRoot[];
 	targetLedger: PlexTargetLedgerBinding;
 	partialReasons: readonly PlexPartialReason[];
+	ambiguousTmdbCandidates?: readonly PlexAmbiguousTmdbCandidate[];
 	coverageReceipt: ProviderCoverageReceiptV1 | ProviderCoverageReceiptV2;
 }): string {
 	if (input.coverageReceipt.version === 1) {
+		if (input.ambiguousTmdbCandidates?.length) {
+			throw new Error("Legacy Plex metadata cannot carry ambiguous TMDB candidates");
+		}
 		const metadata: Extract<PlexGenerationMetadataV5, { publicationLevel: "positive-only" }> = {
 			version: 5,
 			publicationLevel: "positive-only",
@@ -1089,6 +1157,7 @@ export function encodePositivePlexGenerationMetadata(input: {
 			},
 		],
 		...input.targetLedger,
+		ambiguousTmdbCandidates: [...(input.ambiguousTmdbCandidates ?? [])],
 		partialReasons: [...input.partialReasons],
 		coverageReceipt,
 	};

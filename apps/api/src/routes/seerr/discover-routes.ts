@@ -42,7 +42,8 @@ const createRequestBody = z.object({
 	mediaType: z.enum(["movie", "tv"]),
 	seasons: z.array(z.number().int().min(0)).optional(),
 	is4k: z.boolean().optional(),
-	serverId: z.number().int().positive().optional(),
+	// Seerr uses zero-based server identities, as in the approval overrides.
+	serverId: z.number().int().nonnegative().optional(),
 	profileId: z.number().int().positive().optional(),
 	rootFolder: z.string().optional(),
 	languageProfileId: z.number().int().positive().optional(),
@@ -156,7 +157,9 @@ export async function registerDiscoverRoutes(app: FastifyInstance, _opts: Fastif
 	app.post("/:instanceId/request", async (request) => {
 		const { instanceId } = validateRequest(instanceIdParams, request.params);
 		const body = validateRequest(createRequestBody, request.body);
-		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
+		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId, {
+			requireEnabled: true,
+		});
 		return client.createRequest(body);
 	});
 }

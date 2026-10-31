@@ -9,6 +9,7 @@ import { useMemo } from "react";
 import { useCurrentUser } from "../../../hooks/api/useAuth";
 import { useMultiInstanceQueueQuery } from "../../../hooks/api/useDashboard";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
+import { resolveQueueAvailability } from "../lib/queue-availability";
 
 /**
  * Hook for dashboard data management
@@ -90,6 +91,9 @@ export const useDashboardData = () => {
 		services,
 		enabledServices,
 		servicesLoading,
+		servicesError: servicesQuery.error,
+		servicesHasData: servicesQuery.data !== undefined,
+		servicesFetching: servicesQuery.isFetching,
 		servicesRefetch: servicesQuery.refetch,
 		groupedByService,
 
@@ -98,6 +102,10 @@ export const useDashboardData = () => {
 		queueInstances,
 		totalQueueItems,
 		queueLoading: queueQuery.isLoading,
+		queueError: queueQuery.error,
+		queueHasData: queueQuery.data !== undefined,
+		queueFetching: queueQuery.isFetching,
+		queueAvailability: resolveQueueAvailability(queueQuery.data, queueQuery.error),
 		queueRefetch: queueQuery.refetch,
 
 		// Filter options

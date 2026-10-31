@@ -7,7 +7,8 @@
 import type { SeerrAttentionItem, SeerrUpdateRequestPayload } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { logSeerrAction } from "../../lib/seerr/seerr-action-logger.js";
+import { SeerrMutationOutcomeUnknownError } from "../../lib/errors.js";
+import { logSeerrAction, seerrActionFailureDetail } from "../../lib/seerr/seerr-action-logger.js";
 import { requireSeerrClient } from "../../lib/seerr/seerr-client.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
@@ -97,7 +98,9 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 			});
 		}
 
-		const total = allItems.length;
+		// The page is deliberately capped; Seerr's pageInfo carries the count
+		// across all failed requests, including those not returned here.
+		const total = failedResult.pageInfo.results;
 		const items = allItems.slice(0, ATTENTION_LIMIT);
 
 		// Enrich with media metadata (posters, titles)
@@ -134,7 +137,7 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 		const { instanceId, requestId } = validateRequest(requestIdParams, request.params);
 		const overrides = validateRequest(approveBody, request.body ?? undefined);
 		const userId = request.currentUser!.id;
-		const client = await requireSeerrClient(app, userId, instanceId);
+		const client = await requireSeerrClient(app, userId, instanceId, { requireEnabled: true });
 
 		const hasOverrides =
 			!!overrides &&
@@ -161,7 +164,7 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 				await client.updateRequest(requestId, updatePayload);
 			}
 			const result = await client.approveRequest(requestId);
-			logSeerrAction(app, request.log, {
+			await logSeerrAction(app, request.log, {
 				instanceId,
 				userId,
 				action: "approve_request",
@@ -171,13 +174,14 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 			});
 			return result;
 		} catch (err) {
-			logSeerrAction(app, request.log, {
+			await logSeerrAction(app, request.log, {
 				instanceId,
 				userId,
 				action: "approve_request",
 				targetType: "request",
 				targetId: String(requestId),
 				success: false,
+				...seerrActionFailureDetail(err),
 			});
 			throw err;
 		}
@@ -187,10 +191,10 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 	app.post("/:instanceId/:requestId/decline", async (request) => {
 		const { instanceId, requestId } = validateRequest(requestIdParams, request.params);
 		const userId = request.currentUser!.id;
-		const client = await requireSeerrClient(app, userId, instanceId);
+		const client = await requireSeerrClient(app, userId, instanceId, { requireEnabled: true });
 		try {
 			const result = await client.declineRequest(requestId);
-			logSeerrAction(app, request.log, {
+			await logSeerrAction(app, request.log, {
 				instanceId,
 				userId,
 				action: "decline_request",
@@ -199,13 +203,14 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 			});
 			return result;
 		} catch (err) {
-			logSeerrAction(app, request.log, {
+			await logSeerrAction(app, request.log, {
 				instanceId,
 				userId,
 				action: "decline_request",
 				targetType: "request",
 				targetId: String(requestId),
 				success: false,
+				...seerrActionFailureDetail(err),
 			});
 			throw err;
 		}
@@ -215,10 +220,10 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 	app.delete("/:instanceId/:requestId", async (request, reply) => {
 		const { instanceId, requestId } = validateRequest(requestIdParams, request.params);
 		const userId = request.currentUser!.id;
-		const client = await requireSeerrClient(app, userId, instanceId);
+		const client = await requireSeerrClient(app, userId, instanceId, { requireEnabled: true });
 		try {
 			await client.deleteRequest(requestId);
-			logSeerrAction(app, request.log, {
+			await logSeerrAction(app, request.log, {
 				instanceId,
 				userId,
 				action: "delete_request",
@@ -227,13 +232,14 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 			});
 			return reply.status(204).send();
 		} catch (err) {
-			logSeerrAction(app, request.log, {
+			await logSeerrAction(app, request.log, {
 				instanceId,
 				userId,
 				action: "delete_request",
 				targetType: "request",
 				targetId: String(requestId),
 				success: false,
+				...seerrActionFailureDetail(err),
 			});
 			throw err;
 		}
@@ -243,10 +249,10 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 	app.post("/:instanceId/:requestId/retry", async (request) => {
 		const { instanceId, requestId } = validateRequest(requestIdParams, request.params);
 		const userId = request.currentUser!.id;
-		const client = await requireSeerrClient(app, userId, instanceId);
+		const client = await requireSeerrClient(app, userId, instanceId, { requireEnabled: true });
 		try {
 			const result = await client.retryRequest(requestId);
-			logSeerrAction(app, request.log, {
+			await logSeerrAction(app, request.log, {
 				instanceId,
 				userId,
 				action: "retry_request",
@@ -255,13 +261,14 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 			});
 			return result;
 		} catch (err) {
-			logSeerrAction(app, request.log, {
+			await logSeerrAction(app, request.log, {
 				instanceId,
 				userId,
 				action: "retry_request",
 				targetType: "request",
 				targetId: String(requestId),
 				success: false,
+				...seerrActionFailureDetail(err),
 			});
 			throw err;
 		}
@@ -272,9 +279,14 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 		const { instanceId } = validateRequest(instanceIdParams, request.params);
 		const { action, requestIds } = validateRequest(bulkActionBody, request.body);
 		const userId = request.currentUser!.id;
-		const client = await requireSeerrClient(app, userId, instanceId);
+		const client = await requireSeerrClient(app, userId, instanceId, { requireEnabled: true });
 
-		const results: { requestId: number; success: boolean; error?: string }[] = [];
+		const results: {
+			requestId: number;
+			success: boolean;
+			outcome?: "unknown";
+			error?: string;
+		}[] = [];
 		for (const reqId of requestIds) {
 			try {
 				if (action === "approve") {
@@ -284,7 +296,7 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 				} else {
 					await client.deleteRequest(reqId);
 				}
-				logSeerrAction(app, request.log, {
+				await logSeerrAction(app, request.log, {
 					instanceId,
 					userId,
 					action: `bulk_${action}_request`,
@@ -294,27 +306,36 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 				results.push({ requestId: reqId, success: true });
 			} catch (err) {
 				const errorMessage = getErrorMessage(err, "Unknown error");
-				logSeerrAction(app, request.log, {
+				await logSeerrAction(app, request.log, {
 					instanceId,
 					userId,
 					action: `bulk_${action}_request`,
 					targetType: "request",
 					targetId: String(reqId),
 					success: false,
+					...seerrActionFailureDetail(err),
 				});
-				results.push({ requestId: reqId, success: false, error: errorMessage });
+				results.push({
+					requestId: reqId,
+					success: false,
+					...(err instanceof SeerrMutationOutcomeUnknownError
+						? { outcome: "unknown" as const }
+						: {}),
+					error: errorMessage,
+				});
 			}
 		}
 
 		const totalSuccess = results.filter((r) => r.success).length;
-		const totalFailed = results.length - totalSuccess;
-		const body = { results, totalSuccess, totalFailed };
+		const totalUnknown = results.filter((r) => r.outcome === "unknown").length;
+		const totalFailed = results.length - totalSuccess - totalUnknown;
+		const body = { results, totalSuccess, totalFailed, totalUnknown };
 
 		// Return appropriate status code based on outcome
-		if (totalSuccess === 0 && results.length > 0) {
+		if (totalSuccess === 0 && totalUnknown === 0 && results.length > 0) {
 			return reply.status(502).send(body);
 		}
-		if (totalFailed > 0) {
+		if (totalFailed > 0 || totalUnknown > 0) {
 			return reply.status(207).send(body);
 		}
 		return body;

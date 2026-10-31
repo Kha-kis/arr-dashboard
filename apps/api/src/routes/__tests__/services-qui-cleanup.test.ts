@@ -142,6 +142,16 @@ function makeJellyfinInstance(overrides: Record<string, unknown> = {}) {
 
 function createMockPrisma() {
 	const prisma = {
+		$executeRaw: vi.fn().mockResolvedValue(1),
+		searchGrabClaim: { findFirst: vi.fn().mockResolvedValue(null) },
+		arrImportOperation: {
+			findFirst: vi.fn().mockResolvedValue(null),
+			count: vi.fn().mockResolvedValue(0),
+		},
+		queueCleanerImportReceipt: {
+			count: vi.fn().mockResolvedValue(0),
+			findFirst: vi.fn().mockResolvedValue(null),
+		},
 		libraryCleanupConfig: {
 			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -157,9 +167,11 @@ function createMockPrisma() {
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 			delete: vi.fn().mockResolvedValue(undefined),
 		},
+		quiActionLog: { count: vi.fn().mockResolvedValue(0) },
 		libraryCache: {
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 		},
+		quiObservationPublication: { upsert: vi.fn().mockResolvedValue({}) },
 		episodeFileCache: {
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 		},
@@ -167,8 +179,14 @@ function createMockPrisma() {
 		plexEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		tautulliCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		providerNativeInventorySnapshot: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		providerNativeInventoryRun: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		inodeIndexCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinNativeWatchPublication: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinNativeWatchScopeReceipt: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinNativeWatchRow: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinPositiveWatchRow: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		historyObservation: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		historySourceStatus: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		cacheRefreshStatus: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
@@ -202,6 +220,18 @@ const clearedQuiObservation = {
 };
 
 function expectDurableQuiObservationsCleared() {
+	expect(mockPrisma.quiObservationPublication.upsert).toHaveBeenCalledWith({
+		where: { userId: "user-1" },
+		create: {
+			userId: "user-1",
+			topologyDigest: "",
+			generation: expect.any(String),
+			complete: false,
+			observedAt: null,
+			rowCount: 0,
+		},
+		update: { generation: expect.any(String), complete: false, observedAt: null, rowCount: 0 },
+	});
 	expect(mockPrisma.libraryCache.updateMany).toHaveBeenCalledWith({
 		where: { instance: { userId: "user-1" } },
 		data: clearedQuiObservation,
@@ -269,6 +299,27 @@ describe("POST /services — qUI topology cleanup", () => {
 // ----------------------------------------------------------------------
 
 describe("DELETE /services/:id — qui-cache cleanup", () => {
+	it("refuses to cascade-delete a legacy unresolved action with no claim", async () => {
+		mockRequireInstance.mockResolvedValue(makeQuiInstance());
+		mockPrisma.quiActionLog.count.mockResolvedValue(1);
+		const response = await injectAuthenticated("DELETE", "/services/qui-instance-1");
+		expect(response.statusCode).toBe(409);
+		expect(mockPrisma.serviceInstance.delete).not.toHaveBeenCalled();
+		expect(mockInvalidateTorrentListCache).not.toHaveBeenCalled();
+	});
+
+	it("reports an unresolved qUI action hold as a conflict without clearing caches", async () => {
+		mockRequireInstance.mockResolvedValue(makeQuiInstance());
+		mockPrisma.serviceInstance.delete.mockRejectedValue(
+			Object.assign(new Error("foreign key constraint"), { code: "P2003" }),
+		);
+		const response = await injectAuthenticated("DELETE", "/services/qui-instance-1");
+		expect(response.statusCode).toBe(409);
+		expect(JSON.parse(response.payload).message).toContain("unresolved qUI actions");
+		expect(mockInvalidateTorrentListCache).not.toHaveBeenCalled();
+		expect(mockClearFileIdIndexCache).not.toHaveBeenCalled();
+	});
+
 	it("clears qUI-A observations when it is deleted while qUI-B remains enabled", async () => {
 		mockRequireInstance.mockResolvedValue(makeQuiInstance());
 		mockPrisma.serviceInstance.findMany.mockResolvedValue([
@@ -540,6 +591,14 @@ describe("PUT /services/:id — qUI topology cleanup", () => {
 			expect(res.statusCode).toBe(200);
 			expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
 			expectDurableQuiObservationsCleared();
+			expect(mockPrisma.inodeIndexCache.deleteMany).toHaveBeenCalledWith({
+				where: { instanceId: "qui-instance-1" },
+			});
+			expect(mockPrisma.serviceInstance.updateMany).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.objectContaining({ connectionGeneration: { increment: 1 } }),
+				}),
+			);
 			expect(mockInvalidateTorrentListCache).toHaveBeenCalledWith("qui-instance-1");
 			expect(mockClearFileIdIndexCache).toHaveBeenCalledWith("qui-instance-1");
 		},

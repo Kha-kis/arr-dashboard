@@ -89,8 +89,13 @@ function clearSessionAndRedirect(request: NextRequest, targetPath: string): Next
 export async function proxy(request: NextRequest) {
 	const { pathname } = request.nextUrl;
 
-	// Skip proxy for API/auth/health routes — handled by rewrites or route handlers
-	if (pathname.startsWith("/api/") || pathname.startsWith("/auth/") || pathname === "/health") {
+	// Skip proxy for API/auth and unauthenticated probe routes.
+	if (
+		pathname.startsWith("/api/") ||
+		pathname.startsWith("/auth/") ||
+		pathname === "/health" ||
+		pathname === "/live"
+	) {
 		return NextResponse.next();
 	}
 

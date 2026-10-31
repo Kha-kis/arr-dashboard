@@ -30,6 +30,13 @@ export type ManualImportResult = {
 	imported: number;
 };
 
+export type ManualImportReviewSource = {
+	instanceId: string;
+	instanceName: string;
+	service: ManualImportService;
+	downloadId: string;
+};
+
 export type ManualImportModalProps = {
 	instanceId: string;
 	instanceName: string;
@@ -39,6 +46,12 @@ export type ManualImportModalProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	onCompleted?: (result: ManualImportResult) => void;
+	reviewNavigation?: {
+		position: number;
+		total: number;
+		onPrevious?: () => void;
+		onNext?: () => void;
+	};
 };
 
 export type {

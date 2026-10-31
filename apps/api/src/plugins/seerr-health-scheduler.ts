@@ -20,13 +20,30 @@ const seerrHealthSchedulerPlugin = fp(
 		let intervalHandle: ReturnType<typeof setInterval> | null = null;
 		let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
 		let isRunning = false;
+		let admissionClosed = false;
+		const pendingChecks = new Set<Promise<void>>();
+
+		const closeAdmission = () => {
+			admissionClosed = true;
+			if (timeoutHandle) clearTimeout(timeoutHandle);
+			if (intervalHandle) clearInterval(intervalHandle);
+			timeoutHandle = null;
+			intervalHandle = null;
+		};
 
 		async function checkAllSeerrHealth() {
+			if (admissionClosed) return;
 			if (isRunning) {
 				app.log.warn("Seerr health check already running, skipping");
 				return;
 			}
 			isRunning = true;
+			// Retain the complete check, including success/failure status persistence.
+			let settle!: () => void;
+			const completion = new Promise<void>((resolve) => {
+				settle = resolve;
+			});
+			pendingChecks.add(completion);
 			try {
 				// Route the tick through the scheduler registry so last run / duration /
 				// failure counts surface on /api/system/jobs. The registry re-throws,
@@ -121,13 +138,17 @@ const seerrHealthSchedulerPlugin = fp(
 				app.log.error({ err }, "Seerr health scheduler: failed to query instances");
 			} finally {
 				isRunning = false;
+				pendingChecks.delete(completion);
+				settle();
 			}
 		}
 
 		app.addHook("onReady", async () => {
+			if (admissionClosed) return;
 			app.log.info("Seerr health scheduler initialized (5min interval, 20s startup delay)");
 
 			timeoutHandle = setTimeout(() => {
+				if (admissionClosed) return;
 				checkAllSeerrHealth().catch((err) => {
 					app.log.error({ err }, "Failed during initial Seerr health check");
 				});
@@ -140,9 +161,15 @@ const seerrHealthSchedulerPlugin = fp(
 			}, STARTUP_DELAY_MS);
 		});
 
+		app.addHook("preClose", async () => {
+			closeAdmission();
+		});
+
 		app.addHook("onClose", async () => {
-			if (timeoutHandle) clearTimeout(timeoutHandle);
-			if (intervalHandle) clearInterval(intervalHandle);
+			closeAdmission();
+			while (pendingChecks.size > 0) {
+				await Promise.all(pendingChecks);
+			}
 			app.log.info("Seerr health scheduler stopped");
 		});
 	},

@@ -20,7 +20,7 @@ import {
 	passthroughTickWrapper,
 	type TickWrapper,
 } from "../scheduler-registry/scheduler-registry.js";
-import { executeAutoTagRule, type AutoTagRunResult } from "./execute-rule.js";
+import { type AutoTagRunResult, executeAutoTagRule } from "./execute-rule.js";
 import { runRuleWithLock } from "./run-with-lock.js";
 
 const TICK_INTERVAL_MS = 5 * 60 * 1000; // Wake every 5 minutes
@@ -30,6 +30,10 @@ export class AutoTagScheduler {
 	private intervalId: NodeJS.Timeout | null = null;
 	private inFlight = false;
 	private trackTick: TickWrapper;
+	private admissionClosed = false;
+	private scheduleGeneration = 0;
+	private pendingTicks = new Set<Promise<void>>();
+	private shutdownPromise: Promise<void> | null = null;
 
 	constructor(
 		private prisma: PrismaClient,
@@ -42,6 +46,7 @@ export class AutoTagScheduler {
 	}
 
 	start(): void {
+		if (this.admissionClosed) return;
 		if (this.intervalId) {
 			this.log.warn("Auto-tag scheduler already running");
 			return;
@@ -49,22 +54,53 @@ export class AutoTagScheduler {
 
 		this.log.info({ intervalMs: TICK_INTERVAL_MS }, "Starting auto-tag scheduler");
 
-		this.trackTick(() => this.tick()).catch((err) => {
-			this.log.error({ err }, "Initial auto-tag tick failed");
-		});
-
+		const generation = ++this.scheduleGeneration;
 		this.intervalId = setInterval(() => {
-			this.trackTick(() => this.tick()).catch((err) => {
-				this.log.error({ err }, "Scheduled auto-tag tick failed");
-			});
+			void this.runScheduledTick(generation, "Scheduled auto-tag tick failed");
 		}, TICK_INTERVAL_MS);
+		void this.runScheduledTick(generation, "Initial auto-tag tick failed");
 	}
 
 	stop(): void {
+		this.scheduleGeneration++;
 		if (this.intervalId) {
 			clearInterval(this.intervalId);
 			this.intervalId = null;
 			this.log.info("Auto-tag scheduler stopped");
+		}
+	}
+
+	/** Close admission early, without delaying sibling plugins' preClose hooks. */
+	closeAdmission(): void {
+		this.admissionClosed = true;
+		this.stop();
+	}
+
+	/** Finish accepted execution and result bookkeeping before dependencies close. */
+	shutdown(): Promise<void> {
+		this.closeAdmission();
+		this.shutdownPromise ??= (async () => {
+			while (this.pendingTicks.size > 0) await Promise.all(this.pendingTicks);
+		})();
+		return this.shutdownPromise;
+	}
+
+	private async runScheduledTick(generation: number, errorMessage: string): Promise<void> {
+		if (this.admissionClosed || !this.intervalId || generation !== this.scheduleGeneration) return;
+		// Own the entire wrapper, including admission delay and rejection, not
+		// only the rule-query body. Completion tokens never reject during drain.
+		let finish!: () => void;
+		const completion = new Promise<void>((resolve) => {
+			finish = resolve;
+		});
+		this.pendingTicks.add(completion);
+		try {
+			await this.trackTick(() => this.tick());
+		} catch (err) {
+			this.log.error({ err }, errorMessage);
+		} finally {
+			this.pendingTicks.delete(completion);
+			finish();
 		}
 	}
 

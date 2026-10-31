@@ -10,7 +10,9 @@ import {
 	type QuiTorrentProperties,
 	type QuiTracker,
 	type QuiTransferInfo,
+	quiActionPayloadSchemas,
 	quiCapabilitiesSchema,
+	quiCrossSeedMatchTypeSchema,
 	quiInstanceSchema,
 	quiMediaInfoSchema,
 	quiMonitoredTorrentSchema,
@@ -26,6 +28,7 @@ import {
 	quiHealthProbe,
 	quiRequest,
 } from "./client-helpers.js";
+import { attachProviderContentPath } from "./torrent-content-path.js";
 import { mapTrackerHealth } from "./tracker-health-mapper.js";
 
 export interface QuiTorrentInventory {
@@ -84,7 +87,7 @@ export interface QuiClient {
 	 * Consumers may use partial inventories for positive updates, but must not
 	 * infer absence or clear stale state unless `complete` is true.
 	 */
-	listTorrentInventory(): Promise<QuiTorrentInventory>;
+	listTorrentInventory(options?: { signal?: AbortSignal }): Promise<QuiTorrentInventory>;
 	testConnection(): Promise<{ ok: true } | { ok: false; reason: string }>;
 	/**
 	 * Apply a bulk action to one-or-more torrents on a specific qBit
@@ -94,10 +97,9 @@ export interface QuiClient {
 	 * Despite the `bulk-action` name, qui uses this single endpoint as the
 	 * transport for most per-torrent mutations (including settings that
 	 * accept exactly one hash). The per-action body extras live in `extras`
-	 * as a free-form object — the caller has already validated them against
-	 * `quiActionPayloadSchemas[action]`, so we trust the shape here. Each
-	 * extras-key is spread directly into qui's POST body alongside `action`
-	 * + `hashes`. Examples:
+	 * as an action-specific object. Validate again at this final wire boundary,
+	 * then place trusted `action` and `hashes` after extras so callers cannot
+	 * replace the execution-time verified selection. Examples:
 	 *   - setTags:        { tags: "label,foo" }
 	 *   - setCategory:    { category: "media" }
 	 *   - setShareLimit:  { ratioLimit: 2.0, seedingTimeLimit: 86400 }
@@ -253,6 +255,7 @@ const wireTorrentSchema = z
 		tags: z.string().default(""),
 		category: z.string().default(""),
 		save_path: z.string(),
+		content_path: z.string().optional(),
 		added_on: z.number().int(),
 		completion_on: z.number().int(),
 		seeding_time: z.number().int().default(0),
@@ -265,28 +268,32 @@ const wireTorrentSchema = z
 		instance_name: z.string().optional(),
 	})
 	.transform(
-		(w): QuiTorrent => ({
-			hash: w.hash,
-			name: w.name,
-			state: w.state,
-			ratio: w.ratio,
-			progress: Math.max(0, Math.min(1, w.progress)),
-			numSeeds: w.num_seeds,
-			numLeechs: w.num_leechs,
-			tags: splitTags(w.tags),
-			category: w.category,
-			savePath: w.save_path,
-			addedOn: w.added_on,
-			completedOn: w.completion_on > 0 ? w.completion_on : null,
-			seedingTime: w.seeding_time,
-			eta: w.eta,
-			dlSpeed: w.dlspeed,
-			upSpeed: w.upspeed,
-			priority: w.priority,
-			size: w.size,
-			instanceId: w.instance_id,
-			instanceName: w.instance_name,
-		}),
+		(w): QuiTorrent =>
+			attachProviderContentPath(
+				{
+					hash: w.hash,
+					name: w.name,
+					state: w.state,
+					ratio: w.ratio,
+					progress: Math.max(0, Math.min(1, w.progress)),
+					numSeeds: w.num_seeds,
+					numLeechs: w.num_leechs,
+					tags: splitTags(w.tags),
+					category: w.category,
+					savePath: w.save_path,
+					addedOn: w.added_on,
+					completedOn: w.completion_on > 0 ? w.completion_on : null,
+					seedingTime: w.seeding_time,
+					eta: w.eta,
+					dlSpeed: w.dlspeed,
+					upSpeed: w.upspeed,
+					priority: w.priority,
+					size: w.size,
+					instanceId: w.instance_id,
+					instanceName: w.instance_name,
+				},
+				w.content_path,
+			),
 	);
 
 // qUI's TorrentResponse.CrossInstanceTorrents carries
@@ -391,7 +398,7 @@ const wireCrossSeedMatchSchema = z
 		content_path: z.string(),
 		tracker: z.string(),
 		tracker_health: z.enum(["unregistered", "tracker_down"]).optional(),
-		match_type: z.enum(["content_path", "name", "release"]),
+		match_type: quiCrossSeedMatchTypeSchema,
 		tags: z.string().default(""),
 	})
 	.transform(
@@ -440,6 +447,21 @@ const quiNotificationEventDefinitionSchema = z
 	})
 	.passthrough();
 
+const mutationAcknowledgementSchema = (expected: z.ZodTypeAny) =>
+	z.unknown().refine((value) => expected.safeParse(value).success, {
+		message: "qUI mutation acknowledgement could not be verified",
+	});
+
+const bulkActionAcknowledgementSchema = mutationAcknowledgementSchema(
+	z.object({ message: z.literal("Bulk action completed successfully") }).strict(),
+);
+const renameTorrentAcknowledgementSchema = mutationAcknowledgementSchema(
+	z.object({ message: z.literal("Torrent renamed successfully") }).strict(),
+);
+const trackerMutationAcknowledgementSchema = mutationAcknowledgementSchema(
+	z.object({ status: z.literal("success") }).strict(),
+);
+
 /**
  * Build a request-scoped qui client.
  *
@@ -463,7 +485,10 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 		log: app.log,
 	};
 
-	async function fetchTorrentInventory(requireComplete: boolean): Promise<QuiTorrentInventory> {
+	async function fetchTorrentInventory(
+		requireComplete: boolean,
+		signal?: AbortSignal,
+	): Promise<QuiTorrentInventory> {
 		// Cross-instance endpoint paginates server-side. qUI's openapi caps
 		// `limit` at 2000 per page. Older releases omit completeness metadata;
 		// those responses remain usable for positive read-only observations,
@@ -478,10 +503,12 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 		let rawRowsRead = 0;
 		const rawIdentities = new Set<string>();
 		for (let page = 0; page < MAX_PAGES; page++) {
+			signal?.throwIfAborted();
 			const data = requireComplete
 				? await quiRequest(ctx, "/api/torrents/cross-instance", wireCrossInstanceResponseSchema, {
 						query: { limit: String(PAGE_SIZE), page: String(page) },
 						timeoutMs: PER_PAGE_TIMEOUT_MS,
+						signal,
 					})
 				: await quiRequest(
 						ctx,
@@ -490,6 +517,7 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 						{
 							query: { limit: String(PAGE_SIZE), page: String(page) },
 							timeoutMs: PER_PAGE_TIMEOUT_MS,
+							signal,
 						},
 					);
 			if (
@@ -631,8 +659,8 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 			return (await fetchTorrentInventory(options?.requireComplete === true)).torrents;
 		},
 
-		async listTorrentInventory() {
-			return fetchTorrentInventory(false);
+		async listTorrentInventory(options) {
+			return fetchTorrentInventory(false, options?.signal);
 		},
 
 		async getTrackers(instanceId, hash) {
@@ -640,6 +668,7 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 				ctx,
 				`/api/instances/${instanceId}/torrents/${hash}/trackers`,
 				z.array(wireTrackerSchema),
+				{ redactErrorMessage: () => "qUI tracker lookup failed" },
 			);
 		},
 
@@ -675,6 +704,7 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 				ctx,
 				`/api/cross-seed/torrents/${instanceId}/${hash}/local-matches`,
 				wireLocalMatchesResponseSchema,
+				{ diagnosticPolicy: "cross-seed" },
 			);
 			return data.matches ?? [];
 		},
@@ -871,50 +901,80 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 		},
 
 		async renameTorrent(instanceId, hash, name) {
-			await quiRequest(ctx, `/api/instances/${instanceId}/torrents/${hash}/rename`, z.unknown(), {
-				method: "POST",
-				body: { name },
-			});
+			await quiRequest(
+				ctx,
+				`/api/instances/${instanceId}/torrents/${hash}/rename`,
+				renameTorrentAcknowledgementSchema,
+				{
+					method: "POST",
+					body: { name },
+					redactErrorMessage: () => "qUI rename failed",
+				},
+			);
 		},
 
 		async addTrackers(instanceId, hash, urls) {
 			// qui takes a newline-separated string (mirrors qBit's wire
 			// format). Accept an array from callers and join here so the
 			// drawer doesn't need to know the wire detail.
-			await quiRequest(ctx, `/api/instances/${instanceId}/torrents/${hash}/trackers`, z.unknown(), {
-				method: "POST",
-				body: { urls: urls.join("\n") },
-			});
+			await quiRequest(
+				ctx,
+				`/api/instances/${instanceId}/torrents/${hash}/trackers`,
+				trackerMutationAcknowledgementSchema,
+				{
+					method: "POST",
+					body: { urls: urls.join("\n") },
+					redactErrorMessage: () => "qUI add trackers failed",
+				},
+			);
 		},
 
 		async removeTrackers(instanceId, hash, urls) {
-			await quiRequest(ctx, `/api/instances/${instanceId}/torrents/${hash}/trackers`, z.unknown(), {
-				method: "DELETE",
-				body: { urls: urls.join("\n") },
-			});
+			await quiRequest(
+				ctx,
+				`/api/instances/${instanceId}/torrents/${hash}/trackers`,
+				trackerMutationAcknowledgementSchema,
+				{
+					method: "DELETE",
+					body: { urls: urls.join("\n") },
+					redactErrorMessage: () => "qUI remove trackers failed",
+				},
+			);
 		},
 
 		async editTracker(instanceId, hash, oldURL, newURL) {
-			await quiRequest(ctx, `/api/instances/${instanceId}/torrents/${hash}/trackers`, z.unknown(), {
-				method: "PUT",
-				body: { oldURL, newURL },
-			});
+			await quiRequest(
+				ctx,
+				`/api/instances/${instanceId}/torrents/${hash}/trackers`,
+				trackerMutationAcknowledgementSchema,
+				{
+					method: "PUT",
+					body: { oldURL, newURL },
+					redactErrorMessage: () => "qUI edit tracker failed",
+				},
+			);
 		},
 
 		async bulkAction({ qbitInstanceId, hashes, action, extras }) {
-			// qui's bulk-action returns 200 with no documented body schema on
-			// success. We surface the call as void; failures throw via
-			// quiRequest's status-mapping pathway (QuiInstanceUnreachableError
-			// / QuiApiError) and the action-service layer translates them into
-			// audit-log `failed` rows. z.unknown() matches "anything 200".
-			await quiRequest(ctx, `/api/instances/${qbitInstanceId}/torrents/bulk-action`, z.unknown(), {
-				method: "POST",
-				body: {
-					action,
-					hashes,
-					...(extras ?? {}),
+			// qUI confirms bulk actions with an exact message. Any dispatched
+			// request or acknowledgement failure remains uncertain in action-service.
+			const safeExtras = quiActionPayloadSchemas[action].parse(extras ?? {});
+			await quiRequest(
+				ctx,
+				`/api/instances/${qbitInstanceId}/torrents/bulk-action`,
+				bulkActionAcknowledgementSchema,
+				{
+					method: "POST",
+					body: {
+						...safeExtras,
+						// The dashboard command means enable force-start. qUI treats
+						// an omitted enable boolean as false, which would undo it.
+						...(action === "forceStart" ? { enable: true } : {}),
+						action,
+						hashes,
+					},
 				},
-			});
+			);
 		},
 
 		async ensureNotificationTarget({

@@ -1,7 +1,10 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { PrismaClient } from "../../lib/prisma.js";
 import type { Encryptor } from "../auth/encryption.js";
-import { withCleanupOperationGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
+import {
+	CleanupMaintenanceConflictError,
+	withCleanupOperationGuard,
+} from "../library-cleanup/cleanup-maintenance-gate.js";
 import type { NotificationPayload } from "../notifications/types.js";
 import {
 	passthroughTickWrapper,
@@ -15,6 +18,10 @@ const CHECK_INTERVAL_MS = 60 * 1000; // Check every minute
 
 export class BackupScheduler {
 	private intervalId: NodeJS.Timeout | null = null;
+	private scheduleGeneration = 0;
+	private admissionClosed = false;
+	private pendingChecks = new Set<Promise<void>>();
+	private shutdownPromise: Promise<void> | null = null;
 	private backupService: BackupService;
 	private isRunning = false;
 	private notifyFn?: (payload: NotificationPayload) => Promise<void>;
@@ -45,6 +52,7 @@ export class BackupScheduler {
 	 * Start the backup scheduler
 	 */
 	start() {
+		if (this.admissionClosed) return;
 		if (this.intervalId) {
 			this.logger.warn("Backup scheduler already running");
 			return;
@@ -57,18 +65,15 @@ export class BackupScheduler {
 		}
 
 		this.logger.info("Starting backup scheduler");
-
-		// Run immediately on startup
-		this.trackTick(() => this.checkAndRunBackup()).catch((error) => {
-			this.logger.error({ err: error }, "Failed to run initial backup check");
-		});
+		const generation = ++this.scheduleGeneration;
 
 		// Then check every minute
 		this.intervalId = setInterval(() => {
-			this.trackTick(() => this.checkAndRunBackup()).catch((error) => {
-				this.logger.error({ err: error }, "Failed to run scheduled backup check");
-			});
+			void this.runCheck(generation, "Failed to run scheduled backup check");
 		}, CHECK_INTERVAL_MS);
+
+		// Install admission before the immediate startup check enters its wrapper.
+		void this.runCheck(generation, "Failed to run initial backup check");
 	}
 
 	/**
@@ -79,6 +84,42 @@ export class BackupScheduler {
 			clearInterval(this.intervalId);
 			this.intervalId = null;
 			this.logger.info("Backup scheduler stopped");
+		}
+	}
+
+	/** Close timer admission without delaying sibling plugins' preClose hooks. */
+	closeAdmission(): void {
+		this.admissionClosed = true;
+		this.stop();
+	}
+
+	/** Retain complete checks through backup, retention, bookkeeping, and notifications. */
+	shutdown(): Promise<void> {
+		this.closeAdmission();
+		this.shutdownPromise ??= (async () => {
+			while (this.pendingChecks.size > 0) await Promise.all(this.pendingChecks);
+		})();
+		return this.shutdownPromise;
+	}
+
+	private async runCheck(generation: number, errorMessage: string): Promise<void> {
+		if (this.admissionClosed || !this.intervalId || generation !== this.scheduleGeneration) return;
+		let settle!: () => void;
+		const completion = new Promise<void>((resolve) => {
+			settle = resolve;
+		});
+		this.pendingChecks.add(completion);
+		try {
+			await this.trackTick(() => this.checkAndRunBackup());
+		} catch (err) {
+			if (err instanceof CleanupMaintenanceConflictError) {
+				this.logger.debug("Backup check paused during database maintenance");
+			} else {
+				this.logger.error({ err }, errorMessage);
+			}
+		} finally {
+			this.pendingChecks.delete(completion);
+			settle();
 		}
 	}
 

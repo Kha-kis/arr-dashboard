@@ -1,6 +1,6 @@
 "use client";
 
-import type { LibraryService, TorrentStateCounts } from "@arr/shared";
+import type { LibraryService, TorrentStateCounts, QuiObservationStatus } from "@arr/shared";
 import {
 	ArrowDownAZ,
 	ArrowUpAZ,
@@ -20,6 +20,7 @@ import { Button, Input } from "../../../components/ui";
 import { usePlexAccounts, usePlexScanMutation, usePlexSections } from "../../../hooks/api/usePlex";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getLinuxInstanceName, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
+import { isCurrentAuthoritativePlexEvidence } from "../../../lib/plex-evidence";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
 import type { SyncStatus } from "../hooks/use-library-data";
@@ -30,6 +31,7 @@ import {
 	TORRENT_STATE_FILTERS,
 	type TorrentStateFilterValue,
 } from "../hooks/use-library-filters";
+import { QuiObservationNotice } from "./qui-observation-notice";
 
 /**
  * Service filter options for the library
@@ -87,6 +89,7 @@ const BASE_SORT_OPTIONS: Array<{ value: SortByValue; label: string }> = [
  * Props for the LibraryHeader component
  */
 interface LibraryHeaderProps {
+	quiObservationStatus?: QuiObservationStatus;
 	/** Currently selected service filter */
 	serviceFilter: "all" | LibraryService;
 	/** Handler for service filter changes */
@@ -137,6 +140,8 @@ interface LibraryHeaderProps {
 	syncStatus: SyncStatus | null;
 	/** Whether any instance is currently syncing */
 	isSyncing: boolean;
+	/** Whether sync status is unavailable or an instance reported a sync error */
+	hasSyncError: boolean;
 	/** Currently selected "watched by" filter user */
 	watchedByFilter?: string;
 	/** Handler for "watched by" filter changes */
@@ -167,6 +172,7 @@ function formatSyncTime(dateString: string | null): string {
  * Header section for the library page with filters, sorting, and search
  */
 export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
+	quiObservationStatus,
 	serviceFilter,
 	onServiceFilterChange,
 	instanceFilter,
@@ -190,29 +196,49 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 	instanceOptions,
 	syncStatus,
 	isSyncing,
+	hasSyncError,
 	watchedByFilter = "all",
 	onWatchedByFilterChange,
 	hasPlexInstances = false,
 }) => {
 	const [incognitoMode] = useIncognitoMode();
+	const quiAvailable = quiObservationStatus?.status === "available";
+	const showQuiControls = hasQui || quiAvailable || quiObservationStatus?.status === "unavailable";
 	const { gradient: themeGradient } = useThemeGradient();
 	const plexSectionsQuery = usePlexSections(hasPlexInstances);
 	const plexScanMutation = usePlexScanMutation();
 	const [scanDropdownOpen, setScanDropdownOpen] = useState(false);
 
 	const plexSections = plexSectionsQuery.data?.sections ?? [];
-	const hasPlexSections = plexSections.length > 0;
+	const plexInstanceIds = [...new Set(plexSections.map((section) => section.instanceId))].sort();
+	const hasPlexSections = hasPlexInstances && plexSections.length > 0;
+	const canScanPlex =
+		hasPlexSections &&
+		!plexSectionsQuery.isError &&
+		!plexSectionsQuery.isFetching &&
+		isCurrentAuthoritativePlexEvidence(plexSectionsQuery.data?.evidence);
+	const sectionsUnavailable =
+		hasPlexInstances &&
+		(plexSectionsQuery.isError ||
+			(plexSectionsQuery.isSuccess &&
+				!isCurrentAuthoritativePlexEvidence(plexSectionsQuery.data?.evidence)));
 	const plexGradient = SERVICE_GRADIENTS.plex;
-	const plexAccountsQuery = usePlexAccounts(hasPlexInstances);
+	const plexAccountsQuery = usePlexAccounts(hasPlexInstances && Boolean(onWatchedByFilterChange));
 	const plexUsers = plexAccountsQuery.data?.users ?? [];
 
 	const handleScanSection = (instanceId: string, sectionId: string) => {
+		if (!canScanPlex || plexScanMutation.isPending) return;
 		plexScanMutation.mutate({ instanceId, sectionId });
 		setScanDropdownOpen(false);
 	};
 
 	return (
 		<header className="space-y-6">
+			{showQuiControls && (
+				<QuiObservationNotice
+					status={quiObservationStatus ?? { status: "unavailable", observedAt: null }}
+				/>
+			)}
 			{/* Title Section */}
 			<div
 				className="relative animate-in fade-in slide-in-from-bottom-4 duration-500"
@@ -254,16 +280,16 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 									variant="secondary"
 									size="sm"
 									onClick={() => setScanDropdownOpen(!scanDropdownOpen)}
-									disabled={plexScanMutation.isPending}
+									disabled={!canScanPlex || plexScanMutation.isPending}
 									className="relative overflow-hidden"
 								>
 									<HardDriveDownload
 										className={cn("h-4 w-4 mr-2", plexScanMutation.isPending && "animate-pulse")}
 										style={{ color: plexGradient.from }}
 									/>
-									{plexScanMutation.isPending ? "Scanning..." : "Scan Plex"}
+									{plexScanMutation.isPending ? "Requesting scan..." : "Scan Plex"}
 								</Button>
-								{scanDropdownOpen && (
+								{scanDropdownOpen && canScanPlex && !plexScanMutation.isPending && (
 									<div className="absolute right-0 top-full mt-1 z-dropdown rounded-lg border border-border/50 bg-card/95 backdrop-blur-sm shadow-lg min-w-[200px]">
 										<div className="p-1">
 											{plexSections.map((section) => (
@@ -273,7 +299,17 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 													onClick={() => handleScanSection(section.instanceId, section.sectionId)}
 													className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
 												>
-													<span className="truncate">{section.sectionTitle}</span>
+													<span className="truncate text-xs text-muted-foreground">
+														Plex {plexInstanceIds.indexOf(section.instanceId) + 1}:{" "}
+														{incognitoMode
+															? getLinuxInstanceName(section.instanceName)
+															: section.instanceName}
+													</span>
+													<span className="truncate">
+														{incognitoMode
+															? getLinuxInstanceName(section.sectionTitle)
+															: section.sectionTitle}
+													</span>
 													<span className="text-xs text-muted-foreground ml-auto shrink-0">
 														{section.mediaType}
 													</span>
@@ -296,20 +332,24 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 										/>
 										<span className="text-muted-foreground">Syncing...</span>
 									</>
+								) : !syncStatus.isCached ? (
+									<span className="text-warning">Cache unavailable</span>
 								) : (
 									<>
 										<RefreshCw className="h-4 w-4 text-muted-foreground" />
 										<span className="text-muted-foreground">
+											Last known{" "}
 											<span style={{ color: themeGradient.from }} className="font-medium">
 												{syncStatus.totalCachedItems.toLocaleString()}
 											</span>
 											{" items"}
 											{syncStatus.lastSync && (
 												<span className="text-muted-foreground/70">
-													{" • "}Updated {formatSyncTime(syncStatus.lastSync)}
+													{" • "}Synced {formatSyncTime(syncStatus.lastSync)}
 												</span>
 											)}
 										</span>
+										{hasSyncError && <span className="text-warning">Sync unavailable</span>}
 									</>
 								)}
 							</div>
@@ -318,11 +358,43 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 				</div>
 			</div>
 
-			<PlexQueryEvidenceNotice
-				error={plexSectionsQuery.error}
-				evidence={plexSectionsQuery.data?.evidence}
-				label="Plex library sections"
-			/>
+			{hasPlexInstances && (
+				<PlexQueryEvidenceNotice
+					error={plexSectionsQuery.error}
+					evidence={plexSectionsQuery.data?.evidence}
+					label="Plex library sections"
+				/>
+			)}
+			{sectionsUnavailable && (
+				<div
+					role="status"
+					className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
+				>
+					<span>
+						Current Plex sections are unavailable. Scan controls need current verified sections.
+					</span>
+					<Button
+						type="button"
+						variant="secondary"
+						size="sm"
+						disabled={plexSectionsQuery.isFetching}
+						onClick={() => void plexSectionsQuery.refetch()}
+					>
+						Retry Plex sections
+					</Button>
+				</div>
+			)}
+			{hasPlexInstances && plexScanMutation.isSuccess && (
+				<p role="status" className="text-sm text-muted-foreground">
+					Scan requested. Plex acknowledged the request; scan completion is not confirmed here.
+				</p>
+			)}
+			{hasPlexInstances && plexScanMutation.isError && (
+				<p role="alert" className="text-sm text-warning">
+					Scan request not confirmed. Check Plex before requesting another scan; it may have
+					received the request.
+				</p>
+			)}
 
 			{/* Filters Card */}
 			<div
@@ -454,66 +526,28 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 							is empty (only `none` has data) — that means qui was just added
 							and the backfill hasn't covered anything yet. Showing a useless
 							dropdown in that state would confuse new qui users. */}
-						{hasQui &&
-							(() => {
-								const counts = torrentStateCounts;
-								const hasAnyMatchedState = counts
-									? counts.seeding +
-											counts.downloading +
-											counts.stalled_dl +
-											counts.paused +
-											counts.queued +
-											counts.checking +
-											counts.moving +
-											counts.error +
-											counts.unknown >
-										0
-									: false;
-								if (counts && !hasAnyMatchedState) {
-									return (
-										<span
-											className="text-xs italic text-muted-foreground"
-											title="Items haven't been correlated with qui torrents yet — the periodic backfill job is still running. Check back in a few minutes."
-										>
-											Torrent state: correlating…
-										</span>
-									);
-								}
-								// When the "not correlated" bucket is the dominant share, surface
-								// a one-line operator hint so the high count doesn't read as
-								// "the integration is broken." Most common cause is *arr's
-								// history pruning, not anything fixable on the qui side.
-								const noneShare = counts && counts.all > 0 ? (counts.none ?? 0) / counts.all : 0;
-								return (
-									<>
-										<FilterSelect
-											label="Torrent state"
-											value={torrentStateFilter}
-											onChange={(value) =>
-												onTorrentStateFilterChange(value as TorrentStateFilterValue)
-											}
-											options={TORRENT_STATE_FILTERS.map((option) => {
-												const count =
-													option.value === "all"
-														? counts?.all
-														: counts?.[option.value as keyof TorrentStateCounts];
-												const label =
-													typeof count === "number" ? `${option.label} (${count})` : option.label;
-												return { value: option.value, label };
-											})}
-											className="min-w-[200px]"
-										/>
-										{noneShare > 0.3 && (
-											<span
-												className="text-xs italic text-muted-foreground"
-												title="Items can't be correlated when *arr's grab history no longer contains the original downloadId — usually because *arr's history retention is shorter than the item's age. Increase Settings → General → History Retention in Sonarr/Radarr to grow coverage over time."
-											>
-												(uncorrelated items mostly have pruned *arr history)
-											</span>
-										)}
-									</>
-								);
-							})()}
+						{showQuiControls && (
+							<fieldset disabled={!quiAvailable}>
+								<FilterSelect
+									label="Torrent state"
+									value={torrentStateFilter}
+									onChange={(value) => onTorrentStateFilterChange(value as TorrentStateFilterValue)}
+									options={TORRENT_STATE_FILTERS.map((option) => {
+										const counts = quiAvailable ? torrentStateCounts : undefined;
+										const count =
+											option.value === "all"
+												? counts?.all
+												: counts?.[option.value as keyof TorrentStateCounts];
+										const label = option.value === "none" ? "No available qUI data" : option.label;
+										return {
+											value: option.value,
+											label: typeof count === "number" ? `${label} (${count})` : label,
+										};
+									})}
+									className="min-w-[200px]"
+								/>
+							</fieldset>
+						)}
 
 						{/* Watched By filter (Plex) */}
 						{plexUsers.length > 0 && onWatchedByFilterChange && (
@@ -541,7 +575,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 								onChange={(value) => onSortByChange(value as SortByValue)}
 								options={[
 									...BASE_SORT_OPTIONS,
-									...(hasQui
+									...(showQuiControls && quiAvailable
 										? [{ value: "torrentRatio" as SortByValue, label: "Torrent ratio" }]
 										: []),
 								].map((option) => ({

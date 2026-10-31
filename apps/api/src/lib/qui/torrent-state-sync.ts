@@ -6,6 +6,15 @@ import { createQuiClient } from "./client-factory.js";
 import { listQuiInstances } from "./instance-helpers.js";
 import { withQuiObservationTopologyGuard } from "./observation-topology-guard.js";
 import {
+	beginQuiObservationPublication,
+	captureQuiObservationTopology,
+	completeQuiObservationPublication,
+	invalidateQuiObservationPublication,
+	stageQuiTorrentObservations,
+	pruneQuiObservationGenerations,
+	withQuiObservationGenerationWrite,
+} from "./torrent-observation-repository.js";
+import {
 	buildNotificationPayloads,
 	classifyTransition,
 	type ProblemTransition,
@@ -16,6 +25,7 @@ const UPDATE_CHUNK_SIZE = 500;
 // ratio in the VALUES relation), plus the user id. Keep the batch below
 // SQLite's 999-variable limit while retaining one set-based statement per table.
 const OBSERVATION_WRITE_CHUNK_SIZE = 300;
+const SQLITE_WRITE_RETRY_DELAYS_MS = [100, 250, 500] as const;
 const CLEAR_OBSERVATION_DATA = {
 	torrentState: null,
 	torrentRatio: null,
@@ -49,11 +59,50 @@ interface CompleteQuiInventory {
 
 interface AggregatedTorrentObservation {
 	state: NormalizedTorrentState;
+	/** Independent Queue Cleaner policy; deliberately NOT the display winner. */
+	queueState: NormalizedTorrentState;
 	ratio: number | null;
 	instanceLabel: string;
 }
 
 type ObservationWriteClient = Pick<PrismaTypes.TransactionClient, "$executeRaw">;
+
+function isSqliteBusyWriteError(error: unknown): boolean {
+	if (typeof error !== "object" || error === null) return false;
+	try {
+		const candidate = error as {
+			code?: unknown;
+			meta?: { driverAdapterError?: { cause?: { originalCode?: unknown; kind?: unknown } } };
+		};
+		const cause = candidate.meta?.driverAdapterError?.cause;
+		return (
+			(candidate.code === "P1008" || candidate.code === "P2010") &&
+			cause?.originalCode === "SQLITE_BUSY" &&
+			cause.kind === "SocketTimeout"
+		);
+	} catch {
+		return false;
+	}
+}
+
+/** Retry only a local, absolute write; never replay provider reads or notifications. */
+async function withSqliteWriteRetry<T>(
+	dbProvider: FastifyInstance["dbProvider"],
+	operation: () => Promise<T>,
+): Promise<T> {
+	for (let retry = 0; ; retry++) {
+		try {
+			return await operation();
+		} catch (error) {
+			const delay = SQLITE_WRITE_RETRY_DELAYS_MS[retry];
+			if (dbProvider !== "sqlite" || delay === undefined || !isSqliteBusyWriteError(error)) {
+				throw error;
+			}
+			// Yield before reacquiring native runtime fences and the database lock.
+			await new Promise<void>((resolve) => setTimeout(resolve, delay));
+		}
+	}
+}
 
 async function yieldToEventLoop(): Promise<void> {
 	await new Promise<void>((resolve) => setImmediate(resolve));
@@ -93,8 +142,9 @@ async function stageQuiObservationChunk(
 }
 
 async function stageQuiObservations(
-	prisma: ObservationWriteClient,
+	prisma: FastifyInstance["prisma"],
 	userId: string,
+	generation: string,
 	aggregate: ReadonlyMap<string, AggregatedTorrentObservation>,
 	dbProvider: "sqlite" | "postgresql",
 ): Promise<number> {
@@ -106,11 +156,15 @@ async function stageQuiObservations(
 			if (hasPreviousChunk && dbProvider === "sqlite") {
 				await yieldToEventLoop();
 			}
-			rowsUpdated += await stageQuiObservationChunk(
-				prisma,
-				tableName,
-				userId,
-				observations.slice(offset, offset + OBSERVATION_WRITE_CHUNK_SIZE),
+			rowsUpdated += await withSqliteWriteRetry(dbProvider, () =>
+				withQuiObservationGenerationWrite(prisma, userId, generation, (tx) =>
+					stageQuiObservationChunk(
+						tx,
+						tableName,
+						userId,
+						observations.slice(offset, offset + OBSERVATION_WRITE_CHUNK_SIZE),
+					),
+				),
 			);
 			hasPreviousChunk = true;
 		}
@@ -133,8 +187,10 @@ function aggregateCompleteInventories(
 
 	for (const inventory of inventories) {
 		for (const torrent of inventory.torrents) {
-			const hash = torrent.hash.trim().toLowerCase();
-			if (!hash) continue;
+			const hash = torrent.hash.toLowerCase();
+			if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(hash)) {
+				throw new Error("qUI inventory contained an invalid infoHash");
+			}
 			const state = normalizeTorrentState(torrent.state);
 			const current = observations.get(hash) ?? [];
 			current.push({
@@ -159,6 +215,15 @@ function aggregateCompleteInventories(
 		const selected = candidates[0]!;
 		aggregate.set(hash, {
 			state: selected.state,
+			// Display/Library-cleanup ranking stays unchanged. Queue Cleaner must
+			// retain every source veto before the per-copy information is lost.
+			queueState: candidates.some((row) => row.state === "unknown")
+				? "unknown"
+				: candidates.some((row) => row.state === "error")
+					? "error"
+					: candidates.some((row) => row.state === "paused")
+						? "paused"
+						: selected.state,
 			// Cross-seeds and duplicate qUI views can have different ratios. A
 			// single scalar would imply false precision, so only retain it when
 			// exactly one torrent contributed to this hash.
@@ -169,56 +234,86 @@ function aggregateCompleteInventories(
 	return aggregate;
 }
 
-async function clearUserQuiObservations(app: FastifyInstance, userId: string): Promise<number> {
-	return await app.prisma.$transaction(async (tx) => {
-		const where = { instance: { userId } };
-		const libraryRows = await tx.libraryCache.updateMany({
-			where,
-			data: CLEAR_OBSERVATION_DATA,
-		});
-		const episodeRows = await tx.episodeFileCache.updateMany({
-			where,
-			data: CLEAR_OBSERVATION_DATA,
-		});
-		return libraryRows.count + episodeRows.count;
-	});
+async function clearUserQuiObservations(
+	app: FastifyInstance,
+	userId: string,
+	expectedGeneration: string | null,
+): Promise<number> {
+	const generation = await withSqliteWriteRetry(app.dbProvider, () =>
+		invalidateQuiObservationPublication(app.prisma, userId, expectedGeneration),
+	);
+	if (!generation) return 0; // A newer attempt owns both authority and projections.
+	return await withSqliteWriteRetry(app.dbProvider, () =>
+		withQuiObservationGenerationWrite(app.prisma, userId, generation, async (tx) => {
+			const where = { instance: { userId } };
+			const libraryRows = await tx.libraryCache.updateMany({
+				where,
+				data: CLEAR_OBSERVATION_DATA,
+			});
+			const episodeRows = await tx.episodeFileCache.updateMany({
+				where,
+				data: CLEAR_OBSERVATION_DATA,
+			});
+			return libraryRows.count + episodeRows.count;
+		}),
+	);
 }
 
-async function clearUserQuiFreshness(app: FastifyInstance, userId: string): Promise<void> {
-	await app.prisma.$transaction(async (tx) => {
-		const where = { instance: { userId } };
-		await tx.libraryCache.updateMany({
-			where,
-			data: { torrentSyncedAt: null },
-		});
-		await tx.episodeFileCache.updateMany({
-			where,
-			data: { torrentSyncedAt: null },
-		});
-	});
+async function clearUserQuiFreshness(
+	app: FastifyInstance,
+	userId: string,
+	generation: string,
+): Promise<void> {
+	await withSqliteWriteRetry(app.dbProvider, () =>
+		withQuiObservationGenerationWrite(app.prisma, userId, generation, async (tx) => {
+			const where = { instance: { userId } };
+			await tx.libraryCache.updateMany({
+				where,
+				data: { torrentSyncedAt: null },
+			});
+			await tx.episodeFileCache.updateMany({
+				where,
+				data: { torrentSyncedAt: null },
+			});
+		}),
+	);
 }
 
 async function publishUserQuiFreshness(
 	app: FastifyInstance,
 	userId: string,
+	generation: string,
+	topologyDigest: string,
+	rowCount: number,
 	observedAt: Date,
 ): Promise<void> {
-	await app.prisma.$transaction(async (tx) => {
-		const where = { instance: { userId }, infoHash: { not: null } };
-		await tx.libraryCache.updateMany({
-			where,
-			data: { torrentSyncedAt: observedAt },
-		});
-		await tx.episodeFileCache.updateMany({
-			where,
-			data: { torrentSyncedAt: observedAt },
-		});
-	});
+	await withSqliteWriteRetry(app.dbProvider, () =>
+		completeQuiObservationPublication(
+			app.prisma,
+			userId,
+			generation,
+			topologyDigest,
+			rowCount,
+			observedAt,
+			async (tx) => {
+				const where = { instance: { userId }, infoHash: { not: null } };
+				await tx.libraryCache.updateMany({
+					where,
+					data: { torrentSyncedAt: observedAt },
+				});
+				await tx.episodeFileCache.updateMany({
+					where,
+					data: { torrentSyncedAt: observedAt },
+				});
+			},
+		),
+	);
 }
 
 async function persistCompleteAbsence(
-	prisma: Pick<Prisma.TransactionClient, "libraryCache" | "episodeFileCache">,
+	prisma: FastifyInstance["prisma"],
 	userId: string,
+	generation: string,
 	seenHashes: ReadonlySet<string>,
 	dbProvider: "sqlite" | "postgresql",
 ): Promise<number> {
@@ -245,17 +340,21 @@ async function persistCompleteAbsence(
 		if (hasPreviousChunk && dbProvider === "sqlite") {
 			await yieldToEventLoop();
 		}
-		const updated = await prisma.libraryCache.updateMany({
-			where: {
-				id: { in: libraryIds.slice(offset, offset + UPDATE_CHUNK_SIZE) },
-				instance: { userId },
-			},
-			data: {
-				torrentState: null,
-				torrentRatio: null,
-				torrentSyncedAt: null,
-			},
-		});
+		const updated = await withSqliteWriteRetry(dbProvider, () =>
+			withQuiObservationGenerationWrite(prisma, userId, generation, (tx) =>
+				tx.libraryCache.updateMany({
+					where: {
+						id: { in: libraryIds.slice(offset, offset + UPDATE_CHUNK_SIZE) },
+						instance: { userId },
+					},
+					data: {
+						torrentState: null,
+						torrentRatio: null,
+						torrentSyncedAt: null,
+					},
+				}),
+			),
+		);
 		rowsCleared += updated.count;
 		hasPreviousChunk = true;
 	}
@@ -263,17 +362,21 @@ async function persistCompleteAbsence(
 		if (hasPreviousChunk && dbProvider === "sqlite") {
 			await yieldToEventLoop();
 		}
-		const updated = await prisma.episodeFileCache.updateMany({
-			where: {
-				id: { in: episodeIds.slice(offset, offset + UPDATE_CHUNK_SIZE) },
-				instance: { userId },
-			},
-			data: {
-				torrentState: null,
-				torrentRatio: null,
-				torrentSyncedAt: null,
-			},
-		});
+		const updated = await withSqliteWriteRetry(dbProvider, () =>
+			withQuiObservationGenerationWrite(prisma, userId, generation, (tx) =>
+				tx.episodeFileCache.updateMany({
+					where: {
+						id: { in: episodeIds.slice(offset, offset + UPDATE_CHUNK_SIZE) },
+						instance: { userId },
+					},
+					data: {
+						torrentState: null,
+						torrentRatio: null,
+						torrentSyncedAt: null,
+					},
+				}),
+			),
+		);
 		rowsCleared += updated.count;
 		hasPreviousChunk = true;
 	}
@@ -332,6 +435,12 @@ export async function runQuiTorrentStateSync(
 		result.usersScanned++;
 		await withQuiObservationTopologyGuard(userId, async () => {
 			const userStartedAt = Date.now();
+			// Capture before any provider read; a slow scan cannot renew its age.
+			const observedAt = new Date();
+			const topology = await captureQuiObservationTopology(app.prisma, userId);
+			let publicationGeneration =
+				(await app.prisma.quiObservationPublication.findUnique({ where: { userId } }))
+					?.generation ?? null;
 			let userInstancesScanned = 0;
 			let userTorrentsSeen = 0;
 			let userRowsUpdated = 0;
@@ -379,7 +488,7 @@ export async function runQuiTorrentStateSync(
 
 			if (instances.length === 0 || inventories.length !== instances.length) {
 				try {
-					const cleared = await clearUserQuiObservations(app, userId);
+					const cleared = await clearUserQuiObservations(app, userId, publicationGeneration);
 					result.rowsCleared += cleared;
 					userRowsCleared += cleared;
 				} catch (error) {
@@ -391,8 +500,7 @@ export async function runQuiTorrentStateSync(
 					);
 				}
 			} else {
-				const aggregate = aggregateCompleteInventories(inventories);
-				const observedAt = new Date();
+				let aggregate = new Map<string, AggregatedTorrentObservation>();
 				const priorStates = new Map<string, { state: string | null; title: string }>();
 				try {
 					const priorRows = await app.prisma.libraryCache.findMany({
@@ -418,28 +526,67 @@ export async function runQuiTorrentStateSync(
 				let publishedRowsUpdated = 0;
 				let publishedRowsCleared = 0;
 				try {
-					// Phase 2 uses freshness as a publication marker. Two short
-					// transactions bookend the potentially large staging loop, avoiding
-					// a long SQLite write lock while ensuring preview sees either the
-					// previous complete generation, no signal, or the new complete
-					// generation. It can never see a partially fresh generation.
-					await clearUserQuiFreshness(app, userId);
+					aggregate = aggregateCompleteInventories(inventories);
+					publicationGeneration = await withSqliteWriteRetry(app.dbProvider, () =>
+						beginQuiObservationPublication(
+							app.prisma,
+							userId,
+							topology.digest,
+							aggregate.size,
+							publicationGeneration,
+						),
+					);
+					// Every bounded write checks the same generation fence; independent
+					// authority remains unavailable until all rows and projections are
+					// ready. Publish the complete marker last in a short transaction.
+					await pruneQuiObservationGenerations(
+						app.prisma,
+						userId,
+						publicationGeneration,
+						(operation) => withSqliteWriteRetry(app.dbProvider, operation),
+					);
+					await clearUserQuiFreshness(app, userId, publicationGeneration);
+					await stageQuiTorrentObservations(
+						app.prisma,
+						userId,
+						publicationGeneration,
+						[...aggregate].map(([infoHash, row]) => ({
+							infoHash,
+							state: row.queueState,
+							ratio: row.ratio,
+						})),
+						async (operation) => {
+							// Completed batches must let pending reads run before the next
+							// transaction reacquires its independently checked generation fence.
+							if (app.dbProvider === "sqlite") await yieldToEventLoop();
+							return withSqliteWriteRetry(app.dbProvider, operation);
+						},
+					);
 					// Stage each cache table with bounded CASE updates. This avoids one
 					// synchronous better-sqlite3 statement per hash while keeping the
 					// state and ratio paired with their normalized hash.
 					publishedRowsUpdated = await stageQuiObservations(
 						app.prisma,
 						userId,
+						publicationGeneration,
 						aggregate,
 						app.dbProvider,
 					);
 					publishedRowsCleared = await persistCompleteAbsence(
 						app.prisma,
 						userId,
+						publicationGeneration,
 						new Set(aggregate.keys()),
 						app.dbProvider,
 					);
-					await publishUserQuiFreshness(app, userId, observedAt);
+					await publishUserQuiFreshness(
+						app,
+						userId,
+						publicationGeneration,
+						topology.digest,
+						aggregate.size,
+						observedAt,
+					);
 					for (const [hash, observation] of aggregate) {
 						const prior = priorStates.get(hash);
 						if (prior) {
@@ -468,7 +615,7 @@ export async function runQuiTorrentStateSync(
 						"qUI torrent-state sync publish failed; invalidating partial observations",
 					);
 					try {
-						const cleared = await clearUserQuiObservations(app, userId);
+						const cleared = await clearUserQuiObservations(app, userId, publicationGeneration);
 						result.rowsCleared += cleared;
 						userRowsCleared += cleared;
 					} catch (clearError) {
@@ -485,7 +632,7 @@ export async function runQuiTorrentStateSync(
 					const payloads = buildNotificationPayloads(transitions);
 					await Promise.all(
 						payloads.map((payload) =>
-							app.notificationService.notify(payload).catch((error) => {
+							app.notificationService.notify(payload, { userId }).catch((error) => {
 								log.warn(
 									{ err: error, userId, eventType: payload.eventType },
 									"qUI torrent-state notification dispatch failed",

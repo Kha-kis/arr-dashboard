@@ -134,3 +134,62 @@ describe("TrashGitHubFetcher error diagnosability (issue #406 follow-up)", () =>
 		});
 	});
 });
+
+describe("strict include collection does not manufacture a complete empty result", () => {
+	afterEach(() => vi.unstubAllGlobals());
+
+	it("rejects an unavailable include listing instead of accepting it as empty", async () => {
+		vi.stubGlobal("fetch", vi.fn().mockResolvedValue(buildJsonResponse({}, 404)));
+		const fetcher = new TrashGitHubFetcher({
+			strictContent: true,
+			logger: createCapturingLogger([]) as any,
+		});
+		await expect(fetcher.fetchCFIncludes()).rejects.toThrow();
+	});
+
+	it("rejects a failed include after an earlier include succeeded", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: string) => {
+				const url = new URL(input);
+				if (url.hostname === "api.github.com")
+					return buildJsonResponse([
+						{ name: "apply-10000.md", type: "file" },
+						{ name: "note-failure.md", type: "file" },
+					]);
+				return url.pathname.endsWith("note-failure.md")
+					? buildJsonResponse({}, 404)
+					: new Response("Synthetic include content");
+			}),
+		);
+		const fetcher = new TrashGitHubFetcher({
+			strictContent: true,
+			logger: createCapturingLogger([]) as any,
+		});
+		await expect(fetcher.fetchCFIncludes()).rejects.toThrow();
+	});
+
+	it("rejects a malformed include listing", async () => {
+		vi.stubGlobal("fetch", vi.fn().mockResolvedValue(buildJsonResponse({ unexpected: true })));
+		const fetcher = new TrashGitHubFetcher({
+			strictContent: true,
+			logger: createCapturingLogger([]) as any,
+		});
+		await expect(fetcher.fetchCFIncludes()).rejects.toThrow();
+	});
+
+	it("permits a valid empty include listing", async () => {
+		vi.stubGlobal("fetch", vi.fn().mockResolvedValue(buildJsonResponse([])));
+		const fetcher = new TrashGitHubFetcher({
+			strictContent: true,
+			logger: createCapturingLogger([]) as any,
+		});
+		await expect(fetcher.fetchCFIncludes()).resolves.toEqual([]);
+	});
+
+	it("preserves explicitly lenient callers' unavailable-list compatibility", async () => {
+		vi.stubGlobal("fetch", vi.fn().mockResolvedValue(buildJsonResponse({}, 404)));
+		const fetcher = new TrashGitHubFetcher({ logger: createCapturingLogger([]) as any });
+		await expect(fetcher.fetchCFIncludes()).resolves.toEqual([]);
+	});
+});

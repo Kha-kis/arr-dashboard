@@ -5,7 +5,7 @@
  * and daily trend computation.
  */
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { getDeliveryStatistics } from "../statistics.js";
 
 function createMockPrisma(
@@ -25,6 +25,72 @@ function createMockPrisma(
 }
 
 describe("getDeliveryStatistics", () => {
+	it("keeps unfamiliar outcomes inclusive and separate from classified failures", async () => {
+		const prisma = createMockPrisma(
+			["sent", "failed", "dead_letter", "legacy_pending"].map((status) => ({
+				channelId: "ch-1",
+				channelType: "LEGACY_MAIL",
+				eventType: "LEGACY_NOTICE",
+				status,
+				sentAt: new Date("2026-01-25T12:00:00Z"),
+			})),
+		);
+		const result = await getDeliveryStatistics(prisma, ["ch-1"], 7);
+		expect(result.totals).toEqual({
+			sent: 1,
+			failed: 1,
+			deadLetter: 1,
+			unclassified: 1,
+			total: 4,
+			successRate: 33.33,
+		});
+		expect(result.perChannel).toEqual([
+			{
+				channelId: "ch-1",
+				channelType: "LEGACY_MAIL",
+				sent: 1,
+				failed: 2,
+				unclassified: 1,
+				successRate: 33.33,
+			},
+		]);
+		expect(result.dailyTrend).toEqual([
+			{ date: "2026-01-25", sent: 1, failed: 2, unclassified: 1 },
+		]);
+		expect(result.perEventType).toEqual([{ eventType: "LEGACY_NOTICE", count: 4 }]);
+	});
+	it("does not guess status aliases or outcomes for unfamiliar-only history", async () => {
+		const prisma = createMockPrisma(
+			["SENT", "pending", "dead-letter", ""].map((status) => ({
+				channelId: "ch-1",
+				channelType: "DISCORD",
+				eventType: "E1",
+				status,
+				sentAt: new Date("2026-01-25T12:00:00Z"),
+			})),
+		);
+		const result = await getDeliveryStatistics(prisma, ["ch-1"], 7);
+		expect(result.totals).toEqual({
+			sent: 0,
+			failed: 0,
+			deadLetter: 0,
+			unclassified: 4,
+			total: 4,
+			successRate: 0,
+		});
+		expect(result.perChannel[0]).toMatchObject({
+			sent: 0,
+			failed: 0,
+			unclassified: 4,
+			successRate: 0,
+		});
+		expect(result.dailyTrend[0]).toEqual({
+			date: "2026-01-25",
+			sent: 0,
+			failed: 0,
+			unclassified: 4,
+		});
+	});
 	it("returns zero totals when no channel IDs provided", async () => {
 		const prisma = createMockPrisma([]);
 		const result = await getDeliveryStatistics(prisma, [], 7);
@@ -51,7 +117,7 @@ describe("getDeliveryStatistics", () => {
 		expect(result.totals.sent).toBe(0);
 		expect(result.totals.failed).toBe(0);
 		expect(result.totals.total).toBe(0);
-		expect(result.totals.successRate).toBe(100);
+		expect(result.totals.successRate).toBe(0);
 	});
 
 	it("correctly counts sent/failed/dead_letter totals", async () => {

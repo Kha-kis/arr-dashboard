@@ -33,6 +33,7 @@ import {
 } from "../../../hooks/api/useSeerr";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useSeerrInstances } from "../hooks/use-seerr-instances";
+import { notifySeerrActionError } from "../lib/seerr-action-error";
 import { isSeerrCircuitBreakerError } from "../lib/seerr-utils";
 import { ApprovalQueueTab } from "./approval-queue-tab";
 import { InstanceSelector } from "./instance-selector";
@@ -57,7 +58,16 @@ export type RequestsTab = "approval" | "all" | "users" | "issues" | "notificatio
 
 export const RequestsClient = () => {
 	const { gradient: _themeGradient } = useThemeGradient();
-	const { seerrInstances, defaultInstance, isLoading } = useSeerrInstances();
+	const {
+		seerrInstances,
+		defaultInstance,
+		isLoading,
+		error: instancesError,
+		hasFailedInitialRead,
+		isFetching: isFetchingInstances,
+		refetch: refetchInstances,
+	} = useSeerrInstances();
+	const hasConnectionError = !!instancesError || hasFailedInitialRead;
 	const [activeTab, setActiveTab] = useState<RequestsTab>("approval");
 	const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
 	const [selectedRequest, setSelectedRequest] = useState<SeerrRequest | null>(null);
@@ -107,11 +117,34 @@ export const RequestsClient = () => {
 	const retryMutation = useRetrySeerrRequest();
 	const clearCacheMutation = useClearSeerrCache();
 
-	if (isLoading) {
+	if (isLoading && !hasConnectionError) {
 		return <PremiumPageLoading showHeader cardCount={4} />;
 	}
 
-	// No Seerr instances configured
+	const connectionNotice = hasConnectionError && (
+		<div
+			role="alert"
+			aria-busy={isFetchingInstances}
+			className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/50 bg-warning/10 p-4 text-sm text-warning"
+		>
+			<p>
+				{seerrInstances.length > 0
+					? "Seerr connections could not be verified. Showing last-known connections; availability may have changed."
+					: "Unable to verify Seerr connections. Retry to check again."}
+			</p>
+			<Button
+				variant="secondary"
+				onClick={() => void refetchInstances()}
+				disabled={isFetchingInstances}
+				className="gap-2"
+			>
+				<RefreshCw className={`h-4 w-4${isFetchingInstances ? " animate-spin" : ""}`} />
+				Retry
+			</Button>
+		</div>
+	);
+
+	// Only a successful connection read can confirm an empty configuration.
 	if (seerrInstances.length === 0) {
 		return (
 			<>
@@ -126,18 +159,22 @@ export const RequestsClient = () => {
 					className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 					style={{ animationDelay: "100ms", animationFillMode: "backwards" }}
 				>
-					<PremiumEmptyState
-						icon={Inbox}
-						title="No Seerr Instances"
-						description="Add a Seerr instance in Settings to manage media requests, user quotas, and notifications."
-						action={
-							<a href="/settings">
-								<Button variant="secondary" className="gap-2 border-border/50 bg-card/50">
-									Go to Settings
-								</Button>
-							</a>
-						}
-					/>
+					{hasConnectionError ? (
+						connectionNotice
+					) : (
+						<PremiumEmptyState
+							icon={Inbox}
+							title="No Seerr Instances"
+							description="Add a Seerr instance in Settings to manage media requests, user quotas, and notifications."
+							action={
+								<a href="/settings">
+									<Button variant="secondary" className="gap-2 border-border/50 bg-card/50">
+										Go to Settings
+									</Button>
+								</a>
+							}
+						/>
+					)}
 				</div>
 			</>
 		);
@@ -221,6 +258,8 @@ export const RequestsClient = () => {
 				}
 			/>
 
+			{connectionNotice}
+
 			<div
 				className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 				style={{ animationDelay: "100ms", animationFillMode: "backwards" }}
@@ -285,7 +324,7 @@ export const RequestsClient = () => {
 										toast.success("Request approved");
 										setSelectedRequest(null);
 									},
-									onError: () => toast.error("Failed to approve request"),
+									onError: (error) => notifySeerrActionError(error, "Failed to approve request"),
 								},
 							)
 						}
@@ -301,7 +340,7 @@ export const RequestsClient = () => {
 										toast.success("Request declined");
 										setSelectedRequest(null);
 									},
-									onError: () => toast.error("Failed to decline request"),
+									onError: (error) => notifySeerrActionError(error, "Failed to decline request"),
 								},
 							)
 						}
@@ -313,7 +352,7 @@ export const RequestsClient = () => {
 										toast.success("Request retried");
 										setSelectedRequest(null);
 									},
-									onError: () => toast.error("Failed to retry request"),
+									onError: (error) => notifySeerrActionError(error, "Failed to retry request"),
 								},
 							)
 						}
@@ -325,7 +364,7 @@ export const RequestsClient = () => {
 										toast.success("Request deleted");
 										setSelectedRequest(null);
 									},
-									onError: () => toast.error("Failed to delete request"),
+									onError: (error) => notifySeerrActionError(error, "Failed to delete request"),
 								},
 							)
 						}

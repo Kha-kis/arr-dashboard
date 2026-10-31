@@ -36,6 +36,7 @@ import {
 	calculateDiskTotals,
 	checkRecentlyAdded,
 	clampPercentage,
+	safeRequest as executeSafeRequest,
 	finalizeBreakdown,
 	finalizeDiskStats,
 	getTimeThresholds,
@@ -43,7 +44,6 @@ import {
 	type InstanceInfo,
 	mergeBreakdown,
 	processHealthIssues,
-	safeRequest,
 	toDiskMounts,
 	toNumber,
 	updateQualityBreakdown,
@@ -74,6 +74,16 @@ export interface StatsOptions {
 	 * The route handler passes `request.log`; tests omit it (silent).
 	 */
 	log?: FastifyBaseLogger;
+	/** Mark fallback counters as incomplete without discarding healthy instance data. */
+	markIncomplete?: (phase: "ancillary" | "stream") => void;
+}
+
+function trackedSafeRequest(options?: StatsOptions) {
+	return async <T>(operation: () => Promise<T>): Promise<T | undefined> => {
+		const result = await executeSafeRequest(operation);
+		if (result == null) options?.markIncomplete?.("ancillary");
+		return result;
+	};
 }
 
 /**
@@ -113,9 +123,13 @@ async function* asAsyncIterable<T>(items: T[]): AsyncIterable<T> {
 async function chooseBulkIterable<T>(
 	streamItems: StatsStreamItems | undefined,
 	fetchAll: () => Promise<T[]>,
+	options?: StatsOptions,
 ): Promise<AsyncIterable<Record<string, unknown>>> {
 	if (streamItems) return streamItems();
-	const items = (await safeRequest(fetchAll).then((r) => r ?? [])) as Record<string, unknown>[];
+	const items = (await trackedSafeRequest(options)(fetchAll).then((r) => r ?? [])) as Record<
+		string,
+		unknown
+	>[];
 	return asAsyncIterable(items);
 }
 
@@ -242,6 +256,7 @@ export const fetchSonarrStatisticsWithSdk = async (
 	instanceExternalUrl?: string,
 	options?: StatsOptions,
 ): Promise<SonarrStatistics> => {
+	const safeRequest = trackedSafeRequest(options);
 	const instanceInfo: InstanceInfo = {
 		instanceId,
 		instanceName,
@@ -284,8 +299,10 @@ export const fetchSonarrStatisticsWithSdk = async (
 	const qualityBreakdown: Record<string, number> = {};
 	const tagBreakdown: Record<string, number> = {};
 
-	const seriesIterable = await chooseBulkIterable(options?.streamItems, () =>
-		client.series.getAll(),
+	const seriesIterable = await chooseBulkIterable(
+		options?.streamItems,
+		() => client.series.getAll(),
+		options,
 	);
 	try {
 		for await (const entryRaw of seriesIterable) {
@@ -343,6 +360,7 @@ export const fetchSonarrStatisticsWithSdk = async (
 			}
 		}
 	} catch (err) {
+		options?.markIncomplete?.("stream");
 		// Mid-stream failure (HTTP drop, parser error, schema mismatch).
 		// Match `safeRequest`'s logging discipline — log at warn so operators
 		// can correlate, then degrade. Counters stay at whatever was
@@ -409,6 +427,7 @@ export const fetchRadarrStatisticsWithSdk = async (
 	instanceExternalUrl?: string,
 	options?: StatsOptions,
 ): Promise<RadarrStatistics> => {
+	const safeRequest = trackedSafeRequest(options);
 	const instanceInfo: InstanceInfo = {
 		instanceId,
 		instanceName,
@@ -441,8 +460,10 @@ export const fetchRadarrStatisticsWithSdk = async (
 	const qualityBreakdown: Record<string, number> = {};
 	const tagBreakdown: Record<string, number> = {};
 
-	const moviesIterable = await chooseBulkIterable(options?.streamItems, () =>
-		client.movie.getAll(),
+	const moviesIterable = await chooseBulkIterable(
+		options?.streamItems,
+		() => client.movie.getAll(),
+		options,
 	);
 	try {
 		for await (const movieRaw of moviesIterable) {
@@ -477,6 +498,7 @@ export const fetchRadarrStatisticsWithSdk = async (
 			}
 		}
 	} catch (err) {
+		options?.markIncomplete?.("stream");
 		logStreamAbort(options?.log, err, {
 			instanceId,
 			service: "radarr",
@@ -533,7 +555,9 @@ export const fetchProwlarrStatisticsWithSdk = async (
 	instanceName: string,
 	instanceBaseUrl: string,
 	instanceExternalUrl?: string,
+	options?: StatsOptions,
 ): Promise<ProwlarrStatistics> => {
+	const safeRequest = trackedSafeRequest(options);
 	const instanceInfo: InstanceInfo = {
 		instanceId,
 		instanceName,
@@ -639,6 +663,7 @@ export const fetchLidarrStatisticsWithSdk = async (
 	instanceExternalUrl?: string,
 	options?: StatsOptions,
 ): Promise<LidarrStatistics> => {
+	const safeRequest = trackedSafeRequest(options);
 	const instanceInfo: InstanceInfo = {
 		instanceId,
 		instanceName,
@@ -673,8 +698,10 @@ export const fetchLidarrStatisticsWithSdk = async (
 	const qualityBreakdown: Record<string, number> = {};
 	const tagBreakdown: Record<string, number> = {};
 
-	const artistsIterable = await chooseBulkIterable(options?.streamItems, () =>
-		client.artist.getAll(),
+	const artistsIterable = await chooseBulkIterable(
+		options?.streamItems,
+		() => client.artist.getAll(),
+		options,
 	);
 	try {
 		for await (const artistRaw of artistsIterable) {
@@ -729,6 +756,7 @@ export const fetchLidarrStatisticsWithSdk = async (
 			}
 		}
 	} catch (err) {
+		options?.markIncomplete?.("stream");
 		logStreamAbort(options?.log, err, {
 			instanceId,
 			service: "lidarr",
@@ -790,6 +818,7 @@ export const fetchReadarrStatisticsWithSdk = async (
 	instanceExternalUrl?: string,
 	options?: StatsOptions,
 ): Promise<ReadarrStatistics> => {
+	const safeRequest = trackedSafeRequest(options);
 	const instanceInfo: InstanceInfo = {
 		instanceId,
 		instanceName,
@@ -824,8 +853,10 @@ export const fetchReadarrStatisticsWithSdk = async (
 	const qualityBreakdown: Record<string, number> = {};
 	const tagBreakdown: Record<string, number> = {};
 
-	const authorsIterable = await chooseBulkIterable(options?.streamItems, () =>
-		client.author.getAll(),
+	const authorsIterable = await chooseBulkIterable(
+		options?.streamItems,
+		() => client.author.getAll(),
+		options,
 	);
 	try {
 		for await (const authorRaw of authorsIterable) {
@@ -872,6 +903,7 @@ export const fetchReadarrStatisticsWithSdk = async (
 			}
 		}
 	} catch (err) {
+		options?.markIncomplete?.("stream");
 		logStreamAbort(options?.log, err, {
 			instanceId,
 			service: "readarr",

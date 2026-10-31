@@ -2,25 +2,56 @@
  * Integration tests for TrashCacheManager
  *
  * Tests cache operations, compression, staleness detection, and statistics.
- * These tests require database access and are skipped unless TEST_DB=true.
+ * Every run initializes the current schema in a disposable SQLite database.
  */
 
+import { execFile } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PrismaClient } from "../../../lib/prisma.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { TrashCacheManager } from "../cache-manager.js";
 
-// Check if we should run integration tests (requires writable test database)
-const RUN_DB_TESTS = process.env.TEST_DB === "true";
+const execFileAsync = promisify(execFile);
 
-// All tests in this file require database access
-(RUN_DB_TESTS ? describe : describe.skip)("TrashCacheManager Integration Tests", () => {
+describe("TrashCacheManager Integration Tests", () => {
 	let prisma: PrismaClient;
 	let cacheManager: TrashCacheManager;
+	let tempDir: string | undefined;
+	let databasePath: string;
+
+	beforeAll(async () => {
+		tempDir = await mkdtemp(path.join(os.tmpdir(), "trash-cache-test-"));
+		databasePath = path.join(tempDir, "cache.db");
+		await execFileAsync(
+			"pnpm",
+			[
+				"exec",
+				"prisma",
+				"db",
+				"push",
+				"--schema",
+				"prisma/schema.prisma",
+				"--url",
+				`file:${databasePath}`,
+			],
+			{
+				cwd: path.resolve(import.meta.dirname, "../../../.."),
+				env: { ...process.env, DATABASE_URL: `file:${databasePath}` },
+			},
+		);
+	}, 120_000);
+
+	afterAll(async () => {
+		if (tempDir) await rm(tempDir, { recursive: true, force: true });
+	});
 
 	beforeEach(() => {
 		// Create a new Prisma client for each test
-		prisma = createTestPrismaClient();
+		prisma = createTestPrismaClient(databasePath);
 
 		// Create cache manager with default options
 		cacheManager = new TrashCacheManager(prisma, {
@@ -31,8 +62,11 @@ const RUN_DB_TESTS = process.env.TEST_DB === "true";
 
 	afterEach(async () => {
 		// Clean up test data
-		await prisma.trashCache.deleteMany({});
-		await prisma.$disconnect();
+		try {
+			await prisma.trashCache.deleteMany({});
+		} finally {
+			await prisma.$disconnect();
+		}
 	});
 
 	describe("Cache CRUD Operations", () => {

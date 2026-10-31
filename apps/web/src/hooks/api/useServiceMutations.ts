@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import type { ServiceInstanceSummary } from "@arr/shared";
+import type { DashboardStatisticsEnvelope, ServiceInstanceSummary } from "@arr/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
 	type CreateServicePayload,
@@ -13,9 +13,11 @@ import {
 	verifyServiceIdentity,
 } from "../../lib/api-client/services";
 import {
+	dashboardKeys,
 	jellyfinKeys,
 	libraryCleanupKeys,
 	plexKeys,
+	quiKeys,
 	serviceKeys,
 	tautulliKeys,
 	trashCacheKeys,
@@ -23,6 +25,11 @@ import {
 
 const SERVICES_QUERY_KEY = serviceKeys.all;
 const FIELD_OPTIONS_KEY = libraryCleanupKeys.fieldOptions;
+const NO_DASHBOARD_STATISTICS: DashboardStatisticsEnvelope = {
+	availability: "unavailable",
+	observedAt: null,
+	data: null,
+};
 
 type UpdateVariables = {
 	id: string;
@@ -37,12 +44,15 @@ type ReplaceIdentityVariables = IdentityVariables & { payload: UpdateServicePayl
 
 function invalidateServiceDependencies(queryClient: ReturnType<typeof useQueryClient>) {
 	queryClient.invalidateQueries({ queryKey: SERVICES_QUERY_KEY });
+	queryClient.setQueryData(dashboardKeys.statistics, NO_DASHBOARD_STATISTICS);
+	queryClient.invalidateQueries({ queryKey: dashboardKeys.statistics });
 	queryClient.invalidateQueries({ queryKey: trashCacheKeys.cacheHealth });
 	queryClient.invalidateQueries({ queryKey: plexKeys.cacheHealth() });
 	queryClient.invalidateQueries({ queryKey: jellyfinKeys.cacheHealth() });
 	queryClient.invalidateQueries({ queryKey: plexKeys.all });
 	queryClient.invalidateQueries({ queryKey: jellyfinKeys.all });
 	queryClient.invalidateQueries({ queryKey: tautulliKeys.all });
+	queryClient.invalidateQueries({ queryKey: quiKeys.all });
 	queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.status });
 	queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvals });
 }
@@ -64,6 +74,9 @@ export const useCreateServiceMutation = () => {
 		mutationFn: createService,
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: SERVICES_QUERY_KEY });
+			queryClient.setQueryData(dashboardKeys.statistics, NO_DASHBOARD_STATISTICS);
+			queryClient.invalidateQueries({ queryKey: dashboardKeys.statistics });
+			queryClient.invalidateQueries({ queryKey: quiKeys.all });
 			queryClient.invalidateQueries({ queryKey: FIELD_OPTIONS_KEY });
 		},
 	});
@@ -101,6 +114,9 @@ export const useDeleteServiceMutation = () => {
 	return useMutation<void, Error, DeleteVariables>({
 		mutationFn: removeService,
 		onSuccess: (_, id) => {
+			queryClient.setQueryData(dashboardKeys.statistics, NO_DASHBOARD_STATISTICS);
+			queryClient.invalidateQueries({ queryKey: dashboardKeys.statistics });
+			queryClient.invalidateQueries({ queryKey: quiKeys.all });
 			queryClient.setQueryData<ServiceInstanceSummary[]>(SERVICES_QUERY_KEY, (prev) => {
 				if (!prev) {
 					return prev;

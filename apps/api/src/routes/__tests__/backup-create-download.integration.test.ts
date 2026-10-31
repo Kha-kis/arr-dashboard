@@ -89,7 +89,7 @@ async function buildApp(prisma: PrismaClient, databaseUrl: string): Promise<Fast
 		await writeFile(
 			path.join(tempDir, "secrets.json"),
 			JSON.stringify({
-				encryptionKey: "synthetic-encryption-key",
+				encryptionKey: "a".repeat(64),
 				sessionCookieSecret: "synthetic-session-secret",
 			}),
 			{ mode: 0o600 },
@@ -149,5 +149,64 @@ async function buildApp(prisma: PrismaClient, databaseUrl: string): Promise<Fast
 		await expect(decryptBackupData(envelope, "incorrect-synthetic-password")).rejects.toThrow(
 			"Failed to decrypt backup: invalid password or corrupted data",
 		);
+	});
+
+	it("does not publish a backup with invalid secrets and succeeds after an explicit correction", async () => {
+		if (!app || !prisma || !tempDir)
+			throw new Error("Backup integration fixture was not initialized");
+		const secretsPath = path.join(tempDir, "secrets.json");
+		const validSecrets = await readFile(secretsPath);
+		const before = await app.inject({
+			method: "GET",
+			url: "/api/backup",
+			headers: { "x-test-auth": "1" },
+		});
+		expect(before.statusCode).toBe(200);
+		try {
+			await writeFile(
+				secretsPath,
+				JSON.stringify({ sessionCookieSecret: "synthetic-session-secret" }),
+			);
+			const failed = await app.inject({
+				method: "POST",
+				url: "/api/backup/create",
+				headers: { "x-test-auth": "1" },
+				payload: {},
+			});
+			expect(failed.statusCode).toBe(500);
+			expect(failed.json()).toEqual({
+				error: "Application secrets unavailable",
+				details:
+					"The application secrets file is missing, unreadable, or invalid. Check the deployment configuration before retrying; no backup was created.",
+			});
+			const after = await app.inject({
+				method: "GET",
+				url: "/api/backup",
+				headers: { "x-test-auth": "1" },
+			});
+			expect(after.statusCode).toBe(200);
+			expect(after.json()).toEqual(before.json());
+			expect(await prisma.user.count()).toBe(1);
+			await writeFile(secretsPath, validSecrets);
+			const retried = await app.inject({
+				method: "POST",
+				url: "/api/backup/create",
+				headers: { "x-test-auth": "1" },
+				payload: {},
+			});
+			expect(retried.statusCode).toBe(200);
+			const downloaded = await app.inject({
+				method: "GET",
+				url: `/api/backup/${retried.json<{ id: string }>().id}/download`,
+				headers: { "x-test-auth": "1" },
+			});
+			expect(downloaded.statusCode).toBe(200);
+			const envelope = JSON.parse(
+				downloaded.rawPayload.toString("utf8"),
+			) as EncryptedBackupEnvelope;
+			validateBackup(JSON.parse(await decryptBackupData(envelope, TEST_PASSWORD)));
+		} finally {
+			await writeFile(secretsPath, validSecrets);
+		}
 	});
 });

@@ -101,7 +101,7 @@ export type AutoImportResult = z.infer<typeof autoImportResultSchema>;
 export const enhancedPreviewItemSchema = z.object({
 	id: z.number(),
 	title: z.string(),
-	action: z.enum(["remove", "warn", "skip", "whitelist"]),
+	action: z.enum(["remove", "import", "warn", "skip", "whitelist"]),
 	rule: previewRuleSchema,
 	reason: z.string(),
 	detailedReason: z.string(),
@@ -173,6 +173,8 @@ export const enhancedPreviewResultSchema = z.object({
 	queueSummary: queueStateSummarySchema,
 	// Preview counts
 	wouldRemove: z.number(),
+	/** Conditional import attempts, not completed imports or removal authority. */
+	wouldImport: z.number().int().nonnegative(),
 	wouldWarn: z.number(),
 	wouldSkip: z.number(),
 	// Enhanced items with detailed reasoning

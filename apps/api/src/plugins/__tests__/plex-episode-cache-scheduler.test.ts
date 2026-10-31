@@ -64,6 +64,7 @@ beforeEach(async () => {
 		fastifyPlugin(
 			async (server) => {
 				server.decorate("notificationService", {
+					runProducer: async (run: () => Promise<unknown>) => await run(),
 					notify: vi.fn().mockResolvedValue(undefined),
 				} as never);
 			},
@@ -132,6 +133,92 @@ describe("plexEpisodeRefreshResultStatus", () => {
 });
 
 describe("Plex episode scheduler continuations", () => {
+	it("uses fresh stage diagnostics for every exception retry", async () => {
+		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ id: "a", label: "A" },
+		]);
+		mocks.refresh
+			.mockImplementationOnce(async (input) => {
+				if (input.diagnostics) input.diagnostics.stage = "unit-claim";
+				throw new Error("private-first-attempt");
+			})
+			.mockRejectedValueOnce(new Error("private-second-attempt"));
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		await vi.advanceTimersByTimeAsync(30_000);
+		const failures = serializedLogs
+			.map((line) => JSON.parse(line))
+			.filter((record) => record.category === "plex-episode-cache-refresh-failed");
+		expect(failures.map((record) => record.runnerStage)).toEqual(["unit-claim", "not-started"]);
+		expect(serializedLogs.join("\n")).not.toContain("private-first-attempt");
+		expect(serializedLogs.join("\n")).not.toContain("private-second-attempt");
+	});
+	it("keeps a hostile native-cause getter private and preserves retry handling", async () => {
+		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ id: "a", label: "A" },
+		]);
+		const canary = "private-native-cause-getter";
+		const error = Object.assign(new Error(canary), {
+			code: "P1008",
+			meta: {
+				get driverAdapterError() {
+					throw new Error(canary);
+				},
+			},
+		});
+		mocks.refresh.mockRejectedValueOnce(error);
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		const failure = serializedLogs
+			.map((line) => JSON.parse(line))
+			.find((record) => record.category === "plex-episode-cache-refresh-failed");
+		expect(failure).toMatchObject({ runnerStage: "not-started", errorCategory: "unknown" });
+		expect(serializedLogs.join("\n")).not.toContain(canary);
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(2);
+	});
+	it.each([
+		["P1008", undefined, "database-timeout"],
+		["P2010", undefined, "database-query-error"],
+		["P1008", { originalCode: "SQLITE_BUSY", kind: "SocketTimeout" }, "database-busy"],
+		["P2010", { originalCode: "SQLITE_BUSY", kind: "SocketTimeout" }, "database-busy"],
+	] as const)(
+		"logs bounded %s diagnostics without raw native data (case %#)",
+		async (code, cause, expected) => {
+			(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+				{ id: "a", label: "A" },
+			]);
+			const privateValue = "private-provider-secret-sentinel";
+			const error = Object.assign(new Error(privateValue), {
+				code,
+				meta: {
+					modelName: privateValue,
+					driverAdapterError: {
+						cause: cause ? { ...cause, originalMessage: privateValue } : undefined,
+					},
+				},
+			});
+			mocks.refresh.mockImplementationOnce(async (input) => {
+				if (input.diagnostics) input.diagnostics.stage = "unit-claim";
+				throw error;
+			});
+			await app.ready();
+			await vi.advanceTimersByTimeAsync(5 * 60_000);
+			const records = serializedLogs.map((line) => JSON.parse(line));
+			const failure = records.find(
+				(record) => record.category === "plex-episode-cache-refresh-failed",
+			);
+			expect(failure).toMatchObject({
+				phase: "runner",
+				runnerStage: "unit-claim",
+				errorCategory: expected,
+			});
+			expect(serializedLogs.join("\n")).not.toContain(privateValue);
+			await vi.advanceTimersByTimeAsync(30_000);
+			expect(mocks.refresh).toHaveBeenCalledTimes(2);
+		},
+	);
+
 	it("re-admits an unexpected runner failure and completes the instance", async () => {
 		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
 			{ id: "a", label: "A" },
@@ -173,6 +260,11 @@ describe("Plex episode scheduler continuations", () => {
 		const records = serializedLogs.join("\n");
 		expect(records).toContain("plex-episode-cache-refresh-retry-exhausted");
 		expect(records).not.toContain("private runner failure");
+		expect(
+			serializedLogs
+				.map((line) => JSON.parse(line))
+				.find((record) => record.category === "plex-episode-cache-refresh-retry-exhausted"),
+		).toMatchObject({ runnerStage: "not-started", errorCategory: "unknown" });
 	});
 
 	it("retains the exact continuation attempt across an exception retry", async () => {

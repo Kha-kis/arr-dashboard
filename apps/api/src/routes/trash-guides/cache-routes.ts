@@ -81,7 +81,8 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 	/** Create a fetcher configured for the current user's repo settings */
 	async function getFetcher(userId: string) {
 		const repoConfig = await getRepoConfig(app.prisma, userId);
-		return createTrashFetcher({ repoConfig, logger: app.log });
+		// Publishing requires a complete fetch, not a best-effort partial result.
+		return createTrashFetcher({ repoConfig, logger: app.log, strictContent: true });
 	}
 
 	/**

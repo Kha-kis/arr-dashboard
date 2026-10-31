@@ -2,10 +2,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
-import { PrismaPg } from "@prisma/adapter-pg";
-import pg from "pg";
 import { afterEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "../../../generated/prisma/client.js";
+import { createTestPgClient } from "../../__tests__/test-prisma.js";
 import {
 	approvalRecordToAuditSnapshot,
 	recordApprovalRecoveryTransition,
@@ -109,25 +108,32 @@ async function createPostgresDatabase(url: string): Promise<TestDatabase> {
 			"CLEANUP_AUDIT_POSTGRES_URL must target a disposable cleanup_audit_test database",
 		);
 	}
-	const pools = [new pg.Pool({ connectionString: url }), new pg.Pool({ connectionString: url })];
-	const clients = pools.map(
-		(pool) => new PrismaClient({ adapter: new PrismaPg(pool as never) }),
-	) as [PrismaClient, PrismaClient];
-	await clients[0].$connect();
-	await clients[0].$executeRawUnsafe(`DROP TABLE IF EXISTS "library_cleanup_audit_events"`);
-	await clients[0].$executeRawUnsafe(`DROP TABLE IF EXISTS "library_cleanup_configs"`);
-	for (const statement of postgresDdl) await clients[0].$executeRawUnsafe(statement);
-	await clients[0].$executeRawUnsafe(
-		`INSERT INTO "library_cleanup_configs" ("id") VALUES ('config-1')`,
-	);
-	await clients[1].$connect();
-	return {
-		clients,
-		cleanup: async () => {
-			await Promise.all(clients.map((client) => client.$disconnect()));
-			await Promise.all(pools.map((pool) => pool.end()));
-		},
+	const first = await createTestPgClient(url);
+	let second: Awaited<ReturnType<typeof createTestPgClient>> | undefined;
+	const cleanup = async () => {
+		try {
+			await second?.cleanup();
+		} finally {
+			await first.cleanup();
+		}
 	};
+	try {
+		second = await createTestPgClient(url);
+		const clients: [PrismaClient, PrismaClient] = [first.prisma, second.prisma];
+		// Require a fresh disposable database. Never reset existing fixture tables;
+		// transactional DDL also leaves no partial schema if setup fails.
+		await clients[0].$transaction(async (transaction) => {
+			for (const statement of postgresDdl) await transaction.$executeRawUnsafe(statement);
+			await transaction.$executeRawUnsafe(
+				`INSERT INTO "library_cleanup_configs" ("id") VALUES ('config-1')`,
+			);
+		});
+		await clients[1].$connect();
+		return { clients, cleanup };
+	} catch (error) {
+		await cleanup();
+		throw error;
+	}
 }
 
 function seedRows() {

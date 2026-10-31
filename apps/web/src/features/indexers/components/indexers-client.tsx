@@ -1,6 +1,10 @@
 "use client";
 
-import type { ProwlarrIndexer, ProwlarrIndexerDetails } from "@arr/shared";
+import type {
+	ProwlarrIndexer,
+	SearchIndexerUpdateChanges,
+	SearchIndexerUpdateOutcome,
+} from "@arr/shared";
 import {
 	AlertCircle,
 	CheckCircle2,
@@ -83,7 +87,7 @@ export const IndexersClient = () => {
 	// UI state
 	const [testingKey, setTestingKey] = useState<string | null>(null);
 	const [feedback, setFeedback] = useState<{
-		type: "success" | "error";
+		type: "success" | "warning" | "error";
 		message: string;
 	} | null>(null);
 	const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -110,17 +114,24 @@ export const IndexersClient = () => {
 
 	// Auto-dismiss feedback
 	const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const feedbackMountedRef = useRef(false);
 	const setFeedbackWithAutoDismiss = useCallback(
-		(fb: { type: "success" | "error"; message: string }) => {
+		(fb: { type: "success" | "warning" | "error"; message: string }, autoDismiss = true) => {
+			if (!feedbackMountedRef.current) return;
 			if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
 			setFeedback(fb);
-			feedbackTimerRef.current = setTimeout(() => setFeedback(null), FEEDBACK_AUTO_DISMISS_MS);
+			feedbackTimerRef.current = autoDismiss
+				? setTimeout(() => setFeedback(null), FEEDBACK_AUTO_DISMISS_MS)
+				: null;
 		},
 		[],
 	);
 	useEffect(() => {
+		feedbackMountedRef.current = true;
 		return () => {
+			feedbackMountedRef.current = false;
 			if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
+			feedbackTimerRef.current = null;
 		};
 	}, []);
 
@@ -239,13 +250,15 @@ export const IndexersClient = () => {
 		try {
 			const result = await testMutation.mutateAsync({ instanceId, indexerId });
 			setFeedbackWithAutoDismiss({
-				type: "success",
-				message: result.message ?? "Indexer test passed",
+				type: result.success ? "success" : "error",
+				message: result.success
+					? "Indexer test passed"
+					: "Indexer test failed. Check Prowlarr before retrying.",
 			});
-		} catch (err) {
+		} catch {
 			setFeedbackWithAutoDismiss({
 				type: "error",
-				message: getErrorMessage(err, "Indexer test failed"),
+				message: "Unable to confirm indexer test. Check Prowlarr before retrying.",
 			});
 		} finally {
 			setTestingKey(null);
@@ -278,7 +291,7 @@ export const IndexersClient = () => {
 			);
 			for (const result of results) {
 				progress.completed++;
-				if (result.status === "fulfilled") {
+				if (result.status === "fulfilled" && result.value.success === true) {
 					progress.passed++;
 				} else {
 					progress.failed++;
@@ -294,23 +307,35 @@ export const IndexersClient = () => {
 			message:
 				progress.failed === 0
 					? `All ${progress.passed} indexers passed`
-					: `${progress.passed} passed, ${progress.failed} failed out of ${progress.total} indexers`,
+					: `${progress.passed} passed, ${progress.failed} not passed out of ${progress.total} indexers`,
 		});
 	};
 
 	const handleUpdate = async (
 		updateInstanceId: string,
 		indexerId: number,
-		payload: ProwlarrIndexerDetails,
-	) => {
+		changes: SearchIndexerUpdateChanges,
+	): Promise<SearchIndexerUpdateOutcome> => {
 		setFeedback(null);
 		try {
 			const result = await updateMutation.mutateAsync({
 				instanceId: updateInstanceId,
 				indexerId,
-				indexer: payload,
+				changes,
 			});
-			setFeedbackWithAutoDismiss({ type: "success", message: "Indexer changes saved" });
+			const verified = result.status === "verified";
+			setFeedbackWithAutoDismiss(
+				verified
+					? { type: "success", message: "Indexer changes saved and verified" }
+					: {
+							type: "warning",
+							message:
+								result.status === "applied-unverified"
+									? "Update sent, but verification is unavailable. Check Prowlarr before retrying."
+									: "Update outcome is unknown. Check Prowlarr before retrying.",
+						},
+				verified,
+			);
 			void refetch();
 			return result;
 		} catch (err) {
@@ -423,12 +448,8 @@ export const IndexersClient = () => {
 				<div
 					className="rounded-lg border p-3 animate-in fade-in slide-in-from-top-2 duration-200"
 					style={{
-						backgroundColor:
-							feedback.type === "success" ? SEMANTIC_COLORS.success.bg : SEMANTIC_COLORS.error.bg,
-						borderColor:
-							feedback.type === "success"
-								? SEMANTIC_COLORS.success.border
-								: SEMANTIC_COLORS.error.border,
+						backgroundColor: SEMANTIC_COLORS[feedback.type].bg,
+						borderColor: SEMANTIC_COLORS[feedback.type].border,
 					}}
 				>
 					<div className="flex items-center justify-between gap-2">
@@ -437,6 +458,11 @@ export const IndexersClient = () => {
 								<CheckCircle2
 									className="h-4 w-4 shrink-0"
 									style={{ color: SEMANTIC_COLORS.success.from }}
+								/>
+							) : feedback.type === "warning" ? (
+								<AlertCircle
+									className="h-4 w-4 shrink-0"
+									style={{ color: SEMANTIC_COLORS.warning.from }}
 								/>
 							) : (
 								<XCircle
@@ -447,10 +473,7 @@ export const IndexersClient = () => {
 							<p
 								className="text-sm font-medium"
 								style={{
-									color:
-										feedback.type === "success"
-											? SEMANTIC_COLORS.success.text
-											: SEMANTIC_COLORS.error.text,
+									color: SEMANTIC_COLORS[feedback.type].text,
 								}}
 							>
 								{feedback.message}
@@ -483,7 +506,7 @@ export const IndexersClient = () => {
 							</span>
 							<span className="text-muted-foreground">
 								{testAllProgress.passed} passed
-								{testAllProgress.failed > 0 && `, ${testAllProgress.failed} failed`}
+								{testAllProgress.failed > 0 && `, ${testAllProgress.failed} not passed`}
 							</span>
 						</div>
 						<div className="h-1.5 rounded-full bg-muted/20 overflow-hidden">

@@ -13,12 +13,18 @@ export interface SearchSort {
 	sortDirection: "asc" | "desc";
 }
 
+export interface SearchFeedback {
+	type: "success" | "error";
+	message: string;
+	incognitoMessage: string;
+}
+
 export interface SearchStateActions {
 	setQuery: (query: string) => void;
 	setSearchType: (type: "all" | "movie" | "tv" | "music" | "book") => void;
 	setSelectedIndexers: React.Dispatch<React.SetStateAction<Record<string, number[]>>>;
 	setValidationError: (error: string | null) => void;
-	setFeedback: (feedback: { type: "success" | "error"; message: string } | null) => void;
+	setFeedback: (feedback: SearchFeedback | null) => void;
 	setGrabbingKey: (key: string | null) => void;
 	setHasSearched: (searched: boolean) => void;
 	setProtocolFilter: (filter: ProtocolFilter) => void;
@@ -37,7 +43,7 @@ export interface SearchState {
 	searchType: "all" | "movie" | "tv" | "music" | "book";
 	selectedIndexers: Record<string, number[]>;
 	validationError: string | null;
-	feedback: { type: "success" | "error"; message: string } | null;
+	feedback: SearchFeedback | null;
 	grabbingKey: string | null;
 	hasSearched: boolean;
 	filters: SearchFilters;
@@ -53,10 +59,7 @@ export const useSearchState = (): SearchState => {
 	const [searchType, setSearchType] = useState<"all" | "movie" | "tv" | "music" | "book">("movie");
 	const [selectedIndexers, setSelectedIndexers] = useState<Record<string, number[]>>({});
 	const [validationError, setValidationError] = useState<string | null>(null);
-	const [feedback, setFeedback] = useState<{
-		type: "success" | "error";
-		message: string;
-	} | null>(null);
+	const [feedback, setFeedback] = useState<SearchFeedback | null>(null);
 	const [grabbingKey, setGrabbingKey] = useState<string | null>(null);
 	const [hasSearched, setHasSearched] = useState(false);
 	const [protocolFilter, setProtocolFilter] = useState<ProtocolFilter>("all");

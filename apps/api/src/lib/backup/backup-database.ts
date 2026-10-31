@@ -6,14 +6,34 @@
  */
 
 import type { BackupData } from "@arr/shared";
+import { createArrServiceFingerprint } from "../arr/service-fingerprint.js";
 import { BackupCompatibilityError } from "../errors.js";
 import {
 	isLabelSyncMutationUnresolved,
 	parseLabelSyncMutationAttempt,
 } from "../label-sync/jellyfin-mutation-state.js";
 import { loggers } from "../logger.js";
-import type { Prisma, PrismaClient, TrashBackup } from "../prisma.js";
+import type { Prisma, PrismaClient, ServiceInstance, TrashBackup } from "../prisma.js";
+import { importConnectionFingerprint } from "../queue-cleaner/import-receipt.js";
+import { deploymentBackupStateSchema } from "../trash-guides/deployment-backup-state.js";
+import { createDeploymentConnectionStateToken } from "../trash-guides/deployment-target.js";
+import { assertPreparedLabelConservation } from "./backup-label-conservation.js";
+import { validatePortableNotificationOutbox } from "./backup-notification-outbox.js";
+import { BACKUP_MODEL_DISPOSITIONS, validatePortableSafetyState } from "./backup-portability.js";
+import { validateOriginalRestoreBindings } from "./backup-restore-bindings.js";
 import {
+	assertPreparedRestoreData,
+	originalPreparedRestoreRecords,
+	type PreparedRestoreData,
+	preparedRestoreConnectionMatches,
+	preparedRestoreEncryptedFieldsMatch,
+	preparedRestoreGrabBindingMatches,
+	preparedRestoreNotificationBindingMatches,
+	preparedRestoreTrashEndpointCurrent,
+	RestorePreparationError,
+} from "./backup-restore-preparation.js";
+import {
+	hasCompleteSafetyCoverage,
 	isNonterminalRollback,
 	isNonterminalUndeploy,
 	LEGACY_RELATIONAL_CONFIG_DELEGATES,
@@ -23,13 +43,477 @@ import {
 	validateRecords,
 	validateSingletonCollections,
 } from "./backup-validation.js";
+import {
+	readRestoreRuntimeControl,
+	writeRestoreRuntimeCommit,
+} from "./restore-runtime-repository.js";
+import {
+	prepareRestoreRuntimeCommitRecord,
+	type RestoreRuntimeCommitRequest,
+} from "./restore-runtime-state.js";
 
 const log = loggers.backup;
+const publishingPreparedRestores = new WeakSet<PreparedRestoreData>();
+const publishedPreparedRestores = new WeakSet<PreparedRestoreData>();
+
+/** Internal only; public Restore remains disabled. */
+export async function restorePreparedDatabase(
+	prisma: PrismaClient,
+	prepared: PreparedRestoreData,
+	destinationInstallationId: string,
+	runtime?: RestoreRuntimeCommitRequest,
+): Promise<void> {
+	let claimed = false;
+	try {
+		assertPreparedRestorePublication(prepared, destinationInstallationId);
+		if (publishingPreparedRestores.has(prepared) || publishedPreparedRestores.has(prepared))
+			throw new BackupCompatibilityError();
+		publishingPreparedRestores.add(prepared);
+		claimed = true;
+		let admittedRuntime: Readonly<RestoreRuntimeCommitRequest> | undefined;
+		let notificationProgress: NotificationRestoreProgress | undefined;
+		await restoreDatabaseRecords(
+			prisma,
+			prepared.records,
+			async (client) => {
+				assertPreparedRestorePublication(prepared, destinationInstallationId);
+				if (runtime !== undefined) {
+					const marker = prepareRestoreRuntimeCommitRecord(
+						await readRestoreRuntimeControl(client),
+						admittedRuntime ?? runtime,
+					);
+					if (
+						marker.destinationInstallationId !== destinationInstallationId ||
+						marker.runtimeEpoch === null ||
+						marker.activeRestoreId === null ||
+						marker.lastCommittedAt === null
+					)
+						throw new BackupCompatibilityError();
+					// Capture normalized primitives once; caller mutation cannot move
+					// the admitted attempt or timestamp between preflight and commit.
+					admittedRuntime ??= Object.freeze({
+						runtimeEpoch: marker.runtimeEpoch,
+						restoreId: marker.activeRestoreId,
+						destinationInstallationId,
+						committedAt: marker.lastCommittedAt,
+					});
+				}
+				const original = originalPreparedRestoreRecords(prepared);
+				// Preserve existing naming/cleanup/TRaSH/label gates against original
+				// authenticated evidence, never freshly generated ciphertext.
+				await assertPreparedLabelConservation(client, prepared);
+				await assertNonLabelRestoreCompatibility(client, original, prepared);
+				await assertDurableRestoreConservation(client, original, prepared);
+				await assertGrabRestoreConservation(client, original, prepared);
+				notificationProgress = await assertNotificationRestoreConservation(
+					client,
+					original,
+					prepared,
+				);
+			},
+			true,
+			async (tx) => {
+				if (admittedRuntime) await writeRestoreRuntimeCommit(tx, admittedRuntime);
+			},
+			() => notificationProgress,
+		);
+		publishedPreparedRestores.add(prepared);
+	} catch {
+		// Do not retain a raw Prisma/coordination cause containing private data.
+		throw new BackupCompatibilityError();
+	} finally {
+		if (claimed) publishingPreparedRestores.delete(prepared);
+	}
+}
+
+/** Pure preflight only: live destination ownership and conservation still require publication. */
+export function assertPreparedRestorePublication(
+	value: unknown,
+	destinationInstallationId: string,
+): asserts value is PreparedRestoreData {
+	assertPreparedRestoreData(value);
+	if (
+		!hasCompleteSafetyCoverage(value.formatVersion) ||
+		value.safetyCoverage !== "complete" ||
+		value.publicationBlockers.length ||
+		!destinationInstallationId ||
+		value.destinationInstallationId !== destinationInstallationId
+	)
+		throw new BackupCompatibilityError();
+	validatePortableSafetyState(value.records);
+	validatePortableSafetyState(originalPreparedRestoreRecords(value));
+	validateOriginalRestoreBindings(originalPreparedRestoreRecords(value));
+	try {
+		// Run the same deterministic insertion checks before terminal maintenance.
+		// Execution-time ownership and live conservation still run at publication.
+		validateSingletonCollections(value.records);
+		validateRestoreRecords(value.records);
+		prepareLibraryCleanupApprovals(value.records);
+		prepareLibrarySyncSettings(value.records);
+	} catch {
+		// Never retain native validation details or private record values.
+		throw new RestorePreparationError("invalid-backup");
+	}
+}
+
+type DurableRow = Record<string, unknown>;
+const DURABLE_RESTORE_TABLES = [
+	["arrImportOperations", "arrImportOperation"],
+	["arrImportFileProofs", "arrImportFileProof"],
+	["arrImportSourceClaims", "arrImportSourceClaim"],
+	["queueCleanerImportReceipts", "queueCleanerImportReceipt"],
+	["quiActionClaims", "quiActionClaim"],
+	["quiActionLogs", "quiActionLog"],
+] as const;
+
+function canonicalDurableValue(value: unknown, field = ""): unknown {
+	if (value instanceof Date) return value.toISOString();
+	if (typeof value === "string" && /At$/.test(field)) {
+		const date = new Date(value);
+		if (!Number.isNaN(date.getTime())) return date.toISOString();
+	}
+	if (Array.isArray(value)) return value.map((child) => canonicalDurableValue(child));
+	if (value && typeof value === "object")
+		return Object.fromEntries(
+			Object.entries(value)
+				.sort(([a], [b]) => a.localeCompare(b))
+				.map(([key, child]) => [key, canonicalDurableValue(child, key)]),
+		);
+	return value;
+}
+function durableEqual(current: unknown, incoming: unknown): boolean {
+	return (
+		JSON.stringify(canonicalDurableValue(current)) ===
+		JSON.stringify(canonicalDurableValue(incoming))
+	);
+}
+function quiTargetKey(row: DurableRow): string {
+	return JSON.stringify([
+		row.userId,
+		row.serviceInstanceId,
+		row.qbitInstanceId,
+		typeof row.torrentHash === "string" ? row.torrentHash.toLowerCase() : null,
+	]);
+}
+function requireDurableRow(
+	current: DurableRow,
+	incoming: DurableRow | undefined,
+	field: (typeof DURABLE_RESTORE_TABLES)[number][0],
+	prepared: PreparedRestoreData,
+	connection?: { currentFingerprint: string; originalFingerprint: string },
+): void {
+	if (!incoming) throw new BackupCompatibilityError();
+	const comparison = { ...current };
+	if (field === "arrImportOperations" || field === "queueCleanerImportReceipts") {
+		if (connection) {
+			if (
+				current.connectionFingerprint !== connection.currentFingerprint ||
+				incoming.connectionFingerprint !== connection.originalFingerprint
+			)
+				throw new BackupCompatibilityError();
+			comparison.connectionFingerprint = incoming.connectionFingerprint;
+		}
+		if (field === "arrImportOperations") {
+			if (!preparedRestoreEncryptedFieldsMatch(prepared, field, current))
+				throw new BackupCompatibilityError();
+			comparison.encryptedSources = incoming.encryptedSources;
+			comparison.sourcesEncryptionIv = incoming.sourcesEncryptionIv;
+			// Publication clears only these installation-local worker leases. A
+			// new/non-null current worker claim still has to match exactly.
+			if (current.reconcileToken === null && current.reconcileExpiresAt === null) {
+				comparison.reconcileToken = incoming.reconcileToken;
+				comparison.reconcileExpiresAt = incoming.reconcileExpiresAt;
+			}
+		}
+	}
+	if (!durableEqual(comparison, incoming)) throw new BackupCompatibilityError();
+}
+
+async function assertDurableRestoreConservation(
+	client: PrismaClient | Prisma.TransactionClient,
+	original: BackupData["data"],
+	prepared: PreparedRestoreData,
+): Promise<void> {
+	const db = client as unknown as Record<string, { findMany: () => Promise<DurableRow[]> }>;
+	const current: Record<string, DurableRow[]> = {};
+	for (const [field, delegate] of DURABLE_RESTORE_TABLES)
+		current[field] = await db[delegate]!.findMany();
+	const users = recordsById(await client.user.findMany());
+	const instances = recordsById(await client.serviceInstance.findMany());
+	const incomingUsers = recordsById(original.users);
+	const incomingInstances = recordsById(original.serviceInstances);
+	const verifiedConnections = new Map<
+		string,
+		{ currentFingerprint: string; originalFingerprint: string }
+	>();
+	const heldQuiKeys = new Set(
+		current.quiActionClaims!.map((row) => JSON.stringify([quiTargetKey(row), row.attemptId])),
+	);
+	for (const [field] of DURABLE_RESTORE_TABLES) {
+		const incomingRows = original[field] as DurableRow[];
+		const incoming = new Map(
+			incomingRows.map((row) => [
+				field === "quiActionClaims" ? quiTargetKey(row) : String(row.id),
+				row,
+			]),
+		);
+		for (const row of current[field]!) {
+			if (
+				field === "quiActionLogs" &&
+				row.status !== "pending" &&
+				row.status !== "uncertain" &&
+				!heldQuiKeys.has(JSON.stringify([quiTargetKey(row), row.attemptId]))
+			)
+				continue;
+			let ownerId = row.userId;
+			let connection: { currentFingerprint: string; originalFingerprint: string } | undefined;
+			const instanceId =
+				field === "quiActionClaims" || field === "quiActionLogs"
+					? row.serviceInstanceId
+					: row.instanceId;
+			if (typeof instanceId === "string") {
+				const instance = instances.get(instanceId),
+					before = incomingInstances.get(instanceId);
+				connection = verifiedConnections.get(instanceId);
+				if (!connection) {
+					if (!instance || !before || !preparedRestoreConnectionMatches(prepared, instance))
+						throw new BackupCompatibilityError();
+					connection = {
+						currentFingerprint: importConnectionFingerprint(instance as unknown as ServiceInstance),
+						originalFingerprint: importConnectionFingerprint(before as unknown as ServiceInstance),
+					};
+					verifiedConnections.set(instanceId, connection);
+				}
+				if (!instance) throw new BackupCompatibilityError();
+				if (ownerId !== undefined && ownerId !== instance.userId)
+					throw new BackupCompatibilityError();
+				ownerId = instance.userId;
+			}
+			if (typeof ownerId === "string" && (!users.has(ownerId) || !incomingUsers.has(ownerId)))
+				throw new BackupCompatibilityError();
+			requireDurableRow(
+				row,
+				incoming.get(field === "quiActionClaims" ? quiTargetKey(row) : String(row.id)),
+				field,
+				prepared,
+				connection,
+			);
+		}
+	}
+}
 
 // Restores accept encrypted payloads up to 200 MB. Keep the destructive
 // transaction bounded while allowing a supported populated restore to exceed
 // Prisma's five-second interactive-transaction default on slower storage.
 const RESTORE_TRANSACTION_TIMEOUT_MS = 5 * 60 * 1000;
+
+type NotificationRestoreProgress = {
+	events: Map<string, Date>;
+	deliveries: Map<string, { completedAt: Date; updatedAt: Date }>;
+};
+
+function restoredNotificationDeliveryMatches(current: DurableRow, before: DurableRow): boolean {
+	if (!["waiting", "ready", "retry-waiting", "submitting"].includes(String(before.state)))
+		return false;
+	return (
+		current.state === (before.state === "submitting" ? "uncertain" : "canceled") &&
+		current.outcomeCategory === "restored-not-replayed" &&
+		current.completedAt !== null &&
+		durableEqual(current.completedAt, current.updatedAt) &&
+		durableEqual(
+			{
+				...current,
+				state: before.state,
+				outcomeCategory: before.outcomeCategory,
+				completedAt: before.completedAt,
+				updatedAt: before.updatedAt,
+			},
+			before,
+		)
+	);
+}
+
+/** Preserve unfinished work and its entire same-owner aggregation lineage. */
+async function assertNotificationRestoreConservation(
+	client: PrismaClient | Prisma.TransactionClient,
+	original: BackupData["data"],
+	prepared: PreparedRestoreData,
+): Promise<NotificationRestoreProgress> {
+	const events = await client.notificationOutboxEvent.findMany();
+	const deliveries = await client.notificationOutboxDelivery.findMany();
+	const users = await client.user.findMany();
+	validatePortableNotificationOutbox({
+		...original,
+		users,
+		notificationChannel: await client.notificationChannel.findMany(),
+		notificationOutboxEvents: events,
+		notificationOutboxDeliveries: deliveries,
+	});
+	const protectedIds = new Set(
+		deliveries
+			.filter((row) =>
+				["waiting", "ready", "retry-waiting", "submitting", "uncertain"].includes(row.state),
+			)
+			.map((row) => row.eventId),
+	);
+	const connected = new Map<string, string[]>();
+	for (const row of events) {
+		if (!row.aggregateParentId) continue;
+		for (const [from, to] of [
+			[row.id, row.aggregateParentId],
+			[row.aggregateParentId, row.id],
+		]) {
+			const links = connected.get(from!) ?? [];
+			links.push(to!);
+			connected.set(from!, links);
+		}
+	}
+	// Traverse both ways: a digest's unfinished/uncertain result also retains
+	// its retired members, and a held member cannot lose its digest evidence.
+	const pending = [...protectedIds];
+	for (let index = 0; index < pending.length; index++)
+		for (const id of connected.get(pending[index]!) ?? []) {
+			if (protectedIds.has(id)) continue;
+			protectedIds.add(id);
+			pending.push(id);
+		}
+	const incoming = recordsById(original.notificationOutboxEvents ?? []);
+	const incomingDeliveries = recordsById(original.notificationOutboxDeliveries ?? []);
+	const incomingUsers = recordsById(original.users);
+	const byEvent = new Map<string, typeof deliveries>();
+	const incomingByEvent = new Map<string, DurableRow[]>();
+	for (const row of deliveries) {
+		const selected = byEvent.get(row.eventId) ?? [];
+		selected.push(row);
+		byEvent.set(row.eventId, selected);
+	}
+	for (const row of incomingDeliveries.values()) {
+		const selected = incomingByEvent.get(String(row.eventId)) ?? [];
+		selected.push(row);
+		incomingByEvent.set(String(row.eventId), selected);
+	}
+	const progress: NotificationRestoreProgress = { events: new Map(), deliveries: new Map() };
+	for (const row of events) {
+		const before = incoming.get(row.id);
+		let matched = false;
+		let previouslyRestored = false;
+		if (
+			before &&
+			incomingUsers.has(row.userId) &&
+			preparedRestoreNotificationBindingMatches(prepared, row)
+		) {
+			const comparison = {
+				...row,
+				encryptedPayload: before.encryptedPayload,
+				payloadIv: before.payloadIv,
+				dedupFingerprint: before.dedupFingerprint,
+				scopeFingerprint: before.scopeFingerprint,
+			};
+			previouslyRestored =
+				row.stage === "terminal" &&
+				!["grouped", "terminal"].includes(String(before.stage)) &&
+				durableEqual({ ...comparison, stage: before.stage, updatedAt: before.updatedAt }, before);
+			const selected = byEvent.get(row.id) ?? [];
+			matched =
+				(durableEqual(comparison, before) || previouslyRestored) &&
+				selected.length === (incomingByEvent.get(row.id) ?? []).length &&
+				selected.every((delivery) => {
+					const originalDelivery = incomingDeliveries.get(delivery.id);
+					return (
+						!!originalDelivery &&
+						(durableEqual(delivery, originalDelivery) ||
+							restoredNotificationDeliveryMatches(delivery, originalDelivery))
+					);
+				});
+		}
+		if (!matched) {
+			if (protectedIds.has(row.id)) throw new BackupCompatibilityError();
+			continue;
+		}
+		// A second preparation has a new quarantine timestamp. Keep the actual
+		// previous Restore outcome instead of resetting its completion history.
+		if (previouslyRestored) progress.events.set(row.id, row.updatedAt);
+		for (const delivery of byEvent.get(row.id) ?? []) {
+			const originalDelivery = incomingDeliveries.get(delivery.id)!;
+			if (restoredNotificationDeliveryMatches(delivery, originalDelivery))
+				progress.deliveries.set(delivery.id, {
+					completedAt: delivery.completedAt!,
+					updatedAt: delivery.updatedAt,
+				});
+		}
+	}
+	return progress;
+}
+
+/** Preserve every durable intent and exact hold at both publication boundaries. */
+async function assertGrabRestoreConservation(
+	client: PrismaClient | Prisma.TransactionClient,
+	original: BackupData["data"],
+	prepared: PreparedRestoreData,
+): Promise<void> {
+	const current = await client.searchGrabAttempt.findMany();
+	const claims = await client.searchGrabClaim.findMany();
+	const incoming = recordsById(original.searchGrabAttempts ?? []);
+	const incomingClaims = new Map(
+		(original.searchGrabClaims ?? []).map((value) => {
+			const row = value as DurableRow;
+			return [String(row.attemptId), row] as const;
+		}),
+	);
+	const instances = recordsById(await client.serviceInstance.findMany());
+	const originalInstances = recordsById(original.serviceInstances);
+	for (const row of current) {
+		const before = incoming.get(row.id);
+		if (!before || !preparedRestoreEncryptedFieldsMatch(prepared, "searchGrabAttempts", row))
+			throw new BackupCompatibilityError();
+		const comparison: DurableRow = {
+			...row,
+			encryptedTarget: before.encryptedTarget,
+			targetIv: before.targetIv,
+		};
+		// An imported null epoch cannot become source worker ownership again.
+		if (row.workerEpoch === null) comparison.workerEpoch = before.workerEpoch;
+		if (
+			row.connectionFingerprint !== before.connectionFingerprint ||
+			row.targetHash !== before.targetHash
+		) {
+			const instance = instances.get(row.serviceInstanceId),
+				originalInstance = originalInstances.get(row.serviceInstanceId);
+			if (
+				!instance ||
+				!originalInstance ||
+				!preparedRestoreConnectionMatches(prepared, instance) ||
+				createArrServiceFingerprint(instance as unknown as ServiceInstance) !==
+					row.connectionFingerprint ||
+				createArrServiceFingerprint(originalInstance as unknown as ServiceInstance) !==
+					before.connectionFingerprint ||
+				!preparedRestoreGrabBindingMatches(prepared, row)
+			)
+				throw new BackupCompatibilityError();
+			comparison.connectionFingerprint = before.connectionFingerprint;
+			comparison.targetHash = before.targetHash;
+		}
+		if (!durableEqual(comparison, before)) throw new BackupCompatibilityError();
+	}
+	const currentById = new Map(current.map((row) => [row.id, row]));
+	for (const claim of claims) {
+		const before = incomingClaims.get(claim.attemptId),
+			attempt = currentById.get(claim.attemptId),
+			originalAttempt = incoming.get(claim.attemptId),
+			instance = instances.get(claim.serviceInstanceId);
+		if (
+			!before ||
+			!attempt ||
+			!originalAttempt ||
+			!instance ||
+			!preparedRestoreConnectionMatches(prepared, instance) ||
+			claim.targetHash !== attempt.targetHash ||
+			before.targetHash !== originalAttempt.targetHash ||
+			!durableEqual({ ...claim, targetHash: before.targetHash }, before)
+		)
+			throw new BackupCompatibilityError();
+	}
+}
 const LABEL_SYNC_MUTATION_ATTEMPT_FIELDS = {
 	id: true,
 	userId: true,
@@ -54,6 +538,7 @@ const LABEL_SYNC_MUTATION_ATTEMPT_FIELDS = {
 	completedAt: true,
 	status: true,
 	reasonCode: true,
+	restoreEvidence: true,
 	createdAt: true,
 	updatedAt: true,
 } as const;
@@ -271,9 +756,35 @@ export async function assertRestoreCompatibility(
 	prisma: Prisma.TransactionClient | PrismaClient,
 	data: BackupData["data"],
 ): Promise<void> {
+	// Only authenticated, translated preparation can replace Grab evidence.
+	if (
+		(await prisma.searchGrabAttempt.count()) > 0 ||
+		(await prisma.searchGrabClaim.count()) > 0 ||
+		(data.searchGrabAttempts?.length ?? 0) > 0 ||
+		(data.searchGrabClaims?.length ?? 0) > 0
+	)
+		throw new BackupCompatibilityError();
+	// Notification payloads and imported progress also require authenticated
+	// preparation. The raw legacy path cannot silently discard current rows.
+	if (
+		(await prisma.notificationOutboxEvent.count()) > 0 ||
+		(await prisma.notificationOutboxDelivery.count()) > 0 ||
+		(data.notificationOutboxEvents?.length ?? 0) > 0 ||
+		(data.notificationOutboxDeliveries?.length ?? 0) > 0
+	)
+		throw new BackupCompatibilityError();
 	if (await targetHasUnresolvedLabelSyncMutation(prisma)) {
 		throw new BackupCompatibilityError();
 	}
+	await assertNonLabelRestoreCompatibility(prisma, data);
+}
+
+/** Shared checks; only the branded prepared path supplies exact label conservation. */
+async function assertNonLabelRestoreCompatibility(
+	prisma: Prisma.TransactionClient | PrismaClient,
+	data: BackupData["data"],
+	prepared?: PreparedRestoreData,
+): Promise<void> {
 	const record = data as Record<string, unknown>;
 	const missingFields = LEGACY_RELATIONAL_CONFIG_FIELDS.filter(
 		(field) => !Array.isArray(record[field]),
@@ -305,7 +816,7 @@ export async function assertRestoreCompatibility(
 		throw new BackupCompatibilityError();
 	}
 	try {
-		await validateCurrentCoordinationPreserved(prisma, data);
+		await validateCurrentCoordinationPreserved(prisma, data, prepared);
 	} catch (error) {
 		if (error instanceof CoordinationMismatchError) {
 			throw new BackupCompatibilityError(error);
@@ -496,9 +1007,116 @@ function recordsById(value: unknown): Map<string, CoordinationRow> {
 	return records;
 }
 
+function coordinationJsonRecord(value: unknown): Record<string, unknown> | undefined {
+	if (typeof value !== "string") return undefined;
+	try {
+		const parsed: unknown = JSON.parse(value);
+		return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+			? (parsed as Record<string, unknown>)
+			: undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function preparedTemplateConfigMatches(
+	current: CoordinationRow,
+	incoming: CoordinationRow,
+	prepared: PreparedRestoreData,
+	instances: Map<string, CoordinationRow>,
+): boolean {
+	const before = coordinationJsonRecord(incoming.configData),
+		after = coordinationJsonRecord(current.configData);
+	if (!before || !after) return false;
+	const beforeProfile = before.completeQualityProfile,
+		afterProfile = after.completeQualityProfile;
+	if (
+		!beforeProfile ||
+		typeof beforeProfile !== "object" ||
+		Array.isArray(beforeProfile) ||
+		(beforeProfile as Record<string, unknown>).sourceConnectionStateToken == null
+	)
+		return current.configData === incoming.configData; // Legacy evidence stays unbound.
+	if (!afterProfile || typeof afterProfile !== "object" || Array.isArray(afterProfile))
+		return false;
+	const originalProfile = beforeProfile as Record<string, unknown>,
+		currentProfile = afterProfile as Record<string, unknown>;
+	if (
+		typeof originalProfile.sourceInstanceId !== "string" ||
+		currentProfile.sourceInstanceId !== originalProfile.sourceInstanceId
+	)
+		return false;
+	const instance = instances.get(originalProfile.sourceInstanceId);
+	if (
+		!instance ||
+		instance.userId !== current.userId ||
+		!preparedRestoreConnectionMatches(prepared, instance) ||
+		currentProfile.sourceConnectionStateToken !==
+			createDeploymentConnectionStateToken(instance as unknown as ServiceInstance)
+	)
+		return false;
+	return durableEqual(
+		{
+			...after,
+			completeQualityProfile: {
+				...currentProfile,
+				sourceConnectionStateToken: originalProfile.sourceConnectionStateToken,
+			},
+		},
+		before,
+	);
+}
+
+function preparedRecoverySnapshotMatches(
+	current: CoordinationRow,
+	incoming: CoordinationRow,
+	prepared: PreparedRestoreData,
+	instances: Map<string, CoordinationRow>,
+	originalInstances: Map<string, CoordinationRow>,
+): boolean {
+	if (typeof current.instanceId !== "string") return false;
+	const instance = instances.get(current.instanceId),
+		originalInstance = originalInstances.get(current.instanceId);
+	if (
+		!instance ||
+		!originalInstance ||
+		instance.userId !== current.userId ||
+		!preparedRestoreConnectionMatches(prepared, instance)
+	)
+		return false;
+	if (
+		importConnectionFingerprint(instance as unknown as ServiceInstance) ===
+			importConnectionFingerprint(originalInstance as unknown as ServiceInstance) &&
+		current.backupData === incoming.backupData
+	)
+		return true;
+	const before = coordinationJsonRecord(incoming.backupData),
+		after = coordinationJsonRecord(current.backupData);
+	if (!before || !after) return false;
+	if (!("schemaVersion" in before) && !("schemaVersion" in after))
+		return current.backupData === incoming.backupData;
+	// Validate without projecting: schema parsing strips unknown evidence fields.
+	if (
+		before.schemaVersion !== 2 ||
+		!deploymentBackupStateSchema.safeParse(after).success ||
+		!preparedRestoreTrashEndpointCurrent(prepared, instance, after)
+	)
+		return false;
+	return durableEqual(
+		{
+			...after,
+			connectionStateToken: before.connectionStateToken,
+			endpointKey: before.endpointKey,
+		},
+		before,
+	);
+}
+
 function assertCurrentUndeployFallbackPreserved(
 	current: CoordinationRow,
 	incomingTemplates: Map<string, CoordinationRow>,
+	prepared?: PreparedRestoreData,
+	instances?: Map<string, CoordinationRow>,
 ): void {
 	if (typeof current.templateSnapshot === "string" && current.templateSnapshot.length > 0) {
 		return;
@@ -521,6 +1139,20 @@ function assertCurrentUndeployFallbackPreserved(
 		);
 	}
 	for (const field of ["userId", "serviceType", "configData"] as const) {
+		if (field === "configData" && prepared && instances) {
+			if (
+				!preparedTemplateConfigMatches(
+					currentTemplate as CoordinationRow,
+					incomingTemplate,
+					prepared,
+					instances,
+				)
+			)
+				throw new CoordinationMismatchError(
+					"Cannot restore backup: current undeploy fallback template evidence changed",
+				);
+			continue;
+		}
 		if (incomingTemplate[field] !== (currentTemplate as Record<string, unknown>)[field]) {
 			throw new CoordinationMismatchError(
 				`Cannot restore backup: current undeploy fallback template ${current.templateId} changed ${field}`,
@@ -574,6 +1206,7 @@ function assertCurrentSpecialRowPreserved(
 	current: CoordinationRow,
 	incomingRows: Map<string, CoordinationRow>,
 	fields: readonly string[],
+	restoredProjection?: CoordinationRow,
 ): void {
 	const incoming = incomingRows.get(current.id);
 	if (!incoming) {
@@ -581,6 +1214,19 @@ function assertCurrentSpecialRowPreserved(
 			`Cannot restore backup: current ${label} ${current.id} is missing from incoming data`,
 		);
 	}
+	// Only cleanup callers supply this branded preparation's inert projection.
+	// Its sole projected evidence field is the cleared executionToken. A new
+	// claim or any changed durable field must still match neither representation.
+	if (
+		current.executionToken === null &&
+		restoredProjection?.executionToken === null &&
+		fields.every(
+			(field) =>
+				comparableCoordinationValue(restoredProjection[field], field) ===
+				comparableCoordinationValue(current[field], field),
+		)
+	)
+		return;
 	for (const field of fields) {
 		if (
 			comparableCoordinationValue(incoming[field], field) !==
@@ -604,6 +1250,7 @@ function assertCurrentNamingInstancePreserved(
 	history: CoordinationRow,
 	currentInstances: Map<string, CoordinationRow>,
 	incomingInstances: Map<string, CoordinationRow>,
+	prepared?: PreparedRestoreData,
 ): void {
 	if (typeof history.instanceId !== "string" || history.instanceId.length === 0) {
 		throw new CoordinationMismatchError(
@@ -621,6 +1268,13 @@ function assertCurrentNamingInstancePreserved(
 		throw new CoordinationMismatchError(
 			`Cannot restore backup: current active naming recovery ${history.id} service instance ${history.instanceId} is missing from incoming data`,
 		);
+	}
+	if (prepared) {
+		if (!preparedRestoreConnectionMatches(prepared, currentInstance))
+			throw new CoordinationMismatchError(
+				"Cannot restore backup: current active naming recovery connection changed",
+			);
+		return;
 	}
 	for (const field of ACTIVE_NAMING_INSTANCE_FIELDS) {
 		const incomingValue = incomingInstance[field];
@@ -677,6 +1331,7 @@ function assertActiveNamingExportStable(
 async function validateCurrentCoordinationPreserved(
 	tx: Prisma.TransactionClient | PrismaClient,
 	data: BackupData["data"],
+	prepared?: PreparedRestoreData,
 ): Promise<void> {
 	const db = tx as Prisma.TransactionClient;
 	const optionalModels = tx as unknown as Record<
@@ -725,21 +1380,23 @@ async function validateCurrentCoordinationPreserved(
 		where: { status: { in: ["PENDING", "SUCCESS"] }, rolledBack: false },
 	})) as CoordinationRow[];
 	const currentNamingInstances = recordsById(
-		currentActiveNaming.length > 0
-			? await db.serviceInstance.findMany({
-					where: {
-						id: {
-							in: [
-								...new Set(
-									currentActiveNaming
-										.map((row) => row.instanceId)
-										.filter((id): id is string => typeof id === "string" && id.length > 0),
-								),
-							],
+		prepared
+			? await db.serviceInstance.findMany()
+			: currentActiveNaming.length > 0
+				? await db.serviceInstance.findMany({
+						where: {
+							id: {
+								in: [
+									...new Set(
+										currentActiveNaming
+											.map((row) => row.instanceId)
+											.filter((id): id is string => typeof id === "string" && id.length > 0),
+									),
+								],
+							},
 						},
-					},
-				})
-			: [],
+					})
+				: [],
 	);
 	const currentActiveApprovals = optionalModels.libraryCleanupApproval?.findMany
 		? ((await optionalModels.libraryCleanupApproval.findMany({
@@ -778,12 +1435,49 @@ async function validateCurrentCoordinationPreserved(
 	}
 	for (const row of currentUndeployRows) {
 		assertCurrentRowPreserved("undeploy", row, incomingUndeployRows);
-		assertCurrentUndeployFallbackPreserved(row, incomingTemplates);
+		assertCurrentUndeployFallbackPreserved(
+			row,
+			incomingTemplates,
+			prepared,
+			currentNamingInstances,
+		);
 	}
 	for (const row of currentScoreIntents) {
+		let comparison = row;
+		if (prepared) {
+			const incoming = incomingScoreIntents.get(row.id),
+				instance = currentNamingInstances.get(String(row.instanceId));
+			if (
+				!incoming ||
+				!instance ||
+				instance.userId !== row.userId ||
+				!preparedRestoreConnectionMatches(prepared, instance)
+			)
+				throw new CoordinationMismatchError(
+					"Cannot restore backup: current quality-score connection changed",
+				);
+			if (
+				!(
+					incoming.connectionStateToken == null &&
+					(incoming.connectionGeneration ?? 0) === 0 &&
+					row.connectionStateToken == null &&
+					(row.connectionGeneration ?? 0) === 0
+				)
+			) {
+				if (
+					typeof incoming.connectionStateToken !== "string" ||
+					row.connectionStateToken !==
+						createDeploymentConnectionStateToken(instance as unknown as ServiceInstance)
+				)
+					throw new CoordinationMismatchError(
+						"Cannot restore backup: current quality-score binding changed",
+					);
+				comparison = { ...row, connectionStateToken: incoming.connectionStateToken };
+			}
+		}
 		assertCurrentSpecialRowPreserved(
 			"pending or uncertain quality-score intent",
-			row,
+			comparison,
 			incomingScoreIntents,
 			SCORE_INTENT_FIELDS,
 		);
@@ -795,14 +1489,21 @@ async function validateCurrentCoordinationPreserved(
 			incomingActiveNaming,
 			ACTIVE_NAMING_FIELDS,
 		);
-		assertCurrentNamingInstancePreserved(row, currentNamingInstances, incomingInstances);
+		assertCurrentNamingInstancePreserved(row, currentNamingInstances, incomingInstances, prepared);
 	}
+	const preparedApprovals = prepared
+		? recordsById(prepared.records.libraryCleanupApproval)
+		: undefined;
+	const preparedScans = prepared
+		? recordsById(prepared.records.libraryCleanupMediaServerScan)
+		: undefined;
 	for (const row of [...currentActiveApprovals, ...currentScanParentApprovals]) {
 		assertCurrentSpecialRowPreserved(
 			"active cleanup approval",
 			row,
 			incomingApprovals,
 			ACTIVE_APPROVAL_FIELDS,
+			preparedApprovals?.get(row.id),
 		);
 	}
 	for (const row of currentActiveScans) {
@@ -811,6 +1512,7 @@ async function validateCurrentCoordinationPreserved(
 			row,
 			incomingScans,
 			ACTIVE_SCAN_FIELDS,
+			preparedScans?.get(row.id),
 		);
 	}
 
@@ -852,6 +1554,21 @@ async function validateCurrentCoordinationPreserved(
 			);
 		}
 		for (const field of ["userId", "instanceId", "backupData"] as const) {
+			if (field === "backupData" && prepared) {
+				if (
+					!preparedRecoverySnapshotMatches(
+						current,
+						incoming,
+						prepared,
+						currentNamingInstances,
+						incomingInstances,
+					)
+				)
+					throw new CoordinationMismatchError(
+						"Cannot restore backup: current recovery snapshot evidence changed",
+					);
+				continue;
+			}
 			if (incoming[field] !== current[field]) {
 				throw new CoordinationMismatchError(
 					`Cannot restore backup: current recovery snapshot ${snapshotId} changed ${field}`,
@@ -919,12 +1636,57 @@ async function exportDatabaseSnapshot(
 	const notificationSubscription = await prisma.notificationSubscription.findMany();
 	const notificationRule = await prisma.notificationRule.findMany();
 	const notificationAggregationConfig = await prisma.notificationAggregationConfig.findMany();
+	// Accepted notification work and its complete recipient/aggregation graph
+	// are durable state, never subject to the operational History cap.
+	const notificationOutboxEvents = await prisma.notificationOutboxEvent.findMany();
+	const notificationOutboxDeliveries = await prisma.notificationOutboxDelivery.findMany();
 	const autoTagRule = await prisma.autoTagRule.findMany();
 	const labelSyncRule = await prisma.labelSyncRule.findMany();
 	// Active observation runs are disposable and restart from current authority after restore.
 	// Durable mutation history is always exported in full, including terminal
 	// rows, even when disposable operational history is excluded.
 	const labelSyncMutationAttempts = await prisma.labelSyncMutationAttempt.findMany();
+	const searchGrabAttempts = await prisma.searchGrabAttempt.findMany();
+	const searchGrabClaims = await prisma.searchGrabClaim.findMany();
+	// Import protection and qUI claims are durable safety evidence, not capped
+	// operational history. Preserve every attempt, outcome and linked proof.
+	const arrImportOperations = await prisma.arrImportOperation.findMany();
+	const arrImportFileProofs = await prisma.arrImportFileProof.findMany();
+	const arrImportSourceClaims = await prisma.arrImportSourceClaim.findMany();
+	const queueCleanerImportReceipts = await prisma.queueCleanerImportReceipt.findMany();
+	const quiActionClaims = await prisma.quiActionClaim.findMany();
+	const quiBinding = (row: {
+		userId: string;
+		serviceInstanceId: string;
+		qbitInstanceId: number;
+		torrentHash: string;
+		attemptId: string | null;
+	}) =>
+		JSON.stringify([
+			row.userId,
+			row.serviceInstanceId,
+			row.qbitInstanceId,
+			row.torrentHash.toLowerCase(),
+			row.attemptId,
+		]);
+	const claimedBindings = new Set(quiActionClaims.map(quiBinding));
+	const quiLogCandidates = await prisma.quiActionLog.findMany({
+		where: {
+			OR: [
+				{ status: { in: ["pending", "uncertain"] } },
+				{ attemptId: { in: [...new Set(quiActionClaims.map((claim) => claim.attemptId))] } },
+			],
+		},
+	});
+	// Logs can retain uppercase hashes while claims normalize them. Query by
+	// attempt, then retain only exact normalized identity bindings. Unrelated
+	// terminal history remains excluded, including siblings in a bulk attempt.
+	const quiActionLogs = quiLogCandidates.filter(
+		(row) =>
+			row.status === "pending" ||
+			row.status === "uncertain" ||
+			claimedBindings.has(quiBinding(row)),
+	);
 	const queueCleanerConfig = await prisma.queueCleanerConfig.findMany();
 	const libraryCleanupConfig = await prisma.libraryCleanupConfig.findMany();
 	const libraryCleanupRule = await prisma.libraryCleanupRule.findMany();
@@ -1141,9 +1903,19 @@ async function exportDatabaseSnapshot(
 		notificationSubscription,
 		notificationRule,
 		notificationAggregationConfig,
+		notificationOutboxEvents,
+		notificationOutboxDeliveries,
 		autoTagRule,
 		labelSyncRule,
 		labelSyncMutationAttempts,
+		searchGrabAttempts,
+		searchGrabClaims,
+		arrImportOperations,
+		arrImportFileProofs,
+		arrImportSourceClaims,
+		queueCleanerImportReceipts,
+		quiActionClaims,
+		quiActionLogs,
 		queueCleanerConfig,
 		libraryCleanupConfig,
 		libraryCleanupRule,
@@ -1433,6 +2205,18 @@ function prepareLibrarySyncSettings(
  * - Transaction ensures atomicity but can be long-running for large datasets
  */
 export async function restoreDatabase(prisma: PrismaClient, data: BackupData["data"]) {
+	await restoreDatabaseRecords(prisma, data);
+}
+
+async function restoreDatabaseRecords(
+	prisma: PrismaClient,
+	data: BackupData["data"],
+	compatibility: (client: PrismaClient | Prisma.TransactionClient) => Promise<void> = (client) =>
+		assertRestoreCompatibility(client, data),
+	prepared = false,
+	beforeCommit?: (tx: Prisma.TransactionClient) => Promise<void>,
+	getNotificationProgress?: () => NotificationRestoreProgress | undefined,
+) {
 	validateSingletonCollections(data);
 	validateRestoreRecords(data);
 	const libraryCleanupApprovals = prepareLibraryCleanupApprovals(data);
@@ -1450,14 +2234,38 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 	// Preflight on the root client so malformed/future current ledger rows fail
 	// before opening the destructive transaction. Repeat inside the transaction
 	// below to close the race between this read and the first delete.
-	await assertRestoreCompatibility(prisma, data);
+	await compatibility(prisma);
 	// Use a transaction to ensure atomicity
 	await prisma.$transaction(
 		async (tx) => {
 			// Recheck inside the transaction immediately before any delete. The
 			// service-level preflight closes the filesystem TOCTOU window; this check
 			// protects direct callers and races between preflight and transaction.
-			await assertRestoreCompatibility(tx, data);
+			await compatibility(tx);
+			if (prepared) {
+				await tx.notificationOutboxDelivery.deleteMany();
+				await tx.notificationOutboxEvent.updateMany({ data: { aggregateParentId: null } });
+				await tx.notificationOutboxEvent.deleteMany();
+				await tx.searchGrabClaim.deleteMany();
+				// Break restrictive predecessor edges only inside this atomic replacement.
+				await tx.searchGrabAttempt.updateMany({ data: { predecessorId: null } });
+				await tx.searchGrabAttempt.deleteMany();
+				// qUI's service relation is RESTRICT. Explicitly remove durable
+				// children before their parents; insert translated evidence below.
+				await tx.quiActionClaim.deleteMany();
+				await tx.quiActionLog.deleteMany();
+				await tx.arrImportFileProof.deleteMany();
+				await tx.arrImportSourceClaim.deleteMany();
+				await tx.arrImportOperation.deleteMany();
+				await tx.queueCleanerImportReceipt.deleteMany();
+				// Discard source leases/cache, but preserve the destination-local
+				// journal explicitly; it is never part of portable backup data.
+				const models = tx as unknown as Record<string, { deleteMany: () => Promise<unknown> }>;
+				for (const [model, disposition] of Object.entries(BACKUP_MODEL_DISPOSITIONS).reverse()) {
+					if (disposition.disposition !== "portable" && !disposition.preserveOnRestore)
+						await models[model[0]!.toLowerCase() + model.slice(1)]!.deleteMany();
+				}
+			}
 
 			// =================================================================
 			// DELETE all existing data (in reverse order of dependencies)
@@ -1774,6 +2582,83 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 					data: data.userCustomFormat as Prisma.UserCustomFormatCreateManyInput[],
 				});
 			}
+			if (prepared) {
+				const previous = getNotificationProgress?.();
+				const notificationEvents = (
+					(data.notificationOutboxEvents ?? []) as Prisma.NotificationOutboxEventCreateManyInput[]
+				).map((row) => ({
+					...row,
+					updatedAt: previous?.events.get(row.id!) ?? row.updatedAt,
+				}));
+				if (notificationEvents.length)
+					await tx.notificationOutboxEvent.createMany({
+						data: notificationEvents.map((row) => ({ ...row, aggregateParentId: null })),
+					});
+				for (const row of notificationEvents) {
+					if (!row.aggregateParentId) continue;
+					const linked = await tx.notificationOutboxEvent.updateMany({
+						where: { id: row.id, userId: row.userId },
+						data: { aggregateParentId: row.aggregateParentId, updatedAt: row.updatedAt },
+					});
+					if (linked.count !== 1) throw new BackupCompatibilityError();
+				}
+				if (data.notificationOutboxDeliveries?.length)
+					await tx.notificationOutboxDelivery.createMany({
+						data: (
+							data.notificationOutboxDeliveries as Prisma.NotificationOutboxDeliveryCreateManyInput[]
+						).map((row) => ({
+							...row,
+							...previous?.deliveries.get(row.id!),
+						})),
+					});
+				if (data.arrImportOperations!.length)
+					await tx.arrImportOperation.createMany({
+						data: data.arrImportOperations as Prisma.ArrImportOperationCreateManyInput[],
+					});
+				// Insert all historical nodes before installing same-owner predecessor
+				// edges. This is independent of export order on both native engines.
+				const grabAttempts = (data.searchGrabAttempts ??
+					[]) as Prisma.SearchGrabAttemptCreateManyInput[];
+				if (grabAttempts.length)
+					await tx.searchGrabAttempt.createMany({
+						data: grabAttempts.map((row) => ({ ...row, predecessorId: null, workerEpoch: null })),
+					});
+				for (const row of grabAttempts) {
+					if (!row.predecessorId) continue;
+					const linked = await tx.searchGrabAttempt.updateMany({
+						where: { id: row.id, userId: row.userId },
+						data: { predecessorId: row.predecessorId, updatedAt: row.updatedAt },
+					});
+					if (linked.count !== 1) throw new BackupCompatibilityError();
+				}
+				if (data.searchGrabClaims?.length)
+					await tx.searchGrabClaim.createMany({
+						data: data.searchGrabClaims as Prisma.SearchGrabClaimCreateManyInput[],
+					});
+				if (data.arrImportFileProofs!.length)
+					await tx.arrImportFileProof.createMany({
+						data: data.arrImportFileProofs as Prisma.ArrImportFileProofCreateManyInput[],
+					});
+				if (data.arrImportSourceClaims!.length)
+					await tx.arrImportSourceClaim.createMany({
+						data: data.arrImportSourceClaims as Prisma.ArrImportSourceClaimCreateManyInput[],
+					});
+				if (data.queueCleanerImportReceipts!.length)
+					await tx.queueCleanerImportReceipt.createMany({
+						data: data.queueCleanerImportReceipts as Prisma.QueueCleanerImportReceiptCreateManyInput[],
+					});
+				if (data.quiActionLogs!.length)
+					await tx.quiActionLog.createMany({
+						data: data.quiActionLogs as Prisma.QuiActionLogCreateManyInput[],
+					});
+				if (data.quiActionClaims!.length)
+					await tx.quiActionClaim.createMany({
+						data: data.quiActionClaims as Prisma.QuiActionClaimCreateManyInput[],
+					});
+			}
+			// Positive outcome evidence shares the replacement transaction. A
+			// failed marker/fence aborts every insert, delete and session revocation.
+			await beforeCommit?.(tx);
 		},
 		{
 			isolationLevel: "Serializable",

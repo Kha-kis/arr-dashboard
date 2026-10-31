@@ -16,6 +16,7 @@ import type {
 } from "@arr/shared";
 import { useMemo } from "react";
 import { useDashboardStatisticsQuery } from "../../../hooks/api/useDashboard";
+import { resolveDashboardStatisticsState } from "../../../lib/dashboard-statistics-state";
 
 /**
  * Generic sum utility for reducing instance data
@@ -115,18 +116,43 @@ const buildReadarrRows = (
  * @returns Aggregated statistics and table rows for all service types
  */
 export const useStatisticsData = () => {
-	const { data, isLoading, isFetching, error, refetch } = useDashboardStatisticsQuery();
+	const { data: envelope, isLoading, isFetching, error, refetch } = useDashboardStatisticsQuery();
+	const state = resolveDashboardStatisticsState(envelope, error, Date.now());
+	const data = state.data;
+	const incompleteServices = useMemo(() => {
+		const services = ["sonarr", "radarr", "prowlarr", "lidarr", "readarr"] as const;
+		return services.filter((service) => data?.[service]?.instances.some((entry) => entry.error));
+	}, [data]);
+	const configuredInstanceCounts = useMemo(
+		() => ({
+			sonarr: data?.sonarr.instances.length ?? 0,
+			radarr: data?.radarr.instances.length ?? 0,
+			prowlarr: data?.prowlarr.instances.length ?? 0,
+			lidarr: data?.lidarr?.instances.length ?? 0,
+			readarr: data?.readarr?.instances.length ?? 0,
+		}),
+		[data],
+	);
 
 	// Memoize instance arrays to prevent dependency changes on every render
-	const sonarrInstances = useMemo(() => data?.sonarr.instances ?? [], [data?.sonarr.instances]);
-	const radarrInstances = useMemo(() => data?.radarr.instances ?? [], [data?.radarr.instances]);
+	const sonarrInstances = useMemo(
+		() => data?.sonarr.instances.filter((entry) => !entry.error) ?? [],
+		[data?.sonarr.instances],
+	);
+	const radarrInstances = useMemo(
+		() => data?.radarr.instances.filter((entry) => !entry.error) ?? [],
+		[data?.radarr.instances],
+	);
 	const prowlarrInstances = useMemo(
-		() => data?.prowlarr.instances ?? [],
+		() => data?.prowlarr.instances.filter((entry) => !entry.error) ?? [],
 		[data?.prowlarr.instances],
 	);
-	const lidarrInstances = useMemo(() => data?.lidarr?.instances ?? [], [data?.lidarr?.instances]);
+	const lidarrInstances = useMemo(
+		() => data?.lidarr?.instances.filter((entry) => !entry.error) ?? [],
+		[data?.lidarr?.instances],
+	);
 	const readarrInstances = useMemo(
-		() => data?.readarr?.instances ?? [],
+		() => data?.readarr?.instances.filter((entry) => !entry.error) ?? [],
 		[data?.readarr?.instances],
 	);
 
@@ -398,21 +424,18 @@ export const useStatisticsData = () => {
 	// Collect all health issues across services
 	const allHealthIssues: HealthIssue[] = useMemo(() => {
 		const issues: HealthIssue[] = [];
-		if (sonarrAggregate?.healthIssuesList) {
-			issues.push(...sonarrAggregate.healthIssuesList);
-		}
-		if (radarrAggregate?.healthIssuesList) {
-			issues.push(...radarrAggregate.healthIssuesList);
-		}
-		if (prowlarrAggregate?.healthIssuesList) {
-			issues.push(...prowlarrAggregate.healthIssuesList);
-		}
-		if (lidarrAggregate?.healthIssuesList) {
-			issues.push(...lidarrAggregate.healthIssuesList);
-		}
-		if (readarrAggregate?.healthIssuesList) {
-			issues.push(...readarrAggregate.healthIssuesList);
-		}
+		issues.push(
+			...(sonarrAggregate?.healthIssuesList ??
+				sonarrInstances.flatMap((entry) => entry.data.healthIssuesList ?? [])),
+			...(radarrAggregate?.healthIssuesList ??
+				radarrInstances.flatMap((entry) => entry.data.healthIssuesList ?? [])),
+			...(prowlarrAggregate?.healthIssuesList ??
+				prowlarrInstances.flatMap((entry) => entry.data.healthIssuesList ?? [])),
+			...(lidarrAggregate?.healthIssuesList ??
+				lidarrInstances.flatMap((entry) => entry.data.healthIssuesList ?? [])),
+			...(readarrAggregate?.healthIssuesList ??
+				readarrInstances.flatMap((entry) => entry.data.healthIssuesList ?? [])),
+		);
 		return issues;
 	}, [
 		sonarrAggregate?.healthIssuesList,
@@ -420,6 +443,11 @@ export const useStatisticsData = () => {
 		prowlarrAggregate?.healthIssuesList,
 		lidarrAggregate?.healthIssuesList,
 		readarrAggregate?.healthIssuesList,
+		sonarrInstances,
+		radarrInstances,
+		prowlarrInstances,
+		lidarrInstances,
+		readarrInstances,
 	]);
 
 	const totalHealthIssues =
@@ -465,10 +493,16 @@ export const useStatisticsData = () => {
 
 	return {
 		// Query state
+		statisticsState: state,
+		availability: state.availability,
+		observedAt: state.observedAt,
+		hasStatistics: data !== null,
 		isLoading,
 		isFetching,
 		error,
 		refetch,
+		incompleteServices,
+		configuredInstanceCounts,
 
 		// Table rows
 		sonarrRows,

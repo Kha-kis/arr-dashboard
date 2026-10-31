@@ -1,162 +1,121 @@
 "use client";
 
 import type { UserAnalytics } from "@arr/shared";
-import { Clock, Users } from "lucide-react";
-import { useMemo } from "react";
+import { Users } from "lucide-react";
 import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { formatBandwidth } from "./chart-primitives";
 
-// ============================================================================
-// Bar Chart (reusable horizontal bars)
-// ============================================================================
+type User = UserAnalytics["users"][number];
+type Day = UserAnalytics["dailyBreakdown"][number];
 
-interface BarItem {
-	label: string;
-	value: number;
-	secondaryLabel?: string;
-}
-
-const HorizontalBarChart = ({
-	items,
-	color,
-	maxBars = 10,
-}: {
-	items: BarItem[];
-	color: string;
-	maxBars?: number;
-}) => {
-	const visible = items.slice(0, maxBars);
-	const max = Math.max(...visible.map((i) => i.value), 1);
-
-	return (
-		<div className="space-y-2">
-			{visible.map((item, i) => (
-				<div key={item.label} className="flex items-center gap-3 text-sm">
-					<span className="w-24 truncate text-muted-foreground text-right" title={item.label}>
-						{item.label}
-					</span>
-					<div className="flex-1 h-5 rounded-full bg-muted/30 overflow-hidden">
-						<div
-							className="h-full rounded-full transition-all duration-500"
-							style={{
-								width: `${(item.value / max) * 100}%`,
-								background: `linear-gradient(90deg, ${color}, ${color}bb)`,
-								animationDelay: `${i * 50}ms`,
-							}}
-						/>
-					</div>
-					<span className="w-16 text-right font-medium tabular-nums">
-						{item.value.toLocaleString()}
-					</span>
-					{item.secondaryLabel && (
-						<span className="w-20 text-right text-xs text-muted-foreground">
-							{item.secondaryLabel}
-						</span>
-					)}
-				</div>
-			))}
-		</div>
-	);
-};
-
-// ============================================================================
-// Stacked Area Sparkline for daily user breakdown
-// ============================================================================
-
-const UserDailySparkline = ({
-	dailyBreakdown,
-	topUsers,
+function UserDailyChart({
+	days,
+	users,
 	colors,
-	incognitoMode,
+	label,
 }: {
-	dailyBreakdown: Array<{ date: string; userSessions: Record<string, number> }>;
-	topUsers: string[];
+	days: Day[];
+	users: User[];
 	colors: string[];
-	incognitoMode: boolean;
-}) => {
-	if (dailyBreakdown.length < 2 || topUsers.length === 0) return null;
-
-	const width = 600;
-	const height = 80;
-
-	// Compute max total per day
-	const maxTotal = Math.max(
-		...dailyBreakdown.map((d) => Object.values(d.userSessions).reduce((s, v) => s + v, 0)),
-		1,
-	);
-
+	label: (name: string) => string;
+}) {
+	if (days.length < 2) return null;
+	const top = users.slice(0, 5);
+	const topKeys = new Set(top.map((user) => user.key!));
+	const calendar: Array<{ date: string; day: Day | null }> = [];
+	for (const [index, day] of days.entries()) {
+		const previous = days[index - 1];
+		if (previous) {
+			const gapDays = Math.floor((Date.parse(day.date) - Date.parse(previous.date)) / 86_400_000);
+			for (let gap = 1; gap < gapDays && gap <= 90; gap++) {
+				calendar.push({
+					date: new Date(Date.parse(previous.date) + gap * 86_400_000).toISOString().slice(0, 10),
+					day: null,
+				});
+			}
+		}
+		calendar.push({ date: day.date, day });
+	}
+	const max = Math.max(1, ...days.map((day) => day.measurement?.observedSessions ?? 0));
 	return (
 		<div>
-			<h4 className="text-xs text-muted-foreground mb-3">Daily Activity by User</h4>
-			<div className="flex items-end gap-[2px]" style={{ height }}>
-				{dailyBreakdown.map((day) => {
-					const total = Object.values(day.userSessions).reduce((s, v) => s + v, 0);
-					const barH = (total / maxTotal) * height;
-
+			<h4 className="text-xs text-muted-foreground mb-3">Daily Sampled User Activity</h4>
+			<fieldset
+				aria-label="Daily sampled user activity; gaps are unsampled"
+				className="flex items-end gap-px min-w-0 w-full h-20"
+			>
+				{calendar.map(({ date, day }) => {
+					const measured = day?.measurement;
+					const observed = measured?.observedSessions ?? 0;
+					const attributed = measured?.attributedSessions ?? 0;
+					const unknown = measured?.unattributedSessions ?? 0;
+					const other = day
+						? Object.entries(day.userSessions).reduce(
+								(sum, [key, count]) => sum + (topKeys.has(key) ? 0 : count),
+								0,
+							)
+						: 0;
+					const description = !day
+						? `${date}: unsampled`
+						: `${date}: ${observed} observations; ${attributed} attributed; ${unknown} unattributed; ${measured?.collection.idleSnapshots ?? 0} idle; ${measured?.collection.failedSnapshots ?? 0} failed collection observations`;
+					const segments = [
+						...top.map((user, index) => ({
+							key: user.key!,
+							count: day?.userSessions[user.key!] ?? 0,
+							color: colors[index % colors.length],
+						})),
+						{ key: "other", count: other, color: "var(--muted-foreground)" },
+						{ key: "unattributed", count: unknown, color: "var(--muted)" },
+					];
 					return (
 						<div
-							key={day.date}
-							className="flex flex-col justify-end"
-							style={{
-								width: Math.max(4, Math.floor(width / dailyBreakdown.length) - 2),
-								height: "100%",
-							}}
-							title={`${day.date}: ${total} sessions`}
+							key={date}
+							role="img"
+							aria-label={description}
+							title={description}
+							className="flex-1 min-w-0 flex flex-col justify-end h-full"
 						>
-							{topUsers.map((user, ui) => {
-								const count = day.userSessions[user] ?? 0;
-								const segH = total > 0 ? (count / total) * barH : 0;
-								if (segH <= 0) return null;
-								return (
+							{segments
+								.filter((segment) => segment.count > 0)
+								.map((segment) => (
 									<div
-										key={user}
-										className={ui === 0 ? "rounded-t-sm" : ""}
-										style={{ height: segH, backgroundColor: colors[ui % colors.length] }}
+										key={segment.key}
+										data-observations={segment.count}
+										style={{
+											height: `${(segment.count / max) * 100}%`,
+											backgroundColor: segment.color,
+										}}
 									/>
-								);
-							})}
+								))}
 						</div>
 					);
 				})}
+			</fieldset>
+			<div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+				<span>{days[0]?.date}</span>
+				<span>{days[days.length - 1]?.date}</span>
 			</div>
-			{dailyBreakdown.length > 1 && (
-				<div className="flex justify-between text-[10px] text-muted-foreground mt-1">
-					<span>{dailyBreakdown[0]?.date}</span>
-					<span>{dailyBreakdown[dailyBreakdown.length - 1]?.date}</span>
-				</div>
-			)}
-			{/* Legend */}
-			<div className="flex flex-wrap gap-3 mt-2">
-				{topUsers.map((user, i) => (
-					<div key={user} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-						<div
+			<div className="flex flex-wrap gap-3 mt-2 text-[10px] text-muted-foreground">
+				{top.map((user, index) => (
+					<span key={user.key} className="flex items-center gap-1.5">
+						<span
 							className="h-2 w-2 rounded-full"
-							style={{ backgroundColor: colors[i % colors.length] }}
+							style={{ backgroundColor: colors[index % colors.length] }}
 						/>
-						{incognitoMode ? getLinuxUsername(user) : user}
-					</div>
+						{label(user.username)}
+					</span>
 				))}
+				{users.length > 5 && <span>Other attributed users</span>}
+				{days.some((day) => (day.measurement?.unattributedSessions ?? 0) > 0) && (
+					<span>Unattributed observations</span>
+				)}
+				<span>Blank calendar gaps are unsampled, not zero activity.</span>
 			</div>
 		</div>
 	);
-};
-
-// ============================================================================
-// User Analytics Chart
-// ============================================================================
-
-function formatWatchTime(minutes: number): string {
-	if (minutes < 60) return `${minutes}m`;
-	const hours = Math.floor(minutes / 60);
-	if (hours >= 24) {
-		const days = Math.floor(hours / 24);
-		const remH = hours % 24;
-		return remH > 0 ? `${days}d ${remH}h` : `${days}d`;
-	}
-	const mins = minutes % 60;
-	return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
 }
 
 interface UserAnalyticsChartProps {
@@ -174,100 +133,169 @@ export const UserAnalyticsChart = ({
 }: UserAnalyticsChartProps) => {
 	const { gradient } = useThemeGradient();
 	const [incognitoMode] = useIncognitoMode();
+	const serviceLabel = service === "jellyfin" ? "Jellyfin/Emby" : "Plex";
+	const colors = [
+		gradient.from,
+		gradient.to,
+		SERVICE_GRADIENTS[service].from,
+		SERVICE_GRADIENTS.sonarr.from,
+		SERVICE_GRADIENTS.radarr.from,
+	];
+	const measurement =
+		data?.measurement?.version === 1 && data.measurement.attribution === "source-provider-user-id"
+			? data.measurement
+			: undefined;
+	const users = measurement
+		? (data?.users.filter((user) => typeof user.key === "string" && user.key.length > 0) ?? [])
+		: [];
+	const max = Math.max(1, ...users.map((user) => user.totalSessions));
+	const label = (name: string) => (incognitoMode ? getLinuxUsername(name) : name);
 
-	const userColors = useMemo(
-		() => [
-			gradient.from,
-			gradient.to,
-			SERVICE_GRADIENTS[service].from,
-			SERVICE_GRADIENTS.sonarr.from,
-			SERVICE_GRADIENTS.radarr.from,
-		],
-		[gradient.from, gradient.to, service],
-	);
-
-	const barItems = useMemo((): BarItem[] => {
-		if (!data?.users) return [];
-		return data.users.map(
-			(u: { username: string; totalSessions: number; estimatedWatchTimeMinutes: number }) => ({
-				label: incognitoMode ? getLinuxUsername(u.username) : u.username,
-				value: u.totalSessions,
-				secondaryLabel: formatWatchTime(u.estimatedWatchTimeMinutes),
-			}),
-		);
-	}, [data, incognitoMode]);
-
-	const topUsers = useMemo(
-		() => data?.users.slice(0, 5).map((u: { username: string }) => u.username) ?? [],
-		[data],
-	);
-
-	if (isLoading) {
+	if (isLoading && !data)
 		return (
 			<div className="rounded-xl border border-border/30 bg-card/30 p-6">
 				<PremiumSkeleton variant="line" className="h-5 w-40 mb-4" />
 				<PremiumSkeleton variant="line" className="h-[120px] w-full" />
 			</div>
 		);
-	}
-
-	if (isError) {
+	if (isError && !data)
 		return (
 			<PremiumEmptyState
 				icon={Users}
 				title="Failed to Load User Analytics"
-				description="Could not fetch user analytics data."
+				description={`Could not fetch user analytics. Check your ${serviceLabel} connection and try again.`}
 			/>
 		);
-	}
-
-	if (!data || data.users.length === 0) {
+	if (!data)
 		return (
 			<PremiumEmptyState
 				icon={Users}
 				title="No User Data Yet"
-				description="User analytics appear once session snapshots are captured during active streams."
+				description="Check source settings and the collection scheduler for sampled user activity."
 			/>
 		);
-	}
 
+	const collection = measurement?.collection;
+	const emptyState =
+		measurement?.observedSessions === 0
+			? measurement.configuredSources === 0
+				? `No configured ${serviceLabel} sources. Check Settings to configure a connection.`
+				: (collection?.failedSnapshots ?? 0) > 0
+					? "Collection failed in this window. Check source settings and retry collection."
+					: (collection?.invalidSnapshots ?? 0) > 0
+						? "Collection evidence is invalid. Check source settings."
+						: (collection?.idleSnapshots ?? 0) > 0
+							? "Successful idle observations recorded; no active user observations are available."
+							: "No observations recorded in this window. Check source settings and the collection scheduler."
+			: null;
 	return (
-		<div className="rounded-xl border border-border/30 bg-card/30 p-6 space-y-5">
+		<div className="rounded-xl border border-border/30 bg-card/30 p-6 space-y-5 min-w-0">
 			<h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
 				<Users className="h-4 w-4" style={{ color: gradient.from }} />
-				User Analytics
+				Sampled User Activity
 			</h3>
-
-			{/* Top users bar chart */}
-			<HorizontalBarChart items={barItems} color={gradient.from} />
-
-			{/* Summary */}
-			<div className="flex gap-4 text-xs text-muted-foreground border-t border-border/30 pt-3">
-				<span className="flex items-center gap-1">
-					<Users className="h-3 w-3" />
-					{data.users.length} users
-				</span>
-				<span className="flex items-center gap-1">
-					<Clock className="h-3 w-3" />
-					{formatWatchTime(
-						data.users.reduce(
-							(s: number, u: { estimatedWatchTimeMinutes: number }) =>
-								s + u.estimatedWatchTimeMinutes,
-							0,
-						),
-					)}{" "}
-					total
-				</span>
+			{isError && (
+				<p role="status" className="text-xs text-warning">
+					Last-known historical data retained; refresh failed. Check the connection and try again.
+				</p>
+			)}
+			<div className="text-xs text-muted-foreground space-y-1">
+				{measurement ? (
+					<>
+						<p>
+							{measurement.attributedSessions} of {measurement.observedSessions} session
+							observations attributed to source-scoped native users.
+						</p>
+						<p>
+							{measurement.unattributedSessions} unattributed observations retained; missing
+							identity and legacy labels do not become a verified user.
+						</p>
+						<p>
+							Collection: {collection?.failedSnapshots ?? 0} failed,{" "}
+							{collection?.legacySnapshots ?? 0} legacy/unverified,{" "}
+							{collection?.invalidSnapshots ?? 0} invalid, {collection?.idleSnapshots ?? 0} idle
+							observations.
+						</p>
+						{measurement.invalidDetailSnapshots > 0 && (
+							<p>{measurement.invalidDetailSnapshots} snapshots have invalid detail evidence.</p>
+						)}
+						{emptyState && <p role="status">{emptyState}</p>}
+						{measurement.observedSessions > 0 && users.length === 0 && (
+							<p>
+								Native user attribution unavailable. Check source settings for missing identity
+								evidence.
+							</p>
+						)}
+					</>
+				) : (
+					<p>
+						Legacy/unverified user analytics: this response does not establish source-scoped native
+						identity or measured rates.
+					</p>
+				)}
+				<p>
+					Five-minute sample observations, not distinct plays or continuous watch duration. Missing
+					collection intervals cannot be reconstructed.
+				</p>
+				<p>
+					Sample-weighted activity is five minutes per observation, not verified playback time.
+					Average rates use only known observations, never summed traffic volume.
+				</p>
 			</div>
-
-			{/* Daily breakdown sparkline */}
-			{data.dailyBreakdown.length > 1 && (
-				<UserDailySparkline
-					dailyBreakdown={data.dailyBreakdown}
-					topUsers={topUsers}
-					colors={userColors}
-					incognitoMode={incognitoMode}
-				/>
+			{users.length > 0 && (
+				<>
+					<ul aria-label="Source-scoped sampled users" className="space-y-3">
+						{users.slice(0, 10).map((user) => {
+							const rate = user.bandwidthMeasurement;
+							const known =
+								rate?.version === 1 &&
+								rate.observedSessions === user.totalSessions &&
+								rate.measuredSessions > 0 &&
+								typeof user.avgBandwidth === "number" &&
+								Number.isFinite(user.avgBandwidth) &&
+								user.avgBandwidth >= 0;
+							return (
+								<li key={user.key} className="min-w-0 text-xs">
+									<div className="flex flex-wrap gap-x-3 gap-y-1 items-center">
+										<span className="text-muted-foreground break-words">
+											{label(user.username)}
+										</span>
+										<span className="tabular-nums">
+											{user.totalSessions.toLocaleString()} observations
+										</span>
+										<span className="text-muted-foreground">
+											{user.estimatedWatchTimeMinutes.toLocaleString()} sample-weighted minutes
+										</span>
+									</div>
+									<div
+										className="h-2 rounded-full bg-muted/30 overflow-hidden my-1"
+										aria-hidden="true"
+									>
+										<div
+											className="h-full rounded-full"
+											style={{
+												width: `${(user.totalSessions / max) * 100}%`,
+												backgroundColor: gradient.from,
+											}}
+										/>
+									</div>
+									<p className="text-muted-foreground">
+										{known ? `Average ${formatBandwidth(user.avgBandwidth!)}` : "Rate unknown"};{" "}
+										{rate?.measuredSessions ?? 0} of {rate?.observedSessions ?? user.totalSessions}{" "}
+										rate observations{rate?.bandwidthBasis ? ` (${rate.bandwidthBasis})` : ""}.
+									</p>
+								</li>
+							);
+						})}
+					</ul>
+					<p className="text-xs text-muted-foreground">
+						{users.length} source-scoped users; showing {Math.min(users.length, 10)} ranked rows.
+						Counts describe observations, not unique playback sessions.
+					</p>
+				</>
+			)}
+			{measurement && data.dailyBreakdown.length > 1 && (
+				<UserDailyChart days={data.dailyBreakdown} users={users} colors={colors} label={label} />
 			)}
 		</div>
 	);

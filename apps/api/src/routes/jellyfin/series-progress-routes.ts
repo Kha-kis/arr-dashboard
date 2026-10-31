@@ -60,6 +60,7 @@ export async function registerSeriesProgressRoutes(
 			prisma: app.prisma,
 			userId,
 			instances: displayInstances,
+			showTmdbIds: tmdbIds,
 		});
 		const statuses = displayEvidence.providerStatus?.sources ?? [];
 		const sources = displayInstances.map((instance) => {

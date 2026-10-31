@@ -528,7 +528,7 @@ async function withPhysicalTargetLock<T>(key: string, work: () => Promise<T>): P
 	}
 }
 
-/** Bounded, read-only reconciliation for unknown Jellyfin mutation attempts. */
+/** Bounded, read-only reconciliation for unknown and restored-held Jellyfin attempts. */
 export async function reconcileJellyfinMutationAttempts(
 	opts: JellyfinMutationReconciliationOptions,
 ): Promise<JellyfinMutationReconciliationResult> {
@@ -539,7 +539,7 @@ export async function reconcileJellyfinMutationAttempts(
 	if (!isLabelSyncMutationAdmitted(opts.prisma))
 		return { examined: 0, verified: 0, failed: 0, unknown: 0 };
 	const rows = await opts.prisma.labelSyncMutationAttempt.findMany({
-		where: { provider: "jellyfin", status: "unknown" },
+		where: { provider: "jellyfin", status: { in: ["unknown", "restored-held"] }, claimToken: null },
 		orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
 		take: limit,
 	});
@@ -569,6 +569,7 @@ export async function reconcileJellyfinMutationAttempts(
 		if (acquired.kind !== "acquired") continue;
 		const snapshot = acquired.snapshot;
 		let outcome: "verified" | "unknown" = "unknown";
+		let lastObservedAt: Date | undefined;
 		try {
 			const rule = await opts.prisma.labelSyncRule.findFirst({
 				where: { id: snapshot.ruleId, userId: snapshot.userId },
@@ -622,6 +623,9 @@ export async function reconcileJellyfinMutationAttempts(
 					)
 						outcome = "unknown";
 					else {
+						// A failed or identity-invalid check is not a target observation.
+						// Omit the timestamp so persistence retains earlier evidence.
+						lastObservedAt = new Date();
 						// An absent tag cannot prove that an in-flight or timed-out
 						// overwrite will not arrive later. Keep the physical target
 						// blocked until a later read observes the desired tag.
@@ -640,12 +644,13 @@ export async function reconcileJellyfinMutationAttempts(
 				destinationInstanceId: snapshot.destinationInstanceId,
 				activeOperationKey: snapshot.activeOperationKey,
 				claimToken: acquired.claimToken,
+				snapshot,
 				reconcileAttemptCount: acquired.reconcileAttemptCount,
 				outcome:
 					outcome === "verified"
 						? { status: "verified", reasonCode: "applied" }
 						: { status: "unknown", reasonCode: "reconciliation_unavailable" },
-				lastObservedAt: new Date(),
+				lastObservedAt,
 			});
 			if (transition.kind !== "applied") outcome = "unknown";
 		} catch {

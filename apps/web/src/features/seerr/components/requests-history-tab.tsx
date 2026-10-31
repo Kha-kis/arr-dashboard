@@ -13,6 +13,7 @@ import {
 	useSeerrUsers,
 } from "../../../hooks/api/useSeerr";
 import { getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
+import { notifySeerrActionError } from "../lib/seerr-action-error";
 import { RequestCard } from "./request-card";
 
 type RequestFilter =
@@ -207,7 +208,8 @@ export const RequestsHistoryTab = ({
 													{ instanceId, requestId: request.id },
 													{
 														onSuccess: () => toast.success("Request retried"),
-														onError: () => toast.error("Failed to retry request"),
+														onError: (error) =>
+															notifySeerrActionError(error, "Failed to retry request"),
 													},
 												)
 											}
@@ -227,7 +229,8 @@ export const RequestsHistoryTab = ({
 														{ instanceId, requestId: request.id },
 														{
 															onSuccess: () => toast.success("Request deleted"),
-															onError: () => toast.error("Failed to delete request"),
+															onError: (error) =>
+																notifySeerrActionError(error, "Failed to delete request"),
 														},
 													);
 													setConfirmingDeleteId(null);

@@ -289,8 +289,9 @@ export const OnDeckWidget = ({
 					{canScrollLeft && (
 						<button
 							type="button"
+							aria-label="Scroll Continue Watching left"
 							onClick={() => scrollBy("left")}
-							className="absolute left-2 top-1/2 -translate-y-1/2 z-[2] flex h-8 w-8 items-center justify-center rounded-full bg-card/90 border border-border/50 text-muted-foreground hover:text-foreground hover:border-border transition-all opacity-0 group-hover/scroll:opacity-100 duration-200 shadow-lg backdrop-blur-sm"
+							className="absolute left-2 top-1/2 -translate-y-1/2 z-[2] flex h-8 w-8 items-center justify-center rounded-full bg-card/90 border border-border/50 text-muted-foreground hover:text-foreground hover:border-border transition-all opacity-100 md:opacity-0 md:group-hover/scroll:opacity-100 md:focus-visible:opacity-100 duration-200 shadow-lg backdrop-blur-sm"
 						>
 							<ChevronLeft className="h-4 w-4" />
 						</button>
@@ -298,8 +299,9 @@ export const OnDeckWidget = ({
 					{canScrollRight && (
 						<button
 							type="button"
+							aria-label="Scroll Continue Watching right"
 							onClick={() => scrollBy("right")}
-							className="absolute right-2 top-1/2 -translate-y-1/2 z-[2] flex h-8 w-8 items-center justify-center rounded-full bg-card/90 border border-border/50 text-muted-foreground hover:text-foreground hover:border-border transition-all opacity-0 group-hover/scroll:opacity-100 duration-200 shadow-lg backdrop-blur-sm"
+							className="absolute right-2 top-1/2 -translate-y-1/2 z-[2] flex h-8 w-8 items-center justify-center rounded-full bg-card/90 border border-border/50 text-muted-foreground hover:text-foreground hover:border-border transition-all opacity-100 md:opacity-0 md:group-hover/scroll:opacity-100 md:focus-visible:opacity-100 duration-200 shadow-lg backdrop-blur-sm"
 						>
 							<ChevronRight className="h-4 w-4" />
 						</button>

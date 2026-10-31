@@ -9,24 +9,24 @@
  * ensures z.looseObject() tolerance works and we don't accidentally switch
  * to strict parsing.
  */
-import { describe, expect, it, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { integrationHealth } from "../integration-health.js";
-import { parseUpstream, parseUpstreamOrThrow } from "../parse-upstream.js";
 import {
+	plexHistoryResponseSchema,
 	plexIdentityResponseSchema,
+	plexLibraryItemsResponseSchema,
 	plexSectionsResponseSchema,
 	plexSessionsResponseSchema,
-	plexHistoryResponseSchema,
-	plexLibraryItemsResponseSchema,
 } from "../../plex/plex-schemas.js";
 import {
-	tautulliResponseWrapperSchema,
-	tautulliInfoSchema,
-	tautulliHistoryDataSchema,
 	tautulliActivityDataSchema,
+	tautulliHistoryDataSchema,
 	tautulliHomeStatSchema,
+	tautulliInfoSchema,
+	tautulliResponseWrapperSchema,
 } from "../../tautulli/tautulli-schemas.js";
+import { integrationHealth } from "../integration-health.js";
+import { parseUpstream, parseUpstreamOrThrow } from "../parse-upstream.js";
 
 // ============================================================================
 // Plex Fixtures
@@ -361,7 +361,7 @@ describe("Upstream fixture regression tests", () => {
 				expect(session.title).toBe("Breaking Bad");
 				expect(session.User?.title).toBe("admin");
 				expect(session.Player?.state).toBe("playing");
-				expect(session.TranscodeSession?.videoDecision).toBe("transcode");
+				expect(session.TranscodeSession).toMatchObject({ videoDecision: "transcode" });
 			}
 		});
 
@@ -391,7 +391,7 @@ describe("Upstream fixture regression tests", () => {
 				expect(session.sessionKey).toBe("42");
 				expect(session.ratingKey).toBe("789");
 				expect(session.Session?.id).toBe("101");
-				expect(session.User?.id).toBe(1);
+				expect(session.User?.id).toBe("1");
 			}
 		});
 

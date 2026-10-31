@@ -221,6 +221,8 @@ function checkRateLimitBlock(): number {
 // ============================================================================
 
 interface FetchOptions {
+	/** Optional caller-owned cancellation, including response body consumption. */
+	signal?: AbortSignal;
 	timeout?: number;
 	retries?: number;
 	retryDelay?: number;
@@ -260,8 +262,21 @@ type TrashMetadata = z.infer<typeof trashMetadataSchema>;
 /**
  * Delay execution for specified milliseconds
  */
-function delay(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+	signal?.throwIfAborted();
+	return new Promise((resolve, reject) => {
+		const finish = () => {
+			signal?.removeEventListener("abort", abort);
+			resolve();
+		};
+		const timer = setTimeout(finish, ms);
+		const abort = () => {
+			clearTimeout(timer);
+			signal?.removeEventListener("abort", abort);
+			reject(signal?.reason);
+		};
+		signal?.addEventListener("abort", abort, { once: true });
+	});
 }
 
 /**
@@ -288,13 +303,17 @@ async function fetchWithTimeout(
 	url: string,
 	timeout: number,
 	headers?: Record<string, string>,
+	callerSignal?: AbortSignal,
 ): Promise<Response> {
+	callerSignal?.throwIfAborted();
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), timeout);
 
 	try {
 		const response = await fetch(url, {
-			signal: controller.signal,
+			// Native composition keeps caller cancellation attached to the response
+			// body too; clearing our header timeout must not detach that signal.
+			signal: callerSignal ? AbortSignal.any([controller.signal, callerSignal]) : controller.signal,
 			headers: headers || {
 				"User-Agent": "arr-dashboard/2.3.0", // Identify ourselves
 			},
@@ -304,6 +323,7 @@ async function fetchWithTimeout(
 		return response;
 	} catch (error) {
 		clearTimeout(timeoutId);
+		callerSignal?.throwIfAborted();
 		if (error instanceof Error && error.name === "AbortError") {
 			throw new Error(`Request timeout after ${timeout}ms`);
 		}
@@ -324,7 +344,9 @@ async function fetchWithRetry(
 		retries = MAX_RETRIES,
 		retryDelay = RETRY_DELAY_MS,
 		githubToken,
+		signal,
 	} = options;
+	signal?.throwIfAborted();
 
 	// Determine if this is a GitHub API request (vs raw.githubusercontent.com)
 	const isGitHubApi = new URL(url).hostname === "api.github.com";
@@ -338,7 +360,7 @@ async function fetchWithRetry(
 				`Proactive rate limit wait: ${Math.ceil(waitTime / 1000)}s until reset. ` +
 					`Current remaining: ${rateLimitState?.remaining ?? "unknown"}`,
 			);
-			await delay(waitTime + 1000); // Add 1s buffer
+			await delay(waitTime + 1000, signal); // Add 1s buffer
 		}
 	}
 
@@ -346,7 +368,9 @@ async function fetchWithRetry(
 
 	for (let attempt = 1; attempt <= retries; attempt++) {
 		try {
-			const response = await fetchWithTimeout(url, timeout, headers);
+			signal?.throwIfAborted();
+			const response = await fetchWithTimeout(url, timeout, headers, signal);
+			signal?.throwIfAborted();
 
 			// Update rate limit state from response (GitHub API only)
 			if (isGitHubApi) {
@@ -392,7 +416,7 @@ async function fetchWithRetry(
 							`Retrying after ${waitTime}ms`,
 					);
 				}
-				await delay(waitTime);
+				await delay(waitTime, signal);
 				continue;
 			}
 
@@ -405,7 +429,7 @@ async function fetchWithRetry(
 			if (response.status >= 500) {
 				log.warn(`GitHub server error (${response.status}), attempt ${attempt}/${retries}`);
 				if (attempt < retries) {
-					await delay(retryDelay * attempt); // Exponential backoff
+					await delay(retryDelay * attempt, signal); // Exponential backoff
 					continue;
 				}
 			}
@@ -413,6 +437,7 @@ async function fetchWithRetry(
 			// Other errors
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		} catch (error) {
+			signal?.throwIfAborted();
 			lastError = error instanceof Error ? error : new Error(String(error));
 			log.error(
 				{ err: lastError, url, attempt, retries },
@@ -420,7 +445,7 @@ async function fetchWithRetry(
 			);
 
 			if (attempt < retries) {
-				await delay(retryDelay * attempt); // Exponential backoff
+				await delay(retryDelay * attempt, signal); // Exponential backoff
 			}
 		}
 	}
@@ -551,6 +576,7 @@ export class TrashGitHubFetcher {
 		}
 
 		const raw = await response.json();
+		this.fetchOptions.signal?.throwIfAborted();
 		return parseUpstreamOrThrow(raw, trashMetadataSchema, {
 			integration: "trash-guides",
 			category: "metadata",
@@ -593,6 +619,7 @@ export class TrashGitHubFetcher {
 				formats.push(...result.items);
 				recordValidationStats("customFormats", result.stats);
 			} catch (error) {
+				this.fetchOptions.signal?.throwIfAborted();
 				if (this.strictContent) throw error;
 				this.log.warn({ err: error, file }, "Failed to fetch config file");
 				// Continue with other files
@@ -634,6 +661,7 @@ export class TrashGitHubFetcher {
 				groups.push(...result.items);
 				recordValidationStats("customFormatGroups", result.stats);
 			} catch (error) {
+				this.fetchOptions.signal?.throwIfAborted();
 				if (this.strictContent) throw error;
 				this.log.warn({ err: error, file }, "Failed to fetch config file");
 			}
@@ -670,6 +698,7 @@ export class TrashGitHubFetcher {
 				settings.push(...result.items);
 				recordValidationStats("qualitySize", result.stats);
 			} catch (error) {
+				this.fetchOptions.signal?.throwIfAborted();
 				if (this.strictContent) throw error;
 				this.log.warn({ err: error, file }, "Failed to fetch config file");
 			}
@@ -706,6 +735,7 @@ export class TrashGitHubFetcher {
 				profiles.push(...result.items);
 				recordValidationStats("qualityProfiles", result.stats);
 			} catch (error) {
+				this.fetchOptions.signal?.throwIfAborted();
 				if (this.strictContent) throw error;
 				this.log.warn({ err: error, file }, "Failed to fetch config file");
 			}
@@ -733,11 +763,24 @@ export class TrashGitHubFetcher {
 				return [];
 			}
 			const rawData: unknown = await response.json();
-			return validateAndCollect(rawData, trashQualityProfileGroupSchema, "groups.json", this.log, {
-				integration: "trash-guides",
-				category: "qualityProfileGroups",
-			}).items;
+			const result = validateAndCollect(
+				rawData,
+				trashQualityProfileGroupSchema,
+				"groups.json",
+				this.log,
+				{
+					integration: "trash-guides",
+					category: "qualityProfileGroups",
+				},
+			);
+			if (this.strictContent && result.stats.rejected > 0) {
+				throw new Error(
+					`groups.json contained ${result.stats.rejected} invalid Quality Profile Groups`,
+				);
+			}
+			return result.items;
 		} catch (error) {
+			this.fetchOptions.signal?.throwIfAborted();
 			if (this.strictContent) throw error;
 			this.log.error("Error fetching quality profile groups:", error);
 			return [];
@@ -772,6 +815,7 @@ export class TrashGitHubFetcher {
 			});
 			return parsed.custom_formats;
 		} catch (error) {
+			this.fetchOptions.signal?.throwIfAborted();
 			if (error instanceof UpstreamValidationError) throw error;
 			if (this.strictContent) throw error;
 			this.log.error("Error fetching CF conflicts:", error);
@@ -794,6 +838,9 @@ export class TrashGitHubFetcher {
 				const url = `${baseUrl}/${file}`;
 				const response = await fetchWithRetry(url, this.fetchOptions, this.log);
 
+				if (!response.ok && this.strictContent) {
+					throw new Error(`Failed to fetch naming file: HTTP ${response.status}`);
+				}
 				if (response.ok) {
 					const rawData: unknown = await response.json();
 					// Branch by service type — each schema's .transform() injects the _service
@@ -804,22 +851,28 @@ export class TrashGitHubFetcher {
 					// snapshots live in github-fetcher.test.ts so they fail loudly if upstream
 					// changes shape.
 					if (serviceType === "RADARR") {
-						results.push(
-							...validateAndCollect(rawData, radarrNamingSchema, file, this.log, {
-								integration: "trash-guides",
-								category: "radarrNamingPresets",
-							}).items,
-						);
+						const result = validateAndCollect(rawData, radarrNamingSchema, file, this.log, {
+							integration: "trash-guides",
+							category: "radarrNamingPresets",
+						});
+						if (this.strictContent && result.stats.rejected > 0) {
+							throw new Error(`${file} contained ${result.stats.rejected} invalid naming presets`);
+						}
+						results.push(...result.items);
 					} else {
-						results.push(
-							...validateAndCollect(rawData, sonarrNamingSchema, file, this.log, {
-								integration: "trash-guides",
-								category: "sonarrNamingPresets",
-							}).items,
-						);
+						const result = validateAndCollect(rawData, sonarrNamingSchema, file, this.log, {
+							integration: "trash-guides",
+							category: "sonarrNamingPresets",
+						});
+						if (this.strictContent && result.stats.rejected > 0) {
+							throw new Error(`${file} contained ${result.stats.rejected} invalid naming presets`);
+						}
+						results.push(...result.items);
 					}
 				}
 			} catch (error) {
+				this.fetchOptions.signal?.throwIfAborted();
+				if (this.strictContent) throw error;
 				this.log.warn({ err: error, file }, "Failed to fetch naming file");
 			}
 		}
@@ -877,6 +930,7 @@ export class TrashGitHubFetcher {
 				fetchedAt: new Date().toISOString(),
 			};
 		} catch (error) {
+			this.fetchOptions.signal?.throwIfAborted();
 			if (this.strictContent) throw error;
 			this.log.error({ err: error, cfName }, `Failed to fetch CF description for ${cfName}`);
 			return null;
@@ -926,12 +980,13 @@ export class TrashGitHubFetcher {
 
 				// Small delay between batches to avoid rate limiting
 				if (i + BATCH_SIZE < mdFiles.length) {
-					await delay(500);
+					await delay(500, this.fetchOptions.signal);
 				}
 			}
 
 			return descriptions;
 		} catch (error) {
+			this.fetchOptions.signal?.throwIfAborted();
 			if (this.strictContent) throw error;
 			if (error instanceof UpstreamValidationError) {
 				this.log.warn(
@@ -973,6 +1028,9 @@ export class TrashGitHubFetcher {
 			const response = await fetchWithRetry(apiUrl, { ...this.fetchOptions, retries: 2 }, this.log);
 
 			if (!response.ok) {
+				if (this.strictContent) {
+					throw new Error(`GitHub CF includes listing failed: HTTP ${response.status}`);
+				}
 				this.log.warn(`GitHub API returned ${response.status} for CF includes`);
 				return [];
 			}
@@ -1025,8 +1083,13 @@ export class TrashGitHubFetcher {
 								fetchedAt: new Date().toISOString(),
 							} as TrashCFInclude;
 						}
+						if (this.strictContent) {
+							throw new Error(`CF include fetch failed: HTTP ${fetchResponse.status}`);
+						}
 						return null;
-					} catch (_error) {
+					} catch (error) {
+						this.fetchOptions.signal?.throwIfAborted();
+						if (this.strictContent) throw error;
 						this.log.warn(`Failed to fetch include file: ${fileName}`);
 						return null;
 					}
@@ -1037,6 +1100,8 @@ export class TrashGitHubFetcher {
 			this.log.debug?.(`Fetched ${includes.length} CF include files`);
 			return includes;
 		} catch (error) {
+			this.fetchOptions.signal?.throwIfAborted();
+			if (this.strictContent) throw error;
 			if (error instanceof UpstreamValidationError) {
 				this.log.warn(
 					{ integration: error.integration, issues: error.issues },
@@ -1196,6 +1261,7 @@ export class TrashGitHubFetcher {
 
 			return jsonFiles;
 		} catch (error) {
+			this.fetchOptions.signal?.throwIfAborted();
 			if (this.strictContent) throw error;
 			if (error instanceof UpstreamValidationError) {
 				this.log.warn(

@@ -1294,6 +1294,150 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 });
 
 describe("prefetchFreshPlexEpisodeWatchData", () => {
+	it.each([
+		{ kind: "positive", available: true, facts: 1 },
+		{ kind: "empty", available: true, facts: 0 },
+		{ kind: "coordinate-filtered", available: true, facts: 0 },
+		{ kind: "invalid-fingerprint", available: false, facts: 0 },
+		{ kind: "invalid-bound", available: false, facts: 0 },
+		{ kind: "stale-positive", available: false, facts: 0 },
+		{ kind: "malformed-time", available: false, facts: 0 },
+		{ kind: "generation-mismatch", available: false, facts: 0 },
+		{ kind: "invalid-rating-key", available: false, facts: 0 },
+		{ kind: "mixed-unavailable", available: false, facts: 1 },
+		{ kind: "no-plex", available: false, facts: 0 },
+	])(
+		"W1004 reports $kind capability independently of actionable map size",
+		async ({ kind, available, facts }) => {
+			const now = new Date("2026-08-24T12:00:00.000Z");
+			const instance = verifiedPlexInstance();
+			const instances = kind === "no-plex" ? [] : [instance];
+			if (kind === "mixed-unavailable")
+				instances.push(verifiedPlexInstance({ id: "plex-missing" }));
+			authorityMock.positiveEpisodeEvidence.set(instance.id, {
+				available: true,
+				instanceId: instance.id,
+				connectionGeneration: kind === "generation-mismatch" ? 4 : 3,
+				identityGeneration: 7,
+				provenance: {
+					publicationLevel: "positive-only",
+					completeness: "partial",
+					parentPlexGenerationId: "parent-v4",
+					parentTargetDigest: "parent-digest",
+					episodeGenerationId: "episode-v3",
+					episodeDigest: "episode-digest",
+					publishedAt:
+						kind === "malformed-time"
+							? "invalid"
+							: kind === "stale-positive"
+								? "2026-08-23T11:59:59.000Z"
+								: now.toISOString(),
+				},
+				rows:
+					kind === "empty"
+						? []
+						: [
+								{
+									showTmdbId: 42,
+									seasonNumber: 1,
+									episodeNumber: 1,
+									ratingKey: kind === "invalid-rating-key" ? "" : "episode-a",
+									lowerBound: kind === "invalid-bound" ? 0 : 2,
+									sourceFingerprint:
+										kind === "invalid-fingerprint"
+											? "wrong"
+											: plexConnectionFingerprint(instance as never),
+									soleParentTarget: { ratingKey: "show-a" },
+								},
+							],
+			});
+			const reports: boolean[] = [];
+			try {
+				const result = await prefetchFreshPlexEpisodeWatchData(
+					{
+						prisma: { cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue([]) } },
+						log,
+					} as never,
+					instances as never,
+					now,
+					[],
+					{
+						availabilitySink: (value: boolean) => reports.push(value),
+						...(kind === "coordinate-filtered"
+							? { coordinate: { showTmdbId: 99, seasonNumber: 1, episodeNumber: 1 } }
+							: {}),
+					},
+				);
+				expect(result.size).toBe(facts);
+				expect(reports.at(-1)).toBe(available);
+			} finally {
+				authorityMock.positiveEpisodeEvidence.clear();
+			}
+		},
+	);
+	it.each([
+		{ kind: "exact", count: 3, available: true, facts: 1 },
+		{ kind: "unwatched", count: 0, available: true, facts: 0 },
+		{ kind: "available-empty", count: 0, available: true, facts: 0 },
+		{ kind: "invalid-watch", count: null, available: false, facts: 0 },
+	])(
+		"W1004 reports $kind exact fallback availability without absence authority",
+		async ({ kind, count, available, facts }) => {
+			const now = new Date("2026-07-30T12:00:00.000Z"),
+				completedAt = new Date("2026-07-30T11:45:00.000Z");
+			const instance = verifiedPlexInstance();
+			const parentRow = makePlexRow({
+				id: "exact-parent",
+				tmdbId: 42,
+				mediaType: "series",
+				sectionId: "1",
+			});
+			const rows =
+				kind === "available-empty"
+					? []
+					: [
+							{
+								id: "exact-episode",
+								instanceId: instance.id,
+								showTmdbId: 42,
+								seasonNumber: 1,
+								episodeNumber: 2,
+								watchCount: count,
+								lastWatchedAt: now,
+								watchedByUsers: '["Viewer"]',
+								ratingKey: "episode-123",
+								refreshedAt: completedAt,
+								sourceFingerprint: plexConnectionFingerprint(instance as never),
+								connectionGeneration: 3,
+								identityGeneration: 7,
+							},
+						];
+			const prisma = {
+				plexCache: {
+					count: vi.fn().mockResolvedValue(1),
+					findMany: vi.fn().mockResolvedValue([parentRow]),
+				},
+				plexEpisodeCache: {
+					findMany: vi.fn().mockResolvedValue(rows),
+					count: vi.fn().mockResolvedValue(rows.length),
+				},
+				cacheRefreshStatus: {
+					findMany: episodeStatuses(instance.id, completedAt, rows.length, [parentRow]),
+				},
+			};
+			const reports: boolean[] = [];
+			const result = await prefetchFreshPlexEpisodeWatchData(
+				{ prisma, log } as never,
+				[instance] as never,
+				now,
+				[],
+				{ availabilitySink: (value) => reports.push(value) },
+			);
+			expect(reports.at(-1)).toBe(available);
+			expect(result.size).toBe(facts);
+		},
+	);
+
 	it("uses one positive lower-bound source without requiring a complete V2 episode generation", async () => {
 		const now = new Date("2026-08-24T12:00:00.000Z");
 		const instance = verifiedPlexInstance();

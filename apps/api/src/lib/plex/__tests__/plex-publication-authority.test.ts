@@ -371,6 +371,35 @@ describe("Plex publication authority", () => {
 		vi.stubEnv("DATABASE_URL", "file:test.db");
 	});
 
+	it("publishes fresh evidence with a new generation when the optional prior-head read fails", async () => {
+		const fixture = prisma();
+		fixture.tx.cacheRefreshStatus.findUnique
+			.mockResolvedValueOnce({ connectionGeneration: 4, identityGeneration: 9 })
+			.mockRejectedValueOnce(new Error("Prior equivalence read failed"));
+		const result = await refreshPlexCache({
+			prisma: fixture.db,
+			instance: ownedSnapshot(),
+			log,
+		});
+		expect(result).toMatchObject({ kind: "authoritative-snapshot", complete: true, upserted: 1 });
+		expect(result.generationId).toBeTruthy();
+		expect(result.generationId).not.toBe("previous-generation");
+		expect(fixture.rows).toEqual([
+			expect.objectContaining({
+				instanceId: "plex-1",
+				tmdbId: 42,
+				title: "Movie 1",
+				connectionGeneration: 4,
+				identityGeneration: 9,
+			}),
+		]);
+		expect(fixture.status).toMatchObject({
+			lastResult: "success",
+			lastAttemptResult: "success",
+			generationId: result.generationId,
+		});
+	});
+
 	it.each([
 		[1, "start-probe"],
 		[2, "end-probe"],
@@ -660,6 +689,8 @@ describe("Plex publication authority", () => {
 					category: "plex-canonical-collection-rejected",
 					stage,
 					reason: "collection-incomplete",
+					innerStage: "publication-policy",
+					innerFailure: "coverage-blocker",
 				},
 				expect.any(String),
 			);

@@ -56,6 +56,7 @@ export type ProviderNativeInventorySnapshotMinAggregateOutputType = {
   lastAttemptToken: string | null
   lastAttemptResult: string | null
   lastAttemptReason: string | null
+  publishedPassId: string | null
 }
 
 export type ProviderNativeInventorySnapshotMaxAggregateOutputType = {
@@ -74,6 +75,7 @@ export type ProviderNativeInventorySnapshotMaxAggregateOutputType = {
   lastAttemptToken: string | null
   lastAttemptResult: string | null
   lastAttemptReason: string | null
+  publishedPassId: string | null
 }
 
 export type ProviderNativeInventorySnapshotCountAggregateOutputType = {
@@ -92,6 +94,7 @@ export type ProviderNativeInventorySnapshotCountAggregateOutputType = {
   lastAttemptToken: number
   lastAttemptResult: number
   lastAttemptReason: number
+  publishedPassId: number
   _all: number
 }
 
@@ -126,6 +129,7 @@ export type ProviderNativeInventorySnapshotMinAggregateInputType = {
   lastAttemptToken?: true
   lastAttemptResult?: true
   lastAttemptReason?: true
+  publishedPassId?: true
 }
 
 export type ProviderNativeInventorySnapshotMaxAggregateInputType = {
@@ -144,6 +148,7 @@ export type ProviderNativeInventorySnapshotMaxAggregateInputType = {
   lastAttemptToken?: true
   lastAttemptResult?: true
   lastAttemptReason?: true
+  publishedPassId?: true
 }
 
 export type ProviderNativeInventorySnapshotCountAggregateInputType = {
@@ -162,6 +167,7 @@ export type ProviderNativeInventorySnapshotCountAggregateInputType = {
   lastAttemptToken?: true
   lastAttemptResult?: true
   lastAttemptReason?: true
+  publishedPassId?: true
   _all?: true
 }
 
@@ -267,6 +273,7 @@ export type ProviderNativeInventorySnapshotGroupByOutputType = {
   lastAttemptToken: string | null
   lastAttemptResult: string
   lastAttemptReason: string | null
+  publishedPassId: string | null
   _count: ProviderNativeInventorySnapshotCountAggregateOutputType | null
   _avg: ProviderNativeInventorySnapshotAvgAggregateOutputType | null
   _sum: ProviderNativeInventorySnapshotSumAggregateOutputType | null
@@ -308,8 +315,10 @@ export type ProviderNativeInventorySnapshotWhereInput = {
   lastAttemptToken?: Prisma.StringNullableFilter<"ProviderNativeInventorySnapshot"> | string | null
   lastAttemptResult?: Prisma.StringFilter<"ProviderNativeInventorySnapshot"> | string
   lastAttemptReason?: Prisma.StringNullableFilter<"ProviderNativeInventorySnapshot"> | string | null
+  publishedPassId?: Prisma.StringNullableFilter<"ProviderNativeInventorySnapshot"> | string | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
   items?: Prisma.ProviderNativeInventoryItemListRelationFilter
+  publishedPass?: Prisma.XOR<Prisma.ProviderNativeInventoryPassNullableScalarRelationFilter, Prisma.ProviderNativeInventoryPassWhereInput> | null
 }
 
 export type ProviderNativeInventorySnapshotOrderByWithRelationInput = {
@@ -328,8 +337,10 @@ export type ProviderNativeInventorySnapshotOrderByWithRelationInput = {
   lastAttemptToken?: Prisma.SortOrderInput | Prisma.SortOrder
   lastAttemptResult?: Prisma.SortOrder
   lastAttemptReason?: Prisma.SortOrderInput | Prisma.SortOrder
+  publishedPassId?: Prisma.SortOrderInput | Prisma.SortOrder
   instance?: Prisma.ServiceInstanceOrderByWithRelationInput
   items?: Prisma.ProviderNativeInventoryItemOrderByRelationAggregateInput
+  publishedPass?: Prisma.ProviderNativeInventoryPassOrderByWithRelationInput
 }
 
 export type ProviderNativeInventorySnapshotWhereUniqueInput = Prisma.AtLeast<{
@@ -352,8 +363,10 @@ export type ProviderNativeInventorySnapshotWhereUniqueInput = Prisma.AtLeast<{
   lastAttemptToken?: Prisma.StringNullableFilter<"ProviderNativeInventorySnapshot"> | string | null
   lastAttemptResult?: Prisma.StringFilter<"ProviderNativeInventorySnapshot"> | string
   lastAttemptReason?: Prisma.StringNullableFilter<"ProviderNativeInventorySnapshot"> | string | null
+  publishedPassId?: Prisma.StringNullableFilter<"ProviderNativeInventorySnapshot"> | string | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
   items?: Prisma.ProviderNativeInventoryItemListRelationFilter
+  publishedPass?: Prisma.XOR<Prisma.ProviderNativeInventoryPassNullableScalarRelationFilter, Prisma.ProviderNativeInventoryPassWhereInput> | null
 }, "id" | "instanceId_domain">
 
 export type ProviderNativeInventorySnapshotOrderByWithAggregationInput = {
@@ -372,6 +385,7 @@ export type ProviderNativeInventorySnapshotOrderByWithAggregationInput = {
   lastAttemptToken?: Prisma.SortOrderInput | Prisma.SortOrder
   lastAttemptResult?: Prisma.SortOrder
   lastAttemptReason?: Prisma.SortOrderInput | Prisma.SortOrder
+  publishedPassId?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.ProviderNativeInventorySnapshotCountOrderByAggregateInput
   _avg?: Prisma.ProviderNativeInventorySnapshotAvgOrderByAggregateInput
   _max?: Prisma.ProviderNativeInventorySnapshotMaxOrderByAggregateInput
@@ -398,6 +412,7 @@ export type ProviderNativeInventorySnapshotScalarWhereWithAggregatesInput = {
   lastAttemptToken?: Prisma.StringNullableWithAggregatesFilter<"ProviderNativeInventorySnapshot"> | string | null
   lastAttemptResult?: Prisma.StringWithAggregatesFilter<"ProviderNativeInventorySnapshot"> | string
   lastAttemptReason?: Prisma.StringNullableWithAggregatesFilter<"ProviderNativeInventorySnapshot"> | string | null
+  publishedPassId?: Prisma.StringNullableWithAggregatesFilter<"ProviderNativeInventorySnapshot"> | string | null
 }
 
 export type ProviderNativeInventorySnapshotCreateInput = {
@@ -417,6 +432,7 @@ export type ProviderNativeInventorySnapshotCreateInput = {
   lastAttemptReason?: string | null
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutNativeInventorySnapshotsInput
   items?: Prisma.ProviderNativeInventoryItemCreateNestedManyWithoutSnapshotInput
+  publishedPass?: Prisma.ProviderNativeInventoryPassCreateNestedOneWithoutPublishedSnapshotsInput
 }
 
 export type ProviderNativeInventorySnapshotUncheckedCreateInput = {
@@ -435,6 +451,7 @@ export type ProviderNativeInventorySnapshotUncheckedCreateInput = {
   lastAttemptToken?: string | null
   lastAttemptResult?: string
   lastAttemptReason?: string | null
+  publishedPassId?: string | null
   items?: Prisma.ProviderNativeInventoryItemUncheckedCreateNestedManyWithoutSnapshotInput
 }
 
@@ -455,6 +472,7 @@ export type ProviderNativeInventorySnapshotUpdateInput = {
   lastAttemptReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutNativeInventorySnapshotsNestedInput
   items?: Prisma.ProviderNativeInventoryItemUpdateManyWithoutSnapshotNestedInput
+  publishedPass?: Prisma.ProviderNativeInventoryPassUpdateOneWithoutPublishedSnapshotsNestedInput
 }
 
 export type ProviderNativeInventorySnapshotUncheckedUpdateInput = {
@@ -473,6 +491,7 @@ export type ProviderNativeInventorySnapshotUncheckedUpdateInput = {
   lastAttemptToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastAttemptResult?: Prisma.StringFieldUpdateOperationsInput | string
   lastAttemptReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  publishedPassId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   items?: Prisma.ProviderNativeInventoryItemUncheckedUpdateManyWithoutSnapshotNestedInput
 }
 
@@ -492,6 +511,7 @@ export type ProviderNativeInventorySnapshotCreateManyInput = {
   lastAttemptToken?: string | null
   lastAttemptResult?: string
   lastAttemptReason?: string | null
+  publishedPassId?: string | null
 }
 
 export type ProviderNativeInventorySnapshotUpdateManyMutationInput = {
@@ -527,6 +547,7 @@ export type ProviderNativeInventorySnapshotUncheckedUpdateManyInput = {
   lastAttemptToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastAttemptResult?: Prisma.StringFieldUpdateOperationsInput | string
   lastAttemptReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  publishedPassId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type ProviderNativeInventorySnapshotListRelationFilter = {
@@ -560,6 +581,7 @@ export type ProviderNativeInventorySnapshotCountOrderByAggregateInput = {
   lastAttemptToken?: Prisma.SortOrder
   lastAttemptResult?: Prisma.SortOrder
   lastAttemptReason?: Prisma.SortOrder
+  publishedPassId?: Prisma.SortOrder
 }
 
 export type ProviderNativeInventorySnapshotAvgOrderByAggregateInput = {
@@ -585,6 +607,7 @@ export type ProviderNativeInventorySnapshotMaxOrderByAggregateInput = {
   lastAttemptToken?: Prisma.SortOrder
   lastAttemptResult?: Prisma.SortOrder
   lastAttemptReason?: Prisma.SortOrder
+  publishedPassId?: Prisma.SortOrder
 }
 
 export type ProviderNativeInventorySnapshotMinOrderByAggregateInput = {
@@ -603,6 +626,7 @@ export type ProviderNativeInventorySnapshotMinOrderByAggregateInput = {
   lastAttemptToken?: Prisma.SortOrder
   lastAttemptResult?: Prisma.SortOrder
   lastAttemptReason?: Prisma.SortOrder
+  publishedPassId?: Prisma.SortOrder
 }
 
 export type ProviderNativeInventorySnapshotSumOrderByAggregateInput = {
@@ -659,6 +683,48 @@ export type ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNes
   deleteMany?: Prisma.ProviderNativeInventorySnapshotScalarWhereInput | Prisma.ProviderNativeInventorySnapshotScalarWhereInput[]
 }
 
+export type ProviderNativeInventorySnapshotCreateNestedManyWithoutPublishedPassInput = {
+  create?: Prisma.XOR<Prisma.ProviderNativeInventorySnapshotCreateWithoutPublishedPassInput, Prisma.ProviderNativeInventorySnapshotUncheckedCreateWithoutPublishedPassInput> | Prisma.ProviderNativeInventorySnapshotCreateWithoutPublishedPassInput[] | Prisma.ProviderNativeInventorySnapshotUncheckedCreateWithoutPublishedPassInput[]
+  connectOrCreate?: Prisma.ProviderNativeInventorySnapshotCreateOrConnectWithoutPublishedPassInput | Prisma.ProviderNativeInventorySnapshotCreateOrConnectWithoutPublishedPassInput[]
+  createMany?: Prisma.ProviderNativeInventorySnapshotCreateManyPublishedPassInputEnvelope
+  connect?: Prisma.ProviderNativeInventorySnapshotWhereUniqueInput | Prisma.ProviderNativeInventorySnapshotWhereUniqueInput[]
+}
+
+export type ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutPublishedPassInput = {
+  create?: Prisma.XOR<Prisma.ProviderNativeInventorySnapshotCreateWithoutPublishedPassInput, Prisma.ProviderNativeInventorySnapshotUncheckedCreateWithoutPublishedPassInput> | Prisma.ProviderNativeInventorySnapshotCreateWithoutPublishedPassInput[] | Prisma.ProviderNativeInventorySnapshotUncheckedCreateWithoutPublishedPassInput[]
+  connectOrCreate?: Prisma.ProviderNativeInventorySnapshotCreateOrConnectWithoutPublishedPassInput | Prisma.ProviderNativeInventorySnapshotCreateOrConnectWithoutPublishedPassInput[]
+  createMany?: Prisma.ProviderNativeInventorySnapshotCreateManyPublishedPassInputEnvelope
+  connect?: Prisma.ProviderNativeInventorySnapshotWhereUniqueInput | Prisma.ProviderNativeInventorySnapshotWhereUniqueInput[]
+}
+
+export type ProviderNativeInventorySnapshotUpdateManyWithoutPublishedPassNestedInput = {
+  create?: Prisma.XOR<Prisma.ProviderNativeInventorySnapshotCreateWithoutPublishedPassInput, Prisma.ProviderNativeInventorySnapshotUncheckedCreateWithoutPublishedPassInput> | Prisma.ProviderNativeInventorySnapshotCreateWithoutPublishedPassInput[] | Prisma.ProviderNativeInventorySnapshotUncheckedCreateWithoutPublishedPassInput[]
+  connectOrCreate?: Prisma.ProviderNativeInventorySnapshotCreateOrConnectWithoutPublishedPassInput | Prisma.ProviderNativeInventorySnapshotCreateOrConnectWithoutPublishedPassInput[]
+  upsert?: Prisma.ProviderNativeInventorySnapshotUpsertWithWhereUniqueWithoutPublishedPassInput | Prisma.ProviderNativeInventorySnapshotUpsertWithWhereUniqueWithoutPublishedPassInput[]
+  createMany?: Prisma.ProviderNativeInventorySnapshotCreateManyPublishedPassInputEnvelope
+  set?: Prisma.ProviderNativeInventorySnapshotWhereUniqueInput | Prisma.ProviderNativeInventorySnapshotWhereUniqueInput[]
+  disconnect?: Prisma.ProviderNativeInventorySnapshotWhereUniqueInput | Prisma.ProviderNativeInventorySnapshotWhereUniqueInput[]
+  delete?: Prisma.ProviderNativeInventorySnapshotWhereUniqueInput | Prisma.ProviderNativeInventorySnapshotWhereUniqueInput[]
+  connect?: Prisma.ProviderNativeInventorySnapshotWhereUniqueInput | Prisma.ProviderNativeInventorySnapshotWhereUniqueInput[]
+  update?: Prisma.ProviderNativeInventorySnapshotUpdateWithWhereUniqueWithoutPublishedPassInput | Prisma.ProviderNativeInventorySnapshotUpdateWithWhereUniqueWithoutPublishedPassInput[]
+  updateMany?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithWhereWithoutPublishedPassInput | Prisma.ProviderNativeInventorySnapshotUpdateManyWithWhereWithoutPublishedPassInput[]
+  deleteMany?: Prisma.ProviderNativeInventorySnapshotScalarWhereInput | Prisma.ProviderNativeInventorySnapshotScalarWhereInput[]
+}
+
+export type ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutPublishedPassNestedInput = {
+  create?: Prisma.XOR<Prisma.ProviderNativeInventorySnapshotCreateWithoutPublishedPassInput, Prisma.ProviderNativeInventorySnapshotUncheckedCreateWithoutPublishedPassInput> | Prisma.ProviderNativeInventorySnapshotCreateWithoutPublishedPassInput[] | Prisma.ProviderNativeInventorySnapshotUncheckedCreateWithoutPublishedPassInput[]
+  connectOrCreate?: Prisma.ProviderNativeInventorySnapshotCreateOrConnectWithoutPublishedPassInput | Prisma.ProviderNativeInventorySnapshotCreateOrConnectWithoutPublishedPassInput[]
+  upsert?: Prisma.ProviderNativeInventorySnapshotUpsertWithWhereUniqueWithoutPublishedPassInput | Prisma.ProviderNativeInventorySnapshotUpsertWithWhereUniqueWithoutPublishedPassInput[]
+  createMany?: Prisma.ProviderNativeInventorySnapshotCreateManyPublishedPassInputEnvelope
+  set?: Prisma.ProviderNativeInventorySnapshotWhereUniqueInput | Prisma.ProviderNativeInventorySnapshotWhereUniqueInput[]
+  disconnect?: Prisma.ProviderNativeInventorySnapshotWhereUniqueInput | Prisma.ProviderNativeInventorySnapshotWhereUniqueInput[]
+  delete?: Prisma.ProviderNativeInventorySnapshotWhereUniqueInput | Prisma.ProviderNativeInventorySnapshotWhereUniqueInput[]
+  connect?: Prisma.ProviderNativeInventorySnapshotWhereUniqueInput | Prisma.ProviderNativeInventorySnapshotWhereUniqueInput[]
+  update?: Prisma.ProviderNativeInventorySnapshotUpdateWithWhereUniqueWithoutPublishedPassInput | Prisma.ProviderNativeInventorySnapshotUpdateWithWhereUniqueWithoutPublishedPassInput[]
+  updateMany?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithWhereWithoutPublishedPassInput | Prisma.ProviderNativeInventorySnapshotUpdateManyWithWhereWithoutPublishedPassInput[]
+  deleteMany?: Prisma.ProviderNativeInventorySnapshotScalarWhereInput | Prisma.ProviderNativeInventorySnapshotScalarWhereInput[]
+}
+
 export type ProviderNativeInventorySnapshotCreateNestedOneWithoutItemsInput = {
   create?: Prisma.XOR<Prisma.ProviderNativeInventorySnapshotCreateWithoutItemsInput, Prisma.ProviderNativeInventorySnapshotUncheckedCreateWithoutItemsInput>
   connectOrCreate?: Prisma.ProviderNativeInventorySnapshotCreateOrConnectWithoutItemsInput
@@ -689,6 +755,7 @@ export type ProviderNativeInventorySnapshotCreateWithoutInstanceInput = {
   lastAttemptResult?: string
   lastAttemptReason?: string | null
   items?: Prisma.ProviderNativeInventoryItemCreateNestedManyWithoutSnapshotInput
+  publishedPass?: Prisma.ProviderNativeInventoryPassCreateNestedOneWithoutPublishedSnapshotsInput
 }
 
 export type ProviderNativeInventorySnapshotUncheckedCreateWithoutInstanceInput = {
@@ -706,6 +773,7 @@ export type ProviderNativeInventorySnapshotUncheckedCreateWithoutInstanceInput =
   lastAttemptToken?: string | null
   lastAttemptResult?: string
   lastAttemptReason?: string | null
+  publishedPassId?: string | null
   items?: Prisma.ProviderNativeInventoryItemUncheckedCreateNestedManyWithoutSnapshotInput
 }
 
@@ -753,6 +821,70 @@ export type ProviderNativeInventorySnapshotScalarWhereInput = {
   lastAttemptToken?: Prisma.StringNullableFilter<"ProviderNativeInventorySnapshot"> | string | null
   lastAttemptResult?: Prisma.StringFilter<"ProviderNativeInventorySnapshot"> | string
   lastAttemptReason?: Prisma.StringNullableFilter<"ProviderNativeInventorySnapshot"> | string | null
+  publishedPassId?: Prisma.StringNullableFilter<"ProviderNativeInventorySnapshot"> | string | null
+}
+
+export type ProviderNativeInventorySnapshotCreateWithoutPublishedPassInput = {
+  id?: string
+  domain: string
+  generationId?: string | null
+  observedAt?: Date | string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
+  scopeDigest?: string | null
+  contentDigest?: string | null
+  itemCount?: number
+  scopeCount?: number
+  lastAttemptAt?: Date | string | null
+  lastAttemptToken?: string | null
+  lastAttemptResult?: string
+  lastAttemptReason?: string | null
+  instance: Prisma.ServiceInstanceCreateNestedOneWithoutNativeInventorySnapshotsInput
+  items?: Prisma.ProviderNativeInventoryItemCreateNestedManyWithoutSnapshotInput
+}
+
+export type ProviderNativeInventorySnapshotUncheckedCreateWithoutPublishedPassInput = {
+  id?: string
+  instanceId: string
+  domain: string
+  generationId?: string | null
+  observedAt?: Date | string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
+  scopeDigest?: string | null
+  contentDigest?: string | null
+  itemCount?: number
+  scopeCount?: number
+  lastAttemptAt?: Date | string | null
+  lastAttemptToken?: string | null
+  lastAttemptResult?: string
+  lastAttemptReason?: string | null
+  items?: Prisma.ProviderNativeInventoryItemUncheckedCreateNestedManyWithoutSnapshotInput
+}
+
+export type ProviderNativeInventorySnapshotCreateOrConnectWithoutPublishedPassInput = {
+  where: Prisma.ProviderNativeInventorySnapshotWhereUniqueInput
+  create: Prisma.XOR<Prisma.ProviderNativeInventorySnapshotCreateWithoutPublishedPassInput, Prisma.ProviderNativeInventorySnapshotUncheckedCreateWithoutPublishedPassInput>
+}
+
+export type ProviderNativeInventorySnapshotCreateManyPublishedPassInputEnvelope = {
+  data: Prisma.ProviderNativeInventorySnapshotCreateManyPublishedPassInput | Prisma.ProviderNativeInventorySnapshotCreateManyPublishedPassInput[]
+}
+
+export type ProviderNativeInventorySnapshotUpsertWithWhereUniqueWithoutPublishedPassInput = {
+  where: Prisma.ProviderNativeInventorySnapshotWhereUniqueInput
+  update: Prisma.XOR<Prisma.ProviderNativeInventorySnapshotUpdateWithoutPublishedPassInput, Prisma.ProviderNativeInventorySnapshotUncheckedUpdateWithoutPublishedPassInput>
+  create: Prisma.XOR<Prisma.ProviderNativeInventorySnapshotCreateWithoutPublishedPassInput, Prisma.ProviderNativeInventorySnapshotUncheckedCreateWithoutPublishedPassInput>
+}
+
+export type ProviderNativeInventorySnapshotUpdateWithWhereUniqueWithoutPublishedPassInput = {
+  where: Prisma.ProviderNativeInventorySnapshotWhereUniqueInput
+  data: Prisma.XOR<Prisma.ProviderNativeInventorySnapshotUpdateWithoutPublishedPassInput, Prisma.ProviderNativeInventorySnapshotUncheckedUpdateWithoutPublishedPassInput>
+}
+
+export type ProviderNativeInventorySnapshotUpdateManyWithWhereWithoutPublishedPassInput = {
+  where: Prisma.ProviderNativeInventorySnapshotScalarWhereInput
+  data: Prisma.XOR<Prisma.ProviderNativeInventorySnapshotUpdateManyMutationInput, Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutPublishedPassInput>
 }
 
 export type ProviderNativeInventorySnapshotCreateWithoutItemsInput = {
@@ -771,6 +903,7 @@ export type ProviderNativeInventorySnapshotCreateWithoutItemsInput = {
   lastAttemptResult?: string
   lastAttemptReason?: string | null
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutNativeInventorySnapshotsInput
+  publishedPass?: Prisma.ProviderNativeInventoryPassCreateNestedOneWithoutPublishedSnapshotsInput
 }
 
 export type ProviderNativeInventorySnapshotUncheckedCreateWithoutItemsInput = {
@@ -789,6 +922,7 @@ export type ProviderNativeInventorySnapshotUncheckedCreateWithoutItemsInput = {
   lastAttemptToken?: string | null
   lastAttemptResult?: string
   lastAttemptReason?: string | null
+  publishedPassId?: string | null
 }
 
 export type ProviderNativeInventorySnapshotCreateOrConnectWithoutItemsInput = {
@@ -823,6 +957,7 @@ export type ProviderNativeInventorySnapshotUpdateWithoutItemsInput = {
   lastAttemptResult?: Prisma.StringFieldUpdateOperationsInput | string
   lastAttemptReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutNativeInventorySnapshotsNestedInput
+  publishedPass?: Prisma.ProviderNativeInventoryPassUpdateOneWithoutPublishedSnapshotsNestedInput
 }
 
 export type ProviderNativeInventorySnapshotUncheckedUpdateWithoutItemsInput = {
@@ -841,6 +976,7 @@ export type ProviderNativeInventorySnapshotUncheckedUpdateWithoutItemsInput = {
   lastAttemptToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastAttemptResult?: Prisma.StringFieldUpdateOperationsInput | string
   lastAttemptReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  publishedPassId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type ProviderNativeInventorySnapshotCreateManyInstanceInput = {
@@ -858,6 +994,7 @@ export type ProviderNativeInventorySnapshotCreateManyInstanceInput = {
   lastAttemptToken?: string | null
   lastAttemptResult?: string
   lastAttemptReason?: string | null
+  publishedPassId?: string | null
 }
 
 export type ProviderNativeInventorySnapshotUpdateWithoutInstanceInput = {
@@ -876,6 +1013,7 @@ export type ProviderNativeInventorySnapshotUpdateWithoutInstanceInput = {
   lastAttemptResult?: Prisma.StringFieldUpdateOperationsInput | string
   lastAttemptReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   items?: Prisma.ProviderNativeInventoryItemUpdateManyWithoutSnapshotNestedInput
+  publishedPass?: Prisma.ProviderNativeInventoryPassUpdateOneWithoutPublishedSnapshotsNestedInput
 }
 
 export type ProviderNativeInventorySnapshotUncheckedUpdateWithoutInstanceInput = {
@@ -893,11 +1031,87 @@ export type ProviderNativeInventorySnapshotUncheckedUpdateWithoutInstanceInput =
   lastAttemptToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastAttemptResult?: Prisma.StringFieldUpdateOperationsInput | string
   lastAttemptReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  publishedPassId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   items?: Prisma.ProviderNativeInventoryItemUncheckedUpdateManyWithoutSnapshotNestedInput
 }
 
 export type ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  domain?: Prisma.StringFieldUpdateOperationsInput | string
+  generationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  observedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  scopeDigest?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  contentDigest?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  itemCount?: Prisma.IntFieldUpdateOperationsInput | number
+  scopeCount?: Prisma.IntFieldUpdateOperationsInput | number
+  lastAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastAttemptToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastAttemptResult?: Prisma.StringFieldUpdateOperationsInput | string
+  lastAttemptReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  publishedPassId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+}
+
+export type ProviderNativeInventorySnapshotCreateManyPublishedPassInput = {
+  id?: string
+  instanceId: string
+  domain: string
+  generationId?: string | null
+  observedAt?: Date | string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
+  scopeDigest?: string | null
+  contentDigest?: string | null
+  itemCount?: number
+  scopeCount?: number
+  lastAttemptAt?: Date | string | null
+  lastAttemptToken?: string | null
+  lastAttemptResult?: string
+  lastAttemptReason?: string | null
+}
+
+export type ProviderNativeInventorySnapshotUpdateWithoutPublishedPassInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  domain?: Prisma.StringFieldUpdateOperationsInput | string
+  generationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  observedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  scopeDigest?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  contentDigest?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  itemCount?: Prisma.IntFieldUpdateOperationsInput | number
+  scopeCount?: Prisma.IntFieldUpdateOperationsInput | number
+  lastAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastAttemptToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastAttemptResult?: Prisma.StringFieldUpdateOperationsInput | string
+  lastAttemptReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutNativeInventorySnapshotsNestedInput
+  items?: Prisma.ProviderNativeInventoryItemUpdateManyWithoutSnapshotNestedInput
+}
+
+export type ProviderNativeInventorySnapshotUncheckedUpdateWithoutPublishedPassInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  instanceId?: Prisma.StringFieldUpdateOperationsInput | string
+  domain?: Prisma.StringFieldUpdateOperationsInput | string
+  generationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  observedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  scopeDigest?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  contentDigest?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  itemCount?: Prisma.IntFieldUpdateOperationsInput | number
+  scopeCount?: Prisma.IntFieldUpdateOperationsInput | number
+  lastAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastAttemptToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastAttemptResult?: Prisma.StringFieldUpdateOperationsInput | string
+  lastAttemptReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  items?: Prisma.ProviderNativeInventoryItemUncheckedUpdateManyWithoutSnapshotNestedInput
+}
+
+export type ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutPublishedPassInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  instanceId?: Prisma.StringFieldUpdateOperationsInput | string
   domain?: Prisma.StringFieldUpdateOperationsInput | string
   generationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   observedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -960,8 +1174,10 @@ export type ProviderNativeInventorySnapshotSelect<ExtArgs extends runtime.Types.
   lastAttemptToken?: boolean
   lastAttemptResult?: boolean
   lastAttemptReason?: boolean
+  publishedPassId?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
   items?: boolean | Prisma.ProviderNativeInventorySnapshot$itemsArgs<ExtArgs>
+  publishedPass?: boolean | Prisma.ProviderNativeInventorySnapshot$publishedPassArgs<ExtArgs>
   _count?: boolean | Prisma.ProviderNativeInventorySnapshotCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["providerNativeInventorySnapshot"]>
 
@@ -981,7 +1197,9 @@ export type ProviderNativeInventorySnapshotSelectCreateManyAndReturn<ExtArgs ext
   lastAttemptToken?: boolean
   lastAttemptResult?: boolean
   lastAttemptReason?: boolean
+  publishedPassId?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
+  publishedPass?: boolean | Prisma.ProviderNativeInventorySnapshot$publishedPassArgs<ExtArgs>
 }, ExtArgs["result"]["providerNativeInventorySnapshot"]>
 
 export type ProviderNativeInventorySnapshotSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -1000,7 +1218,9 @@ export type ProviderNativeInventorySnapshotSelectUpdateManyAndReturn<ExtArgs ext
   lastAttemptToken?: boolean
   lastAttemptResult?: boolean
   lastAttemptReason?: boolean
+  publishedPassId?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
+  publishedPass?: boolean | Prisma.ProviderNativeInventorySnapshot$publishedPassArgs<ExtArgs>
 }, ExtArgs["result"]["providerNativeInventorySnapshot"]>
 
 export type ProviderNativeInventorySnapshotSelectScalar = {
@@ -1019,19 +1239,23 @@ export type ProviderNativeInventorySnapshotSelectScalar = {
   lastAttemptToken?: boolean
   lastAttemptResult?: boolean
   lastAttemptReason?: boolean
+  publishedPassId?: boolean
 }
 
-export type ProviderNativeInventorySnapshotOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "domain" | "generationId" | "observedAt" | "connectionGeneration" | "identityGeneration" | "scopeDigest" | "contentDigest" | "itemCount" | "scopeCount" | "lastAttemptAt" | "lastAttemptToken" | "lastAttemptResult" | "lastAttemptReason", ExtArgs["result"]["providerNativeInventorySnapshot"]>
+export type ProviderNativeInventorySnapshotOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "domain" | "generationId" | "observedAt" | "connectionGeneration" | "identityGeneration" | "scopeDigest" | "contentDigest" | "itemCount" | "scopeCount" | "lastAttemptAt" | "lastAttemptToken" | "lastAttemptResult" | "lastAttemptReason" | "publishedPassId", ExtArgs["result"]["providerNativeInventorySnapshot"]>
 export type ProviderNativeInventorySnapshotInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
   items?: boolean | Prisma.ProviderNativeInventorySnapshot$itemsArgs<ExtArgs>
+  publishedPass?: boolean | Prisma.ProviderNativeInventorySnapshot$publishedPassArgs<ExtArgs>
   _count?: boolean | Prisma.ProviderNativeInventorySnapshotCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type ProviderNativeInventorySnapshotIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
+  publishedPass?: boolean | Prisma.ProviderNativeInventorySnapshot$publishedPassArgs<ExtArgs>
 }
 export type ProviderNativeInventorySnapshotIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
+  publishedPass?: boolean | Prisma.ProviderNativeInventorySnapshot$publishedPassArgs<ExtArgs>
 }
 
 export type $ProviderNativeInventorySnapshotPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -1039,6 +1263,7 @@ export type $ProviderNativeInventorySnapshotPayload<ExtArgs extends runtime.Type
   objects: {
     instance: Prisma.$ServiceInstancePayload<ExtArgs>
     items: Prisma.$ProviderNativeInventoryItemPayload<ExtArgs>[]
+    publishedPass: Prisma.$ProviderNativeInventoryPassPayload<ExtArgs> | null
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1056,6 +1281,7 @@ export type $ProviderNativeInventorySnapshotPayload<ExtArgs extends runtime.Type
     lastAttemptToken: string | null
     lastAttemptResult: string
     lastAttemptReason: string | null
+    publishedPassId: string | null
   }, ExtArgs["result"]["providerNativeInventorySnapshot"]>
   composites: {}
 }
@@ -1452,6 +1678,7 @@ export interface Prisma__ProviderNativeInventorySnapshotClient<T, Null = never, 
   readonly [Symbol.toStringTag]: "PrismaPromise"
   instance<T extends Prisma.ServiceInstanceDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstanceDefaultArgs<ExtArgs>>): Prisma.Prisma__ServiceInstanceClient<runtime.Types.Result.GetResult<Prisma.$ServiceInstancePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
   items<T extends Prisma.ProviderNativeInventorySnapshot$itemsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ProviderNativeInventorySnapshot$itemsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ProviderNativeInventoryItemPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  publishedPass<T extends Prisma.ProviderNativeInventorySnapshot$publishedPassArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ProviderNativeInventorySnapshot$publishedPassArgs<ExtArgs>>): Prisma.Prisma__ProviderNativeInventoryPassClient<runtime.Types.Result.GetResult<Prisma.$ProviderNativeInventoryPassPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1496,6 +1723,7 @@ export interface ProviderNativeInventorySnapshotFieldRefs {
   readonly lastAttemptToken: Prisma.FieldRef<"ProviderNativeInventorySnapshot", 'String'>
   readonly lastAttemptResult: Prisma.FieldRef<"ProviderNativeInventorySnapshot", 'String'>
   readonly lastAttemptReason: Prisma.FieldRef<"ProviderNativeInventorySnapshot", 'String'>
+  readonly publishedPassId: Prisma.FieldRef<"ProviderNativeInventorySnapshot", 'String'>
 }
     
 
@@ -1916,6 +2144,25 @@ export type ProviderNativeInventorySnapshot$itemsArgs<ExtArgs extends runtime.Ty
   take?: number
   skip?: number
   distinct?: Prisma.ProviderNativeInventoryItemScalarFieldEnum | Prisma.ProviderNativeInventoryItemScalarFieldEnum[]
+}
+
+/**
+ * ProviderNativeInventorySnapshot.publishedPass
+ */
+export type ProviderNativeInventorySnapshot$publishedPassArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ProviderNativeInventoryPass
+   */
+  select?: Prisma.ProviderNativeInventoryPassSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the ProviderNativeInventoryPass
+   */
+  omit?: Prisma.ProviderNativeInventoryPassOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ProviderNativeInventoryPassInclude<ExtArgs> | null
+  where?: Prisma.ProviderNativeInventoryPassWhereInput
 }
 
 /**

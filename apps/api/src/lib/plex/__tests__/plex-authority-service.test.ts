@@ -826,6 +826,10 @@ describe("PlexAuthorityService settlement window", () => {
 					watched: true,
 					watchedByUsers: "[]",
 					lastWatchedAt: null,
+					soleParentTarget: {
+						sectionId: "shows-a",
+						ratingKey: "show-42",
+					},
 				},
 			],
 		});
@@ -905,6 +909,41 @@ describe("PlexAuthorityService settlement window", () => {
 			available: false,
 			evidence: { authority: "unavailable", reasonCodes: ["latest_attempt_failed"] },
 		});
+
+		repositoryMocks.loadPositiveEpisodeEvidence.mockResolvedValueOnce({
+			...observed,
+			parentMetadata: {
+				...observed.parentMetadata,
+				version: 6,
+				ambiguousTmdbCandidates: [{ mediaType: "movie", tmdbId: 42 }],
+			},
+		});
+		const crossMediaTypeAmbiguity = await service.readPositiveEpisodeEvidence({
+			userId: "user-1",
+			instanceId: "plex-1",
+		});
+		expect(crossMediaTypeAmbiguity).toMatchObject({ available: true, rows: [{ showTmdbId: 42 }] });
+
+		repositoryMocks.loadPositiveEpisodeEvidence.mockResolvedValueOnce({
+			...observed,
+			metadata: {
+				...observed.metadata,
+				episodeDigest: createPositivePlexEpisodeDigest([], [positiveEpisodeRow]),
+			},
+			parentMetadata: {
+				...observed.parentMetadata,
+				version: 6,
+				ambiguousTmdbCandidates: [
+					{ mediaType: "series", tmdbId: 42 },
+					{ mediaType: "movie", tmdbId: 84 },
+				],
+			},
+		});
+		const ambiguousParent = await service.readPositiveEpisodeEvidence({
+			userId: "user-1",
+			instanceId: "plex-1",
+		});
+		expect(ambiguousParent).toMatchObject({ available: true, rows: [] });
 
 		repositoryMocks.loadPositiveEpisodeEvidence.mockResolvedValueOnce({
 			...observed,

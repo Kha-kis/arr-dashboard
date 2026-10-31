@@ -1,7 +1,7 @@
 /**
  * Auto-Tagger Webhook Config API Client
  *
- * Reads + rotates the per-user webhook secret used by Sonarr/Radarr
+ * Reads status and explicitly generates/rotates the per-user webhook secret used by Sonarr/Radarr
  * Connect to authenticate inbound webhooks.
  */
 
@@ -9,8 +9,8 @@ import { apiRequest } from "./base";
 
 export interface WebhookConfig {
 	/**
-	 * Plaintext secret. Returned ONLY when freshlyGenerated=true (first read
-	 * after generation/rotation). Null otherwise — the API never persists the
+	 * Plaintext secret. Returned ONLY by POST generation/rotation when
+	 * freshlyGenerated=true. GET always returns null — the API never persists the
 	 * plaintext, only its SHA-256 hash, so we can't show it again later.
 	 */
 	secret: string | null;

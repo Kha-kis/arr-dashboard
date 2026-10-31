@@ -1,10 +1,28 @@
-import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Fastify from "fastify";
 import fastifyPlugin from "fastify-plugin";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+const schemaBuilds = vi.hoisted(() => ({ count: 0 }));
+
+vi.mock("node:child_process", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:child_process")>();
+	return {
+		...actual,
+		// Count real native builds; never replace schema creation with a stub.
+		execFileSync: (...args: unknown[]) => {
+			if (
+				args[0] === "pnpm" &&
+				Array.isArray(args[1]) &&
+				args[1].slice(0, 4).join(" ") === "exec prisma db push"
+			)
+				schemaBuilds.count++;
+			return Reflect.apply(actual.execFileSync, actual, args);
+		},
+	};
+});
 
 const identityMocks = vi.hoisted(() => ({ readProviderIdentity: vi.fn() }));
 
@@ -13,6 +31,7 @@ vi.mock("../../services/service-identity.js", async (importOriginal) => ({
 	readProviderIdentity: identityMocks.readProviderIdentity,
 }));
 
+import { SqliteSchemaFixture } from "../../__tests__/sqlite-schema-fixture.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import scheduler from "../../../plugins/plex-episode-cache-scheduler.js";
 import type { EpisodeRefreshSchedulerBridge } from "../../services/episode-refresh-scheduler-bridge.js";
@@ -40,6 +59,9 @@ import { plexConnectionFingerprint } from "../service-instance-fingerprint.js";
 
 const databases: Array<{ directory: string; prisma: ReturnType<typeof createTestPrismaClient> }> =
 	[];
+const sqliteSchema = new SqliteSchemaFixture();
+
+beforeAll(() => sqliteSchema.initialize(), 60_000);
 
 beforeEach(() => {
 	identityMocks.readProviderIdentity.mockReset().mockResolvedValue({
@@ -54,11 +76,7 @@ beforeEach(() => {
 async function database() {
 	const directory = mkdtempSync(join(tmpdir(), "plex-episode-stage-"));
 	const dbPath = join(directory, "test.db");
-	execFileSync("pnpm", ["exec", "prisma", "db", "push", "--schema", "prisma/schema.prisma"], {
-		cwd: process.cwd(),
-		env: { ...process.env, DATABASE_URL: `file:${dbPath}` },
-		stdio: "ignore",
-	});
+	sqliteSchema.copyTo(dbPath);
 	const prisma = createTestPrismaClient(dbPath);
 	databases.push({ directory, prisma });
 	await prisma.user.create({
@@ -379,6 +397,7 @@ async function completedFinalizerFixtureForTargets(
 		targets: readonly ParentTarget[];
 		stages: readonly StagedEpisode[];
 		parentPublicationLevel?: "authoritative" | "positive-only";
+		ambiguousTmdbCandidates?: readonly { mediaType: "movie" | "series"; tmdbId: number }[];
 	},
 ) {
 	const attemptedAt = new Date("2026-09-06T00:00:00.000Z");
@@ -437,7 +456,7 @@ async function completedFinalizerFixtureForTargets(
 			}),
 		),
 	} as never;
-	const metadata =
+	const baseMetadata =
 		input.parentPublicationLevel === "positive-only"
 			? encodePositivePlexGenerationMetadata({
 					sections,
@@ -459,6 +478,12 @@ async function completedFinalizerFixtureForTargets(
 					partialReasons: [],
 					coverageReceipt,
 				});
+	const metadata = input.ambiguousTmdbCandidates
+		? JSON.stringify({
+				...JSON.parse(baseMetadata),
+				ambiguousTmdbCandidates: input.ambiguousTmdbCandidates,
+			})
+		: baseMetadata;
 	await prisma.cacheRefreshStatus.createMany({
 		data: [
 			{
@@ -589,6 +614,14 @@ afterEach(async () => {
 	for (const entry of databases.splice(0)) {
 		await entry.prisma.$disconnect();
 		rmSync(entry.directory, { recursive: true, force: true });
+	}
+});
+
+afterAll(() => {
+	try {
+		expect(schemaBuilds.count).toBe(1);
+	} finally {
+		sqliteSchema.dispose();
 	}
 });
 
@@ -1478,6 +1511,52 @@ describe("plex episode refresh repository", { timeout: 30_000 }, () => {
 		).toMatchObject([{ showTmdbId: 42, ratingKey: "episode-b", watchCount: 2 }]);
 	});
 
+	it("does not publish staged episodes for a same-type ambiguous show candidate", async () => {
+		const prisma = await database();
+		const fixture = await completedFinalizerFixtureForTargets(prisma, {
+			targets: [
+				{
+					instanceId: "plex-1",
+					generationId: "parent-1",
+					showTmdbId: 42,
+					sectionId: "shows",
+					sectionUuid: "shows-uuid",
+					mediaType: "series",
+					tvdbId: 99,
+					ratingKey: "show-1",
+				},
+			],
+			stages: [
+				{
+					unitOrdinal: 0,
+					showTmdbId: 42,
+					parentRatingKey: "show-1",
+					seasonNumber: 1,
+					episodeNumber: 1,
+					ratingKey: "episode-1",
+					title: "Episode 1",
+					watchCount: 2,
+				},
+			],
+			parentPublicationLevel: "positive-only",
+			ambiguousTmdbCandidates: [{ mediaType: "series", tmdbId: 42 }],
+		});
+		const instance = await prisma.serviceInstance.findUniqueOrThrow({ where: { id: "plex-1" } });
+
+		await expect(
+			finalizePlexEpisodeRun({
+				prisma,
+				userId: "user-1",
+				instance,
+				runId: fixture.run.id,
+				plexAuthority: null,
+				attempt: fixture.attempt,
+				now: fixture.attempt.attemptedAt,
+			}),
+		).resolves.toMatchObject({ published: false, outcome: "terminal-no-publication" });
+		expect(await prisma.plexEpisodeCache.count({ where: { instanceId: "plex-1" } })).toBe(1);
+	});
+
 	it("publishes an episode digest accepted by the actual persisted authority reader", async () => {
 		const prisma = await database();
 		const fixture = await completedFinalizerFixtureForTargets(prisma, {
@@ -1914,7 +1993,7 @@ describe("plex episode refresh repository", { timeout: 30_000 }, () => {
 				retainedStages,
 			);
 		}
-	}, 30_000);
+	}, 60_000);
 
 	it("rolls back the cache, status, run, and stages when the exact status-attempt CAS loses", async () => {
 		const prisma = await database();

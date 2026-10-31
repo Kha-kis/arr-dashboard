@@ -12,6 +12,7 @@ import { libraryKeys } from "../../lib/query-keys";
 export interface ProviderNativeInventoryQueryOptions {
 	instanceId: string | null;
 	domain: "library" | "episode";
+	metadataFilter?: "missing-tmdb" | null;
 	afterNativeId?: string | null;
 	expectedGenerationId?: string | null;
 	refreshKey?: number;
@@ -21,16 +22,19 @@ export interface ProviderNativeInventoryQueryOptions {
 export function useProviderNativeInventory({
 	instanceId,
 	domain,
+	metadataFilter = null,
 	afterNativeId = null,
 	expectedGenerationId = null,
 	refreshKey = 0,
 	enabled = true,
 }: ProviderNativeInventoryQueryOptions) {
 	const hasCursor = Boolean(afterNativeId);
+	const shouldPoll = !hasCursor || domain === "episode";
 	return useQuery<ProviderNativeInventoryResponse>({
 		queryKey: libraryKeys.nativeInventory({
 			instanceId: instanceId ?? "",
 			domain,
+			metadataFilter,
 			afterNativeId: afterNativeId ?? null,
 			expectedGenerationId: expectedGenerationId ?? null,
 			refreshKey,
@@ -38,6 +42,7 @@ export function useProviderNativeInventory({
 		queryFn: async () => {
 			if (!instanceId) throw new Error("A media server instance is required");
 			const search = new URLSearchParams({ instanceId, domain, limit: "100" });
+			if (metadataFilter) search.set("metadataFilter", metadataFilter);
 			if (afterNativeId) search.set("afterNativeId", afterNativeId);
 			if (expectedGenerationId) search.set("expectedGenerationId", expectedGenerationId);
 			const payload = await apiRequest<unknown>(
@@ -46,8 +51,8 @@ export function useProviderNativeInventory({
 			return providerNativeInventoryResponseSchema.parse(payload);
 		},
 		enabled: enabled && Boolean(instanceId),
-		refetchInterval: hasCursor ? false : POLLING_BACKGROUND,
-		staleTime: hasCursor ? Infinity : POLLING_BACKGROUND,
+		refetchInterval: shouldPoll ? POLLING_BACKGROUND : false,
+		staleTime: shouldPoll ? POLLING_BACKGROUND : Infinity,
 		placeholderData: undefined,
 	});
 }

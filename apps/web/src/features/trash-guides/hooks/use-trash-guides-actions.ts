@@ -32,7 +32,19 @@ export function useTrashGuidesActions() {
 		async (serviceType: ServiceType) => {
 			setRefreshing(serviceType);
 			try {
-				await refreshMutation.mutateAsync({ serviceType, force: true });
+				const response = await refreshMutation.mutateAsync({ serviceType, force: true });
+				const hasFailures = Object.values(response.results ?? {}).some(
+					(result) =>
+						result !== null &&
+						typeof result === "object" &&
+						"success" in result &&
+						result.success === false,
+				);
+				if (hasFailures) {
+					toast.error(
+						"Some cache entries could not be refreshed. Previous data was kept for failed entries.",
+					);
+				}
 			} catch (error) {
 				const message = getErrorMessage(error, "Unknown error");
 				toast.error(`Failed to refresh ${serviceType.toLowerCase()} cache: ${message}`);

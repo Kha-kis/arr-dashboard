@@ -308,6 +308,7 @@ The `/config` volume contains critical data that must be preserved:
 | `PUID` | `911` | User ID for file permissions (LinuxServer.io style) |
 | `PGID` | `911` | Group ID for file permissions (LinuxServer.io style) |
 | `DATABASE_URL` | `file:/config/prod.db` | Database connection string (SQLite or PostgreSQL) |
+| `SQLITE_JOURNAL_MODE` | `preserve` | SQLite-only: keep the existing mode, or explicitly request `wal`/`delete` at startup. WAL requires a local filesystem. |
 | `SESSION_TTL_HOURS` | `24` | Session expiration time in hours |
 | `SESSION_COOKIE_NAME` | `arr_session` | Name of the session cookie |
 | `PASSWORD_POLICY` | `strict` | `strict` (uppercase, lowercase, number, special char) or `relaxed` (8+ chars, passphrase-friendly) |
@@ -337,6 +338,15 @@ Community Applications template available. See the [wiki](https://github.com/Kha
 ### Synology/QNAP
 
 Use Docker Compose method with appropriate volume paths.
+
+SQLite WAL is an opt-in concurrency setting, not a substitute for short write
+transactions: it lets readers continue during a writer, but SQLite still has
+only one writer at a time. Keep the entire `/config` volume together. While the
+app is running in WAL mode, `prod.db-wal` and `prod.db-shm` may exist and must
+not be separated from `prod.db` in raw file copies. For an offline file backup,
+stop the app cleanly and verify the database before copying it. Use
+`SQLITE_JOURNAL_MODE=delete` only for a deliberate rollback with no other
+database process open; removing the setting later merely preserves WAL mode.
 
 ### PostgreSQL Database
 

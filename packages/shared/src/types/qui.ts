@@ -122,7 +122,13 @@ export const quiTrackerHealthSchema = z.enum([
 export type QuiTrackerHealth = z.infer<typeof quiTrackerHealthSchema>;
 
 /** Cross-seed match type — confidence varies by source. */
-export const quiCrossSeedMatchTypeSchema = z.enum(["content_path", "name", "release"]);
+export const quiCrossSeedMatchTypeSchema = z.enum([
+	"content_path",
+	"name",
+	"release",
+	"hardlink",
+	"reflink",
+]);
 
 export type QuiCrossSeedMatchType = z.infer<typeof quiCrossSeedMatchTypeSchema>;
 
@@ -322,6 +328,35 @@ export const quiTrackerSchema = z.object({
 
 export type QuiTracker = z.infer<typeof quiTrackerSchema>;
 
+/** Safe tracker row returned by the drawer point-read endpoint. */
+export const quiTrackerViewSchema = z
+	.object({
+		trackerSelector: z
+			.string()
+			.regex(/^[a-f0-9]{64}$/)
+			.nullable(),
+		hostname: z.string().min(1),
+		port: z.string().nullable(),
+		tier: z.number().int().nullable(),
+		status: z.number().int(),
+		health: quiTrackerHealthSchema,
+		numSeeds: z.number().int(),
+		numLeeches: z.number().int(),
+		numPeers: z.number().int(),
+		selectable: z.boolean(),
+	})
+	.strict();
+
+export type QuiTrackerView = z.infer<typeof quiTrackerViewSchema>;
+
+export const quiTrackerSelectorSchema = z.string().regex(/^[a-f0-9]{64}$/);
+
+export const quiTrackerViewsResponseSchema = z.object({
+	trackers: z.array(quiTrackerViewSchema),
+});
+
+export type QuiTrackerViewsResponse = z.infer<typeof quiTrackerViewsResponseSchema>;
+
 /**
  * A torrent that qui has identified as a cross-seed sibling of another torrent.
  * `trackerHealth` is only present when the tracker reports a problem; `matchType`
@@ -427,13 +462,13 @@ export const crossSeedDiscoveryResponseSchema = z.object({
 	/** LibraryCache.id of the last scanned row — pass back as cursor for the next batch */
 	nextCursor: z.string().nullable(),
 	/** Number of LibraryCache rows scanned in this batch (≤ scanBatchSize) */
-	scannedThisBatch: z.number().int(),
+	scannedThisBatch: z.number().int().nonnegative(),
 	/** Number of items in this batch that had ≥1 sibling */
-	foundThisBatch: z.number().int(),
+	foundThisBatch: z.number().int().nonnegative(),
 	/** Total scanned across this scan session — frontend accumulates */
-	totalScanned: z.number().int(),
+	totalScanned: z.number().int().nonnegative(),
 	/** Total found across this scan session — frontend accumulates */
-	totalFound: z.number().int(),
+	totalFound: z.number().int().nonnegative(),
 	/** True when no more rows remain to scan */
 	exhausted: z.boolean(),
 	/** Display name of the qui instance the scan used */
@@ -446,7 +481,13 @@ export const crossSeedDiscoveryResponseSchema = z.object({
 	 * "no siblings found" from a "we tried and qui errored" answer.
 	 * Optional for one release window to keep older API clients valid.
 	 */
-	siblingFetchErrors: z.number().int().optional(),
+	siblingFetchErrors: z.number().int().nonnegative().optional(),
+	/**
+	 * Read-only coverage witness from qui's torrent inventory. Only explicit
+	 * true establishes coverage; false or an older response omitting this field
+	 * leaves coverage unverified. This never authorizes a torrent action.
+	 */
+	torrentInventoryComplete: z.boolean().optional(),
 });
 
 export type CrossSeedDiscoveryResponse = z.infer<typeof crossSeedDiscoveryResponseSchema>;
@@ -462,7 +503,7 @@ export const crossSeedDiscoveryAvailabilitySchema = z.discriminatedUnion("availa
 		quiInstanceId: z.string(),
 		quiInstanceLabel: z.string(),
 		/** Total LibraryCache rows with a backfilled infoHash (the scan universe) */
-		scanCandidates: z.number().int(),
+		scanCandidates: z.number().int().nonnegative(),
 	}),
 	z.object({
 		available: z.literal(false),
@@ -582,6 +623,35 @@ export const quiActionSchema = z.enum([
 
 export type QuiAction = z.infer<typeof quiActionSchema>;
 
+/** Drawer mutations share audit/recovery vocabulary, but are not bulk commands. */
+export const quiDrawerOperationSchema = z.enum([
+	"renameTorrent",
+	"addTrackers",
+	"removeTrackers",
+	"editTracker",
+]);
+
+export type QuiDrawerOperation = z.infer<typeof quiDrawerOperationSchema>;
+
+export const quiLoggedOperationSchema = z.union([quiActionSchema, quiDrawerOperationSchema]);
+export type QuiLoggedOperation = z.infer<typeof quiLoggedOperationSchema>;
+
+export const quiDrawerAuditSummarySchema = z
+	.object({ trackerCount: z.number().int().min(1).max(50) })
+	.strict();
+export type QuiDrawerAuditSummary = z.infer<typeof quiDrawerAuditSummarySchema>;
+
+const QUI_LOGGED_OPERATIONS = new Set<QuiLoggedOperation>([
+	...quiActionSchema.options,
+	...quiDrawerOperationSchema.options,
+]);
+
+export function coerceQuiLoggedOperation(raw: string): QuiLoggedOperation | "unknown" {
+	return QUI_LOGGED_OPERATIONS.has(raw as QuiLoggedOperation)
+		? (raw as QuiLoggedOperation)
+		: "unknown";
+}
+
 /**
  * Subset of actions that are destructive — mutate state in a way that
  * either deletes data, moves data on disk, or is otherwise expensive to
@@ -596,7 +666,16 @@ export const QUI_DESTRUCTIVE_ACTIONS: ReadonlySet<QuiAction> = new Set<QuiAction
 ]);
 
 /** Lifecycle states for a logged action. */
-export const quiActionStatusSchema = z.enum(["pending", "success", "failed"]);
+export const QUI_ACTION_PENDING_GRACE_MS = 2 * 60_000;
+
+export const quiActionStatusSchema = z.enum([
+	"pending",
+	"success",
+	"failed",
+	"uncertain",
+	"operator_verified_applied",
+	"operator_verified_not_applied",
+]);
 
 export type QuiActionStatus = z.infer<typeof quiActionStatusSchema>;
 
@@ -637,12 +716,11 @@ export const QUI_TAGS_MAX_LENGTH = 2_000;
  * schema describes ONLY the action-specific extras — `hashes` (bulk) and
  * the target hash (single) live on URL params and a separate bulk envelope.
  *
- * Empty `z.object({})` is intentional for the "no-extras" actions: it
- * accepts `{}` and rejects unknown fields when callers paired with
- * `.strict()`, but here we stay permissive (`.passthrough()`) so a future
- * extension doesn't reject already-deployed older clients.
+ * Unknown extras must be rejected: qUI's flat wire body also contains
+ * `action`, `hashes`, and `selectAll`, which must never come from a caller's
+ * action-specific payload. Future extras require an explicit schema change.
  */
-const emptyPayload = z.object({}).passthrough();
+const emptyPayload = z.object({}).strict();
 
 export const quiActionPayloadSchemas = {
 	pause: emptyPayload,
@@ -658,47 +736,64 @@ export const quiActionPayloadSchemas = {
 	increasePriority: emptyPayload,
 	decreasePriority: emptyPayload,
 	toggleSequentialDownload: emptyPayload,
-	setTags: z.object({
-		// Comma-joined tag list (qui's wire format — qui accepts a single
-		// comma-separated string, not a JSON array). Required and non-empty.
-		tags: z.string().min(1).max(QUI_TAGS_MAX_LENGTH),
-	}),
-	setCategory: z.object({
-		// qBit category names accept any string qBit accepts. Empty string
-		// is valid — it clears the category. No length cap here matches
-		// qui's behavior; downstream audit log writes a JSON blob.
-		category: z.string().max(200),
-	}),
-	toggleAutoTMM: z.object({
-		enable: z.boolean(),
-	}),
-	setUploadLimit: z.object({
-		// KB/s. 0 = no limit per qBit convention. Negative values rejected.
-		uploadLimit: z.number().int().nonnegative(),
-	}),
-	setDownloadLimit: z.object({
-		downloadLimit: z.number().int().nonnegative(),
-	}),
-	setShareLimit: z.object({
-		// qBit sentinels: -1 = no limit, -2 = use global. Operator may set
-		// only one at a time, but qui's wire format expects both fields
-		// present, so require both here and let the UI fill `-2` for "leave
-		// alone."
-		ratioLimit: z.number(),
-		seedingTimeLimit: z.number().int(),
-		inactiveSeedingTimeLimit: z.number().int().optional(),
-	}),
-	setLocation: z.object({
-		// Absolute path. qui validates the path internally (must be within
-		// configured safe directories). We don't pre-validate beyond
-		// non-empty + reasonable length.
-		location: z.string().min(1).max(4096),
-	}),
-	delete: z.object({
-		// Explicit because the cost difference between true and false is
-		// catastrophic. Default is omitted — caller MUST decide.
-		deleteFiles: z.boolean(),
-	}),
+	setTags: z
+		.object({
+			// Comma-joined tag list (qui's wire format — qui accepts a single
+			// comma-separated string, not a JSON array). Required; an explicit
+			// empty string clears all tags, matching qui's setTags contract.
+			tags: z.string().max(QUI_TAGS_MAX_LENGTH),
+		})
+		.strict(),
+	setCategory: z
+		.object({
+			// qBit category names accept any string qBit accepts. Empty string
+			// is valid — it clears the category. No length cap here matches
+			// qui's behavior; downstream audit log writes a JSON blob.
+			category: z.string().max(200),
+		})
+		.strict(),
+	toggleAutoTMM: z
+		.object({
+			enable: z.boolean(),
+		})
+		.strict(),
+	setUploadLimit: z
+		.object({
+			// KB/s. 0 = no limit per qBit convention. Negative values rejected.
+			uploadLimit: z.number().int().nonnegative(),
+		})
+		.strict(),
+	setDownloadLimit: z
+		.object({
+			downloadLimit: z.number().int().nonnegative(),
+		})
+		.strict(),
+	setShareLimit: z
+		.object({
+			// qBit sentinels: -1 = no limit, -2 = use global. Operator may set
+			// only one at a time, but qui's wire format expects both fields
+			// present, so require both here and let the UI fill `-2` for "leave
+			// alone."
+			ratioLimit: z.number(),
+			seedingTimeLimit: z.number().int(),
+			inactiveSeedingTimeLimit: z.number().int().optional(),
+		})
+		.strict(),
+	setLocation: z
+		.object({
+			// Absolute path. qui validates the path internally (must be within
+			// configured safe directories). We don't pre-validate beyond
+			// non-empty + reasonable length.
+			location: z.string().min(1).max(4096),
+		})
+		.strict(),
+	delete: z
+		.object({
+			// Explicit because the cost difference between true and false is
+			// catastrophic. Default is omitted — caller MUST decide.
+			deleteFiles: z.boolean(),
+		})
+		.strict(),
 } as const satisfies Record<QuiAction, z.ZodTypeAny>;
 
 /**
@@ -715,9 +810,8 @@ export type QuiActionPayload = {
  * `quiActionPayloadSchemas[action]` to validate the entire body keyed
  * on the URL `:action` param.
  *
- * Kept as a permissive object on the wire so we can spread the payload
- * fields alongside `hashes` without nesting (matches qui's flat body
- * shape and the existing Phase 4 wire format that frontends already use).
+ * The envelope permits action-specific fields only because the route then
+ * validates the remaining fields against a strict per-action payload schema.
  */
 export const quiBulkActionRequestSchema = z
 	.object({
@@ -744,27 +838,8 @@ export type QuiTorrentActionRequest = QuiActionPayload | Record<string, never>;
 export type QuiActionMaybeUnknown = QuiAction | "unknown";
 export type QuiActionStatusMaybeUnknown = QuiActionStatus | "unknown";
 
-const QUI_ACTION_VALUES = new Set<QuiAction>([
-	"pause",
-	"resume",
-	"recheck",
-	"reannounce",
-	"setTags",
-	"setCategory",
-	"toggleAutoTMM",
-	"forceStart",
-	"topPriority",
-	"bottomPriority",
-	"increasePriority",
-	"decreasePriority",
-	"toggleSequentialDownload",
-	"setUploadLimit",
-	"setDownloadLimit",
-	"setShareLimit",
-	"setLocation",
-	"delete",
-]);
-const QUI_ACTION_STATUS_VALUES = new Set<QuiActionStatus>(["pending", "success", "failed"]);
+const QUI_ACTION_VALUES = new Set<QuiAction>(quiActionSchema.options);
+const QUI_ACTION_STATUS_VALUES = new Set<QuiActionStatus>(quiActionStatusSchema.options);
 
 export function coerceQuiAction(raw: string): QuiActionMaybeUnknown {
 	return QUI_ACTION_VALUES.has(raw as QuiAction) ? (raw as QuiAction) : "unknown";
@@ -787,7 +862,7 @@ export const quiActionLogEntrySchema = z.object({
 	serviceInstanceLabel: z.string(),
 	qbitInstanceId: z.number().int(),
 	torrentHash: z.string(),
-	action: quiActionSchema,
+	action: quiLoggedOperationSchema,
 	status: quiActionStatusSchema,
 	error: z.string().nullable(),
 	payload: z.unknown().nullable(),
@@ -902,6 +977,25 @@ export const quiSummaryQbitInstanceSchema = z.object({
 	torrentCount: z.number().int(),
 });
 
+export const quiHomeInventoryCoverageSchema = z.object({
+	status: z.enum(["unconfigured", "current", "last-known", "partial", "unavailable"]),
+	currentInstances: z.number().int().nonnegative(),
+	lastKnownInstances: z.number().int().nonnegative(),
+	unavailableInstances: z.number().int().nonnegative(),
+	incompleteInstances: z.number().int().nonnegative(),
+	/** Oldest usable observation included in the aggregate, if any. */
+	oldestFetchedAt: z.string().datetime().nullable(),
+});
+
+export type QuiHomeInventoryCoverage = z.infer<typeof quiHomeInventoryCoverageSchema>;
+
+export const quiHomeSupportingCoverageSchema = z.enum([
+	"unconfigured",
+	"current",
+	"partial",
+	"unavailable",
+]);
+
 /**
  * Response shape for `GET /api/qui/summary` — drives the KPI strip
  * on the qui home page. One call, one cheap pass; refreshed on the
@@ -929,6 +1023,12 @@ export const quiSummaryResponseSchema = z.object({
 	configuredInstances: z.number().int(),
 	/** Per-qBit-instance health. Empty when no qui instance reachable. */
 	qbitInstances: z.array(quiSummaryQbitInstanceSchema),
+	/** Coverage of the torrent rows used by inventory KPIs. */
+	inventoryCoverage: quiHomeInventoryCoverageSchema,
+	/** Coverage of qBittorrent instance-list reads. */
+	topologyCoverage: quiHomeSupportingCoverageSchema,
+	/** Coverage of live transfer-info reads for connected backends. */
+	throughputCoverage: quiHomeSupportingCoverageSchema,
 });
 
 export type QuiSummaryResponse = z.infer<typeof quiSummaryResponseSchema>;
@@ -940,9 +1040,11 @@ export type QuiSummaryResponse = z.infer<typeof quiSummaryResponseSchema>;
  * one-click jump to the library item.
  */
 export const quiAttentionItemSchema = z.object({
+	/** Owning qUI connection; qBittorrent hashes may repeat across connections. */
+	quiInstanceId: z.string(),
 	hash: z.string(),
 	name: z.string(),
-	state: quiTorrentStateSchema,
+	state: normalizedTorrentStateSchema,
 	ratio: z.number(),
 	size: z.number().int(),
 	qbitInstanceId: z.number().int().nullable(),
@@ -976,6 +1078,15 @@ export const quiAttentionResponseSchema = z.object({
 	/** Total count across all severities — may exceed `items.length`
 	 * when the route caps the response. */
 	totalCount: z.number().int(),
+	inventoryCoverage: quiHomeInventoryCoverageSchema,
+	trackerCoverage: quiHomeSupportingCoverageSchema,
+	/** Read-only coverage of the persisted FileID inventory. This is not
+	 * cleanup authority and can be unavailable while torrents are current. */
+	fileCoverage: z.object({
+		status: z.enum(["unconfigured", "current", "last-known", "partial", "unavailable"]),
+		issueCount: z.number().int().nonnegative(),
+		oldestBuiltAt: z.string().datetime().nullable(),
+	}),
 });
 
 export type QuiAttentionResponse = z.infer<typeof quiAttentionResponseSchema>;

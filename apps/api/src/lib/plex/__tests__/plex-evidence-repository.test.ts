@@ -218,6 +218,7 @@ function v6Metadata(publicationLevel: "authoritative" | "positive-only", itemCou
 					observedRoots: [
 						{ sectionKey: "shows", domain: "episode-parents", digest: "a".repeat(64) },
 					],
+					ambiguousTmdbCandidates: [],
 					capabilities: [
 						{
 							domain: "episode-parents",
@@ -744,6 +745,230 @@ describe("Plex evidence repository", () => {
 			coordinate: "shows:show-42",
 			observedValue: 3,
 			evidence: { reasonCodes: [] },
+		});
+	});
+
+	it("withholds ambiguous TMDB candidates from V6 target-scoped watch-count proof", async () => {
+		const targets = [42, 99].map((tmdbId) => ({
+			id: `target-${tmdbId}`,
+			instanceId: "plex-1",
+			generationId: "generation-1",
+			sectionId: "shows",
+			sectionUuid: "shows-uuid",
+			mediaType: "series" as const,
+			tmdbId,
+			tvdbId: null,
+			ratingKey: `show-${tmdbId}`,
+		}));
+		const targetLedger = createPlexTargetLedgerBinding({
+			instanceId: "plex-1",
+			generationId: "generation-1",
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			targets,
+		});
+		const metadata = JSON.parse(v6Metadata("positive-only", 2)) as Record<string, unknown>;
+		Object.assign(metadata, targetLedger, {
+			ambiguousTmdbCandidates: [{ mediaType: "series", tmdbId: 42 }],
+		});
+		const current = status({ itemCount: 2, generationMetadata: JSON.stringify(metadata) });
+		const testFixture = fixture({
+			statuses: [current, current],
+			targets,
+			rows: targets.map((target) =>
+				row({
+					mediaType: "series",
+					tmdbId: target.tmdbId,
+					sectionId: "shows",
+					ratingKey: target.ratingKey,
+					watchCount: 3,
+				}),
+			),
+		});
+
+		const result = await loadTargetScopedPlexWatchCountMutationEvidenceBatch(
+			testFixture.prisma as never,
+			{
+				userId: "user-1",
+				instanceId: "plex-1",
+				targets: targets.map(({ mediaType, tmdbId }) => ({ mediaType, tmdbId })),
+				now,
+				maxAgeMs: 3 * 60 * 60 * 1000,
+			},
+		);
+		expect(result).toMatchObject({
+			available: true,
+			targets: [expect.objectContaining({ mediaType: "series", tmdbId: 99 })],
+		});
+	});
+
+	it("withholds target-scoped proof for legacy V6 metadata without ambiguity coverage", async () => {
+		const target = {
+			id: "target-series-42",
+			instanceId: "plex-1",
+			generationId: "generation-1",
+			sectionId: "shows",
+			sectionUuid: "shows-uuid",
+			mediaType: "series" as const,
+			tmdbId: 42,
+			tvdbId: null,
+			ratingKey: "show-42",
+		};
+		const targetLedger = createPlexTargetLedgerBinding({
+			instanceId: target.instanceId,
+			generationId: target.generationId,
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			targets: [target],
+		});
+		const metadata = JSON.parse(v6Metadata("positive-only", 1)) as Record<string, unknown>;
+		delete metadata.ambiguousTmdbCandidates;
+		Object.assign(metadata, targetLedger);
+		const current = status({ itemCount: 1, generationMetadata: JSON.stringify(metadata) });
+		const testFixture = fixture({
+			statuses: [current, current],
+			targets: [target],
+			rows: [
+				row({
+					mediaType: "series",
+					tmdbId: 42,
+					sectionId: "shows",
+					ratingKey: "show-42",
+					watchCount: 3,
+				}),
+			],
+		});
+
+		await expect(
+			loadTargetScopedPlexWatchCountMutationEvidenceBatch(testFixture.prisma as never, {
+				userId: "user-1",
+				instanceId: "plex-1",
+				targets: [{ mediaType: "series", tmdbId: 42 }],
+				now,
+				maxAgeMs: 3 * 60 * 60 * 1000,
+			}),
+		).resolves.toMatchObject({ available: false });
+	});
+
+	it("does not let a movie candidate suppress the same-ID series watch-count proof", async () => {
+		const target = {
+			id: "target-series-42",
+			instanceId: "plex-1",
+			generationId: "generation-1",
+			sectionId: "shows",
+			sectionUuid: "shows-uuid",
+			mediaType: "series" as const,
+			tmdbId: 42,
+			tvdbId: null,
+			ratingKey: "show-42",
+		};
+		const targetLedger = createPlexTargetLedgerBinding({
+			instanceId: target.instanceId,
+			generationId: target.generationId,
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			targets: [target],
+		});
+		const metadata = JSON.parse(v6Metadata("positive-only", 1)) as Record<string, unknown>;
+		Object.assign(metadata, targetLedger, {
+			ambiguousTmdbCandidates: [{ mediaType: "movie", tmdbId: 42 }],
+		});
+		const current = status({ itemCount: 1, generationMetadata: JSON.stringify(metadata) });
+		const testFixture = fixture({
+			statuses: [current, current],
+			targets: [target],
+			rows: [
+				row({
+					mediaType: "series",
+					tmdbId: 42,
+					sectionId: "shows",
+					ratingKey: "show-42",
+					watchCount: 3,
+				}),
+			],
+		});
+
+		const result = await loadTargetScopedPlexWatchCountMutationEvidenceBatch(
+			testFixture.prisma as never,
+			{
+				userId: "user-1",
+				instanceId: "plex-1",
+				targets: [{ mediaType: "series", tmdbId: 42 }],
+				now,
+				maxAgeMs: 3 * 60 * 60 * 1000,
+			},
+		);
+
+		expect(result).toMatchObject({
+			available: true,
+			targets: [expect.objectContaining({ mediaType: "series", tmdbId: 42 })],
+		});
+	});
+
+	it("does not let a series candidate suppress the same-ID movie watch-count proof", async () => {
+		const target = {
+			id: "target-movie-42",
+			instanceId: "plex-1",
+			generationId: "generation-1",
+			sectionId: "movies",
+			sectionUuid: "movies-uuid",
+			mediaType: "movie" as const,
+			tmdbId: 42,
+			tvdbId: null,
+			ratingKey: "movie-42",
+		};
+		const targetLedger = createPlexTargetLedgerBinding({
+			instanceId: target.instanceId,
+			generationId: target.generationId,
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			targets: [target],
+		});
+		const metadata = JSON.parse(v6Metadata("positive-only", 1)) as Record<string, unknown>;
+		metadata.sections = [
+			...(metadata.sections as Array<Record<string, unknown>>),
+			{
+				key: "movies",
+				uuid: "movies-uuid",
+				title: "Movies",
+				type: "movie",
+				refreshing: false,
+				scannedAt: 1_777_000_000,
+				updatedAt: 1_777_000_100,
+			},
+		];
+		Object.assign(metadata, targetLedger, {
+			ambiguousTmdbCandidates: [{ mediaType: "series", tmdbId: 42 }],
+		});
+		const current = status({ itemCount: 1, generationMetadata: JSON.stringify(metadata) });
+		const testFixture = fixture({
+			statuses: [current, current],
+			targets: [target],
+			rows: [
+				row({
+					mediaType: "movie",
+					tmdbId: 42,
+					sectionId: "movies",
+					ratingKey: "movie-42",
+					watchCount: 3,
+				}),
+			],
+		});
+
+		const result = await loadTargetScopedPlexWatchCountMutationEvidenceBatch(
+			testFixture.prisma as never,
+			{
+				userId: "user-1",
+				instanceId: "plex-1",
+				targets: [{ mediaType: "movie", tmdbId: 42 }],
+				now,
+				maxAgeMs: 3 * 60 * 60 * 1000,
+			},
+		);
+
+		expect(result).toMatchObject({
+			available: true,
+			targets: [expect.objectContaining({ mediaType: "movie", tmdbId: 42 })],
 		});
 	});
 

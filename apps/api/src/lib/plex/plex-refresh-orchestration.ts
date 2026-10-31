@@ -1,12 +1,13 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { Encryptor } from "../auth/encryption.js";
 import type { PrismaClient, ServiceInstance } from "../prisma.js";
-import { refreshNativeInventory } from "../provider-observation/native-inventory-refresh.js";
+import { requestNativeInventoryRefresh } from "../provider-observation/native-inventory-job-orchestration.js";
 import {
 	claimObservationUnit,
 	createOrLoadObservationRun,
 	failObservationUnit,
 	hasExhaustedObservationRunRetries,
+	releaseCancelledObservationUnitClaim,
 } from "../provider-observation/observation-run-repository.js";
 import {
 	buildObservationAuthorityKey,
@@ -42,16 +43,34 @@ import {
 	finalizePlexEpisodeRun,
 	stagePlexEpisodeUnitInTransaction,
 } from "./plex-episode-refresh-repository.js";
-import { collectPlexNativeInventory } from "./plex-native-inventory.js";
 import { plexConnectionFingerprint } from "./service-instance-fingerprint.js";
 
+export type PlexEpisodeWorkDiagnostics = {
+	stage:
+		| "not-started"
+		| "attempt-claim"
+		| "parent-read"
+		| "planning"
+		| "run-open"
+		| "unit-claim"
+		| "unit-reproof"
+		| "claimed-unit-check"
+		| "unit-publication"
+		| "failure-recording"
+		| "finalization";
+};
+
 export type OwnedPlexRefreshContext = {
+	signal?: AbortSignal;
 	prisma: PrismaClient;
 	encryptor: Pick<Encryptor, "decrypt">;
 	instance: ServiceInstance;
 	log: FastifyBaseLogger;
 	cleanupRunClaimToken?: string;
 	resumeFailed?: boolean;
+	nativeInventoryMode?: "automatic" | "force";
+	/** Internal scheduler-owned state; contains no provider or resource data. */
+	diagnostics?: PlexEpisodeWorkDiagnostics;
 };
 
 type PlexEpisodeRunProgress = ObservationRunProgress & {
@@ -84,6 +103,7 @@ export type PlexEpisodeWorkItemRunnerDependencies = {
 		log: FastifyBaseLogger;
 	}) => Pick<PlexAuthorityService, "readPositiveEpisodeParents">;
 	createClient: (input: {
+		signal?: AbortSignal;
 		baseUrl: string;
 		apiKey: string;
 		log: FastifyBaseLogger;
@@ -93,16 +113,31 @@ export type PlexEpisodeWorkItemRunnerDependencies = {
 
 const defaultPlexEpisodeWorkItemRunnerDependencies: PlexEpisodeWorkItemRunnerDependencies = {
 	createParentAuthority: ({ prisma, log }) => new PlexAuthorityService({ prisma, log }),
-	createClient: ({ baseUrl, apiKey, log, httpAuthHeaders }) =>
-		new PlexClient(baseUrl, apiKey, log, undefined, httpAuthHeaders),
+	createClient: ({ baseUrl, apiKey, log, httpAuthHeaders, signal }) =>
+		new PlexClient(
+			baseUrl,
+			apiKey,
+			log,
+			undefined,
+			httpAuthHeaders,
+			signal ? { signal, onRequest: () => {} } : undefined,
+		),
 };
 
 const PREPARATION_FAILURE_MESSAGE = "Plex refresh preparation failed before publication";
 
 function attemptOptions(context: OwnedPlexRefreshContext) {
-	return context.cleanupRunClaimToken === undefined
-		? {}
-		: { cleanupRunClaimToken: context.cleanupRunClaimToken };
+	return {
+		signal: context.signal,
+		...(context.cleanupRunClaimToken === undefined
+			? {}
+			: { cleanupRunClaimToken: context.cleanupRunClaimToken }),
+	};
+}
+
+function checkEpisodeCancellation(signal?: AbortSignal): void {
+	if (signal?.aborted)
+		throw new ProviderIdentityGuardError("PUBLICATION_CANCELLED", "Episode publication cancelled.");
 }
 
 function plexPreparationFailure(): PlexCacheRefreshResult {
@@ -157,9 +192,11 @@ async function refreshWithOwnedPlexAttempt<TResult>(
 
 	try {
 		const publicationContext: PlexPublicationContext = {
+			signal: context.signal,
 			prisma: context.prisma,
 			instance: createOwnedPlexPublicationSnapshot(context.encryptor, context.instance),
 			log: context.log,
+			nativeInventoryMode: context.nativeInventoryMode ?? "automatic",
 			...(context.cleanupRunClaimToken === undefined
 				? {}
 				: { cleanupRunClaimToken: context.cleanupRunClaimToken }),
@@ -217,25 +254,25 @@ async function refreshPlexLibraryWithNativeInventory(
 	context: PlexPublicationContext,
 	attempt: PlexCacheRefreshAttempt,
 ): Promise<PlexCacheRefreshResult> {
-	const native = await refreshNativeInventory({
-		...context,
-		cacheType: "plex",
-		attempt,
-		domains: ["library", "episode"],
-		collect: async (instance) =>
-			await collectPlexNativeInventory(
-				new PlexClient(
-					instance.baseUrl,
-					instance.apiKey,
-					context.log,
-					undefined,
-					instance.httpAuthHeaders,
-				),
-				context.log,
-			),
-	});
+	let nativeInventoryStatus: PlexCacheRefreshResult["nativeInventoryStatus"];
+	try {
+		const native = await requestNativeInventoryRefresh(
+			context.prisma,
+			context.instance,
+			["paired"],
+			{ mode: context.nativeInventoryMode ?? "automatic" },
+		);
+		nativeInventoryStatus =
+			native.status === "accepted"
+				? "scheduled"
+				: native.status === "retryable"
+					? "failed"
+					: native.status;
+	} catch {
+		nativeInventoryStatus = "failed";
+	}
 	const canonical = await refreshPlexCacheWithAttempt(context, attempt);
-	return { ...canonical, nativeInventoryStatus: native.status };
+	return { ...canonical, nativeInventoryStatus };
 }
 
 /** Refresh episode evidence after revoking authority before credential preparation. */
@@ -380,16 +417,27 @@ async function currentOwnedPlexInstance(context: OwnedPlexRefreshContext) {
 export function createPlexEpisodeWorkItemRunner(
 	deps: PlexEpisodeWorkItemRunnerDependencies = defaultPlexEpisodeWorkItemRunnerDependencies,
 ) {
-	return async function runNextPlexEpisodeWorkItemCore(
+	const runNextPlexEpisodeWorkItemCore = async (
 		context: OwnedPlexRefreshContext,
-		preclaimedAttempt?: PlexCacheRefreshAttempt,
-	): Promise<PlexEpisodeRunProgress> {
+		preclaimedAttempt: PlexCacheRefreshAttempt | undefined,
+		cancellation: {
+			authority?: ProviderPublicationAuthority;
+			attempt?: PlexCacheRefreshAttempt;
+			claim?: ObservationUnitClaim;
+		},
+	): Promise<PlexEpisodeRunProgress> => {
+		checkEpisodeCancellation(context.signal);
+		const stage = (value: PlexEpisodeWorkDiagnostics["stage"]) => {
+			if (context.diagnostics) context.diagnostics.stage = value;
+		};
+		stage("attempt-claim");
 		let authority: ProviderPublicationAuthority;
 		try {
 			authority = createProviderPublicationAuthority(context.instance);
 		} catch {
 			return emptyEpisodeProgress();
 		}
+		cancellation.authority = authority;
 		let attempt: PlexCacheRefreshAttempt;
 		let acquired = false;
 		if (preclaimedAttempt) {
@@ -421,6 +469,7 @@ export function createPlexEpisodeWorkItemRunner(
 			acquired = attemptClaim.status === "acquired";
 		}
 		const ownsAttempt = acquired || preclaimedAttempt !== undefined;
+		cancellation.attempt = attempt;
 		let attemptSettled = false;
 		const retainOwnedAttempt = (progress: PlexEpisodeRunProgress): PlexEpisodeRunProgress =>
 			ownsAttempt &&
@@ -431,6 +480,7 @@ export function createPlexEpisodeWorkItemRunner(
 				? { ...progress, continuationAttempt: attempt }
 				: progress;
 		const terminateAcquired = async () => {
+			stage("failure-recording");
 			if (!acquired && !preclaimedAttempt) return "not-owned" as const;
 			const finished = await finishPlexCacheRefreshAttemptFailure(
 				context.prisma,
@@ -443,6 +493,7 @@ export function createPlexEpisodeWorkItemRunner(
 			);
 			return finished;
 		};
+		stage("parent-read");
 		const parentAuthority = deps.createParentAuthority({
 			prisma: context.prisma,
 			log: context.log,
@@ -461,6 +512,7 @@ export function createPlexEpisodeWorkItemRunner(
 				...(terminated === "failed" && ownsAttempt ? { continuationAttempt: attempt } : {}),
 			};
 		}
+		stage("planning");
 		const targets = parents.targets.map((target) => ({
 			instanceId: target.instanceId,
 			generationId: parents.generationId,
@@ -486,6 +538,7 @@ export function createPlexEpisodeWorkItemRunner(
 			identityGeneration: parents.identityGeneration,
 		};
 		const expectedAuthorityKey = buildObservationAuthorityKey(runAuthority);
+		stage("run-open");
 		const run = await createOrLoadObservationRun(context.prisma, {
 			authority: runAuthority,
 			units: plan.units.map((unit) => ({
@@ -536,6 +589,7 @@ export function createPlexEpisodeWorkItemRunner(
 			claim: ObservationUnitClaim,
 			reasonCode: NonNullable<ObservationRunProgress["reasonCode"]>,
 		) => {
+			stage("failure-recording");
 			const failed = await failObservationUnit(context.prisma, {
 				claim,
 				reasonCode,
@@ -553,6 +607,7 @@ export function createPlexEpisodeWorkItemRunner(
 				progress.completedWork !== progress.totalWork
 			)
 				return retainOwnedAttempt(progress);
+			stage("finalization");
 			const current = await currentOwnedPlexInstance(context);
 			if (!current) return { ...progress, superseded: true };
 			let currentAuthority: ProviderPublicationAuthority;
@@ -590,6 +645,8 @@ export function createPlexEpisodeWorkItemRunner(
 					attemptOptions(context),
 				);
 			} catch (error) {
+				if (error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_CANCELLED")
+					throw error;
 				if (error instanceof ProviderIdentityGuardError && error.code === "IDENTITY_UNAVAILABLE") {
 					if (!ownsAttempt) {
 						return { ...progress, attemptFailed: true, retryCategory: "identity-unavailable" };
@@ -654,16 +711,23 @@ export function createPlexEpisodeWorkItemRunner(
 					return { ...progress, superseded: true };
 			}
 		};
+		stage("unit-claim");
 		const claim = await claimObservationUnit(context.prisma, { runId: run.id, now: new Date() });
+		if (claim) cancellation.claim = claim;
+		checkEpisodeCancellation(context.signal);
 		if (!claim) {
 			const progress = await runProgress(context.prisma, run.id);
 			if (progress.state === "failed") await finishAttemptIfExhausted();
 			return await finalizeIfComplete(progress);
 		}
-		const reproof = await parentAuthority.readPositiveEpisodeParents({
-			userId: context.instance.userId,
-			instanceId: context.instance.id,
-		});
+		stage("unit-reproof");
+		const reproof = await parentAuthority
+			.readPositiveEpisodeParents({
+				userId: context.instance.userId,
+				instanceId: context.instance.id,
+			})
+			.catch(() => null);
+		if (!reproof) return await failClaim(claim, "provider-unavailable");
 		const reproofTargets =
 			reproof.available && "targets" in reproof
 				? reproof.targets.map((target) => ({
@@ -677,7 +741,12 @@ export function createPlexEpisodeWorkItemRunner(
 						ratingKey: target.ratingKey,
 					}))
 				: [];
-		const reproofPlan = reproofTargets.length ? planPlexEpisodeRefresh(reproofTargets) : null;
+		let reproofPlan: ReturnType<typeof planPlexEpisodeRefresh> | null;
+		try {
+			reproofPlan = reproofTargets.length ? planPlexEpisodeRefresh(reproofTargets) : null;
+		} catch {
+			return await failClaim(claim, "coverage-incomplete");
+		}
 		const ordinal = (() => {
 			try {
 				return JSON.parse(claim.scopePayload ?? "{}").ordinal;
@@ -697,17 +766,21 @@ export function createPlexEpisodeWorkItemRunner(
 		) {
 			return await failClaim(claim, "coverage-incomplete");
 		}
-		const persistedClaim = await context.prisma.providerObservationUnit.findFirst({
-			where: {
-				id: claim.unitId,
-				runId: claim.runId,
-				state: "running",
-				claimToken: claim.claimToken,
-				phase: "collect",
-				scopeKey: claim.scopeKey,
-			},
-			include: { run: true },
-		});
+		stage("claimed-unit-check");
+		const persistedClaim = await context.prisma.providerObservationUnit
+			.findFirst({
+				where: {
+					id: claim.unitId,
+					runId: claim.runId,
+					state: "running",
+					claimToken: claim.claimToken,
+					phase: "collect",
+					scopeKey: claim.scopeKey,
+				},
+				include: { run: true },
+			})
+			.catch(() => undefined);
+		if (persistedClaim === undefined) return await failClaim(claim, "provider-unavailable");
 		if (
 			!persistedClaim ||
 			persistedClaim.ordinal !== ordinal ||
@@ -731,7 +804,8 @@ export function createPlexEpisodeWorkItemRunner(
 		}
 		// The caller row is untrusted after the durable claim. Re-read immediately
 		// before decryption and never perform provider I/O from stale authority.
-		const current = await currentOwnedPlexInstance(context);
+		const current = await currentOwnedPlexInstance(context).catch(() => undefined);
+		if (current === undefined) return await failClaim(claim, "provider-unavailable");
 		if (!current) return { ...(await runProgress(context.prisma, run.id)), superseded: true };
 		let currentAuthority: ProviderPublicationAuthority;
 		try {
@@ -749,9 +823,11 @@ export function createPlexEpisodeWorkItemRunner(
 			collected: Awaited<ReturnType<typeof collectPlexEpisodeUnit>>;
 			staged: boolean;
 		};
+		stage("unit-publication");
 		try {
 			const snapshot = createOwnedPlexPublicationSnapshot(context.encryptor, current);
 			const client = deps.createClient({
+				signal: context.signal,
 				baseUrl: snapshot.baseUrl,
 				apiKey: snapshot.apiKey,
 				log: context.log,
@@ -778,15 +854,43 @@ export function createPlexEpisodeWorkItemRunner(
 				attemptOptions(context),
 			);
 		} catch (error) {
+			if (error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_CANCELLED")
+				throw error;
 			if (error instanceof ProviderIdentityGuardError && error.code !== "IDENTITY_UNAVAILABLE") {
 				return { ...(await runProgress(context.prisma, run.id)), superseded: true };
 			}
 			return await failClaim(claim, "provider-unavailable");
 		}
+		checkEpisodeCancellation(context.signal);
 		if (!guardedUnit.collected.complete)
 			return await failClaim(claim, guardedUnit.collected.reasonCode);
 		if (!guardedUnit.staged) return retainOwnedAttempt(await runProgress(context.prisma, run.id));
 		return await finalizeIfComplete(await runProgress(context.prisma, run.id));
+	};
+	return async (context: OwnedPlexRefreshContext, preclaimedAttempt?: PlexCacheRefreshAttempt) => {
+		const cancellation: {
+			authority?: ProviderPublicationAuthority;
+			attempt?: PlexCacheRefreshAttempt;
+			claim?: ObservationUnitClaim;
+		} = {};
+		try {
+			return await runNextPlexEpisodeWorkItemCore(context, preclaimedAttempt, cancellation);
+		} catch (error) {
+			if (
+				error instanceof ProviderIdentityGuardError &&
+				error.code === "PUBLICATION_CANCELLED" &&
+				cancellation.claim &&
+				cancellation.authority &&
+				cancellation.attempt
+			)
+				await releaseCancelledObservationUnitClaim(context.prisma, {
+					claim: cancellation.claim,
+					authority: cancellation.authority,
+					attempt: cancellation.attempt,
+					cleanupRunClaimToken: context.cleanupRunClaimToken,
+				});
+			throw error;
+		}
 	};
 }
 

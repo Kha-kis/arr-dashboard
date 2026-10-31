@@ -6,6 +6,7 @@
 // so the white-screen-on-cross-origin failure mode doesn't bite operators
 // who access the dev server via the LAN IP instead of localhost.
 import os from "node:os";
+import { RESTORE_UPLOAD_BODY_LIMIT } from "@arr/shared";
 
 function wslAndLocalDevOrigins() {
 	const fromEnv = process.env.DEV_ALLOWED_ORIGINS
@@ -23,6 +24,9 @@ const allowedOrigins = wslAndLocalDevOrigins();
 
 const nextConfig = {
 	output: "standalone",
+	// Next clones rewrite bodies before API validation. Its 10 MiB default
+	// would truncate supported Restore uploads; retain the API's bounded ceiling.
+	experimental: { proxyClientMaxBodySize: RESTORE_UPLOAD_BODY_LIMIT },
 	...(allowedOrigins.length > 0 && { allowedDevOrigins: allowedOrigins }),
 	// Empty turbopack config to silence Next.js 16 warning when using --webpack for builds
 	turbopack: {},

@@ -41,9 +41,19 @@ const TABLE_NAMES = [
 	"notificationSubscription",
 	"notificationRule",
 	"notificationAggregationConfig",
+	"notificationOutboxEvent",
+	"notificationOutboxDelivery",
 	"autoTagRule",
 	"labelSyncRule",
 	"labelSyncMutationAttempt",
+	"searchGrabAttempt",
+	"searchGrabClaim",
+	"arrImportOperation",
+	"arrImportFileProof",
+	"arrImportSourceClaim",
+	"queueCleanerImportReceipt",
+	"quiActionClaim",
+	"quiActionLog",
 	"providerObservationRun",
 	"providerObservationUnit",
 	"plexEpisodeObservationStage",
@@ -664,6 +674,10 @@ describe("restoreDatabase — current coordination preservation", () => {
 				findMany: vi.fn().mockResolvedValue(options.currentMutationAttempts ?? []),
 				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
 			},
+			searchGrabAttempt: { count: vi.fn().mockResolvedValue(0) },
+			searchGrabClaim: { count: vi.fn().mockResolvedValue(0) },
+			notificationOutboxEvent: { count: vi.fn().mockResolvedValue(0) },
+			notificationOutboxDelivery: { count: vi.fn().mockResolvedValue(0) },
 			huntSearchHistory: { deleteMany: firstDelete },
 		};
 		const transactionTx = new Proxy(tx, {
@@ -998,6 +1012,10 @@ describe("restoreDatabase — current coordination preservation", () => {
 		const transaction = vi.fn().mockResolvedValue(undefined);
 		const prisma = {
 			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
+			searchGrabAttempt: { count: vi.fn().mockResolvedValue(0) },
+			searchGrabClaim: { count: vi.fn().mockResolvedValue(0) },
+			notificationOutboxEvent: { count: vi.fn().mockResolvedValue(0) },
+			notificationOutboxDelivery: { count: vi.fn().mockResolvedValue(0) },
 			$transaction: transaction,
 		} as unknown as PrismaClient;
 		await expect(restoreDatabase(prisma, incomingData())).resolves.toBeUndefined();

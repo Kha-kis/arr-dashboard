@@ -206,10 +206,30 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 	};
 
 	const data = dataQuery.data;
+	// Keep the click-time copy only as a last-known fallback. Query refreshes
+	// must reach the open drawer; never substitute a same-hash other instance.
+	const matchesSelected = (copy: SeriesTorrentCopy) =>
+		copy.infoHash === selectedItem?.copy.infoHash &&
+		copy.quiInstanceId === selectedItem?.copy.quiInstanceId &&
+		copy.qbitInstanceId === selectedItem?.copy.qbitInstanceId;
+	const selectedMatches =
+		data?.clusters.flatMap((cluster) => cluster.copies).filter(matchesSelected) ?? [];
+	const selectedCopy = selectedMatches.length === 1 ? selectedMatches[0] : undefined;
+	const observationAvailable =
+		!dataQuery.isError && selectedCopy !== undefined && !selectedCopy.quiUnreachable;
+	const refreshSelectedTorrent = async () => {
+		const observed = await dataQuery.refetch();
+		if (!observed.isSuccess) return false;
+		const matches = observed.data.clusters
+			.flatMap((cluster) => cluster.copies)
+			.filter(matchesSelected);
+		return matches.length === 1 && !matches[0]!.quiUnreachable;
+	};
 	const total = data?.totalEpisodes ?? 0;
 	const correlated = data?.correlatedEpisodes ?? 0;
 	const viaInode = data?.viaInodeEpisodes ?? 0;
 	const stuck = data?.stuckEpisodes ?? 0;
+	const coverageComplete = data?.coverageStatus === "complete";
 	const correlationPct = total > 0 ? Math.round((correlated / total) * 100) : 0;
 
 	if (dataQuery.isLoading) {
@@ -223,7 +243,7 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 		);
 	}
 
-	if (dataQuery.isError) {
+	if (dataQuery.isError && !data) {
 		return (
 			<GlassmorphicCard className="space-y-2 p-4">
 				<div className="flex items-center gap-2 text-sm">
@@ -303,13 +323,15 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 							<Stat
 								label="Status"
 								value={
-									stuck > 0
-										? "Stuck — no torrent"
-										: viaInode > 0
-											? "Correlated via inode"
-											: "Correlated"
+									!coverageComplete
+										? "Coverage pending"
+										: stuck > 0
+											? "Stuck — no torrent"
+											: viaInode > 0
+												? "Correlated via inode"
+												: "Correlated"
 								}
-								tone={stuck === 0 ? "success" : "warning"}
+								tone={!coverageComplete ? "info" : stuck === 0 ? "success" : "warning"}
 							/>
 							<Stat
 								label="Size"
@@ -325,8 +347,20 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 							<Stat label="Episodes" value={total.toString()} />
 							<Stat
 								label="Correlated"
-								value={`${correlated} (${correlationPct}%)`}
-								tone={correlated === total ? "success" : correlated > 0 ? "info" : "warning"}
+								value={
+									coverageComplete
+										? `${correlated} (${correlationPct}%)`
+										: `${correlated} confirmed · pending`
+								}
+								tone={
+									!coverageComplete
+										? "info"
+										: correlated === total
+											? "success"
+											: correlated > 0
+												? "info"
+												: "warning"
+								}
 							/>
 							<Stat
 								label="Via inode"
@@ -335,8 +369,8 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 							/>
 							<Stat
 								label="Stuck"
-								value={stuck.toString()}
-								tone={stuck === 0 ? "success" : "warning"}
+								value={coverageComplete ? stuck.toString() : "Unknown"}
+								tone={!coverageComplete ? "muted" : stuck === 0 ? "success" : "warning"}
 							/>
 						</div>
 					)}
@@ -385,6 +419,7 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 								<SeasonGroupCard
 									key={group.seasonNumber}
 									group={group}
+									coverageComplete={coverageComplete}
 									clusterByKey={clusterByKey}
 									expandedClusters={expandedClusters}
 									expandedSeasons={expandedSeasons}
@@ -427,15 +462,19 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 					<div className="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs">
 						<p className="text-amber-200">
 							{itemType === "movie"
-								? "No torrent correlated yet. Use cross-seed search above or trigger a re-grab from Radarr."
+								? coverageComplete
+									? "No torrent correlated yet. Use cross-seed search above or trigger a re-grab from Radarr."
+									: "Torrent ownership is still being checked. Missing matches are unknown."
 								: "No episodes found for this series."}
 						</p>
 					</div>
 				)}
 			</GlassmorphicCard>
 			<TorrentDetailDrawer
-				copy={selectedItem?.copy ?? null}
+				copy={selectedCopy ?? selectedItem?.copy ?? null}
 				arrContext={selectedItem?.arrContext ?? null}
+				observationAvailable={observationAvailable}
+				refreshTorrent={refreshSelectedTorrent}
 				onClose={() => setSelectedItem(null)}
 			/>
 		</TooltipProvider>
@@ -512,6 +551,7 @@ const ActionItemRow: React.FC<{ item: SeriesActionItem }> = ({ item }) => {
  */
 const SeasonGroupCard: React.FC<{
 	group: SeriesSeasonGroup;
+	coverageComplete: boolean;
 	clusterByKey: Map<string, SeriesTorrentCluster>;
 	expandedClusters: Set<string>;
 	expandedSeasons: Set<number>;
@@ -525,6 +565,7 @@ const SeasonGroupCard: React.FC<{
 	onOpenDrawer: (copy: SeriesTorrentCopy, coverageLabel: string) => void;
 }> = ({
 	group,
+	coverageComplete,
 	clusterByKey,
 	expandedClusters,
 	expandedSeasons,
@@ -537,9 +578,10 @@ const SeasonGroupCard: React.FC<{
 	searchPending,
 	onOpenDrawer,
 }) => {
-	const isFullyStuck = group.correlatedEpisodes === 0 && group.totalEpisodes > 0;
+	const isFullyStuck =
+		coverageComplete && group.correlatedEpisodes === 0 && group.totalEpisodes > 0;
 	const isFullyCovered =
-		group.correlatedEpisodes === group.totalEpisodes && group.totalEpisodes > 0;
+		coverageComplete && group.correlatedEpisodes === group.totalEpisodes && group.totalEpisodes > 0;
 	const pct =
 		group.totalEpisodes > 0
 			? Math.round((group.correlatedEpisodes / group.totalEpisodes) * 100)
@@ -582,7 +624,9 @@ const SeasonGroupCard: React.FC<{
 									: "bg-amber-500/20 text-amber-200"
 						}`}
 					>
-						{group.correlatedEpisodes}/{group.totalEpisodes} ({pct}%)
+						{coverageComplete
+							? `${group.correlatedEpisodes}/${group.totalEpisodes} (${pct}%)`
+							: `${group.correlatedEpisodes} confirmed · pending`}
 					</span>
 					{group.stuckEpisodes > 0 && (
 						<span className="text-[11px] text-muted-foreground">{group.stuckEpisodes} stuck</span>

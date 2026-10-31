@@ -5,6 +5,12 @@
  */
 
 import type { NtfyConfig } from "@arr/shared";
+import {
+	httpFailureCategory,
+	networkFailureCategory,
+	notificationFailure,
+	NotificationFailureError,
+} from "../failure-diagnostics.js";
 import type { ChannelPlugin, ChannelSender, NotificationPayload, SendResult } from "../types.js";
 
 const NTFY_TIMEOUT_MS = 10000;
@@ -59,29 +65,14 @@ export const ntfySender: ChannelSender = {
 			if (response.ok) {
 				return { success: true, retryable: false };
 			}
+			await response.body?.cancel().catch(() => {});
 
-			if (response.status === 429) {
-				return { success: false, retryable: true, error: "Rate limited (429)" };
-			}
-
-			if (response.status >= 500) {
-				return { success: false, retryable: true, error: `Server error (${response.status})` };
-			}
-
-			return {
-				success: false,
-				retryable: false,
-				error: `HTTP ${response.status}: ${response.statusText}`,
-			};
+			return notificationFailure(
+				httpFailureCategory(response.status),
+				response.status === 429 || response.status >= 500,
+			);
 		} catch (err) {
-			if (err instanceof Error && err.name === "TimeoutError") {
-				return { success: false, retryable: true, error: "Request timed out" };
-			}
-			return {
-				success: false,
-				retryable: true,
-				error: err instanceof Error ? err.message : String(err),
-			};
+			return notificationFailure(networkFailureCategory(err), true);
 		}
 	},
 
@@ -92,7 +83,7 @@ export const ntfySender: ChannelSender = {
 			body: "This is a test notification from Arr Dashboard.",
 		});
 		if (!result.success) {
-			throw new Error(result.error ?? "ntfy test failed");
+			throw new NotificationFailureError(result.failureCategory ?? "unknown");
 		}
 	},
 };

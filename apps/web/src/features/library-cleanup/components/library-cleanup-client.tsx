@@ -156,7 +156,14 @@ function EpisodeIdentity({
 export function LibraryCleanupClient() {
 	const { gradient } = useThemeGradient();
 	const [activeTab, setActiveTab] = useState<Tab>("config");
-	const { data: config, isLoading } = useCleanupConfig();
+	const {
+		data: config,
+		isLoading,
+		isError: isConfigError,
+		isFetching: isConfigFetching,
+		errorUpdatedAt: configErrorUpdatedAt,
+		refetch: refetchConfig,
+	} = useCleanupConfig();
 	const updateConfig = useUpdateCleanupConfig();
 	const preview = useCleanupPreview();
 	const execute = useCleanupExecute();
@@ -165,7 +172,9 @@ export function LibraryCleanupClient() {
 	const [explainTarget, setExplainTarget] = useState<ExplainTarget | null>(null);
 	const explain = useCleanupExplain();
 
-	if (isLoading) return <PremiumPageLoading showHeader cardCount={3} />;
+	// Keep the unavailable state and disabled Retry visible during a cold retry.
+	const isConfigUnavailable = isConfigError || (!config && configErrorUpdatedAt > 0);
+	if (isLoading && !isConfigUnavailable) return <PremiumPageLoading showHeader cardCount={3} />;
 
 	return (
 		<>
@@ -184,6 +193,27 @@ export function LibraryCleanupClient() {
 			/>
 
 			<div className="mt-6 space-y-6">
+				{activeTab === "config" && isConfigUnavailable && (
+					<div
+						role="alert"
+						className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm"
+					>
+						<p>
+							{config
+								? "Failed to refresh configuration. Showing last-known settings; they may be stale."
+								: "Configuration is unavailable. Please try again."}
+						</p>
+						<button
+							type="button"
+							onClick={() => void refetchConfig()}
+							disabled={isConfigFetching}
+							className="mt-2 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium bg-primary/20 text-primary hover:bg-primary/30 disabled:opacity-50"
+						>
+							<RefreshCw className="h-3 w-3" />
+							Retry
+						</button>
+					</div>
+				)}
 				{activeTab === "config" && config && (
 					<ConfigTab
 						config={config}
@@ -1109,7 +1139,16 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 	const retry = useRetryCleanupItem();
 	const reject = useRejectCleanupItem();
 	const bulkAction = useBulkCleanupAction();
-	const actionError = approve.error ?? retry.error ?? bulkAction.error;
+	const isActionPending =
+		approve.isPending || retry.isPending || reject.isPending || bulkAction.isPending;
+	const actionError = approve.error ?? retry.error ?? reject.error ?? bulkAction.error;
+	const currentSelectedIds = useMemo(
+		() =>
+			statusFilter === "pending"
+				? (data?.items.filter((item) => selectedIds.has(item.id)).map((item) => item.id) ?? [])
+				: [],
+		[data, selectedIds, statusFilter],
+	);
 	const actionWarnings = [
 		...(approve.data?.warnings ?? []),
 		...(retry.data?.warnings ?? []),
@@ -1123,28 +1162,34 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 		setSelectedIds(new Set());
 	}, [page, statusFilter]);
 
-	const toggleItem = useCallback((id: string) => {
-		setSelectedIds((prev) => {
-			const next = new Set(prev);
-			if (next.has(id)) next.delete(id);
-			else next.add(id);
-			return next;
-		});
-	}, []);
+	const toggleItem = useCallback(
+		(id: string) => {
+			if (isActionPending) return;
+			setSelectedIds((prev) => {
+				const next = new Set(prev);
+				if (next.has(id)) next.delete(id);
+				else next.add(id);
+				return next;
+			});
+		},
+		[isActionPending],
+	);
 
 	const toggleAll = useCallback(() => {
-		if (!data) return;
+		if (!data || isActionPending) return;
 		setSelectedIds((prev) => {
-			if (prev.size === data.items.length) return new Set();
+			if (data.items.every((item) => prev.has(item.id))) return new Set();
 			return new Set(data.items.map((i) => i.id));
 		});
-	}, [data]);
+	}, [data, isActionPending]);
 
 	const handleBulkAction = useCallback(
 		(action: "approved" | "rejected") => {
-			const ids = [...selectedIds];
+			if (isActionPending || currentSelectedIds.length === 0) return;
+			const ids = currentSelectedIds;
 			approve.reset();
 			retry.reset();
+			reject.reset();
 			bulkAction.mutate(
 				{ ids, action },
 				{
@@ -1152,13 +1197,13 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 				},
 			);
 		},
-		[selectedIds, approve, retry, bulkAction],
+		[currentSelectedIds, isActionPending, approve, retry, reject, bulkAction],
 	);
 
 	const showCheckboxes = statusFilter === "pending" && data && data.items.length > 0;
 	const allSelected =
 		showCheckboxes && data
-			? selectedIds.size === data.items.length && data.items.length > 0
+			? currentSelectedIds.length === data.items.length && data.items.length > 0
 			: false;
 
 	return (
@@ -1182,6 +1227,7 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 								setPage(1);
 							}}
 							aria-pressed={statusFilter === value}
+							disabled={isActionPending}
 							className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
 								statusFilter === value
 									? "bg-primary/20 text-primary border border-primary/30"
@@ -1199,6 +1245,7 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 						aria-checked={allSelected}
 						aria-label="Select all items"
 						onClick={toggleAll}
+						disabled={isActionPending}
 						className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors ml-auto"
 					>
 						<div
@@ -1214,11 +1261,11 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 			</div>
 
 			{/* Bulk action bar */}
-			{selectedIds.size > 0 && (
+			{currentSelectedIds.length > 0 && (
 				<BulkActionBar
-					count={selectedIds.size}
+					count={currentSelectedIds.length}
 					gradient={gradient}
-					isPending={bulkAction.isPending}
+					isPending={isActionPending}
 					onApprove={() => handleBulkAction("approved")}
 					onReject={() => handleBulkAction("rejected")}
 				/>
@@ -1229,7 +1276,9 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 					role="alert"
 					className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400 whitespace-pre-line"
 				>
-					{getErrorMessage(actionError)}
+					{incognitoMode
+						? anonymizeCleanupError(getErrorMessage(actionError))
+						: getErrorMessage(actionError)}
 				</div>
 			)}
 			{actionWarnings.length > 0 && (
@@ -1313,6 +1362,7 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 												incognitoMode ? getLinuxIsoName(item.title) : item.title
 											}`}
 											onClick={() => toggleItem(item.id)}
+											disabled={isActionPending}
 											className="shrink-0"
 										>
 											<div
@@ -1397,11 +1447,13 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 											<button
 												type="button"
 												onClick={() => {
+													if (isActionPending) return;
 													retry.reset();
+													reject.reset();
 													bulkAction.reset();
 													approve.mutate(item.id);
 												}}
-												disabled={approve.isPending}
+												disabled={isActionPending}
 												className="rounded-md px-3 py-1 text-xs font-medium bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-colors"
 											>
 												Approve
@@ -1409,12 +1461,13 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 											<button
 												type="button"
 												onClick={() => {
+													if (isActionPending) return;
 													approve.reset();
 													retry.reset();
 													bulkAction.reset();
 													reject.mutate(item.id);
 												}}
-												disabled={reject.isPending}
+												disabled={isActionPending}
 												className="rounded-md px-3 py-1 text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
 											>
 												Reject
@@ -1425,11 +1478,13 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 										<button
 											type="button"
 											onClick={() => {
+												if (isActionPending) return;
 												approve.reset();
+												reject.reset();
 												bulkAction.reset();
 												retry.mutate(item.id);
 											}}
-											disabled={retry.isPending}
+											disabled={isActionPending}
 											className="rounded-md px-3 py-1 text-xs font-medium bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors disabled:opacity-50"
 										>
 											Resume retry
@@ -1445,7 +1500,7 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 						<div className="flex items-center justify-center gap-2 pt-2">
 							<button
 								type="button"
-								disabled={page <= 1}
+								disabled={page <= 1 || isActionPending}
 								onClick={() => setPage(page - 1)}
 								className="rounded-md p-1.5 text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
 							>
@@ -1456,7 +1511,7 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 							</span>
 							<button
 								type="button"
-								disabled={page >= totalPages}
+								disabled={page >= totalPages || isActionPending}
 								onClick={() => setPage(page + 1)}
 								className="rounded-md p-1.5 text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
 							>

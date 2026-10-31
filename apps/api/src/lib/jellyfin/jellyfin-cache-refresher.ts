@@ -30,13 +30,14 @@ import type {
 	ProviderCoverageReceiptV2,
 	ProviderCoverageUnitV1,
 } from "../provider-observation/coverage-receipt.js";
-import { refreshNativeInventory } from "../provider-observation/native-inventory-refresh.js";
+import { requestNativeInventoryRefresh } from "../provider-observation/native-inventory-job-orchestration.js";
 import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import type { ProviderCacheRefreshAttempt } from "../services/provider-cache-status.js";
 import {
 	createProviderPublicationAuthority,
 	type OwnedProviderPublicationSnapshot,
 	ProviderIdentityGuardError,
+	type ProviderPublicationStage,
 	withGuardedProviderPublication,
 } from "../services/provider-identity-guard.js";
 import { JellyfinClient, type JellyfinLibrary, type JellyfinUser } from "./jellyfin-client.js";
@@ -45,14 +46,54 @@ import {
 	fingerprintJellyfinLibraryRows,
 	type JellyfinLibraryGenerationMetadataV1,
 } from "./jellyfin-generation-metadata.js";
-import { collectJellyfinNativeEpisodeInventory } from "./jellyfin-native-episode-inventory.js";
-import { collectJellyfinNativeLibraryInventory } from "./jellyfin-native-inventory.js";
 
 export const JELLYFIN_STALE_EVICTION_CHUNK_SIZE = 500;
 /** Bound Prisma's cached createMany query plans for production-sized libraries. */
 export const JELLYFIN_CACHE_PUBLICATION_CHUNK_SIZE = 100;
 /** Allow bounded publication batches to complete on higher-latency databases. */
 export const JELLYFIN_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS = 60_000;
+
+type JellyfinCanonicalPhase =
+	| ProviderPublicationStage
+	| "preparing-owned-input"
+	| "native-admission"
+	| "user-discovery"
+	| "library-discovery"
+	| "library-item-collection"
+	| "library-page-request"
+	| "library-page-headers"
+	| "library-page-body"
+	| "library-page-validation"
+	| "library-page-accepted"
+	| "library-items-mapped"
+	| "on-deck-collection"
+	| "attempt-settled"
+	| "attempt-failed";
+
+function createCanonicalPhaseObserver(
+	log: FastifyBaseLogger,
+	provider: "jellyfin" | "emby",
+): (stage: JellyfinCanonicalPhase) => void {
+	const startedAt = performance.now();
+	return (stage) => {
+		try {
+			// Pino serializes child bindings even when the event itself is safe.
+			const bindings =
+				"bindings" in log && typeof log.bindings === "function" ? log.bindings() : {};
+			if (Object.keys(bindings).some((key) => !["pid", "hostname"].includes(key))) return;
+			const elapsedMs = Math.min(
+				Number.MAX_SAFE_INTEGER,
+				Math.max(0, Math.floor(performance.now() - startedAt)),
+			);
+			log.info(
+				{ provider, category: "canonical-phase", cacheType: "jellyfin", stage, elapsedMs },
+				"Provider canonical refresh phase",
+			);
+		} catch {
+			// Optional timing evidence must never change refresh or failure handling.
+		}
+	};
+}
 
 // ============================================================================
 // Aggregation Types
@@ -116,6 +157,7 @@ export interface JellyfinCacheSnapshot {
 }
 
 export interface JellyfinPublicationContext {
+	signal?: AbortSignal;
 	prisma: PrismaClient;
 	instance: OwnedProviderPublicationSnapshot;
 	log: FastifyBaseLogger;
@@ -123,7 +165,7 @@ export interface JellyfinPublicationContext {
 }
 
 export interface JellyfinCacheRefreshResult {
-	nativeInventoryStatus?: "published" | "failed" | "superseded";
+	nativeInventoryStatus?: "scheduled" | "coalesced" | "current" | "failed" | "superseded";
 	upserted: number;
 	errors: number;
 	errorMessages: string[];
@@ -160,6 +202,7 @@ export function createOwnedJellyfinPublicationSnapshot(
 function jellyfinClientForSnapshot(
 	instance: OwnedProviderPublicationSnapshot,
 	log: FastifyBaseLogger,
+	signal?: AbortSignal,
 ): JellyfinClient {
 	return new JellyfinClient(
 		instance.baseUrl,
@@ -167,6 +210,8 @@ function jellyfinClientForSnapshot(
 		log,
 		undefined,
 		instance.httpAuthHeaders,
+		undefined,
+		signal,
 	);
 }
 
@@ -174,27 +219,37 @@ export async function refreshJellyfinCache(
 	context: JellyfinPublicationContext,
 ): Promise<JellyfinCacheRefreshResult> {
 	const { prisma, instance, log } = context;
+	const onStage = createCanonicalPhaseObserver(
+		log,
+		instance.service === "EMBY" ? "emby" : "jellyfin",
+	);
 	try {
-		return await withGuardedProviderPublication(
+		const result = await withGuardedProviderPublication(
 			prisma,
 			instance,
 			log,
 			async () =>
 				await collectJellyfinCacheLiveEvidence(
-					jellyfinClientForSnapshot(instance, log),
+					jellyfinClientForSnapshot(instance, log, context.signal),
 					instance.id,
 					log,
 					{
 						provider: instance.service === "EMBY" ? "emby" : "jellyfin",
+						onStage,
 					},
 				),
 			async (tx, collected) => await publishJellyfinCache(tx, instance, collected),
 			{
+				onStage,
 				cleanupRunClaimToken: context.cleanupRunClaimToken,
+				signal: context.signal,
 				timeout: JELLYFIN_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS,
 			},
 		);
+		onStage("attempt-settled");
+		return result;
 	} catch (error) {
+		onStage("attempt-failed");
 		log.error({ category: "publication-rejected" }, "Jellyfin cache publication rejected");
 		if (error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_SUPERSEDED") {
 			return { upserted: 0, errors: 0, errorMessages: [], complete: false, superseded: true };
@@ -218,11 +273,13 @@ export async function refreshJellyfinCache(
  * compatibility entry point for callers that have not adopted attempts.
  */
 export async function refreshOwnedJellyfinCache(context: {
+	signal?: AbortSignal;
 	prisma: PrismaClient;
 	encryptor: Pick<Encryptor, "decrypt">;
 	instance: ServiceInstance;
 	log: FastifyBaseLogger;
 	cleanupRunClaimToken?: string;
+	nativeInventoryMode?: "automatic" | "force";
 }): Promise<JellyfinCacheRefreshResult> {
 	return await runOwnedJellyfinCacheAttempt(context);
 }
@@ -230,11 +287,13 @@ export async function refreshOwnedJellyfinCache(context: {
 /** Continue a Jellyfin/Emby refresh with the caller's exact durable claim. */
 export async function refreshOwnedJellyfinCacheWithAttempt(
 	context: {
+		signal?: AbortSignal;
 		prisma: PrismaClient;
 		encryptor: Pick<Encryptor, "decrypt">;
 		instance: ServiceInstance;
 		log: FastifyBaseLogger;
 		cleanupRunClaimToken?: string;
+		nativeInventoryMode?: "automatic" | "force";
 	},
 	attempt: ProviderCacheRefreshAttempt,
 ): Promise<JellyfinCacheRefreshResult> {
@@ -243,15 +302,21 @@ export async function refreshOwnedJellyfinCacheWithAttempt(
 
 async function runOwnedJellyfinCacheAttempt(
 	context: {
+		signal?: AbortSignal;
 		prisma: PrismaClient;
 		encryptor: Pick<Encryptor, "decrypt">;
 		instance: ServiceInstance;
 		log: FastifyBaseLogger;
 		cleanupRunClaimToken?: string;
+		nativeInventoryMode?: "automatic" | "force";
 	},
 	claimedAttempt?: ProviderCacheRefreshAttempt,
 ): Promise<JellyfinCacheRefreshResult> {
 	let nativeInventoryStatus: JellyfinCacheRefreshResult["nativeInventoryStatus"];
+	const onStage = createCanonicalPhaseObserver(
+		context.log,
+		context.instance.service === "EMBY" ? "emby" : "jellyfin",
+	);
 	try {
 		const authority = createProviderPublicationAuthority(context.instance);
 		const provider = authority.service === "EMBY" ? "emby" : "jellyfin";
@@ -264,36 +329,33 @@ async function runOwnedJellyfinCacheAttempt(
 			authority,
 			cacheType: "jellyfin",
 			log: context.log,
-			prepare: () => createOwnedJellyfinPublicationSnapshot(context.encryptor, context.instance),
+			prepare: () => {
+				onStage("preparing-owned-input");
+				return createOwnedJellyfinPublicationSnapshot(context.encryptor, context.instance);
+			},
 			collect: async (prepared, attempt) => {
-				const nativeResults = [];
-				for (const [domain, collect] of [
-					["library", collectJellyfinNativeLibraryInventory],
-					["episode", collectJellyfinNativeEpisodeInventory],
-				] as const) {
-					const result = await refreshNativeInventory({
-						prisma: context.prisma,
-						instance: prepared,
-						log: context.log,
-						cacheType: "jellyfin",
-						attempt,
-						domains: [domain],
-						cleanupRunClaimToken: context.cleanupRunClaimToken,
-						collect: async (instance) =>
-							await collect(jellyfinClientForSnapshot(instance, context.log)),
-					});
-					nativeResults.push(result.status);
+				try {
+					onStage("native-admission");
+					const native = await requestNativeInventoryRefresh(
+						context.prisma,
+						authority,
+						["library", "episode"],
+						{ mode: context.nativeInventoryMode ?? "automatic" },
+					);
+					nativeInventoryStatus =
+						native.status === "accepted"
+							? "scheduled"
+							: native.status === "retryable"
+								? "failed"
+								: native.status;
+				} catch {
+					nativeInventoryStatus = "failed";
 				}
-				nativeInventoryStatus = nativeResults.includes("failed")
-					? "failed"
-					: nativeResults.includes("superseded")
-						? "superseded"
-						: "published";
 				const collected = await collectJellyfinCacheLiveEvidence(
-					jellyfinClientForSnapshot(prepared, context.log),
+					jellyfinClientForSnapshot(prepared, context.log, context.signal),
 					prepared.id,
 					context.log,
-					{ provider, attemptStartedAt: attempt.attemptedAt },
+					{ provider, attemptStartedAt: attempt.attemptedAt, onStage },
 				);
 				if (
 					!collected.completedAt ||
@@ -365,10 +427,14 @@ async function runOwnedJellyfinCacheAttempt(
 				};
 			},
 			failureReason: (error) =>
-				error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_SUPERSEDED"
-					? "publication-superseded"
-					: "provider-unavailable",
+				context.signal?.aborted
+					? "unknown-failure"
+					: error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_SUPERSEDED"
+						? "publication-superseded"
+						: "provider-unavailable",
 			options: {
+				onStage,
+				signal: context.signal,
 				cleanupRunClaimToken: context.cleanupRunClaimToken,
 				timeout: JELLYFIN_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS,
 			},
@@ -376,8 +442,10 @@ async function runOwnedJellyfinCacheAttempt(
 		const result = claimedAttempt
 			? await runClaimedProviderObservationAttempt(input, claimedAttempt)
 			: await runProviderObservationAttempt(input);
+		onStage("attempt-settled");
 		return { ...result, ...(nativeInventoryStatus ? { nativeInventoryStatus } : {}) };
 	} catch (error) {
+		onStage("attempt-failed");
 		context.log.error({ category: "publication-rejected" }, "Jellyfin cache publication rejected");
 		if (
 			error instanceof ProviderObservationCoordinatorError &&
@@ -390,9 +458,11 @@ async function runOwnedJellyfinCacheAttempt(
 			upserted: 0,
 			errors: 1,
 			errorMessages: [
-				error instanceof ProviderObservationCoordinatorError && error.code === "receipt-invalid"
-					? "receipt-invalid"
-					: "provider-unavailable",
+				context.signal?.aborted
+					? "refresh-cancelled"
+					: error instanceof ProviderObservationCoordinatorError && error.code === "receipt-invalid"
+						? "receipt-invalid"
+						: "provider-unavailable",
 			],
 			complete: false,
 		};
@@ -456,6 +526,7 @@ async function replaceJellyfinCacheRows(
 }
 
 interface JellyfinCollectionOptions {
+	onStage?: (stage: JellyfinCanonicalPhase) => void;
 	provider?: "jellyfin" | "emby";
 	attemptStartedAt?: Date;
 	observedAt?: Date;
@@ -543,6 +614,14 @@ export async function collectJellyfinCacheLiveEvidence(
 	options: JellyfinCollectionOptions = {},
 ): Promise<JellyfinCacheCollectionResult> {
 	const provider = options.provider ?? "jellyfin";
+	const observer = options.onStage ?? createCanonicalPhaseObserver(log, provider);
+	const onStage = (stage: JellyfinCanonicalPhase) => {
+		try {
+			observer(stage);
+		} catch {
+			// Collection must retain its result even if optional diagnostics fail.
+		}
+	};
 	const attemptStartedAt = options.attemptStartedAt ?? new Date();
 	const observedAt = options.observedAt ?? new Date();
 	const coverageUnits: ProviderCoverageUnitV1[] = [];
@@ -577,6 +656,7 @@ export async function collectJellyfinCacheLiveEvidence(
 	try {
 		let users: JellyfinUser[];
 		try {
+			onStage("user-discovery");
 			users = await client.getUsers();
 		} catch {
 			log.error({ category: "user-discovery-failed" }, "Jellyfin user discovery failed");
@@ -600,6 +680,7 @@ export async function collectJellyfinCacheLiveEvidence(
 
 		for (const user of users) {
 			try {
+				onStage("library-discovery");
 				const libraries = await client.getLibraries(user.id);
 				const libraryIds = new Set<string>();
 				if (
@@ -653,8 +734,20 @@ export async function collectJellyfinCacheLiveEvidence(
 				const scopeKey = `user:${user.id}/library:${library.id}`;
 				let pageResult: Awaited<ReturnType<JellyfinClient["getLibraryItemsWithCoverage"]>>;
 				try {
+					onStage("library-item-collection");
 					pageResult = await client.getLibraryItemsWithCoverage(user.id, library.id, {
 						includeItemTypes,
+						onReadStage: (stage) => {
+							const phases = {
+								"request-start": "library-page-request",
+								"headers-received": "library-page-headers",
+								"body-read": "library-page-body",
+								validation: "library-page-validation",
+								"page-accepted": "library-page-accepted",
+								"items-mapped": "library-items-mapped",
+							} as const;
+							onStage(phases[stage]);
+						},
 					});
 				} catch {
 					complete = false;
@@ -812,6 +905,7 @@ export async function collectJellyfinCacheLiveEvidence(
 				rawObserved: 0,
 			});
 			try {
+				onStage("on-deck-collection");
 				const [resumeItems, nextUp] = await Promise.all([
 					client.getResumeItems(user.id),
 					client.getNextUp(user.id),

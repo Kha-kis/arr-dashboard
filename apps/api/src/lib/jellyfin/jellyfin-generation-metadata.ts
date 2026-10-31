@@ -110,10 +110,21 @@ interface JellyfinEpisodeGenerationMetadataBaseV3 {
 
 export type JellyfinEpisodeGenerationMetadataV3 = JellyfinEpisodeGenerationMetadataBaseV3;
 
+export type JellyfinEpisodeGenerationMetadataV4 = Omit<
+	JellyfinEpisodeGenerationMetadataBaseV2,
+	"version"
+> & {
+	version: 4;
+	storage: "generation-scoped";
+	sourceVersion: 1 | 2 | 3;
+	catalogProvenance?: JellyfinEpisodeCatalogProvenance;
+};
+
 export type JellyfinEpisodeGenerationMetadata =
 	| JellyfinEpisodeGenerationMetadataV1
 	| JellyfinEpisodeGenerationMetadataV2
-	| JellyfinEpisodeGenerationMetadataV3;
+	| JellyfinEpisodeGenerationMetadataV3
+	| JellyfinEpisodeGenerationMetadataV4;
 
 export type JellyfinGenerationMetadataV1 =
 	| JellyfinLibraryGenerationMetadataV1
@@ -197,6 +208,10 @@ const EPISODE_V3_KEYS = [
 	"contentFingerprint",
 	"coverageReceipt",
 ] as const;
+
+const EPISODE_V4_KEYS = [...EPISODE_V2_KEYS, "storage", "sourceVersion"] as const;
+
+const EPISODE_V4_CATALOG_KEYS = [...EPISODE_V4_KEYS, "catalogProvenance"] as const;
 
 const LIBRARY_RECEIPT_DOMAINS = [
 	"library-inventory",
@@ -421,15 +436,19 @@ function decodeBase(
 	| ({
 			provider: JellyfinProvider;
 			itemCount: number;
-			version: 1 | 2 | 3;
+			version: 1 | 2 | 3 | 4;
 	  } & JellyfinLibraryDiscriminator)
 	| null {
 	const expectedKeys = episode
-		? value.version === 3
-			? EPISODE_V3_KEYS
-			: value.version === 2
-				? EPISODE_V2_KEYS
-				: EPISODE_KEYS
+		? value.version === 4
+			? value.sourceVersion === 3 && value.publicationLevel === "positive-only"
+				? EPISODE_V4_CATALOG_KEYS
+				: EPISODE_V4_KEYS
+			: value.version === 3
+				? EPISODE_V3_KEYS
+				: value.version === 2
+					? EPISODE_V2_KEYS
+					: EPISODE_KEYS
 		: LIBRARY_KEYS;
 	if (!hasExactKeys(value, expectedKeys)) return null;
 	const validDiscriminator = episode
@@ -439,7 +458,14 @@ function decodeBase(
 			(value.publicationLevel === "positive-only" && value.completeness === "partial");
 	if (
 		(!episode && value.version !== 1) ||
-		(episode && value.version !== 1 && value.version !== 2 && value.version !== 3) ||
+		(episode &&
+			value.version !== 1 &&
+			value.version !== 2 &&
+			value.version !== 3 &&
+			value.version !== 4) ||
+		(value.version === 4 &&
+			(value.storage !== "generation-scoped" ||
+				(value.sourceVersion !== 1 && value.sourceVersion !== 2 && value.sourceVersion !== 3))) ||
 		!isProvider(value.provider) ||
 		value.cacheType !== (episode ? "jellyfin_episode" : "jellyfin") ||
 		!validDiscriminator ||
@@ -459,14 +485,14 @@ function decodeBase(
 			value.parentLibraryGenerationId.includes("\0") ||
 			value.parentLibraryGenerationId.length > 500 ||
 			!isFingerprint(value.parentLibraryMetadataFingerprint) ||
-			((value.version === 2 || value.version === 3) &&
+			((value.version === 2 || value.version === 3 || value.version === 4) &&
 				!isFingerprint(value.parentLibraryDependencyFingerprint))
 		) {
 			return null;
 		}
 	}
 	return {
-		version: value.version as 1 | 2 | 3,
+		version: value.version as 1 | 2 | 3 | 4,
 		provider: value.provider,
 		itemCount: value.itemCount,
 		publicationLevel: value.publicationLevel,
@@ -474,7 +500,7 @@ function decodeBase(
 	} as {
 		provider: JellyfinProvider;
 		itemCount: number;
-		version: 1 | 2 | 3;
+		version: 1 | 2 | 3 | 4;
 	} & JellyfinLibraryDiscriminator;
 }
 
@@ -513,7 +539,7 @@ export function decodeJellyfinEpisodeGenerationMetadata(
 		true,
 		base.itemCount,
 		base.publicationLevel === "authoritative",
-		base.version === 3,
+		base.version === 3 || (base.version === 4 && value.sourceVersion === 3),
 	);
 	if (!coverageReceipt) return { ok: false };
 	if (base.version === 3) {
@@ -528,6 +554,24 @@ export function decodeJellyfinEpisodeGenerationMetadata(
 				coverageReceipt,
 				catalogProvenance,
 			} as JellyfinEpisodeGenerationMetadataV3,
+		};
+	}
+	if (base.version === 4) {
+		if (value.sourceVersion === 3 && base.publicationLevel === "positive-only") {
+			const catalogProvenance = decodeJellyfinEpisodeCatalogProvenance(value.catalogProvenance);
+			if (!catalogProvenance) return { ok: false };
+			return {
+				ok: true,
+				metadata: {
+					...value,
+					coverageReceipt,
+					catalogProvenance,
+				} as JellyfinEpisodeGenerationMetadataV4,
+			};
+		}
+		return {
+			ok: true,
+			metadata: { ...value, coverageReceipt } as JellyfinEpisodeGenerationMetadataV4,
 		};
 	}
 	return {
@@ -689,7 +733,7 @@ function canonicalEpisodeDate(value: Date | string | null): string | null {
 			: value;
 }
 
-function projectJellyfinEpisodeRow(
+export function projectJellyfinEpisodeRow(
 	row: JellyfinEpisodeRowFingerprintInput,
 ): CanonicalJellyfinEpisodeRow {
 	return {

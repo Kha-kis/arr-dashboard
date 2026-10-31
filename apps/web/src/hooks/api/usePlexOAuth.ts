@@ -72,9 +72,7 @@ export function usePlexOAuth(): UsePlexOAuthResult {
 
 	const popupRef = useRef<Window | null>(null);
 	const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-	const pollStartRef = useRef<number>(0);
-	const abortRef = useRef(false);
-	const pollInFlightRef = useRef(false);
+	const attemptRef = useRef(0);
 
 	/** Clean up polling interval and popup. */
 	const cleanup = useCallback(() => {
@@ -89,11 +87,16 @@ export function usePlexOAuth(): UsePlexOAuthResult {
 	}, []);
 
 	// Cleanup on unmount
-	useEffect(() => cleanup, [cleanup]);
+	useEffect(
+		() => () => {
+			attemptRef.current += 1;
+			cleanup();
+		},
+		[cleanup],
+	);
 
 	const cancel = useCallback(() => {
-		abortRef.current = true;
-		pollInFlightRef.current = false;
+		attemptRef.current += 1;
 		cleanup();
 		setStatus("idle");
 		setError(null);
@@ -105,8 +108,10 @@ export function usePlexOAuth(): UsePlexOAuthResult {
 			return;
 		}
 
-		abortRef.current = false;
-		pollInFlightRef.current = false;
+		const attempt = ++attemptRef.current;
+		const isCurrentAttempt = () => attemptRef.current === attempt;
+		// A cancelled request's finally must never release a newer attempt's gate.
+		let pollInFlight = false;
 		setError(null);
 		setServers([]);
 		setTokenRef(null);
@@ -141,7 +146,7 @@ export function usePlexOAuth(): UsePlexOAuthResult {
 			try {
 				const { pinId, pinCode } = await createPlexPin(clientId);
 
-				if (abortRef.current) return;
+				if (!isCurrentAttempt()) return;
 
 				// Redirect popup to Plex auth page
 				const authParams = new URLSearchParams({
@@ -153,24 +158,25 @@ export function usePlexOAuth(): UsePlexOAuthResult {
 				popup.location.href = `${PLEX_AUTH_URL}?${authParams.toString()}`;
 
 				setStatus("polling");
-				pollStartRef.current = Date.now();
+				const pollStartedAt = Date.now();
 
 				// Start polling for token
 				pollIntervalRef.current = setInterval(async () => {
 					// Skip if a previous poll request is still in flight
-					if (pollInFlightRef.current) return;
+					if (!isCurrentAttempt() || pollInFlight) return;
 
 					// Timeout check
-					if (Date.now() - pollStartRef.current > POLL_TIMEOUT_MS) {
+					if (Date.now() - pollStartedAt > POLL_TIMEOUT_MS) {
 						cleanup();
 						setStatus("error");
 						setError("Plex authentication timed out. Please try again.");
 						return;
 					}
 
-					pollInFlightRef.current = true;
+					pollInFlight = true;
 					try {
 						const { tokenRef: receivedRef } = await pollPlexPin(pinId, clientId);
+						if (!isCurrentAttempt()) return;
 
 						// Check popup closed AFTER polling — the user may have closed
 						// the popup after approving (Plex says "you can close this window")
@@ -185,7 +191,6 @@ export function usePlexOAuth(): UsePlexOAuthResult {
 						// Token stored server-side — stop polling
 						cleanup();
 
-						if (abortRef.current) return;
 						setTokenRef(receivedRef);
 						setStatus("discovering");
 
@@ -193,11 +198,11 @@ export function usePlexOAuth(): UsePlexOAuthResult {
 						try {
 							const { servers: discovered } = await discoverPlexServers(receivedRef, clientId);
 
-							if (abortRef.current) return;
+							if (!isCurrentAttempt()) return;
 							setServers(discovered);
 							setStatus("done");
 						} catch (discoverErr: unknown) {
-							if (!abortRef.current) {
+							if (isCurrentAttempt()) {
 								setStatus("error");
 								setError(getErrorMessage(discoverErr, "Failed to discover Plex servers"));
 							}
@@ -206,15 +211,14 @@ export function usePlexOAuth(): UsePlexOAuthResult {
 						// Poll-check errors are transient — the interval will retry on next tick.
 						// Discovery errors are handled in the inner try-catch above.
 					} finally {
-						pollInFlightRef.current = false;
+						pollInFlight = false;
 					}
 				}, POLL_INTERVAL_MS);
 			} catch (err: unknown) {
+				if (!isCurrentAttempt()) return;
 				cleanup();
-				if (!abortRef.current) {
-					setStatus("error");
-					setError(getErrorMessage(err, "Failed to start Plex authentication"));
-				}
+				setStatus("error");
+				setError(getErrorMessage(err, "Failed to start Plex authentication"));
 			}
 		})();
 	}, [status, cleanup]);

@@ -18,6 +18,7 @@ import {
 import { SimpleFormField } from "../../../components/ui/simple-form-field";
 import { useSeerrUserQuota, useUpdateSeerrUser } from "../../../hooks/api/useSeerr";
 import { getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
+import { notifySeerrActionError } from "../lib/seerr-action-error";
 
 interface UserSettingsDialogProps {
 	user: SeerrUser | null;
@@ -85,8 +86,9 @@ export const UserSettingsDialog = ({
 					);
 					onOpenChange(false);
 				},
-				onError: () =>
-					toast.error(
+				onError: (error) =>
+					notifySeerrActionError(
+						error,
 						`Failed to update quota for ${incognitoMode ? getLinuxUsername(user.displayName) : user.displayName}`,
 					),
 			},

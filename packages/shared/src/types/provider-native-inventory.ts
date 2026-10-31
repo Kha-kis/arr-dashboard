@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { providerNativeWatchCoverageSchema } from "./native-watch-coverage";
 
 export const providerInventoryConnectionSchema = z.object({
 	status: z.enum(["matched", "unmatched", "ambiguous", "unknown"]),
@@ -22,6 +23,14 @@ export const providerInventoryConnectionSchema = z.object({
 });
 export type ProviderInventoryConnection = z.infer<typeof providerInventoryConnectionSchema>;
 
+export const providerNativeWatchDisplaySchema = z.object({
+	state: z.enum(["watched", "unwatched", "unknown"]),
+	freshness: z.enum(["current", "last-known", "unavailable"]),
+	valueSemantics: z.enum(["exact", "lower-bound", "unknown"]),
+	observedAt: z.string().datetime().nullable(),
+});
+export type ProviderNativeWatchDisplay = z.infer<typeof providerNativeWatchDisplaySchema>;
+
 const nativeKeySchema = z
 	.string()
 	.min(1)
@@ -32,6 +41,7 @@ export const providerNativeInventoryRequestSchema = z
 	.object({
 		instanceId: nativeKeySchema,
 		domain: z.enum(["library", "episode"]),
+		metadataFilter: z.literal("missing-tmdb").optional(),
 		afterNativeId: nativeKeySchema.optional(),
 		expectedGenerationId: z.string().min(1).max(500).optional(),
 		limit: z.coerce.number().int().min(1).max(200).default(100),
@@ -42,14 +52,47 @@ export const providerNativeInventoryRequestSchema = z
 			message: "Continuing inventory pages requires the original snapshot generation",
 			path: ["expectedGenerationId"],
 		},
-	);
+	)
+	.refine((value) => value.metadataFilter === undefined || value.domain === "library", {
+		message: "Metadata filtering is available only for library inventory",
+		path: ["metadataFilter"],
+	});
+
+export const providerNativeInventoryAttemptSchema = z.object({
+	state: z.enum([
+		"pending",
+		"running",
+		"ready",
+		"published",
+		"incomplete",
+		"superseded",
+		"unknown",
+	]),
+	passOrdinal: z.number().int().min(0).max(3),
+	pagesCompleted: z.number().int().nonnegative(),
+	itemsStaged: z.number().int().nonnegative(),
+	failureCount: z.number().int().nonnegative(),
+	reasonCode: z
+		.enum([
+			"provider-unavailable",
+			"coverage-incomplete",
+			"deadline-exceeded",
+			"database-retryable",
+			"budget-exhausted",
+		])
+		.nullable(),
+});
+export type ProviderNativeInventoryAttempt = z.infer<typeof providerNativeInventoryAttemptSchema>;
 
 export const providerNativeInventoryResponseSchema = z.discriminatedUnion("status", [
 	z.object({
 		status: z.literal("available"),
+		attempt: providerNativeInventoryAttemptSchema.optional(),
 		generationId: z.string(),
+		watchCoverage: providerNativeWatchCoverageSchema.optional(),
 		observedAt: z.string(),
 		itemCount: z.number().int().nonnegative(),
+		filteredItemCount: z.number().int().nonnegative().optional(),
 		scopeCount: z.number().int().nonnegative(),
 		lastAttemptAt: z.string().nullable(),
 		lastAttemptResult: z.enum(["unknown", "in_progress", "success", "failed"]),
@@ -58,6 +101,7 @@ export const providerNativeInventoryResponseSchema = z.discriminatedUnion("statu
 			.nullable(),
 		freshness: z.enum(["current", "last-known"]),
 		complete: z.boolean(),
+		evidence: z.literal("positive-only").optional(),
 		rows: z.array(
 			z.object({
 				nativeId: z.string(),
@@ -74,18 +118,22 @@ export const providerNativeInventoryResponseSchema = z.discriminatedUnion("statu
 					})
 					.optional(),
 				connection: providerInventoryConnectionSchema.optional(),
+				watch: providerNativeWatchDisplaySchema.optional(),
 			}),
 		),
 		nextNativeId: z.string().nullable(),
 	}),
 	z.object({
 		status: z.literal("unavailable"),
+		attempt: providerNativeInventoryAttemptSchema.optional(),
 		reason: z.enum([
 			"not-owned",
 			"provider-unavailable",
 			"identity-changed",
 			"no-publication",
 			"snapshot-changed",
+			"filter-limit-exceeded",
+			"unsupported-provider",
 			"malformed-publication",
 		]),
 	}),

@@ -13,6 +13,7 @@
  */
 
 import type { FastifyBaseLogger } from "fastify";
+import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 import type { ServiceInstance } from "../../../lib/prisma.js";
 import type { ArrClientFactory } from "../client-factory.js";
@@ -73,6 +74,40 @@ async function collect<T>(gen: AsyncIterable<T>): Promise<T[]> {
 }
 
 describe("streamLibraryItems", () => {
+	it("reports split stream timing without private connection or item data", async () => {
+		const records: Array<Record<string, unknown>> = [];
+		const log = pino(
+			{ level: "info", base: null, timestamp: false },
+			{ write: (line: string) => records.push(JSON.parse(line) as Record<string, unknown>) },
+		) as unknown as FastifyBaseLogger;
+		const instance = makeMockInstance("RADARR");
+		instance.label = "private-instance-label";
+		instance.baseUrl = "https://private.invalid";
+		const factory = {
+			rawRequest: async () => {
+				await new Promise((resolve) => setTimeout(resolve, 20));
+				return new Response(
+					new ReadableStream<Uint8Array>({
+						async pull(controller) {
+							await new Promise((resolve) => setTimeout(resolve, 20));
+							controller.enqueue(new TextEncoder().encode('[{"id":1,"title":"private-item"}]'));
+							controller.close();
+						},
+					}),
+				);
+			},
+		} as unknown as ArrClientFactory;
+
+		const items = await collect(streamLibraryItems(factory, instance, log));
+
+		expect(items).toHaveLength(1);
+		const timing = records.find((record) => record.category === "arr-library-stream-timing");
+		expect(timing).toMatchObject({ service: "radarr", itemCount: 1 });
+		expect(timing?.headerWaitMs).toBeGreaterThanOrEqual(15);
+		expect(timing?.consumeMs).toBeGreaterThanOrEqual(15);
+		expect(JSON.stringify(timing)).not.toMatch(/private-|instanceId|baseUrl|apiKey|url|title/i);
+	});
+
 	it("yields each top-level array element of the JSON response", async () => {
 		const body = JSON.stringify([
 			{ id: 1, title: "A" },

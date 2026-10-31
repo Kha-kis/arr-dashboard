@@ -18,12 +18,14 @@ import {
 	updateLabelSyncRule,
 } from "../../lib/api-client/label-sync";
 import { labelSyncKeys } from "../../lib/query-keys";
+import { POLLING_ACTIVE } from "../../lib/polling-intervals";
 
 export const useLabelSyncRules = () => {
 	return useQuery<LabelSyncRule[]>({
 		queryKey: labelSyncKeys.rules,
 		queryFn: fetchLabelSyncRules,
-		staleTime: 30_000,
+		staleTime: POLLING_ACTIVE,
+		refetchInterval: POLLING_ACTIVE,
 	});
 };
 

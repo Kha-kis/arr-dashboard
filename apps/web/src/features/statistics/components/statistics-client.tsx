@@ -1,14 +1,17 @@
 "use client";
 
 import { Activity, BarChart3, BookOpen, Film, Globe, Music, RefreshCw, Tv } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { PremiumSkeleton } from "../../../components/layout";
+import { DashboardStatisticsNotice } from "../../../components/presentational/dashboard-statistics-notice";
 import { Alert, AlertDescription } from "../../../components/ui";
 import { Button } from "../../../components/ui/button";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useRefreshState } from "../../../hooks/useRefreshState";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { jellyfinKeys, plexKeys, tautulliKeys } from "../../../lib/query-keys";
 import { cn } from "../../../lib/utils";
 import { useStatisticsData } from "../hooks/useStatisticsData";
 import { ArrServiceTab } from "./arr-service-tab";
@@ -19,6 +22,7 @@ import { ProwlarrTab } from "./prowlarr-tab";
 import type { StatisticsTab } from "./statistics-tabs";
 
 export const StatisticsClient = () => {
+	const queryClient = useQueryClient();
 	const [activeTab, setActiveTab] = useState<StatisticsTab>("overview");
 	const { gradient: themeGradient } = useThemeGradient();
 
@@ -45,10 +49,14 @@ export const StatisticsClient = () => {
 	);
 
 	const {
+		statisticsState,
+		hasStatistics,
 		isLoading,
 		isFetching,
 		error,
 		refetch,
+		incompleteServices,
+		configuredInstanceCounts,
 		sonarrRows,
 		radarrRows,
 		prowlarrRows,
@@ -62,7 +70,30 @@ export const StatisticsClient = () => {
 		combinedDisk,
 		allHealthIssues,
 	} = useStatisticsData();
-	const [isRefreshing, handleRefresh] = useRefreshState(refetch);
+	const [isRefreshing, handleRefresh] = useRefreshState(async () => {
+		const sourceKey =
+			activeTab === "overview" && hasTautulli
+				? tautulliKeys.all
+				: activeTab === "plex" && hasPlex
+					? plexKeys.all
+					: activeTab === "jellyfin" && hasJellyfin
+						? jellyfinKeys.all
+						: undefined;
+
+		// Refresh independent visible reads together, retaining each query's own
+		// data/error state. Join an in-flight source read rather than restarting it.
+		await Promise.allSettled([
+			refetch(),
+			...(sourceKey
+				? [
+						queryClient.refetchQueries(
+							{ queryKey: sourceKey, type: "active" },
+							{ cancelRefetch: false },
+						),
+					]
+				: []),
+		]);
+	});
 
 	const tabs: Array<{
 		id: StatisticsTab;
@@ -76,35 +107,35 @@ export const StatisticsClient = () => {
 			id: "sonarr",
 			label: "Sonarr",
 			icon: Tv,
-			count: sonarrRows.length,
+			count: hasStatistics ? configuredInstanceCounts.sonarr : undefined,
 			gradient: SERVICE_GRADIENTS.sonarr,
 		},
 		{
 			id: "radarr",
 			label: "Radarr",
 			icon: Film,
-			count: radarrRows.length,
+			count: hasStatistics ? configuredInstanceCounts.radarr : undefined,
 			gradient: SERVICE_GRADIENTS.radarr,
 		},
 		{
 			id: "lidarr",
 			label: "Lidarr",
 			icon: Music,
-			count: lidarrRows.length,
+			count: hasStatistics ? configuredInstanceCounts.lidarr : undefined,
 			gradient: SERVICE_GRADIENTS.lidarr,
 		},
 		{
 			id: "readarr",
 			label: "Readarr",
 			icon: BookOpen,
-			count: readarrRows.length,
+			count: hasStatistics ? configuredInstanceCounts.readarr : undefined,
 			gradient: SERVICE_GRADIENTS.readarr,
 		},
 		{
 			id: "prowlarr",
 			label: "Prowlarr",
 			icon: Globe,
-			count: prowlarrRows.length,
+			count: hasStatistics ? configuredInstanceCounts.prowlarr : undefined,
 			gradient: SERVICE_GRADIENTS.prowlarr,
 		},
 		...(hasPlex
@@ -195,7 +226,7 @@ export const StatisticsClient = () => {
 					<Button
 						variant="secondary"
 						onClick={() => void handleRefresh()}
-						disabled={isFetching}
+						disabled={isFetching || isRefreshing}
 						className={cn(
 							"relative overflow-hidden transition-all duration-300",
 							"shrink-0",
@@ -273,14 +304,27 @@ export const StatisticsClient = () => {
 			{error && (
 				<Alert variant="danger">
 					<AlertDescription>
-						Unable to refresh one or more instances. Showing last known values.
+						{hasStatistics
+							? "Unable to confirm current statistics. Showing the last observed values."
+							: "Unable to load statistics. No totals are available yet."}
+					</AlertDescription>
+				</Alert>
+			)}
+			<DashboardStatisticsNotice state={statisticsState} />
+			{hasStatistics && incompleteServices.length > 0 && (
+				<Alert variant="warning">
+					<AlertDescription>
+						Some provider statistics are unavailable. Totals exclude unavailable provider data and
+						may be partial.
 					</AlertDescription>
 				</Alert>
 			)}
 
 			{/* Tab Content */}
-			{activeTab === "overview" && (
+			{activeTab === "overview" && hasStatistics && (
 				<OverviewTab
+					incompleteServices={incompleteServices}
+					configuredInstanceCounts={configuredInstanceCounts}
 					allHealthIssues={allHealthIssues}
 					combinedDisk={combinedDisk}
 					sonarrRows={sonarrRows}
@@ -298,9 +342,10 @@ export const StatisticsClient = () => {
 				/>
 			)}
 
-			{activeTab === "sonarr" && (
+			{activeTab === "sonarr" && hasStatistics && (
 				<ArrServiceTab
 					serviceType="sonarr"
+					availabilityIncomplete={incompleteServices.includes("sonarr")}
 					icon={Tv}
 					gradient={SERVICE_GRADIENTS.sonarr}
 					totals={sonarrTotals}
@@ -308,9 +353,10 @@ export const StatisticsClient = () => {
 				/>
 			)}
 
-			{activeTab === "radarr" && (
+			{activeTab === "radarr" && hasStatistics && (
 				<ArrServiceTab
 					serviceType="radarr"
+					availabilityIncomplete={incompleteServices.includes("radarr")}
 					icon={Film}
 					gradient={SERVICE_GRADIENTS.radarr}
 					totals={radarrTotals}
@@ -318,9 +364,10 @@ export const StatisticsClient = () => {
 				/>
 			)}
 
-			{activeTab === "lidarr" && (
+			{activeTab === "lidarr" && hasStatistics && (
 				<ArrServiceTab
 					serviceType="lidarr"
+					availabilityIncomplete={incompleteServices.includes("lidarr")}
 					icon={Music}
 					gradient={SERVICE_GRADIENTS.lidarr}
 					totals={lidarrTotals}
@@ -328,9 +375,10 @@ export const StatisticsClient = () => {
 				/>
 			)}
 
-			{activeTab === "readarr" && (
+			{activeTab === "readarr" && hasStatistics && (
 				<ArrServiceTab
 					serviceType="readarr"
+					availabilityIncomplete={incompleteServices.includes("readarr")}
 					icon={BookOpen}
 					gradient={SERVICE_GRADIENTS.readarr}
 					totals={readarrTotals}
@@ -338,8 +386,12 @@ export const StatisticsClient = () => {
 				/>
 			)}
 
-			{activeTab === "prowlarr" && (
-				<ProwlarrTab prowlarrTotals={prowlarrTotals} prowlarrRows={prowlarrRows} />
+			{activeTab === "prowlarr" && hasStatistics && (
+				<ProwlarrTab
+					prowlarrTotals={prowlarrTotals}
+					prowlarrRows={prowlarrRows}
+					availabilityIncomplete={incompleteServices.includes("prowlarr")}
+				/>
 			)}
 
 			{activeTab === "plex" && <PlexTab />}

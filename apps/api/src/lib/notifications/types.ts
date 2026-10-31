@@ -1,4 +1,46 @@
-import type { NotificationEventType } from "@arr/shared";
+import type { NotificationEventType, NotificationFailureCategory } from "@arr/shared";
+
+export type { NotificationFailureCategory } from "@arr/shared";
+
+/** Encrypted connection identity captured before an actual delivery attempt. */
+export interface DeliveryAttemptContext {
+	readonly id: string;
+	readonly userId: string;
+	readonly type: string;
+	readonly encryptedConfig: string;
+	readonly configIv: string;
+}
+
+/** Retry config and its generation must come from the same recipient resolution. */
+export interface DeliveryRecipient {
+	readonly config: Record<string, unknown>;
+	readonly context: DeliveryAttemptContext;
+}
+
+export function captureDeliveryAttempt(channel: DeliveryAttemptContext): DeliveryAttemptContext {
+	return Object.freeze({
+		id: channel.id,
+		userId: channel.userId,
+		type: channel.type,
+		encryptedConfig: channel.encryptedConfig,
+		configIv: channel.configIv,
+	});
+}
+
+export function isDeliveryAttemptContext(
+	context: DeliveryAttemptContext | undefined,
+	channelId: string,
+	channelType: string,
+): context is DeliveryAttemptContext {
+	return (
+		!!context &&
+		context.id === channelId &&
+		context.type === channelType &&
+		[context.id, context.userId, context.type, context.encryptedConfig, context.configIv].every(
+			(value) => typeof value === "string" && value.length > 0,
+		)
+	);
+}
 
 /**
  * Payload sent to channel senders for delivery.
@@ -22,6 +64,8 @@ export interface SendResult {
 	retryable: boolean;
 	retryAfterMs?: number;
 	error?: string;
+	/** Evidence-derived category, never provider response or exception text. */
+	failureCategory?: NotificationFailureCategory;
 }
 
 /**
@@ -41,7 +85,7 @@ export interface ChannelSender {
 export interface ChannelFormField {
 	key: string;
 	label: string;
-	type: "text" | "url" | "email" | "password" | "number" | "boolean";
+	type: "text" | "url" | "email" | "password" | "number" | "boolean" | "headers";
 	placeholder?: string;
 	required?: boolean;
 }

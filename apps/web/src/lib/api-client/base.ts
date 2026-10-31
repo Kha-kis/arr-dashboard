@@ -1,4 +1,5 @@
 import type { ApiErrorPayload } from "@arr/shared";
+import { reportProtectedUnauthorized } from "../auth-session-signal";
 import { getErrorMessage } from "../error-utils";
 
 export class ApiError extends Error {
@@ -20,8 +21,8 @@ export class UnauthorizedError extends ApiError {
 }
 
 export class BadRequestError extends ApiError {
-	constructor(message = "Bad Request") {
-		super(message, 400);
+	constructor(message = "Bad Request", payload?: ApiErrorPayload) {
+		super(message, 400, payload);
 		this.name = "BadRequestError";
 	}
 }
@@ -33,7 +34,18 @@ export class NetworkError extends Error {
 	}
 }
 
-type RequestOptions = RequestInit & { json?: unknown };
+export class InvalidSuccessResponseError extends Error {
+	constructor() {
+		super("Request acknowledgment could not be verified.");
+		this.name = "InvalidSuccessResponseError";
+	}
+}
+
+type RequestOptions = RequestInit & {
+	json?: unknown;
+	expectedSuccessStatus?: number;
+	requireJsonSuccess?: boolean;
+};
 
 const resolveUrl = (path: string): string => {
 	if (path.startsWith("http://") || path.startsWith("https://")) {
@@ -45,7 +57,15 @@ const resolveUrl = (path: string): string => {
 };
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-	const { json, headers, body, method: requestedMethod, ...rest } = options;
+	const {
+		json,
+		headers,
+		body,
+		method: requestedMethod,
+		expectedSuccessStatus,
+		requireJsonSuccess,
+		...rest
+	} = options;
 	const method = requestedMethod ?? (json !== undefined ? "POST" : "GET");
 	// Next.js may forward a body-less POST with chunked transfer encoding. Fastify
 	// then sees a request body without a media type and rejects it before the route
@@ -76,6 +96,24 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 	}
 
 	if (response.status === 401) {
+		const publicOidcRequest =
+			path === "/auth/oidc/providers" ||
+			path === "/auth/oidc/setup" ||
+			(path === "/auth/oidc/login" &&
+				(json === undefined ||
+					(typeof json === "object" &&
+						json !== null &&
+						"intent" in json &&
+						json.intent === "login")));
+		if (
+			path !== "/auth/me" &&
+			path !== "/auth/setup-required" &&
+			path !== "/auth/login" &&
+			!path.startsWith("/auth/passkey/login/") &&
+			!publicOidcRequest
+		) {
+			reportProtectedUnauthorized();
+		}
 		throw new UnauthorizedError();
 	}
 
@@ -86,10 +124,23 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 				? await response.json().catch(() => undefined)
 				: await response.text();
 		const message =
-			errorPayload && typeof errorPayload === "object" && "message" in errorPayload
-				? (errorPayload as { message: string }).message
+			errorPayload &&
+			typeof errorPayload === "object" &&
+			"message" in errorPayload &&
+			typeof errorPayload.message === "string"
+				? errorPayload.message
 				: "Bad Request";
-		throw new BadRequestError(message);
+		throw new BadRequestError(message, errorPayload);
+	}
+
+	// Only opting-in actions impose a precise success contract. Do not consume
+	// or retain an unexpected successful body's private diagnostic content.
+	if (
+		response.ok &&
+		expectedSuccessStatus !== undefined &&
+		response.status !== expectedSuccessStatus
+	) {
+		throw new Error("Request acknowledgment could not be verified.");
 	}
 
 	if (response.status === 204) {
@@ -97,6 +148,14 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 	}
 
 	const contentType = response.headers.get("content-type");
+	if (response.ok && requireJsonSuccess) {
+		if (!contentType?.includes("application/json")) throw new InvalidSuccessResponseError();
+		try {
+			return (await response.json()) as T;
+		} catch {
+			throw new InvalidSuccessResponseError();
+		}
+	}
 	const payload =
 		contentType && contentType.includes("application/json")
 			? await response.json().catch(() => undefined)

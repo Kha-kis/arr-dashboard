@@ -73,7 +73,8 @@ export interface JobStatus extends JobDefinition {
 
 interface JobRecord {
 	definition: JobDefinition;
-	state: JobState;
+	/** Accepted observations, including tracked work pending in the operation wrapper. */
+	activeRuns: number;
 	lastStartedAt: Date | null;
 	lastFinishedAt: Date | null;
 	lastSuccessAt: Date | null;
@@ -143,7 +144,7 @@ export class SchedulerRegistry {
 		}
 		this.jobs.set(definition.id, {
 			definition,
-			state: "idle",
+			activeRuns: 0,
 			lastStartedAt: null,
 			lastFinishedAt: null,
 			lastSuccessAt: null,
@@ -163,17 +164,13 @@ export class SchedulerRegistry {
 		const record = this.mustGet(jobId);
 		record.disabled = true;
 		record.disabledReason = reason;
-		record.state = "disabled";
 	}
 
-	/** Clear the disabled flag and return the job to idle. */
+	/** Clear the disabled flag without obscuring any already accepted work. */
 	markEnabled(jobId: string): void {
 		const record = this.mustGet(jobId);
 		record.disabled = false;
 		record.disabledReason = null;
-		if (record.state === "disabled") {
-			record.state = "idle";
-		}
 	}
 
 	/**
@@ -184,21 +181,48 @@ export class SchedulerRegistry {
 	 * observes, it does not swallow.
 	 */
 	async track<T>(jobId: string, fn: () => Promise<T>, options: TrackOptions = {}): Promise<T> {
+		return this.trackOperation(jobId, fn, options, "admit");
+	}
+
+	/**
+	 * Observe work inside a caller-owned admission guard without admitting it again.
+	 * The callback starts only after job/concurrency validation. All callback errors,
+	 * including skipped maintenance conflicts, propagate to the caller's retry path.
+	 */
+	async observeAlreadyAdmitted<T>(
+		jobId: string,
+		fn: () => Promise<T>,
+		options: TrackOptions = {},
+	): Promise<T> {
+		return this.trackOperation(jobId, fn, options, "already-admitted");
+	}
+
+	private async trackOperation<T>(
+		jobId: string,
+		fn: () => Promise<T>,
+		options: TrackOptions,
+		admission: "admit" | "already-admitted",
+	): Promise<T> {
 		const record = this.mustGet(jobId);
 		const concurrency = options.concurrency ?? record.definition.concurrency;
 
-		if (concurrency === "serial" && record.state === "running") {
+		if (concurrency === "serial" && record.activeRuns > 0) {
 			throw new SerialJobBusyError(jobId);
 		}
 
-		const previousState = record.state;
-		const previousLastStartedAt = record.lastStartedAt;
 		const startedAt = this.clock.now();
-		record.lastStartedAt = startedAt;
-		record.state = "running";
+		record.activeRuns += 1;
 
 		try {
-			const result = await this.operationWrapper(fn);
+			const operation = () => {
+				// A rejected maintenance admission never entered the body. Recording
+				// only admitted starts avoids rolling back a newer overlapping run.
+				record.lastStartedAt = startedAt;
+				return fn();
+			};
+			const result = await (admission === "admit"
+				? this.operationWrapper(operation)
+				: passthroughTickWrapper(operation));
 			const finishedAt = this.clock.now();
 			record.lastFinishedAt = finishedAt;
 			record.lastSuccessAt = finishedAt;
@@ -206,17 +230,13 @@ export class SchedulerRegistry {
 			record.lastError = null;
 			record.consecutiveFailures = 0;
 			record.totalRuns += 1;
-			if (record.state === "running") {
-				record.state = record.disabled ? "disabled" : "idle";
-			}
 			return result;
 		} catch (error) {
 			if (this.isSkippedOperationError(error)) {
 				// The wrapper rejected before the job body ran (for example, while
 				// restore holds maintenance). Preserve the prior execution ledger:
 				// this was neither a success nor a failure.
-				record.lastStartedAt = previousLastStartedAt;
-				record.state = previousState;
+				if (admission === "already-admitted") throw error;
 				return undefined as T;
 			}
 			const finishedAt = this.clock.now();
@@ -227,10 +247,9 @@ export class SchedulerRegistry {
 			record.consecutiveFailures += 1;
 			record.totalRuns += 1;
 			record.totalFailures += 1;
-			if (record.state === "running") {
-				record.state = record.disabled ? "disabled" : "idle";
-			}
 			throw error;
+		} finally {
+			record.activeRuns -= 1;
 		}
 	}
 
@@ -262,7 +281,7 @@ export class SchedulerRegistry {
 function toStatus(record: JobRecord): JobStatus {
 	return {
 		...record.definition,
-		state: record.state,
+		state: record.activeRuns > 0 ? "running" : record.disabled ? "disabled" : "idle",
 		lastStartedAt: record.lastStartedAt?.toISOString() ?? null,
 		lastFinishedAt: record.lastFinishedAt?.toISOString() ?? null,
 		lastSuccessAt: record.lastSuccessAt?.toISOString() ?? null,

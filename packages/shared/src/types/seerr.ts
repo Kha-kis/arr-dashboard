@@ -211,6 +211,13 @@ export interface SeerrNotificationAgent {
 	options: Record<string, unknown>;
 }
 
+export interface SeerrNotificationAgentsResponse {
+	agents: SeerrNotificationAgent[];
+	coverage: "complete" | "partial" | "unavailable";
+	/** Known public agent identities whose configuration could not be verified. */
+	unavailableAgents: Array<{ id: string; name: string }>;
+}
+
 export interface SeerrStatus {
 	version: string;
 	commitTag: string;
@@ -495,6 +502,10 @@ export interface SeerrServerWithDetails {
 /** Combined request options for the request dialog */
 export interface SeerrRequestOptions {
 	servers: SeerrServerWithDetails[];
+	/** Coverage of configured servers, not whether a requested mode has a server. */
+	coverage: "complete" | "partial" | "unavailable";
+	configuredServerCount: number;
+	unavailableServerCount: number;
 }
 
 /** Params for discover endpoints */
@@ -902,7 +913,8 @@ export interface LibraryEnrichmentItem {
 	voteAverage: number | null;
 	backdropPath: string | null;
 	posterPath: string | null;
-	openIssueCount: number;
+	/** Null when the issue-count read failed; zero is reserved for a verified empty count. */
+	openIssueCount: number | null;
 }
 
 /** Batch enrichment response keyed by "movie:{tmdbId}" or "tv:{tmdbId}" */

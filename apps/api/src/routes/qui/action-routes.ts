@@ -1,11 +1,17 @@
 import type { QuiAction, QuiActionPayload } from "@arr/shared";
 import {
-	coerceQuiAction,
 	coerceQuiActionStatus,
+	coerceQuiLoggedOperation,
 	quiActionPayloadSchemas,
 	quiBulkActionRequestSchema,
+	quiDrawerAuditSummarySchema,
+	quiDrawerOperationSchema,
 } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
+import {
+	QuiActionReconciliationError,
+	reconcileQuiAction,
+} from "../../lib/qui/action-reconciliation.js";
 import { executeQuiAction } from "../../lib/qui/action-service.js";
 import { createQuiClient } from "../../lib/qui/client-factory.js";
 import { requireQuiInstance } from "../../lib/qui/instance-helpers.js";
@@ -13,6 +19,8 @@ import { validateRequest } from "../../lib/utils/validate.js";
 import {
 	ACTION_LOG_QUERY,
 	ACTION_PARAMS,
+	ACTION_RECONCILIATION_BODY,
+	ACTION_RECONCILIATION_PARAMS,
 	BULK_ACTION_PARAMS,
 	safeParseJson,
 } from "./qui-shared.js";
@@ -30,8 +38,8 @@ export function registerActionRoutes(app: FastifyInstance): void {
 		async (request, reply) => {
 			const userId = request.currentUser!.id;
 			const { id, instanceId, hash, action } = validateRequest(ACTION_PARAMS, request.params);
-			const qbitInstanceId = Number.parseInt(instanceId, 10);
-			if (!Number.isFinite(qbitInstanceId)) {
+			const qbitInstanceId = /^\d+$/.test(instanceId) ? Number(instanceId) : NaN;
+			if (!Number.isSafeInteger(qbitInstanceId) || qbitInstanceId <= 0) {
 				return reply.status(400).send({ error: "qbit instanceId must be numeric" });
 			}
 			// Per-action payload validation: each action declares its own
@@ -58,13 +66,24 @@ export function registerActionRoutes(app: FastifyInstance): void {
 				payload,
 			});
 
-			// Surface failures as 502 (upstream said no) — the audit log row
-			// captures the precise reason; the response body just carries
-			// enough for the UI to render a toast.
+			// A failed preflight never reached qUI; a lost upstream response
+			// did and must be shown as an uncertain outcome, not a rejection.
 			if (result.status === "failed") {
+				return reply.status(409).send({
+					error: "qui mutation unavailable",
+					message: result.error,
+				});
+			}
+			if (result.status === "uncertain") {
 				return reply.status(502).send({
-					error: "qui mutation failed",
-					message: result.error ?? "qui mutation failed",
+					error: "qui mutation outcome uncertain",
+					message: result.error,
+				});
+			}
+			if (result.status === "audit_unsettled") {
+				return reply.status(503).send({
+					error: "qui action audit unresolved",
+					message: result.error,
 				});
 			}
 
@@ -88,16 +107,14 @@ export function registerActionRoutes(app: FastifyInstance): void {
 		// the same flat body — the second pass enforces field presence and
 		// types for the action's extras (e.g. `category` for setCategory).
 		const envelope = validateRequest(quiBulkActionRequestSchema, request.body);
-		const qbitInstanceId = Number.parseInt(instanceId, 10);
-		if (!Number.isFinite(qbitInstanceId)) {
+		const qbitInstanceId = /^\d+$/.test(instanceId) ? Number(instanceId) : NaN;
+		if (!Number.isSafeInteger(qbitInstanceId) || qbitInstanceId <= 0) {
 			return reply.status(400).send({ error: "qbit instanceId must be numeric" });
 		}
 		const payloadSchema = quiActionPayloadSchemas[action as QuiAction];
-		// Strip envelope-level fields (`hashes`) before payload validation —
-		// otherwise emptyPayload's `passthrough()` would let `hashes` leak
-		// into `extras` and qui would receive duplicated arrays in its POST
-		// body. Field-specific payload schemas would reject unknown keys
-		// silently here too without the strip.
+		// Strip the one authorized envelope field before applying the strict
+		// action-specific extras schema. All other selection and action-control
+		// fields are rejected rather than forwarded to qUI's flat wire body.
 		const rawBody = (request.body ?? {}) as Record<string, unknown>;
 		const { hashes: _omitHashes, ...payloadBody } = rawBody;
 		const payload = validateRequest(payloadSchema, payloadBody) as QuiActionPayload;
@@ -117,14 +134,50 @@ export function registerActionRoutes(app: FastifyInstance): void {
 		});
 
 		if (result.status === "failed") {
+			return reply.status(409).send({
+				error: "qui mutation unavailable",
+				message: result.error,
+			});
+		}
+		if (result.status === "uncertain") {
 			return reply.status(502).send({
-				error: "qui mutation failed",
-				message: result.error ?? "qui mutation failed",
+				error: "qui mutation outcome uncertain",
+				message: result.error,
+			});
+		}
+		if (result.status === "audit_unsettled") {
+			return reply.status(503).send({
+				error: "qui action audit unresolved",
+				message: result.error,
 			});
 		}
 
 		return reply.send({ status: "success", logRowCount: result.logRowCount });
 	});
+
+	// An ambiguous upstream response is never retried automatically. The
+	// operator can resolve one owned per-hash intent after checking qUI.
+	app.post<{ Params: { id: string }; Body: unknown }>(
+		"/qui/actions/:id/reconcile",
+		async (request, reply) => {
+			const { id } = validateRequest(ACTION_RECONCILIATION_PARAMS, request.params);
+			const { decision } = validateRequest(ACTION_RECONCILIATION_BODY, request.body);
+			try {
+				const status = await reconcileQuiAction({
+					prisma: app.prisma,
+					userId: request.currentUser!.id,
+					actionLogId: id,
+					decision,
+				});
+				return reply.send({ status });
+			} catch (error) {
+				if (error instanceof QuiActionReconciliationError) {
+					return reply.status(409).send({ error: "qUI action not found or already resolved" });
+				}
+				throw error;
+			}
+		},
+	);
 
 	// ────────────────────────────────────────────────────────────────────
 	// Phase 4.1 — action log feed for the "My Actions" tab
@@ -132,8 +185,8 @@ export function registerActionRoutes(app: FastifyInstance): void {
 	//
 	// Mirrors the activity feed pagination shape. Joins the ServiceInstance
 	// label so the frontend can render "Primary qui" without a second query.
-	// Failures: `error` text is included verbatim so the operator can see
-	// what qui returned without leaving the timeline.
+	// Stored errors are generic categories; qUI transport details are never
+	// copied into new action rows.
 
 	app.get<{
 		Querystring: { cursor?: string; limit?: string; action?: string; status?: string };
@@ -143,6 +196,7 @@ export function registerActionRoutes(app: FastifyInstance): void {
 		const take = limit ?? 50;
 
 		let cursorRequestedAt: Date | null = null;
+		let cursorId: string | null = null;
 		if (cursor) {
 			const anchor = await app.prisma.quiActionLog.findUnique({
 				where: { id: cursor },
@@ -150,6 +204,7 @@ export function registerActionRoutes(app: FastifyInstance): void {
 			});
 			if (anchor && anchor.userId === userId) {
 				cursorRequestedAt = anchor.requestedAt;
+				cursorId = cursor;
 			}
 		}
 
@@ -158,9 +213,16 @@ export function registerActionRoutes(app: FastifyInstance): void {
 				userId,
 				...(action ? { action } : {}),
 				...(status ? { status } : {}),
-				...(cursorRequestedAt ? { requestedAt: { lt: cursorRequestedAt } } : {}),
+				...(cursorRequestedAt && cursorId
+					? {
+							OR: [
+								{ requestedAt: { lt: cursorRequestedAt } },
+								{ requestedAt: cursorRequestedAt, id: { lt: cursorId } },
+							],
+						}
+					: {}),
 			},
-			orderBy: { requestedAt: "desc" },
+			orderBy: [{ requestedAt: "desc" }, { id: "desc" }],
 			take: take + 1,
 			include: {
 				serviceInstance: { select: { label: true } },
@@ -176,9 +238,10 @@ export function registerActionRoutes(app: FastifyInstance): void {
 		// extension reaching an old client) can't type-lie into the response.
 		// Unknown values are filtered + counted instead of crashing the
 		// page — the client never sees an action/status it can't render.
+		const drawerOperations = new Set<string>(quiDrawerOperationSchema.options);
 		const entries = trimmed
 			.map((r) => {
-				const action = coerceQuiAction(r.action);
+				const action = coerceQuiLoggedOperation(r.action);
 				const status = coerceQuiActionStatus(r.status);
 				if (action === "unknown" || status === "unknown") {
 					request.log.warn(
@@ -186,6 +249,16 @@ export function registerActionRoutes(app: FastifyInstance): void {
 						"qui action-log row had unknown enum value — filtering from response",
 					);
 					return null;
+				}
+				const storedPayload = r.payload ? safeParseJson(r.payload) : null;
+				let payload = storedPayload;
+				if (drawerOperations.has(action)) {
+					if (action === "renameTorrent") {
+						payload = null;
+					} else {
+						const safeSummary = quiDrawerAuditSummarySchema.safeParse(storedPayload);
+						payload = safeSummary.success ? safeSummary.data : null;
+					}
 				}
 				const requestedAtIso = r.requestedAt.toISOString();
 				return {
@@ -197,7 +270,7 @@ export function registerActionRoutes(app: FastifyInstance): void {
 					action,
 					status,
 					error: r.error,
-					payload: r.payload ? safeParseJson(r.payload) : null,
+					payload,
 					requestedAt: requestedAtIso,
 					/** Canonical timestamp alias — see schema notes. */
 					timestamp: requestedAtIso,

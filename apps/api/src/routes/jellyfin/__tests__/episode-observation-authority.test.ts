@@ -233,6 +233,7 @@ describe("Jellyfin episode observation routes", () => {
 			prisma: app.prisma,
 			userId: "user-1",
 			instances: [primary],
+			showTmdbIds: [42],
 		});
 	});
 
@@ -268,6 +269,19 @@ describe("Jellyfin episode observation routes", () => {
 			providerStatus: evidenceFor([primary], "current").providerStatus,
 		});
 	});
+
+	it.each(["42.5", "9007199254740992"])(
+		"rejects non-integer or unsafe show IDs before reading episode evidence: %s",
+		async (showTmdbId) => {
+			const response = await createInjectAuthenticated(app)(
+				"GET",
+				`/api/jellyfin/episodes?instanceId=jellyfin-1&showTmdbId=${showTmdbId}`,
+			);
+			expect(response.statusCode).toBe(400);
+			expect(findFirst).not.toHaveBeenCalled();
+			expect(mocks.readEpisodes).not.toHaveBeenCalled();
+		},
+	);
 
 	it.each(["missing", "foreign", "disabled"] as const)(
 		"preserves 404 semantics for a %s requested instance",

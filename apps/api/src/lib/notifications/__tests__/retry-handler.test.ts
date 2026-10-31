@@ -5,14 +5,19 @@
  * and graceful shutdown via flush().
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { NotificationChannelType } from "@arr/shared";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	CleanupMaintenanceConflictError,
 	withCleanupMaintenanceGuard,
 } from "../../library-cleanup/cleanup-maintenance-gate.js";
 import { RetryHandler } from "../retry-handler.js";
-import type { NotificationPayload, SendResult } from "../types.js";
+import type {
+	DeliveryAttemptContext,
+	DeliveryRecipient,
+	NotificationPayload,
+	SendResult,
+} from "../types.js";
 
 const mockLogger = {
 	info: vi.fn(),
@@ -33,11 +38,24 @@ type LogFnType = (
 	status: "sent" | "failed" | "dead_letter",
 	error?: string,
 	retryCount?: number,
+	attemptContext?: DeliveryAttemptContext,
 ) => Promise<void>;
 
 let sendFn: ReturnType<typeof vi.fn<SendFnType>>;
 let logDeliveryFn: ReturnType<typeof vi.fn<LogFnType>>;
 let handler: RetryHandler;
+
+function context(id = "ch-1", type = "DISCORD"): DeliveryAttemptContext {
+	return { id, userId: "owner", type, encryptedConfig: "encrypted", configIv: "iv" };
+}
+
+function recipient(
+	config: Record<string, unknown> = {},
+	id = "ch-1",
+	type = "DISCORD",
+): DeliveryRecipient {
+	return { config, context: context(id, type) };
+}
 
 function createPayload(title = "Test") {
 	return {
@@ -74,7 +92,8 @@ describe("RetryHandler", () => {
 		handler.enqueue({
 			channelId: "ch-1",
 			channelType: "DISCORD",
-			config: { webhookUrl: "https://example.com" },
+			attemptContext: context(),
+			resolveRecipient: async () => recipient({ webhookUrl: "https://example.com" }),
 			payload: createPayload(),
 		});
 
@@ -91,8 +110,102 @@ describe("RetryHandler", () => {
 			"sent",
 			undefined,
 			1,
+			context(),
 		);
 		expect(handler.pendingCount).toBe(0);
+	});
+
+	it("shutdown retains the latest actual retry generation instead of newly revalidated settings", async () => {
+		let current = recipient({ webhookUrl: "retry-destination" });
+		current = {
+			...current,
+			context: { ...current.context, encryptedConfig: "retry-encrypted", configIv: "retry-iv" },
+		};
+		const attempted = { ...current.context };
+		sendFn.mockResolvedValue({ success: false, retryable: true });
+		handler = new RetryHandler(sendFn, logDeliveryFn, mockLogger);
+		handler.enqueue({
+			channelId: "ch-1",
+			channelType: "DISCORD",
+			attemptContext: context(),
+			resolveRecipient: async () => current,
+			payload: createPayload(),
+		});
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(sendFn).toHaveBeenCalledWith(
+			"DISCORD",
+			{ webhookUrl: "retry-destination" },
+			createPayload(),
+		);
+		current = {
+			config: { webhookUrl: "shutdown-destination" },
+			context: { ...context(), encryptedConfig: "shutdown-encrypted" },
+		};
+		await handler.flush();
+		expect(sendFn).toHaveBeenCalledTimes(1);
+		expect(logDeliveryFn.mock.calls).toHaveLength(1);
+		expect(logDeliveryFn.mock.calls[0]?.[6]).toEqual(attempted);
+		expect(logDeliveryFn.mock.calls[0]?.[3]).toBe("dead_letter");
+	});
+
+	it("freezes the original attempt when enqueue receives a mutable caller object", async () => {
+		const original = { ...context() };
+		handler = new RetryHandler(sendFn, logDeliveryFn, mockLogger);
+		handler.enqueue({
+			channelId: "ch-1",
+			channelType: "DISCORD",
+			attemptContext: original,
+			resolveRecipient: async () => recipient(),
+			payload: createPayload(),
+		});
+		original.encryptedConfig = "never-attempted";
+		await handler.flush();
+		expect(logDeliveryFn.mock.calls[0]?.[6]).toEqual(context());
+	});
+
+	it.each(["owner", "id", "type", "missing context"] as const)(
+		"rejects a resolved recipient with mismatched %s before send or shutdown logging",
+		async (mismatch) => {
+			const resolved = recipient();
+			const invalid =
+				mismatch === "missing context"
+					? { config: resolved.config }
+					: {
+							...resolved,
+							context: {
+								...resolved.context,
+								[mismatch === "owner" ? "userId" : mismatch]: "wrong",
+							},
+						};
+			handler = new RetryHandler(sendFn, logDeliveryFn, mockLogger);
+			handler.enqueue({
+				channelId: "ch-1",
+				channelType: "DISCORD",
+				attemptContext: context(),
+				resolveRecipient: async () => invalid as DeliveryRecipient,
+				payload: createPayload(),
+			});
+			await vi.advanceTimersByTimeAsync(30_000);
+			await handler.flush();
+			expect(sendFn).not.toHaveBeenCalled();
+			expect(logDeliveryFn).not.toHaveBeenCalled();
+			expect(handler.pendingCount).toBe(0);
+		},
+	);
+
+	it("does not accept a queued item without original attempt evidence", async () => {
+		handler = new RetryHandler(sendFn, logDeliveryFn, mockLogger);
+		handler.enqueue({
+			channelId: "ch-1",
+			channelType: "DISCORD",
+			attemptContext: undefined as unknown as DeliveryAttemptContext,
+			resolveRecipient: async () => recipient(),
+			payload: createPayload(),
+		});
+		await vi.advanceTimersByTimeAsync(30_000);
+		await handler.flush();
+		expect(sendFn).not.toHaveBeenCalled();
+		expect(logDeliveryFn).not.toHaveBeenCalled();
 	});
 
 	it("holds mutation ownership across retry dispatch and delivery logging", async () => {
@@ -106,7 +219,8 @@ describe("RetryHandler", () => {
 		handler.enqueue({
 			channelId: "ch-1",
 			channelType: "DISCORD",
-			config: { webhookUrl: "https://example.com" },
+			attemptContext: context(),
+			resolveRecipient: async () => recipient({ webhookUrl: "https://example.com" }),
 			payload: createPayload(),
 		});
 
@@ -127,7 +241,8 @@ describe("RetryHandler", () => {
 		handler.enqueue({
 			channelId: "ch-1",
 			channelType: "DISCORD",
-			config: { webhookUrl: "https://example.com" },
+			attemptContext: context(),
+			resolveRecipient: async () => recipient({ webhookUrl: "https://example.com" }),
 			payload: createPayload(),
 		});
 		const finishRestore = deferred<void>();
@@ -148,6 +263,7 @@ describe("RetryHandler", () => {
 			"sent",
 			undefined,
 			1,
+			context(),
 		);
 	});
 
@@ -162,7 +278,8 @@ describe("RetryHandler", () => {
 		handler.enqueue({
 			channelId: "ch-1",
 			channelType: "DISCORD",
-			config: { webhookUrl: "https://example.com" },
+			attemptContext: context(),
+			resolveRecipient: async () => recipient({ webhookUrl: "https://example.com" }),
 			payload: createPayload(),
 		});
 
@@ -183,7 +300,7 @@ describe("RetryHandler", () => {
 			(call: unknown[]) => call[3] === "dead_letter",
 		);
 		expect(deadLetterCall).toBeDefined();
-		expect(deadLetterCall![4]).toContain("Exhausted 3 retries");
+		expect(deadLetterCall![4]).toMatch(/not confirmed after retries.*check/i);
 		expect(handler.pendingCount).toBe(0);
 	});
 
@@ -205,7 +322,8 @@ describe("RetryHandler", () => {
 		handler.enqueue({
 			channelId: "ch-1",
 			channelType: "DISCORD",
-			config: { webhookUrl: "https://example.com" },
+			attemptContext: context(),
+			resolveRecipient: async () => recipient({ webhookUrl: "https://example.com" }),
 			payload: createPayload(),
 		});
 
@@ -235,7 +353,8 @@ describe("RetryHandler", () => {
 		handler.enqueue({
 			channelId: "ch-1",
 			channelType: "DISCORD",
-			config: { webhookUrl: "https://example.com" },
+			attemptContext: context(),
+			resolveRecipient: async () => recipient({ webhookUrl: "https://example.com" }),
 			payload: createPayload(),
 			retryAfterMs: 5000,
 		});
@@ -255,6 +374,7 @@ describe("RetryHandler", () => {
 			"sent",
 			undefined,
 			2,
+			context(),
 		);
 	});
 
@@ -263,13 +383,15 @@ describe("RetryHandler", () => {
 			success: false,
 			retryable: false,
 			error: "bad webhook URL",
+			failureCategory: "authentication",
 		} satisfies SendResult);
 		handler = new RetryHandler(sendFn, logDeliveryFn, mockLogger);
 
 		handler.enqueue({
 			channelId: "ch-1",
 			channelType: "DISCORD",
-			config: { webhookUrl: "https://example.com" },
+			attemptContext: context(),
+			resolveRecipient: async () => recipient({ webhookUrl: "https://example.com" }),
 			payload: createPayload(),
 		});
 
@@ -281,30 +403,33 @@ describe("RetryHandler", () => {
 			(call: unknown[]) => call[3] === "dead_letter",
 		);
 		expect(deadLetterCall).toBeDefined();
-		expect(deadLetterCall![4]).toBe("bad webhook URL");
+		expect(deadLetterCall![4]).toMatch(/authentication.*credentials.*permissions/i);
+		expect(JSON.stringify(mockLogger.warn.mock.calls)).not.toContain("bad webhook URL");
 		expect(handler.pendingCount).toBe(0);
 	});
 
-	it("flush() clears all pending timers and dead-letters remaining items", () => {
+	it("flush() clears all pending timers and dead-letters remaining items", async () => {
 		sendFn.mockResolvedValue({ success: false, retryable: true } satisfies SendResult);
 		handler = new RetryHandler(sendFn, logDeliveryFn, mockLogger);
 
 		handler.enqueue({
 			channelId: "ch-1",
 			channelType: "DISCORD",
-			config: {},
+			attemptContext: context(),
+			resolveRecipient: async () => recipient(),
 			payload: createPayload("Item 1"),
 		});
 		handler.enqueue({
 			channelId: "ch-2",
 			channelType: "TELEGRAM",
-			config: {},
+			attemptContext: context("ch-2", "TELEGRAM"),
+			resolveRecipient: async () => recipient({}, "ch-2", "TELEGRAM"),
 			payload: createPayload("Item 2"),
 		});
 
 		expect(handler.pendingCount).toBe(2);
 
-		handler.flush();
+		await handler.flush();
 
 		expect(handler.pendingCount).toBe(0);
 
@@ -317,7 +442,76 @@ describe("RetryHandler", () => {
 		expect(deadLetterCalls[1]![4]).toContain("shutdown");
 	});
 
-	it("pendingCount reflects queue size", () => {
+	it.each(["revoked", "resolver failure"] as const)(
+		"flush() does not persist payload when recipient is %s",
+		async (resolution) => {
+			const resolutionStarted = deferred<void>();
+			handler = new RetryHandler(sendFn, logDeliveryFn, mockLogger);
+			handler.enqueue({
+				channelId: "ch-1",
+				channelType: "DISCORD",
+				attemptContext: context(),
+				resolveRecipient: async () => {
+					resolutionStarted.resolve();
+					if (resolution === "resolver failure") throw new Error("private resolver detail");
+					return null;
+				},
+				payload: createPayload("Private notification"),
+			});
+
+			const flushing = handler.flush();
+			await resolutionStarted.promise;
+			await flushing;
+
+			expect(sendFn).not.toHaveBeenCalled();
+			expect(logDeliveryFn).not.toHaveBeenCalled();
+			expect(handler.pendingCount).toBe(0);
+			expect(JSON.stringify(mockLogger.warn.mock.calls)).not.toContain("private");
+		},
+	);
+
+	it("flush() awaits recipient revalidation and shutdown delivery logging", async () => {
+		const resolverStarted = deferred<void>();
+		const finishResolver = deferred<DeliveryRecipient | null>();
+		const logStarted = deferred<void>();
+		const finishLog = deferred<void>();
+		logDeliveryFn.mockImplementation(async () => {
+			logStarted.resolve();
+			await finishLog.promise;
+		});
+		handler = new RetryHandler(sendFn, logDeliveryFn, mockLogger);
+		handler.enqueue({
+			channelId: "ch-1",
+			channelType: "DISCORD",
+			attemptContext: context(),
+			resolveRecipient: async () => {
+				resolverStarted.resolve();
+				return finishResolver.promise;
+			},
+			payload: createPayload("Private notification"),
+		});
+
+		let settled = false;
+		const flushPromise = handler.flush();
+		expect(flushPromise).toBeInstanceOf(Promise);
+		void flushPromise.then(() => {
+			settled = true;
+		});
+		await resolverStarted.promise;
+		expect(handler.pendingCount).toBe(0);
+		expect(settled).toBe(false);
+
+		finishResolver.resolve(recipient({ webhookUrl: "current" }));
+		await logStarted.promise;
+		expect(settled).toBe(false);
+		finishLog.resolve();
+		await flushPromise;
+
+		expect(settled).toBe(true);
+		expect(sendFn).not.toHaveBeenCalled();
+	});
+
+	it("pendingCount reflects queue size", async () => {
 		handler = new RetryHandler(sendFn, logDeliveryFn, mockLogger);
 
 		expect(handler.pendingCount).toBe(0);
@@ -325,7 +519,8 @@ describe("RetryHandler", () => {
 		handler.enqueue({
 			channelId: "ch-1",
 			channelType: "DISCORD",
-			config: {},
+			attemptContext: context(),
+			resolveRecipient: async () => recipient(),
 			payload: createPayload(),
 		});
 		expect(handler.pendingCount).toBe(1);
@@ -333,12 +528,13 @@ describe("RetryHandler", () => {
 		handler.enqueue({
 			channelId: "ch-2",
 			channelType: "TELEGRAM",
-			config: {},
+			attemptContext: context("ch-2", "TELEGRAM"),
+			resolveRecipient: async () => recipient({}, "ch-2", "TELEGRAM"),
 			payload: createPayload(),
 		});
 		expect(handler.pendingCount).toBe(2);
 
-		handler.flush();
+		await handler.flush();
 		expect(handler.pendingCount).toBe(0);
 	});
 });

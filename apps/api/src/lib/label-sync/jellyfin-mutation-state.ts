@@ -8,6 +8,8 @@ export const LABEL_SYNC_MUTATION_STATUSES = [
 	"claimed",
 	"sending",
 	"unknown",
+	"restored-held",
+	"reconciled",
 	"verified",
 	"noop",
 	"failed",
@@ -16,8 +18,14 @@ export const LABEL_SYNC_MUTATION_STATUSES = [
 
 export type LabelSyncMutationStatus = (typeof LABEL_SYNC_MUTATION_STATUSES)[number];
 
-export const LABEL_SYNC_MUTATION_UNRESOLVED_STATUSES = ["claimed", "sending", "unknown"] as const;
+export const LABEL_SYNC_MUTATION_UNRESOLVED_STATUSES = [
+	"claimed",
+	"sending",
+	"unknown",
+	"restored-held",
+] as const;
 export const LABEL_SYNC_MUTATION_TERMINAL_STATUSES = [
+	"reconciled",
 	"verified",
 	"noop",
 	"failed",
@@ -43,6 +51,8 @@ export const LABEL_SYNC_MUTATION_REASON_CODES = [
 	"reconciliation_unavailable",
 	"attempt_limit",
 	"internal_failure",
+	"restore_uncertain",
+	"desired_state_observed",
 ] as const;
 
 export type LabelSyncMutationReasonCode = (typeof LABEL_SYNC_MUTATION_REASON_CODES)[number];
@@ -58,6 +68,19 @@ const MAX_IDENTIFIER_LENGTH = 512;
 const MAX_FINGERPRINT_LENGTH = 256;
 const MAX_TAG_LENGTH = 256;
 const MAX_PORTABLE_INT = 2_147_483_647;
+
+/** Historical snapshot evidence, never a worker claim or submission authority. */
+export type LabelSyncRestoreEvidence = {
+	version: 1;
+	originalStatus: "claimed" | "sending" | "unknown";
+	originalReasonCode: LabelSyncMutationReasonCode | null;
+	originalSendAttemptCount: number;
+	originalReconcileAttemptCount: number;
+	originalRequestStartedAt: string | null;
+	originalLastObservedAt: string | null;
+	originalCreatedAt: string;
+	originalUpdatedAt: string;
+};
 
 export type LabelSyncMutationAttemptRecord = {
 	id: string;
@@ -85,6 +108,8 @@ export type LabelSyncMutationAttemptRecord = {
 	reasonCode: LabelSyncMutationReasonCode | null;
 	createdAt: Date;
 	updatedAt: Date;
+	/** Optional only for legacy construction; the strict parser normalizes null. */
+	restoreEvidence?: string | null;
 };
 
 const TERMINAL_BLOCKED_REASONS = new Set([
@@ -108,6 +133,7 @@ export function validateLabelSyncMutationTerminalEvidence(
 		| "reconcileAttemptCount"
 		| "requestStartedAt"
 		| "lastObservedAt"
+		| "restoreEvidence"
 	>,
 ): void {
 	if (
@@ -118,6 +144,18 @@ export function validateLabelSyncMutationTerminalEvidence(
 		attempt.reconcileAttemptCount > MAX_LABEL_SYNC_MUTATION_ATTEMPTS
 	)
 		invalid();
+	if (attempt.status === "reconciled") {
+		validateRestoredMutationEvidence(attempt);
+		if (
+			attempt.reasonCode !== "desired_state_observed" ||
+			attempt.lastObservedAt === null ||
+			attempt.reconcileAttemptCount <=
+				parseLabelSyncRestoreEvidence(attempt.restoreEvidence).originalReconcileAttemptCount
+		)
+			invalid();
+		return;
+	}
+	if (attempt.restoreEvidence !== undefined && attempt.restoreEvidence !== null) invalid();
 
 	if (attempt.status === "verified") {
 		if (
@@ -196,8 +234,29 @@ export function validateLabelSyncMutationAttemptLifecycle(
 		| "requestStartedAt"
 		| "lastObservedAt"
 		| "reasonCode"
+		| "restoreEvidence"
 	>,
 ): void {
+	if (attempt.status === "restored-held") {
+		validateRestoredMutationEvidence(attempt);
+		const original = parseLabelSyncRestoreEvidence(attempt.restoreEvidence);
+		const acquired = attempt.reconcileAttemptCount > original.originalReconcileAttemptCount;
+		if (attempt.claimToken !== null && !acquired) invalid();
+		if (
+			attempt.reasonCode !== "restore_uncertain" &&
+			attempt.reasonCode !== "reconciliation_unavailable" &&
+			attempt.reasonCode !== "attempt_limit"
+		)
+			invalid();
+		if (attempt.reasonCode !== "restore_uncertain" && !acquired) invalid();
+		return;
+	}
+	if (
+		attempt.status !== "reconciled" &&
+		attempt.restoreEvidence !== undefined &&
+		attempt.restoreEvidence !== null
+	)
+		invalid();
 	if (attempt.status === "claimed") {
 		if (
 			attempt.requestStartedAt !== null ||
@@ -331,6 +390,108 @@ function date(value: unknown, nullable: boolean): Date | null {
 	return parsed;
 }
 
+/** Decode bounded string-JSON without admitting a token or arbitrary fields. */
+export function parseLabelSyncRestoreEvidence(value: unknown): LabelSyncRestoreEvidence {
+	if (typeof value !== "string" || value.length > 2048) invalid();
+	let decoded: unknown;
+	try {
+		decoded = JSON.parse(value);
+	} catch {
+		return invalid();
+	}
+	const input = record(decoded);
+	const fields = [
+		"version",
+		"originalStatus",
+		"originalReasonCode",
+		"originalSendAttemptCount",
+		"originalReconcileAttemptCount",
+		"originalRequestStartedAt",
+		"originalLastObservedAt",
+		"originalCreatedAt",
+		"originalUpdatedAt",
+	];
+	if (
+		Object.keys(input).length !== fields.length ||
+		Object.keys(input).some((key) => !fields.includes(key))
+	)
+		invalid();
+	if (
+		input.version !== 1 ||
+		!["claimed", "sending", "unknown"].includes(String(input.originalStatus))
+	)
+		invalid();
+	const evidence: LabelSyncRestoreEvidence = {
+		version: 1,
+		originalStatus: input.originalStatus as LabelSyncRestoreEvidence["originalStatus"],
+		originalReasonCode:
+			input.originalReasonCode === null
+				? null
+				: parseLabelSyncMutationReasonCode(input.originalReasonCode),
+		originalSendAttemptCount: safeInteger(input.originalSendAttemptCount, 1),
+		originalReconcileAttemptCount: safeInteger(
+			input.originalReconcileAttemptCount,
+			MAX_LABEL_SYNC_MUTATION_ATTEMPTS,
+		),
+		originalRequestStartedAt: date(input.originalRequestStartedAt, true)?.toISOString() ?? null,
+		originalLastObservedAt: date(input.originalLastObservedAt, true)?.toISOString() ?? null,
+		originalCreatedAt: (date(input.originalCreatedAt, false) as Date).toISOString(),
+		originalUpdatedAt: (date(input.originalUpdatedAt, false) as Date).toISOString(),
+	};
+	if (JSON.stringify(evidence) !== value) invalid();
+	if (evidence.originalStatus === "claimed") {
+		if (
+			evidence.originalSendAttemptCount !== 0 ||
+			evidence.originalRequestStartedAt !== null ||
+			evidence.originalLastObservedAt !== null ||
+			evidence.originalReconcileAttemptCount !== 0 ||
+			evidence.originalReasonCode !== null
+		)
+			invalid();
+	} else if (evidence.originalStatus === "sending") {
+		if (
+			evidence.originalSendAttemptCount !== 1 ||
+			evidence.originalRequestStartedAt === null ||
+			evidence.originalLastObservedAt !== null ||
+			evidence.originalReconcileAttemptCount !== 0 ||
+			evidence.originalReasonCode !== null
+		)
+			invalid();
+	} else {
+		if (
+			evidence.originalSendAttemptCount !== 1 ||
+			evidence.originalRequestStartedAt === null ||
+			!["uncertain_send", "reconciliation_unavailable", "attempt_limit"].includes(
+				evidence.originalReasonCode ?? "",
+			)
+		)
+			invalid();
+		if (
+			evidence.originalReasonCode !== "uncertain_send" &&
+			evidence.originalReconcileAttemptCount < 1
+		)
+			invalid();
+	}
+	return evidence;
+}
+
+function validateRestoredMutationEvidence(
+	attempt: Pick<
+		LabelSyncMutationAttemptRecord,
+		"restoreEvidence" | "sendAttemptCount" | "reconcileAttemptCount" | "requestStartedAt"
+	>,
+): void {
+	const original = parseLabelSyncRestoreEvidence(attempt.restoreEvidence);
+	if (
+		attempt.sendAttemptCount !== original.originalSendAttemptCount ||
+		(attempt.requestStartedAt?.toISOString() ?? null) !== original.originalRequestStartedAt ||
+		!Number.isSafeInteger(attempt.reconcileAttemptCount) ||
+		attempt.reconcileAttemptCount < original.originalReconcileAttemptCount ||
+		attempt.reconcileAttemptCount > MAX_LABEL_SYNC_MUTATION_ATTEMPTS
+	)
+		invalid();
+}
+
 export function parseLabelSyncMutationStatus(value: unknown): LabelSyncMutationStatus {
 	if (
 		typeof value === "string" &&
@@ -379,6 +540,7 @@ export function parseLabelSyncMutationAttempt(value: unknown): LabelSyncMutation
 		"reasonCode",
 		"createdAt",
 		"updatedAt",
+		"restoreEvidence",
 	]);
 	if (Object.keys(input).some((field) => !allowedFields.has(field))) return invalid();
 	const status = parseLabelSyncMutationStatus(input.status);
@@ -441,6 +603,10 @@ export function parseLabelSyncMutationAttempt(value: unknown): LabelSyncMutation
 		reasonCode,
 		createdAt: date(input.createdAt, false) as Date,
 		updatedAt: date(input.updatedAt, false) as Date,
+		restoreEvidence:
+			input.restoreEvidence === undefined || input.restoreEvidence === null
+				? null
+				: boundedString(input.restoreEvidence, 2048),
 	};
 	validateLabelSyncMutationAttemptLifecycle(parsed);
 	return parsed;

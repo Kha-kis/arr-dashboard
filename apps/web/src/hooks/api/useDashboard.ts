@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import type {
-	DashboardStatisticsResponse,
+	DashboardStatisticsEnvelope,
 	HistoryResponseV2,
 	MultiInstanceCalendarResponse,
 	MultiInstanceQueueResponse,
@@ -70,10 +70,19 @@ export const useMultiInstanceCalendarQuery = (params: {
 	});
 
 export const useDashboardStatisticsQuery = () =>
-	useQuery<DashboardStatisticsResponse>({
+	useQuery<DashboardStatisticsEnvelope>({
 		queryKey: dashboardKeys.statistics,
 		queryFn: fetchDashboardStatistics,
 		staleTime: 60 * 1000,
 		gcTime: 2 * 60 * 1000, // 2 minutes
-		refetchInterval: POLLING_STATS,
+		retry: false,
+		refetchInterval: (query) => {
+			const availability = query.state.data?.availability;
+			return query.state.error ||
+				!availability ||
+				availability === "collecting" ||
+				availability === "unavailable"
+				? 10_000
+				: POLLING_STATS;
+		},
 	});

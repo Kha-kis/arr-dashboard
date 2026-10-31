@@ -1,4 +1,10 @@
 import type { PushoverConfig } from "@arr/shared";
+import {
+	httpFailureCategory,
+	networkFailureCategory,
+	notificationFailure,
+	NotificationFailureError,
+} from "../failure-diagnostics.js";
 import type { ChannelPlugin, ChannelSender, NotificationPayload, SendResult } from "../types.js";
 import { extractMetadataFields } from "./format-metadata.js";
 
@@ -42,42 +48,41 @@ export const pushoverSender: ChannelSender = {
 			if (response.ok) {
 				return { success: true, retryable: false };
 			}
+			await response.body?.cancel().catch(() => {});
 
-			const text = await response.text().catch(() => "");
-			const error = `Pushover API failed: ${response.status} ${text}`;
-
-			if (response.status === 429) {
-				return { success: false, retryable: true, error };
-			}
-			if (response.status >= 500) {
-				return { success: false, retryable: true, error };
-			}
-			return { success: false, retryable: false, error };
+			return notificationFailure(
+				httpFailureCategory(response.status),
+				response.status === 429 || response.status >= 500,
+			);
 		} catch (err) {
-			const error = err instanceof Error ? err.message : String(err);
-			return { success: false, retryable: true, error: `Pushover network error: ${error}` };
+			return notificationFailure(networkFailureCategory(err), true);
 		}
 	},
 
 	async test(config: Record<string, unknown>): Promise<void> {
 		const { userKey, apiToken } = config as PushoverConfig;
 
-		const response = await fetch(PUSHOVER_API, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({
-				token: apiToken,
-				user: userKey,
-				title: "Test Notification",
-				message: "Arr Dashboard notification channel is working!",
-				priority: -1,
-			}),
-			signal: AbortSignal.timeout(PUSHOVER_TIMEOUT_MS),
-		});
+		try {
+			const response = await fetch(PUSHOVER_API, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					token: apiToken,
+					user: userKey,
+					title: "Test Notification",
+					message: "Arr Dashboard notification channel is working!",
+					priority: -1,
+				}),
+				signal: AbortSignal.timeout(PUSHOVER_TIMEOUT_MS),
+			});
 
-		if (!response.ok) {
-			const text = await response.text().catch(() => "");
-			throw new Error(`Pushover test failed: ${response.status} ${text}`);
+			if (!response.ok) {
+				await response.body?.cancel().catch(() => {});
+				throw new NotificationFailureError(httpFailureCategory(response.status));
+			}
+		} catch (err) {
+			if (err instanceof NotificationFailureError) throw err;
+			throw new NotificationFailureError(networkFailureCategory(err));
 		}
 	},
 };

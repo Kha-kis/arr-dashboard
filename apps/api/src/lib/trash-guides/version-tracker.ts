@@ -5,6 +5,7 @@
  * Fetches latest commit hashes to detect when new updates are available.
  */
 
+import { setTimeout as wait } from "node:timers/promises";
 import type { TrashRepoConfig } from "@arr/shared";
 import { DEFAULT_TRASH_REPO } from "@arr/shared";
 
@@ -46,6 +47,7 @@ interface FetchOptions {
 	timeout?: number;
 	retries?: number;
 	retryDelay?: number;
+	signal?: AbortSignal;
 }
 
 // ============================================================================
@@ -55,8 +57,13 @@ interface FetchOptions {
 /**
  * Delay execution for specified milliseconds
  */
-function delay(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
+async function delay(ms: number, signal?: AbortSignal): Promise<void> {
+	try {
+		await wait(ms, undefined, { signal });
+	} catch (error) {
+		signal?.throwIfAborted();
+		throw error;
+	}
 }
 
 /**
@@ -66,13 +73,15 @@ async function fetchWithTimeout(
 	url: string,
 	timeout: number,
 	headers?: Record<string, string>,
+	signal?: AbortSignal,
 ): Promise<Response> {
+	signal?.throwIfAborted();
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), timeout);
 
 	try {
 		const response = await fetch(url, {
-			signal: controller.signal,
+			signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal,
 			headers: {
 				"User-Agent": "arr-dashboard/2.3.0",
 				Accept: "application/vnd.github.v3+json",
@@ -84,6 +93,7 @@ async function fetchWithTimeout(
 		return response;
 	} catch (error) {
 		clearTimeout(timeoutId);
+		signal?.throwIfAborted();
 		if (error instanceof Error && error.name === "AbortError") {
 			throw new Error(`Request timeout after ${timeout}ms`);
 		}
@@ -103,13 +113,15 @@ async function fetchWithRetry(
 		timeout = FETCH_TIMEOUT_MS,
 		retries = MAX_RETRIES,
 		retryDelay = RETRY_DELAY_MS,
+		signal,
 	} = options;
 
 	let lastError: Error | undefined;
 
 	for (let attempt = 1; attempt <= retries; attempt++) {
+		signal?.throwIfAborted();
 		try {
-			const response = await fetchWithTimeout(url, timeout, headers);
+			const response = await fetchWithTimeout(url, timeout, headers, signal);
 
 			// Check for rate limiting
 			if (response.status === 403) {
@@ -130,6 +142,7 @@ async function fetchWithRetry(
 
 			return response;
 		} catch (error) {
+			signal?.throwIfAborted();
 			lastError = error instanceof Error ? error : new Error(String(error));
 
 			// Don't retry rate limit errors
@@ -138,7 +151,7 @@ async function fetchWithRetry(
 			}
 
 			if (attempt < retries) {
-				await delay(retryDelay * 2 ** (attempt - 1)); // Exponential backoff (1x, 2x, 4x...)
+				await delay(retryDelay * 2 ** (attempt - 1), signal); // Exponential backoff (1x, 2x, 4x...)
 			}
 		}
 	}
@@ -151,7 +164,7 @@ async function fetchWithRetry(
 // ============================================================================
 
 export interface VersionTracker {
-	getLatestCommit(): Promise<VersionInfo>;
+	getLatestCommit(options?: { signal?: AbortSignal }): Promise<VersionInfo>;
 	getCommitInfo(commitHash: string): Promise<VersionInfo>;
 	compareCommits(
 		oldHash: string,
@@ -174,11 +187,18 @@ export function createVersionTracker(repoConfig?: TrashRepoConfig): VersionTrack
 	/**
 	 * Get the latest commit on the configured branch
 	 */
-	async function getLatestCommit(): Promise<VersionInfo> {
+	async function getLatestCommit({ signal }: { signal?: AbortSignal } = {}): Promise<VersionInfo> {
 		const url = `${GITHUB_API_BASE}/repos/${repoSlug}/commits/${config.branch}`;
 
-		const response = await fetchWithRetry(url, {}, headers);
-		const commit: GitHubCommit = await response.json();
+		const response = await fetchWithRetry(url, { signal }, headers);
+		let commit: GitHubCommit;
+		try {
+			commit = await response.json();
+		} catch (error) {
+			signal?.throwIfAborted();
+			throw error;
+		}
+		signal?.throwIfAborted();
 
 		return {
 			commitHash: commit.sha,

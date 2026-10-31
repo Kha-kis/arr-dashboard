@@ -9,8 +9,57 @@ import type { FastifyInstance } from "fastify";
  */
 export class LifecycleService {
 	private isShuttingDown = false;
+	private terminationRequested = false;
+	private restartTimer: ReturnType<typeof setTimeout> | undefined;
+	private closePromise: Promise<void> | undefined;
+	private httpHandlerAdmissionClosed = false;
+	private readonly pendingHttpHandlers = new Set<Promise<void>>();
 
 	constructor(private app: FastifyInstance) {}
+
+	/** Track the actual handler promise, not its response or socket lifetime. */
+	async runHttpHandler<T>(handler: () => T | PromiseLike<T>): Promise<T> {
+		if (this.httpHandlerAdmissionClosed) {
+			throw Object.assign(new Error("HTTP handlers are unavailable during shutdown"), {
+				statusCode: 503,
+			});
+		}
+
+		let settle!: () => void;
+		const completion = new Promise<void>((resolve) => {
+			settle = resolve;
+		});
+		this.pendingHttpHandlers.add(completion);
+		try {
+			return await handler();
+		} finally {
+			this.pendingHttpHandlers.delete(completion);
+			settle();
+		}
+	}
+
+	/** Close admission without blocking other preClose hooks. */
+	closeHttpHandlerAdmission(): void {
+		this.httpHandlerAdmissionClosed = true;
+	}
+
+	/** Wait before earlier-registered infrastructure (including Prisma) closes. */
+	async drainHttpHandlers(): Promise<void> {
+		this.closeHttpHandlerAdmission();
+		await Promise.all(this.pendingHttpHandlers);
+	}
+
+	/** Terminal shutdown supersedes any queued or draining operator restart. */
+	shutdown(): Promise<void> {
+		this.terminationRequested = true;
+		this.isShuttingDown = true;
+		this.closeHttpHandlerAdmission();
+		if (this.restartTimer !== undefined) {
+			clearTimeout(this.restartTimer);
+			this.restartTimer = undefined;
+		}
+		return this.gracefulShutdown();
+	}
 
 	/**
 	 * Initiate a graceful restart of the application
@@ -18,12 +67,12 @@ export class LifecycleService {
 	 * Security: Should only be called after authentication/authorization checks
 	 *
 	 * @param reason - Why the restart was triggered (for logging)
-	 * @returns Promise that resolves when restart is initiated
+	 * @returns True only when this request schedules a new restart; false when suppressed
 	 */
-	async restart(reason: string): Promise<void> {
+	async restart(reason: string): Promise<boolean> {
 		if (this.isShuttingDown) {
 			this.app.log.warn("Restart already in progress; ignoring duplicate request");
-			return;
+			return false;
 		}
 
 		this.isShuttingDown = true;
@@ -38,19 +87,23 @@ export class LifecycleService {
 		);
 
 		// Schedule the actual restart after allowing time for response to be sent
-		setTimeout(() => {
+		this.restartTimer = setTimeout(() => {
+			this.restartTimer = undefined;
 			void this.performRestart();
 		}, 1500);
+		return true;
 	}
 
 	/**
 	 * Perform the actual restart
 	 */
 	private async performRestart(): Promise<void> {
+		if (this.terminationRequested) return;
 		try {
 			// Step 1: Graceful shutdown of connections
 			this.app.log.info("Closing server connections gracefully");
 			await this.gracefulShutdown();
+			if (this.terminationRequested) return;
 
 			// Step 2: Spawn new process (production only)
 			let spawnSuccess = true;
@@ -80,6 +133,9 @@ export class LifecycleService {
 				return;
 			}
 		} catch (error) {
+			// The terminal owner observes the same rejected drain and chooses
+			// its failure exit. Never race it with a replacement or another exit.
+			if (this.terminationRequested) return;
 			this.app.log.error({ err: error }, "Error during restart");
 			process.exit(1);
 		}
@@ -88,12 +144,16 @@ export class LifecycleService {
 	/**
 	 * Gracefully close all connections
 	 */
-	private async gracefulShutdown(): Promise<void> {
-		try {
-			await this.app.close();
-		} catch (error) {
-			this.app.log.error({ err: error }, "Error closing Fastify server");
-		}
+	private gracefulShutdown(): Promise<void> {
+		// Install ownership before invoking close, including a reentrant signal.
+		this.closePromise ??= Promise.resolve()
+			.then(() => this.app.close())
+			.catch((error) => {
+				this.app.log.error({ err: error }, "Error closing Fastify server");
+				// Failed cleanup must not authorize a replacement process.
+				throw error;
+			});
+		return this.closePromise;
 	}
 
 	/**

@@ -35,6 +35,20 @@ export const authKeys = {
 	passkeyCredentials: ["passkey-credentials"] as const,
 };
 
+export const manualImportKeys = {
+	candidatesRoot: ["manual-import", "candidates"] as const,
+	candidates: (ownerId: string | null, params: Record<string, unknown>) =>
+		["manual-import", "candidates", ownerId, params] as const,
+	progress: (ownerId: string | null, idempotencyKey: string | null) =>
+		["manual-import", "progress", ownerId, idempotencyKey] as const,
+	source: (ownerId: string | null, params: Record<string, unknown>) =>
+		["manual-import", "source", ownerId, params] as const,
+	remainderReview: (ownerId: string | null) =>
+		["manual-import", "remainder-review", ownerId] as const,
+	newAttemptReview: (ownerId: string | null) =>
+		["manual-import", "new-attempt-review", ownerId] as const,
+};
+
 /* -------------------------------------------------------------------------- */
 /*  Services                                                                   */
 /* -------------------------------------------------------------------------- */
@@ -57,6 +71,7 @@ export const libraryKeys = {
 	nativeInventory: (params: {
 		instanceId: string;
 		domain: "library" | "episode";
+		metadataFilter: "missing-tmdb" | null;
 		afterNativeId: string | null;
 		expectedGenerationId: string | null;
 		refreshKey: number;
@@ -264,6 +279,8 @@ export const searchKeys = {
 	indexers: ["search", "indexers"] as const,
 	indexerDetails: (instanceId: string, indexerId: number) =>
 		["search", "indexers", "details", instanceId, indexerId] as const,
+	grabResults: (generation: string) => ["search", "grab", "results", generation] as const,
+	grabIntent: (intentId: string) => ["search", "grab", "intent", intentId] as const,
 };
 
 /* -------------------------------------------------------------------------- */
@@ -500,6 +517,8 @@ export const oidcKeys = {
 
 export const backupKeys = {
 	all: ["backups"] as const,
+	restore: ["backup-restore"] as const,
+	restoreStatus: ["backup-restore-status"] as const,
 	settings: ["backup-settings"] as const,
 	passwordStatus: ["backup-password-status"] as const,
 };
@@ -522,6 +541,10 @@ export const pulseKeys = {
 
 export const quiKeys = {
 	all: ["qui"] as const,
+	// Local unresolved tag attempts; never fetched or persisted to storage.
+	tagFences: ["qui", "tag-write-fences"] as const,
+	seriesTorrentsAll: ["qui", "series-torrents"] as const,
+	movieTorrentsAll: ["qui", "movie-torrents"] as const,
 	// Per-series aggregate (episode counts + distinct torrents). Powers
 	// the SeriesTorrentsPanel in the library detail modal. Invalidated
 	// when a cross-seed trigger or manual backfill changes correlation.
@@ -537,6 +560,11 @@ export const quiKeys = {
 	// no parameters). Cached server-side for 1h; client also caches via
 	// the long staleTime on the hook.
 	trackerIcons: () => ["qui", "tracker-icons"] as const,
+	torrentTrackers: {
+		all: ["qui", "torrent-trackers"] as const,
+		byHash: (quiInstanceId: string | null, qbitInstanceId: number | null, hash: string) =>
+			["qui", "torrent-trackers", quiInstanceId, qbitInstanceId, hash] as const,
+	},
 	/**
 	 * Per-library-page seeding summary. Keyed by the sorted item set so
 	 * cache hits across re-renders of the same page. Includes arr

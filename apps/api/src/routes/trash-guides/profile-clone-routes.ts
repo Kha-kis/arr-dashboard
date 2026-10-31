@@ -48,7 +48,7 @@ const instanceProfileParams = z.object({
 
 const profileImportSchema = z.object({
 	instanceId: z.string().min(1),
-	profileId: z.number().int(),
+	profileId: z.number().int().positive().safe(),
 });
 
 const profilePreviewSchema = z.object({
@@ -64,7 +64,7 @@ const profilePreviewSchema = z.object({
 
 const profileDeploySchema = profilePreviewSchema.extend({
 	profileName: z.string().min(1),
-	existingProfileId: z.number().int().optional(),
+	existingProfileId: z.number().int().positive().safe().optional(),
 });
 
 const serviceTypeEnum = z.enum(["RADARR", "SONARR"]);

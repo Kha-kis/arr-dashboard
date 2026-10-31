@@ -26,6 +26,7 @@ import {
 } from "../../../hooks/api/useSeerr";
 import { getLinuxIsoName, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { notifySeerrActionError } from "../lib/seerr-action-error";
 import {
 	formatRelativeTime,
 	getIssueStatusLabel,
@@ -142,11 +143,13 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 		addCommentMutation.mutate(
 			{ instanceId, issueId, message },
 			{
-				onSuccess: () => toast.success("Comment added"),
-				onError: () => toast.error("Failed to add comment"),
+				onSuccess: () => {
+					toast.success("Comment added");
+					setCommentInput((prev) => ({ ...prev, [issueId]: "" }));
+				},
+				onError: (error) => notifySeerrActionError(error, "Failed to add comment"),
 			},
 		);
-		setCommentInput((prev) => ({ ...prev, [issueId]: "" }));
 	};
 
 	return (
@@ -365,7 +368,8 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 														{ instanceId, issueId: issue.id, status: "resolved" },
 														{
 															onSuccess: () => toast.success("Issue resolved"),
-															onError: () => toast.error("Failed to resolve issue"),
+															onError: (error) =>
+																notifySeerrActionError(error, "Failed to resolve issue"),
 														},
 													)
 												}
@@ -384,7 +388,8 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 														{ instanceId, issueId: issue.id, status: "open" },
 														{
 															onSuccess: () => toast.success("Issue reopened"),
-															onError: () => toast.error("Failed to reopen issue"),
+															onError: (error) =>
+																notifySeerrActionError(error, "Failed to reopen issue"),
 														},
 													)
 												}

@@ -7,11 +7,16 @@ import type {
 	ProviderObservationUnit,
 } from "../prisma.js";
 import {
+	type ProviderPublicationAuthority,
+	withCurrentProviderPublicationAuthority,
+} from "../services/provider-identity-guard.js";
+import {
 	buildObservationActiveSlotKey,
 	buildObservationAuthorityKey,
 	decodeProviderObservationReasonCode,
 	type ObservationRunAuthority,
 	type ObservationRunProvider,
+	type ObservationRunProgress,
 	type ObservationRunUnitSeed,
 	type ObservationUnitClaim,
 	observationCountSchema,
@@ -852,6 +857,46 @@ export async function inspectRecoverableObservationRunForCacheAttempt(
 	};
 }
 
+/** Joined cancellation releases no retry budget and cannot authorize a new owner. */
+export async function releaseCancelledObservationUnitClaim(
+	prisma: Db,
+	input: {
+		claim: ObservationUnitClaim;
+		authority: ProviderPublicationAuthority;
+		attempt: { attemptedAt: Date; resultMarker: string };
+		cleanupRunClaimToken?: string;
+	},
+): Promise<boolean> {
+	const cacheType = input.authority.service === "PLEX" ? "plex_episode" : "jellyfin_episode";
+	if (!["PLEX", "JELLYFIN", "EMBY"].includes(input.authority.service)) return false;
+	const publication = await withCurrentProviderPublicationAuthority(
+		prisma,
+		input.authority,
+		async (tx) => {
+			const status = await tx.cacheRefreshStatus.findFirst({
+				where: {
+					instanceId: input.authority.id,
+					cacheType,
+					connectionGeneration: input.authority.connectionGeneration,
+					identityGeneration: input.authority.identityGeneration,
+					lastAttemptAt: input.attempt.attemptedAt,
+					lastAttemptResult: input.attempt.resultMarker,
+				},
+			});
+			if (!status) return false;
+			return await releaseInheritedObservationUnitClaim(tx, {
+				...input.claim,
+				instanceId: input.authority.id,
+				cacheType,
+				connectionGeneration: input.authority.connectionGeneration,
+				identityGeneration: input.authority.identityGeneration,
+			});
+		},
+		{ cleanupRunClaimToken: input.cleanupRunClaimToken },
+	);
+	return publication.matched && publication.value;
+}
+
 /** Release only the exact claim proven to be inherited by startup recovery. */
 export async function releaseInheritedObservationUnitClaim(
 	prisma: Pick<Tx, "providerObservationRun" | "providerObservationUnit" | "$executeRaw">,
@@ -1083,69 +1128,202 @@ export async function completeObservationUnit(
 	});
 }
 
+type ObservationUnitFailureInput = {
+	claim: Pick<ObservationUnitClaim, "runId" | "unitId" | "claimToken">;
+	reasonCode: ProviderObservationReasonCode;
+	now: Date;
+	resetProgress?: boolean;
+};
+
 export async function failObservationUnit(
 	prisma: Db,
+	input: ObservationUnitFailureInput,
+): Promise<boolean> {
+	return await prisma.$transaction(async (tx) => await failObservationUnitInTransaction(tx, input));
+}
+
+/** Retry a joined owner's failed settlement, never another owner's active claim. */
+export async function failOwnedObservationUnit(
+	prisma: Db,
 	input: {
-		claim: ObservationUnitClaim;
-		reasonCode: ProviderObservationReasonCode;
-		now: Date;
-		resetProgress?: boolean;
+		failure: ObservationUnitFailureInput;
+		authority: ProviderPublicationAuthority;
+		authorityKey: string;
+		attempt: { attemptedAt: Date; resultMarker: string };
+		now?: Date;
+		cleanupRunClaimToken?: string;
 	},
+): Promise<
+	| { status: "recorded"; progress: ObservationRunProgress; renewalDeadline: Date | null }
+	| { status: "superseded" | "unavailable" }
+> {
+	if (!["JELLYFIN", "EMBY"].includes(input.authority.service)) return { status: "superseded" };
+	const publication = await withCurrentProviderPublicationAuthority(
+		prisma,
+		input.authority,
+		async (tx) => {
+			const status = await tx.cacheRefreshStatus.findFirst({
+				where: {
+					instanceId: input.authority.id,
+					cacheType: "jellyfin_episode",
+					connectionGeneration: input.authority.connectionGeneration,
+					identityGeneration: input.authority.identityGeneration,
+					lastAttemptAt: input.attempt.attemptedAt,
+					lastAttemptResult: input.attempt.resultMarker,
+				},
+				select: { id: true },
+			});
+			if (!status) return { status: "superseded" as const };
+			const run = await tx.providerObservationRun.findFirst({
+				where: {
+					id: input.failure.claim.runId,
+					instanceId: input.authority.id,
+					provider: "jellyfin_episode",
+					cacheType: "jellyfin_episode",
+					authorityKey: input.authorityKey,
+					activeSlotKey: { not: null },
+					state: { in: ["running", "failed"] },
+					connectionGeneration: input.authority.connectionGeneration,
+					identityGeneration: input.authority.identityGeneration,
+				},
+				select: { id: true },
+			});
+			if (!run || !(await failObservationUnitInTransaction(tx, input.failure)))
+				return { status: "superseded" as const };
+			const failed = await tx.providerObservationRun.findUniqueOrThrow({
+				where: { id: run.id },
+				select: {
+					completedUnits: true,
+					totalUnits: true,
+					completedWork: true,
+					totalWork: true,
+					parentGenerationId: true,
+					targetDigest: true,
+					nextAttemptAt: true,
+				},
+			});
+			const retryDeferred = failed.nextAttemptAt !== null;
+			if (
+				!retryDeferred &&
+				!(await hasExhaustedObservationRunRetries(tx, {
+					runId: run.id,
+					authorityKey: input.authorityKey,
+				}))
+			)
+				throw new Error("Owned observation failure ledger is inconsistent");
+			// Unit, outer attempt and renewal evidence commit together. A later
+			// database failure rolls back the debit/reset as well as this marker.
+			const settled = await tx.cacheRefreshStatus.updateMany({
+				where: {
+					id: status.id,
+					instanceId: input.authority.id,
+					cacheType: "jellyfin_episode",
+					connectionGeneration: input.authority.connectionGeneration,
+					identityGeneration: input.authority.identityGeneration,
+					lastAttemptAt: input.attempt.attemptedAt,
+					lastAttemptResult: input.attempt.resultMarker,
+				},
+				data: {
+					lastAttemptResult: "error",
+					lastAttemptErrorMessage: retryDeferred ? "collection-deferred" : "provider-unavailable",
+				},
+			});
+			if (settled.count !== 1)
+				throw new Error("Owned observation settlement lost its outer attempt");
+			const renewal = retryDeferred
+				? null
+				: await readAutomaticRenewalCandidate(tx, {
+						runId: run.id,
+						instanceId: input.authority.id,
+						userId: input.authority.userId,
+						authorityKey: input.authorityKey,
+						parentGenerationId: failed.parentGenerationId ?? "",
+						targetDigest: failed.targetDigest,
+						connectionGeneration: input.authority.connectionGeneration,
+						identityGeneration: input.authority.identityGeneration,
+						now: input.now ?? new Date(),
+					});
+			return {
+				status: "recorded" as const,
+				progress: {
+					state: "failed" as const,
+					completedUnits: failed.completedUnits,
+					totalUnits: failed.totalUnits,
+					completedWork: failed.completedWork,
+					totalWork: failed.totalWork,
+					reasonCode: input.failure.reasonCode,
+				},
+				renewalDeadline: renewal?.deadline ?? null,
+			};
+		},
+		{ cleanupRunClaimToken: input.cleanupRunClaimToken },
+	);
+	// Guard refusal may be temporary cleanup ownership, not lost claim authority.
+	return publication.matched ? publication.value : { status: "unavailable" };
+}
+
+async function failObservationUnitInTransaction(
+	tx: Tx,
+	input: ObservationUnitFailureInput,
 ): Promise<boolean> {
 	const reason = decodeProviderObservationReasonCode(input.reasonCode);
-	return await prisma.$transaction(async (tx) => {
-		const current = await tx.providerObservationUnit.findFirst({
-			where: {
-				id: input.claim.unitId,
-				runId: input.claim.runId,
-				state: "running",
-				claimToken: input.claim.claimToken,
-			},
-		});
-		if (!current) return false;
-		const nextAttemptCount = current.attemptCount + 1;
-		const delay =
-			nextAttemptCount <= AUTOMATIC_ATTEMPT_LIMIT ? BACKOFF_MS[nextAttemptCount - 1]! : null;
-		const result = await tx.providerObservationUnit.updateMany({
-			where: {
-				id: input.claim.unitId,
-				runId: input.claim.runId,
-				state: "running",
-				claimToken: input.claim.claimToken,
-			},
-			data: {
-				state: "failed",
-				claimToken: null,
-				...(input.resetProgress
-					? { cursor: 0, expectedRawCount: null, observedRawCount: 0, completedAt: null }
-					: {}),
-				attemptCount: nextAttemptCount,
-				nextAttemptAt: delay === null ? null : new Date(input.now.getTime() + delay),
-				lastReasonCode: reason,
-			},
-		});
-		if (result.count !== 1) return false;
-		if (input.resetProgress) {
-			await tx.plexEpisodeObservationStage.deleteMany({
-				where: { runId: input.claim.runId, unitId: input.claim.unitId },
-			});
-			await tx.jellyfinEpisodeObservationStage.deleteMany({
-				where: { runId: input.claim.runId, unitId: input.claim.unitId },
-			});
-			await tx.jellyfinEpisodeObservationExclusion.deleteMany({
-				where: { runId: input.claim.runId, unitId: input.claim.unitId },
-			});
-		}
-		await tx.providerObservationRun.updateMany({
-			where: { id: input.claim.runId, state: { in: ["running", "failed"] } },
-			data: {
-				state: "failed",
-				nextAttemptAt: delay === null ? null : new Date(input.now.getTime() + delay),
-				lastReasonCode: reason,
-			},
-		});
-		return true;
+	const current = await tx.providerObservationUnit.findFirst({
+		where: {
+			id: input.claim.unitId,
+			runId: input.claim.runId,
+			state: "running",
+			claimToken: input.claim.claimToken,
+		},
 	});
+	if (!current) return false;
+	const nextAttemptCount = current.attemptCount + 1;
+	const delay =
+		nextAttemptCount <= AUTOMATIC_ATTEMPT_LIMIT ? BACKOFF_MS[nextAttemptCount - 1]! : null;
+	const result = await tx.providerObservationUnit.updateMany({
+		where: {
+			id: input.claim.unitId,
+			runId: input.claim.runId,
+			state: "running",
+			claimToken: input.claim.claimToken,
+		},
+		data: {
+			state: "failed",
+			claimToken: null,
+			...(input.resetProgress
+				? {
+						cursor: 0,
+						expectedRawCount: null,
+						observedRawCount: 0,
+						completedPages: 0,
+						completedAt: null,
+					}
+				: {}),
+			attemptCount: nextAttemptCount,
+			nextAttemptAt: delay === null ? null : new Date(input.now.getTime() + delay),
+			lastReasonCode: reason,
+		},
+	});
+	if (result.count !== 1) return false;
+	if (input.resetProgress) {
+		await tx.plexEpisodeObservationStage.deleteMany({
+			where: { runId: input.claim.runId, unitId: input.claim.unitId },
+		});
+		await tx.jellyfinEpisodeObservationStage.deleteMany({
+			where: { runId: input.claim.runId, unitId: input.claim.unitId },
+		});
+		await tx.jellyfinEpisodeObservationExclusion.deleteMany({
+			where: { runId: input.claim.runId, unitId: input.claim.unitId },
+		});
+	}
+	await tx.providerObservationRun.updateMany({
+		where: { id: input.claim.runId, state: { in: ["running", "failed"] } },
+		data: {
+			state: "failed",
+			nextAttemptAt: delay === null ? null : new Date(input.now.getTime() + delay),
+			lastReasonCode: reason,
+		},
+	});
+	return true;
 }
 
 export async function invalidateObservationRuns(

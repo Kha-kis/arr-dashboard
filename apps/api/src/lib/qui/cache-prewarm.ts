@@ -7,8 +7,8 @@
  *
  * Design notes:
  *   - `prewarmInstance` runs ONE qui instance's paginated walk with a
- *     hard per-instance timeout. It never throws — failure is logged
- *     and the next instance proceeds.
+ *     per-instance cancellation deadline. It never throws — failure is
+ *     logged and the next instance proceeds only after actual settlement.
  *   - `prewarmAllSequential` walks instances one-at-a-time. Sequential
  *     is the load-bearing OOM-safety property; do not switch to
  *     Promise.all without revisiting the heap math in the plugin's
@@ -31,7 +31,10 @@ export interface PrewarmInstanceDeps {
 	getCachedAllTorrents: (
 		instanceId: string,
 		client: QuiClient,
+		signal: AbortSignal,
 	) => Promise<{ length: number } | unknown[]>;
+	/** Shutdown cancellation; the same flight is retained until the provider settles. */
+	signal?: AbortSignal;
 	timeoutMs: number;
 	logger: Pick<Logger, "info" | "warn">;
 	/** Injectable clock for tests. */
@@ -44,7 +47,7 @@ export interface PrewarmInstanceDeps {
 
 /**
  * Pre-warm one instance. Resolves on success or failure — never throws.
- * The timeout race uses the deps' injected timer so tests can avoid
+ * The cancellation deadline uses the deps' injected timer so tests can avoid
  * real-world delays.
  */
 export async function prewarmInstance(
@@ -56,34 +59,21 @@ export async function prewarmInstance(
 	const clearTimer = deps.clearTimer ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
 	const start = now();
 	let timerHandle: unknown;
+	const deadline = new AbortController();
+	const signal = deps.signal ? AbortSignal.any([deps.signal, deadline.signal]) : deadline.signal;
 	try {
+		signal.throwIfAborted();
 		const client = deps.createClient(instance);
-		const timeoutPromise = new Promise<never>((_, reject) => {
-			timerHandle = setTimer(
-				() => reject(new Error(`pre-warm timed out after ${deps.timeoutMs}ms`)),
-				deps.timeoutMs,
-			);
-			// Don't hold the loop open during shutdown when this races a
-			// real `getCachedAllTorrents`.
-			const h = timerHandle as { unref?: () => void };
-			h.unref?.();
-		});
-		const result = await Promise.race([
-			deps.getCachedAllTorrents(instance.id, client),
-			timeoutPromise,
-		]);
-		// Clear the timer as soon as the real fetch wins the race; on
-		// timeout the rejection handler already fired so this is a no-op.
-		//
-		// Note: `Promise.race` leaves the losing promise in `pending`
-		// state. That's a well-known property of the JavaScript Promise
-		// model — there's no built-in cancellation. Cleaner-looking
-		// "fixes" (e.g., manually rejecting `timeoutPromise` here) would
-		// either need an attached `.catch` (or produce unhandled-rejection
-		// noise) or require an AbortController flowed all the way into
-		// `getCachedAllTorrents`, which is a bigger surface change. In
-		// practice the pending promise is collected within microseconds
-		// when this function returns and its closure falls out of scope.
+		timerHandle = setTimer(
+			() => deadline.abort(new Error(`pre-warm timed out after ${deps.timeoutMs}ms`)),
+			deps.timeoutMs,
+		);
+		(timerHandle as { unref?: () => void }).unref?.();
+		// Cancellation requests settlement; it does not prove settlement. Keep
+		// the sequential slot and lifecycle lease even for an abort-ignoring
+		// provider or a flight started by another cache caller.
+		const result = await deps.getCachedAllTorrents(instance.id, client, signal);
+		signal.throwIfAborted();
 		clearTimer(timerHandle);
 		const torrentCount = Array.isArray(result)
 			? result.length

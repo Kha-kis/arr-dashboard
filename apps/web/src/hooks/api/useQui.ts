@@ -27,9 +27,11 @@ import {
 	fetchQuiTags,
 	fetchQuiTorrentFiles,
 	fetchQuiTorrentProperties,
+	fetchQuiTorrentTrackers,
 	fetchQuiWebhookConfig,
 	fetchSeriesTorrents,
 	fetchTrackerIcons,
+	postQuiActionReconciliation,
 	postQuiAddTrackers,
 	postQuiBulkAction,
 	postQuiEditTracker,
@@ -37,6 +39,7 @@ import {
 	postQuiRenameTorrent,
 	postQuiTorrentAction,
 	type QuiActionLogParams,
+	type QuiActionResolutionDecision,
 	type QuiDirScanTriggerResult,
 	type QuiEventLogParams,
 	type RegisterQuiWebhookArgs,
@@ -48,6 +51,13 @@ import {
 } from "../../lib/api-client/qui";
 import { POLLING_ACTIVE, POLLING_BACKGROUND, POLLING_STANDARD } from "../../lib/polling-intervals";
 import { quiKeys } from "../../lib/query-keys";
+import {
+	beginQuiTagAttempt,
+	type QuiTagFences,
+	type QuiTagTarget,
+	quiTagTargetKey,
+	settleQuiTagAttempt,
+} from "../../lib/qui-tag-fence";
 
 /**
  * Probe for the Cross-Seed Discovery page (Phase 3.1). Returns whether the
@@ -134,6 +144,51 @@ export const useQuiActionLog = (filters: Omit<QuiActionLogParams, "cursor"> = {}
 	});
 };
 
+export const useQuiTorrentTrackers = (args: {
+	quiInstanceId: string | null;
+	qbitInstanceId: number | null;
+	hash: string;
+	enabled?: boolean;
+}) => {
+	const { quiInstanceId, qbitInstanceId, hash, enabled = true } = args;
+	return useQuery({
+		queryKey: quiKeys.torrentTrackers.byHash(quiInstanceId, qbitInstanceId, hash),
+		queryFn: () =>
+			fetchQuiTorrentTrackers({
+				quiInstanceId: quiInstanceId!,
+				qbitInstanceId: qbitInstanceId!,
+				hash,
+			}),
+		enabled: enabled && quiInstanceId !== null && qbitInstanceId !== null,
+		staleTime: POLLING_STANDARD,
+		retry: false,
+	});
+};
+
+const invalidateDrawerMutation = (
+	queryClient: ReturnType<typeof useQueryClient>,
+	includeTrackers = false,
+) => {
+	queryClient.invalidateQueries({ queryKey: quiKeys.actions() });
+	queryClient.invalidateQueries({ queryKey: quiKeys.torrentProperties.all });
+	queryClient.invalidateQueries({ queryKey: quiKeys.seriesTorrentsAll });
+	queryClient.invalidateQueries({ queryKey: quiKeys.movieTorrentsAll });
+	if (includeTrackers) {
+		queryClient.invalidateQueries({ queryKey: quiKeys.torrentTrackers.all });
+	}
+};
+
+export const useQuiActionReconciliation = () => {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: (args: { actionLogId: string; decision: QuiActionResolutionDecision }) =>
+			postQuiActionReconciliation(args),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: quiKeys.actions() });
+		},
+	});
+};
+
 /**
  * Single-torrent mutation hook (Phase 4.1). On settle (success OR failure)
  * invalidates the action log so the new row appears immediately, plus the
@@ -145,10 +200,21 @@ export const useQuiTorrentAction = () => {
 	const queryClient = useQueryClient();
 	return useMutation({
 		mutationFn: (args: SingleTorrentActionArgs) => postQuiTorrentAction(args),
+		onMutate: (args: SingleTorrentActionArgs) =>
+			args.action === "setTags" ? beginQuiTagAttempt(queryClient, args) : undefined,
 		// `onSettled` (not `onSuccess`) — the audit log records failures too,
 		// so the My Actions tab must refresh on the failed-mutation path or
 		// the new `failed` row stays invisible.
-		onSettled: () => {
+		onSettled: (data, _error, args, tagAttempt) => {
+			// Hook-level callbacks still run if a drawer closes while awaiting
+			// the request. Per-call callbacks are only for the mounted UI.
+			if (tagAttempt) {
+				settleQuiTagAttempt(queryClient, tagAttempt, data?.status === "success");
+			}
+			if (args.action === "setTags") {
+				queryClient.invalidateQueries({ queryKey: quiKeys.seriesTorrentsAll, refetchType: "none" });
+				queryClient.invalidateQueries({ queryKey: quiKeys.movieTorrentsAll, refetchType: "none" });
+			}
 			queryClient.invalidateQueries({ queryKey: quiKeys.actions() });
 			// Broad invalidation across all open drawers' per-torrent
 			// caches — `.all` is a prefix of every `byHash(...)` key so
@@ -158,6 +224,21 @@ export const useQuiTorrentAction = () => {
 			queryClient.invalidateQueries({ queryKey: quiKeys.torrentFiles.all });
 		},
 	});
+};
+
+/** A tag attempt outlives a drawer, but never a verified target observation. */
+export const useQuiTagMutationFence = (target: QuiTagTarget) => {
+	const targetKey = quiTagTargetKey(target);
+	const query = useQuery({
+		queryKey: quiKeys.tagFences,
+		queryFn: async (): Promise<QuiTagFences> => ({}),
+		initialData: {} as QuiTagFences,
+		enabled: false,
+		gcTime: Infinity,
+		staleTime: Infinity,
+		select: (fences) => fences[targetKey] ?? null,
+	});
+	return query.data;
 };
 
 /**
@@ -275,25 +356,15 @@ export const useQuiRenameTorrent = () => {
 			name: string;
 		}) => postQuiRenameTorrent(args),
 		onSettled: () => {
-			// Same broad-invalidate pattern as useQuiTorrentAction — refetch
-			// the open drawer's properties (carries the name) and files keys
-			// so the rename is visible immediately, not on the next polling
-			// tick.
-			queryClient.invalidateQueries({ queryKey: quiKeys.torrentProperties.all });
+			invalidateDrawerMutation(queryClient);
 			queryClient.invalidateQueries({ queryKey: quiKeys.torrentFiles.all });
 		},
 	});
 };
 
-/**
- * Refresh the series/movie torrent panels after a tracker mutation so the
- * cluster cards' tracker pills (and a re-opened drawer) reflect the change.
- * The drawer's Trackers section updates optimistically from local state —
- * it renders `copy`, a frozen snapshot, so a query refetch can't reach it.
- */
+/** Refresh panels and server-derived drawer state after tracker mutations. */
 const invalidateTorrentPanels = (queryClient: ReturnType<typeof useQueryClient>) => {
-	queryClient.invalidateQueries({ queryKey: ["qui", "series-torrents"] });
-	queryClient.invalidateQueries({ queryKey: ["qui", "movie-torrents"] });
+	invalidateDrawerMutation(queryClient, true);
 };
 
 /** Add tracker URLs to a torrent. */
@@ -318,7 +389,8 @@ export const useQuiRemoveTrackers = () => {
 			quiInstanceId: string;
 			qbitInstanceId: number;
 			hash: string;
-			hostnames: string[];
+			trackerSelectors?: string[];
+			hostnames?: string[];
 		}) => postQuiRemoveTrackers(args),
 		onSettled: () => invalidateTorrentPanels(queryClient),
 	});
@@ -332,7 +404,8 @@ export const useQuiEditTracker = () => {
 			quiInstanceId: string;
 			qbitInstanceId: number;
 			hash: string;
-			oldHostname: string;
+			trackerSelector?: string;
+			oldHostname?: string;
 			newURL: string;
 		}) => postQuiEditTracker(args),
 		onSettled: () => invalidateTorrentPanels(queryClient),
@@ -511,10 +584,10 @@ export const useTrackerIcons = () => {
  * `"${itemType}:${itemId}"` with `{trackerCount, topHosts, hashCount}`
  * per item.
  *
- * Cached server-side and client-side for 10 min — the underlying
- * inode-index and tracker-meta caches have their own longer TTLs;
- * this hook just aggregates. Disabled when the items list is empty
- * (avoids a no-op POST on initial mount before library data loads).
+ * Complete results are rechecked on the standard cadence and on focus so
+ * receipt revocation can replace an exact badge on an open Library page.
+ * Building, partial, and unavailable coverage is retried more promptly
+ * without treating an empty map as verified absence. Disabled for no items.
  */
 export const useLibrarySeedingSummary = (args: {
 	items: Array<{ arrInstanceId: string; itemId: number; itemType: "movie" | "series" }>;
@@ -531,9 +604,17 @@ export const useLibrarySeedingSummary = (args: {
 		queryKey: quiKeys.librarySeedingSummary("multi", itemKey),
 		queryFn: () => fetchLibrarySeedingSummary({ items: args.items }),
 		enabled: args.enabled !== false && args.items.length > 0,
-		staleTime: 10 * 60 * 1000,
-		refetchOnWindowFocus: false,
+		staleTime: POLLING_STANDARD,
+		refetchOnWindowFocus: "always",
 		retry: 1,
+		refetchInterval: (query) => {
+			const status = query.state.data?.status;
+			if (status === "building") return 3_000;
+			if (status === "partial" || status === "unavailable" || query.state.status === "error")
+				return 30_000;
+			if (status === "available") return POLLING_STANDARD;
+			return false;
+		},
 	});
 };
 

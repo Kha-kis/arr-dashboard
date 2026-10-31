@@ -105,7 +105,7 @@ const plexSession = {
 	title: "Synthetic Movie",
 	grandparentTitle: undefined,
 	type: "movie",
-	user: { id: 1, title: "viewer" },
+	user: { id: "1", title: "viewer" },
 	player: { title: "Player", platform: "Web", product: "Browser", state: "playing" },
 	state: "playing" as const,
 	viewOffset: 100,
@@ -236,6 +236,12 @@ describe("now-playing availability", () => {
 		expect(healthyResponse.json()).toMatchObject({
 			sessions: [],
 			availability: { status: "complete", configuredSources: 1, availableSources: 1 },
+			bandwidthCoverage: {
+				status: "complete",
+				observedSessions: 0,
+				measuredSessions: 0,
+				knownTotalKbps: 0,
+			},
 		});
 
 		const absent = [
@@ -250,6 +256,13 @@ describe("now-playing availability", () => {
 			sessions: [],
 			totalBandwidth: 0,
 			availability: { status: "not-configured", configuredSources: 0, availableSources: 0 },
+			bandwidthBasis: "provider-reported",
+			bandwidthCoverage: {
+				status: "unavailable",
+				observedSessions: 0,
+				measuredSessions: 0,
+				knownTotalKbps: null,
+			},
 		});
 	});
 

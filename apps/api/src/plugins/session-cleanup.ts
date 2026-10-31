@@ -18,8 +18,26 @@ const CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 const sessionCleanupPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
 		let cleanupInterval: ReturnType<typeof setInterval> | null = null;
+		let admissionClosed = false;
+		const pendingCleanups = new Set<Promise<void>>();
+
+		const closeAdmission = () => {
+			admissionClosed = true;
+			if (cleanupInterval) {
+				app.log.info("Stopping session cleanup scheduler");
+				clearInterval(cleanupInterval);
+				cleanupInterval = null;
+			}
+		};
 
 		const runCleanup = async () => {
+			if (admissionClosed) return;
+			// Register before starting work; a queued callback must not enter after close.
+			let settle!: () => void;
+			const completion = new Promise<void>((resolve) => {
+				settle = resolve;
+			});
+			pendingCleanups.add(completion);
 			try {
 				// Route the tick through the scheduler registry so last run /
 				// duration / failure counts are visible via /api/system/jobs.
@@ -32,6 +50,9 @@ const sessionCleanupPlugin = fastifyPlugin(
 			} catch (error) {
 				// Registry already recorded the failure; preserve existing log behavior.
 				app.log.error({ err: error }, "Failed to clean up expired sessions");
+			} finally {
+				pendingCleanups.delete(completion);
+				settle();
 			}
 		};
 
@@ -42,14 +63,18 @@ const sessionCleanupPlugin = fastifyPlugin(
 			await runCleanup();
 
 			// Schedule periodic cleanup
-			cleanupInterval = setInterval(runCleanup, CLEANUP_INTERVAL_MS);
+			if (!admissionClosed) cleanupInterval = setInterval(runCleanup, CLEANUP_INTERVAL_MS);
+		});
+
+		app.addHook("preClose", async () => {
+			// Do not block sibling admission hooks while already accepted ticks settle.
+			closeAdmission();
 		});
 
 		app.addHook("onClose", async () => {
-			if (cleanupInterval) {
-				app.log.info("Stopping session cleanup scheduler");
-				clearInterval(cleanupInterval);
-				cleanupInterval = null;
+			closeAdmission();
+			while (pendingCleanups.size > 0) {
+				await Promise.all(pendingCleanups);
 			}
 		});
 	},

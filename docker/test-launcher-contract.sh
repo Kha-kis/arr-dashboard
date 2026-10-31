@@ -1,7 +1,7 @@
 #!/bin/sh
 # Launcher (dist/launcher.js) contract tests against the real image.
 #
-# The combined supervisor runs /app/api/dist/launcher.js as the top-level API
+# The combined supervisor runs the selected provider package's launcher as the top-level API
 # service. This script proves the launcher's contract in that configuration:
 #   1. code 42  -> internal restart, launcher stays alive
 #   2. code 3   -> non-42 propagated, launcher exits with the same code
@@ -9,7 +9,7 @@
 #   4. restart loop guard -> 10 restarts in 60s stops the launcher (exit 1)
 #   5. LAUNCHER_MANAGED=true is set for the inner server
 #
-# A mock index.js replaces /app/api/dist/index.js (never the launcher) so the
+# A mock index.js replaces the SQLite package entrypoint (never the launcher) so the
 # inner server's exit behavior is deterministic. The container runs the real
 # /app/start.sh-adjacent launcher path: tini -> node launcher.js.
 #
@@ -71,8 +71,8 @@ start_ctr() {
     docker rm -f "$CTR" >/dev/null 2>&1 || true
     docker run -d --name "$CTR" \
         -v "$CONFIG_DIR":/config \
-        -v "$MOCK":/app/api/dist/index.js:ro \
-        "$IMAGE" node --enable-source-maps /app/api/dist/launcher.js >/dev/null
+        -v "$MOCK":/app/api/providers/sqlite/dist/index.js:ro \
+        "$IMAGE" node --enable-source-maps /app/api/providers/sqlite/dist/launcher.js >/dev/null
 }
 
 set_mode() {

@@ -21,7 +21,10 @@ const item = {
 	remoteIds: { tmdbId: 202 },
 } as unknown as LibraryItem;
 
-function renderCard(seriesProgress: { plex?: SeriesProgressItem; jellyfin?: SeriesProgressItem }) {
+function renderCard(
+	seriesProgress: { plex?: SeriesProgressItem; jellyfin?: SeriesProgressItem },
+	seedingSummary?: { trackerCount: number; topHosts: string[]; complete: boolean },
+) {
 	return render(
 		<ColorThemeProvider>
 			<IncognitoProvider>
@@ -30,6 +33,7 @@ function renderCard(seriesProgress: { plex?: SeriesProgressItem; jellyfin?: Seri
 					onToggleMonitor={vi.fn()}
 					pending={false}
 					seriesProgress={seriesProgress}
+					seedingSummary={seedingSummary}
 				/>
 			</IncognitoProvider>
 		</ColorThemeProvider>,
@@ -69,5 +73,11 @@ describe("library card series progress evidence", () => {
 		expect(screen.getByText("Plex")).toBeInTheDocument();
 		expect(screen.getByText("Watch status unknown")).toBeInTheDocument();
 		expect(screen.queryByText(/%/)).not.toBeInTheDocument();
+	});
+
+	it("labels a partial tracker count as a lower bound", () => {
+		renderCard({}, { trackerCount: 2, topHosts: ["tracker.invalid"], complete: false });
+		expect(screen.getByTitle("At least 2 trackers observed")).toBeInTheDocument();
+		expect(screen.queryByTitle("Seeding at 2 trackers")).not.toBeInTheDocument();
 	});
 });

@@ -349,6 +349,58 @@ function setupSync(
 // ============================================================================
 
 describe("syncInstance", () => {
+	it("retires an old movie hash and retry marker when Radarr replaces the file", async () => {
+		const raw = makeRawItem({
+			hasFile: true,
+			path: "/synthetic",
+			movieFile: { relativePath: "new.mkv", size: 1 },
+		});
+		const oldData = JSON.stringify({
+			title: "Test Item",
+			year: 2024,
+			path: "/synthetic",
+			movieFile: { relativePath: "old.mkv", size: 1 },
+		});
+		const { deps, instance, mockPrisma } = setupSync(
+			"RADARR",
+			[raw],
+			[{ id: "cache-1", arrItemId: 1, itemType: "movie", hasFile: true, data: oldData }],
+		);
+		const result = await syncInstance(deps, instance);
+		expect(result.success).toBe(true);
+		expect(mockPrisma._txUpdates[0]?.data).toEqual(
+			expect.objectContaining({
+				infoHash: null,
+				infoHashSource: null,
+				pathBackfillRetryAfter: null,
+				torrentState: null,
+			}),
+		);
+	});
+
+	it("keeps a deferred movie miss deferred when Radarr reports the same file", async () => {
+		const raw = makeRawItem({
+			hasFile: true,
+			path: "/synthetic",
+			movieFile: { relativePath: "same.mkv", size: 1 },
+		});
+		const oldData = JSON.stringify({
+			title: "Test Item",
+			year: 2024,
+			path: "/synthetic",
+			movieFile: { relativePath: "same.mkv", size: 1 },
+		});
+		const { deps, instance, mockPrisma } = setupSync(
+			"RADARR",
+			[raw],
+			[{ id: "cache-1", arrItemId: 1, itemType: "movie", hasFile: true, data: oldData }],
+		);
+		const result = await syncInstance(deps, instance);
+		expect(result.success).toBe(true);
+		expect(mockPrisma._txUpdates[0]?.data).not.toHaveProperty("pathBackfillRetryAfter");
+		expect(mockPrisma._txUpdates[0]?.data).not.toHaveProperty("infoHash");
+	});
+
 	describe("rating cache contract", () => {
 		async function syncRating(
 			service: "RADARR" | "SONARR",
@@ -1106,6 +1158,69 @@ describe("syncInstance", () => {
 
 			expect(result.success).toBe(false);
 			expect(result.error).toBe("DB down");
+		});
+
+		it("settles a failed sync after one transient status-write timeout without repeating the stream", async () => {
+			const { deps, instance, mockPrisma } = setupSync("READARR");
+			let streamStarts = 0;
+			deps.streamLibraryItems = async function* () {
+				streamStarts++;
+				yield makeRawItem();
+				throw new Error("provider unavailable");
+			};
+			const statusUpdate = mockPrisma.librarySyncStatus.update as ReturnType<typeof vi.fn>;
+			statusUpdate
+				.mockRejectedValueOnce(Object.assign(new Error("operation timed out"), { code: "P1008" }))
+				.mockResolvedValue({});
+
+			const result = await syncInstance(deps, instance);
+
+			expect(result.success).toBe(false);
+			expect(result.error).toBe("provider unavailable");
+			expect(streamStarts).toBe(1);
+			expect(statusUpdate).toHaveBeenCalledTimes(2);
+			for (const [write] of statusUpdate.mock.calls) {
+				expect(write).toEqual({
+					where: { instanceId: instance.id },
+					data: { syncInProgress: false, lastError: "provider unavailable" },
+				});
+			}
+		});
+
+		it("stops retrying a failed sync status write after a bounded number of timeouts", async () => {
+			const { deps, instance, mockPrisma, log } = setupSync("READARR");
+			deps.streamLibraryItems = async function* () {
+				yield makeRawItem();
+				throw new Error("provider unavailable");
+			};
+			const statusUpdate = mockPrisma.librarySyncStatus.update as ReturnType<typeof vi.fn>;
+			statusUpdate.mockRejectedValue(
+				Object.assign(new Error("operation timed out"), { code: "P1008" }),
+			);
+
+			const result = await syncInstance(deps, instance);
+
+			expect(result.success).toBe(false);
+			expect(statusUpdate).toHaveBeenCalledTimes(5);
+			expect(log.error).toHaveBeenCalledWith(
+				expect.objectContaining({ err: expect.any(Error) }),
+				"Failed to update sync status with error",
+			);
+		});
+
+		it("does not retry a non-transient failed sync status write", async () => {
+			const { deps, instance, mockPrisma } = setupSync("READARR");
+			deps.streamLibraryItems = async function* () {
+				yield makeRawItem();
+				throw new Error("provider unavailable");
+			};
+			const statusUpdate = mockPrisma.librarySyncStatus.update as ReturnType<typeof vi.fn>;
+			statusUpdate.mockRejectedValue(Object.assign(new Error("row missing"), { code: "P2025" }));
+
+			const result = await syncInstance(deps, instance);
+
+			expect(result.success).toBe(false);
+			expect(statusUpdate).toHaveBeenCalledTimes(1);
 		});
 	});
 

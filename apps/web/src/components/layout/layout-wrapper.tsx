@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useThemeGradient } from "../../hooks/useThemeGradient";
 import { useColorTheme } from "../../providers/color-theme-provider";
 import { CommandPalette, useCommandPalette } from "./command-palette";
+import { Dialog } from "../ui/dialog";
 import { Sidebar } from "./sidebar";
 import { TopBar } from "./topbar";
 
@@ -20,11 +21,26 @@ export const LayoutWrapper = ({ children }: LayoutWrapperProps) => {
 	const { open: commandPaletteOpen, setOpen: setCommandPaletteOpen } = useCommandPalette();
 	const { colorTheme } = useColorTheme();
 	const [mounted, setMounted] = useState(false);
+	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 	const showLayout = !ROUTES_WITHOUT_LAYOUT.has(pathname);
 
 	// Handle hydration - only check theme after mount to avoid SSR mismatch
 	useEffect(() => {
 		setMounted(true);
+	}, []);
+
+	useEffect(() => {
+		setMobileMenuOpen(false);
+	}, [pathname]);
+
+	useEffect(() => {
+		const desktop = window.matchMedia("(min-width: 1024px)");
+		const closeOnDesktop = () => {
+			if (desktop.matches) setMobileMenuOpen(false);
+		};
+		closeOnDesktop();
+		desktop.addEventListener("change", closeOnDesktop);
+		return () => desktop.removeEventListener("change", closeOnDesktop);
 	}, []);
 
 	// *arr Suite theme uses flat Sonarr-style design, no gradient backgrounds
@@ -58,11 +74,13 @@ export const LayoutWrapper = ({ children }: LayoutWrapperProps) => {
 				/>
 			)}
 
-			<Sidebar />
-			<div className="flex flex-1 flex-col relative z-10 min-w-0">
-				<TopBar />
-				<div className="flex-1 p-6 min-w-0">{children}</div>
-			</div>
+			<Dialog open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+				<Sidebar onNavigate={() => setMobileMenuOpen(false)} />
+				<div className="flex flex-1 flex-col relative z-10 min-w-0">
+					<TopBar />
+					<div className="flex-1 p-6 min-w-0">{children}</div>
+				</div>
+			</Dialog>
 		</div>
 	);
 };

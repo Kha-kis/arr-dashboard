@@ -69,7 +69,7 @@ describe("discordSender", () => {
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
 		expect(result.retryAfterMs).toBe(2500);
-		expect(result.error).toContain("429");
+		expect(result.failureCategory).toBe("rate-limited");
 	});
 
 	it("returns retryable on 5xx error", async () => {
@@ -84,7 +84,7 @@ describe("discordSender", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
-		expect(result.error).toContain("500");
+		expect(result.failureCategory).toBe("provider-unavailable");
 	});
 
 	it("returns non-retryable on 4xx (not 429)", async () => {
@@ -99,7 +99,7 @@ describe("discordSender", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(false);
-		expect(result.error).toContain("400");
+		expect(result.failureCategory).toBe("rejected");
 	});
 
 	it("returns retryable on network/timeout error", async () => {
@@ -112,7 +112,7 @@ describe("discordSender", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
-		expect(result.error).toContain("network error");
+		expect(result.failureCategory).toBe("transport");
 	});
 
 	it("truncates embed fields at 25", async () => {

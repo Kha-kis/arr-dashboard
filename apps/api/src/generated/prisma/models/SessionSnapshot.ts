@@ -58,6 +58,7 @@ export type SessionSnapshotMinAggregateOutputType = {
   transcodeCount: number | null
   directStreamCount: number | null
   sessionsJson: string | null
+  measurementJson: string | null
 }
 
 export type SessionSnapshotMaxAggregateOutputType = {
@@ -72,6 +73,7 @@ export type SessionSnapshotMaxAggregateOutputType = {
   transcodeCount: number | null
   directStreamCount: number | null
   sessionsJson: string | null
+  measurementJson: string | null
 }
 
 export type SessionSnapshotCountAggregateOutputType = {
@@ -86,6 +88,7 @@ export type SessionSnapshotCountAggregateOutputType = {
   transcodeCount: number
   directStreamCount: number
   sessionsJson: number
+  measurementJson: number
   _all: number
 }
 
@@ -122,6 +125,7 @@ export type SessionSnapshotMinAggregateInputType = {
   transcodeCount?: true
   directStreamCount?: true
   sessionsJson?: true
+  measurementJson?: true
 }
 
 export type SessionSnapshotMaxAggregateInputType = {
@@ -136,6 +140,7 @@ export type SessionSnapshotMaxAggregateInputType = {
   transcodeCount?: true
   directStreamCount?: true
   sessionsJson?: true
+  measurementJson?: true
 }
 
 export type SessionSnapshotCountAggregateInputType = {
@@ -150,6 +155,7 @@ export type SessionSnapshotCountAggregateInputType = {
   transcodeCount?: true
   directStreamCount?: true
   sessionsJson?: true
+  measurementJson?: true
   _all?: true
 }
 
@@ -251,6 +257,7 @@ export type SessionSnapshotGroupByOutputType = {
   transcodeCount: number
   directStreamCount: number
   sessionsJson: string
+  measurementJson: string | null
   _count: SessionSnapshotCountAggregateOutputType | null
   _avg: SessionSnapshotAvgAggregateOutputType | null
   _sum: SessionSnapshotSumAggregateOutputType | null
@@ -288,6 +295,7 @@ export type SessionSnapshotWhereInput = {
   transcodeCount?: Prisma.IntFilter<"SessionSnapshot"> | number
   directStreamCount?: Prisma.IntFilter<"SessionSnapshot"> | number
   sessionsJson?: Prisma.StringFilter<"SessionSnapshot"> | string
+  measurementJson?: Prisma.StringNullableFilter<"SessionSnapshot"> | string | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
 }
 
@@ -303,6 +311,7 @@ export type SessionSnapshotOrderByWithRelationInput = {
   transcodeCount?: Prisma.SortOrder
   directStreamCount?: Prisma.SortOrder
   sessionsJson?: Prisma.SortOrder
+  measurementJson?: Prisma.SortOrderInput | Prisma.SortOrder
   instance?: Prisma.ServiceInstanceOrderByWithRelationInput
 }
 
@@ -321,6 +330,7 @@ export type SessionSnapshotWhereUniqueInput = Prisma.AtLeast<{
   transcodeCount?: Prisma.IntFilter<"SessionSnapshot"> | number
   directStreamCount?: Prisma.IntFilter<"SessionSnapshot"> | number
   sessionsJson?: Prisma.StringFilter<"SessionSnapshot"> | string
+  measurementJson?: Prisma.StringNullableFilter<"SessionSnapshot"> | string | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
 }, "id">
 
@@ -336,6 +346,7 @@ export type SessionSnapshotOrderByWithAggregationInput = {
   transcodeCount?: Prisma.SortOrder
   directStreamCount?: Prisma.SortOrder
   sessionsJson?: Prisma.SortOrder
+  measurementJson?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.SessionSnapshotCountOrderByAggregateInput
   _avg?: Prisma.SessionSnapshotAvgOrderByAggregateInput
   _max?: Prisma.SessionSnapshotMaxOrderByAggregateInput
@@ -358,6 +369,7 @@ export type SessionSnapshotScalarWhereWithAggregatesInput = {
   transcodeCount?: Prisma.IntWithAggregatesFilter<"SessionSnapshot"> | number
   directStreamCount?: Prisma.IntWithAggregatesFilter<"SessionSnapshot"> | number
   sessionsJson?: Prisma.StringWithAggregatesFilter<"SessionSnapshot"> | string
+  measurementJson?: Prisma.StringNullableWithAggregatesFilter<"SessionSnapshot"> | string | null
 }
 
 export type SessionSnapshotCreateInput = {
@@ -371,6 +383,7 @@ export type SessionSnapshotCreateInput = {
   transcodeCount?: number
   directStreamCount?: number
   sessionsJson: string
+  measurementJson?: string | null
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutSessionSnapshotsInput
 }
 
@@ -386,6 +399,7 @@ export type SessionSnapshotUncheckedCreateInput = {
   transcodeCount?: number
   directStreamCount?: number
   sessionsJson: string
+  measurementJson?: string | null
 }
 
 export type SessionSnapshotUpdateInput = {
@@ -399,6 +413,7 @@ export type SessionSnapshotUpdateInput = {
   transcodeCount?: Prisma.IntFieldUpdateOperationsInput | number
   directStreamCount?: Prisma.IntFieldUpdateOperationsInput | number
   sessionsJson?: Prisma.StringFieldUpdateOperationsInput | string
+  measurementJson?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutSessionSnapshotsNestedInput
 }
 
@@ -414,6 +429,7 @@ export type SessionSnapshotUncheckedUpdateInput = {
   transcodeCount?: Prisma.IntFieldUpdateOperationsInput | number
   directStreamCount?: Prisma.IntFieldUpdateOperationsInput | number
   sessionsJson?: Prisma.StringFieldUpdateOperationsInput | string
+  measurementJson?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type SessionSnapshotCreateManyInput = {
@@ -428,6 +444,7 @@ export type SessionSnapshotCreateManyInput = {
   transcodeCount?: number
   directStreamCount?: number
   sessionsJson: string
+  measurementJson?: string | null
 }
 
 export type SessionSnapshotUpdateManyMutationInput = {
@@ -441,6 +458,7 @@ export type SessionSnapshotUpdateManyMutationInput = {
   transcodeCount?: Prisma.IntFieldUpdateOperationsInput | number
   directStreamCount?: Prisma.IntFieldUpdateOperationsInput | number
   sessionsJson?: Prisma.StringFieldUpdateOperationsInput | string
+  measurementJson?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type SessionSnapshotUncheckedUpdateManyInput = {
@@ -455,6 +473,7 @@ export type SessionSnapshotUncheckedUpdateManyInput = {
   transcodeCount?: Prisma.IntFieldUpdateOperationsInput | number
   directStreamCount?: Prisma.IntFieldUpdateOperationsInput | number
   sessionsJson?: Prisma.StringFieldUpdateOperationsInput | string
+  measurementJson?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type SessionSnapshotListRelationFilter = {
@@ -479,6 +498,7 @@ export type SessionSnapshotCountOrderByAggregateInput = {
   transcodeCount?: Prisma.SortOrder
   directStreamCount?: Prisma.SortOrder
   sessionsJson?: Prisma.SortOrder
+  measurementJson?: Prisma.SortOrder
 }
 
 export type SessionSnapshotAvgOrderByAggregateInput = {
@@ -503,6 +523,7 @@ export type SessionSnapshotMaxOrderByAggregateInput = {
   transcodeCount?: Prisma.SortOrder
   directStreamCount?: Prisma.SortOrder
   sessionsJson?: Prisma.SortOrder
+  measurementJson?: Prisma.SortOrder
 }
 
 export type SessionSnapshotMinOrderByAggregateInput = {
@@ -517,6 +538,7 @@ export type SessionSnapshotMinOrderByAggregateInput = {
   transcodeCount?: Prisma.SortOrder
   directStreamCount?: Prisma.SortOrder
   sessionsJson?: Prisma.SortOrder
+  measurementJson?: Prisma.SortOrder
 }
 
 export type SessionSnapshotSumOrderByAggregateInput = {
@@ -582,6 +604,7 @@ export type SessionSnapshotCreateWithoutInstanceInput = {
   transcodeCount?: number
   directStreamCount?: number
   sessionsJson: string
+  measurementJson?: string | null
 }
 
 export type SessionSnapshotUncheckedCreateWithoutInstanceInput = {
@@ -595,6 +618,7 @@ export type SessionSnapshotUncheckedCreateWithoutInstanceInput = {
   transcodeCount?: number
   directStreamCount?: number
   sessionsJson: string
+  measurementJson?: string | null
 }
 
 export type SessionSnapshotCreateOrConnectWithoutInstanceInput = {
@@ -637,6 +661,7 @@ export type SessionSnapshotScalarWhereInput = {
   transcodeCount?: Prisma.IntFilter<"SessionSnapshot"> | number
   directStreamCount?: Prisma.IntFilter<"SessionSnapshot"> | number
   sessionsJson?: Prisma.StringFilter<"SessionSnapshot"> | string
+  measurementJson?: Prisma.StringNullableFilter<"SessionSnapshot"> | string | null
 }
 
 export type SessionSnapshotCreateManyInstanceInput = {
@@ -650,6 +675,7 @@ export type SessionSnapshotCreateManyInstanceInput = {
   transcodeCount?: number
   directStreamCount?: number
   sessionsJson: string
+  measurementJson?: string | null
 }
 
 export type SessionSnapshotUpdateWithoutInstanceInput = {
@@ -663,6 +689,7 @@ export type SessionSnapshotUpdateWithoutInstanceInput = {
   transcodeCount?: Prisma.IntFieldUpdateOperationsInput | number
   directStreamCount?: Prisma.IntFieldUpdateOperationsInput | number
   sessionsJson?: Prisma.StringFieldUpdateOperationsInput | string
+  measurementJson?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type SessionSnapshotUncheckedUpdateWithoutInstanceInput = {
@@ -676,6 +703,7 @@ export type SessionSnapshotUncheckedUpdateWithoutInstanceInput = {
   transcodeCount?: Prisma.IntFieldUpdateOperationsInput | number
   directStreamCount?: Prisma.IntFieldUpdateOperationsInput | number
   sessionsJson?: Prisma.StringFieldUpdateOperationsInput | string
+  measurementJson?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type SessionSnapshotUncheckedUpdateManyWithoutInstanceInput = {
@@ -689,6 +717,7 @@ export type SessionSnapshotUncheckedUpdateManyWithoutInstanceInput = {
   transcodeCount?: Prisma.IntFieldUpdateOperationsInput | number
   directStreamCount?: Prisma.IntFieldUpdateOperationsInput | number
   sessionsJson?: Prisma.StringFieldUpdateOperationsInput | string
+  measurementJson?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 
@@ -705,6 +734,7 @@ export type SessionSnapshotSelect<ExtArgs extends runtime.Types.Extensions.Inter
   transcodeCount?: boolean
   directStreamCount?: boolean
   sessionsJson?: boolean
+  measurementJson?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["sessionSnapshot"]>
 
@@ -720,6 +750,7 @@ export type SessionSnapshotSelectCreateManyAndReturn<ExtArgs extends runtime.Typ
   transcodeCount?: boolean
   directStreamCount?: boolean
   sessionsJson?: boolean
+  measurementJson?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["sessionSnapshot"]>
 
@@ -735,6 +766,7 @@ export type SessionSnapshotSelectUpdateManyAndReturn<ExtArgs extends runtime.Typ
   transcodeCount?: boolean
   directStreamCount?: boolean
   sessionsJson?: boolean
+  measurementJson?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["sessionSnapshot"]>
 
@@ -750,9 +782,10 @@ export type SessionSnapshotSelectScalar = {
   transcodeCount?: boolean
   directStreamCount?: boolean
   sessionsJson?: boolean
+  measurementJson?: boolean
 }
 
-export type SessionSnapshotOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "capturedAt" | "concurrentStreams" | "totalBandwidth" | "lanBandwidth" | "wanBandwidth" | "directPlayCount" | "transcodeCount" | "directStreamCount" | "sessionsJson", ExtArgs["result"]["sessionSnapshot"]>
+export type SessionSnapshotOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "capturedAt" | "concurrentStreams" | "totalBandwidth" | "lanBandwidth" | "wanBandwidth" | "directPlayCount" | "transcodeCount" | "directStreamCount" | "sessionsJson" | "measurementJson", ExtArgs["result"]["sessionSnapshot"]>
 export type SessionSnapshotInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }
@@ -780,6 +813,7 @@ export type $SessionSnapshotPayload<ExtArgs extends runtime.Types.Extensions.Int
     transcodeCount: number
     directStreamCount: number
     sessionsJson: string
+    measurementJson: string | null
   }, ExtArgs["result"]["sessionSnapshot"]>
   composites: {}
 }
@@ -1215,6 +1249,7 @@ export interface SessionSnapshotFieldRefs {
   readonly transcodeCount: Prisma.FieldRef<"SessionSnapshot", 'Int'>
   readonly directStreamCount: Prisma.FieldRef<"SessionSnapshot", 'Int'>
   readonly sessionsJson: Prisma.FieldRef<"SessionSnapshot", 'String'>
+  readonly measurementJson: Prisma.FieldRef<"SessionSnapshot", 'String'>
 }
     
 

@@ -6,13 +6,16 @@
  * database so a missing schema column or generated-client field fails here.
  */
 
+import { execFile } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Prisma, PrismaClient } from "../../../lib/prisma.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 
-const RUN_DB_TESTS = process.env.TEST_DB === "true";
-const TEST_DB_PATH = path.resolve(import.meta.dirname, "../../../../prisma/test-integration.db");
+const execFileAsync = promisify(execFile);
 
 const ids = {
 	user: "trash-state-contract-user",
@@ -24,18 +27,31 @@ const ids = {
 	deployment: "trash-state-contract-deployment",
 };
 
-(RUN_DB_TESTS ? describe : describe.skip)("durable deployment-state Prisma contract", () => {
+describe("durable deployment-state Prisma contract", () => {
 	let prisma: PrismaClient;
+	let directory: string | undefined;
 
 	beforeEach(async () => {
-		prisma = createTestPrismaClient(TEST_DB_PATH);
-		await prisma.templateDeploymentHistory.deleteMany({ where: { id: ids.deployment } });
-		await prisma.instanceQualityProfileOverride.deleteMany({ where: { id: ids.override } });
-		await prisma.templateQualityProfileMapping.deleteMany({ where: { id: ids.mapping } });
-		await prisma.trashSyncHistory.deleteMany({ where: { id: ids.syncHistory } });
-		await prisma.trashTemplate.deleteMany({ where: { id: ids.template } });
-		await prisma.serviceInstance.deleteMany({ where: { id: ids.instance } });
-		await prisma.user.deleteMany({ where: { id: ids.user } });
+		directory = await mkdtemp(path.join(os.tmpdir(), "deployment-state-test-"));
+		const databasePath = path.join(directory, "state.db");
+		await execFileAsync(
+			"pnpm",
+			[
+				"exec",
+				"prisma",
+				"db",
+				"push",
+				"--schema",
+				"prisma/schema.prisma",
+				"--url",
+				`file:${databasePath}`,
+			],
+			{
+				cwd: path.resolve(import.meta.dirname, "../../../.."),
+				env: { ...process.env, DATABASE_URL: `file:${databasePath}` },
+			},
+		);
+		prisma = createTestPrismaClient(databasePath);
 
 		await prisma.user.create({ data: { id: ids.user, username: ids.user } });
 		await prisma.serviceInstance.create({
@@ -58,17 +74,15 @@ const ids = {
 				configData: "{}",
 			},
 		});
-	});
+	}, 120_000);
 
 	afterEach(async () => {
-		await prisma.templateDeploymentHistory.deleteMany({ where: { id: ids.deployment } });
-		await prisma.instanceQualityProfileOverride.deleteMany({ where: { id: ids.override } });
-		await prisma.templateQualityProfileMapping.deleteMany({ where: { id: ids.mapping } });
-		await prisma.trashSyncHistory.deleteMany({ where: { id: ids.syncHistory } });
-		await prisma.trashTemplate.deleteMany({ where: { id: ids.template } });
-		await prisma.serviceInstance.deleteMany({ where: { id: ids.instance } });
-		await prisma.user.deleteMany({ where: { id: ids.user } });
-		await prisma.$disconnect();
+		try {
+			await prisma?.$disconnect();
+		} finally {
+			if (directory) await rm(directory, { recursive: true, force: true });
+			directory = undefined;
+		}
 	});
 
 	it("creates, updates, and reads every durable deployment-state field", async () => {

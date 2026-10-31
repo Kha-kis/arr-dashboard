@@ -2,6 +2,10 @@ import { createHash, randomBytes } from "node:crypto";
 import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from "fastify";
 import type { ApiEnv } from "../../config/env.js";
 import type { Prisma, PrismaClient } from "../../lib/prisma.js";
+import {
+	retainRestoreRuntimeOperation,
+	withRestoreRuntimeOperation,
+} from "../backup/restore-runtime-admission.js";
 
 /**
  * Base cookie options for session management.
@@ -46,11 +50,42 @@ interface SessionRotationOptions {
 }
 
 export class SessionService {
+	private validationAdmissionClosed = false;
+	private readonly pendingValidationWork = new Set<Promise<void>>();
+
 	constructor(
 		private readonly prisma: PrismaClient,
 		private readonly env: ApiEnv,
 		private readonly logger?: FastifyBaseLogger,
+		private readonly metadataPrisma: Pick<PrismaClient, "session"> = prisma,
 	) {}
+
+	/** Stop new validation without blocking the remaining preClose hooks. */
+	closeValidationAdmission(): void {
+		this.validationAdmissionClosed = true;
+	}
+
+	/** Admitted lookups may still start their background metadata update. */
+	async drainValidations(): Promise<void> {
+		this.closeValidationAdmission();
+		while (this.pendingValidationWork.size > 0) {
+			await Promise.all(this.pendingValidationWork);
+		}
+	}
+
+	private async trackValidationWork<T>(operation: () => PromiseLike<T>): Promise<T> {
+		let settle!: () => void;
+		const completion = new Promise<void>((resolve) => {
+			settle = resolve;
+		});
+		this.pendingValidationWork.add(completion);
+		try {
+			return await operation();
+		} finally {
+			this.pendingValidationWork.delete(completion);
+			settle();
+		}
+	}
 
 	/**
 	 * Create a new session with optional metadata
@@ -210,6 +245,15 @@ export class SessionService {
 	}
 
 	async validateRequest(request: FastifyRequest) {
+		if (this.validationAdmissionClosed) {
+			throw Object.assign(new Error("Session validation is unavailable during shutdown"), {
+				statusCode: 503,
+			});
+		}
+		return this.trackValidationWork(() => this.resolveRequest(request));
+	}
+
+	private async resolveRequest(request: FastifyRequest) {
 		const rawCookie = request.cookies?.[this.env.SESSION_COOKIE_NAME];
 		if (!rawCookie) {
 			return null;
@@ -246,13 +290,24 @@ export class SessionService {
 			return null;
 		}
 
-		// Update lastAccessedAt in the background (non-blocking, non-critical metadata)
-		this.prisma.session
-			.update({
-				where: { id: hashedToken },
-				data: { lastAccessedAt: new Date() },
-			})
-			.catch(() => {});
+		// Metadata stays nonblocking for authentication, but must settle before DB teardown.
+		void this.trackValidationWork(async () => {
+			// The accepted lookup may finish after new admission closes. Retain its
+			// metadata obligation without extending the request's database ticket.
+			const retained = retainRestoreRuntimeOperation();
+			try {
+				const update = async () =>
+					this.metadataPrisma.session.update({
+						where: { id: hashedToken },
+						data: { lastAccessedAt: new Date() },
+					});
+				return await (retained
+					? retained.run(update)
+					: withRestoreRuntimeOperation(update, { independent: true }));
+			} finally {
+				await retained?.release();
+			}
+		}).catch(() => {});
 
 		return { session: record, token: unsigned.value };
 	}

@@ -31,7 +31,8 @@ const schedulerRegistryPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
 		const registry = new SchedulerRegistry(
 			undefined,
-			withCleanupOperationGuard,
+			(operation) =>
+				app.restoreRuntime.runIndependentOperation(() => withCleanupOperationGuard(operation)),
 			(error) => error instanceof CleanupMaintenanceConflictError,
 		);
 		// Pre-register every known job so the /api/system/jobs surface always

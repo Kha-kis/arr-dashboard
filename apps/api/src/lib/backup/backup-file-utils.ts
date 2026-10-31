@@ -8,6 +8,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import type { BackupData } from "@arr/shared";
+import { isValidEncryptionKey } from "../auth/encryption.js";
 import { loggers } from "../logger.js";
 
 const log = loggers.backup;
@@ -18,13 +19,27 @@ const log = loggers.backup;
 export async function readSecrets(secretsPath: string): Promise<BackupData["secrets"]> {
 	try {
 		const secretsContent = await fs.readFile(secretsPath, "utf-8");
-		const secrets = JSON.parse(secretsContent);
+		const secrets: unknown = JSON.parse(secretsContent);
+		if (
+			typeof secrets !== "object" ||
+			secrets === null ||
+			Array.isArray(secrets) ||
+			!("encryptionKey" in secrets) ||
+			typeof secrets.encryptionKey !== "string" ||
+			!isValidEncryptionKey(secrets.encryptionKey) ||
+			!("sessionCookieSecret" in secrets) ||
+			typeof secrets.sessionCookieSecret !== "string" ||
+			secrets.sessionCookieSecret.length === 0
+		) {
+			throw new Error("Invalid cryptographic fields");
+		}
 		return {
 			encryptionKey: secrets.encryptionKey,
 			sessionCookieSecret: secrets.sessionCookieSecret,
 		};
-	} catch (error) {
-		throw new Error(`Failed to read secrets file: ${error}`);
+	} catch {
+		// JSON parser and filesystem errors may contain secret fragments or paths.
+		throw new Error("Failed to read secrets file: unavailable or invalid cryptographic fields");
 	}
 }
 

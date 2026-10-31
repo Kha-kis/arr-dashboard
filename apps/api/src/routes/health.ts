@@ -3,6 +3,13 @@ import { getAppVersionInfo } from "../lib/utils/version.js";
 
 const versionInfo = getAppVersionInfo();
 
+declare module "fastify" {
+	interface FastifyContextConfig {
+		/** Trusted route declaration for the public database-independent live probe. */
+		runtimeLiveness?: boolean;
+	}
+}
+
 export const registerHealthRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	app.get("/", { logLevel: "silent" }, async (request, reply) => {
 		try {
@@ -22,5 +29,12 @@ export const registerHealthRoutes: FastifyPluginCallback = (app, _opts, done) =>
 			});
 		}
 	});
+	done();
+};
+
+export const registerLiveRoutes: FastifyPluginCallback = (app, _opts, done) => {
+	app.get("/", { logLevel: "silent", config: { runtimeLiveness: true } }, async () => ({
+		status: "ok",
+	}));
 	done();
 };

@@ -242,7 +242,7 @@ describe("Tautulli observation scheduler lifecycle", () => {
 
 	it("skips a due tick while the prior tick is unresolved", async () => {
 		let resolveRefresh!: () => void;
-		mocks.refresh.mockImplementation(
+		mocks.refresh.mockImplementationOnce(
 			() =>
 				new Promise((resolve) => {
 					resolveRefresh = () => resolve(positiveResult());

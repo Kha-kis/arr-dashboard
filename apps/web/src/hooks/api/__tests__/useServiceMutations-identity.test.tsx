@@ -4,9 +4,11 @@ import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import {
+	dashboardKeys,
 	jellyfinKeys,
 	libraryCleanupKeys,
 	plexKeys,
+	quiKeys,
 	serviceKeys,
 	tautulliKeys,
 	trashCacheKeys,
@@ -16,6 +18,8 @@ vi.mock("../../../lib/api-client/services");
 
 import * as servicesApi from "../../../lib/api-client/services";
 import {
+	useCreateServiceMutation,
+	useDeleteServiceMutation,
 	useReplaceServiceIdentityMutation,
 	useUpdateServiceMutation,
 	useVerifyServiceIdentityMutation,
@@ -53,6 +57,30 @@ function wrapper(client: QueryClient) {
 }
 
 describe("service identity mutations", () => {
+	it("invalidates qUI Library summaries after service creation and deletion", async () => {
+		const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+		const invalidateQueries = vi.spyOn(client, "invalidateQueries");
+		vi.mocked(servicesApi.createService).mockResolvedValue(unverifiedService);
+		vi.mocked(servicesApi.removeService).mockResolvedValue(undefined);
+		const create = renderHook(() => useCreateServiceMutation(), { wrapper: wrapper(client) });
+		const remove = renderHook(() => useDeleteServiceMutation(), { wrapper: wrapper(client) });
+		create.result.current.mutate({
+			service: "plex",
+			label: "test",
+			baseUrl: "http://test.invalid",
+			apiKey: "synthetic-test-key",
+		});
+		await waitFor(() => expect(create.result.current.isSuccess).toBe(true));
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: quiKeys.all });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: dashboardKeys.statistics });
+		invalidateQueries.mockClear();
+		remove.result.current.mutate("plex-1");
+		await waitFor(() => expect(remove.result.current.isSuccess).toBe(true));
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: quiKeys.all });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: dashboardKeys.statistics });
+		client.clear();
+	});
+
 	it("invalidates provider and cleanup evidence after an ordinary service update", async () => {
 		const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
 		client.setQueryData(serviceKeys.all, [unverifiedService]);
@@ -76,8 +104,10 @@ describe("service identity mutations", () => {
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: plexKeys.all });
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: jellyfinKeys.all });
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: tautulliKeys.all });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: quiKeys.all });
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: libraryCleanupKeys.status });
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: libraryCleanupKeys.approvals });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: dashboardKeys.statistics });
 		client.clear();
 	});
 

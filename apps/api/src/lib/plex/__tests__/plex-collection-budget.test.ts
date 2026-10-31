@@ -120,4 +120,34 @@ describe("Plex canonical collection budget", () => {
 		await expect(client.getIdentity()).rejects.toThrow("expired");
 		expect(fetcher).not.toHaveBeenCalled();
 	});
+
+	it("joins accepted collection after shutdown even if it swallows cancellation", async () => {
+		const controller = new AbortController();
+		let entered!: () => void, release!: () => void;
+		const started = new Promise<void>((resolve) => {
+			entered = resolve;
+		});
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		let settled = false;
+		const running = collectWithinPlexBudget(
+			log,
+			async () => {
+				entered();
+				await gate;
+				return "partial";
+			},
+			controller.signal,
+		).finally(() => {
+			settled = true;
+		});
+		const assertion = expect(running).rejects.toThrow("Plex canonical collection cancelled.");
+		await started;
+		controller.abort(new Error("private cancellation reason"));
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		expect(settled).toBe(false);
+		release();
+		await assertion;
+	});
 });

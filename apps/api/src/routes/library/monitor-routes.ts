@@ -1,11 +1,10 @@
 import {
-	type LibraryService,
 	libraryAlbumMonitorRequestSchema,
 	libraryBookMonitorRequestSchema,
 	libraryEpisodeMonitorRequestSchema,
 	libraryToggleMonitorRequestSchema,
 } from "@arr/shared";
-import type { FastifyBaseLogger, FastifyPluginCallback } from "fastify";
+import type { FastifyInstance, FastifyPluginCallback, FastifyReply, FastifyRequest } from "fastify";
 import {
 	getClientForInstance,
 	isLidarrClient,
@@ -13,388 +12,276 @@ import {
 	isReadarrClient,
 	isSonarrClient,
 } from "../../lib/arr/client-helpers.js";
-import { toNumber } from "../../lib/library/type-converters.js";
+import {
+	areRequestedMonitorRowsConfirmed,
+	isMonitoringResourceForTarget,
+	isMonitoringStateConfirmed,
+	isPositiveMonitoringId,
+	monitoringSeasons,
+	monitoringSourceWhere,
+} from "../../lib/library/monitoring-confirmation.js";
+import { normalizeSeasons } from "../../lib/library/series-normalizer.js";
+import type { ServiceInstance } from "../../lib/prisma.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
-/**
- * Optimistically update the library cache after a monitoring change
- * Updates both the indexed `monitored` field and the JSON `data` blob
- */
-async function updateCacheMonitoredStatus(
-	prisma: import("../../lib/prisma.js").PrismaClientInstance,
-	instanceId: string,
+const unconfirmed = (reply: FastifyReply) =>
+	reply.status(502).send({ error: "Monitoring update not confirmed." });
+const sourceCurrent = async (app: FastifyInstance, instance: ServiceInstance) =>
+	(await app.prisma.serviceInstance.findFirst({
+		where: monitoringSourceWhere(instance),
+		select: { id: true },
+	})) !== null;
+
+/** Publish valid observed ACK fields only; successful projection is required for204. */
+async function publishObserved(
+	app: FastifyInstance,
+	instance: ServiceInstance,
 	arrItemId: number,
 	itemType: "movie" | "series" | "artist" | "author",
-	monitored: boolean,
-	log: FastifyBaseLogger,
-): Promise<void> {
-	try {
-		const cached = await prisma.libraryCache.findUnique({
-			where: {
-				instanceId_arrItemId_itemType: {
-					instanceId,
-					arrItemId,
-					itemType,
-				},
-			},
-		});
-
-		if (cached) {
-			// Parse existing data, update monitored, re-serialize
-			const data = JSON.parse(cached.data);
-			data.monitored = monitored;
-
-			await prisma.libraryCache.update({
-				where: { id: cached.id },
-				data: {
-					monitored,
-					data: JSON.stringify(data),
-					updatedAt: new Date(),
-				},
-			});
-		}
-	} catch (err) {
-		// Cache update is best-effort — the next sync will correct any inconsistencies
-		log.debug(
-			{ err, instanceId, arrItemId, itemType },
-			"Best-effort cache update failed after monitor toggle",
+	acknowledged: Record<string, unknown>,
+): Promise<boolean> {
+	const seasons = itemType === "series" ? monitoringSeasons(acknowledged.seasons) : undefined;
+	const monitored =
+		typeof acknowledged.monitored === "boolean" ? acknowledged.monitored : undefined;
+	if (monitored === undefined && seasons === undefined) return false;
+	const where = {
+		instanceId: instance.id,
+		arrItemId,
+		itemType,
+		instance: monitoringSourceWhere(instance),
+	};
+	const cached = await app.prisma.libraryCache.findFirst({ where });
+	if (!cached) return false;
+	const data = JSON.parse(cached.data);
+	if (data === null || typeof data !== "object" || Array.isArray(data)) return false;
+	if (monitored !== undefined) data.monitored = monitored;
+	if (seasons !== undefined) {
+		const previous = Array.isArray(data.seasons) ? data.seasons : [];
+		const prior = (number: number) =>
+			previous.find((season: { seasonNumber: number }) => season.seasonNumber === number);
+		const observed = (
+			normalizeSeasons(seasons.map((season) => ({ ...prior(season.seasonNumber), ...season }))) ??
+			[]
+		).map((season) => ({ ...prior(season.seasonNumber), ...season }));
+		// ACK rows are positive observations, not complete-inventory/absence proof.
+		data.seasons = previous.map(
+			(season: { seasonNumber: number }) =>
+				observed.find((row) => row.seasonNumber === season.seasonNumber) ?? season,
 		);
+		data.seasons.push(...observed.filter((season) => !prior(season.seasonNumber)));
+		// This aggregate describes the merged cached view, not full provider coverage.
+		data.statistics = {
+			...data.statistics,
+			monitoredSeasons: data.seasons.filter(
+				(season: { monitored?: boolean }) => season.monitored === true,
+			).length,
+		};
+	}
+	// The UPDATE relation also fences a source change after the preceding SELECT.
+	await app.prisma.libraryCache.update({
+		where: { id: cached.id, ...where },
+		data: {
+			monitored: monitored ?? cached.monitored,
+			data: JSON.stringify(data),
+			updatedAt: new Date(),
+		},
+	});
+	return true;
+}
+
+async function monitorChildren(
+	app: FastifyInstance,
+	request: FastifyRequest,
+	reply: FastifyReply,
+	input: { instanceId: string; parentId: number | string; ids: number[]; monitored: boolean },
+	kind: "episode" | "album" | "book",
+) {
+	const parentId = Number(input.parentId);
+	if (
+		!isPositiveMonitoringId(parentId) ||
+		input.ids.length === 0 ||
+		!input.ids.every(isPositiveMonitoringId) ||
+		new Set(input.ids).size !== input.ids.length
+	)
+		return reply.status(400).send({ error: "Invalid monitoring identifiers" });
+	const result = await getClientForInstance(app, request, input.instanceId);
+	if (!result.success) return reply.status(result.statusCode).send({ error: result.error });
+	const { client, instance } = result;
+	let read: () => Promise<unknown>,
+		write: () => Promise<unknown>,
+		key: "seriesId" | "artistId" | "authorId";
+	if (kind === "episode" && isSonarrClient(client)) {
+		key = "seriesId";
+		read = () => client.episode.getAll({ episodeIds: input.ids });
+		write = () => client.episode.setMonitored(input.ids, input.monitored);
+	} else if (kind === "album" && isLidarrClient(client)) {
+		key = "artistId";
+		read = () => client.album.getAll({ albumIds: input.ids });
+		write = () => client.album.monitor({ albumIds: input.ids, monitored: input.monitored });
+	} else if (kind === "book" && isReadarrClient(client)) {
+		key = "authorId";
+		read = () => client.book.getAll({ bookIds: input.ids });
+		write = () => client.book.monitor({ bookIds: input.ids, monitored: input.monitored });
+	} else return reply.status(400).send({ error: "Unsupported monitoring service" });
+	try {
+		const parent = { key, id: parentId };
+		if (
+			!areRequestedMonitorRowsConfirmed(await read(), input.ids, parent) ||
+			!(await sourceCurrent(app, instance))
+		)
+			return unconfirmed(reply);
+		const acknowledged = await write();
+		// Readarr void ACK requires one selected-ID GET, never another write/full scan.
+		if (!(await sourceCurrent(app, instance))) return unconfirmed(reply);
+		const observed = kind === "book" ? await read() : acknowledged;
+		if (
+			!(await sourceCurrent(app, instance)) ||
+			!areRequestedMonitorRowsConfirmed(observed, input.ids, parent, input.monitored)
+		)
+			return unconfirmed(reply);
+		return reply.status(204).send();
+	} catch {
+		request.log.warn("Monitoring update not confirmed");
+		return unconfirmed(reply);
 	}
 }
 
-/**
- * Register monitoring control routes for library
- * - POST /library/monitor - Toggle monitoring for movies/series/seasons/artists/authors
- * - POST /library/episode/monitor - Toggle monitoring for episodes (Sonarr)
- * - POST /library/album/monitor - Toggle monitoring for albums (Lidarr)
- * - POST /library/book/monitor - Toggle monitoring for books (Readarr)
- */
 export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) => {
-	/**
-	 * POST /library/monitor
-	 * Toggles monitoring status for movies, series, or specific seasons
-	 */
 	app.post("/library/monitor", async (request, reply) => {
 		const payload = validateRequest(libraryToggleMonitorRequestSchema, request.body ?? {});
-
-		const clientResult = await getClientForInstance(app, request, payload.instanceId);
-		if (!clientResult.success) {
-			return reply.status(clientResult.statusCode).send({
-				error: clientResult.error,
-			});
-		}
-
-		const { client, instance } = clientResult;
-		const service = instance.service.toLowerCase() as LibraryService;
-
-		if (service !== payload.service) {
-			return reply.status(400).send({
-				error: "Instance service mismatch",
-			});
-		}
-
+		const result = await getClientForInstance(app, request, payload.instanceId);
+		if (!result.success) return reply.status(result.statusCode).send({ error: result.error });
+		const { client, instance } = result;
+		if (instance.service.toLowerCase() !== payload.service)
+			return reply.status(400).send({ error: "Instance service mismatch" });
 		const itemId = Number(payload.itemId);
-		if (!Number.isFinite(itemId)) {
-			return reply.status(400).send({
-				error: "Invalid item identifier",
-			});
-		}
-
+		if (!isPositiveMonitoringId(itemId))
+			return reply.status(400).send({ error: "Invalid item identifier" });
+		const selected = payload.seasonNumbers;
+		if (
+			selected &&
+			(!selected.every((number) => Number.isSafeInteger(number) && number >= 0) ||
+				new Set(selected).size !== selected.length)
+		)
+			return reply.status(400).send({ error: "Invalid season selection" });
 		try {
-			if (service === "radarr" && isRadarrClient(client)) {
-				// Fetch current movie, update monitored, then save
-				const movie = await client.movie.getById(itemId);
-				const updatedMovie = {
-					...movie,
+			let acknowledged: unknown, itemType: "movie" | "series" | "artist" | "author";
+			let expectedSeasons: ReturnType<typeof monitoringSeasons>;
+			if (isRadarrClient(client)) {
+				const current = await client.movie.getById(itemId);
+				if (
+					!isMonitoringResourceForTarget(current, itemId) ||
+					!(await sourceCurrent(app, instance))
+				)
+					return unconfirmed(reply);
+				acknowledged = await client.movie.update(itemId, {
+					...current,
 					id: itemId,
 					monitored: payload.monitored,
-				};
-				await client.movie.update(itemId, updatedMovie);
-
-				// Optimistically update cache
-				await updateCacheMonitoredStatus(
-					app.prisma,
-					payload.instanceId,
-					itemId,
-					"movie",
-					payload.monitored,
-					request.log,
-				);
-
-				return reply.status(204).send();
-			}
-
-			if (service === "sonarr" && isSonarrClient(client)) {
-				// Fetch current series
-				const series = await client.series.getById(itemId);
-
-				// Update series monitored status
-				const updatedSeries = {
-					...series,
+				});
+				itemType = "movie";
+			} else if (isSonarrClient(client)) {
+				const current = await client.series.getById(itemId);
+				if (!isMonitoringResourceForTarget(current, itemId)) return unconfirmed(reply);
+				const seasons = monitoringSeasons(current.seasons);
+				if (!seasons) return unconfirmed(reply);
+				if (selected?.some((number) => !seasons.some((season) => season.seasonNumber === number)))
+					return reply.status(400).send({ error: "Invalid season selection" });
+				expectedSeasons = seasons.map((season) => ({
+					...season,
+					monitored: selected?.length
+						? selected.includes(season.seasonNumber)
+							? payload.monitored
+							: season.monitored
+						: season.seasonNumber === 0
+							? false
+							: payload.monitored,
+				}));
+				if (!(await sourceCurrent(app, instance))) return unconfirmed(reply);
+				acknowledged = await client.series.update(itemId, {
+					...current,
 					id: itemId,
 					monitored: payload.monitored,
-				};
-
-				// Update season monitoring if seasons exist
-				if (Array.isArray(series.seasons)) {
-					const seasonNumbers = payload.seasonNumbers
-						?.map((number) => Number(number))
-						.filter((value) => Number.isFinite(value));
-
-					updatedSeries.seasons = series.seasons.map((season: Record<string, unknown>) => {
-						const seasonObj = season;
-						const seasonNumber = toNumber(seasonObj?.seasonNumber) ?? 0;
-						const hasSelections = Array.isArray(seasonNumbers) && seasonNumbers.length > 0;
-
-						let nextMonitored = !!seasonObj?.monitored;
-
-						if (hasSelections) {
-							if (seasonNumbers?.includes(seasonNumber)) {
-								nextMonitored = payload.monitored;
-							}
-						} else {
-							// Don't monitor specials (season 0) by default
-							nextMonitored = seasonNumber === 0 ? false : payload.monitored;
-						}
-
-						return {
-							...seasonObj,
-							monitored: nextMonitored,
-						};
-					});
-				}
-
-				await client.series.update(
-					itemId,
-					updatedSeries as Parameters<typeof client.series.update>[1],
-				);
-
-				// Optimistically update cache
-				await updateCacheMonitoredStatus(
-					app.prisma,
-					payload.instanceId,
-					itemId,
-					"series",
-					payload.monitored,
-					request.log,
-				);
-
-				return reply.status(204).send();
-			}
-
-			if (service === "lidarr" && isLidarrClient(client)) {
-				// Fetch current artist, update monitored, then save
-				const artist = await client.artist.getById(itemId);
-				const updatedArtist = {
-					...artist,
+					seasons: expectedSeasons,
+				} as Parameters<typeof client.series.update>[1]);
+				itemType = "series";
+			} else if (isLidarrClient(client)) {
+				const current = await client.artist.getById(itemId);
+				if (
+					!isMonitoringResourceForTarget(current, itemId) ||
+					!(await sourceCurrent(app, instance))
+				)
+					return unconfirmed(reply);
+				acknowledged = await client.artist.update(itemId, {
+					...current,
 					id: itemId,
 					monitored: payload.monitored,
-				};
-				await client.artist.update(itemId, updatedArtist);
-
-				// Optimistically update cache
-				await updateCacheMonitoredStatus(
-					app.prisma,
-					payload.instanceId,
-					itemId,
-					"artist",
-					payload.monitored,
-					request.log,
-				);
-
-				return reply.status(204).send();
-			}
-
-			if (service === "readarr" && isReadarrClient(client)) {
-				// Fetch current author, update monitored, then save
-				const author = await client.author.getById(itemId);
-				const updatedAuthor = {
-					...author,
+				});
+				itemType = "artist";
+			} else if (isReadarrClient(client)) {
+				const current = await client.author.getById(itemId);
+				if (
+					!isMonitoringResourceForTarget(current, itemId) ||
+					!(await sourceCurrent(app, instance))
+				)
+					return unconfirmed(reply);
+				acknowledged = await client.author.update(itemId, {
+					...current,
 					id: itemId,
 					monitored: payload.monitored,
-				};
-				await client.author.update(itemId, updatedAuthor);
-
-				// Optimistically update cache
-				await updateCacheMonitoredStatus(
-					app.prisma,
-					payload.instanceId,
-					itemId,
-					"author",
-					payload.monitored,
-					request.log,
-				);
-
-				return reply.status(204).send();
-			}
-
-			return reply.status(400).send({
-				error: "Unsupported service type",
-			});
-		} catch (error) {
-			request.log.error(
-				{ err: error, instanceId: instance.id, itemId: payload.itemId },
-				"failed to update monitoring",
-			);
-			throw error;
+				});
+				itemType = "author";
+			} else return reply.status(400).send({ error: "Unsupported service type" });
+			if (
+				!(await sourceCurrent(app, instance)) ||
+				!isMonitoringResourceForTarget(acknowledged, itemId)
+			)
+				return unconfirmed(reply);
+			const projected = await publishObserved(app, instance, itemId, itemType, acknowledged);
+			if (
+				!projected ||
+				!isMonitoringStateConfirmed(acknowledged, {
+					id: itemId,
+					monitored: payload.monitored,
+					seasons: expectedSeasons,
+				})
+			)
+				return unconfirmed(reply);
+			return reply.status(204).send();
+		} catch {
+			request.log.warn("Monitoring update not confirmed");
+			return unconfirmed(reply);
 		}
 	});
-
-	/**
-	 * POST /library/episode/monitor
-	 * Toggles monitoring status for specific episodes
-	 */
 	app.post("/library/episode/monitor", async (request, reply) => {
 		const payload = validateRequest(libraryEpisodeMonitorRequestSchema, request.body ?? {});
-
-		const clientResult = await getClientForInstance(app, request, payload.instanceId);
-		if (!clientResult.success) {
-			return reply.status(clientResult.statusCode).send({
-				error: clientResult.error,
-			});
-		}
-
-		const { client, instance } = clientResult;
-		const service = instance.service.toLowerCase() as LibraryService;
-
-		if (service !== "sonarr" || !isSonarrClient(client)) {
-			return reply.status(400).send({
-				error: "Episode monitoring is only supported for Sonarr instances",
-			});
-		}
-
-		const seriesId = Number(payload.seriesId);
-		if (!Number.isFinite(seriesId)) {
-			return reply.status(400).send({
-				error: "Invalid series identifier",
-			});
-		}
-
-		if (!payload.episodeIds || payload.episodeIds.length === 0) {
-			return reply.status(400).send({
-				error: "No episode IDs provided",
-			});
-		}
-
-		try {
-			// Use SDK's episode.setMonitored method for bulk monitoring updates
-			await client.episode.setMonitored(payload.episodeIds, payload.monitored);
-
-			return reply.status(204).send();
-		} catch (error) {
-			request.log.error(
-				{ err: error, instanceId: instance.id, episodeIds: payload.episodeIds },
-				"failed to update episode monitoring",
-			);
-			throw error;
-		}
+		return monitorChildren(
+			app,
+			request,
+			reply,
+			{ ...payload, parentId: payload.seriesId, ids: payload.episodeIds },
+			"episode",
+		);
 	});
-
-	/**
-	 * POST /library/album/monitor
-	 * Toggles monitoring status for specific albums in Lidarr
-	 */
 	app.post("/library/album/monitor", async (request, reply) => {
 		const payload = validateRequest(libraryAlbumMonitorRequestSchema, request.body ?? {});
-
-		const clientResult = await getClientForInstance(app, request, payload.instanceId);
-		if (!clientResult.success) {
-			return reply.status(clientResult.statusCode).send({
-				error: clientResult.error,
-			});
-		}
-
-		const { client, instance } = clientResult;
-		const service = instance.service.toLowerCase() as LibraryService;
-
-		if (service !== "lidarr" || !isLidarrClient(client)) {
-			return reply.status(400).send({
-				error: "Album monitoring is only supported for Lidarr instances",
-			});
-		}
-
-		const artistId = Number(payload.artistId);
-		if (!Number.isFinite(artistId)) {
-			return reply.status(400).send({
-				error: "Invalid artist identifier",
-			});
-		}
-
-		if (!payload.albumIds || payload.albumIds.length === 0) {
-			return reply.status(400).send({
-				error: "No album IDs provided",
-			});
-		}
-
-		try {
-			// Lidarr uses PUT /api/v1/album/monitor for bulk monitoring updates
-			await client.album.monitor({
-				albumIds: payload.albumIds,
-				monitored: payload.monitored,
-			});
-
-			return reply.status(204).send();
-		} catch (error) {
-			request.log.error(
-				{ err: error, instanceId: instance.id, albumIds: payload.albumIds },
-				"failed to update album monitoring",
-			);
-			throw error;
-		}
+		return monitorChildren(
+			app,
+			request,
+			reply,
+			{ ...payload, parentId: payload.artistId, ids: payload.albumIds },
+			"album",
+		);
 	});
-
-	/**
-	 * POST /library/book/monitor
-	 * Toggles monitoring status for specific books in Readarr
-	 */
 	app.post("/library/book/monitor", async (request, reply) => {
 		const payload = validateRequest(libraryBookMonitorRequestSchema, request.body ?? {});
-
-		const clientResult = await getClientForInstance(app, request, payload.instanceId);
-		if (!clientResult.success) {
-			return reply.status(clientResult.statusCode).send({
-				error: clientResult.error,
-			});
-		}
-
-		const { client, instance } = clientResult;
-		const service = instance.service.toLowerCase() as LibraryService;
-
-		if (service !== "readarr" || !isReadarrClient(client)) {
-			return reply.status(400).send({
-				error: "Book monitoring is only supported for Readarr instances",
-			});
-		}
-
-		const authorId = Number(payload.authorId);
-		if (!Number.isFinite(authorId)) {
-			return reply.status(400).send({
-				error: "Invalid author identifier",
-			});
-		}
-
-		if (!payload.bookIds || payload.bookIds.length === 0) {
-			return reply.status(400).send({
-				error: "No book IDs provided",
-			});
-		}
-
-		try {
-			// Readarr uses PUT /api/v1/book/monitor for bulk monitoring updates
-			await client.book.monitor({
-				bookIds: payload.bookIds,
-				monitored: payload.monitored,
-			});
-
-			return reply.status(204).send();
-		} catch (error) {
-			request.log.error(
-				{ err: error, instanceId: instance.id, bookIds: payload.bookIds },
-				"failed to update book monitoring",
-			);
-			throw error;
-		}
+		return monitorChildren(
+			app,
+			request,
+			reply,
+			{ ...payload, parentId: payload.authorId, ids: payload.bookIds },
+			"book",
+		);
 	});
-
 	done();
 };

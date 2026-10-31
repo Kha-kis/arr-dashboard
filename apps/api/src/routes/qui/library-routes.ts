@@ -6,16 +6,24 @@ import {
 	runEpisodeBackfillSweep,
 	runEpisodeFileSync,
 } from "../../lib/library-sync/episode-file-backfill.js";
+import { hasCompleteEpisodeFileInventory } from "../../lib/library-sync/episode-file-coverage.js";
 import {
 	buildFileIdIndex,
 	clearFileIdIndexCache,
-	getAllHashesForFileId,
+	FILE_ID_INDEX_FRESH_MS,
+	type FileIdIndex,
+	fingerprintQuiTorrentInventory,
+	getAllHashesForFileIdWithPathEvidence,
+	readCachedFileIdCoverage,
 } from "../../lib/library-sync/infohash-backfill-by-inode.js";
 import { runPathBackfillSweep } from "../../lib/library-sync/infohash-backfill-by-path.js";
 import { createQuiClient } from "../../lib/qui/client-factory.js";
 import { getDiscoveryAvailability, runDiscoveryBatch } from "../../lib/qui/cross-seed-discovery.js";
 import { listQuiInstances } from "../../lib/qui/instance-helpers.js";
-import { getCachedAllTorrents } from "../../lib/qui/torrent-list-cache.js";
+import {
+	getCachedAllTorrents,
+	getTorrentListObservation,
+} from "../../lib/qui/torrent-list-cache.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import {
@@ -24,6 +32,73 @@ import {
 	extractHostnameSafe,
 	safeParseJson,
 } from "./qui-shared.js";
+
+async function awaitWithinDeadline<T>(
+	work: Promise<T>,
+	deadlineAt: number,
+): Promise<{ settled: true; value: T } | { settled: false }> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		return await Promise.race([
+			work.then((value) => ({ settled: true as const, value })),
+			new Promise<{ settled: false }>((resolve) => {
+				timer = setTimeout(
+					() => resolve({ settled: false }),
+					Math.max(0, deadlineAt - performance.now()),
+				);
+			}),
+		]);
+	} finally {
+		if (timer) clearTimeout(timer);
+	}
+}
+
+function createInventoryCoverage(configuredInstances: number) {
+	let currentInstances = 0;
+	let lastKnownInstances = 0;
+	let unavailableInstances = 0;
+	let incompleteInstances = 0;
+	let oldestFetchedAtMs: number | null = null;
+	return {
+		current: (fetchedAtMs: number, complete: boolean) => {
+			currentInstances++;
+			if (!complete) incompleteInstances++;
+			oldestFetchedAtMs = Math.min(oldestFetchedAtMs ?? fetchedAtMs, fetchedAtMs);
+		},
+		lastKnown: (fetchedAtMs: number, complete: boolean) => {
+			lastKnownInstances++;
+			if (!complete) incompleteInstances++;
+			oldestFetchedAtMs = Math.min(oldestFetchedAtMs ?? fetchedAtMs, fetchedAtMs);
+		},
+		unavailable: () => {
+			unavailableInstances++;
+		},
+		result: () => ({
+			status:
+				configuredInstances === 0
+					? "unconfigured"
+					: unavailableInstances === configuredInstances
+						? "unavailable"
+						: unavailableInstances > 0 || incompleteInstances > 0
+							? "partial"
+							: lastKnownInstances > 0
+								? "last-known"
+								: "current",
+			currentInstances,
+			lastKnownInstances,
+			unavailableInstances,
+			incompleteInstances,
+			oldestFetchedAt:
+				oldestFetchedAtMs === null ? null : new Date(oldestFetchedAtMs).toISOString(),
+		}),
+	};
+}
+
+function instanceReadCoverage(completeInstances: number, configuredInstances: number) {
+	if (configuredInstances === 0) return "unconfigured";
+	if (completeInstances === configuredInstances) return "current";
+	return completeInstances === 0 ? "unavailable" : "partial";
+}
 
 export function registerLibraryRoutes(app: FastifyInstance): void {
 	// Cross-Seed Discovery (Phase 3.1) — availability probe for empty-state
@@ -62,6 +137,7 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 	app.get("/qui/summary", async (request, reply) => {
 		const userId = request.currentUser!.id;
 		const instances = await listQuiInstances(app, userId);
+		const inventoryCoverage = createInventoryCoverage(instances.length);
 
 		// Empty state — user has no qui configured. Return zeros so the
 		// frontend can render an empty-state pitch without an extra
@@ -78,6 +154,9 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 				lastSyncOk: null,
 				configuredInstances: 0,
 				qbitInstances: [],
+				inventoryCoverage: inventoryCoverage.result(),
+				topologyCoverage: "unconfigured",
+				throughputCoverage: "unconfigured",
 			});
 		}
 
@@ -98,13 +177,17 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			torrentCount: number;
 		}> = [];
 
-		const perInstanceTorrentCount = new Map<number, number>();
+		let completeTopologyInstances = 0;
+		let completeThroughputInstances = 0;
 
 		for (const instance of instances) {
+			// qBit numeric IDs are only unique within their parent qUI service.
+			const perInstanceTorrentCount = new Map<number, number>();
 			let client: ReturnType<typeof createQuiClient>;
 			try {
 				client = createQuiClient(app, instance);
 			} catch (err) {
+				inventoryCoverage.unavailable();
 				request.log.warn(
 					{ err, instanceId: instance.id },
 					"qui summary: client construction failed (likely encryption key mismatch); skipping instance",
@@ -113,7 +196,18 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			}
 
 			try {
-				const torrents = await getCachedAllTorrents(instance.id, client);
+				const observation = await getTorrentListObservation(instance.id, client);
+				if (observation.availability === "unavailable") {
+					inventoryCoverage.unavailable();
+					if (observation.failure !== undefined)
+						request.log.warn(
+							{ err: observation.failure, instanceId: instance.id },
+							"qui summary: torrent inventory read failed",
+						);
+				} else if (observation.availability === "last-known")
+					inventoryCoverage.lastKnown(observation.fetchedAtMs, observation.complete);
+				else inventoryCoverage.current(observation.fetchedAtMs, observation.complete);
+				const torrents = observation.torrents;
 				totalTorrents += torrents.length;
 				for (const t of torrents) {
 					const normalized = normalizeTorrentState(t.state);
@@ -138,6 +232,7 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 					}
 				}
 			} catch (err) {
+				inventoryCoverage.unavailable();
 				request.log.warn(
 					{ err, instanceId: instance.id },
 					"qui summary: listAllTorrents failed; skipping torrents for this instance",
@@ -146,6 +241,8 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 
 			try {
 				const qbits = await client.listInstances();
+				completeTopologyInstances++;
+				let throughputComplete = true;
 				for (const q of qbits) {
 					qbitInstances.push({
 						id: q.id,
@@ -162,6 +259,7 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 							dlSpeed += transfer.dlSpeed;
 							upSpeed += transfer.upSpeed;
 						} catch (transferErr) {
+							throughputComplete = false;
 							request.log.warn(
 								{ err: transferErr, instanceId: instance.id, qbitInstanceId: q.id },
 								"qui summary: transfer-info failed; throughput excludes this qBit",
@@ -169,6 +267,7 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 						}
 					}
 				}
+				if (throughputComplete) completeThroughputInstances++;
 			} catch (err) {
 				request.log.warn(
 					{ err, instanceId: instance.id },
@@ -206,6 +305,9 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			lastSyncOk,
 			configuredInstances: instances.length,
 			qbitInstances,
+			inventoryCoverage: inventoryCoverage.result(),
+			topologyCoverage: instanceReadCoverage(completeTopologyInstances, instances.length),
+			throughputCoverage: instanceReadCoverage(completeThroughputInstances, instances.length),
 		});
 	});
 
@@ -653,16 +755,16 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 	// `enrichTorrentHashes` helper. No duplicate signal, no separate
 	// brand registry, no schema column to maintain.
 	//
-	// Caching: per (user, item set) for 10 min. The set hash is
-	// stable for repeat-loads of the same library page. Aggressive
-	// caching is fine because the underlying tracker data already has
-	// its own 1h cache, and this just aggregates over a known item set.
+	// Cache complete results for 10 min and explicitly partial lower bounds
+	// for only 60 seconds. The latter caps repeated tracker fanout while a
+	// legacy index upgrades without ever presenting missing data as absent.
 	//
 	// Cost: the bottleneck is the per-hash `getTrackers` qui call, which
 	// we batch (concurrency cap of 32). For a typical 100-item library
-	// page sharing ~50-150 unique hashes (cross-seeds collapse), first
-	// load is ~1-2s; subsequent loads from cache are instant.
+	// page sharing ~50-150 unique hashes (cross-seeds collapse), the cold
+	// fanout can be slower; subsequent complete-cache reads are immediate.
 	const LIBRARY_SUMMARY_TTL_MS = 10 * 60 * 1000;
+	const LIBRARY_PARTIAL_SUMMARY_TTL_MS = 60 * 1000;
 	interface LibrarySeedingSummaryEntry {
 		trackerCount: number;
 		topHosts: string[];
@@ -670,8 +772,86 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 	}
 	const librarySummaryCache = new Map<
 		string,
-		{ summaries: Record<string, LibrarySeedingSummaryEntry>; builtAt: number }
+		{
+			status: "available" | "partial";
+			summaries: Record<string, LibrarySeedingSummaryEntry>;
+			builtAt: number;
+		}
 	>();
+	// A partial summary is retried every minute. Reuse successful, recently
+	// observed per-hash hosts across overlapping pages and partial retries,
+	// but never use this cache to promote a response to exact coverage.
+	const PARTIAL_TRACKER_HOST_TTL_MS = 2 * 60 * 1000;
+	const MAX_PARTIAL_TRACKER_HOST_ENTRIES = 20_000;
+	const partialTrackerHostCache = new Map<string, { hosts: string[]; expiresAt: number }>();
+	const partialTrackerHostPending = new Map<string, Promise<string[]>>();
+	interface TrackerOutcome {
+		hosts: string[];
+		exact: boolean;
+		observedAt: number;
+	}
+	interface TrackerCollection {
+		authority: string;
+		evidence: string;
+		invalidated: boolean;
+		lastAccessAt: number;
+		outcomes: Map<string, TrackerOutcome>;
+		pending: Map<string, Promise<void>>;
+	}
+	const collections = new Map<string, TrackerCollection>();
+	// Expire abandoned pages, not continuously polled work: a hard age limit
+	// would restart large healthy collections at the same prefix forever.
+	const COLLECTION_IDLE_MS = 2 * 60 * 1000;
+	const MAX_COLLECTIONS = 128;
+	const MAX_PENDING_TRACKER_READS = 128;
+	const admittedReads = new Set<Promise<unknown>>();
+	let admissionClosed = false;
+	const observeRead = <T>(read: Promise<T>): Promise<T> => {
+		admittedReads.add(read);
+		void read.then(
+			() => admittedReads.delete(read),
+			() => admittedReads.delete(read),
+		);
+		return read;
+	};
+	app.addHook("onClose", async () => {
+		admissionClosed = true;
+		for (const collection of collections.values()) collection.invalidated = true;
+		collections.clear();
+		partialTrackerHostCache.clear();
+		await Promise.allSettled([...admittedReads]);
+	});
+	const getOrFetchTrackerHosts = (
+		key: string,
+		fetchHosts: () => Promise<string[]>,
+		allowCached: boolean,
+		ownsCollection: () => boolean,
+	): Promise<{ hosts: string[]; freshForRequest: boolean }> => {
+		const cached = partialTrackerHostCache.get(key);
+		if (cached && Date.now() < cached.expiresAt && allowCached)
+			return Promise.resolve({ hosts: cached.hosts, freshForRequest: false });
+		if (cached && Date.now() >= cached.expiresAt) partialTrackerHostCache.delete(key);
+		const pending = partialTrackerHostPending.get(key);
+		if (pending) return pending.then((hosts) => ({ hosts, freshForRequest: false }));
+		const task = fetchHosts()
+			.then((hosts) => {
+				if (!ownsCollection()) return hosts;
+				if (partialTrackerHostCache.size >= MAX_PARTIAL_TRACKER_HOST_ENTRIES) {
+					const oldest = partialTrackerHostCache.keys().next().value;
+					if (oldest !== undefined) partialTrackerHostCache.delete(oldest);
+				}
+				partialTrackerHostCache.set(key, {
+					hosts,
+					expiresAt: Date.now() + PARTIAL_TRACKER_HOST_TTL_MS,
+				});
+				return hosts;
+			})
+			.finally(() => {
+				if (partialTrackerHostPending.get(key) === task) partialTrackerHostPending.delete(key);
+			});
+		partialTrackerHostPending.set(key, task);
+		return task.then((hosts) => ({ hosts, freshForRequest: true }));
+	};
 	const LIBRARY_SUMMARY_BODY = z.object({
 		// Each item carries its own arr instance ID so a single batch can
 		// span multiple Sonarr/Radarr instances (the library page
@@ -700,42 +880,146 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			.map((i) => `${i.arrInstanceId}|${i.itemType}:${i.itemId}`)
 			.sort()
 			.join(",");
-		const cacheKey = `${userId}|${sortedKey}`;
-		const cached = librarySummaryCache.get(cacheKey);
-		if (cached && Date.now() - cached.builtAt < LIBRARY_SUMMARY_TTL_MS) {
-			return reply.send({ summaries: cached.summaries });
-		}
-
-		// FS-enabled qui instance is the only thing we strictly need —
-		// per-item arr-instance scoping happens inline below via the
-		// `instance.userId` join. No qui or no FS access → empty
-		// summaries, cards render without the tracker strip.
-		const quiInstance = await app.prisma.serviceInstance.findFirst({
-			where: { userId, service: "QUI", enabled: true, hasLocalFilesystemAccess: true },
+		const collectionSlot = JSON.stringify([userId, sortedKey]);
+		const seriesItems = body.items.filter((item) => item.itemType === "series");
+		const seriesRows =
+			seriesItems.length > 0
+				? await app.prisma.libraryCache.findMany({
+						where: {
+							itemType: "series",
+							instance: { userId },
+							OR: seriesItems.map((item) => ({
+								instanceId: item.arrInstanceId,
+								arrItemId: item.itemId,
+							})),
+						},
+						select: {
+							instanceId: true,
+							arrItemId: true,
+							cachedAt: true,
+							episodeFileInventoryReceipt: true,
+						},
+					})
+				: [];
+		const seriesAuthority = new Map(
+			seriesRows.map((row) => [`${row.instanceId}|series:${row.arrItemId}`, row]),
+		);
+		// Receipt revocation or a new Sonarr series snapshot must invalidate
+		// even a previously exact ten-minute summary cache entry.
+		const seriesAuthorityKey = seriesItems
+			.map((item) => {
+				const key = `${item.arrInstanceId}|series:${item.itemId}`;
+				const row = seriesAuthority.get(key);
+				return JSON.stringify([
+					key,
+					row?.cachedAt.getTime() ?? null,
+					row?.episodeFileInventoryReceipt ?? null,
+				]);
+			})
+			.sort()
+			.join(",");
+		// Check configuration before serving a cached result. Connection
+		// generation and path mapping are part of the cache's authority.
+		const enabledQuiInstances = await app.prisma.serviceInstance.findMany({
+			where: { userId, service: "QUI", enabled: true },
 		});
-		if (!quiInstance) {
-			return reply.send({ summaries: {} });
+		const quiInstances = enabledQuiInstances.filter(
+			(instance) => instance.hasLocalFilesystemAccess,
+		);
+		if (quiInstances.length === 0) {
+			const previous = collections.get(collectionSlot);
+			if (previous) previous.invalidated = true;
+			collections.delete(collectionSlot);
+			return reply.send({
+				status: enabledQuiInstances.length > 0 ? "unavailable" : "not-configured",
+				summaries: {},
+			});
 		}
+		const configurationKey = enabledQuiInstances
+			.map((instance) =>
+				JSON.stringify([
+					instance.id,
+					instance.baseUrl,
+					instance.encryptedApiKey,
+					instance.encryptionIv,
+					instance.encryptedHttpAuthCredentials,
+					instance.httpAuthEncryptionIv,
+					instance.hasLocalFilesystemAccess,
+					instance.connectionGeneration,
+					instance.identityGeneration,
+					instance.pathPrefix,
+				]),
+			)
+			.sort()
+			.join(",");
+		const cacheKey = `${userId}|${configurationKey}|${seriesAuthorityKey}|${sortedKey}`;
+		for (const [slot, collection] of collections) {
+			if (
+				Date.now() - collection.lastAccessAt >= COLLECTION_IDLE_MS ||
+				(slot === collectionSlot && collection.authority !== cacheKey)
+			) {
+				collection.invalidated = true;
+				collections.delete(slot);
+			}
+		}
+		const cached = librarySummaryCache.get(cacheKey);
+		if (
+			cached &&
+			Date.now() - cached.builtAt <
+				(cached.status === "available" ? LIBRARY_SUMMARY_TTL_MS : LIBRARY_PARTIAL_SUMMARY_TTL_MS)
+		) {
+			return reply.send({ status: cached.status, summaries: cached.summaries });
+		}
+		const summaryStartedAt = Date.now();
+		const indexStartedAt = Date.now();
 
 		// Reuse the cached inode index (built once per qui instance,
-		// 30-min TTL, persisted across restarts). If the index isn't
-		// warm, bail with empty rather than block the library page.
-		const indexClient = createQuiClient(app, quiInstance);
-		const inodeIndex = await Promise.race([
-			buildFileIdIndex(indexClient, quiInstance, request.log, app.prisma).catch((err) => {
-				// Mirror panel-routes which logs the same failure (used to be
-				// silent here — a regression that breaks seeding badges would
-				// only surface via user reports, not log signal).
-				request.log.warn(
-					{ err, quiInstanceId: quiInstance.id },
-					"qui library-seeding-summary: inode index build failed; returning empty summary",
-				);
-				return null;
+		// 30-min TTL, persisted across restarts). A cold build continues in
+		// the background; a bounded response reports building, not no trackers.
+		const indexResults = await Promise.all(
+			quiInstances.map(async (quiInstance) => {
+				let indexClient: ReturnType<typeof createQuiClient>;
+				try {
+					indexClient = createQuiClient(app, quiInstance);
+				} catch (err) {
+					request.log.warn(
+						{ err, quiInstanceId: quiInstance.id },
+						"qui library-seeding-summary: connection unavailable",
+					);
+					return { quiInstance, result: { status: "unavailable" as const } };
+				}
+				let indexWaitTimer: ReturnType<typeof setTimeout> | undefined;
+				const result = await Promise.race([
+					buildFileIdIndex(indexClient, quiInstance, request.log, app.prisma).then(
+						(index) => ({ status: "available" as const, index }),
+						(err) => {
+							request.log.warn(
+								{ err, quiInstanceId: quiInstance.id },
+								"qui library-seeding-summary: inode index build failed",
+							);
+							return { status: "unavailable" as const };
+						},
+					),
+					new Promise<{ status: "building" }>((resolve) => {
+						indexWaitTimer = setTimeout(() => resolve({ status: "building" }), 750);
+					}),
+				]);
+				if (indexWaitTimer) clearTimeout(indexWaitTimer);
+				return { quiInstance, result };
 			}),
-			new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
-		]);
-		if (!inodeIndex) {
-			return reply.send({ summaries: {} });
+		);
+		const indexMs = Date.now() - indexStartedAt;
+		const availableIndexes = indexResults.filter(
+			(entry): entry is typeof entry & { result: { status: "available"; index: FileIdIndex } } =>
+				entry.result.status === "available",
+		);
+		if (availableIndexes.length === 0) {
+			return reply.send({
+				status: indexResults.some((entry) => entry.result.status === "building")
+					? "building"
+					: "unavailable",
+				summaries: {},
+			});
 		}
 
 		// Resolve each item's file paths. Movies → LibraryCache.data.path
@@ -744,7 +1028,9 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 		interface ItemPaths {
 			key: string; // "type:id"
 			paths: string[];
+			pathInventoryComplete: boolean;
 		}
+		const itemPathsStartedAt = Date.now();
 		const itemPaths: ItemPaths[] = await Promise.all(
 			body.items.map(async ({ arrInstanceId, itemId, itemType }) => {
 				// Key includes the *arr instance ID so two instances with
@@ -760,7 +1046,7 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 						},
 						select: { data: true },
 					});
-					if (!row) return { key, paths: [] };
+					if (!row) return { key, paths: [], pathInventoryComplete: false };
 					try {
 						const parsed = JSON.parse(row.data) as Record<string, unknown>;
 						const path = typeof parsed.path === "string" ? parsed.path : null;
@@ -772,144 +1058,410 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 								? movieFile.relativePath
 								: null;
 						if (path && relativePath) {
-							return { key, paths: [`${path.replace(/\/+$/, "")}/${relativePath}`] };
+							return {
+								key,
+								paths: [`${path.replace(/\/+$/, "")}/${relativePath}`],
+								pathInventoryComplete: true,
+							};
 						}
 					} catch {
 						/* fall through */
 					}
-					return { key, paths: [] };
+					return { key, paths: [], pathInventoryComplete: false };
 				}
-				// series: gather all episode files
+				// A nonempty series file cache is only positive evidence. Exact
+				// coverage requires a successful same-snapshot Sonarr sync receipt
+				// that matches every cached file identity, including the count.
+				const series = seriesAuthority.get(key);
 				const episodes = await app.prisma.episodeFileCache.findMany({
 					where: {
 						instanceId: arrInstanceId,
 						arrSeriesId: itemId,
 						instance: { userId },
 					},
-					select: { path: true },
+					select: { arrEpisodeFileId: true, path: true, size: true },
 				});
-				return { key, paths: episodes.map((e) => e.path).filter(Boolean) };
+				return {
+					key,
+					paths: episodes.map((episode) => episode.path).filter(Boolean),
+					pathInventoryComplete: hasCompleteEpisodeFileInventory(
+						series?.episodeFileInventoryReceipt,
+						series?.cachedAt,
+						episodes,
+					),
+				};
 			}),
 		);
+		const itemPathsMs = Date.now() - itemPathsStartedAt;
 
-		// stat() every path → inode → hash set. All in-memory after
-		// inode index is warm; just a few hundred syscalls.
-		const itemHashes = new Map<string, Set<string>>();
-		const allHashes = new Set<string>();
-		for (const { key, paths } of itemPaths) {
-			const hashes = new Set<string>();
-			await Promise.all(
-				paths.map(async (p) => {
-					const found = await getAllHashesForFileId(p, inodeIndex);
-					for (const h of found) hashes.add(h);
-				}),
-			);
-			itemHashes.set(key, hashes);
-			for (const h of hashes) allHashes.add(h);
+		const itemHosts = new Map<string, Set<string>>();
+		const itemAllHashes = new Map<string, Set<string>>();
+		for (const { key } of itemPaths) {
+			itemHosts.set(key, new Set());
+			itemAllHashes.set(key, new Set());
 		}
-
-		// Resolve per-hash tracker hostnames. Originally this loop made TWO
-		// qui round-trips per hash: `getTorrentByHash` purely to look up
-		// which qBit instance hosts that hash (so `getTrackers` knows which
-		// instance to query), then `getTrackers` itself. With the SWR cache
-		// in place, the first lookup becomes a Map.get() — we already have
-		// every torrent in memory after a successful `listAllTorrents`. Cuts
-		// the round-trip count from 2N to N (e.g., 300 → 150 on a 150-hash
-		// page). The cached `QuiTorrent` doesn't carry trackers itself, so
-		// the second call is unavoidable without a wider cache redesign.
-		//
-		// Cache miss → fall through to `getTorrentByHash` so behavior is
-		// identical to the pre-cache path. Happens during a cold SWR window
-		// or for hashes added since the cache was last refreshed.
-		const client = createQuiClient(app, quiInstance);
-		let hashToInstance: Map<string, number>;
-		try {
-			const cachedTorrents = await getCachedAllTorrents(quiInstance.id, client);
-			hashToInstance = new Map(
-				cachedTorrents
-					.filter((t): t is typeof t & { instanceId: number } => typeof t.instanceId === "number")
-					.map((t) => [t.hash.toLowerCase(), t.instanceId]),
+		let coverageComplete =
+			availableIndexes.length === quiInstances.length &&
+			enabledQuiInstances.length === quiInstances.length &&
+			itemPaths.every((item) => item.paths.length > 0 && item.pathInventoryComplete);
+		let fileEvidenceMs = 0;
+		let trackerEvidenceMs = 0;
+		let trackerEvidencePending = false;
+		const scopes: Array<{
+			quiInstance: (typeof quiInstances)[number];
+			itemHashes: Map<string, Set<string>>;
+			allHashes: Set<string>;
+		}> = [];
+		const fileSignatures: unknown[] = [];
+		// One tracker-work budget for the page, excluding filesystem evidence.
+		// Only this handler admits batches. Late reads settle into their own
+		// collection; the next foreground poll resumes the remaining work.
+		let trackerBudgetRemainingMs = 1_200;
+		for (const { quiInstance, result } of availableIndexes) {
+			const inodeIndex = result.index;
+			if (
+				inodeIndex.inventoryComplete !== true ||
+				inodeIndex.skippedUnstatable !== 0 ||
+				inodeIndex.incompleteDirectoryWalks !== 0
+			) {
+				coverageComplete = false;
+			}
+			// Each qUI instance has its own path mapping and inode inventory.
+			const itemHashes = new Map<string, Set<string>>();
+			const allHashes = new Set<string>();
+			const fileEvidenceStartedAt = Date.now();
+			// Bound filesystem work across the whole page, including large series.
+			// Retain path order when merging so hash and host display order remains
+			// stable even when stat calls settle out of order.
+			const pathWork = itemPaths.flatMap(({ paths }, itemIndex) =>
+				paths.map((path) => ({ itemIndex, path })),
 			);
-		} catch (err) {
-			// If the cache fetch fails entirely (qui unreachable), every
-			// per-hash request below would fail the same way. Continue with
-			// an empty map; the per-hash try/catch logs zero hosts and the
-			// summary degrades gracefully rather than 500-ing the whole route.
-			// Logged so an operator notices a sustained outage rather than
-			// just seeing a quietly-degraded library page.
-			request.log.warn(
-				{ err, quiInstanceId: quiInstance.id },
-				"qui library-seeding-summary: torrent-list cache fetch failed; falling back to per-hash lookups",
-			);
-			hashToInstance = new Map();
-		}
-
-		const hashToHosts = new Map<string, string[]>();
-		const hashArr = Array.from(allHashes);
-		// Concurrency cap: qui can typically handle ~50 parallel requests
-		// but we stay conservative at 32 to leave headroom for the
-		// existing cluster endpoint that's running for any open panel.
-		const CONCURRENCY = 32;
-		for (let i = 0; i < hashArr.length; i += CONCURRENCY) {
-			const batch = hashArr.slice(i, i + CONCURRENCY);
+			const pathEvidence: Awaited<ReturnType<typeof getAllHashesForFileIdWithPathEvidence>>[] =
+				new Array(pathWork.length);
+			let nextPathIndex = 0;
 			await Promise.all(
-				batch.map(async (hash) => {
-					try {
-						// Look up which qBit instance hosts this hash. The cache
-						// covers the common case in zero round-trips; cache miss
-						// falls back to the original cross-instance search.
-						let instanceId = hashToInstance.get(hash.toLowerCase());
-						if (instanceId === undefined) {
-							const torrent = await client.getTorrentByHash(hash);
-							if (!torrent || typeof torrent.instanceId !== "number") {
-								hashToHosts.set(hash, []);
-								return;
-							}
-							instanceId = torrent.instanceId;
-						}
-						const trackers = await client.getTrackers(instanceId, hash);
-						const hosts = trackers
-							.filter((t) => !t.url.startsWith("** "))
-							.map((t) => extractHostnameSafe(t.url))
-							.filter((h) => h.length > 0);
-						hashToHosts.set(hash, hosts);
-					} catch (err) {
-						// One hash failing is fine (qui returns ENOENT for
-						// torrents removed between cache refresh and now).
-						// `debug` rather than `warn` because this can fire
-						// dozens of times per page; the aggregate "all hashes
-						// failed" case would still be visible via the empty
-						// `hashToInstance` warn above.
-						request.log.debug(
-							{ err, hash },
-							"qui library-seeding-summary: tracker fetch failed for hash",
+				Array.from({ length: Math.min(64, pathWork.length) }, async () => {
+					while (nextPathIndex < pathWork.length) {
+						const pathIndex = nextPathIndex++;
+						const work = pathWork[pathIndex];
+						if (!work) throw new Error("qUI page path missing during evidence resolution");
+						pathEvidence[pathIndex] = await getAllHashesForFileIdWithPathEvidence(
+							work.path,
+							inodeIndex,
 						);
-						hashToHosts.set(hash, []);
 					}
 				}),
 			);
+			const resolvedHashes = itemPaths.map(() => new Set<string>());
+			for (const [index, work] of pathWork.entries()) {
+				const lookup = pathEvidence[index];
+				const hashes = resolvedHashes[work.itemIndex];
+				if (!lookup || !hashes) throw new Error("qUI file evidence missing for page path");
+				if (!lookup.pathVerified || !lookup.correlationComplete) coverageComplete = false;
+				for (const hash of lookup.hashes) hashes.add(hash);
+			}
+			for (const [index, { key }] of itemPaths.entries()) {
+				const hashes = resolvedHashes[index];
+				if (!hashes) throw new Error("qUI file evidence missing for page item");
+				itemHashes.set(key, hashes);
+				for (const h of hashes) allHashes.add(h);
+			}
+			fileEvidenceMs += Date.now() - fileEvidenceStartedAt;
+			scopes.push({ quiInstance, itemHashes, allHashes });
+			fileSignatures.push([
+				quiInstance.id,
+				inodeIndex.inventoryComplete,
+				inodeIndex.skippedUnstatable,
+				inodeIndex.incompleteDirectoryWalks,
+				pathWork
+					.map((work, index) => [
+						itemPaths[work.itemIndex]?.key,
+						work.path,
+						[...pathEvidence[index]!.hashes].sort(),
+						pathEvidence[index]!.pathVerified,
+						pathEvidence[index]!.correlationComplete,
+					])
+					.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+			]);
+		}
+		// Equivalent item/file orderings must resume the same finite work list.
+		const evidence = JSON.stringify([
+			itemPaths
+				.map((item) => ({ ...item, paths: [...item.paths].sort() }))
+				.sort((a, b) => a.key.localeCompare(b.key)),
+			fileSignatures.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+			coverageComplete,
+		]);
+		let collection = collections.get(collectionSlot);
+		// File preparation awaited external evidence. Another request may have
+		// established different authority meanwhile; leave its collection intact.
+		if (
+			admissionClosed ||
+			collection?.invalidated ||
+			(collection && collection.authority !== cacheKey)
+		) {
+			return reply.send({ status: "building", summaries: {} });
+		}
+		if (!collection || collection.evidence !== evidence) {
+			if (collection) collection.invalidated = true;
+			if (collections.size >= MAX_COLLECTIONS) {
+				const oldest = collections.keys().next().value;
+				if (oldest !== undefined) {
+					collections.get(oldest)!.invalidated = true;
+					collections.delete(oldest);
+				}
+			}
+			collection = {
+				authority: cacheKey,
+				evidence,
+				invalidated: false,
+				lastAccessAt: Date.now(),
+				outcomes: new Map(),
+				pending: new Map(),
+			};
+			collections.set(collectionSlot, collection);
+		}
+		collection.lastAccessAt = Date.now();
+		collections.delete(collectionSlot);
+		collections.set(collectionSlot, collection);
+		const ownedCollection = collection;
+		const ownsCollection = () =>
+			!admissionClosed &&
+			!ownedCollection.invalidated &&
+			ownedCollection.authority === cacheKey &&
+			collections.get(collectionSlot) === ownedCollection;
+		let oldestObservationAt = Date.now();
+		for (const { quiInstance, itemHashes, allHashes } of scopes) {
+			// Resolve per-hash tracker hostnames. Originally this loop made TWO
+			// qui round-trips per hash: `getTorrentByHash` purely to look up
+			// which qBit instance hosts that hash (so `getTrackers` knows which
+			// instance to query), then `getTrackers` itself. With the SWR cache
+			// in place, the first lookup becomes a Map.get() — we already have
+			// every torrent in memory after a successful `listAllTorrents`. Cuts
+			// the round-trip count from 2N to N (e.g., 300 → 150 on a 150-hash
+			// page). The cached `QuiTorrent` doesn't carry trackers itself, so
+			// the second call is required for a cold hash, but successful
+			// lower-bound evidence can now be reused briefly across overlapping
+			// partial pages. Exact publication still fetches live evidence.
+			//
+			// Cache miss → fall through to `getTorrentByHash` so behavior is
+			// identical to the pre-cache path. Happens during a cold SWR window
+			// or for hashes added since the cache was last refreshed.
+			// Budget elapsed work monotonically; wall-clock changes must not alter this allowance.
+			const trackerEvidenceStartedAt = performance.now();
+			const trackerDeadlineAt = trackerEvidenceStartedAt + trackerBudgetRemainingMs;
+			const hashToHosts = new Map<string, string[]>();
+			try {
+				const client = createQuiClient(app, quiInstance);
+				if (!ownsCollection() || performance.now() >= trackerDeadlineAt) {
+					trackerEvidencePending = true;
+					coverageComplete = false;
+					break;
+				}
+				let hashToInstance: Map<string, number>;
+				try {
+					const listResult = await awaitWithinDeadline(
+						observeRead(getCachedAllTorrents(quiInstance.id, client)),
+						trackerDeadlineAt,
+					);
+					if (!listResult.settled) {
+						trackerEvidencePending = true;
+						coverageComplete = false;
+						break;
+					}
+					const cachedTorrents = listResult.value;
+					hashToInstance = new Map(
+						cachedTorrents
+							.filter(
+								(t): t is typeof t & { instanceId: number } => typeof t.instanceId === "number",
+							)
+							.map((t) => [t.hash.toLowerCase(), t.instanceId]),
+					);
+				} catch (err) {
+					// Individual lookups may still recover positive hosts, but without
+					// the complete torrent list the result cannot be exact.
+					coverageComplete = false;
+					request.log.warn(
+						{ err, quiInstanceId: quiInstance.id },
+						"qui library-seeding-summary: torrent-list cache fetch failed; falling back to per-hash lookups",
+					);
+					hashToInstance = new Map();
+				}
+
+				const outcomeKey = (hash: string) =>
+					JSON.stringify([
+						quiInstance.id,
+						hash.toLowerCase(),
+						hashToInstance.get(hash.toLowerCase()) ?? null,
+					]);
+				const hashArr = Array.from(allHashes).filter(
+					(hash) => !ownedCollection.outcomes.has(outcomeKey(hash)),
+				);
+				const partialBeforeTrackerFetch = !coverageComplete;
+				// Concurrency cap: qui can typically handle ~50 parallel requests
+				// but we stay conservative at 32 to leave headroom for the
+				// existing cluster endpoint that's running for any open panel.
+				const CONCURRENCY = 32;
+				for (let i = 0; i < hashArr.length; i += CONCURRENCY) {
+					if (!ownsCollection() || performance.now() >= trackerDeadlineAt) {
+						trackerEvidencePending = true;
+						coverageComplete = false;
+						break;
+					}
+					const batch = hashArr.slice(i, i + CONCURRENCY);
+					const batchWork = Promise.all(
+						batch.map((hash) => {
+							const key = outcomeKey(hash);
+							if (ownedCollection.outcomes.has(key)) return Promise.resolve();
+							const pending = ownedCollection.pending.get(key);
+							if (pending) return pending;
+							if (admittedReads.size >= MAX_PENDING_TRACKER_READS) {
+								trackerEvidencePending = true;
+								return Promise.resolve();
+							}
+							const observedAt = Date.now();
+							const task = observeRead(
+								(async () => {
+									try {
+										// Look up which qBit instance hosts this hash. The cache
+										// covers the common case in zero round-trips; cache miss
+										// falls back to the original cross-instance search.
+										let instanceId = hashToInstance.get(hash.toLowerCase());
+										if (instanceId === undefined) {
+											const torrent = await client.getTorrentByHash(hash);
+											if (!torrent || typeof torrent.instanceId !== "number") {
+												if (ownsCollection())
+													ownedCollection.outcomes.set(key, {
+														hosts: [],
+														exact: false,
+														observedAt,
+													});
+												return;
+											}
+											instanceId = torrent.instanceId;
+										}
+										const fetchHosts = async (): Promise<string[]> => {
+											if (!ownsCollection() || performance.now() >= trackerDeadlineAt)
+												throw new Error("qUI tracker read admission ended");
+											const trackers = await client.getTrackers(instanceId, hash);
+											return trackers
+												.filter((t) => !t.url.startsWith("** "))
+												.map((t) => extractHostnameSafe(t.url))
+												.filter((h) => h.length > 0);
+										};
+										const cacheKey = JSON.stringify([
+											userId,
+											configurationKey,
+											quiInstance.id,
+											quiInstance.connectionGeneration,
+											quiInstance.identityGeneration,
+											instanceId,
+											hash.toLowerCase(),
+										]);
+										const trackerEvidence = await getOrFetchTrackerHosts(
+											cacheKey,
+											fetchHosts,
+											partialBeforeTrackerFetch,
+											ownsCollection,
+										);
+										// A joined in-flight read may supply a positive lower bound,
+										// only this collection's own read can make it exact.
+										if (ownsCollection())
+											ownedCollection.outcomes.set(key, {
+												hosts: trackerEvidence.hosts,
+												exact: trackerEvidence.freshForRequest,
+												observedAt,
+											});
+									} catch (err) {
+										// One hash failing is fine (qui returns ENOENT for
+										// torrents removed between cache refresh and now).
+										// `debug` rather than `warn` because this can fire
+										// dozens of times per page; the aggregate "all hashes
+										// failed" case would still be visible via the empty
+										// `hashToInstance` warn above.
+										request.log.debug(
+											{ err, hash },
+											"qui library-seeding-summary: tracker fetch failed for hash",
+										);
+										if (ownsCollection())
+											ownedCollection.outcomes.set(key, { hosts: [], exact: false, observedAt });
+									}
+								})(),
+							);
+							ownedCollection.pending.set(key, task);
+							void task.then(() => ownedCollection.pending.delete(key));
+							return task;
+						}),
+					);
+					// Even an initially complete scope must not wait indefinitely on
+					// an upstream straggler. Only fully settled live reads can be exact.
+					const batchResult = await awaitWithinDeadline(batchWork, trackerDeadlineAt);
+					if (!batchResult.settled) {
+						trackerEvidencePending = true;
+						coverageComplete = false;
+						break;
+					}
+				}
+				for (const hash of allHashes) {
+					const outcome = ownedCollection.outcomes.get(outcomeKey(hash));
+					if (!outcome) {
+						trackerEvidencePending = true;
+						coverageComplete = false;
+						continue;
+					}
+					oldestObservationAt = Math.min(oldestObservationAt, outcome.observedAt);
+					if (!outcome.exact || Date.now() - outcome.observedAt >= LIBRARY_SUMMARY_TTL_MS)
+						coverageComplete = false;
+					hashToHosts.set(hash, outcome.hosts);
+				}
+			} finally {
+				const elapsed = performance.now() - trackerEvidenceStartedAt;
+				trackerEvidenceMs += elapsed;
+				trackerBudgetRemainingMs = Math.max(0, trackerBudgetRemainingMs - elapsed);
+			}
+
+			for (const [key, hashes] of itemHashes) {
+				const hosts = itemHosts.get(key)!;
+				const combinedHashes = itemAllHashes.get(key)!;
+				for (const h of hashes) {
+					combinedHashes.add(h);
+					for (const host of hashToHosts.get(h) ?? []) hosts.add(host);
+				}
+			}
+			if (trackerEvidencePending) break;
 		}
 
-		// Aggregate per item: union of all hosts across all hashes
-		// covering it. trackerCount = distinct hosts. topHosts = up to
-		// 4, preserving discovery order (qui's enumeration order for
-		// the inode index, which roughly mirrors insertion time).
+		// Union distinct hosts and hashes across all enabled qUI instances.
 		const summaries: Record<string, LibrarySeedingSummaryEntry> = {};
-		for (const [key, hashes] of itemHashes) {
-			const hosts = new Set<string>();
-			for (const h of hashes) {
-				const hostsForHash = hashToHosts.get(h) ?? [];
-				for (const host of hostsForHash) hosts.add(host);
-			}
+		for (const [key, hosts] of itemHosts) {
 			summaries[key] = {
 				trackerCount: hosts.size,
 				topHosts: Array.from(hosts).slice(0, 4),
-				hashCount: hashes.size,
+				hashCount: itemAllHashes.get(key)?.size ?? 0,
 			};
 		}
 
-		librarySummaryCache.set(cacheKey, { summaries, builtAt: Date.now() });
-		return reply.send({ summaries });
+		if (ownedCollection.invalidated || admissionClosed) trackerEvidencePending = true;
+		const status = trackerEvidencePending ? "building" : coverageComplete ? "available" : "partial";
+		request.log.info(
+			{
+				itemCount: body.items.length,
+				filePathCount: itemPaths.reduce((count, item) => count + item.paths.length, 0),
+				indexMs,
+				itemPathsMs,
+				fileEvidenceMs,
+				trackerEvidenceMs,
+				trackerEvidencePending,
+				totalMs: Date.now() - summaryStartedAt,
+				status,
+			},
+			"qui library-seeding-summary: aggregate phase timing",
+		);
+		if (status !== "building" && ownsCollection()) {
+			librarySummaryCache.set(cacheKey, { status, summaries, builtAt: oldestObservationAt });
+			collections.delete(collectionSlot);
+		}
+		return reply.send({ status, summaries });
 	});
 
 	app.post("/qui/backfill/run-now", async (request, reply) => {
@@ -981,10 +1533,57 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 		const limit = Math.max(1, Math.min(100, Number.isFinite(limitRaw) ? limitRaw : 20));
 
 		const instances = await listQuiInstances(app, userId);
+		const inventoryCoverage = createInventoryCoverage(instances.length);
 		if (instances.length === 0) {
-			return reply.send({ items: [], totalCount: 0 });
+			return reply.send({
+				items: [],
+				totalCount: 0,
+				inventoryCoverage: inventoryCoverage.result(),
+				trackerCoverage: "unconfigured",
+				fileCoverage: { status: "unconfigured", issueCount: 0, oldestBuiltAt: null },
+			});
 		}
 
+		// This is a read of already-published evidence, not an index build. A
+		// missing or generation-mismatched snapshot cannot prove an all-clear.
+		const fileIssuesByInstance = new Map<
+			string,
+			Map<string, { missingFiles: number; sizeMismatches: number; otherFailures: number }>
+		>();
+		const fileFingerprintByInstance = new Map<string, string>();
+		let fileEnabledInstances = 0;
+		let fileAvailableInstances = 0;
+		let fileIssueCount = 0;
+		let filePartial = false;
+		let fileLastKnown = false;
+		let fileMembershipUnverified = false;
+		let oldestFileBuiltAtMs: number | null = null;
+		for (const instance of instances) {
+			if (!instance.hasLocalFilesystemAccess) continue;
+			fileEnabledInstances++;
+			const snapshot = readCachedFileIdCoverage(instance);
+			if (!snapshot) continue;
+			fileAvailableInstances++;
+			fileFingerprintByInstance.set(instance.id, snapshot.torrentInventoryFingerprint);
+			oldestFileBuiltAtMs = Math.min(oldestFileBuiltAtMs ?? snapshot.builtAtMs, snapshot.builtAtMs);
+			if (Date.now() - snapshot.builtAtMs >= FILE_ID_INDEX_FRESH_MS) fileLastKnown = true;
+			if (
+				!snapshot.inventoryComplete ||
+				snapshot.skippedUnstatable > 0 ||
+				snapshot.incompleteDirectoryWalks > 0 ||
+				snapshot.issues.length > 0
+			)
+				filePartial = true;
+			fileIssueCount += snapshot.issues.length;
+			const issues = new Map<
+				string,
+				{ missingFiles: number; sizeMismatches: number; otherFailures: number }
+			>();
+			for (const issue of snapshot.issues) {
+				issues.set(`${issue.qbitInstanceId ?? "none"}:${issue.hash.toLowerCase()}`, issue);
+			}
+			fileIssuesByInstance.set(instance.id, issues);
+		}
 		// Collect attention-worthy torrents from every qui instance. The
 		// "is this attention-worthy" rule lives here, not in qui — qui
 		// reports raw state, we decide which states are operator-actionable.
@@ -1000,6 +1599,7 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 		const attentionStates = new Set(["error", "paused", "stalled_dl"]);
 
 		type AttentionTorrent = {
+			quiInstanceId: string;
 			hash: string;
 			name: string;
 			state: ReturnType<typeof normalizeTorrentState>;
@@ -1010,14 +1610,18 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			qbitInstanceName: string | null;
 			severity: "critical" | "warning";
 			reason: string;
+			fileIssue: boolean;
 		};
 		const collected: AttentionTorrent[] = [];
+		let completeTrackerInstances = 0;
 
 		for (const instance of instances) {
 			let client: ReturnType<typeof createQuiClient>;
 			try {
 				client = createQuiClient(app, instance);
 			} catch (err) {
+				inventoryCoverage.unavailable();
+				if (fileFingerprintByInstance.has(instance.id)) fileMembershipUnverified = true;
 				// Mirror /qui/summary's logging — was silent here, so an
 				// encryption-key mismatch or similar config issue would
 				// silently shrink the attention feed with no signal.
@@ -1027,10 +1631,32 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 				);
 				continue;
 			}
-			let torrents: Awaited<ReturnType<typeof getCachedAllTorrents>>;
+			let torrents: Awaited<ReturnType<typeof getTorrentListObservation>>["torrents"];
 			try {
-				torrents = await getCachedAllTorrents(instance.id, client);
+				const observation = await getTorrentListObservation(instance.id, client);
+				const fileFingerprint = fileFingerprintByInstance.get(instance.id);
+				if (
+					fileFingerprint !== undefined &&
+					(observation.availability !== "current" ||
+						!observation.complete ||
+						fingerprintQuiTorrentInventory(observation.torrents) !== fileFingerprint)
+				)
+					fileMembershipUnverified = true;
+				if (observation.availability === "unavailable") {
+					inventoryCoverage.unavailable();
+					if (observation.failure !== undefined)
+						request.log.warn(
+							{ err: observation.failure, instanceId: instance.id },
+							"qui attention: torrent inventory read failed",
+						);
+				} else if (observation.availability === "last-known")
+					inventoryCoverage.lastKnown(observation.fetchedAtMs, observation.complete);
+				else inventoryCoverage.current(observation.fetchedAtMs, observation.complete);
+				torrents = observation.torrents;
+				if (observation.availability === "unavailable") continue;
 			} catch (err) {
+				inventoryCoverage.unavailable();
+				if (fileFingerprintByInstance.has(instance.id)) fileMembershipUnverified = true;
 				request.log.warn(
 					{ err, instanceId: instance.id },
 					"qui attention: listAllTorrents failed; skipping instance",
@@ -1042,6 +1668,7 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			// can't express. Fetch per qBit instance present in this qui's
 			// torrent list; a disabled reannounce service just returns [].
 			const trackerProblemHashes = new Set<string>();
+			let trackerComplete = true;
 			const qbitIds = new Set<number>();
 			for (const t of torrents) {
 				if (typeof t.instanceId === "number") qbitIds.add(t.instanceId);
@@ -1053,16 +1680,21 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 						if (c.hasTrackerProblem) trackerProblemHashes.add(c.hash.toLowerCase());
 					}
 				} catch (err) {
+					trackerComplete = false;
 					request.log.debug(
 						{ err, instanceId: instance.id, qbitInstanceId: qbitId },
 						"qui attention: reannounce-candidates fetch failed; skipping tracker signal",
 					);
 				}
 			}
+			if (trackerComplete) completeTrackerInstances++;
 			for (const t of torrents) {
 				const normalized = normalizeTorrentState(t.state);
 				const hasTrackerProblem = trackerProblemHashes.has(t.hash.toLowerCase());
-				if (!attentionStates.has(normalized) && !hasTrackerProblem) continue;
+				const fileIssue = fileIssuesByInstance
+					.get(instance.id)
+					?.get(`${t.instanceId ?? "none"}:${t.hash.toLowerCase()}`);
+				if (!attentionStates.has(normalized) && !hasTrackerProblem && !fileIssue) continue;
 				// Severity heuristic: error → critical, paused/stalled/tracker → warning.
 				const severity: "critical" | "warning" = normalized === "error" ? "critical" : "warning";
 				const reasons: string[] = [];
@@ -1070,7 +1702,16 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 				if (normalized === "stalled_dl") reasons.push("Stalled (no peers)");
 				if (normalized === "paused") reasons.push("Paused");
 				if (hasTrackerProblem) reasons.push("Tracker failing");
+				if (fileIssue?.missingFiles)
+					reasons.push(`${fileIssue.missingFiles} files missing from on-disk inventory`);
+				if (fileIssue?.sizeMismatches)
+					reasons.push(
+						`${fileIssue.sizeMismatches} file size${fileIssue.sizeMismatches === 1 ? "" : "s"} differ${fileIssue.sizeMismatches === 1 ? "s" : ""} from qBittorrent`,
+					);
+				if (fileIssue?.otherFailures)
+					reasons.push(`${fileIssue.otherFailures} files could not be verified`);
 				collected.push({
+					quiInstanceId: instance.id,
 					hash: t.hash.toLowerCase(),
 					name: t.name,
 					state: normalized,
@@ -1081,12 +1722,33 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 					qbitInstanceName: t.instanceName ?? null,
 					severity,
 					reason: reasons.join(" · ") || normalized,
+					fileIssue: !!fileIssue,
 				});
 			}
 		}
 
-		// Sort: critical first, then by ratio ascending (worst-ratio bubbles up).
+		const fileCoverage = {
+			status:
+				fileEnabledInstances === 0
+					? "unconfigured"
+					: fileAvailableInstances === 0
+						? "unavailable"
+						: fileEnabledInstances < instances.length ||
+								fileAvailableInstances < fileEnabledInstances ||
+								filePartial ||
+								fileMembershipUnverified
+							? "partial"
+							: fileLastKnown
+								? "last-known"
+								: "current",
+			issueCount: fileIssueCount,
+			oldestBuiltAt:
+				oldestFileBuiltAtMs === null ? null : new Date(oldestFileBuiltAtMs).toISOString(),
+		};
+
+		// Keep file discrepancies reachable in the bounded first page.
 		collected.sort((a, b) => {
+			if (a.fileIssue !== b.fileIssue) return a.fileIssue ? -1 : 1;
 			if (a.severity !== b.severity) return a.severity === "critical" ? -1 : 1;
 			return a.ratio - b.ratio;
 		});
@@ -1134,6 +1796,7 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			const ctx = cacheByHash.get(t.hash);
 			const arrService = ctx ? arrServiceMap[ctx.instance.service] : null;
 			return {
+				quiInstanceId: t.quiInstanceId,
 				hash: t.hash,
 				name: t.name,
 				state: t.state,
@@ -1159,7 +1822,13 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			};
 		});
 
-		return reply.send({ items, totalCount });
+		return reply.send({
+			items,
+			totalCount,
+			inventoryCoverage: inventoryCoverage.result(),
+			trackerCoverage: instanceReadCoverage(completeTrackerInstances, instances.length),
+			fileCoverage,
+		});
 	});
 
 	// qui Activity feed (Phase 3.2) — paginated chronological view of every

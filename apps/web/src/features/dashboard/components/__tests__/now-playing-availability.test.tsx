@@ -20,7 +20,7 @@ const session: PlexSession = {
 	ratingKey: "item-one",
 	title: "Synthetic movie",
 	type: "movie",
-	user: { id: 1, title: "Synthetic viewer", thumb: "" },
+	user: { id: "1", title: "Synthetic viewer", thumb: "" },
 	player: {
 		title: "Synthetic player",
 		platform: "Synthetic platform",
@@ -86,6 +86,288 @@ afterEach(() => {
 });
 
 describe.each(["compact", "full"] as const)("Now Playing %s availability", (variant) => {
+	it.each([null, "007", "9007199254740993"])(
+		"keeps a playable session visible without using optional user ID %s as its label",
+		async (id) => {
+			vi.mocked(fetchNowPlaying).mockResolvedValue({
+				sessions: [{ ...session, user: { ...session.user, id } }],
+				totalBandwidth: 1000,
+				availability: complete,
+			});
+			mount(variant, { plex: true, jellyfin: false, tautulli: false });
+			await screen.findByText("Synthetic movie");
+			expect(
+				screen.getByText(
+					variant === "compact"
+						? "Synthetic viewer"
+						: "Synthetic viewer · Synthetic player (Synthetic platform)",
+				),
+			).toBeInTheDocument();
+			if (id !== null) expect(screen.queryByText(id)).not.toBeInTheDocument();
+		},
+	);
+	it("labels DirectStream distinctly and never calls unknown audio transcoded", async () => {
+		vi.mocked(fetchNowPlaying).mockResolvedValue({
+			sessions: [
+				{
+					...session,
+					videoDecision: "DirectStream",
+					audioDecision: "unknown",
+					audioCodec: "aac",
+					videoResolution: "1920x1080",
+				},
+			],
+			totalBandwidth: 1000,
+			availability: complete,
+		});
+		mount(variant, { plex: true, jellyfin: false, tautulli: false });
+		await screen.findByText("Synthetic movie");
+		expect(screen.getByText(/Direct Stream/)).toHaveTextContent("1920x1080");
+		expect(screen.queryByText(/Direct Play|AAC \(Transcode\)/)).not.toBeInTheDocument();
+		expect(screen.getByText(/AAC/)).toHaveTextContent(/unknown/i);
+	});
+	it("does not turn a missing video method into a Transcode badge", async () => {
+		vi.mocked(fetchNowPlaying).mockResolvedValue({
+			sessions: [{ ...session, videoDecision: "" }],
+			totalBandwidth: 1000,
+			availability: complete,
+		});
+		mount(variant, { plex: true, jellyfin: false, tautulli: false });
+		await screen.findByText("Synthetic movie");
+		expect(screen.getByText(/Playback unknown/i)).toBeInTheDocument();
+		expect(screen.queryByText(/^Transcode$/i)).not.toBeInTheDocument();
+	});
+	it("shows an explicit zero rate rather than hiding it", async () => {
+		vi.mocked(fetchNowPlaying).mockResolvedValue({
+			sessions: [{ ...session, bandwidth: 0 }],
+			totalBandwidth: 0,
+			availability: complete,
+			bandwidthBasis: "provider-reported",
+			bandwidthCoverage: {
+				status: "complete",
+				observedSessions: 1,
+				measuredSessions: 1,
+				knownTotalKbps: 0,
+			},
+		});
+		mount(variant, { plex: true, jellyfin: false, tautulli: false });
+		await screen.findByText("Synthetic movie");
+		expect(screen.getByLabelText("Session stream rate")).toHaveTextContent("0 kbps");
+		expect(screen.getByLabelText("Observed stream rate summary")).toHaveTextContent(
+			/reported.*0 kbps/i,
+		);
+	});
+	it("shows a known subtotal with measurement counts without treating missing rates as zero", async () => {
+		vi.mocked(fetchNowPlaying).mockResolvedValue({
+			sessions: [
+				session,
+				{ ...session, sessionKey: "second", title: "Second observation", bandwidth: undefined },
+			],
+			totalBandwidth: 1000,
+			availability: complete,
+			bandwidthBasis: "provider-reported",
+			bandwidthCoverage: {
+				status: "partial",
+				observedSessions: 2,
+				measuredSessions: 1,
+				knownTotalKbps: 1000,
+			},
+		});
+		mount(variant, { plex: true, jellyfin: false, tautulli: false });
+		await screen.findByText("Second observation");
+		expect(screen.getByLabelText("Observed stream rate summary")).toHaveTextContent(
+			/known subtotal.*1\.0 Mbps.*1\/2/i,
+		);
+		expect(screen.getAllByLabelText("Session stream rate")[1]).toHaveTextContent(/unknown/i);
+		expect(screen.getByText(/2 active streams/i)).toBeInTheDocument();
+	});
+	it("does not certify legacy numeric rate totals without measurement metadata", async () => {
+		vi.mocked(fetchNowPlaying).mockResolvedValue({
+			sessions: [session],
+			totalBandwidth: 1000,
+			availability: complete,
+		});
+		mount(variant, { plex: true, jellyfin: false, tautulli: false });
+		await screen.findByText("Synthetic movie");
+		expect(screen.getByLabelText("Observed stream rate summary")).toHaveTextContent(/unverified/i);
+		expect(screen.getByLabelText("Session stream rate")).toHaveTextContent(/unverified/i);
+	});
+	it("discloses zero measured rows when a healthy provider omits every rate", async () => {
+		vi.mocked(fetchNowPlaying).mockResolvedValue({
+			sessions: [{ ...session, bandwidth: undefined }],
+			totalBandwidth: 0,
+			availability: complete,
+			bandwidthBasis: "provider-reported",
+			bandwidthCoverage: {
+				status: "unavailable",
+				observedSessions: 1,
+				measuredSessions: 0,
+				knownTotalKbps: null,
+			},
+		});
+		mount(variant, { plex: true, jellyfin: false, tautulli: false });
+		await screen.findByText("Synthetic movie");
+		expect(screen.getByLabelText("Observed stream rate summary")).toHaveTextContent(
+			/unknown.*0\/1/i,
+		);
+		expect(screen.getByLabelText("Session stream rate")).toHaveTextContent(/unknown/i);
+		expect(screen.queryByText(/0 kbps/)).not.toBeInTheDocument();
+	});
+	it("does not trust a measurement receipt that disagrees with its session rows", async () => {
+		vi.mocked(fetchNowPlaying).mockResolvedValue({
+			sessions: [{ ...session, bandwidth: undefined }],
+			totalBandwidth: 0,
+			availability: complete,
+			bandwidthBasis: "provider-reported",
+			bandwidthCoverage: {
+				status: "complete",
+				observedSessions: 1,
+				measuredSessions: 1,
+				knownTotalKbps: 0,
+			},
+		});
+		mount(variant, { plex: true, jellyfin: false, tautulli: false });
+		await screen.findByText("Synthetic movie");
+		expect(screen.getByLabelText("Observed stream rate summary")).toHaveTextContent(/unverified/i);
+		expect(screen.getByLabelText("Session stream rate")).toHaveTextContent(/unverified/i);
+	});
+	it("renders native Jellyfin/Emby Direct Play quality even when rate evidence is absent", async () => {
+		vi.mocked(fetchJellyfinNowPlaying).mockResolvedValue({
+			sessions: [
+				{
+					sessionId: "native-direct",
+					title: "Native direct observation",
+					type: "Movie",
+					user: "Synthetic viewer",
+					player: "Synthetic player",
+					deviceName: "Synthetic device",
+					state: "playing",
+					viewOffset: 0,
+					duration: 60000,
+					videoDecision: "direct play",
+					audioDecision: "direct play",
+					videoCodec: "hevc",
+					audioCodec: "eac3",
+					videoResolution: "3840x2160",
+					instanceId: "native-source",
+					instanceName: "Synthetic instance",
+				},
+			],
+			totalBandwidth: 0,
+			availability: complete,
+			bandwidthBasis: "encoding-estimate",
+			bandwidthCoverage: {
+				status: "unavailable",
+				observedSessions: 1,
+				measuredSessions: 0,
+				knownTotalKbps: null,
+			},
+		});
+		mount(variant, { plex: false, jellyfin: true, tautulli: false });
+		await screen.findByText("Native direct observation");
+		expect(screen.getByText(/Direct Play/)).toHaveTextContent(/HEVC.*3840x2160/);
+		expect(screen.getByText(/EAC3/)).toBeInTheDocument();
+		expect(screen.getByLabelText("Session stream rate")).toHaveTextContent(/unknown/i);
+		expect(screen.getByLabelText("Observed stream rate summary")).toHaveTextContent(
+			/unknown.*0\/1/i,
+		);
+		expect(screen.queryByText(/0 kbps/)).not.toBeInTheDocument();
+	});
+	it("labels Jellyfin encoding estimates and renders its native output quality", async () => {
+		vi.mocked(fetchJellyfinNowPlaying).mockResolvedValue({
+			sessions: [
+				{
+					sessionId: "jellyfin-session",
+					title: "Jellyfin observation",
+					type: "Movie",
+					user: "Synthetic viewer",
+					player: "Synthetic player",
+					deviceName: "Synthetic device",
+					state: "playing",
+					viewOffset: 0,
+					duration: 60000,
+					videoDecision: "copy",
+					audioDecision: "transcode",
+					videoCodec: "h264",
+					audioCodec: "aac",
+					videoResolution: "1920x1080",
+					bandwidth: 1234.5,
+					instanceId: "jellyfin-one",
+					instanceName: "Synthetic instance",
+				},
+			],
+			totalBandwidth: 1234.5,
+			availability: complete,
+			bandwidthBasis: "encoding-estimate",
+			bandwidthCoverage: {
+				status: "complete",
+				observedSessions: 1,
+				measuredSessions: 1,
+				knownTotalKbps: 1234.5,
+			},
+		});
+		mount(variant, { plex: false, jellyfin: true, tautulli: false });
+		await screen.findByText("Jellyfin observation");
+		expect(screen.getByLabelText("Observed stream rate summary")).toHaveTextContent(
+			/estimated.*1\.2 Mbps/i,
+		);
+		expect(screen.getByText(/Direct Stream/)).toHaveTextContent(/H264.*1920x1080/);
+		expect(screen.getByText(/AAC/)).toHaveTextContent("Transcode");
+		expect(screen.getByLabelText("Session stream rate")).toHaveTextContent(/estimated/i);
+	});
+	it("retains failed-refetch measurements as last-known, then recovers to explicit zero", async () => {
+		vi.mocked(fetchNowPlaying).mockResolvedValue({
+			sessions: [session],
+			totalBandwidth: 1000,
+			availability: complete,
+			bandwidthBasis: "provider-reported",
+			bandwidthCoverage: {
+				status: "complete",
+				observedSessions: 1,
+				measuredSessions: 1,
+				knownTotalKbps: 1000,
+			},
+		});
+		const client = mount(variant, { plex: true, jellyfin: false, tautulli: false });
+		await screen.findByText("Synthetic movie");
+		expect(screen.getByLabelText("Observed stream rate summary")).toHaveTextContent(
+			/reported.*1\.0 Mbps/i,
+		);
+		vi.mocked(fetchNowPlaying).mockRejectedValue(privateError);
+		await act(async () => {
+			await client.invalidateQueries({ queryKey: plexKeys.nowPlaying() });
+		});
+		await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/stale|last-known/i));
+		expect(screen.getByLabelText("Observed stream rate summary")).toHaveTextContent(
+			/current.*unknown/i,
+		);
+		expect(screen.getByLabelText("Session stream rate")).toHaveTextContent(
+			/1\.0 Mbps.*last-known/i,
+		);
+		expect(screen.queryByText(privateError.message)).not.toBeInTheDocument();
+		vi.mocked(fetchNowPlaying).mockResolvedValue({
+			sessions: [{ ...session, bandwidth: 0 }],
+			totalBandwidth: 0,
+			availability: complete,
+			bandwidthBasis: "provider-reported",
+			bandwidthCoverage: {
+				status: "complete",
+				observedSessions: 1,
+				measuredSessions: 1,
+				knownTotalKbps: 0,
+			},
+		});
+		await act(async () => {
+			await client.invalidateQueries({ queryKey: plexKeys.nowPlaying() });
+		});
+		await waitFor(() =>
+			expect(screen.getByLabelText("Session stream rate")).toHaveTextContent("0 kbps"),
+		);
+		expect(screen.getByLabelText("Observed stream rate summary")).toHaveTextContent(
+			/reported.*0 kbps/i,
+		);
+		expect(screen.getByLabelText("Session stream rate")).not.toHaveTextContent(/last-known/i);
+	});
 	it("uses optional Tautulli activity when no native Plex connection is configured", async () => {
 		vi.mocked(fetchTautulliActivity).mockResolvedValue({
 			sessions: [

@@ -36,6 +36,14 @@ type StatisticsData = ReturnType<typeof useStatisticsData>;
 interface OverviewTabProps {
 	allHealthIssues: HealthIssue[];
 	combinedDisk: CombinedDiskStats;
+	incompleteServices?: string[];
+	configuredInstanceCounts?: {
+		sonarr: number;
+		radarr: number;
+		lidarr: number;
+		readarr: number;
+		prowlarr: number;
+	};
 	sonarrRows: StatisticsData["sonarrRows"];
 	radarrRows: StatisticsData["radarrRows"];
 	lidarrRows: StatisticsData["lidarrRows"];
@@ -65,6 +73,8 @@ function formatDuration(seconds: number): string {
 export const OverviewTab = ({
 	allHealthIssues,
 	combinedDisk,
+	incompleteServices = [],
+	configuredInstanceCounts,
 	sonarrRows,
 	radarrRows,
 	lidarrRows,
@@ -80,6 +90,14 @@ export const OverviewTab = ({
 }: OverviewTabProps) => {
 	const [incognitoMode] = useIncognitoMode();
 	const [healthExpanded, setHealthExpanded] = useState(false);
+	const counts = configuredInstanceCounts ?? {
+		sonarr: sonarrRows.length,
+		radarr: radarrRows.length,
+		lidarr: lidarrRows.length,
+		readarr: readarrRows.length,
+		prowlarr: prowlarrRows.length,
+	};
+	const statisticsUnavailableMessage = "Statistics unavailable for one or more instances";
 
 	// Transparency for the combined storage figure (#495). When the root-folder
 	// filter actually EXCLUDED non-media disks, surface that as "N of M disks
@@ -257,6 +275,11 @@ export const OverviewTab = ({
 						</div>
 					)}
 				</div>
+			) : incompleteServices.length > 0 ? (
+				<div className="flex items-center gap-4 p-4 rounded-2xl border border-warning/30 bg-warning/5">
+					<AlertTriangle className="h-5 w-5 text-warning shrink-0" />
+					<span className="text-sm text-warning">Health coverage is incomplete.</span>
+				</div>
 			) : (
 				<div
 					className="flex items-center gap-4 p-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] animate-in fade-in slide-in-from-bottom-4 duration-500"
@@ -285,54 +308,76 @@ export const OverviewTab = ({
 				style={{ animationDelay: "300ms", animationFillMode: "backwards" }}
 			>
 				<StatCard
-					value={sonarrRows.length}
+					value={counts.sonarr}
 					label="Sonarr"
-					description={`${sonarrTotals.totalSeries} series total`}
+					description={
+						incompleteServices.includes("sonarr")
+							? "Statistics incomplete"
+							: `${sonarrTotals.totalSeries} series total`
+					}
 					icon={Tv}
 					gradient={SERVICE_GRADIENTS.sonarr}
 					onClick={() => onSwitchTab("sonarr")}
 					animationDelay={300}
 				/>
 				<StatCard
-					value={radarrRows.length}
+					value={counts.radarr}
 					label="Radarr"
-					description={`${radarrTotals.totalMovies} movies total`}
+					description={
+						incompleteServices.includes("radarr")
+							? "Statistics incomplete"
+							: `${radarrTotals.totalMovies} movies total`
+					}
 					icon={Film}
 					gradient={SERVICE_GRADIENTS.radarr}
 					onClick={() => onSwitchTab("radarr")}
 					animationDelay={350}
 				/>
 				<StatCard
-					value={lidarrRows.length}
+					value={counts.lidarr}
 					label="Lidarr"
-					description={`${lidarrTotals.totalArtists} artists total`}
+					description={
+						incompleteServices.includes("lidarr")
+							? "Statistics incomplete"
+							: `${lidarrTotals.totalArtists} artists total`
+					}
 					icon={Music}
 					gradient={SERVICE_GRADIENTS.lidarr}
 					onClick={() => onSwitchTab("lidarr")}
 					animationDelay={400}
 				/>
 				<StatCard
-					value={readarrRows.length}
+					value={counts.readarr}
 					label="Readarr"
-					description={`${readarrTotals.totalAuthors} authors total`}
+					description={
+						incompleteServices.includes("readarr")
+							? "Statistics incomplete"
+							: `${readarrTotals.totalAuthors} authors total`
+					}
 					icon={BookOpen}
 					gradient={SERVICE_GRADIENTS.readarr}
 					onClick={() => onSwitchTab("readarr")}
 					animationDelay={450}
 				/>
 				<StatCard
-					value={prowlarrRows.length}
+					value={counts.prowlarr}
 					label="Prowlarr"
-					description={`${prowlarrTotals.totalIndexers} indexers total`}
+					description={
+						incompleteServices.includes("prowlarr")
+							? "Statistics incomplete"
+							: `${prowlarrTotals.totalIndexers} indexers total`
+					}
 					icon={Globe}
 					gradient={SERVICE_GRADIENTS.prowlarr}
 					onClick={() => onSwitchTab("prowlarr")}
 					animationDelay={500}
 				/>
 				<StatCard
-					value={formatBytes(combinedDisk.diskUsed)}
+					value={incompleteServices.length > 0 ? "—" : formatBytes(combinedDisk.diskUsed)}
 					label="Storage"
-					description={storageDescription}
+					description={
+						incompleteServices.length > 0 ? "Storage coverage incomplete" : storageDescription
+					}
 					icon={HardDrive}
 					animationDelay={550}
 				/>
@@ -373,77 +418,112 @@ export const OverviewTab = ({
 					name="Sonarr"
 					icon={Tv}
 					gradient={SERVICE_GRADIENTS.sonarr}
+					statusMessage={
+						incompleteServices.includes("sonarr") ? statisticsUnavailableMessage : undefined
+					}
 					onViewDetails={() => onSwitchTab("sonarr")}
-					stats={[
-						{ label: "Series", value: sonarrTotals.totalSeries },
-						{
-							label: "Downloaded",
-							value: formatPercent(sonarrTotals.downloadPercent),
-							highlight: true,
-						},
-						{ label: "Missing", value: sonarrTotals.missingEpisodes },
-						{ label: "Disk Usage", value: formatPercent(sonarrTotals.diskPercent) },
-					]}
+					stats={
+						incompleteServices.includes("sonarr")
+							? []
+							: [
+									{ label: "Series", value: sonarrTotals.totalSeries },
+									{
+										label: "Downloaded",
+										value: formatPercent(sonarrTotals.downloadPercent),
+										highlight: true,
+									},
+									{ label: "Missing", value: sonarrTotals.missingEpisodes },
+									{ label: "Disk Usage", value: formatPercent(sonarrTotals.diskPercent) },
+								]
+					}
 				/>
 				<ServiceQuickCard
 					name="Radarr"
 					icon={Film}
 					gradient={SERVICE_GRADIENTS.radarr}
+					statusMessage={
+						incompleteServices.includes("radarr") ? statisticsUnavailableMessage : undefined
+					}
 					onViewDetails={() => onSwitchTab("radarr")}
-					stats={[
-						{ label: "Movies", value: radarrTotals.totalMovies },
-						{
-							label: "Downloaded",
-							value: formatPercent(radarrTotals.downloadPercent),
-							highlight: true,
-						},
-						{ label: "Missing", value: radarrTotals.missingMovies },
-						{ label: "Disk Usage", value: formatPercent(radarrTotals.diskPercent) },
-					]}
+					stats={
+						incompleteServices.includes("radarr")
+							? []
+							: [
+									{ label: "Movies", value: radarrTotals.totalMovies },
+									{
+										label: "Downloaded",
+										value: formatPercent(radarrTotals.downloadPercent),
+										highlight: true,
+									},
+									{ label: "Missing", value: radarrTotals.missingMovies },
+									{ label: "Disk Usage", value: formatPercent(radarrTotals.diskPercent) },
+								]
+					}
 				/>
 				<ServiceQuickCard
 					name="Lidarr"
 					icon={Music}
 					gradient={SERVICE_GRADIENTS.lidarr}
+					statusMessage={
+						incompleteServices.includes("lidarr") ? statisticsUnavailableMessage : undefined
+					}
 					onViewDetails={() => onSwitchTab("lidarr")}
-					stats={[
-						{ label: "Artists", value: lidarrTotals.totalArtists },
-						{
-							label: "Downloaded",
-							value: formatPercent(lidarrTotals.downloadPercent),
-							highlight: true,
-						},
-						{ label: "Missing", value: lidarrTotals.missingTracks },
-						{ label: "Disk Usage", value: formatPercent(lidarrTotals.diskPercent) },
-					]}
+					stats={
+						incompleteServices.includes("lidarr")
+							? []
+							: [
+									{ label: "Artists", value: lidarrTotals.totalArtists },
+									{
+										label: "Downloaded",
+										value: formatPercent(lidarrTotals.downloadPercent),
+										highlight: true,
+									},
+									{ label: "Missing", value: lidarrTotals.missingTracks },
+									{ label: "Disk Usage", value: formatPercent(lidarrTotals.diskPercent) },
+								]
+					}
 				/>
 				<ServiceQuickCard
 					name="Readarr"
 					icon={BookOpen}
 					gradient={SERVICE_GRADIENTS.readarr}
+					statusMessage={
+						incompleteServices.includes("readarr") ? statisticsUnavailableMessage : undefined
+					}
 					onViewDetails={() => onSwitchTab("readarr")}
-					stats={[
-						{ label: "Authors", value: readarrTotals.totalAuthors },
-						{
-							label: "Downloaded",
-							value: formatPercent(readarrTotals.downloadPercent),
-							highlight: true,
-						},
-						{ label: "Missing", value: readarrTotals.missingBooks },
-						{ label: "Disk Usage", value: formatPercent(readarrTotals.diskPercent) },
-					]}
+					stats={
+						incompleteServices.includes("readarr")
+							? []
+							: [
+									{ label: "Authors", value: readarrTotals.totalAuthors },
+									{
+										label: "Downloaded",
+										value: formatPercent(readarrTotals.downloadPercent),
+										highlight: true,
+									},
+									{ label: "Missing", value: readarrTotals.missingBooks },
+									{ label: "Disk Usage", value: formatPercent(readarrTotals.diskPercent) },
+								]
+					}
 				/>
 				<ServiceQuickCard
 					name="Prowlarr"
 					icon={Globe}
 					gradient={SERVICE_GRADIENTS.prowlarr}
+					statusMessage={
+						incompleteServices.includes("prowlarr") ? statisticsUnavailableMessage : undefined
+					}
 					onViewDetails={() => onSwitchTab("prowlarr")}
-					stats={[
-						{ label: "Indexers", value: prowlarrTotals.totalIndexers },
-						{ label: "Active", value: prowlarrTotals.activeIndexers, highlight: true },
-						{ label: "Total Queries", value: prowlarrTotals.totalQueries },
-						{ label: "Grab Rate", value: formatPercent(prowlarrTotals.grabRate) },
-					]}
+					stats={
+						incompleteServices.includes("prowlarr")
+							? []
+							: [
+									{ label: "Indexers", value: prowlarrTotals.totalIndexers },
+									{ label: "Active", value: prowlarrTotals.activeIndexers, highlight: true },
+									{ label: "Total Queries", value: prowlarrTotals.totalQueries },
+									{ label: "Grab Rate", value: formatPercent(prowlarrTotals.grabRate) },
+								]
+					}
 				/>
 				{hasTautulli && (
 					<ServiceQuickCard

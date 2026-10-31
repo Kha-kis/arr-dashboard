@@ -55,6 +55,7 @@ export const registerSyncRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		const statuses = instances.map((instance) => {
 			const status = instance.librarySyncStatus;
+			const syncInProgress = scheduler.isInstanceSyncing(instance.id);
 			return {
 				instanceId: instance.id,
 				instanceName: instance.label,
@@ -63,8 +64,11 @@ export const registerSyncRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					? {
 							lastFullSync: status.lastFullSync?.toISOString() ?? null,
 							lastSyncDurationMs: status.lastSyncDurationMs,
-							syncInProgress: status.syncInProgress || scheduler.isInstanceSyncing(instance.id),
-							lastError: status.lastError,
+							syncInProgress,
+							lastError:
+								status.syncInProgress && !syncInProgress
+									? "Previous library sync was interrupted; cached data is last known."
+									: status.lastError,
 							itemCount: status.itemCount,
 							pollingEnabled: status.pollingEnabled,
 							pollingIntervalMins: status.pollingIntervalMins,
@@ -72,7 +76,7 @@ export const registerSyncRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					: {
 							lastFullSync: null,
 							lastSyncDurationMs: null,
-							syncInProgress: scheduler.isInstanceSyncing(instance.id),
+							syncInProgress,
 							lastError: null,
 							itemCount: 0,
 							pollingEnabled: true,

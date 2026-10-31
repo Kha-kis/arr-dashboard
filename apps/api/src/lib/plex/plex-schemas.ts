@@ -5,7 +5,9 @@
  * All schemas use z.looseObject() to tolerate extra fields across Plex versions.
  */
 
+import { getSessionBandwidthKbps } from "@arr/shared";
 import { z } from "zod";
+import { normalizePlexSessionUserId } from "./plex-session-identity.js";
 
 const plexPaginationFields = {
 	offset: z.coerce.number().int().nonnegative().refine(Number.isSafeInteger),
@@ -342,54 +344,67 @@ export const plexOnDeckResponseSchema = z.looseObject({
  * Use z.coerce.string() / z.coerce.number() for defensive parsing of fields
  * that may arrive as either type. Player fields are optional with defaults
  * because some clients (PlexAmp, web player) don't report all device metadata.
- * Note: official API docs type User.id as string, but this codebase consumes
- * it as number (PlexSessionItem.user.id) — coerce handles both safely.
+ * User.id is an opaque string coordinate. Safe numeric variants normalize
+ * losslessly; missing/malformed optional identity cannot discard a usable session.
  */
 export const plexSessionsResponseSchema = z.looseObject({
-	MediaContainer: z.looseObject({
-		size: z.number().optional(),
-		Metadata: z
-			.array(
-				z.looseObject({
-					sessionKey: z.coerce.string(),
-					ratingKey: z.coerce.string(),
-					title: z.string().optional().default(""),
-					grandparentTitle: z.string().optional(),
-					type: z.string().optional().default("unknown"),
-					viewOffset: z.number().optional(),
-					duration: z.number().optional(),
-					thumb: z.string().optional(),
-					User: z
-						.looseObject({
-							id: z.coerce.number(),
-							title: z.string().optional().default(""),
-							thumb: z.string().optional(),
-						})
-						.optional(),
-					Player: z
-						.looseObject({
-							title: z.string().optional().default(""),
-							platform: z.string().optional().default("unknown"),
-							product: z.string().optional().default("unknown"),
-							state: z.string().optional().default("unknown"),
-						})
-						.optional(),
-					Session: z
-						.looseObject({
-							id: z.coerce.string(),
-							bandwidth: z.number().optional(),
-						})
-						.optional(),
-					TranscodeSession: z
-						.looseObject({
-							videoDecision: z.string().optional(),
-							audioDecision: z.string().optional(),
-						})
-						.optional(),
-				}),
-			)
-			.optional(),
-	}),
+	MediaContainer: z
+		.looseObject({
+			size: z.number().optional(),
+			Metadata: z
+				.array(
+					z.looseObject({
+						sessionKey: z.coerce.string(),
+						ratingKey: z.coerce.string(),
+						title: z.string().optional().default(""),
+						grandparentTitle: z.string().optional(),
+						type: z.string().optional().default("unknown"),
+						viewOffset: z.number().optional(),
+						duration: z.number().optional(),
+						thumb: z.string().optional(),
+						User: z
+							.unknown()
+							.transform((value) => {
+								if (value === null || typeof value !== "object" || Array.isArray(value))
+									return undefined;
+								const user = value as Record<string, unknown>;
+								return {
+									id: normalizePlexSessionUserId(user.id),
+									title: typeof user.title === "string" ? user.title : "",
+									thumb: typeof user.thumb === "string" ? user.thumb : undefined,
+								};
+							})
+							.optional(),
+						Player: z
+							.looseObject({
+								title: z.string().optional().default(""),
+								platform: z.string().optional().default("unknown"),
+								product: z.string().optional().default("unknown"),
+								state: z.string().optional().default("unknown"),
+							})
+							.optional(),
+						Session: z
+							.looseObject({
+								id: z.coerce.string(),
+								bandwidth: z
+									.unknown()
+									.transform((value) => getSessionBandwidthKbps(value) ?? undefined)
+									.optional(),
+							})
+							.optional(),
+						// Measurements are projected field by field so malformed optional
+						// evidence cannot discard otherwise usable session identity.
+						Media: z.unknown().optional(),
+						TranscodeSession: z.unknown().optional(),
+					}),
+				)
+				.optional(),
+		})
+		.refine(
+			({ size, Metadata }) =>
+				Metadata === undefined ? size === 0 : size === undefined || size === Metadata.length,
+			{ message: "Plex session list completeness cannot be verified" },
+		),
 });
 
 /** /library/metadata/{id}/allLeaves endpoint */

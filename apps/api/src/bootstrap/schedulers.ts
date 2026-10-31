@@ -1,15 +1,19 @@
 import type { FastifyInstance } from "fastify";
+import { registerRestoreBootstrapPlugin } from "../lib/backup/restore-runtime-bootstrap.js";
 import autoTagSchedulerPlugin from "../plugins/auto-tag-scheduler.js";
 import backupSchedulerPlugin from "../plugins/backup-scheduler.js";
 import historyCollectionSchedulerPlugin from "../plugins/history-collection-scheduler.js";
 import huntingSchedulerPlugin from "../plugins/hunting-scheduler.js";
+import importOperationSchedulerPlugin from "../plugins/import-operation-scheduler.js";
 import infoHashBackfillSchedulerPlugin from "../plugins/infohash-backfill-scheduler.js";
 import insightsDigestSchedulerPlugin from "../plugins/insights-digest-scheduler.js";
 import jellyfinCacheSchedulerPlugin from "../plugins/jellyfin-cache-scheduler.js";
 import jellyfinEpisodeCacheSchedulerPlugin from "../plugins/jellyfin-episode-cache-scheduler.js";
+import jellyfinPositiveWatchSchedulerPlugin from "../plugins/jellyfin-positive-watch-scheduler.js";
 import labelSyncSchedulerPlugin from "../plugins/label-sync-scheduler.js";
 import libraryCleanupSchedulerPlugin from "../plugins/library-cleanup-scheduler.js";
 import librarySyncSchedulerPlugin from "../plugins/library-sync-scheduler.js";
+import nativeInventorySchedulerPlugin from "../plugins/native-inventory-scheduler.js";
 import plexCacheSchedulerPlugin from "../plugins/plex-cache-scheduler.js";
 import plexEpisodeCacheSchedulerPlugin from "../plugins/plex-episode-cache-scheduler.js";
 import queueCleanerSchedulerPlugin from "../plugins/queue-cleaner-scheduler.js";
@@ -34,48 +38,51 @@ import trashUpdateSchedulerPlugin from "../plugins/trash-update-scheduler.js";
  */
 export function registerSchedulers(app: FastifyInstance): void {
 	// Backups + session lifecycle
-	app.register(backupSchedulerPlugin);
-	app.register(sessionCleanupPlugin);
-	app.register(sessionSnapshotSchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, backupSchedulerPlugin, { readyPhase: "running" });
+	registerRestoreBootstrapPlugin(app, sessionCleanupPlugin);
+	registerRestoreBootstrapPlugin(app, sessionSnapshotSchedulerPlugin);
 
 	// Library sync + automation (ARR side)
-	app.register(librarySyncSchedulerPlugin);
-	app.register(huntingSchedulerPlugin);
-	app.register(queueCleanerSchedulerPlugin);
-	app.register(libraryCleanupSchedulerPlugin);
-	app.register(labelSyncSchedulerPlugin);
-	app.register(autoTagSchedulerPlugin);
-	app.register(tmdbListCacheSchedulerPlugin);
-	app.register(traktListCacheSchedulerPlugin);
-	app.register(insightsDigestSchedulerPlugin);
-	app.register(historyCollectionSchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, librarySyncSchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, huntingSchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, queueCleanerSchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, importOperationSchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, libraryCleanupSchedulerPlugin, { readyPhase: "running" });
+	registerRestoreBootstrapPlugin(app, labelSyncSchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, autoTagSchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, tmdbListCacheSchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, traktListCacheSchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, insightsDigestSchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, historyCollectionSchedulerPlugin);
 
 	// TRaSH Guides sync + cleanup
-	app.register(trashBackupCleanupPlugin);
-	app.register(trashUpdateSchedulerPlugin);
-	app.register(trashSyncSchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, trashBackupCleanupPlugin);
+	registerRestoreBootstrapPlugin(app, trashUpdateSchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, trashSyncSchedulerPlugin, { readyPhase: "running" });
 
 	// Media server caches (Plex / Jellyfin / Tautulli)
-	app.register(plexCacheSchedulerPlugin);
-	app.register(plexEpisodeCacheSchedulerPlugin);
-	app.register(jellyfinCacheSchedulerPlugin);
-	app.register(jellyfinEpisodeCacheSchedulerPlugin);
-	app.register(tautulliCacheSchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, plexCacheSchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, plexEpisodeCacheSchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, jellyfinCacheSchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, jellyfinEpisodeCacheSchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, jellyfinPositiveWatchSchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, nativeInventorySchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, tautulliCacheSchedulerPlugin);
 
 	// Seerr health monitoring
-	app.register(seerrHealthSchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, seerrHealthSchedulerPlugin);
 
 	// qui torrent-state snapshot (powers Library page filter + per-card badge)
-	app.register(quiTorrentStateSchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, quiTorrentStateSchedulerPlugin);
 
 	// qui torrent-list cache pre-warm (one-shot at boot+30s, sequential
 	// per-instance, opt-out via DISABLE_QUI_CACHE_PREWARM). Eliminates the
 	// "first user after restart pays ~3.5s" cliff on the /qui home page;
 	// the SWR cache handles every subsequent request invisibly.
-	app.register(quiCachePrewarmPlugin);
+	registerRestoreBootstrapPlugin(app, quiCachePrewarmPlugin);
 
 	// infoHash backfill (eager — fills LibraryCache.infoHash from *arr history
 	// so the qui sync above has something to correlate against beyond items
 	// the user has actively viewed in the modal)
-	app.register(infoHashBackfillSchedulerPlugin);
+	registerRestoreBootstrapPlugin(app, infoHashBackfillSchedulerPlugin);
 }

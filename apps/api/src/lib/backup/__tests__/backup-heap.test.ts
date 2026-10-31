@@ -1,44 +1,51 @@
 /**
  * Heap-measurement test for v2.18.4 OOM fix.
  *
- * The reporter's bug fired during scheduled backup at ~760 MB heap (768 MB
- * container cap, see Dockerfile:141 `--max-old-space-size=768`). This test
- * seeds a synthetic-large dataset shaped like a heavy install — primarily
- * `huntLog` rows with realistic JSON `details` blobs that were the primary
- * culprit — then runs `createBackup` under the same heap pattern that
- * crashed in production.
+ * Uses 5,000 synthetic huntLog rows and 2,000 huntSearchHistory rows in a
+ * fresh full-schema SQLite database. Calls the real backup/crypto paths.
  *
- * Skipped by default (TEST_HEAP=true to opt in). It's slow (~5–10s) and
- * needs a writable test DB, so we keep it out of the default `pnpm test`
- * loop. Run before tagging a release that touches the backup path.
+ * Opt in from apps/api with TEST_HEAP=true and Vitest options:
+ * --pool=forks --execArgv=--expose-gc --execArgv=--max-old-space-size=768
+ * --maxWorkers=1 --no-file-parallelism
  *
  * What this test proves vs. doesn't:
- *  - PROVES: a 50k-row huntLog table with realistic blobs no longer trips
- *    a 768 MB heap cap during scheduled backup.
- *  - DOES NOT prove: production-shaped data hits the same number; users
- *    with unusual table distributions could still OOM.
+ *  - Measures post-operation heap and post-GC retained growth on this dataset.
+ *  - Checks real encrypted output, scheduled history omission and an explicit
+ *    manual retention limit large enough to include every seeded history row.
+ *  - Does not measure peak heap/RSS or reproduce 50k rows/production data.
+ *    Node's 768 MiB old-space flag is not a 768 MiB process/RSS limit.
  */
 
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
+import { getHeapStatistics } from "node:v8";
+import type { BackupData, BackupFileInfo } from "@arr/shared";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
+import { Encryptor } from "../../auth/encryption.js";
 import type { PrismaClient } from "../../prisma.js";
+import { decryptBackupData, type EncryptedBackupEnvelope } from "../backup-crypto.js";
 import { BackupService } from "../backup-service.js";
 
 const RUN_HEAP_TESTS = process.env.TEST_HEAP === "true";
-
-// Mock encryptor — same shape used by other integration tests.
-const mockEncryptor = {
-	encrypt: vi.fn((value: string) => ({
-		value: Buffer.from(value).toString("base64"),
-		iv: "mock-iv-123",
-	})),
-	decrypt: vi.fn((data: { value: string; iv: string }) =>
-		Buffer.from(data.value, "base64").toString("utf-8"),
-	),
+const execFileAsync = promisify(execFile);
+const TEST_PASSWORD = "synthetic-heap-backup-password";
+const TEST_SECRETS = {
+	encryptionKey: "a".repeat(64),
+	sessionCookieSecret: "synthetic-heap-session-secret".repeat(2),
 };
+const HUNT_LOGS = 5_000;
+const HUNT_HISTORY = 2_000;
+
+function collectGarbage(): void {
+	if (typeof global.gc !== "function") {
+		throw new Error("Heap tests require --execArgv=--expose-gc with the forks pool");
+	}
+	global.gc();
+}
 
 // Synthetic huntLog `details` blob shaped like a real one — search results
 // from arr-sdk include indexer name, release title, size, indexer flags,
@@ -63,7 +70,7 @@ function makeRealisticDetailsBlob(seed: number): string {
 }
 
 (RUN_HEAP_TESTS ? describe : describe.skip)(
-	"BackupService — heap measurement under production-shaped load (TEST_HEAP=true)",
+	"BackupService — synthetic 5k/2k heap checks (TEST_HEAP=true)",
 	() => {
 		let prisma: PrismaClient;
 		let backupService: BackupService;
@@ -72,23 +79,53 @@ function makeRealisticDetailsBlob(seed: number): string {
 		let testDbPath: string;
 
 		beforeAll(async () => {
+			collectGarbage();
+			// V8 accepts underscores too, and later duplicate flags override earlier ones.
+			const oldSpaceFlags = process.execArgv.filter((argument) =>
+				/^--max[-_]old[-_]space[-_]size(?:=|$)/.test(argument),
+			);
+			if (oldSpaceFlags.length !== 1 || oldSpaceFlags[0] !== "--max-old-space-size=768") {
+				throw new Error("Heap tests require exactly one --execArgv=--max-old-space-size=768");
+			}
+			console.log({
+				gcAvailable: true,
+				oldSpaceFlagMiB: 768,
+				observedHeapLimitMiB: getHeapStatistics().heap_size_limit / 1024 / 1024,
+			});
+			vi.stubEnv("NODE_ENV", "production");
+			vi.stubEnv("BACKUP_PASSWORD", TEST_PASSWORD);
 			// fs.mkdtemp atomically creates a unique directory with mode 0o700 —
 			// avoids the symlink race that path.join+mkdir is vulnerable to (CWE-377/378).
 			testBackupsDir = await fs.mkdtemp(path.join(os.tmpdir(), "backup-heap-"));
 			testSecretsPath = path.join(testBackupsDir, "secrets.json");
 			testDbPath = path.join(testBackupsDir, "heap-test.db");
 
-			// Copy the pre-seeded test DB (which has the schema applied) to a
-			// dedicated heap-test DB file so we don't pollute test-integration.db
-			// with 50k synthetic rows.
-			const sourceDb = path.resolve(import.meta.dirname, "../../../../prisma/test-integration.db");
-			await fs.copyFile(sourceDb, testDbPath);
-
-			await fs.writeFile(testSecretsPath, JSON.stringify({ backupPassword: "x".repeat(32) }));
+			await execFileAsync(
+				"pnpm",
+				[
+					"exec",
+					"prisma",
+					"db",
+					"push",
+					"--schema",
+					"prisma/schema.prisma",
+					"--url",
+					`file:${testDbPath}`,
+				],
+				{
+					cwd: path.resolve(import.meta.dirname, "../../../.."),
+					env: { ...process.env, DATABASE_URL: `file:${testDbPath}` },
+					timeout: 60_000,
+				},
+			);
+			await fs.writeFile(testSecretsPath, JSON.stringify(TEST_SECRETS), { mode: 0o600 });
 
 			prisma = createTestPrismaClient(testDbPath);
-			backupService = new BackupService(prisma, testSecretsPath, mockEncryptor as never);
-			(backupService as unknown as { backupsDir: string }).backupsDir = testBackupsDir;
+			backupService = new BackupService(
+				prisma,
+				testSecretsPath,
+				new Encryptor(TEST_SECRETS.encryptionKey),
+			);
 
 			// Seed a service instance so huntConfig FKs resolve.
 			await prisma.user.create({
@@ -120,9 +157,6 @@ function makeRealisticDetailsBlob(seed: number): string {
 			// + row count that exercises the OOM-prone path. Larger seeds
 			// (50k) would more faithfully reproduce the reporter's scenario,
 			// but keep the test runtime under ~30s for CI feasibility.
-			const HUNT_LOGS = 5000;
-			const HUNT_HISTORY = 2000;
-
 			console.log(`Seeding ${HUNT_LOGS} huntLog rows + ${HUNT_HISTORY} huntSearchHistory rows...`);
 			const seedStart = Date.now();
 
@@ -151,18 +185,45 @@ function makeRealisticDetailsBlob(seed: number): string {
 				searchedAt: new Date(Date.now() - i * 60_000),
 			}));
 			await prisma.huntSearchHistory.createMany({ data: huntHistoryRows });
+			expect(await prisma.huntLog.count()).toBe(HUNT_LOGS);
+			expect(await prisma.huntSearchHistory.count()).toBe(HUNT_HISTORY);
 
 			console.log(`Seed complete in ${Date.now() - seedStart}ms`);
-		});
+		}, 120_000);
 
 		afterAll(async () => {
-			await prisma.$disconnect();
-			await fs.rm(testBackupsDir, { recursive: true, force: true }).catch(() => {});
+			try {
+				await prisma?.$disconnect();
+			} finally {
+				try {
+					if (testBackupsDir) await fs.rm(testBackupsDir, { recursive: true, force: true });
+				} finally {
+					vi.unstubAllEnvs();
+				}
+			}
 		});
 
-		it("scheduled backup stays well under 768 MB heap with operational history excluded", async () => {
+		async function expectBackupHistory(
+			backup: BackupFileInfo,
+			logs: number,
+			history: number,
+		): Promise<void> {
+			const internal = await backupService.getBackupByIdInternal(backup.id);
+			expect(internal).not.toBeNull();
+			const backupPath = path.join(testBackupsDir, "backups", backup.type, backup.filename);
+			expect(internal?.path).toBe(backupPath);
+			expect((await fs.stat(backupPath)).mode & 0o777).toBe(0o600);
+			const envelope: EncryptedBackupEnvelope = JSON.parse(await fs.readFile(backupPath, "utf8"));
+			const restored: BackupData = JSON.parse(await decryptBackupData(envelope, TEST_PASSWORD));
+			expect(restored.data.users).toHaveLength(1);
+			expect(restored.data.serviceInstances).toHaveLength(1);
+			expect(restored.data.huntLogs).toHaveLength(logs);
+			expect(restored.data.huntSearchHistory).toHaveLength(history);
+		}
+
+		it("scheduled backup post-operation heap stays below 400 MiB with history excluded", async () => {
 			// Force GC to a clean baseline. Requires --expose-gc.
-			global.gc?.();
+			collectGarbage();
 			const baseline = process.memoryUsage().heapUsed;
 
 			const before = process.memoryUsage();
@@ -170,7 +231,7 @@ function makeRealisticDetailsBlob(seed: number): string {
 				`Pre-backup heap: ${(before.heapUsed / 1024 / 1024).toFixed(1)} MB / RSS ${(before.rss / 1024 / 1024).toFixed(1)} MB`,
 			);
 
-			await backupService.createBackup("heap-test", "scheduled");
+			const backup = await backupService.createBackup("heap-test", "scheduled");
 
 			const after = process.memoryUsage();
 			console.log(
@@ -187,14 +248,13 @@ function makeRealisticDetailsBlob(seed: number): string {
 			// Generous threshold — the actual delta should be tiny since
 			// we skip the heavy tables entirely.
 			expect(after.heapUsed).toBeLessThan(400 * 1024 * 1024);
+			await expectBackupHistory(backup, 0, 0);
 		});
 
-		it("manual backup with full history stays under 768 MB on this dataset", async () => {
-			// Manual backups load EVERYTHING. With our 5k+2k seed dataset
-			// and ~3KB blob per row, this is ~21 MB of raw row data — well
-			// within the cap. This test pins that manual backups don't
-			// regress for typical heavy users (vs. extreme outliers).
-			global.gc?.();
+		it("manual backup including all seeded history has post-operation heap below 768 MiB", async () => {
+			// The default history cap is 1,000 rows per table. Explicitly request
+			// the full synthetic dataset so the memory check cannot pass by truncation.
+			collectGarbage();
 			const baseline = process.memoryUsage().heapUsed;
 
 			const before = process.memoryUsage();
@@ -202,7 +262,9 @@ function makeRealisticDetailsBlob(seed: number): string {
 				`Pre-manual heap: ${(before.heapUsed / 1024 / 1024).toFixed(1)} MB / RSS ${(before.rss / 1024 / 1024).toFixed(1)} MB`,
 			);
 
-			await backupService.createBackup("heap-test", "manual");
+			const backup = await backupService.createBackup("heap-test", "manual", {
+				historyRetentionLimit: HUNT_LOGS,
+			});
 
 			const after = process.memoryUsage();
 			console.log(
@@ -212,21 +274,22 @@ function makeRealisticDetailsBlob(seed: number): string {
 			const heapDeltaMB = (after.heapUsed - baseline) / 1024 / 1024;
 			console.log(`Manual backup heap delta: ${heapDeltaMB.toFixed(1)} MB`);
 
-			// Hard cap — manual backups must NOT exceed the production heap
-			// limit on a realistic-but-heavy dataset.
+			// Post-operation snapshot only; this assertion does not measure peak heap.
 			expect(after.heapUsed).toBeLessThan(768 * 1024 * 1024);
+			await expectBackupHistory(backup, HUNT_LOGS, HUNT_HISTORY);
 		});
 
-		it("repeated scheduled backups do not leak heap monotonically", async () => {
+		it("five scheduled backups keep post-GC retained growth below 50 MiB", async () => {
 			// 5 successive scheduled backups; heap should return near baseline
 			// between runs (post-GC). Catches regressions where a future
 			// refactor accidentally retains references to the row data.
-			global.gc?.();
+			collectGarbage();
 			const baseline = process.memoryUsage().heapUsed;
 
+			const backups: BackupFileInfo[] = [];
 			for (let i = 0; i < 5; i++) {
-				await backupService.createBackup("heap-test", "scheduled");
-				global.gc?.();
+				backups.push(await backupService.createBackup("heap-test", "scheduled"));
+				collectGarbage();
 			}
 
 			const final = process.memoryUsage().heapUsed;
@@ -236,6 +299,8 @@ function makeRealisticDetailsBlob(seed: number): string {
 			// Allow up to 50 MB of growth — small drift is normal due to V8
 			// internal allocations, but anything more suggests a leak.
 			expect(final - baseline).toBeLessThan(50 * 1024 * 1024);
+			expect(new Set(backups.map((backup) => backup.id)).size).toBe(5);
+			for (const backup of backups) await expectBackupHistory(backup, 0, 0);
 		});
 	},
 );

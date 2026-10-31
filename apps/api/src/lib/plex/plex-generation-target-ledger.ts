@@ -261,6 +261,32 @@ export async function readPlexGenerationTargets(
 	return await readPlexGenerationTargetsForSelection(prisma, scope);
 }
 
+/** Reads all instance targets for transaction-local reuse, exposing surplus/crossed generations. */
+export async function readPlexGenerationTargetsForReuse(
+	prisma: Pick<PrismaClientInstance, "plexGenerationTarget">,
+	instanceId: string,
+	expectedCount: number,
+): Promise<PlexGenerationTarget[] | null> {
+	const targets: PlexGenerationTarget[] = [];
+	let cursor: string | undefined;
+	while (true) {
+		const take = Math.min(PLEX_TARGET_LEDGER_READ_PAGE_SIZE, expectedCount - targets.length + 1);
+		const page = await prisma.plexGenerationTarget.findMany({
+			// Deliberately not generation-filtered: old/crossed/surplus rows must remain visible.
+			where: { instanceId },
+			orderBy: { id: "asc" },
+			take,
+			...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+		});
+		if (page.length > take || targets.length + page.length > expectedCount) return null;
+		targets.push(...page.map(({ id: _id, ...target }) => target as PlexGenerationTarget));
+		if (page.length < take) return targets;
+		const next = page.at(-1)?.id;
+		if (!next || next === cursor) return null;
+		cursor = next;
+	}
+}
+
 /** Reads only the exact logical targets a caller needs, in bounded pages. */
 export async function readPlexGenerationTargetsForSelection(
 	prisma: Pick<PrismaClientInstance, "plexGenerationTarget">,

@@ -163,6 +163,36 @@ export type JellyfinEvidencePrisma = {
 			cursor?: { id: string };
 		}): Promise<JellyfinEpisodeRow[]>;
 	};
+	jellyfinEpisodeGenerationRow?: {
+		findMany(args: {
+			where: { instanceId: string; generationId: string; instance: { userId: string } };
+			select: typeof EPISODE_ROW_SELECT;
+			take: number;
+			orderBy: { id: "asc" };
+			skip?: number;
+			cursor?: { id: string };
+		}): Promise<JellyfinEpisodeRow[]>;
+	};
+	jellyfinEpisodePreparation?: {
+		findUnique(args: {
+			where: { runId: string };
+			select: {
+				instanceId: true;
+				generationId: true;
+				state: true;
+				expectedRowCount: true;
+				contentFingerprint: true;
+				observedAt: true;
+			};
+		}): Promise<{
+			instanceId: string;
+			generationId: string;
+			state: string;
+			expectedRowCount: number | null;
+			contentFingerprint: string | null;
+			observedAt: Date | null;
+		} | null>;
+	};
 };
 
 export type JellyfinObservationInput = {
@@ -243,7 +273,12 @@ type StrictPublication<Row, Metadata extends JellyfinMetadata> = {
 
 export type TransactionReader = Pick<
 	JellyfinEvidencePrisma,
-	"serviceInstance" | "cacheRefreshStatus" | "jellyfinCache" | "jellyfinEpisodeCache"
+	| "serviceInstance"
+	| "cacheRefreshStatus"
+	| "jellyfinCache"
+	| "jellyfinEpisodeCache"
+	| "jellyfinEpisodeGenerationRow"
+	| "jellyfinEpisodePreparation"
 >;
 
 function validDate(value: unknown): value is Date {
@@ -436,6 +471,7 @@ async function readRows(
 	instanceId: string,
 	userId: string,
 	cacheType: JellyfinCacheType,
+	generationId?: string,
 ): Promise<JellyfinLibraryRow[] | JellyfinEpisodeRow[]> {
 	const rows: EvidenceRow[] = [];
 	let cursor: string | undefined;
@@ -450,13 +486,21 @@ async function readRows(
 						orderBy: { id: "asc" },
 						...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
 					})
-				: await tx.jellyfinEpisodeCache.findMany({
-						where: { instanceId, instance: { userId } },
-						select: EPISODE_ROW_SELECT,
-						take: JELLYFIN_EVIDENCE_READ_PAGE_SIZE,
-						orderBy: { id: "asc" },
-						...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-					});
+				: generationId
+					? ((await tx.jellyfinEpisodeGenerationRow?.findMany({
+							where: { instanceId, generationId, instance: { userId } },
+							select: EPISODE_ROW_SELECT,
+							take: JELLYFIN_EVIDENCE_READ_PAGE_SIZE,
+							orderBy: { id: "asc" },
+							...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+						})) ?? [])
+					: await tx.jellyfinEpisodeCache.findMany({
+							where: { instanceId, instance: { userId } },
+							select: EPISODE_ROW_SELECT,
+							take: JELLYFIN_EVIDENCE_READ_PAGE_SIZE,
+							orderBy: { id: "asc" },
+							...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+						});
 		if (page.length === 0) break;
 		if (
 			page.length > JELLYFIN_EVIDENCE_READ_PAGE_SIZE ||
@@ -871,8 +915,24 @@ async function readOwnedJellyfinObservationCore(
 		);
 	}
 	let rows: JellyfinLibraryRow[] | JellyfinEpisodeRow[];
+	const decodedEpisode =
+		input.cacheType === "jellyfin_episode" &&
+		input.mode === "mutation" &&
+		status?.generationMetadata
+			? decodeJellyfinEpisodeGenerationMetadata(status.generationMetadata)
+			: null;
+	const generationScopedMutation =
+		decodedEpisode?.ok &&
+		decodedEpisode.metadata.version === 4 &&
+		decodedEpisode.metadata.publicationLevel === "authoritative";
 	try {
-		rows = await readRows(tx, instance.id, input.userId, input.cacheType);
+		rows = await readRows(
+			tx,
+			instance.id,
+			input.userId,
+			input.cacheType,
+			generationScopedMutation ? (status?.generationId ?? undefined) : undefined,
+		);
 	} catch {
 		return resultFor(
 			instance,
@@ -1031,6 +1091,41 @@ async function readOwnedJellyfinObservationCore(
 			false,
 			false,
 		);
+	}
+	if (generationScopedMutation) {
+		const preparation = status?.generationId
+			? await tx.jellyfinEpisodePreparation?.findUnique({
+					where: { runId: status.generationId },
+					select: {
+						instanceId: true,
+						generationId: true,
+						state: true,
+						expectedRowCount: true,
+						contentFingerprint: true,
+						observedAt: true,
+					},
+				})
+			: null;
+		if (
+			preparation?.instanceId !== instance.id ||
+			preparation.generationId !== status?.generationId ||
+			preparation.state !== "published" ||
+			preparation.expectedRowCount !== status.itemCount ||
+			preparation.contentFingerprint !== strict.metadata.contentFingerprint ||
+			preparation.observedAt?.getTime() !== status.lastRefreshedAt?.getTime()
+		) {
+			return resultFor(
+				instance,
+				input.cacheType,
+				input.mode,
+				status,
+				strict.metadata,
+				[],
+				unavailableStatus("rows-inconsistent"),
+				false,
+				false,
+			);
+		}
 	}
 	let episodeParentCurrent = true;
 	if (input.cacheType === "jellyfin_episode") {

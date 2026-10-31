@@ -16,3 +16,9 @@ onlyBuiltDependencies:
 minimumReleaseAge: 10080
 trustPolicy: no-downgrade
 blockExoticSubdeps: true
+
+# Fail installation if the version-scoped security backport stops applying.
+allowUnusedPatches: false
+ignorePatchFailures: false
+patchedDependencies:
+  braces@3.0.3: patches/braces@3.0.3.patch

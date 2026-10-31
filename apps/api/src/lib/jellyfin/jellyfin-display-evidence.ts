@@ -4,6 +4,7 @@ import {
 	providerObservationSourceStatusSchema,
 } from "@arr/shared";
 import type { ServiceInstance } from "../prisma.js";
+import type { PrismaClient } from "../prisma.js";
 import {
 	type JellyfinEpisodeObservation,
 	type JellyfinEpisodeRow,
@@ -12,6 +13,7 @@ import {
 	type JellyfinObservation,
 	readOwnedJellyfinObservation,
 } from "./jellyfin-evidence-repository.js";
+import { readOwnedGenerationScopedEpisodeDisplay } from "./jellyfin-generation-scoped-display.js";
 
 export type JellyfinDisplayInstance = Pick<ServiceInstance, "id" | "label"> & {
 	service: "JELLYFIN" | "EMBY";
@@ -205,12 +207,13 @@ export async function readOwnedJellyfinLibraryDisplaySources({
 }
 
 export type ReadOwnedJellyfinEpisodeDisplaySourcesInput =
-	ReadOwnedJellyfinLibraryDisplaySourcesInput;
+	ReadOwnedJellyfinLibraryDisplaySourcesInput & { showTmdbIds?: readonly number[] };
 
 export async function readOwnedJellyfinEpisodeDisplaySources({
 	prisma,
 	userId,
 	instances,
+	showTmdbIds,
 	now,
 	maxAgeMs,
 }: ReadOwnedJellyfinEpisodeDisplaySourcesInput): Promise<JellyfinEpisodeDisplayEvidence> {
@@ -221,7 +224,18 @@ export async function readOwnedJellyfinEpisodeDisplaySources({
 		instances.map(async (instance) => {
 			let observation: JellyfinObservation | null;
 			try {
-				observation = await readOwnedJellyfinObservation({
+				observation =
+					typeof (prisma as { $transaction?: unknown }).$transaction === "function"
+						? await readOwnedGenerationScopedEpisodeDisplay({
+								prisma: prisma as unknown as PrismaClient,
+								userId,
+								instanceId: instance.id,
+								showTmdbIds,
+								now: effectiveNow,
+								maxAgeMs,
+							})
+						: null;
+				observation ??= await readOwnedJellyfinObservation({
 					prisma,
 					userId,
 					instanceId: instance.id,

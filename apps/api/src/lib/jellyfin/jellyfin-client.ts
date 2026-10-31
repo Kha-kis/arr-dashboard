@@ -5,6 +5,7 @@
  * Jellyfin uses the Authorization: MediaBrowser header format.
  */
 
+import { setTimeout as delay } from "node:timers/promises";
 import type { FastifyBaseLogger } from "fastify";
 import type { z } from "zod";
 import type { ClientInstanceData } from "../arr/client-factory.js";
@@ -17,6 +18,11 @@ import {
 } from "../provider-observation/native-inventory.js";
 import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import { parseUpstreamOrThrow, UpstreamValidationError } from "../validation/parse-upstream.js";
+import {
+	awaitJellyfinRead,
+	discardLateJellyfinResponse,
+	readJellyfinJson,
+} from "./jellyfin-read-deadline.js";
 import {
 	jellyfinEpisodeItemsPageSchema,
 	jellyfinItemDetailSchema,
@@ -35,6 +41,10 @@ import {
 	jellyfinTargetWatchItemSchema,
 	jellyfinUsersResponseSchema,
 } from "./jellyfin-schemas.js";
+import {
+	type JellyfinSessionSourceQuality,
+	readJellyfinSessionSourceQuality,
+} from "./jellyfin-session-source-quality.js";
 
 // ============================================================================
 // Response Types
@@ -110,9 +120,11 @@ export interface JellyfinSession {
 	/** Total duration of the current item (milliseconds, converted from ticks) */
 	durationMs: number;
 	nowPlayingItem?: JellyfinItem;
+	/** Active source tracks, not encoded output or a network-rate estimate. */
+	sourceQuality?: JellyfinSessionSourceQuality;
 	transcodingInfo?: {
-		isVideoDirect: boolean;
-		isAudioDirect: boolean;
+		isVideoDirect?: boolean;
+		isAudioDirect?: boolean;
 		bitrate?: number;
 		width?: number;
 		height?: number;
@@ -129,8 +141,157 @@ const DEFAULT_TIMEOUT = 15_000;
 const DEVICE_ID = "arr-dashboard-server";
 const CLIENT_NAME = "Arr Control Center";
 const COMPLETE_ITEMS_PAGE_SIZE = 1000;
+const NATIVE_EPISODE_PAGE_SIZE = 2000;
+const DURABLE_EPISODE_MAX_PAGE_SIZE = 2000;
 const COMPLETE_ITEMS_MAX = 100_000;
 const NATIVE_PAGE_RETRY_DELAYS_MS = [1000, 2000] as const;
+
+type ProviderReadFailurePhase = "request" | "response" | "body" | "validation";
+type ProviderReadFailureKind =
+	| "timeout"
+	| "aborted"
+	| "transport"
+	| "http-error"
+	| "unexpected-content-type"
+	| "invalid-json"
+	| "schema"
+	| "unavailable";
+
+class JellyfinBodyReadError extends Error {
+	constructor(readonly kind: "timeout" | "transport") {
+		super(
+			kind === "timeout"
+				? "Jellyfin response body timed out"
+				: "Jellyfin response body transport failed",
+		);
+		this.name = "JellyfinBodyReadError";
+	}
+}
+
+function providerReadTime(): number {
+	try {
+		return performance.now();
+	} catch {
+		return 0;
+	}
+}
+
+function providerReadTransportCode(value: unknown) {
+	switch (value) {
+		case "ECONNRESET":
+		case "ECONNREFUSED":
+		case "ENOTFOUND":
+		case "EAI_AGAIN":
+		case "ETIMEDOUT":
+		case "EPIPE":
+		case "UND_ERR_CONNECT_TIMEOUT":
+		case "UND_ERR_HEADERS_TIMEOUT":
+		case "UND_ERR_BODY_TIMEOUT":
+		case "UND_ERR_SOCKET":
+		case "UND_ERR_ABORTED":
+			return value;
+		default:
+			return null;
+	}
+}
+
+function classifyProviderReadFailure(error: unknown, phase: ProviderReadFailurePhase) {
+	try {
+		if (phase === "validation") {
+			return {
+				kind: error instanceof UpstreamValidationError ? "schema" : "unavailable",
+				transportCode: null,
+			} as const;
+		}
+		if (typeof error !== "object" || error === null) {
+			return { kind: "unavailable", transportCode: null } as const;
+		}
+		// Only exact names and one allowlisted code are observed, never error text.
+		const failure = error as { name?: unknown; code?: unknown; cause?: unknown };
+		const name = failure.name;
+		let transportCode = providerReadTransportCode(failure.code);
+		if (transportCode === null) {
+			const cause = failure.cause;
+			if (typeof cause === "object" && cause !== null) {
+				transportCode = providerReadTransportCode((cause as { code?: unknown }).code);
+			}
+		}
+		const kind: ProviderReadFailureKind =
+			name === "TimeoutError"
+				? "timeout"
+				: name === "AbortError"
+					? "aborted"
+					: error instanceof TypeError || transportCode !== null
+						? "transport"
+						: phase === "body" && error instanceof SyntaxError
+							? "invalid-json"
+							: "unavailable";
+		return { kind, transportCode };
+	} catch {
+		// Hostile error getters must not replace the original request outcome.
+		return { kind: "unavailable", transportCode: null } as const;
+	}
+}
+
+function isValidNativeInventoryPage(
+	page: { Items: Array<{ Id: string }>; StartIndex: number; TotalRecordCount: number },
+	startIndex: number,
+	limit: number,
+): boolean {
+	if (
+		!Number.isSafeInteger(page.StartIndex) ||
+		page.StartIndex !== startIndex ||
+		!Number.isSafeInteger(page.TotalRecordCount) ||
+		page.TotalRecordCount < 0 ||
+		page.TotalRecordCount > COMPLETE_ITEMS_MAX ||
+		startIndex > page.TotalRecordCount ||
+		page.Items.length > limit ||
+		startIndex + page.Items.length > page.TotalRecordCount ||
+		(page.Items.length === 0 && startIndex < page.TotalRecordCount)
+	) {
+		return false;
+	}
+	const ids = new Set<string>();
+	for (const item of page.Items) {
+		if (!item.Id.trim() || ids.has(item.Id)) return false;
+		ids.add(item.Id);
+	}
+	return true;
+}
+
+function logNativeEpisodePageTiming(
+	log: FastifyBaseLogger,
+	fields: {
+		category: "native-episode-page-timing";
+		page: number;
+		rows: number;
+		elapsedMs: number;
+		status: "complete" | "failed";
+	},
+): void {
+	try {
+		log.info?.(fields, "Jellyfin native episode page read timing");
+	} catch {
+		// Diagnostic telemetry must not change provider-read or publication outcomes.
+	}
+}
+
+function logNativeInventoryPageTiming(
+	log: FastifyBaseLogger,
+	fields: {
+		category: "native-inventory-page-timing";
+		domain: "library" | "episode";
+		rows: number;
+		elapsedMs: number;
+		status: "complete" | "failed";
+	},
+): void {
+	try {
+		log.info?.(fields, "Jellyfin native inventory page read timing");
+	} catch {
+		// Timing telemetry cannot change the provider-read result.
+	}
+}
 
 function jellyfinExternalIds(
 	providerIds: Readonly<Record<string, string>> | undefined,
@@ -155,6 +316,25 @@ export interface JellyfinCompleteItemsResult {
 	reason: "page-failure" | null;
 }
 
+export type JellyfinLibraryReadStage =
+	| "request-start"
+	| "headers-received"
+	| "body-read"
+	| "validation"
+	| "page-accepted"
+	| "items-mapped";
+
+function observeLibraryReadStage(
+	observer: ((stage: JellyfinLibraryReadStage) => void) | undefined,
+	stage: JellyfinLibraryReadStage,
+): void {
+	try {
+		observer?.(stage);
+	} catch {
+		// Optional diagnostics cannot change provider reads or completeness.
+	}
+}
+
 export interface JellyfinNativeLibraryCoverageResult {
 	items: JellyfinNativeLibraryItem[];
 	expectedRawCount: number | null;
@@ -172,6 +352,26 @@ export interface JellyfinNativeEpisodeCoverageResult {
 	rawObserved: number;
 	reason: "page-failure" | null;
 }
+
+export type JellyfinNativeInventoryPageResult =
+	| {
+			status: "page";
+			domain: "library";
+			startIndex: number;
+			totalRecordCount: number;
+			items: JellyfinNativeLibraryItem[];
+	  }
+	| {
+			status: "page";
+			domain: "episode";
+			startIndex: number;
+			totalRecordCount: number;
+			items: JellyfinNativeEpisodeItem[];
+	  }
+	| {
+			status: "unavailable";
+			reason: "deadline-exceeded" | "provider-unavailable" | "coverage-incomplete";
+	  };
 
 export interface JellyfinEpisodeCoverageResult extends JellyfinCompleteItemsResult {
 	failureMessage?: string;
@@ -270,6 +470,7 @@ export class JellyfinClient {
 	private readonly log: FastifyBaseLogger;
 	private readonly timeout: number;
 	private readonly httpAuthHeaders: Record<string, string>;
+	private readonly sessionProvider: "JELLYFIN" | "EMBY";
 	private readonly mutationTargets = new WeakMap<
 		JellyfinMutationTargetSnapshot,
 		StoredMutationTarget
@@ -281,12 +482,15 @@ export class JellyfinClient {
 		log: FastifyBaseLogger,
 		timeout = DEFAULT_TIMEOUT,
 		httpAuthHeaders: Record<string, string> = {},
+		sessionProvider: "JELLYFIN" | "EMBY" = "JELLYFIN",
+		private readonly readSignal?: AbortSignal,
 	) {
 		this.baseUrl = baseUrl.replace(/\/$/, "");
 		this.apiKey = apiKey;
 		this.log = log;
 		this.timeout = timeout;
 		this.httpAuthHeaders = httpAuthHeaders;
+		this.sessionProvider = sessionProvider;
 	}
 
 	/**
@@ -350,6 +554,7 @@ export class JellyfinClient {
 	/** Get the server's complete native media-folder inventory. */
 	async getNativeMediaFolders(options?: {
 		mutationValidation?: boolean;
+		timeoutMs?: number;
 	}): Promise<JellyfinLibrary[]> {
 		const data = options?.mutationValidation
 			? await this.mutationRequest("/Library/MediaFolders", {
@@ -357,6 +562,7 @@ export class JellyfinClient {
 				})
 			: await this.request("/Library/MediaFolders", {
 					schema: jellyfinNativeMediaFoldersResponseSchema,
+					...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
 				});
 		if (data.Items.length !== data.TotalRecordCount) {
 			throw new Error("Jellyfin native media-folder inventory was not returned completely");
@@ -404,11 +610,16 @@ export class JellyfinClient {
 	async getLibraryItemsWithCoverage(
 		userId: string,
 		libraryId: string,
-		options?: { includeItemTypes?: string },
+		options?: {
+			includeItemTypes?: string;
+			onReadStage?: (stage: JellyfinLibraryReadStage) => void;
+		},
 	): Promise<JellyfinCompleteItemsResult> {
 		const result = await this.getLibraryItemsWithRawCoverage(userId, libraryId, options);
+		const items = result.reason === null ? result.items.map(mapItem) : [];
+		if (result.reason === null) observeLibraryReadStage(options?.onReadStage, "items-mapped");
 		return {
-			items: result.reason === null ? result.items.map(mapItem) : [],
+			items,
 			expectedRawCount: result.expectedRawCount,
 			pagesAttempted: result.pagesAttempted,
 			pagesCompleted: result.pagesCompleted,
@@ -479,6 +690,7 @@ export class JellyfinClient {
 	 */
 	async getNativeEpisodeItemsWithCoverage(
 		libraryId: string,
+		timeBudgetMs?: number,
 	): Promise<JellyfinNativeEpisodeCoverageResult> {
 		const params = new URLSearchParams({
 			ParentId: libraryId,
@@ -497,6 +709,10 @@ export class JellyfinClient {
 				page.StartIndex === requestedStartIndex
 					? undefined
 					: "Jellyfin native episode page cursor is invalid",
+			false,
+			true,
+			NATIVE_EPISODE_PAGE_SIZE,
+			timeBudgetMs,
 		);
 		return {
 			items:
@@ -520,10 +736,136 @@ export class JellyfinClient {
 		};
 	}
 
+	/** One bounded native provider page; cross-page agreement belongs to the durable runner. */
+	async readNativeInventoryPage(input: {
+		domain: "library" | "episode";
+		libraryId: string;
+		includeItemTypes?: JellyfinNativeLibraryIncludeItemTypes;
+		startIndex: number;
+		limit: number;
+		deadlineAt: number;
+	}): Promise<JellyfinNativeInventoryPageResult> {
+		if (
+			(input.domain !== "library" && input.domain !== "episode") ||
+			typeof input.libraryId !== "string" ||
+			input.libraryId.length === 0 ||
+			input.libraryId.length > 1024 ||
+			input.libraryId.includes("\0") ||
+			!Number.isSafeInteger(input.startIndex) ||
+			input.startIndex < 0 ||
+			!Number.isSafeInteger(input.limit) ||
+			input.limit < 1 ||
+			input.limit > 2_000 ||
+			!Number.isFinite(input.deadlineAt)
+		) {
+			throw new Error("Jellyfin native page input is invalid");
+		}
+		if (Date.now() >= input.deadlineAt) {
+			return { status: "unavailable", reason: "deadline-exceeded" };
+		}
+		const params = new URLSearchParams({
+			ParentId: input.libraryId,
+			IncludeItemTypes:
+				input.domain === "episode" ? "Episode" : (input.includeItemTypes ?? "Movie,Series,BoxSet"),
+			Recursive: "true",
+			CollapseBoxSetItems: "false",
+			EnableUserData: "false",
+			EnableImages: "false",
+			StartIndex: String(input.startIndex),
+			Limit: String(input.limit),
+		});
+		if (input.domain === "library") params.set("Fields", "ProviderIds");
+		const startedAt = Date.now();
+		try {
+			const timeoutMs = Math.max(1, input.deadlineAt - Date.now());
+			if (input.domain === "library") {
+				const page = await this.request(`/Items?${params.toString()}`, {
+					schema: jellyfinNativeLibraryItemsResponseSchema,
+					timeoutMs,
+				});
+				if (!isValidNativeInventoryPage(page, input.startIndex, input.limit)) {
+					return { status: "unavailable", reason: "coverage-incomplete" };
+				}
+				const items = page.Items.map((item) => {
+					const externalIds = jellyfinExternalIds(item.ProviderIds);
+					return {
+						id: item.Id,
+						type: item.Type,
+						name: item.Name,
+						...(hasNativeInventoryExternalIds(externalIds) ? { externalIds } : {}),
+					};
+				});
+				logNativeInventoryPageTiming(this.log, {
+					category: "native-inventory-page-timing",
+					domain: input.domain,
+					rows: items.length,
+					elapsedMs: Date.now() - startedAt,
+					status: "complete",
+				});
+				return {
+					status: "page",
+					domain: "library",
+					startIndex: page.StartIndex,
+					totalRecordCount: page.TotalRecordCount,
+					items,
+				};
+			}
+			const page = await this.request(`/Items?${params.toString()}`, {
+				schema: jellyfinNativeEpisodeItemsResponseSchema,
+				timeoutMs,
+			});
+			if (!isValidNativeInventoryPage(page, input.startIndex, input.limit)) {
+				return { status: "unavailable", reason: "coverage-incomplete" };
+			}
+			const items = page.Items.map((item) => ({
+				id: item.Id,
+				type: item.Type,
+				name: item.Name,
+				...(item.SeriesId ? { seriesId: item.SeriesId } : {}),
+				...(item.ParentIndexNumber !== undefined ? { seasonNumber: item.ParentIndexNumber } : {}),
+				...(item.IndexNumber !== undefined ? { episodeNumber: item.IndexNumber } : {}),
+			}));
+			logNativeInventoryPageTiming(this.log, {
+				category: "native-inventory-page-timing",
+				domain: input.domain,
+				rows: items.length,
+				elapsedMs: Date.now() - startedAt,
+				status: "complete",
+			});
+			return {
+				status: "page",
+				domain: "episode",
+				startIndex: page.StartIndex,
+				totalRecordCount: page.TotalRecordCount,
+				items,
+			};
+		} catch (error) {
+			logNativeInventoryPageTiming(this.log, {
+				category: "native-inventory-page-timing",
+				domain: input.domain,
+				rows: 0,
+				elapsedMs: Date.now() - startedAt,
+				status: "failed",
+			});
+			return {
+				status: "unavailable",
+				reason:
+					Date.now() >= input.deadlineAt
+						? "deadline-exceeded"
+						: error instanceof UpstreamValidationError
+							? "coverage-incomplete"
+							: "provider-unavailable",
+			};
+		}
+	}
+
 	private async getLibraryItemsWithRawCoverage(
 		userId: string,
 		libraryId: string,
-		options?: { includeItemTypes?: string },
+		options?: {
+			includeItemTypes?: string;
+			onReadStage?: (stage: JellyfinLibraryReadStage) => void;
+		},
 	): Promise<JellyfinRawItemsResult> {
 		const params = new URLSearchParams({
 			ParentId: libraryId,
@@ -537,6 +879,12 @@ export class JellyfinClient {
 
 		return await this.getCompleteItemsWithCoverage(
 			`/Users/${encodeURIComponent(userId)}/Items?${params.toString()}`,
+			jellyfinItemsResponseSchema,
+			undefined,
+			false,
+			false,
+			options?.onReadStage,
+			true,
 		);
 	}
 
@@ -546,6 +894,7 @@ export class JellyfinClient {
 	async getResumeItems(userId: string): Promise<JellyfinItem[]> {
 		const items = await this.getCompleteItems(
 			`/Users/${encodeURIComponent(userId)}/Items/Resume?Fields=ProviderIds`,
+			true,
 		);
 		return items.map(mapItem);
 	}
@@ -556,6 +905,7 @@ export class JellyfinClient {
 	async getNextUp(userId: string): Promise<JellyfinItem[]> {
 		const items = await this.getCompleteItems(
 			`/Shows/NextUp?userId=${encodeURIComponent(userId)}&Fields=ProviderIds`,
+			true,
 		);
 		return items.map(mapItem);
 	}
@@ -583,10 +933,15 @@ export class JellyfinClient {
 				positionMs: Math.round((s.PlayState?.PositionTicks ?? 0) / TICKS_PER_MS),
 				durationMs: Math.round((s.NowPlayingItem?.RunTimeTicks ?? 0) / TICKS_PER_MS),
 				nowPlayingItem: s.NowPlayingItem ? mapItem(s.NowPlayingItem) : undefined,
+				sourceQuality: readJellyfinSessionSourceQuality(
+					s.NowPlayingItem,
+					s.PlayState,
+					this.sessionProvider,
+				),
 				transcodingInfo: s.TranscodingInfo
 					? {
-							isVideoDirect: s.TranscodingInfo.IsVideoDirect ?? true,
-							isAudioDirect: s.TranscodingInfo.IsAudioDirect ?? true,
+							isVideoDirect: s.TranscodingInfo.IsVideoDirect,
+							isAudioDirect: s.TranscodingInfo.IsAudioDirect,
 							bitrate: s.TranscodingInfo.Bitrate,
 							width: s.TranscodingInfo.Width,
 							height: s.TranscodingInfo.Height,
@@ -644,10 +999,30 @@ export class JellyfinClient {
 		startIndex: number,
 		limit = COMPLETE_ITEMS_PAGE_SIZE,
 	): Promise<JellyfinEpisodeItemsPage> {
+		return await this.getEpisodeItemsPageWithFilter(userId, libraryId, startIndex, limit, false);
+	}
+
+	/** Positive watch evidence only; omitted rows never imply an unplayed state. */
+	async getPlayedEpisodeItemsPageWithCoverage(
+		userId: string,
+		libraryId: string,
+		startIndex: number,
+		limit = COMPLETE_ITEMS_PAGE_SIZE,
+	): Promise<JellyfinEpisodeItemsPage> {
+		return await this.getEpisodeItemsPageWithFilter(userId, libraryId, startIndex, limit, true);
+	}
+
+	private async getEpisodeItemsPageWithFilter(
+		userId: string,
+		libraryId: string,
+		startIndex: number,
+		limit: number,
+		playedOnly: boolean,
+	): Promise<JellyfinEpisodeItemsPage> {
 		if (!Number.isSafeInteger(startIndex) || startIndex < 0) {
 			throw new Error("Jellyfin episode page start index is invalid");
 		}
-		if (!Number.isSafeInteger(limit) || limit < 1 || limit > COMPLETE_ITEMS_PAGE_SIZE) {
+		if (!Number.isSafeInteger(limit) || limit < 1 || limit > DURABLE_EPISODE_MAX_PAGE_SIZE) {
 			throw new Error("Jellyfin episode page limit is invalid");
 		}
 		const params = new URLSearchParams({
@@ -655,10 +1030,11 @@ export class JellyfinClient {
 			IncludeItemTypes: "Episode",
 			Recursive: "true",
 			EnableUserData: "true",
-			Fields: "ProviderIds,UserData",
+			EnableImages: "false",
 			StartIndex: String(startIndex),
 			Limit: String(limit),
 		});
+		if (playedOnly) params.set("IsPlayed", "true");
 		const response = await this.request(
 			`/Users/${encodeURIComponent(userId)}/Items?${params.toString()}`,
 			{ schema: jellyfinEpisodeItemsPageSchema },
@@ -677,6 +1053,9 @@ export class JellyfinClient {
 		}
 		const ids = new Set<string>();
 		for (const item of response.Items) {
+			if (playedOnly && item.UserData?.Played !== true) {
+				throw new Error("Jellyfin watched filter returned an unplayed episode");
+			}
 			if (
 				item.Type !== "Episode" ||
 				item.Id.trim().length === 0 ||
@@ -1015,8 +1394,17 @@ export class JellyfinClient {
 	// Internal helpers
 	// ========================================================================
 
-	private async getCompleteItems(path: string): Promise<JellyfinRawItem[]> {
-		const result = await this.getCompleteItemsWithCoverage(path);
+	private async getCompleteItems(
+		path: string,
+		retryTransientRead = false,
+	): Promise<JellyfinRawItem[]> {
+		const result = await this.getCompleteItemsWithCoverage(
+			path,
+			jellyfinItemsResponseSchema,
+			undefined,
+			false,
+			retryTransientRead,
+		);
 		if (result.reason !== null) {
 			throw new Error(
 				result.failureMessage ?? "Jellyfin item inventory could not be verified as complete",
@@ -1032,12 +1420,19 @@ export class JellyfinClient {
 		path: string,
 		schema: z.ZodType<T>,
 		validatePage?: JellyfinPageValidator<T>,
+		mutationValidation?: boolean,
+		retryTransientRead?: boolean,
+		onReadStage?: (stage: JellyfinLibraryReadStage) => void,
+		adaptLibraryBodyFailure?: boolean,
 	): Promise<JellyfinRawItemsResult<T["Items"][number]>>;
 	private async getCompleteItemsWithCoverage<T extends JellyfinItemsEnvelope>(
 		path: string,
 		schema: z.ZodType<T> = jellyfinItemsResponseSchema as unknown as z.ZodType<T>,
 		validatePage?: JellyfinPageValidator<T>,
 		mutationValidation = false,
+		retryTransientRead = false,
+		onReadStage?: (stage: JellyfinLibraryReadStage) => void,
+		adaptLibraryBodyFailure = false,
 	): Promise<JellyfinRawItemsResult<T["Items"][number]>> {
 		const items: T["Items"][number][] = [];
 		const seenIds = new Set<string>();
@@ -1046,21 +1441,48 @@ export class JellyfinClient {
 		let pagesAttempted = 0;
 		let pagesCompleted = 0;
 		let failureMessage: string | undefined;
+		let pageSize = COMPLETE_ITEMS_PAGE_SIZE;
+		let pageReductions = 0;
 
 		while (expectedTotal === null || startIndex < expectedTotal) {
+			// Coverage counts logical cursor pages; physical recovery attempts stay
+			// inside that page, as in the native and on-deck read contracts.
 			pagesAttempted++;
-			const pageUrl = new URL(path, "http://jellyfin.invalid");
-			pageUrl.searchParams.set("StartIndex", String(startIndex));
-			pageUrl.searchParams.set("Limit", String(COMPLETE_ITEMS_PAGE_SIZE));
-			let data: T;
-			try {
-				data = mutationValidation
-					? await this.mutationRequest(`${pageUrl.pathname}${pageUrl.search}`, { schema })
-					: await this.request(`${pageUrl.pathname}${pageUrl.search}`, { schema });
-			} catch {
-				failureMessage = "Jellyfin item page request failed";
-				break;
+			let data: T | undefined;
+			while (true) {
+				const pageUrl = new URL(path, "http://jellyfin.invalid");
+				pageUrl.searchParams.set("StartIndex", String(startIndex));
+				pageUrl.searchParams.set("Limit", String(pageSize));
+				try {
+					data = mutationValidation
+						? await this.mutationRequest(`${pageUrl.pathname}${pageUrl.search}`, { schema })
+						: await this.request(`${pageUrl.pathname}${pageUrl.search}`, {
+								schema,
+								retryTransientRead,
+								onReadStage,
+							});
+					break;
+				} catch (error) {
+					if (!mutationValidation && this.readSignal?.aborted)
+						throw new Error("Provider read cancelled.");
+					if (
+						adaptLibraryBodyFailure &&
+						!mutationValidation &&
+						error instanceof JellyfinBodyReadError &&
+						pageSize > 125 &&
+						pageReductions < 3
+					) {
+						// Failed physical attempts accept no rows. Keep the cursor, total,
+						// and identities, with one reduction budget for the entire call.
+						pageSize /= 2;
+						pageReductions++;
+						continue;
+					}
+					failureMessage = "Jellyfin item page request failed";
+					break;
+				}
 			}
+			if (!data) break;
 			const pageValidationFailure = validatePage?.(data, startIndex);
 			if (pageValidationFailure) {
 				failureMessage = pageValidationFailure;
@@ -1082,10 +1504,7 @@ export class JellyfinClient {
 				failureMessage = "Jellyfin item inventory changed while it was being paged";
 				break;
 			}
-			if (
-				data.Items.length > COMPLETE_ITEMS_PAGE_SIZE ||
-				startIndex + data.Items.length > expectedTotal
-			) {
+			if (data.Items.length > pageSize || startIndex + data.Items.length > expectedTotal) {
 				failureMessage = "Jellyfin item pagination exceeded its declared total";
 				break;
 			}
@@ -1113,6 +1532,7 @@ export class JellyfinClient {
 			}
 			pagesCompleted++;
 			startIndex += data.Items.length;
+			observeLibraryReadStage(onReadStage, "page-accepted");
 		}
 
 		if (failureMessage || expectedTotal === null || items.length !== expectedTotal) {
@@ -1141,9 +1561,18 @@ export class JellyfinClient {
 		schema: z.ZodType<T>,
 		validatePage?: JellyfinPageValidator<T>,
 		mutationValidation = false,
+		recordEpisodePageTiming = false,
+		pageSize = COMPLETE_ITEMS_PAGE_SIZE,
+		timeBudgetMs?: number,
 	): Promise<JellyfinRawItemsResult<T["Items"][number]>> {
 		let pagesAttempted = 0;
 		let pagesCompleted = 0;
+		const deadlineAt =
+			timeBudgetMs === undefined
+				? null
+				: Number.isFinite(timeBudgetMs) && timeBudgetMs > 0
+					? Date.now() + timeBudgetMs
+					: Date.now();
 
 		for (let restartCount = 0; restartCount <= 1; restartCount++) {
 			pagesAttempted = 0;
@@ -1156,28 +1585,69 @@ export class JellyfinClient {
 			let failureMessage: string | undefined;
 
 			while (expectedTotal === null || startIndex < expectedTotal) {
+				if (deadlineAt !== null && Date.now() >= deadlineAt) {
+					failureMessage = "Jellyfin native item inventory time budget exceeded";
+					break;
+				}
 				pagesAttempted++;
 				const pageUrl = new URL(path, "http://jellyfin.invalid");
 				pageUrl.searchParams.set("StartIndex", String(startIndex));
-				pageUrl.searchParams.set("Limit", String(COMPLETE_ITEMS_PAGE_SIZE));
+				pageUrl.searchParams.set("Limit", String(pageSize));
 				let data: T | undefined;
 				for (let attempt = 0; attempt < NATIVE_PAGE_RETRY_DELAYS_MS.length + 1; attempt++) {
+					if (!mutationValidation) this.readSignal?.throwIfAborted();
+					if (deadlineAt !== null && Date.now() >= deadlineAt) {
+						failureMessage = "Jellyfin native item inventory time budget exceeded";
+						break;
+					}
+					const readStartedAt = Date.now();
 					try {
+						const timeoutMs =
+							deadlineAt === null ? undefined : Math.max(1, deadlineAt - Date.now());
 						data = mutationValidation
 							? await this.mutationRequest(`${pageUrl.pathname}${pageUrl.search}`, { schema })
-							: await this.request(`${pageUrl.pathname}${pageUrl.search}`, { schema });
+							: await this.request(`${pageUrl.pathname}${pageUrl.search}`, {
+									schema,
+									...(timeoutMs === undefined ? {} : { timeoutMs }),
+								});
+						if (recordEpisodePageTiming) {
+							logNativeEpisodePageTiming(this.log, {
+								category: "native-episode-page-timing",
+								page: pagesAttempted,
+								rows: data.Items.length,
+								elapsedMs: Date.now() - readStartedAt,
+								status: "complete",
+							});
+						}
 						break;
 					} catch (error) {
+						if (!mutationValidation && this.readSignal?.aborted)
+							throw new Error("Provider read cancelled.");
+						if (recordEpisodePageTiming) {
+							logNativeEpisodePageTiming(this.log, {
+								category: "native-episode-page-timing",
+								page: pagesAttempted,
+								rows: 0,
+								elapsedMs: Date.now() - readStartedAt,
+								status: "failed",
+							});
+						}
 						if (
 							mutationValidation ||
 							error instanceof UpstreamValidationError ||
+							(deadlineAt !== null && Date.now() >= deadlineAt) ||
 							attempt >= NATIVE_PAGE_RETRY_DELAYS_MS.length
 						) {
 							failureMessage = "Jellyfin native item page request failed";
 							break;
 						}
-						await new Promise<void>((resolve) =>
-							setTimeout(resolve, NATIVE_PAGE_RETRY_DELAYS_MS[attempt]),
+						const retryDelayMs = NATIVE_PAGE_RETRY_DELAYS_MS[attempt] ?? 0;
+						await delay(
+							deadlineAt === null
+								? retryDelayMs
+								: Math.min(retryDelayMs, Math.max(0, deadlineAt - Date.now())),
+							undefined,
+							{ signal: mutationValidation ? undefined : this.readSignal },
 						);
 					}
 				}
@@ -1202,10 +1672,7 @@ export class JellyfinClient {
 					restartReason = "Jellyfin native item inventory changed while it was being paged";
 					break;
 				}
-				if (
-					data.Items.length > COMPLETE_ITEMS_PAGE_SIZE ||
-					startIndex + data.Items.length > expectedTotal
-				) {
+				if (data.Items.length > pageSize || startIndex + data.Items.length > expectedTotal) {
 					failureMessage = "Jellyfin native item pagination exceeded its declared total";
 					break;
 				}
@@ -1231,7 +1698,9 @@ export class JellyfinClient {
 				startIndex += data.Items.length;
 			}
 
-			if (restartReason && restartCount === 0) continue;
+			if (deadlineAt !== null && Date.now() >= deadlineAt)
+				failureMessage = "Jellyfin native item inventory time budget exceeded";
+			if (restartReason && restartCount === 0 && !failureMessage) continue;
 			if (restartReason) failureMessage = restartReason;
 			if (failureMessage || expectedTotal === null || items.length !== expectedTotal) {
 				return {
@@ -1278,18 +1747,31 @@ export class JellyfinClient {
 			body?: Record<string, unknown>;
 			schema?: z.ZodType<T>;
 			skipAuth?: boolean;
+			timeoutMs?: number;
+			retryTransientRead?: boolean;
+			onReadStage?: (stage: JellyfinLibraryReadStage) => void;
 		},
 	): Promise<T> {
 		const url = `${this.baseUrl}${path}`;
+		const isRead = (options?.method ?? "GET") === "GET";
+		if (isRead) this.readSignal?.throwIfAborted();
 
 		const headers: Record<string, string> = options?.skipAuth
 			? { Accept: "application/json", ...this.httpAuthHeaders }
 			: this.authHeaders();
 
+		if (
+			options?.timeoutMs !== undefined &&
+			(!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0)
+		)
+			throw new Error("Jellyfin request timeout is invalid");
+		const timeoutMs = Math.min(
+			this.timeout,
+			Math.max(1, Math.ceil(options?.timeoutMs ?? this.timeout)),
+		);
 		const fetchOptions: RequestInit = {
 			method: options?.method ?? "GET",
 			headers,
-			signal: AbortSignal.timeout(this.timeout),
 		};
 
 		if (options?.body) {
@@ -1297,9 +1779,77 @@ export class JellyfinClient {
 			fetchOptions.body = JSON.stringify(options.body);
 		}
 
-		const response = await fetch(url, fetchOptions);
+		let readStartedAt = 0;
+		const reportReadFailure = (
+			phase: ProviderReadFailurePhase,
+			error: unknown,
+			status: number | null,
+			kind?: ProviderReadFailureKind,
+		) => {
+			if (!isRead) return;
+			try {
+				const failure = classifyProviderReadFailure(error, phase);
+				const elapsed = providerReadTime() - readStartedAt;
+				this.log.warn(
+					{
+						category: "jellyfin-provider-read-failure",
+						phase,
+						kind: kind ?? failure.kind,
+						status: Number.isInteger(status) && status! >= 100 && status! <= 599 ? status : null,
+						elapsedMs: Number.isFinite(elapsed)
+							? Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.floor(elapsed)))
+							: 0,
+						transportCode: failure.transportCode,
+					},
+					"Jellyfin provider read failed",
+				);
+			} catch {
+				// Diagnostics are best effort, including logger failures.
+			}
+		};
+		let requestTimeoutSignal: AbortSignal | undefined;
+		let requestSignal: AbortSignal | undefined;
+		const fetchOnce = async () => {
+			if (isRead) this.readSignal?.throwIfAborted();
+			const timeoutSignal = AbortSignal.timeout(timeoutMs);
+			requestTimeoutSignal = timeoutSignal;
+			const signal =
+				isRead && this.readSignal
+					? AbortSignal.any([this.readSignal, timeoutSignal])
+					: timeoutSignal;
+			requestSignal = signal;
+			readStartedAt = isRead ? providerReadTime() : 0;
+			try {
+				observeLibraryReadStage(options?.onReadStage, "request-start");
+				const pending = fetch(url, { ...fetchOptions, signal });
+				const response = isRead
+					? await awaitJellyfinRead(pending, signal, discardLateJellyfinResponse)
+					: await pending;
+				observeLibraryReadStage(options?.onReadStage, "headers-received");
+				return response;
+			} catch (error) {
+				reportReadFailure("request", error, null);
+				throw error;
+			}
+		};
+		let response: Response;
+		try {
+			response = await fetchOnce();
+		} catch (error) {
+			if (!isRead || !options?.retryTransientRead) throw error;
+			const { kind } = classifyProviderReadFailure(error, "request");
+			if (kind !== "timeout" && kind !== "transport") {
+				throw error;
+			}
+			// Only on-deck reads opt in. Retry this GET once, not its inventory or
+			// validation. A caller cancellation or second failure remains terminal.
+			this.readSignal?.throwIfAborted();
+			await delay(250, undefined, { signal: this.readSignal });
+			response = await fetchOnce();
+		}
 
 		if (!response.ok) {
+			reportReadFailure("response", undefined, response.status, "http-error");
 			this.log.warn({ status: response.status }, "Jellyfin API request failed");
 			throw new Error(`Jellyfin API request failed: HTTP ${response.status}`);
 		}
@@ -1308,21 +1858,44 @@ export class JellyfinClient {
 		if (contentType.includes("application/json")) {
 			let raw: unknown;
 			try {
-				raw = await response.json();
-			} catch {
+				observeLibraryReadStage(options?.onReadStage, "body-read");
+				raw = isRead ? await readJellyfinJson(response, requestSignal!) : await response.json();
+			} catch (error) {
+				const failure = classifyProviderReadFailure(error, "body");
+				// Node fetch can surface an expired response-body deadline as an
+				// AbortError. Only this physical attempt's signal proves that timeout;
+				// current caller cancellation always takes precedence.
+				const kind =
+					isRead && this.readSignal?.aborted
+						? "aborted"
+						: failure.kind === "aborted" && requestTimeoutSignal?.aborted
+							? "timeout"
+							: failure.kind;
+				reportReadFailure("body", error, response.status, kind);
+				if (isRead && (kind === "timeout" || kind === "transport")) {
+					throw new JellyfinBodyReadError(kind);
+				}
 				throw new Error("Jellyfin API returned invalid JSON");
 			}
 			if (!options?.schema) {
+				reportReadFailure("validation", undefined, response.status, "unavailable");
 				throw new Error("Jellyfin API response schema is unavailable");
 			}
-			return parseUpstreamOrThrow(raw, options.schema, {
-				integration: "jellyfin",
-				category: "provider-response",
-			});
+			try {
+				observeLibraryReadStage(options?.onReadStage, "validation");
+				return parseUpstreamOrThrow(raw, options.schema, {
+					integration: "jellyfin",
+					category: "provider-response",
+				});
+			} catch (error) {
+				reportReadFailure("validation", error, response.status);
+				throw error;
+			}
 		}
 
 		// Non-JSON responses (e.g., from POST /Library/Refresh)
 		if (options?.schema) {
+			reportReadFailure("response", undefined, response.status, "unexpected-content-type");
 			throw new Error("Jellyfin API returned an unexpected response type");
 		}
 		return undefined as T;
@@ -1399,6 +1972,7 @@ export function createJellyfinClient(
 	encryptor: Encryptor,
 	instance: ClientInstanceData,
 	log: FastifyBaseLogger,
+	readSignal?: AbortSignal,
 ): JellyfinClient {
 	const apiKey = encryptor.decrypt({
 		value: instance.encryptedApiKey,
@@ -1410,7 +1984,15 @@ export function createJellyfinClient(
 			"HTTP Basic Auth cannot be combined with modern Jellyfin authentication; configure a proxy bypass",
 		);
 	}
-	return new JellyfinClient(instance.baseUrl, apiKey, log, DEFAULT_TIMEOUT, httpAuthHeaders);
+	return new JellyfinClient(
+		instance.baseUrl,
+		apiKey,
+		log,
+		DEFAULT_TIMEOUT,
+		httpAuthHeaders,
+		instance.service === "EMBY" ? "EMBY" : "JELLYFIN",
+		readSignal,
+	);
 }
 
 // ============================================================================

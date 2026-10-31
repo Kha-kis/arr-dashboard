@@ -7,10 +7,18 @@ import type {
 	ManualImportServiceType,
 	ManualImportSubmissionFile,
 } from "@arr/shared";
-import { manualImportCandidateListSchema, manualImportCandidateSchema } from "@arr/shared";
+import {
+	manualImportCandidateListSchema,
+	manualImportCandidateSchema,
+	manualImportForeignEditionIdSchema,
+	manualImportTrackIdsSchema,
+} from "@arr/shared";
 import type { LidarrClient, RadarrClient, ReadarrClient, SonarrClient } from "arr-sdk";
+import {
+	classifyImportCommand,
+	importCommandFingerprint,
+} from "../lib/arr/manual-import-command.js";
 import { toNumber, toStringValue } from "../lib/data/values.js";
-import { getErrorMessage } from "../lib/utils/error-message.js";
 
 /**
  * Simple logger interface compatible with Fastify's logger
@@ -28,6 +36,77 @@ export class ManualImportError extends Error {
 		super(message);
 		this.name = "ManualImportError";
 		this.statusCode = statusCode;
+	}
+}
+
+export class ManualImportIdentityError extends ManualImportError {
+	constructor() {
+		super("Automatic import identity or media mapping is unverified; action deferred.", 409);
+		this.name = "ManualImportIdentityError";
+	}
+}
+
+export class ManualImportSubmissionUnknownError extends ManualImportError {
+	constructor() {
+		super(
+			"ARR import submission outcome is unknown. Check provider command activity before retrying.",
+			502,
+		);
+		this.name = "ManualImportSubmissionUnknownError";
+	}
+}
+
+export interface AutoManualImportOptions {
+	expectedMedia?: Record<string, unknown>;
+	beforeSubmit?: (files: Array<Record<string, unknown>>) => Promise<void>;
+}
+
+function canonicalDownloadId(value: string): string {
+	return /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(value) ? value.toLowerCase() : value;
+}
+
+function matchesDownload(candidate: ManualImportCandidate, requested: string): boolean {
+	return Boolean(
+		candidate.downloadId?.trim() &&
+			requested.trim() &&
+			canonicalDownloadId(candidate.downloadId!) === canonicalDownloadId(requested),
+	);
+}
+
+function matchesMedia(
+	candidate: ManualImportCandidate,
+	expected: Record<string, unknown>,
+): boolean {
+	const matches = (actual: number | undefined, field: string) =>
+		Number.isSafeInteger(expected[field]) &&
+		Number(expected[field]) > 0 &&
+		actual === expected[field];
+	switch (candidate.service) {
+		case "radarr":
+			return matches(candidate.movie?.id, "movieId");
+		case "sonarr": {
+			if (
+				!matches(candidate.series?.id, "seriesId") ||
+				!candidate.episodes?.length ||
+				candidate.episodes.some((episode) => !Number.isSafeInteger(episode.id) || episode.id <= 0)
+			)
+				return false;
+			if (Number.isSafeInteger(expected.episodeId) && Number(expected.episodeId) > 0) {
+				return candidate.episodes.some((episode) => episode.id === expected.episodeId);
+			}
+			return (
+				Number.isSafeInteger(expected.seasonNumber) &&
+				Number(expected.seasonNumber) >= 0 &&
+				candidate.seasonNumber === expected.seasonNumber &&
+				candidate.episodes.every(
+					(episode) => (episode.seasonNumber ?? candidate.seasonNumber) === expected.seasonNumber,
+				)
+			);
+		}
+		case "lidarr":
+			return matches(candidate.artist?.id, "artistId") && matches(candidate.album?.id, "albumId");
+		case "readarr":
+			return matches(candidate.author?.id, "authorId") && matches(candidate.book?.id, "bookId");
 	}
 }
 
@@ -61,10 +140,10 @@ export const setManualImportLogger = (logger: ManualImportLogger) => {
 };
 
 // Debug logging for normalization issues - helps diagnose API response problems
-const logNormalizationWarning = (entityType: string, reason: string, rawValue?: unknown) => {
+const logNormalizationWarning = (entityType: string, reason: string) => {
 	if (process.env.NODE_ENV === "development" || process.env.DEBUG_MANUAL_IMPORT) {
 		const msg = `[manual-import] Normalization skipped for ${entityType}: ${reason}`;
-		moduleLogger?.debug(msg, rawValue !== undefined ? { rawValue } : undefined);
+		moduleLogger?.debug(msg);
 	}
 };
 
@@ -119,7 +198,7 @@ const normalizeSeries = (series: unknown): ManualImportCandidateSonarr["series"]
 	const seriesObj = series as Record<string, unknown> | undefined;
 	const id = toNumber(seriesObj?.id);
 	if (typeof id !== "number") {
-		logNormalizationWarning("series", "missing or invalid id", seriesObj?.id);
+		logNormalizationWarning("series", "missing or invalid id");
 		return undefined;
 	}
 
@@ -134,7 +213,7 @@ const normalizeMovie = (movie: unknown): ManualImportCandidateRadarr["movie"] =>
 	const movieObj = movie as Record<string, unknown> | undefined;
 	const id = toNumber(movieObj?.id);
 	if (typeof id !== "number") {
-		logNormalizationWarning("movie", "missing or invalid id", movieObj?.id);
+		logNormalizationWarning("movie", "missing or invalid id");
 		return undefined;
 	}
 
@@ -150,7 +229,7 @@ const normalizeArtist = (artist: unknown): ManualImportCandidateLidarr["artist"]
 	const artistObj = artist as Record<string, unknown> | undefined;
 	const id = toNumber(artistObj?.id);
 	if (typeof id !== "number") {
-		logNormalizationWarning("artist", "missing or invalid id", artistObj?.id);
+		logNormalizationWarning("artist", "missing or invalid id");
 		return undefined;
 	}
 
@@ -165,7 +244,7 @@ const normalizeAlbum = (album: unknown): ManualImportCandidateLidarr["album"] =>
 	const albumObj = album as Record<string, unknown> | undefined;
 	const id = toNumber(albumObj?.id);
 	if (typeof id !== "number") {
-		logNormalizationWarning("album", "missing or invalid id", albumObj?.id);
+		logNormalizationWarning("album", "missing or invalid id");
 		return undefined;
 	}
 
@@ -180,7 +259,7 @@ const normalizeAuthor = (author: unknown): ManualImportCandidateReadarr["author"
 	const authorObj = author as Record<string, unknown> | undefined;
 	const id = toNumber(authorObj?.id);
 	if (typeof id !== "number") {
-		logNormalizationWarning("author", "missing or invalid id", authorObj?.id);
+		logNormalizationWarning("author", "missing or invalid id");
 		return undefined;
 	}
 
@@ -195,7 +274,7 @@ const normalizeBook = (book: unknown): ManualImportCandidateReadarr["book"] => {
 	const bookObj = book as Record<string, unknown> | undefined;
 	const id = toNumber(bookObj?.id);
 	if (typeof id !== "number") {
-		logNormalizationWarning("book", "missing or invalid id", bookObj?.id);
+		logNormalizationWarning("book", "missing or invalid id");
 		return undefined;
 	}
 
@@ -261,7 +340,8 @@ const mapCandidate = (
 				service,
 				artist: normalizeArtist(itemObj?.artist),
 				album: normalizeAlbum(itemObj?.album),
-				albumReleaseId: toNumber(itemObj?.albumReleaseId),
+				albumReleaseId: itemObj?.albumReleaseId,
+				tracks: itemObj?.tracks,
 			});
 		}
 
@@ -271,15 +351,13 @@ const mapCandidate = (
 				service,
 				author: normalizeAuthor(itemObj?.author),
 				book: normalizeBook(itemObj?.book),
+				foreignEditionId: itemObj?.foreignEditionId,
 			});
 		}
 
 		return null;
-	} catch (error) {
-		// Log validation failures to aid debugging - especially important for newer Lidarr/Readarr integrations
-		const errorMessage = getErrorMessage(error, "Unknown validation error");
-		const warnMsg = `[manual-import] Failed to parse ${service} candidate at path "${path}": ${errorMessage}`;
-		moduleLogger?.warn(warnMsg);
+	} catch {
+		moduleLogger?.warn(`[manual-import] Candidate validation failed for ${service}`);
 		return null;
 	}
 };
@@ -304,7 +382,8 @@ type CommandFileResult = {
 export const collectAutoManualImportFiles = (
 	service: ManualImportService,
 	candidates: ManualImportCandidate[],
-	fallbackDownloadId: string,
+	requestedDownloadId: string,
+	expectedMedia?: Record<string, unknown>,
 ): CommandFileResult => {
 	const files: ManualImportSubmissionFile[] = [];
 	const skipped: string[] = [];
@@ -317,9 +396,13 @@ export const collectAutoManualImportFiles = (
 			continue;
 		}
 
-		const downloadId = candidate.downloadId ?? fallbackDownloadId;
-		if (!downloadId) {
-			skipped.push(`${humanName}: missing download identifier`);
+		if (!matchesDownload(candidate, requestedDownloadId)) {
+			skipped.push(`${humanName}: missing or mismatched download identifier`);
+			continue;
+		}
+		const downloadId = candidate.downloadId!;
+		if (expectedMedia && !matchesMedia(candidate, expectedMedia)) {
+			skipped.push(`${humanName}: current queue media mapping is unverified or mismatched`);
 			continue;
 		}
 
@@ -399,6 +482,14 @@ export const collectAutoManualImportFiles = (
 				skipped.push(`${humanName}: missing artist or album mapping`);
 				continue;
 			}
+			const trackIds = lidarrCandidate.tracks?.map((track) => track.id).sort((a, b) => a - b);
+			if (
+				!Number.isSafeInteger(lidarrCandidate.albumReleaseId) ||
+				Number(lidarrCandidate.albumReleaseId) <= 0 ||
+				!manualImportTrackIdsSchema.safeParse(trackIds).success
+			) {
+				throw new ManualImportIdentityError();
+			}
 
 			files.push({
 				path: candidate.path,
@@ -407,6 +498,7 @@ export const collectAutoManualImportFiles = (
 				artistId,
 				albumId,
 				albumReleaseId: lidarrCandidate.albumReleaseId,
+				trackIds,
 				quality: lidarrCandidate.quality,
 				languages: lidarrCandidate.languages,
 				releaseGroup: lidarrCandidate.releaseGroup,
@@ -428,6 +520,11 @@ export const collectAutoManualImportFiles = (
 				skipped.push(`${humanName}: missing author or book mapping`);
 				continue;
 			}
+			if (
+				!manualImportForeignEditionIdSchema.safeParse(readarrCandidate.foreignEditionId).success
+			) {
+				throw new ManualImportIdentityError();
+			}
 
 			files.push({
 				path: candidate.path,
@@ -435,6 +532,7 @@ export const collectAutoManualImportFiles = (
 				downloadId,
 				authorId,
 				bookId,
+				foreignEditionId: readarrCandidate.foreignEditionId,
 				quality: readarrCandidate.quality,
 				languages: readarrCandidate.languages,
 				releaseGroup: readarrCandidate.releaseGroup,
@@ -509,7 +607,13 @@ const buildCommandFiles = (
 			const artistId = file.artistId;
 			const albumId = file.albumId;
 
-			if (typeof artistId !== "number" || typeof albumId !== "number") {
+			if (
+				typeof artistId !== "number" ||
+				typeof albumId !== "number" ||
+				!Number.isSafeInteger(file.albumReleaseId) ||
+				Number(file.albumReleaseId) <= 0 ||
+				!manualImportTrackIdsSchema.safeParse(file.trackIds).success
+			) {
 				throw new ManualImportError(
 					`File at index ${index} is missing artist or album selection for Lidarr.`,
 				);
@@ -540,7 +644,11 @@ const buildCommandFiles = (
 			const authorId = file.authorId;
 			const bookId = file.bookId;
 
-			if (typeof authorId !== "number" || typeof bookId !== "number") {
+			if (
+				typeof authorId !== "number" ||
+				typeof bookId !== "number" ||
+				!manualImportForeignEditionIdSchema.safeParse(file.foreignEditionId).success
+			) {
 				throw new ManualImportError(
 					`File at index ${index} is missing author or book selection for Readarr.`,
 				);
@@ -550,6 +658,7 @@ const buildCommandFiles = (
 				...base,
 				authorId,
 				bookId,
+				foreignEditionId: file.foreignEditionId,
 			};
 
 			if (typeof file.bookFileId === "number") {
@@ -633,21 +742,34 @@ export const fetchManualImportCandidatesWithSdk = async (
 			rawItems = await baseClient.get<unknown[]>(apiPath, params);
 		}
 
-		if (!Array.isArray(rawItems) || rawItems.length === 0) {
-			return [];
+		if (!Array.isArray(rawItems)) {
+			throw new ManualImportError(
+				"Manual import candidates are unavailable: invalid provider response. Check provider connectivity and retry.",
+				502,
+			);
 		}
 
-		const candidates = rawItems
-			.map((item) => mapCandidate(service, item))
-			.filter((candidate): candidate is ManualImportCandidate => candidate !== null);
+		const candidates: ManualImportCandidate[] = [];
+		for (const item of rawItems) {
+			const candidate = mapCandidate(service, item);
+			if (candidate === null) {
+				throw new ManualImportError(
+					"Manual import candidates are unavailable: incomplete provider evidence. Check provider metadata and retry.",
+					502,
+				);
+			}
+			candidates.push(candidate);
+		}
 
 		return manualImportCandidateListSchema.parse(candidates);
 	} catch (error) {
 		if (error instanceof ManualImportError) {
 			throw error;
 		}
-		const message = getErrorMessage(error, "Unknown error");
-		throw new ManualImportError(`Failed to fetch manual import items: ${message}`, 502);
+		throw new ManualImportError(
+			"Manual import candidates are unavailable. Check provider connectivity and retry.",
+			502,
+		);
 	}
 };
 
@@ -665,6 +787,7 @@ export const submitManualImportCommandWithSdk = async (
 	service: ManualImportService,
 	files: ManualImportSubmissionFile[],
 	importMode: "auto" | "move" | "copy",
+	beforeSubmit?: AutoManualImportOptions["beforeSubmit"],
 ) => {
 	if (files.length === 0) {
 		throw new ManualImportError("No files were provided for manual import.");
@@ -675,6 +798,7 @@ export const submitManualImportCommandWithSdk = async (
 	// Convert import mode to SDK expected format (capitalized)
 	// "auto" defaults to "Move" which is the standard ARR behavior
 	const sdkImportMode: "Move" | "Copy" = importMode === "copy" ? "Copy" : "Move";
+	await beforeSubmit?.(commandFiles);
 
 	try {
 		// Use BaseClient.post() directly to call the command API.
@@ -682,17 +806,14 @@ export const submitManualImportCommandWithSdk = async (
 		const baseClient = client as unknown as BaseClientMethods;
 		const commandPath = getCommandApiPath(service);
 
-		await baseClient.post(commandPath, {
+		const receipt = await baseClient.post(commandPath, {
 			name: "ManualImport",
 			importMode: sdkImportMode,
 			files: commandFiles,
 		});
-	} catch (error) {
-		if (error instanceof ManualImportError) {
-			throw error;
-		}
-		const message = getErrorMessage(error, "Unknown error");
-		throw new ManualImportError(`ARR manual import command failed: ${message}`, 502);
+		return classifyImportCommand(receipt, importCommandFingerprint(commandFiles));
+	} catch {
+		throw new ManualImportSubmissionUnknownError();
 	}
 };
 
@@ -703,6 +824,7 @@ export const autoImportByDownloadIdWithSdk = async (
 	client: SonarrClient | RadarrClient | LidarrClient | ReadarrClient,
 	service: ManualImportService,
 	downloadId: string,
+	options: AutoManualImportOptions = {},
 ) => {
 	const candidates = await fetchManualImportCandidatesWithSdk(client, service, {
 		downloadId,
@@ -713,7 +835,21 @@ export const autoImportByDownloadIdWithSdk = async (
 		throw new ManualImportError("ARR did not provide any importable files for this download.");
 	}
 
-	const { files, skipped } = collectAutoManualImportFiles(service, candidates, downloadId);
+	if (
+		candidates.some(
+			(candidate) =>
+				!matchesDownload(candidate, downloadId) ||
+				(options.expectedMedia && !matchesMedia(candidate, options.expectedMedia)),
+		)
+	) {
+		throw new ManualImportIdentityError();
+	}
+	const { files, skipped } = collectAutoManualImportFiles(
+		service,
+		candidates,
+		downloadId,
+		options.expectedMedia,
+	);
 
 	if (files.length === 0) {
 		const detail = skipped.length > 0 ? skipped.slice(0, 3).join("; ") : undefined;
@@ -724,5 +860,5 @@ export const autoImportByDownloadIdWithSdk = async (
 		);
 	}
 
-	await submitManualImportCommandWithSdk(client, service, files, "auto");
+	return submitManualImportCommandWithSdk(client, service, files, "auto", options.beforeSubmit);
 };

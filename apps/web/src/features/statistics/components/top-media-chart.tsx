@@ -6,6 +6,7 @@ import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { ActivityCollectionNotice } from "./activity-collection-notice";
 
 type Metric = "plays" | "popularity";
 
@@ -78,7 +79,7 @@ export const TopMediaChart = ({
 	const subject = SUBJECT_FOR_MEDIA_TYPE[mediaType];
 	const HeaderIcon = metric === "popularity" ? Users : Icon;
 
-	if (isLoading) {
+	if (isLoading && !data) {
 		return (
 			<div className="rounded-xl border border-border/30 bg-card/30 p-6">
 				<PremiumSkeleton variant="line" className="h-5 w-40 mb-4" />
@@ -96,33 +97,58 @@ export const TopMediaChart = ({
 		);
 	}
 
-	if (isError) {
+	if (isError && !data) {
 		return (
 			<PremiumEmptyState
 				icon={Trophy}
 				title={`Failed to Load ${heading}`}
-				description={`Could not fetch ${subject} leaderboard. Try refreshing.`}
+				description="Check the media-server connection in Settings and try again."
 			/>
 		);
 	}
+
+	const refreshNotice = isError ? (
+		<p role="status" className="text-xs text-muted-foreground">
+			Showing last-known observations; refresh failed. Check the media-server connection in Settings
+			and try again.
+		</p>
+	) : null;
 
 	if (!data || data.items.length === 0) {
 		return (
-			<PremiumEmptyState
-				icon={Trophy}
-				title={`No ${heading} Yet`}
-				description={`Leaderboard appears once active sessions for ${subject} are captured by the snapshot scheduler.`}
-			/>
+			<div>
+				{refreshNotice}
+				<ActivityCollectionNotice measurement={data?.measurement} empty />
+				<PremiumEmptyState
+					icon={Trophy}
+					title="No Matching Sampled Observations"
+					description={`No matching ${subject} observations are available; this is not proof of no playback.`}
+				/>
+			</div>
 		);
 	}
 
+	const attributionVerified = (item: TopMediaResponse["items"][number]): boolean =>
+		data.measurement !== undefined &&
+		item.unattributedSessions !== undefined &&
+		item.unidentifiedPlaybackSessions !== undefined;
 	const primaryValue = (item: TopMediaResponse["items"][number]): number =>
-		metric === "popularity" ? item.distinctUserCount : item.playCount;
-	const primaryLabel = metric === "popularity" ? "viewers" : "plays";
+		!attributionVerified(item)
+			? 0
+			: metric === "popularity"
+				? item.distinctUserCount
+				: item.playCount;
+	const primaryLabel = metric === "popularity" ? "known viewers" : "known plays";
 	const maxPrimary = Math.max(...data.items.map(primaryValue), 1);
 
 	return (
 		<div className="rounded-xl border border-border/30 bg-card/30 p-6 space-y-4">
+			{refreshNotice}
+			<ActivityCollectionNotice measurement={data.measurement} empty={false} />
+			<p className="text-xs text-muted-foreground">
+				Titles grouped by display label; source-scoped viewers are not global distinct people.
+				Sample-weighted activity is five minutes per observation, not verified playback time.
+			</p>
 			<h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
 				<HeaderIcon className="h-4 w-4" style={{ color: gradient.from }} />
 				{heading}
@@ -132,9 +158,12 @@ export const TopMediaChart = ({
 				{data.items.map((item, i) => {
 					const displayTitle = incognitoMode ? getLinuxIsoName(item.title) : item.title;
 					const value = primaryValue(item);
+					const unknown =
+						metric === "popularity" ? item.unattributedSessions : item.unidentifiedPlaybackSessions;
+					const showUnknown = !attributionVerified(item) || (value === 0 && (unknown ?? 0) > 0);
 					const widthPercent = (value / maxPrimary) * 100;
 					return (
-						<div key={`${item.title}-${i}`} className="flex items-center gap-3 text-sm group">
+						<div key={item.title} className="flex items-center gap-3 text-sm group">
 							<span
 								className="w-5 text-right text-xs font-medium tabular-nums text-muted-foreground/60"
 								title={`#${i + 1}`}
@@ -156,13 +185,23 @@ export const TopMediaChart = ({
 									/>
 									<span className="relative z-10 truncate">{displayTitle}</span>
 								</div>
+								{attributionVerified(item) ? (
+									<p className="text-[10px] text-muted-foreground">
+										{item.unattributedSessions} unattributed observations;{" "}
+										{item.unidentifiedPlaybackSessions} unidentified playback observations.
+									</p>
+								) : (
+									<p className="text-[10px] text-muted-foreground">
+										Viewer and playback attribution unverified.
+									</p>
+								)}
 							</div>
 							<span className="w-16 text-right font-medium tabular-nums">
-								{value.toLocaleString()}
+								{showUnknown ? "Unknown" : value.toLocaleString()}
 								<span className="text-[10px] text-muted-foreground ml-1">{primaryLabel}</span>
 							</span>
 							<span className="w-20 text-right text-xs text-muted-foreground tabular-nums">
-								{formatWatchTime(item.totalDurationMinutes)}
+								{data.measurement ? formatWatchTime(item.totalDurationMinutes) : "Unverified"}
 							</span>
 						</div>
 					);

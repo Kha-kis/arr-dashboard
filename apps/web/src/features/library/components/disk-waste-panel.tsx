@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { ServiceBadge } from "../../../components/layout";
 import { useLibraryMonitorMutation } from "../../../hooks/api/useLibrary";
 import type { DiskWasteItem, DiskWasteResponse } from "../../../hooks/api/useDiskWasteInsights";
-import { getErrorMessage } from "../../../lib/error-utils";
+import { showMonitoringUnconfirmedToast } from "../lib/monitoring-feedback";
 import { getLinuxInstanceName, getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
@@ -78,9 +78,9 @@ export function DiskWastePanel({
 				itemId: item.arrItemId,
 				monitored: false,
 			});
-			toast.success(`${item.title} unmonitored`);
-		} catch (error) {
-			toast.error(getErrorMessage(error, "Failed to unmonitor"));
+			toast.success("Monitoring disabled");
+		} catch {
+			showMonitoringUnconfirmedToast();
 		} finally {
 			setPendingId(null);
 		}

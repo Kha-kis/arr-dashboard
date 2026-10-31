@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { GradientButton } from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
+import { getLinuxInstanceName, useIncognitoMode } from "@/lib/incognito";
 import {
 	useNotificationSubscriptions,
 	useUpdateSubscriptions,
@@ -14,7 +15,7 @@ import type {
 	SubscriptionGridResponse,
 	SubscriptionUpdateEntry,
 } from "../../../lib/api-client/notifications";
-import { getErrorMessage } from "../../../lib/error-utils";
+import { SubscriptionSaveUnverifiedError } from "../../../lib/api-client/notifications";
 
 /** Local map: eventType → channelId[] (convenient for checkbox toggling) */
 type SubsMap = Record<string, string[]>;
@@ -117,7 +118,7 @@ const EVENT_GROUPS: Array<{ label: string; events: NotificationEventType[] }> = 
 
 /** Derive local map from the backend normalized response */
 function toSubsMap(response: SubscriptionGridResponse): SubsMap {
-	const map: SubsMap = {};
+	const map: SubsMap = Object.create(null);
 	for (const event of response.events) {
 		map[event] = [];
 	}
@@ -155,22 +156,47 @@ function buildUpdateEntries(
 
 export function SubscriptionGrid() {
 	const { gradient } = useThemeGradient();
-	const { data: serverData, isLoading, isError } = useNotificationSubscriptions();
+	const [incognitoMode] = useIncognitoMode();
+	const {
+		data: serverData,
+		isLoading,
+		isError,
+		isFetching,
+		refetch,
+	} = useNotificationSubscriptions();
 	const updateSubs = useUpdateSubscriptions();
 
 	const [localSubs, setLocalSubs] = useState<SubsMap>({});
 	const [hasChanges, setHasChanges] = useState(false);
+	const [referenceGrid, setReferenceGrid] = useState<SubscriptionGridResponse | undefined>(
+		serverData,
+	);
+	const [unverified, setUnverified] = useState(false);
+	const [reloading, setReloading] = useState(false);
+	const [saveNotice, setSaveNotice] = useState<string | null>(null);
 	const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
-	// Derive local state from server response
+	// A draft remains tied to the grid it was edited against. Background reads
+	// cannot replace its cells, columns or baseline while saving or recovering.
 	useEffect(() => {
-		if (serverData) {
+		if (serverData && !hasChanges && !updateSubs.isPending && !unverified) {
+			setReferenceGrid(serverData);
 			setLocalSubs(toSubsMap(serverData));
-			setHasChanges(false);
 		}
-	}, [serverData]);
+	}, [serverData, hasChanges, updateSubs.isPending, unverified]);
+
+	const editableLocked = updateSubs.isPending || unverified || reloading;
+
+	const acceptGrid = (grid: SubscriptionGridResponse) => {
+		setReferenceGrid(grid);
+		setLocalSubs(toSubsMap(grid));
+		setHasChanges(false);
+		setUnverified(false);
+	};
 
 	const toggleSubscription = (eventType: string, channelId: string) => {
+		if (editableLocked) return;
+		setSaveNotice(null);
 		setLocalSubs((prev) => {
 			const current = prev[eventType] ?? [];
 			const updated = current.includes(channelId)
@@ -194,23 +220,49 @@ export function SubscriptionGrid() {
 	};
 
 	const handleSave = () => {
-		if (!serverData) return;
-		const entries = buildUpdateEntries(serverData, localSubs);
+		if (!referenceGrid || editableLocked) return;
+		const entries = buildUpdateEntries(referenceGrid, localSubs);
 		if (entries.length === 0) {
 			setHasChanges(false);
 			return;
 		}
 		updateSubs.mutate(entries, {
-			onSuccess: () => setHasChanges(false),
-			onError: (err) => toast.error(getErrorMessage(err, "Failed to save subscriptions")),
+			onSuccess: (confirmed) => {
+				acceptGrid(confirmed.grid);
+				setSaveNotice(
+					confirmed.omittedCount === null
+						? "Saved subscriptions reloaded. Omitted selection count is unknown; review the current grid."
+						: confirmed.omittedCount > 0
+							? `${confirmed.omittedCount} selection entries were omitted. Review the saved grid.`
+							: null,
+				);
+			},
+			onError: (error) => {
+				if (error instanceof SubscriptionSaveUnverifiedError) setUnverified(true);
+				else toast.error("Subscriptions could not be saved. Review your draft and try again.");
+			},
 		});
 	};
 
-	// Columns (channels) and rows (events) come from the server response
-	const channels = useMemo(() => serverData?.channels ?? [], [serverData]);
-	const availableEvents = useMemo(() => new Set(serverData?.events ?? []), [serverData]);
+	const reloadSavedGrid = async () => {
+		if (reloading || updateSubs.isPending) return;
+		setReloading(true);
+		try {
+			const result = await refetch();
+			if (result.isSuccess && result.data) {
+				acceptGrid(result.data);
+				setSaveNotice(null);
+			}
+		} finally {
+			setReloading(false);
+		}
+	};
 
-	if (isLoading) {
+	// Columns (channels) and rows (events) come from the server response
+	const channels = useMemo(() => referenceGrid?.channels ?? [], [referenceGrid]);
+	const availableEvents = useMemo(() => new Set(referenceGrid?.events ?? []), [referenceGrid]);
+
+	if (isLoading && !referenceGrid) {
 		return (
 			<div className="flex items-center justify-center py-12">
 				<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -218,33 +270,68 @@ export function SubscriptionGrid() {
 		);
 	}
 
-	if (isError) {
+	if (isError && !referenceGrid) {
 		return (
-			<div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
+			<div
+				role="alert"
+				className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground"
+			>
 				<AlertTriangle className="h-6 w-6" />
-				<p className="text-sm">Failed to load subscriptions. Please try refreshing the page.</p>
+				<p className="text-sm">Subscriptions are unavailable. Please try again.</p>
+				<GradientButton onClick={() => void refetch()} disabled={isFetching}>
+					Try again
+				</GradientButton>
 			</div>
 		);
 	}
 
+	const readNotice = unverified ? (
+		<div role="alert" className="rounded-xl border border-border/30 bg-muted/10 p-4 space-y-2">
+			<p className="text-sm text-muted-foreground">
+				Subscription save outcome could not be verified. Your draft is retained. Reload saved
+				subscriptions and review before saving again.
+			</p>
+			<GradientButton onClick={() => void reloadSavedGrid()} disabled={reloading}>
+				Reload saved subscriptions and discard draft
+			</GradientButton>
+		</div>
+	) : isError ? (
+		<div role="alert" className="text-sm text-muted-foreground space-y-2">
+			<p>Showing last-known saved subscriptions; refresh failed. Any draft is retained.</p>
+			<GradientButton onClick={() => void refetch()} disabled={isFetching}>
+				Try again
+			</GradientButton>
+		</div>
+	) : isFetching ? (
+		<p role="status" className="text-sm text-muted-foreground">
+			Showing last-known saved subscriptions while refreshing. Any draft is retained.
+		</p>
+	) : null;
+
 	if (channels.length === 0) {
 		return (
-			<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
-				<p className="text-center text-muted-foreground py-8">
-					Create at least one notification channel before configuring event subscriptions.
-				</p>
+			<div className="space-y-4">
+				{readNotice}
+				{saveNotice && <p className="text-sm text-muted-foreground">{saveNotice}</p>}
+				<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
+					<p className="text-center text-muted-foreground py-8">
+						Create at least one notification channel before configuring event subscriptions.
+					</p>
+				</div>
 			</div>
 		);
 	}
 
 	return (
 		<div className="space-y-4">
+			{readNotice}
+			{saveNotice && <p className="text-sm text-muted-foreground">{saveNotice}</p>}
 			<div className="flex items-center justify-between">
 				<p className="text-sm text-muted-foreground">
 					Select which channels receive notifications for each event type.
 				</p>
 				{hasChanges && (
-					<GradientButton onClick={handleSave} disabled={updateSubs.isPending}>
+					<GradientButton onClick={handleSave} disabled={editableLocked}>
 						{updateSubs.isPending ? (
 							<Loader2 className="mr-2 h-4 w-4 animate-spin" />
 						) : (
@@ -266,7 +353,7 @@ export function SubscriptionGrid() {
 										key={ch.id}
 										className="px-3 py-3 text-center text-muted-foreground font-medium whitespace-nowrap"
 									>
-										{ch.name}
+										{incognitoMode ? getLinuxInstanceName(ch.name) : ch.name}
 									</th>
 								))}
 							</tr>
@@ -318,6 +405,7 @@ export function SubscriptionGrid() {
 															<td key={ch.id} className="px-3 py-2.5 text-center">
 																<button
 																	type="button"
+																	disabled={editableLocked}
 																	onClick={() => toggleSubscription(event, ch.id)}
 																	className={`h-5 w-5 rounded border transition-colors ${
 																		isChecked
@@ -325,7 +413,7 @@ export function SubscriptionGrid() {
 																			: "border-border/50 bg-background/30"
 																	}`}
 																	style={isChecked ? { backgroundColor: gradient.from } : undefined}
-																	aria-label={`${isChecked ? "Unsubscribe" : "Subscribe"} ${ch.name} from ${EVENT_LABELS[event] ?? event}`}
+																	aria-label={`${isChecked ? "Unsubscribe" : "Subscribe"} ${incognitoMode ? getLinuxInstanceName(ch.name) : ch.name} from ${EVENT_LABELS[event] ?? event}`}
 																>
 																	{isChecked && (
 																		<svg

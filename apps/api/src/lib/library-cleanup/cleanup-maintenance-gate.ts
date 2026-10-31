@@ -1,12 +1,17 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import {
+	retainRestoreRuntimeOperation,
+	withRestoreRuntimeOperation,
+} from "../backup/restore-runtime-admission.js";
 
 /**
  * In-process reader/writer gate around cleanup-sensitive mutations.
  *
- * The API runtime lease guarantees one live API process per database. That
- * lets this gate live outside the application tables that backup restore
- * replaces: cleanup runs and topology writes are shared readers, while a
- * database restore is the exclusive writer.
+ * Stable 2.x supports one API process per database; runtime enforcement is
+ * tracked separately in #829. This gate does not establish database ownership
+ * across processes. Within the supported topology it lives outside the tables
+ * that backup restore replaces: cleanup runs and topology writes are shared
+ * readers, while a database restore is the exclusive writer.
  */
 
 let activeCleanupOperations = 0;
@@ -90,6 +95,10 @@ export async function withExclusiveCleanupOperationGuard<T>(
 }
 
 export async function withCleanupOperationGuard<T>(operation: () => Promise<T>): Promise<T> {
+	return withRestoreRuntimeOperation(() => runCleanupOperationGuard(operation));
+}
+
+async function runCleanupOperationGuard<T>(operation: () => Promise<T>): Promise<T> {
 	if (operationGuardContext.getStore()?.active === true) {
 		return await operation();
 	}
@@ -110,12 +119,33 @@ export async function withCleanupOperationGuard<T>(operation: () => Promise<T>):
 export async function withIndependentCleanupOperationGuard<T>(
 	operation: () => Promise<T>,
 ): Promise<T> {
+	return withRestoreRuntimeOperation(() => runIndependentCleanupOperationGuard(operation), {
+		independent: true,
+	});
+}
+
+async function runIndependentCleanupOperationGuard<T>(operation: () => Promise<T>): Promise<T> {
 	const { context, release } = acquireCleanupOperationGuardState({ allowNestedExclusive: true });
 	try {
 		return await operationGuardContext.run(context, operation);
 	} finally {
 		release();
 	}
+}
+
+/** Retain accepted queued work; acquire cleanup exclusion only when it actually runs. */
+export function retainCleanupOperation(): {
+	run<T>(operation: () => Promise<T>): Promise<T>;
+	release(): Promise<void>;
+} {
+	const retained = retainRestoreRuntimeOperation();
+	return Object.freeze({
+		run: <T>(operation: () => Promise<T>) =>
+			retained
+				? retained.run(() => runIndependentCleanupOperationGuard(operation))
+				: runIndependentCleanupOperationGuard(operation),
+		release: () => retained?.release() ?? Promise.resolve(),
+	});
 }
 
 export async function withCleanupMaintenanceGuard<T>(

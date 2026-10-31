@@ -232,16 +232,19 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		}
 
 		app.notificationService
-			?.notify({
-				eventType: "TRASH_DEPLOY_FAILED",
-				title: `TRaSH deployment failed on ${result.instanceLabel}`,
-				body: result.errors?.join("; ") ?? "Deployment failed",
-				url: "/trash-guides",
-				metadata: {
-					instance: result.instanceLabel,
-					templateId,
+			?.notify(
+				{
+					eventType: "TRASH_DEPLOY_FAILED",
+					title: `TRaSH deployment failed on ${result.instanceLabel}`,
+					body: result.errors?.join("; ") ?? "Deployment failed",
+					url: "/trash-guides",
+					metadata: {
+						instance: result.instanceLabel,
+						templateId,
+					},
 				},
-			})
+				{ userId },
+			)
 			.catch((err) => {
 				request.log.warn({ err }, "Deployment failed notification dispatch failed");
 			});
@@ -606,17 +609,20 @@ export async function deploymentRoutes(app: FastifyInstance) {
 
 		if (hasFailures && !hasUncertain) {
 			app.notificationService
-				?.notify({
-					eventType: "TRASH_DEPLOY_FAILED",
-					title: `TRaSH bulk deployment had failures`,
-					body: `Failed on: ${failedNames || "unknown instances"}`,
-					url: "/trash-guides",
-					metadata: {
-						totalInstances: instanceIds.length,
-						failedInstances: result.failedInstances,
-						templateId,
+				?.notify(
+					{
+						eventType: "TRASH_DEPLOY_FAILED",
+						title: `TRaSH bulk deployment had failures`,
+						body: `Failed on: ${failedNames || "unknown instances"}`,
+						url: "/trash-guides",
+						metadata: {
+							totalInstances: instanceIds.length,
+							failedInstances: result.failedInstances,
+							templateId,
+						},
 					},
-				})
+					{ userId },
+				)
 				.catch((err) => {
 					request.log.warn({ err }, "Bulk deployment failed notification dispatch failed");
 				});

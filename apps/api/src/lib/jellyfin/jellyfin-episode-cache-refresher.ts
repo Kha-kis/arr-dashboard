@@ -1,5 +1,6 @@
 /** Publishes a complete per-instance Jellyfin/Emby episode snapshot atomically. */
 
+import { createHash } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import type { Encryptor } from "../auth/encryption.js";
 import { Prisma, type PrismaClient, type ServiceInstance } from "../prisma.js";
@@ -10,14 +11,20 @@ import {
 	claimObservationUnit,
 	createOrLoadObservationRun,
 	failObservationUnit,
+	failOwnedObservationUnit,
 	getAutomaticObservationRenewalDeadline,
 	hasExhaustedObservationRunRetries,
+	releaseCancelledObservationUnitClaim,
 	renewExhaustedObservationRun,
 } from "../provider-observation/observation-run-repository.js";
-import type { ObservationRunProgress } from "../provider-observation/observation-run-types.js";
+import type {
+	ObservationRunProgress,
+	ObservationUnitClaim,
+} from "../provider-observation/observation-run-types.js";
 import {
 	claimProviderCacheRefreshAttempt,
 	finishProviderCacheRefreshAttemptFailure,
+	type ProviderCacheRefreshAttempt,
 } from "../services/provider-cache-status.js";
 import {
 	createProviderPublicationAuthority,
@@ -29,11 +36,15 @@ import {
 } from "../services/provider-identity-guard.js";
 import { UpstreamValidationError } from "../validation/parse-upstream.js";
 import {
+	type FinalizerLoopDiagnostics,
+	finalizerLoopDiagnosticsFrom,
+} from "./finalizer-loop-observation.js";
+import {
 	createOwnedJellyfinPublicationSnapshot,
 	JELLYFIN_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS,
 	type JellyfinPublicationContext,
 } from "./jellyfin-cache-refresher.js";
-import { JellyfinClient } from "./jellyfin-client.js";
+import { JellyfinClient, type JellyfinEpisodeItemsPage } from "./jellyfin-client.js";
 import { invalidateJellyfinEpisodeAttempt } from "./jellyfin-episode-attempt-recovery.js";
 import {
 	buildJellyfinEpisodeCatalogProvenance,
@@ -44,6 +55,16 @@ import {
 	jellyfinEpisodeCatalogScopesFromReceipt,
 } from "./jellyfin-episode-catalog-provenance.js";
 import {
+	type JellyfinEpisodeFinalizationWorkerPayload,
+	type JellyfinEpisodeFinalizerFailureCode,
+	type JellyfinEpisodeFinalizerFailureStage,
+	type NativeWatchStageFailureDiagnostics,
+	runJellyfinEpisodeFinalizerWorker,
+	sanitizeNativeWatchStageFailureDiagnostics,
+} from "./jellyfin-episode-finalizer-worker-transport.js";
+import type { JellyfinEpisodePageWorkerInput } from "./jellyfin-episode-page-worker-protocol.js";
+import { runJellyfinEpisodePageWorker } from "./jellyfin-episode-page-worker-transport.js";
+import {
 	fingerprintJellyfinEpisodeParentDependency,
 	JELLYFIN_EPISODE_PARENT_KEY_PREFIX,
 	jellyfinEpisodeParentGenerationKey,
@@ -52,8 +73,12 @@ import {
 	buildJellyfinEpisodeScopePlan,
 	finalizeJellyfinEpisodeRun,
 	invalidateJellyfinEpisodeRun,
+	JELLYFIN_EPISODE_NEW_RUN_PAGE_SIZE,
 	JELLYFIN_EPISODE_PARENT_MUTATION_AUTHORITY_MAX_AGE_MS,
+	type JellyfinEpisodeFinalizationTiming,
 	type JellyfinEpisodePageRejectionReason,
+	jellyfinEpisodePageSizeFromPayload,
+	readCompletedJellyfinEpisodePublication,
 	stageJellyfinEpisodePage,
 	validateJellyfinEpisodeSavedV2Plan,
 	validateJellyfinEpisodeSavedV3Plan,
@@ -65,6 +90,7 @@ import {
 	hasJellyfinEpisodeParentReceipt,
 	type JellyfinLibraryRowFingerprintInput,
 } from "./jellyfin-generation-metadata.js";
+import { cleanupPublishedJellyfinEpisodeArtifacts } from "./jellyfin-native-watch-repository.js";
 
 export { JELLYFIN_EPISODE_PARENT_MUTATION_AUTHORITY_MAX_AGE_MS };
 
@@ -87,7 +113,10 @@ export type JellyfinEpisodeRefreshResult = {
 };
 
 export type JellyfinEpisodePublicationContext = {
+	signal?: AbortSignal;
 	prisma: PrismaClient;
+	/** The configured database URL; supplied by production composition for SQLite worker routing. */
+	databaseUrl?: string;
 	encryptor: Pick<Encryptor, "decrypt">;
 	instance: ServiceInstance;
 	log: FastifyBaseLogger;
@@ -100,21 +129,28 @@ export type JellyfinEpisodePublicationContext = {
 /**
  * Production composition seam for the durable page runner.  Claims, guarded
  * publication, staging, recovery compatibility, and finalization stay inside
- * the runner; this only supplies the provider-client constructor.
+ * the runner; this supplies discovery and the physically joined page read.
  */
 export type JellyfinEpisodeWorkItemRunnerDependencies = {
 	createClient: (input: {
+		signal?: AbortSignal;
 		baseUrl: string;
 		apiKey: string;
 		log: FastifyBaseLogger;
 		httpAuthHeaders?: Record<string, string>;
 	}) => JellyfinClient;
+	readPage: (
+		input: JellyfinEpisodePageWorkerInput,
+		client: JellyfinClient,
+		signal?: AbortSignal,
+	) => Promise<JellyfinEpisodeItemsPage>;
 };
 
 const defaultJellyfinEpisodeWorkItemRunnerDependencies: JellyfinEpisodeWorkItemRunnerDependencies =
 	{
-		createClient: ({ baseUrl, apiKey, log, httpAuthHeaders }) =>
-			new JellyfinClient(baseUrl, apiKey, log, undefined, httpAuthHeaders),
+		createClient: ({ baseUrl, apiKey, log, httpAuthHeaders, signal }) =>
+			new JellyfinClient(baseUrl, apiKey, log, undefined, httpAuthHeaders, undefined, signal),
+		readPage: (input, _client, signal) => runJellyfinEpisodePageWorker(input, { signal }),
 	};
 
 type JellyfinEpisodeWorkProgress = ObservationRunProgress & {
@@ -129,6 +165,24 @@ type JellyfinEpisodeWorkProgress = ObservationRunProgress & {
 	retryablePreRenewalFailure?: true;
 	parentRefreshPending?: true;
 };
+
+type EpisodeClaimState = {
+	authority?: ProviderPublicationAuthority;
+	attempt?: ProviderCacheRefreshAttempt;
+	claim?: ObservationUnitClaim;
+	failure?: Parameters<typeof failObservationUnit>[1];
+};
+
+type PendingEpisodeFailure = {
+	authorityFingerprint: string;
+	authorityKey: string;
+	attempt: ProviderCacheRefreshAttempt;
+	failure: Parameters<typeof failObservationUnit>[1];
+};
+
+function episodeAuthorityFingerprint(authority: ProviderPublicationAuthority): string {
+	return createHash("sha256").update(JSON.stringify(authority)).digest("hex");
+}
 
 type JellyfinEpisodePageFailureCategory =
 	| "episode-page-coverage"
@@ -316,13 +370,100 @@ function claimScope(payload: string | null) {
 export function createJellyfinEpisodeWorkItemRunner(
 	deps: JellyfinEpisodeWorkItemRunnerDependencies = defaultJellyfinEpisodeWorkItemRunnerDependencies,
 ) {
+	// One small intent per failed instance, scoped to this client's lifetime.
+	// No page/catalog payload, plaintext connection, timer or admitted operation
+	// survives a call. A replacement client uses normal startup recovery instead.
+	const pendingFailures = new WeakMap<PrismaClient, Map<string, PendingEpisodeFailure>>();
+	function forgetPending(
+		context: JellyfinEpisodePublicationContext,
+		pending: PendingEpisodeFailure,
+	): void {
+		const failures = pendingFailures.get(context.prisma);
+		if (failures?.get(context.instance.id) !== pending) return;
+		failures.delete(context.instance.id);
+		if (failures.size === 0) pendingFailures.delete(context.prisma);
+	}
+	async function recoverPendingFailure(
+		context: JellyfinEpisodePublicationContext,
+	): Promise<JellyfinEpisodeWorkProgress | null> {
+		const pending = pendingFailures.get(context.prisma)?.get(context.instance.id);
+		if (!pending) return null;
+		checkEpisodeCancellation(context.signal);
+		const authority = createProviderPublicationAuthority(context.instance);
+		if (episodeAuthorityFingerprint(authority) !== pending.authorityFingerprint) {
+			forgetPending(context, pending);
+			return { ...emptyEpisodeProgress(), superseded: true };
+		}
+		const result = await retryJellyfinEpisodeFailureSettlement(
+			context,
+			async () =>
+				await failOwnedObservationUnit(context.prisma, {
+					failure: pending.failure,
+					authority,
+					authorityKey: pending.authorityKey,
+					attempt: pending.attempt,
+					now: context.now,
+					cleanupRunClaimToken: context.cleanupRunClaimToken,
+				}),
+		);
+		if (result.status === "unavailable")
+			return { ...emptyEpisodeProgress(), state: "running", retryableDependencyFailure: true };
+		forgetPending(context, pending);
+		return result.status === "recorded"
+			? {
+					...result.progress,
+					progressed: false,
+					...(result.renewalDeadline ? { renewalDeadline: result.renewalDeadline } : {}),
+				}
+			: { ...emptyEpisodeProgress(), superseded: true };
+	}
 	async function runNextJellyfinEpisodeWorkItemCore(
 		context: JellyfinEpisodePublicationContext,
 		markAdmissionStarted: () => void,
 		preRenewal: { settle: () => Promise<boolean> },
+		cancellation: EpisodeClaimState,
 	): Promise<JellyfinEpisodeWorkProgress> {
+		checkEpisodeCancellation(context.signal);
+		const workItemStartedAt = performance.now();
+		async function observeWorkStage<T>(
+			stage:
+				| "unit-claim"
+				| "guarded-read"
+				| "provider-read"
+				| "publication-fence"
+				| "page-stage"
+				| "run-progress",
+			operation: () => Promise<T>,
+		): Promise<T> {
+			const startedAt = performance.now();
+			const record = (state: "entered" | "succeeded" | "failed") => {
+				try {
+					context.log.info(
+						{
+							category: "jellyfin-episode-work-stage",
+							stage,
+							state,
+							elapsedMs: Math.max(0, Math.round(performance.now() - startedAt)),
+						},
+						"Jellyfin episode work stage",
+					);
+				} catch {
+					// Diagnostics never replace an operation's result or release its claim.
+				}
+			};
+			record("entered");
+			let state: "succeeded" | "failed" = "failed";
+			try {
+				const value = await operation();
+				state = "succeeded";
+				return value;
+			} finally {
+				record(state);
+			}
+		}
 		const now = context.now ?? new Date();
 		const guardOptions = {
+			signal: context.signal,
 			cleanupRunClaimToken: context.cleanupRunClaimToken,
 			now: () => now,
 			timeout: JELLYFIN_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS,
@@ -334,6 +475,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 			logJellyfinEpisodePrePageFailure(context.log, "current-authority-failed");
 			return emptyEpisodeProgress();
 		}
+		cancellation.authority = authority;
 		// A parent library refresh keeps the last published generation intact while
 		// it owns the provider status marker. Check that dependency before claiming
 		// an episode attempt so waiting does not create a failure or consume a retry.
@@ -376,6 +518,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 		}
 		if (outer.status === "superseded") return emptyEpisodeProgress();
 		const attempt = outer.attempt;
+		cancellation.attempt = attempt;
 		const canFinishAttempt = outer.status === "acquired";
 		preRenewal.settle = async () =>
 			canFinishAttempt &&
@@ -478,6 +621,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 				current as unknown as ServiceInstance,
 			);
 			client = deps.createClient({
+				signal: context.signal,
 				baseUrl: snapshot.baseUrl,
 				apiKey: snapshot.apiKey,
 				log: context.log,
@@ -553,17 +697,24 @@ export function createJellyfinEpisodeWorkItemRunner(
 			plan = savedPlan.plan;
 			scopes = savedPlan.scopes;
 			run = savedPlan.run;
-			if (
+			const automaticV3Recovery =
 				context.automaticRenewal === "provider-unavailable-cooldown" &&
 				run.state === "failed" &&
-				run.parentGenerationId?.startsWith(JELLYFIN_EPISODE_PARENT_V3_KEY_PREFIX)
+				run.parentGenerationId?.startsWith(JELLYFIN_EPISODE_PARENT_V3_KEY_PREFIX);
+			if (
+				automaticV3Recovery &&
+				run.nextAttemptAt === null &&
+				(await hasExhaustedObservationRunRetries(context.prisma, {
+					runId: run.id,
+					authorityKey: run.authorityKey,
+				}))
 			) {
 				if (!canFinishAttempt) {
 					return { ...(await runProgress(context.prisma, run.id)), renewalDeferred: true };
 				}
 				markAdmissionStarted();
 				const renewed = await renewExhaustedObservationRun(context.prisma, {
-					mode: context.automaticRenewal,
+					mode: "provider-unavailable-cooldown",
 					runId: run.id,
 					instanceId: current.id,
 					userId: current.userId,
@@ -621,10 +772,10 @@ export function createJellyfinEpisodeWorkItemRunner(
 					where: { id: run.id },
 				});
 			}
-			// Explicit user Retry may renew an exhausted retry epoch,
-			// but must use the saved catalog authority rather than today's expanded key.
+			// Automatic refresh must preserve a retryable V3 run's persisted deadline.
+			// Explicit Retry may reset a failed epoch using the saved catalog authority.
 			markAdmissionStarted();
-			if (context.resumeFailed && run.state === "failed") {
+			if (context.resumeFailed && run.state === "failed" && !automaticV3Recovery) {
 				try {
 					run = await createOrLoadObservationRun(context.prisma, {
 						authority: {
@@ -652,6 +803,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 			try {
 				scopes = await discoverScopes();
 			} catch (error) {
+				if (isEpisodeCancellation(error)) throw error;
 				logJellyfinEpisodePrePageFailure(context.log, classifyJellyfinEpisodeScopeFailure(error));
 				if (isIdentityUnavailable(error) && activeRunBeforeDiscovery) {
 					return {
@@ -670,14 +822,18 @@ export function createJellyfinEpisodeWorkItemRunner(
 				);
 			}
 			try {
-				plan = buildJellyfinEpisodeScopePlan(scopes, {
-					parentLibraryGenerationId: parent.generationId,
-					parentLibraryMetadataFingerprint: parent.metadataFingerprint,
-					...(parent.catalogProvenance && parent.parentDependencyFingerprint
-						? { parentLibraryDependencyFingerprint: parent.parentDependencyFingerprint }
-						: {}),
-					...(parent.catalogProvenance ? { catalogProvenance: parent.catalogProvenance } : {}),
-				});
+				plan = buildJellyfinEpisodeScopePlan(
+					scopes,
+					{
+						parentLibraryGenerationId: parent.generationId,
+						parentLibraryMetadataFingerprint: parent.metadataFingerprint,
+						...(parent.catalogProvenance && parent.parentDependencyFingerprint
+							? { parentLibraryDependencyFingerprint: parent.parentDependencyFingerprint }
+							: {}),
+						...(parent.catalogProvenance ? { catalogProvenance: parent.catalogProvenance } : {}),
+					},
+					current.service === "JELLYFIN" ? JELLYFIN_EPISODE_NEW_RUN_PAGE_SIZE : 1_000,
+				);
 			} catch {
 				logJellyfinEpisodePrePageFailure(context.log, "scope-plan-failed");
 				return await failAttempt("coverage-incomplete");
@@ -742,12 +898,49 @@ export function createJellyfinEpisodeWorkItemRunner(
 						authorityKey: run.authorityKey,
 					}),
 			);
-		const claim = await claimObservationUnit(context.prisma, { runId: run.id, now });
+		const finishAttemptIfRetryDeferred = async () => {
+			if (!runOwnsAttempt) return null;
+			return await finishProviderCacheRefreshAttemptFailure(
+				context.prisma,
+				"jellyfin_episode",
+				"collection-deferred",
+				authority,
+				attempt,
+				context.log,
+				guardOptions,
+				async (tx) =>
+					(await tx.providerObservationRun.count({
+						where: {
+							id: run.id,
+							instanceId: current.id,
+							provider: "jellyfin_episode",
+							cacheType: "jellyfin_episode",
+							authorityKey: run.authorityKey,
+							activeSlotKey: { not: null },
+							parentGenerationId: run.parentGenerationId,
+							targetDigest: plan.targetDigest,
+							connectionGeneration: authority.connectionGeneration,
+							identityGeneration: authority.identityGeneration,
+							state: "failed",
+							nextAttemptAt: { gt: now },
+						},
+					})) === 1,
+			);
+		};
+		const claim = await observeWorkStage(
+			"unit-claim",
+			async () => await claimObservationUnit(context.prisma, { runId: run.id, now }),
+		);
+		if (claim) cancellation.claim = claim;
+		checkEpisodeCancellation(context.signal);
 		if (!claim) {
 			const progress = await runProgress(context.prisma, run.id);
 			if (progress.completedUnits !== progress.totalUnits) {
+				const deferred = progress.state === "failed" ? await finishAttemptIfRetryDeferred() : null;
 				const settlement =
-					runOwnsAttempt && progress.state === "failed" ? await finishAttemptIfExhausted() : null;
+					runOwnsAttempt && progress.state === "failed" && deferred !== "recorded"
+						? await finishAttemptIfExhausted()
+						: null;
 				const renewalDeadline = settlement === "recorded" ? await automaticRenewalDeadline() : null;
 				return {
 					...progress,
@@ -758,10 +951,27 @@ export function createJellyfinEpisodeWorkItemRunner(
 			if (parent.temporaryUnavailable) {
 				return { ...progress, retryableDependencyFailure: true, progressed: false };
 			}
+			const admissionStartedAt = performance.now();
+			const logAdmission = (outcome: string) => {
+				try {
+					context.log.info(
+						{
+							category: "jellyfin-episode-finalizer-admission-timing",
+							outcome,
+							durationMs: Math.max(0, Math.round(performance.now() - admissionStartedAt)),
+						},
+						"Jellyfin episode finalizer admission timing",
+					);
+				} catch {
+					// Timing diagnostics cannot change retry or publication authority.
+				}
+			};
 			let finalScopes: Array<{ userId: string; userName: string; libraryId: string }>;
 			try {
 				finalScopes = await discoverScopes();
 			} catch (error) {
+				if (isEpisodeCancellation(error)) throw error;
+				logAdmission("scope-unavailable");
 				logJellyfinEpisodePrePageFailure(context.log, classifyJellyfinEpisodeScopeFailure(error));
 				if (isIdentityUnavailable(error)) {
 					return { ...progress, retryableDependencyFailure: true, progressed: false };
@@ -775,56 +985,275 @@ export function createJellyfinEpisodeWorkItemRunner(
 			// that intentionally invalidates stale authority inside its transaction.
 			const finalNow = context.now ?? new Date();
 			const finalParent = await readAuthoritativeLibraryParent(context.prisma, snapshot, finalNow);
-			if (isParentRefreshPending(finalParent)) return await deferForParentRefresh();
+			if (isParentRefreshPending(finalParent)) {
+				logAdmission("parent-wait");
+				return await deferForParentRefresh();
+			}
 			if (!finalParent) {
 				const lastGood =
 					savedPlan?.kind === "valid"
 						? await readAuthoritativeLibraryParent(context.prisma, snapshot, finalNow, true)
 						: null;
-				if (isParentRefreshPending(lastGood)) return await deferForParentRefresh();
+				if (isParentRefreshPending(lastGood)) {
+					logAdmission("parent-wait");
+					return await deferForParentRefresh();
+				}
 				if (
 					lastGood?.temporaryUnavailable &&
 					(activeCatalog
 						? catalogProvenanceIsCompatible(activeCatalog, lastGood.catalogProvenance)
 						: lastGood.parentGenerationId === activeEpisodeParentGenerationId)
 				) {
+					logAdmission("parent-unavailable");
 					return { ...progress, retryableDependencyFailure: true, progressed: false };
 				}
+				logAdmission("parent-invalid");
 				return await failAttempt("coverage-incomplete", run.id, runOwnsAttempt);
 			}
 			const finalCatalogCompatible = activeCatalog
 				? catalogProvenanceIsCompatible(activeCatalog, finalParent.catalogProvenance)
 				: finalParent.parentGenerationId === activeEpisodeParentGenerationId;
 			if (!finalCatalogCompatible) {
+				logAdmission("parent-changed");
 				return await failAttempt("coverage-incomplete", run.id, runOwnsAttempt);
 			}
-			try {
-				const finalized = await withGuardedProviderPublication(
-					context.prisma,
-					snapshot,
-					context.log,
-					async () => undefined,
-					async (tx) =>
-						await finalizeJellyfinEpisodeRun({
-							prisma: context.prisma,
-							transaction: tx,
-							userId: current.userId,
-							instance: current,
-							runId: run.id,
-							scopes: finalScopes,
+			logAdmission("admitted");
+			let workerWaitMs: number | undefined;
+			const workerUnavailable = async (
+				reasonCode:
+					| "transport-failed"
+					| "transaction-expired"
+					| "database-contention"
+					| "unknown" = "unknown",
+				phase?: "connection" | "publication",
+				durationMs?: number,
+				stage?: JellyfinEpisodeFinalizerFailureStage,
+				code?: JellyfinEpisodeFinalizerFailureCode,
+				nativeWatchDiagnostics?: NativeWatchStageFailureDiagnostics,
+				loopObservation?: FinalizerLoopDiagnostics,
+			): Promise<JellyfinEpisodeWorkProgress> => {
+				try {
+					context.log.warn(
+						{
+							category: "jellyfin-episode-finalizer-worker-unavailable",
+							reasonCode,
+							...(phase ? { phase } : {}),
+							...(stage ? { stage } : {}),
+							...(code ? { code } : {}),
+							...sanitizeNativeWatchStageFailureDiagnostics(stage, nativeWatchDiagnostics),
+							loopObservation: finalizerLoopDiagnosticsFrom({ loopObservation }),
+							...(durationMs === undefined ? {} : { durationMs }),
+							...(workerWaitMs === undefined ? {} : { workerWaitMs }),
+						},
+						"Jellyfin episode finalizer worker unavailable",
+					);
+				} catch {
+					// Diagnostic logging cannot invalidate resumable staged evidence.
+				}
+				if (canFinishAttempt || runOwnsAttempt) {
+					try {
+						await finishProviderCacheRefreshAttemptFailure(
+							context.prisma,
+							"jellyfin_episode",
+							"provider-unavailable",
+							authority,
 							attempt,
-							now: finalNow,
-						}),
-					{ ...guardOptions, now: () => finalNow },
-				);
+							context.log,
+							guardOptions,
+							async (tx) =>
+								(await tx.jellyfinEpisodePreparation.count({
+									where: {
+										runId: run.id,
+										instanceId: current.id,
+										generationId: run.id,
+										state: { in: ["preparing", "verified"] },
+										leaseExpiresAt: { gt: new Date() },
+									},
+								})) === 0,
+						);
+					} catch {
+						// A failed attempt-status write cannot discard resumable stages.
+					}
+				}
+				return { ...progress, retryableDependencyFailure: true, progressed: false };
+			};
+			try {
+				const timingRef: { current?: JellyfinEpisodeFinalizationTiming; rawTotalMs?: number } = {};
+				let finalizationCallDurationMs: number;
+				let outerOverheadMs: number | undefined;
+				let cleanupMs: number;
+				let cleanupFailed = false;
+				let finalized: { published: boolean; itemCount: number };
+				if (context.databaseUrl && !/^postgres(ql)?:\/\//i.test(context.databaseUrl)) {
+					if (snapshot.service !== "JELLYFIN" && snapshot.service !== "EMBY") {
+						return await failAttempt("coverage-incomplete", run.id, runOwnsAttempt);
+					}
+					let workerResult: Awaited<ReturnType<typeof runJellyfinEpisodeFinalizerWorker>>;
+					const workerWaitStartedAt = performance.now();
+					try {
+						workerResult = await runJellyfinEpisodeFinalizerWorker(
+							{
+								databaseUrl: context.databaseUrl,
+								userId: current.userId,
+								instance: snapshot as JellyfinEpisodeFinalizationWorkerPayload["instance"],
+								runId: run.id,
+								scopes: finalScopes,
+								attempt,
+								now: finalNow,
+								...(context.cleanupRunClaimToken
+									? { cleanupRunClaimToken: context.cleanupRunClaimToken }
+									: {}),
+							},
+							{ signal: context.signal },
+						);
+					} catch (error) {
+						workerWaitMs = Math.max(0, Math.round(performance.now() - workerWaitStartedAt));
+						let committedItemCount: number | null = null;
+						try {
+							committedItemCount = await readCompletedJellyfinEpisodePublication(context.prisma, {
+								userId: current.userId,
+								instanceId: current.id,
+								runId: run.id,
+								attempt,
+							});
+						} catch {
+							// An unavailable read cannot authorize invalidating resumable stages.
+						}
+						if (committedItemCount !== null) {
+							return {
+								...(await runProgress(context.prisma, run.id)),
+								publishedItemCount: committedItemCount,
+								progressed: false,
+							};
+						}
+						checkEpisodeCancellation(context.signal);
+						return await workerUnavailable(
+							"transport-failed",
+							undefined,
+							undefined,
+							undefined,
+							undefined,
+							undefined,
+							finalizerLoopDiagnosticsFrom(error),
+						);
+					}
+					workerWaitMs = Math.max(0, Math.round(performance.now() - workerWaitStartedAt));
+					if (workerResult.status === "cancelled")
+						throw new ProviderIdentityGuardError(
+							"PUBLICATION_CANCELLED",
+							"Episode publication cancelled.",
+						);
+					if (workerResult.status === "identity-unavailable") {
+						return { ...progress, retryableDependencyFailure: true, progressed: false };
+					}
+					if (workerResult.status !== "published") {
+						if (workerResult.status === "not-published") {
+							try {
+								context.log.warn(
+									{
+										category: "jellyfin-episode-finalizer-not-published",
+										reason: workerResult.reason ?? "unknown",
+										workerWaitMs,
+									},
+									"Jellyfin episode finalizer did not publish",
+								);
+							} catch {
+								// Diagnostics cannot change publication or retry authority.
+							}
+							if (workerResult.reason === "lease-busy" || workerResult.reason === "lease-lost")
+								return { ...progress, retryableDependencyFailure: true, progressed: false };
+							return await failAttempt("coverage-incomplete", undefined, runOwnsAttempt);
+						}
+						if (workerResult.status === "failed")
+							return await workerUnavailable(
+								workerResult.failureCategory,
+								workerResult.failurePhase,
+								workerResult.failureElapsedMs,
+								workerResult.failureStage,
+								workerResult.failureCode,
+								workerResult,
+								finalizerLoopDiagnosticsFrom(workerResult),
+							);
+						return await failAttempt("coverage-incomplete", run.id, runOwnsAttempt);
+					}
+					finalized = { published: true, itemCount: workerResult.itemCount };
+					if (workerResult.timing) timingRef.current = workerResult.timing;
+					finalizationCallDurationMs = workerResult.finalizationCallMs;
+					outerOverheadMs = workerResult.outerOverheadMs;
+					cleanupMs = workerResult.cleanupMs;
+					cleanupFailed = workerResult.cleanupFailed;
+				} else {
+					const finalizationStartedAt = performance.now();
+					finalized = await withGuardedProviderPublication(
+						context.prisma,
+						snapshot,
+						context.log,
+						async () => undefined,
+						async (tx) =>
+							await finalizeJellyfinEpisodeRun({
+								prisma: context.prisma,
+								transaction: tx,
+								userId: current.userId,
+								instance: current,
+								runId: run.id,
+								scopes: finalScopes,
+								attempt,
+								now: finalNow,
+								recordTiming: (timing, rawTotalMs) => {
+									timingRef.current = timing;
+									timingRef.rawTotalMs = rawTotalMs;
+								},
+							}),
+						{ ...guardOptions, now: () => finalNow },
+					);
+					finalizationCallDurationMs = performance.now() - finalizationStartedAt;
+					if (!finalized.published)
+						return await failAttempt("coverage-incomplete", undefined, runOwnsAttempt);
+					const cleanupStartedAt = performance.now();
+					try {
+						await cleanupPublishedJellyfinEpisodeArtifacts(context.prisma, current.id, run.id);
+					} catch {
+						cleanupFailed = true;
+					}
+					cleanupMs = Math.max(0, Math.round(performance.now() - cleanupStartedAt));
+				}
 				if (!finalized.published)
-					return await failAttempt("coverage-incomplete", undefined, runOwnsAttempt);
+					return await failAttempt("coverage-incomplete", run.id, runOwnsAttempt);
+				if (cleanupFailed) {
+					context.log.warn(
+						{ category: "jellyfin-episode-post-publication-cleanup-failed" },
+						"Jellyfin episode post-publication cleanup deferred",
+					);
+				}
+				try {
+					if (timingRef.current && typeof context.log.info === "function") {
+						context.log.info(
+							{
+								category: "jellyfin-episode-finalization-timing",
+								...timingRef.current,
+								finalizationCallMs: Math.max(0, Math.round(finalizationCallDurationMs)),
+								...(workerWaitMs === undefined ? {} : { workerWaitMs }),
+								outerOverheadMs: Math.max(
+									0,
+									Math.round(
+										outerOverheadMs ?? finalizationCallDurationMs - (timingRef.rawTotalMs ?? 0),
+									),
+								),
+								cleanupMs,
+							},
+							"Jellyfin episode finalization timing",
+						);
+					}
+				} catch {
+					// Diagnostics cannot change the committed publication result.
+				}
 				return {
 					...(await runProgress(context.prisma, run.id)),
 					publishedItemCount: finalized.itemCount,
 					progressed: false,
 				};
 			} catch (error) {
+				if (isEpisodeCancellation(error)) throw error;
 				if (isIdentityUnavailable(error)) {
 					return { ...progress, retryableDependencyFailure: true, progressed: false };
 				}
@@ -832,72 +1261,155 @@ export function createJellyfinEpisodeWorkItemRunner(
 			}
 		}
 		const persisted = claimScope(claim.scopePayload);
+		const pageSize = jellyfinEpisodePageSizeFromPayload(claim.scopePayload);
 		const scope = persisted
 			? scopes.find(
 					(candidate) =>
 						candidate.userId === persisted.userId && candidate.libraryId === persisted.libraryId,
 				)
 			: undefined;
-		if (!scope) {
+		if (!scope || pageSize === null) {
 			return await failAttempt("coverage-incomplete", run.id, runOwnsAttempt);
 		}
 		let stagingPage = false;
+		let settlingRejectedPage = false;
+		let providerReadMs = 0;
+		let guardMs = 0;
+		let stageMs = 0;
+		let itemCount = 0;
+		let outcome: "progressed" | "rejected" | "failed" = "failed";
+		let stageCompletedAt: number | null = null;
+		const guardStartedAt = performance.now();
 		try {
-			const page = await withGuardedProviderPublication(
-				context.prisma,
-				snapshot,
-				context.log,
-				async () =>
-					await client.getEpisodeItemsPageWithCoverage(scope.userId, scope.libraryId, claim.cursor),
-				async (_tx, collectedPage) => collectedPage,
-				guardOptions,
-			);
-			stagingPage = true;
-			const progressed = await stageJellyfinEpisodePage(
-				context.prisma,
-				claim,
-				scope,
-				page,
-				now,
-				(reason: JellyfinEpisodePageRejectionReason) => {
-					if (typeof context.log.warn !== "function") return;
-					context.log.warn(
-						{ category: "episode-page-rejected", reason },
-						"Jellyfin episode page unavailable",
+			const page = await (async () => {
+				try {
+					return await observeWorkStage(
+						"guarded-read",
+						async () =>
+							await withGuardedProviderPublication(
+								context.prisma,
+								snapshot,
+								context.log,
+								async () => {
+									const readStartedAt = performance.now();
+									try {
+										return await observeWorkStage(
+											"provider-read",
+											async () =>
+												await deps.readPage(
+													{
+														baseUrl: snapshot.baseUrl,
+														apiKey: snapshot.apiKey,
+														httpAuthHeaders: snapshot.httpAuthHeaders,
+														userId: scope.userId,
+														libraryId: scope.libraryId,
+														startIndex: claim.cursor,
+														limit: pageSize,
+													},
+													client,
+													context.signal,
+												),
+										);
+									} finally {
+										providerReadMs = performance.now() - readStartedAt;
+									}
+								},
+								async (_tx, collectedPage) =>
+									await observeWorkStage("publication-fence", async () => collectedPage),
+								guardOptions,
+							),
 					);
-				},
-			);
+				} finally {
+					guardMs = performance.now() - guardStartedAt;
+				}
+			})();
+			itemCount = page.items.length;
+			checkEpisodeCancellation(context.signal);
+			stagingPage = true;
+			const stageStartedAt = performance.now();
+			const progressed = await (async () => {
+				try {
+					return await observeWorkStage(
+						"page-stage",
+						async () =>
+							await stageJellyfinEpisodePage(
+								context.prisma,
+								claim,
+								scope,
+								page,
+								now,
+								(reason: JellyfinEpisodePageRejectionReason) => {
+									if (typeof context.log.warn !== "function") return;
+									context.log.warn(
+										{ category: "episode-page-rejected", reason },
+										"Jellyfin episode page unavailable",
+									);
+								},
+							),
+					);
+				} finally {
+					stageCompletedAt = performance.now();
+					stageMs = stageCompletedAt - stageStartedAt;
+				}
+			})();
+			checkEpisodeCancellation(context.signal);
 			if (!progressed) {
-				const failed = await failObservationUnit(context.prisma, {
+				outcome = "rejected";
+				settlingRejectedPage = true;
+				cancellation.failure = {
 					claim,
 					reasonCode: "coverage-incomplete",
 					now,
 					resetProgress: true,
-				});
+				};
+				const failed = await settleJellyfinEpisodeUnitFailure(context, cancellation.failure);
+				cancellation.failure = undefined;
 				if (failed && runOwnsAttempt) await finishAttemptIfExhausted();
 				return { ...(await runProgress(context.prisma, run.id)), progressed: false };
 			}
-			return { ...(await runProgress(context.prisma, run.id)), progressed };
+			outcome = "progressed";
+			return {
+				...(await observeWorkStage(
+					"run-progress",
+					async () => await runProgress(context.prisma, run.id),
+				)),
+				progressed,
+			};
 		} catch (error) {
+			// A failed rejection settlement must not lose resetProgress or be
+			// reclassified as a provider failure by this same page-level catch.
+			if (settlingRejectedPage) throw error;
+			if (isEpisodeCancellation(error)) throw error;
+			checkEpisodeCancellation(context.signal);
 			if (isTerminalIdentityAuthorityFailure(error)) {
 				return await failAttempt("coverage-incomplete", run.id, runOwnsAttempt);
 			}
-			if (typeof context.log.warn === "function") {
-				context.log.warn(
-					{
-						category: stagingPage
-							? classifyJellyfinEpisodeStageFailure(error)
-							: classifyJellyfinEpisodePageFailure(error),
-					},
-					"Jellyfin episode page unavailable",
-				);
+			try {
+				if (typeof context.log.warn === "function") {
+					context.log.warn(
+						{
+							category: stagingPage
+								? classifyJellyfinEpisodeStageFailure(error)
+								: classifyJellyfinEpisodePageFailure(error),
+						},
+						"Jellyfin episode page unavailable",
+					);
+				}
+			} catch {
+				// Diagnostics cannot prevent fenced settlement or replace its database error.
 			}
-			const failed = await failObservationUnit(context.prisma, {
+			cancellation.failure = {
 				claim,
 				reasonCode: "provider-unavailable",
 				now,
-			});
-			const settlement = failed && runOwnsAttempt ? await finishAttemptIfExhausted() : null;
+			};
+			const failed = await settleJellyfinEpisodeUnitFailure(context, cancellation.failure);
+			cancellation.failure = undefined;
+			const deferred = failed ? await finishAttemptIfRetryDeferred() : null;
+			const settlement =
+				failed && runOwnsAttempt && deferred !== "recorded"
+					? await finishAttemptIfExhausted()
+					: null;
 			const progress = await runProgress(context.prisma, run.id);
 			const renewalDeadline = settlement === "recorded" ? await automaticRenewalDeadline() : null;
 			return {
@@ -905,6 +1417,30 @@ export function createJellyfinEpisodeWorkItemRunner(
 				progressed: false,
 				...(renewalDeadline ? { renewalDeadline } : {}),
 			};
+		} finally {
+			try {
+				if (typeof context.log.info === "function") {
+					const finishedAt = performance.now();
+					const elapsed = (duration: number) => Math.max(0, Math.round(duration));
+					context.log.info(
+						{
+							category: "jellyfin-episode-page-timing",
+							phase: claim.phase === "verify" ? "verify" : "collect",
+							outcome,
+							itemCount,
+							prePageMs: elapsed(guardStartedAt - workItemStartedAt),
+							guardMs: elapsed(guardMs),
+							providerReadMs: elapsed(providerReadMs),
+							stageMs: elapsed(stageMs),
+							postStageMs: stageCompletedAt === null ? 0 : elapsed(finishedAt - stageCompletedAt),
+							totalMs: elapsed(finishedAt - workItemStartedAt),
+						},
+						"Jellyfin episode page timing",
+					);
+				}
+			} catch {
+				// Diagnostics must never replace a durable page result or its original failure.
+			}
 		}
 	}
 	return async (
@@ -912,15 +1448,59 @@ export function createJellyfinEpisodeWorkItemRunner(
 	): Promise<JellyfinEpisodeWorkProgress> => {
 		let admissionStarted = false;
 		const preRenewal = { settle: async () => true };
+		const cancellation: EpisodeClaimState = {};
 		try {
+			const recovered = await recoverPendingFailure(context);
+			if (recovered) return recovered;
 			return await runNextJellyfinEpisodeWorkItemCore(
 				context,
 				() => {
 					admissionStarted = true;
 				},
 				preRenewal,
+				cancellation,
 			);
 		} catch (error) {
+			if (isEpisodeCancellation(error)) {
+				if (cancellation.claim && cancellation.authority && cancellation.attempt)
+					await releaseCancelledObservationUnitClaim(context.prisma, {
+						claim: cancellation.claim,
+						authority: cancellation.authority,
+						attempt: cancellation.attempt,
+						cleanupRunClaimToken: context.cleanupRunClaimToken,
+					});
+				throw error;
+			}
+			if (
+				cancellation.failure &&
+				cancellation.authority &&
+				cancellation.attempt &&
+				cancellation.claim
+			) {
+				let failures = pendingFailures.get(context.prisma);
+				if (!failures) {
+					failures = new Map();
+					pendingFailures.set(context.prisma, failures);
+				}
+				failures.set(cancellation.authority.id, {
+					authorityFingerprint: episodeAuthorityFingerprint(cancellation.authority),
+					authorityKey: cancellation.claim.authorityKey,
+					attempt: {
+						...cancellation.attempt,
+						attemptedAt: new Date(cancellation.attempt.attemptedAt),
+					},
+					failure: {
+						claim: {
+							runId: cancellation.claim.runId,
+							unitId: cancellation.claim.unitId,
+							claimToken: cancellation.claim.claimToken,
+						},
+						reasonCode: cancellation.failure.reasonCode,
+						now: new Date(cancellation.failure.now),
+						resetProgress: cancellation.failure.resetProgress,
+					},
+				});
+			}
 			if (
 				context.automaticRenewal &&
 				!admissionStarted &&
@@ -938,6 +1518,33 @@ export function createJellyfinEpisodeWorkItemRunner(
 	};
 }
 
+async function settleJellyfinEpisodeUnitFailure(
+	context: Pick<JellyfinEpisodePublicationContext, "prisma" | "signal">,
+	input: Parameters<typeof failObservationUnit>[1],
+): Promise<boolean> {
+	return await retryJellyfinEpisodeFailureSettlement(
+		context,
+		async () => await failObservationUnit(context.prisma, input),
+	);
+}
+
+async function retryJellyfinEpisodeFailureSettlement<T>(
+	context: Pick<JellyfinEpisodePublicationContext, "prisma" | "signal">,
+	operation: () => Promise<T>,
+): Promise<T> {
+	// The provider worker has joined before either caller reaches settlement.
+	// Retry only the rolled-back transaction with the same claim and failure
+	// semantics; never repeat provider work or release another worker's lease.
+	for (let attempt = 0; ; attempt++) {
+		checkEpisodeCancellation(context.signal);
+		try {
+			return await operation();
+		} catch (error) {
+			if (attempt >= 2 || !isTransientEpisodeDatabaseFailure(error)) throw error;
+		}
+	}
+}
+
 function isTransientEpisodeDatabaseFailure(error: unknown): boolean {
 	return (
 		error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -949,7 +1556,20 @@ function isTransientEpisodeDatabaseFailure(error: unknown): boolean {
 export const runNextJellyfinEpisodeWorkItem = createJellyfinEpisodeWorkItemRunner();
 
 function isTerminalIdentityAuthorityFailure(error: unknown): boolean {
-	return error instanceof ProviderIdentityGuardError && error.code !== "IDENTITY_UNAVAILABLE";
+	return (
+		error instanceof ProviderIdentityGuardError &&
+		error.code !== "IDENTITY_UNAVAILABLE" &&
+		error.code !== "PUBLICATION_CANCELLED"
+	);
+}
+
+function isEpisodeCancellation(error: unknown): boolean {
+	return error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_CANCELLED";
+}
+
+function checkEpisodeCancellation(signal?: AbortSignal): void {
+	if (signal?.aborted)
+		throw new ProviderIdentityGuardError("PUBLICATION_CANCELLED", "Episode publication cancelled.");
 }
 
 function isIdentityUnavailable(error: unknown): boolean {

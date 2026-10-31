@@ -33,7 +33,12 @@ const trashSyncSchedulerPlugin = fastifyPlugin(
 						app.deploymentExecutor,
 						app.arrClientFactory,
 						(payload, options) => app.notificationService.notify(payload, options),
-						{ trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.trashSync, fn) },
+						{
+							trackTick: (fn) =>
+								app.notificationService.runProducer(() =>
+									app.schedulerRegistry.track(JOB_ID.trashSync, fn),
+								),
+						},
 					);
 
 					app.decorate("trashSyncScheduler", scheduler);
@@ -43,16 +48,21 @@ const trashSyncSchedulerPlugin = fastifyPlugin(
 			);
 		});
 
+		app.addHook("preClose", async () => {
+			app.trashSyncScheduler?.closeAdmission();
+		});
+
 		app.addHook("onClose", async () => {
 			if (app.trashSyncScheduler) {
 				app.log.info("Stopping TRaSH sync scheduler");
-				app.trashSyncScheduler.stop();
+				await app.trashSyncScheduler.shutdown();
 			}
 		});
 	},
 	{
 		name: "trash-sync-scheduler",
 		dependencies: ["prisma", "deployment-executor", "scheduler-registry"],
+		decorators: { fastify: ["notificationService"] },
 	},
 );
 

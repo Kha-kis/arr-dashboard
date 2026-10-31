@@ -370,6 +370,7 @@ export type ProviderObservationRunWhereInput = {
   completedAt?: Prisma.DateTimeNullableFilter<"ProviderObservationRun"> | Date | string | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
   units?: Prisma.ProviderObservationUnitListRelationFilter
+  jellyfinEpisodePreparation?: Prisma.XOR<Prisma.JellyfinEpisodePreparationNullableScalarRelationFilter, Prisma.JellyfinEpisodePreparationWhereInput> | null
 }
 
 export type ProviderObservationRunOrderByWithRelationInput = {
@@ -396,6 +397,7 @@ export type ProviderObservationRunOrderByWithRelationInput = {
   completedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   instance?: Prisma.ServiceInstanceOrderByWithRelationInput
   units?: Prisma.ProviderObservationUnitOrderByRelationAggregateInput
+  jellyfinEpisodePreparation?: Prisma.JellyfinEpisodePreparationOrderByWithRelationInput
 }
 
 export type ProviderObservationRunWhereUniqueInput = Prisma.AtLeast<{
@@ -425,6 +427,7 @@ export type ProviderObservationRunWhereUniqueInput = Prisma.AtLeast<{
   completedAt?: Prisma.DateTimeNullableFilter<"ProviderObservationRun"> | Date | string | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
   units?: Prisma.ProviderObservationUnitListRelationFilter
+  jellyfinEpisodePreparation?: Prisma.XOR<Prisma.JellyfinEpisodePreparationNullableScalarRelationFilter, Prisma.JellyfinEpisodePreparationWhereInput> | null
 }, "id" | "activeSlotKey">
 
 export type ProviderObservationRunOrderByWithAggregationInput = {
@@ -506,6 +509,7 @@ export type ProviderObservationRunCreateInput = {
   completedAt?: Date | string | null
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutProviderObservationRunsInput
   units?: Prisma.ProviderObservationUnitCreateNestedManyWithoutRunInput
+  jellyfinEpisodePreparation?: Prisma.JellyfinEpisodePreparationCreateNestedOneWithoutRunInput
 }
 
 export type ProviderObservationRunUncheckedCreateInput = {
@@ -531,6 +535,7 @@ export type ProviderObservationRunUncheckedCreateInput = {
   updatedAt?: Date | string
   completedAt?: Date | string | null
   units?: Prisma.ProviderObservationUnitUncheckedCreateNestedManyWithoutRunInput
+  jellyfinEpisodePreparation?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedOneWithoutRunInput
 }
 
 export type ProviderObservationRunUpdateInput = {
@@ -556,6 +561,7 @@ export type ProviderObservationRunUpdateInput = {
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutProviderObservationRunsNestedInput
   units?: Prisma.ProviderObservationUnitUpdateManyWithoutRunNestedInput
+  jellyfinEpisodePreparation?: Prisma.JellyfinEpisodePreparationUpdateOneWithoutRunNestedInput
 }
 
 export type ProviderObservationRunUncheckedUpdateInput = {
@@ -581,6 +587,7 @@ export type ProviderObservationRunUncheckedUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   units?: Prisma.ProviderObservationUnitUncheckedUpdateManyWithoutRunNestedInput
+  jellyfinEpisodePreparation?: Prisma.JellyfinEpisodePreparationUncheckedUpdateOneWithoutRunNestedInput
 }
 
 export type ProviderObservationRunCreateManyInput = {
@@ -662,6 +669,11 @@ export type ProviderObservationRunListRelationFilter = {
 
 export type ProviderObservationRunOrderByRelationAggregateInput = {
   _count?: Prisma.SortOrder
+}
+
+export type ProviderObservationRunScalarRelationFilter = {
+  is?: Prisma.ProviderObservationRunWhereInput
+  isNot?: Prisma.ProviderObservationRunWhereInput
 }
 
 export type ProviderObservationRunCountOrderByAggregateInput = {
@@ -756,11 +768,6 @@ export type ProviderObservationRunSumOrderByAggregateInput = {
   completedWork?: Prisma.SortOrder
 }
 
-export type ProviderObservationRunScalarRelationFilter = {
-  is?: Prisma.ProviderObservationRunWhereInput
-  isNot?: Prisma.ProviderObservationRunWhereInput
-}
-
 export type ProviderObservationRunCreateNestedManyWithoutInstanceInput = {
   create?: Prisma.XOR<Prisma.ProviderObservationRunCreateWithoutInstanceInput, Prisma.ProviderObservationRunUncheckedCreateWithoutInstanceInput> | Prisma.ProviderObservationRunCreateWithoutInstanceInput[] | Prisma.ProviderObservationRunUncheckedCreateWithoutInstanceInput[]
   connectOrCreate?: Prisma.ProviderObservationRunCreateOrConnectWithoutInstanceInput | Prisma.ProviderObservationRunCreateOrConnectWithoutInstanceInput[]
@@ -803,6 +810,20 @@ export type ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput 
   deleteMany?: Prisma.ProviderObservationRunScalarWhereInput | Prisma.ProviderObservationRunScalarWhereInput[]
 }
 
+export type ProviderObservationRunCreateNestedOneWithoutJellyfinEpisodePreparationInput = {
+  create?: Prisma.XOR<Prisma.ProviderObservationRunCreateWithoutJellyfinEpisodePreparationInput, Prisma.ProviderObservationRunUncheckedCreateWithoutJellyfinEpisodePreparationInput>
+  connectOrCreate?: Prisma.ProviderObservationRunCreateOrConnectWithoutJellyfinEpisodePreparationInput
+  connect?: Prisma.ProviderObservationRunWhereUniqueInput
+}
+
+export type ProviderObservationRunUpdateOneRequiredWithoutJellyfinEpisodePreparationNestedInput = {
+  create?: Prisma.XOR<Prisma.ProviderObservationRunCreateWithoutJellyfinEpisodePreparationInput, Prisma.ProviderObservationRunUncheckedCreateWithoutJellyfinEpisodePreparationInput>
+  connectOrCreate?: Prisma.ProviderObservationRunCreateOrConnectWithoutJellyfinEpisodePreparationInput
+  upsert?: Prisma.ProviderObservationRunUpsertWithoutJellyfinEpisodePreparationInput
+  connect?: Prisma.ProviderObservationRunWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ProviderObservationRunUpdateToOneWithWhereWithoutJellyfinEpisodePreparationInput, Prisma.ProviderObservationRunUpdateWithoutJellyfinEpisodePreparationInput>, Prisma.ProviderObservationRunUncheckedUpdateWithoutJellyfinEpisodePreparationInput>
+}
+
 export type ProviderObservationRunCreateNestedOneWithoutUnitsInput = {
   create?: Prisma.XOR<Prisma.ProviderObservationRunCreateWithoutUnitsInput, Prisma.ProviderObservationRunUncheckedCreateWithoutUnitsInput>
   connectOrCreate?: Prisma.ProviderObservationRunCreateOrConnectWithoutUnitsInput
@@ -839,6 +860,7 @@ export type ProviderObservationRunCreateWithoutInstanceInput = {
   updatedAt?: Date | string
   completedAt?: Date | string | null
   units?: Prisma.ProviderObservationUnitCreateNestedManyWithoutRunInput
+  jellyfinEpisodePreparation?: Prisma.JellyfinEpisodePreparationCreateNestedOneWithoutRunInput
 }
 
 export type ProviderObservationRunUncheckedCreateWithoutInstanceInput = {
@@ -863,6 +885,7 @@ export type ProviderObservationRunUncheckedCreateWithoutInstanceInput = {
   updatedAt?: Date | string
   completedAt?: Date | string | null
   units?: Prisma.ProviderObservationUnitUncheckedCreateNestedManyWithoutRunInput
+  jellyfinEpisodePreparation?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedOneWithoutRunInput
 }
 
 export type ProviderObservationRunCreateOrConnectWithoutInstanceInput = {
@@ -917,6 +940,122 @@ export type ProviderObservationRunScalarWhereInput = {
   completedAt?: Prisma.DateTimeNullableFilter<"ProviderObservationRun"> | Date | string | null
 }
 
+export type ProviderObservationRunCreateWithoutJellyfinEpisodePreparationInput = {
+  id?: string
+  provider: string
+  cacheType: string
+  authorityKey: string
+  activeSlotKey?: string | null
+  parentGenerationId?: string | null
+  targetDigest: string
+  targetCount: number
+  connectionGeneration: number
+  identityGeneration: number
+  state: string
+  totalUnits: number
+  completedUnits?: number
+  totalWork: number
+  completedWork?: number
+  nextAttemptAt?: Date | string | null
+  lastReasonCode?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  completedAt?: Date | string | null
+  instance: Prisma.ServiceInstanceCreateNestedOneWithoutProviderObservationRunsInput
+  units?: Prisma.ProviderObservationUnitCreateNestedManyWithoutRunInput
+}
+
+export type ProviderObservationRunUncheckedCreateWithoutJellyfinEpisodePreparationInput = {
+  id?: string
+  instanceId: string
+  provider: string
+  cacheType: string
+  authorityKey: string
+  activeSlotKey?: string | null
+  parentGenerationId?: string | null
+  targetDigest: string
+  targetCount: number
+  connectionGeneration: number
+  identityGeneration: number
+  state: string
+  totalUnits: number
+  completedUnits?: number
+  totalWork: number
+  completedWork?: number
+  nextAttemptAt?: Date | string | null
+  lastReasonCode?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  completedAt?: Date | string | null
+  units?: Prisma.ProviderObservationUnitUncheckedCreateNestedManyWithoutRunInput
+}
+
+export type ProviderObservationRunCreateOrConnectWithoutJellyfinEpisodePreparationInput = {
+  where: Prisma.ProviderObservationRunWhereUniqueInput
+  create: Prisma.XOR<Prisma.ProviderObservationRunCreateWithoutJellyfinEpisodePreparationInput, Prisma.ProviderObservationRunUncheckedCreateWithoutJellyfinEpisodePreparationInput>
+}
+
+export type ProviderObservationRunUpsertWithoutJellyfinEpisodePreparationInput = {
+  update: Prisma.XOR<Prisma.ProviderObservationRunUpdateWithoutJellyfinEpisodePreparationInput, Prisma.ProviderObservationRunUncheckedUpdateWithoutJellyfinEpisodePreparationInput>
+  create: Prisma.XOR<Prisma.ProviderObservationRunCreateWithoutJellyfinEpisodePreparationInput, Prisma.ProviderObservationRunUncheckedCreateWithoutJellyfinEpisodePreparationInput>
+  where?: Prisma.ProviderObservationRunWhereInput
+}
+
+export type ProviderObservationRunUpdateToOneWithWhereWithoutJellyfinEpisodePreparationInput = {
+  where?: Prisma.ProviderObservationRunWhereInput
+  data: Prisma.XOR<Prisma.ProviderObservationRunUpdateWithoutJellyfinEpisodePreparationInput, Prisma.ProviderObservationRunUncheckedUpdateWithoutJellyfinEpisodePreparationInput>
+}
+
+export type ProviderObservationRunUpdateWithoutJellyfinEpisodePreparationInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  provider?: Prisma.StringFieldUpdateOperationsInput | string
+  cacheType?: Prisma.StringFieldUpdateOperationsInput | string
+  authorityKey?: Prisma.StringFieldUpdateOperationsInput | string
+  activeSlotKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  parentGenerationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  targetDigest?: Prisma.StringFieldUpdateOperationsInput | string
+  targetCount?: Prisma.IntFieldUpdateOperationsInput | number
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  state?: Prisma.StringFieldUpdateOperationsInput | string
+  totalUnits?: Prisma.IntFieldUpdateOperationsInput | number
+  completedUnits?: Prisma.IntFieldUpdateOperationsInput | number
+  totalWork?: Prisma.IntFieldUpdateOperationsInput | number
+  completedWork?: Prisma.IntFieldUpdateOperationsInput | number
+  nextAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastReasonCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutProviderObservationRunsNestedInput
+  units?: Prisma.ProviderObservationUnitUpdateManyWithoutRunNestedInput
+}
+
+export type ProviderObservationRunUncheckedUpdateWithoutJellyfinEpisodePreparationInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  instanceId?: Prisma.StringFieldUpdateOperationsInput | string
+  provider?: Prisma.StringFieldUpdateOperationsInput | string
+  cacheType?: Prisma.StringFieldUpdateOperationsInput | string
+  authorityKey?: Prisma.StringFieldUpdateOperationsInput | string
+  activeSlotKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  parentGenerationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  targetDigest?: Prisma.StringFieldUpdateOperationsInput | string
+  targetCount?: Prisma.IntFieldUpdateOperationsInput | number
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  state?: Prisma.StringFieldUpdateOperationsInput | string
+  totalUnits?: Prisma.IntFieldUpdateOperationsInput | number
+  completedUnits?: Prisma.IntFieldUpdateOperationsInput | number
+  totalWork?: Prisma.IntFieldUpdateOperationsInput | number
+  completedWork?: Prisma.IntFieldUpdateOperationsInput | number
+  nextAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastReasonCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  units?: Prisma.ProviderObservationUnitUncheckedUpdateManyWithoutRunNestedInput
+}
+
 export type ProviderObservationRunCreateWithoutUnitsInput = {
   id?: string
   provider: string
@@ -939,6 +1078,7 @@ export type ProviderObservationRunCreateWithoutUnitsInput = {
   updatedAt?: Date | string
   completedAt?: Date | string | null
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutProviderObservationRunsInput
+  jellyfinEpisodePreparation?: Prisma.JellyfinEpisodePreparationCreateNestedOneWithoutRunInput
 }
 
 export type ProviderObservationRunUncheckedCreateWithoutUnitsInput = {
@@ -963,6 +1103,7 @@ export type ProviderObservationRunUncheckedCreateWithoutUnitsInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   completedAt?: Date | string | null
+  jellyfinEpisodePreparation?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedOneWithoutRunInput
 }
 
 export type ProviderObservationRunCreateOrConnectWithoutUnitsInput = {
@@ -1003,6 +1144,7 @@ export type ProviderObservationRunUpdateWithoutUnitsInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutProviderObservationRunsNestedInput
+  jellyfinEpisodePreparation?: Prisma.JellyfinEpisodePreparationUpdateOneWithoutRunNestedInput
 }
 
 export type ProviderObservationRunUncheckedUpdateWithoutUnitsInput = {
@@ -1027,6 +1169,7 @@ export type ProviderObservationRunUncheckedUpdateWithoutUnitsInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  jellyfinEpisodePreparation?: Prisma.JellyfinEpisodePreparationUncheckedUpdateOneWithoutRunNestedInput
 }
 
 export type ProviderObservationRunCreateManyInstanceInput = {
@@ -1074,6 +1217,7 @@ export type ProviderObservationRunUpdateWithoutInstanceInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   units?: Prisma.ProviderObservationUnitUpdateManyWithoutRunNestedInput
+  jellyfinEpisodePreparation?: Prisma.JellyfinEpisodePreparationUpdateOneWithoutRunNestedInput
 }
 
 export type ProviderObservationRunUncheckedUpdateWithoutInstanceInput = {
@@ -1098,6 +1242,7 @@ export type ProviderObservationRunUncheckedUpdateWithoutInstanceInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   units?: Prisma.ProviderObservationUnitUncheckedUpdateManyWithoutRunNestedInput
+  jellyfinEpisodePreparation?: Prisma.JellyfinEpisodePreparationUncheckedUpdateOneWithoutRunNestedInput
 }
 
 export type ProviderObservationRunUncheckedUpdateManyWithoutInstanceInput = {
@@ -1178,6 +1323,7 @@ export type ProviderObservationRunSelect<ExtArgs extends runtime.Types.Extension
   completedAt?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
   units?: boolean | Prisma.ProviderObservationRun$unitsArgs<ExtArgs>
+  jellyfinEpisodePreparation?: boolean | Prisma.ProviderObservationRun$jellyfinEpisodePreparationArgs<ExtArgs>
   _count?: boolean | Prisma.ProviderObservationRunCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["providerObservationRun"]>
 
@@ -1259,6 +1405,7 @@ export type ProviderObservationRunOmit<ExtArgs extends runtime.Types.Extensions.
 export type ProviderObservationRunInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
   units?: boolean | Prisma.ProviderObservationRun$unitsArgs<ExtArgs>
+  jellyfinEpisodePreparation?: boolean | Prisma.ProviderObservationRun$jellyfinEpisodePreparationArgs<ExtArgs>
   _count?: boolean | Prisma.ProviderObservationRunCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type ProviderObservationRunIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -1273,6 +1420,7 @@ export type $ProviderObservationRunPayload<ExtArgs extends runtime.Types.Extensi
   objects: {
     instance: Prisma.$ServiceInstancePayload<ExtArgs>
     units: Prisma.$ProviderObservationUnitPayload<ExtArgs>[]
+    jellyfinEpisodePreparation: Prisma.$JellyfinEpisodePreparationPayload<ExtArgs> | null
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1692,6 +1840,7 @@ export interface Prisma__ProviderObservationRunClient<T, Null = never, ExtArgs e
   readonly [Symbol.toStringTag]: "PrismaPromise"
   instance<T extends Prisma.ServiceInstanceDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstanceDefaultArgs<ExtArgs>>): Prisma.Prisma__ServiceInstanceClient<runtime.Types.Result.GetResult<Prisma.$ServiceInstancePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
   units<T extends Prisma.ProviderObservationRun$unitsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ProviderObservationRun$unitsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ProviderObservationUnitPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  jellyfinEpisodePreparation<T extends Prisma.ProviderObservationRun$jellyfinEpisodePreparationArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ProviderObservationRun$jellyfinEpisodePreparationArgs<ExtArgs>>): Prisma.Prisma__JellyfinEpisodePreparationClient<runtime.Types.Result.GetResult<Prisma.$JellyfinEpisodePreparationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -2162,6 +2311,25 @@ export type ProviderObservationRun$unitsArgs<ExtArgs extends runtime.Types.Exten
   take?: number
   skip?: number
   distinct?: Prisma.ProviderObservationUnitScalarFieldEnum | Prisma.ProviderObservationUnitScalarFieldEnum[]
+}
+
+/**
+ * ProviderObservationRun.jellyfinEpisodePreparation
+ */
+export type ProviderObservationRun$jellyfinEpisodePreparationArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the JellyfinEpisodePreparation
+   */
+  select?: Prisma.JellyfinEpisodePreparationSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the JellyfinEpisodePreparation
+   */
+  omit?: Prisma.JellyfinEpisodePreparationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.JellyfinEpisodePreparationInclude<ExtArgs> | null
+  where?: Prisma.JellyfinEpisodePreparationWhereInput
 }
 
 /**

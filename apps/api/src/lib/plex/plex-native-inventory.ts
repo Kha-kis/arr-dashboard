@@ -6,6 +6,7 @@ import {
 	type NativeInventoryRow,
 	reconcileNativeInventoryIdentifiers,
 } from "../provider-observation/native-inventory.js";
+import type { NativeInventoryJobAdapter } from "../provider-observation/native-inventory-job-runner.js";
 import type { PlexClient, PlexCompletePageResult, PlexSettlementLibrary } from "./plex-client.js";
 import { logPlexCollectionRejection } from "./plex-collection-diagnostics.js";
 import { evaluatePlexLiveSettlement } from "./plex-live-settlement.js";
@@ -116,6 +117,171 @@ async function probe(
 
 function catalogIdentity(sections: readonly PlexSettlementLibrary[]): string {
 	return JSON.stringify(sections.map((s) => [s.key, s.uuid, s.type, s.scannedAt, s.updatedAt]));
+}
+
+export interface PlexNativeJobScope {
+	domain: NativeInventoryDomain;
+	sectionKey: string;
+	sectionUuid: string;
+	sectionType: "movie" | "show";
+	scopeKey: string;
+}
+
+type PlexNativeJobReader = Pick<
+	PlexClient,
+	"getActivities" | "getLibrarySettlementSections" | "readNativeInventoryPage"
+>;
+
+/** One paired run retains Plex's settled-catalog proof across both domains. */
+export function createPlexNativeJobAdapter(
+	client: PlexNativeJobReader,
+): NativeInventoryJobAdapter<PlexNativeJobScope>;
+export function createPlexNativeJobAdapter(
+	client: Pick<PlexNativeJobReader, "readNativeInventoryPage">,
+	options: { discoverScopes: NativeInventoryJobAdapter<PlexNativeJobScope>["discoverScopes"] },
+): NativeInventoryJobAdapter<PlexNativeJobScope>;
+export function createPlexNativeJobAdapter(
+	client: Pick<PlexNativeJobReader, "readNativeInventoryPage"> &
+		Partial<Omit<PlexNativeJobReader, "readNativeInventoryPage">>,
+	options?: { discoverScopes: NativeInventoryJobAdapter<PlexNativeJobScope>["discoverScopes"] },
+): NativeInventoryJobAdapter<PlexNativeJobScope> {
+	return {
+		domain: "paired",
+		async discoverScopes(deadlineAt) {
+			if (options?.discoverScopes) return await options.discoverScopes(deadlineAt);
+			if (!client.getActivities || !client.getLibrarySettlementSections)
+				return { status: "unavailable", reason: "provider-unavailable" };
+			const remainingMs = deadlineAt - Date.now();
+			if (remainingMs <= 0) return { status: "unavailable", reason: "deadline-exceeded" };
+			let activities: Awaited<ReturnType<PlexClient["getActivities"]>>;
+			let sections: Awaited<ReturnType<PlexClient["getLibrarySettlementSections"]>>;
+			try {
+				[activities, sections] = await Promise.all([
+					client.getActivities({ uncached: true, timeoutMs: remainingMs }),
+					client.getLibrarySettlementSections({ uncached: true, timeoutMs: remainingMs }),
+				]);
+			} catch {
+				return { status: "unavailable", reason: "provider-unavailable" };
+			}
+			const selected = sections.filter(
+				(section) => section.type === "movie" || section.type === "show",
+			);
+			if (
+				selected.some((section) => !validKey(section.key) || !validKey(section.uuid)) ||
+				new Set(selected.map((section) => section.key)).size !== selected.length ||
+				new Set(selected.map((section) => section.uuid)).size !== selected.length
+			)
+				return { status: "unavailable", reason: "coverage-incomplete" };
+			const settled = evaluatePlexLiveSettlement({
+				activities,
+				sections,
+				selectedSectionKeys: selected.map((section) => section.key),
+			});
+			if (!settled.settled) return { status: "unavailable", reason: "coverage-incomplete" };
+			selected.sort((a, b) => a.key.localeCompare(b.key));
+			const scopes: PlexNativeJobScope[] = [];
+			for (const section of selected) {
+				const sectionType = section.type as "movie" | "show";
+				const scope = {
+					sectionKey: section.key,
+					sectionUuid: section.uuid,
+					sectionType,
+					scopeKey: JSON.stringify([section.key, section.uuid, section.type]),
+				};
+				scopes.push({ ...scope, domain: "library" });
+				if (sectionType === "show") scopes.push({ ...scope, domain: "episode" });
+			}
+			return { status: "ready", catalogIdentity: catalogIdentity(selected), scopes };
+		},
+		async readPage(scope, startIndex, limit, deadlineAt) {
+			if (
+				!validKey(scope.sectionKey) ||
+				!validKey(scope.sectionUuid) ||
+				(scope.sectionType !== "movie" && scope.sectionType !== "show") ||
+				(scope.domain !== "library" && scope.domain !== "episode") ||
+				(scope.domain === "episode" && scope.sectionType !== "show") ||
+				scope.scopeKey !== JSON.stringify([scope.sectionKey, scope.sectionUuid, scope.sectionType])
+			)
+				return { status: "unavailable", reason: "coverage-incomplete" };
+			let page: Awaited<ReturnType<PlexClient["readNativeInventoryPage"]>>;
+			try {
+				page = await client.readNativeInventoryPage({
+					domain: scope.domain,
+					sectionId: scope.sectionKey,
+					startIndex,
+					limit,
+					deadlineAt,
+				});
+			} catch {
+				return { status: "unavailable", reason: "provider-unavailable" };
+			}
+			if (page.status === "unavailable") return page;
+			if (page.domain !== scope.domain || page.startIndex !== startIndex) {
+				return { status: "unavailable", reason: "coverage-incomplete" };
+			}
+			const rawNativeIds: string[] = [];
+			const comparisonKeys: Array<string | null> = [];
+			const rows: NativeInventoryRow[] = [];
+			for (const item of page.items) {
+				if (!validKey(item.ratingKey)) {
+					return { status: "unavailable", reason: "coverage-incomplete" };
+				}
+				rawNativeIds.push(item.ratingKey);
+				if (scope.domain === "library") {
+					if (item.type === "collection") {
+						comparisonKeys.push(null);
+						continue;
+					}
+					if (item.type !== scope.sectionType) {
+						return { status: "unavailable", reason: "coverage-incomplete" };
+					}
+					comparisonKeys.push(JSON.stringify([item.type]));
+					rows.push({
+						nativeId: item.ratingKey,
+						mediaType: item.type === "show" ? "series" : "movie",
+						libraryIds: [scope.sectionKey],
+						parentNativeId: null,
+						seasonNumber: null,
+						episodeNumber: null,
+						title: item.title,
+						...(hasNativeInventoryExternalIds(item.externalIds)
+							? { externalIds: item.externalIds }
+							: {}),
+					});
+				} else {
+					if (item.type !== "episode")
+						return { status: "unavailable", reason: "coverage-incomplete" };
+					comparisonKeys.push(
+						JSON.stringify([
+							item.type,
+							item.grandparentRatingKey,
+							item.seasonNumber,
+							item.episodeNumber,
+						]),
+					);
+					rows.push({
+						nativeId: item.ratingKey,
+						mediaType: "episode",
+						libraryIds: [scope.sectionKey],
+						parentNativeId: item.grandparentRatingKey,
+						seasonNumber: item.seasonNumber,
+						episodeNumber: item.episodeNumber,
+						title: item.title,
+					});
+				}
+			}
+			return {
+				status: "page",
+				domain: scope.domain,
+				scopeKey: scope.scopeKey,
+				startIndex: page.startIndex,
+				totalRecordCount: page.totalRecordCount,
+				rawNativeIds,
+				comparisonKeys,
+				rows,
+			};
+		},
+	};
 }
 
 function inventoryIdentity(snapshots: readonly CollectedNativeInventory[]): string {

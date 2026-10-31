@@ -23,7 +23,7 @@ const episodeQuery = z.object({
 			if (!Number.isFinite(n) || n <= 0) return 0;
 			return n;
 		})
-		.pipe(z.number().positive()),
+		.pipe(z.number().int().positive().refine(Number.isSafeInteger)),
 });
 
 type JellyfinEpisodeStatusResponse = {
@@ -64,6 +64,7 @@ export async function registerEpisodeRoutes(app: FastifyInstance, _opts: Fastify
 			prisma: app.prisma,
 			userId,
 			instances: [displayInstance],
+			showTmdbIds: [showTmdbId],
 		});
 		const episodes = displayEvidence.sources
 			.flatMap((source) => source.rows)

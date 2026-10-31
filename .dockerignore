@@ -6,19 +6,23 @@
 # Build outputs (we build fresh in container)
 **/dist
 **/.next
-*.log
+**/*.log
 *.tsbuildinfo
 .turbo
 
 # Development files
 .env
 .env.*
+**/.env
+**/.env.*
 !.env.example
 !.env.production.example
 apps/api/config-dev/
+**/config-dev/
 
 # Git
 .git
+**/.git
 .gitignore
 .github
 
@@ -41,9 +45,19 @@ coverage
 docs
 
 # Database
-*.db
-*.db-journal
-secrets.json
+**/*.db
+**/*.db-journal
+**/*.db-wal
+**/*.db-shm
+**/*.sqlite
+**/*.sqlite-journal
+**/*.sqlite-wal
+**/*.sqlite-shm
+**/*.sqlite3
+**/*.sqlite3-journal
+**/*.sqlite3-wal
+**/*.sqlite3-shm
+**/secrets.json
 
 # OS
 .DS_Store
@@ -56,6 +70,9 @@ docker-compose*.yml
 
 # Data directory
 data/
+apps/api/data/
+apps/web/data/
+**/backups/
 
 # Disposable Library Cleanup harness (never part of the candidate image context)
 # This covers ignored .env files, Docker-secret inputs, rendered Compose models,

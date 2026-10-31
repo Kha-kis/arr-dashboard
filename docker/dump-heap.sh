@@ -31,8 +31,9 @@ POLL_INTERVAL_SEC=2
 # The combined container runs the API under a launcher:
 #
 #   start.sh
-#     -> node /app/api/dist/launcher.js        (top-level, supervised)
-#          -> node --enable-source-maps /app/api/dist/index.js   (inner API)
+#     -> node /app/api/providers/<provider>/dist/launcher.js (supervised)
+#          -> node --enable-source-maps .../dist/index.js   (inner API)
+# The previous /app/api/dist/index.js layout is also recognized.
 #
 # A heap snapshot must target the inner API server (index.js), never the
 # launcher. The launcher inherits NODE_OPTIONS (including
@@ -46,12 +47,12 @@ for proc in /proc/[0-9]*; do
 	if [ "$(cat "$proc/comm" 2>/dev/null)" = "node" ]; then
 		cmdline=$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null || echo "")
 		case "$cmdline" in
-			*"/app/api/dist/index.js"*)
+			*"/app/api/dist/index.js"*|*"/app/api/providers/sqlite/dist/index.js"*|*"/app/api/providers/postgresql/dist/index.js"*)
 				# Explicitly skip the launcher (its cmdline is
 				# ".../launcher.js" and never contains index.js, but
 				# guard anyway in case the entry path ever changes).
 				case "$cmdline" in
-					*"/app/api/dist/launcher.js"*) continue ;;
+					*"/app/api/dist/launcher.js"*|*"/app/api/providers/sqlite/dist/launcher.js"*|*"/app/api/providers/postgresql/dist/launcher.js"*) continue ;;
 				esac
 				api_count=$((api_count + 1))
 				api_pid="${proc##*/}"
@@ -62,7 +63,7 @@ for proc in /proc/[0-9]*; do
 done
 
 if [ "$api_count" -eq 0 ]; then
-	echo "ERROR: could not find the inner API server process (node /app/api/dist/index.js)." >&2
+	echo "ERROR: could not find the inner API server process (node with a packaged dist/index.js)." >&2
 	echo "  The API may currently be restarting (the launcher respawns it after a" >&2
 	echo "  code-42 restart with a ~1s gap). Retry in a moment." >&2
 	echo "  Refusing to fall back to the launcher process — a snapshot of the" >&2
@@ -77,7 +78,7 @@ if [ "$api_count" -gt 1 ]; then
 		if [ "$(cat "$proc/comm" 2>/dev/null)" = "node" ]; then
 			cmdline=$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null || echo "")
 			case "$cmdline" in
-				*"/app/api/dist/index.js"*)
+				*"/app/api/dist/index.js"*|*"/app/api/providers/sqlite/dist/index.js"*|*"/app/api/providers/postgresql/dist/index.js"*)
 					echo "  candidate PID ${proc##*/}: $cmdline" >&2
 					;;
 			esac

@@ -22,7 +22,8 @@ vi.mock("../../../lib/seerr/seerr-client.js", () => ({
 	requireSeerrClient: vi.fn().mockResolvedValue(mockClient),
 }));
 
-vi.mock("../../../lib/seerr/seerr-action-logger.js", () => ({
+vi.mock("../../../lib/seerr/seerr-action-logger.js", async (importOriginal) => ({
+	...(await importOriginal<object>()),
 	logSeerrAction: vi.fn(),
 }));
 
@@ -31,6 +32,7 @@ vi.mock("../../../lib/seerr/seerr-action-logger.js", () => ({
 // ---------------------------------------------------------------------------
 
 import Fastify from "fastify";
+import { SeerrMutationOutcomeUnknownError } from "../../../lib/errors.js";
 import { logSeerrAction } from "../../../lib/seerr/seerr-action-logger.js";
 import { requireSeerrClient } from "../../../lib/seerr/seerr-client.js";
 import { registerRequestRoutes } from "../request-routes.js";
@@ -189,6 +191,29 @@ describe("GET /:instanceId/count", () => {
 // ===========================================================================
 
 describe("GET /:instanceId/attention", () => {
+	it("reports the provider total when the failed-request page is capped", async () => {
+		const failedRequests = Array.from({ length: 10 }, (_, index) => ({
+			...sampleRequest,
+			id: index + 1,
+			status: 4,
+		}));
+		const page = {
+			pageInfo: { pages: 3, pageSize: 10, results: 27, page: 1 },
+			results: failedRequests,
+		};
+		mockClient.getRequests.mockResolvedValueOnce(page);
+		mockClient.enrichRequestsWithMedia.mockResolvedValueOnce(page);
+
+		const res = await app.inject({
+			method: "GET",
+			url: "/api/seerr/requests/inst-1/attention",
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(JSON.parse(res.payload)).toMatchObject({ total: 27 });
+		expect(JSON.parse(res.payload).items).toHaveLength(10);
+	});
+
 	it("returns failed requests as attention items", async () => {
 		const failedRequest = {
 			...sampleRequest,
@@ -312,6 +337,22 @@ describe("GET /:instanceId/:requestId", () => {
 // ===========================================================================
 
 describe("POST /:instanceId/:requestId/approve", () => {
+	it("records an ambiguous provider outcome as unknown, not a definite failure", async () => {
+		mockClient.approveRequest.mockRejectedValueOnce(new SeerrMutationOutcomeUnknownError());
+		const res = await app.inject({
+			method: "POST",
+			url: "/api/seerr/requests/inst-1/1/approve",
+		});
+		expect(res.statusCode).toBe(502);
+		expect(logSeerrAction).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({
+				success: false,
+				detail: { outcome: "unknown" },
+			}),
+		);
+	});
 	it("approves and returns result with success audit log", async () => {
 		const approveResult = { id: 1, status: 2 };
 		mockClient.approveRequest.mockResolvedValueOnce(approveResult);
@@ -706,6 +747,23 @@ describe("POST /:instanceId/:requestId/retry", () => {
 // ===========================================================================
 
 describe("POST /:instanceId/bulk", () => {
+	it("separates unknown outcomes from definite failures", async () => {
+		mockClient.approveRequest
+			.mockResolvedValueOnce({ id: 1 })
+			.mockRejectedValueOnce(new SeerrMutationOutcomeUnknownError());
+		const res = await app.inject({
+			method: "POST",
+			url: "/api/seerr/requests/inst-1/bulk",
+			payload: { action: "approve", requestIds: [1, 2] },
+		});
+		expect(res.statusCode).toBe(207);
+		expect(JSON.parse(res.payload)).toMatchObject({
+			totalSuccess: 1,
+			totalFailed: 0,
+			totalUnknown: 1,
+			results: [{ success: true }, { success: false, outcome: "unknown" }],
+		});
+	});
 	it("returns all successes when every request succeeds", async () => {
 		mockClient.approveRequest.mockResolvedValue({ status: 2 });
 

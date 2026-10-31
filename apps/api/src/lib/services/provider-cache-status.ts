@@ -13,6 +13,7 @@ import {
 } from "../provider-observation/observation-run-repository.js";
 import {
 	hasAuthoritativeProviderCacheGeneration,
+	sameProviderPublicationAuthority,
 	type ProviderIdentityGuardOptions,
 	type ProviderPublicationAuthority,
 	withCurrentProviderPublicationAuthority,
@@ -23,6 +24,7 @@ export type WatchProviderCacheRefreshType =
 	| "plex_episode"
 	| "jellyfin"
 	| "jellyfin_episode"
+	| "jellyfin_episode_positive"
 	| "tautulli";
 export type PlexCacheRefreshType = Extract<WatchProviderCacheRefreshType, "plex" | "plex_episode">;
 
@@ -39,6 +41,99 @@ export type ProviderCacheRefreshClaim =
 	| { status: "acquired"; attempt: ProviderCacheRefreshAttempt }
 	| { status: "already-running"; attempt: ProviderCacheRefreshAttempt }
 	| { status: "superseded" };
+
+let nextClaimOrder = 0n;
+const claimOrders = new WeakMap<
+	ProviderCacheRefreshAttempt,
+	{
+		order: bigint;
+		cacheType: WatchProviderCacheRefreshType;
+		authority: Readonly<ProviderPublicationAuthority>;
+		attemptedAt: number;
+		resultMarker: string;
+	}
+>();
+
+/** Process-local ordering only; never grants publication or mutation authority. */
+export function getProviderCacheRefreshClaimOrder(
+	attempt: ProviderCacheRefreshAttempt,
+	cacheType: WatchProviderCacheRefreshType,
+	authority: ProviderPublicationAuthority,
+): bigint | undefined {
+	const recorded = claimOrders.get(attempt);
+	if (
+		!recorded ||
+		!isValidDate(attempt.attemptedAt) ||
+		recorded.cacheType !== cacheType ||
+		!sameProviderPublicationAuthority(recorded.authority, authority) ||
+		recorded.attemptedAt !== attempt.attemptedAt.getTime() ||
+		recorded.resultMarker !== attempt.resultMarker
+	)
+		return undefined;
+	return recorded.order;
+}
+
+/**
+ * Called only after the producer owning this exact attempt has settled. Repair
+ * diagnostics, never publication data or an unrelated/live claim. Database
+ * failures are left to the scheduler's existing finite recovery ladder.
+ */
+export async function reconcileSettledProviderCacheRefreshAttempt(
+	prisma: Pick<PrismaClient, "$transaction">,
+	cacheType: "plex" | "jellyfin",
+	instance: ProviderPublicationAuthority,
+	attempt: ProviderCacheRefreshAttempt,
+	publishedAt?: Date,
+): Promise<"ready" | "superseded" | "unavailable"> {
+	if (
+		!supportsCacheType(instance.service, cacheType) ||
+		!isValidDate(attempt.attemptedAt) ||
+		!isValidAttemptMarker(attempt.resultMarker)
+	)
+		return "superseded";
+	return await withProviderClaimLock(`${instance.id}:${cacheType}`, async () => {
+		try {
+			const result = await withCurrentProviderPublicationAuthority(prisma, instance, async (tx) => {
+				const status = await tx.cacheRefreshStatus.findUnique({
+					where: { instanceId_cacheType: { instanceId: instance.id, cacheType } },
+				});
+				if (!status || !hasAuthoritativeProviderCacheGeneration(status, instance)) return false;
+				// A native-only failure must never turn canonical success into failure.
+				if (publishedAt)
+					return (
+						isValidDate(publishedAt) &&
+						publishedAt.getTime() >= attempt.attemptedAt.getTime() &&
+						status.lastResult === "success" &&
+						status.lastAttemptResult === "success" &&
+						status.lastAttemptAt?.getTime() === publishedAt.getTime() &&
+						status.lastRefreshedAt.getTime() === publishedAt.getTime()
+					);
+				if (status.lastAttemptAt?.getTime() !== attempt.attemptedAt.getTime()) return false;
+				// Terminal errors no longer carry a nonce. This grants no repair
+				// ownership or write; the ordinary fresh-claim CAS is still required.
+				if (status.lastAttemptResult === "error") return true;
+				if (status.lastAttemptResult !== attempt.resultMarker) return false;
+				const updated = await tx.cacheRefreshStatus.updateMany({
+					where: {
+						instanceId: instance.id,
+						cacheType,
+						lastAttemptAt: attempt.attemptedAt,
+						lastAttemptResult: attempt.resultMarker,
+						connectionGeneration: instance.connectionGeneration,
+						identityGeneration: instance.identityGeneration,
+					},
+					data: { lastAttemptResult: "error", lastAttemptErrorMessage: "provider-unavailable" },
+				});
+				return updated.count === 1;
+			});
+			// Guard refusal can be temporary cleanup exclusion, not proven stale authority.
+			if (!result.matched) return "unavailable";
+			return result.value ? "ready" : "superseded";
+		} catch {
+			return "unavailable";
+		}
+	});
+}
 
 const providerClaimLocks = new Map<string, Promise<void>>();
 
@@ -289,7 +384,18 @@ export async function claimProviderCacheRefreshAttempt(
 				);
 			}
 		}
-		return result.matched && result.value ? result.value : { status: "superseded" };
+		const claim = result.matched && result.value ? result.value : { status: "superseded" as const };
+		// The transaction has committed, and the existing claim lock is still held.
+		// Preserve the exact original object through every producer/handoff caller.
+		if (claim.status === "acquired")
+			claimOrders.set(claim.attempt, {
+				order: ++nextClaimOrder,
+				cacheType,
+				authority: Object.freeze({ ...instance }),
+				attemptedAt: claim.attempt.attemptedAt.getTime(),
+				resultMarker: claim.attempt.resultMarker,
+			});
+		return claim;
 	});
 }
 
@@ -585,41 +691,48 @@ export async function finishProviderCacheRefreshAttemptFailure(
 	options: ProviderIdentityGuardOptions = {},
 	precondition?: ProviderCacheAttemptFailurePrecondition,
 ): Promise<"recorded" | "superseded" | "failed"> {
-	try {
-		if (!supportsCacheType(instance.service, cacheType)) {
-			throw new Error("Provider cache type does not match publication service");
+	const retryDelaysMs = [100, 250, 500, 1000] as const;
+	for (let retry = 0; ; retry++) {
+		try {
+			if (!supportsCacheType(instance.service, cacheType)) {
+				throw new Error("Provider cache type does not match publication service");
+			}
+			const result = await withCurrentProviderPublicationAuthority(
+				prisma,
+				instance,
+				async (tx) => {
+					if (precondition && !(await precondition(tx))) return false;
+					const updated = await tx.cacheRefreshStatus.updateMany({
+						where: {
+							instanceId: instance.id,
+							cacheType,
+							lastAttemptAt: attempt.attemptedAt,
+							lastAttemptResult: attempt.resultMarker,
+							connectionGeneration: instance.connectionGeneration,
+							identityGeneration: instance.identityGeneration,
+						},
+						data: {
+							lastAttemptResult: "error",
+							lastAttemptErrorMessage: boundedProviderStatusMessage(cacheType, message),
+						},
+					});
+					return updated.count === 1;
+				},
+				options,
+			);
+			return result.matched && result.value ? "recorded" : "superseded";
+		} catch (error) {
+			const retryDelayMs = retryDelaysMs[retry];
+			if (retryDelayMs !== undefined && isRetryableClaimConflict(error)) {
+				await new Promise<void>((resolve) => setTimeout(resolve, retryDelayMs));
+				continue;
+			}
+			log.warn(
+				{ cacheType, reasonCode: "attempt_status_write_failed" },
+				"Failed to finish provider cache refresh attempt",
+			);
+			return "failed";
 		}
-		const result = await withCurrentProviderPublicationAuthority(
-			prisma,
-			instance,
-			async (tx) => {
-				if (precondition && !(await precondition(tx))) return false;
-				const updated = await tx.cacheRefreshStatus.updateMany({
-					where: {
-						instanceId: instance.id,
-						cacheType,
-						lastAttemptAt: attempt.attemptedAt,
-						lastAttemptResult: attempt.resultMarker,
-						connectionGeneration: instance.connectionGeneration,
-						identityGeneration: instance.identityGeneration,
-					},
-					data: {
-						lastAttemptResult: "error",
-						lastAttemptErrorMessage: boundedProviderStatusMessage(cacheType, message),
-					},
-				});
-				return updated.count === 1;
-			},
-			options,
-		);
-		return result.matched && result.value ? "recorded" : "superseded";
-	} catch (error) {
-		void error;
-		log.warn(
-			{ cacheType, reasonCode: "attempt_status_write_failed" },
-			"Failed to finish provider cache refresh attempt",
-		);
-		return "failed";
 	}
 }
 
@@ -764,6 +877,11 @@ function supportsCacheType(service: string, cacheType: string): boolean {
 		case "PLEX":
 			return cacheType === "plex" || cacheType === "plex_episode";
 		case "JELLYFIN":
+			return (
+				cacheType === "jellyfin" ||
+				cacheType === "jellyfin_episode" ||
+				cacheType === "jellyfin_episode_positive"
+			);
 		case "EMBY":
 			return cacheType === "jellyfin" || cacheType === "jellyfin_episode";
 		case "TAUTULLI":

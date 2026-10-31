@@ -13,6 +13,18 @@ export type LabelSyncDestService = LabelSyncService;
 
 export type LabelSyncRunStatus = "success" | "partial" | "failed";
 
+/** Restored recovery is separate from historical runs and original-send acknowledgment. */
+export type LabelSyncRecovery =
+	| { availability: "unavailable" }
+	| {
+			availability: "known";
+			state: "clear" | "restored-held" | "reconciled";
+			heldCount: number;
+			reconciledCount: number;
+			/** Latest actual observation, not a run, claim or startup timestamp. */
+			lastCheckAt: string | null;
+	  };
+
 export const DESTINATION_MUTATION_AUTHORITY_UNAVAILABLE =
 	"destination_mutation_authority_unavailable" as const;
 
@@ -59,6 +71,7 @@ export interface LabelSyncRule {
 	destInstanceId: string;
 	destTagName: string;
 	destinationMutationCapability: LabelSyncDestinationMutationCapability;
+	recovery: LabelSyncRecovery;
 
 	lastRunAt: string | null;
 	lastRunStatus: LabelSyncRunStatus | null;

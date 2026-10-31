@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({ exact: vi.fn(), positive: vi.fn(), jellyfin: v
 vi.mock("../../../lib/plex/plex-authority-service.js", async (original) => ({
 	...(await original<typeof import("../../../lib/plex/plex-authority-service.js")>()),
 	PlexAuthorityService: class {
-		readInstanceSelectedEpisodes(input: unknown) {
+		readInstanceSelectedEpisodeDisplay(input: unknown) {
 			return mocks.exact(input);
 		}
 		readPositiveEpisodeDisplayEvidence(input: unknown) {

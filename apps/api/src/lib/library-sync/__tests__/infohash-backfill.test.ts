@@ -1,4 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
+import type { ServiceInstance } from "../../prisma.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	backfillInfoHashForRow,
@@ -35,7 +36,7 @@ const arrInstance = {
 	encryptionIv: "iv",
 	service: "RADARR",
 	label: "Primary Radarr",
-} as never;
+} as ServiceInstance;
 
 function makeApp(historyResponse: { ok: boolean; records?: unknown[] }) {
 	return {
@@ -56,8 +57,12 @@ function makeApp(historyResponse: { ok: boolean; records?: unknown[] }) {
 				count: vi.fn().mockResolvedValue(0),
 			},
 			libraryCache: {
-				update: vi.fn().mockResolvedValue({}),
+				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				findFirst: vi.fn().mockResolvedValue({ data: "{}" }),
 				findMany: vi.fn().mockResolvedValue([]),
+				count: vi.fn().mockResolvedValue(0),
+			},
+			episodeFileCache: {
 				count: vi.fn().mockResolvedValue(0),
 			},
 		},
@@ -218,7 +223,7 @@ describe("backfillInfoHashForRow", () => {
 			arrItemId: 5,
 		});
 		expect(hash).toBeNull();
-		expect(app.prisma.libraryCache.update).not.toHaveBeenCalled();
+		expect(app.prisma.libraryCache.updateMany).not.toHaveBeenCalled();
 	});
 
 	it("persists the hash to LibraryCache when found", async () => {
@@ -233,8 +238,28 @@ describe("backfillInfoHashForRow", () => {
 			arrItemId: 5,
 		});
 		expect(hash).toBe(VALID_SHA1);
-		expect(app.prisma.libraryCache.update).toHaveBeenCalledWith({
-			where: { id: "cache-1" },
+		expect(app.prisma.libraryCache.updateMany).toHaveBeenCalledWith({
+			where: {
+				id: "cache-1",
+				instanceId: "radarr-1",
+				itemType: "movie",
+				arrItemId: 5,
+				data: "{}",
+				infoHash: null,
+				instance: {
+					id: "radarr-1",
+					userId: "user-1",
+					service: "RADARR",
+					enabled: true,
+					baseUrl: arrInstance.baseUrl,
+					connectionGeneration: undefined,
+					identityGeneration: undefined,
+					encryptedApiKey: arrInstance.encryptedApiKey,
+					encryptionIv: arrInstance.encryptionIv,
+					encryptedHttpAuthCredentials: undefined,
+					httpAuthEncryptionIv: undefined,
+				},
+			},
 			data: {
 				infoHash: VALID_SHA1,
 				torrentState: null,
@@ -256,7 +281,7 @@ describe("backfillInfoHashForRow", () => {
 			arrItemId: 1,
 		});
 		expect(app.prisma.serviceInstance.findFirst).toHaveBeenCalledWith({
-			where: { id: "sonarr-1", userId: "user-2", service: "SONARR" },
+			where: { id: "sonarr-1", userId: "user-2", service: "SONARR", enabled: true },
 		});
 	});
 });
@@ -350,11 +375,20 @@ describe("countBackfillCandidates", () => {
 		const count = await countBackfillCandidates(app);
 		expect(count).toBe(150);
 		expect(app.prisma.libraryCache.count).toHaveBeenCalledWith({
-			where: {
+			where: expect.objectContaining({
 				infoHash: null,
-				itemType: { in: ["movie", "series"] },
 				instance: { userId: { in: ["user-1"] } },
-			},
+				OR: expect.arrayContaining([
+					{ itemType: "series" },
+					expect.objectContaining({ itemType: "movie" }),
+				]),
+			}),
+		});
+		expect(app.prisma.episodeFileCache.count).toHaveBeenCalledWith({
+			where: expect.objectContaining({
+				infoHash: null,
+				instance: { userId: { in: ["user-1"] }, service: "SONARR" },
+			}),
 		});
 	});
 });

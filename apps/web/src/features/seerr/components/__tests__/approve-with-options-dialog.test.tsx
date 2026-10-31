@@ -39,9 +39,11 @@ const defaultServer = {
 		isDefault: true,
 		activeProfileId: 10,
 		activeDirectory: "/tv-a",
+		activeTags: [],
 	},
 	profiles: [{ id: 10, name: "HD-1080p" }],
 	rootFolders: [{ id: 100, path: "/tv-a" }],
+	tags: [],
 };
 
 const alternateServer = {
@@ -52,9 +54,11 @@ const alternateServer = {
 		isDefault: false,
 		activeProfileId: 20,
 		activeDirectory: "/tv-b",
+		activeTags: [],
 	},
 	profiles: [{ id: 20, name: "WEB-1080p" }],
 	rootFolders: [{ id: 200, path: "/tv-b" }],
+	tags: [],
 };
 
 const request = {
@@ -92,9 +96,16 @@ describe("ApproveWithOptionsDialog", () => {
 		localStorage.clear();
 		mutate = vi.fn();
 		mockUseSeerrRequestOptions.mockReturnValue({
-			data: { servers: [defaultServer, alternateServer] },
+			data: {
+				servers: [defaultServer, alternateServer],
+				coverage: "complete",
+				configuredServerCount: 2,
+				unavailableServerCount: 0,
+			},
 			isLoading: false,
 			isError: false,
+			isFetching: false,
+			refetch: vi.fn(),
 		});
 		mockUseApproveSeerrRequest.mockReturnValue({ ...defaultMutation, mutate });
 	});
@@ -164,6 +175,9 @@ describe("ApproveWithOptionsDialog", () => {
 		expect(getLinuxSavePath("/media/tv")).toBe(getLinuxSavePath("/media/tv4k"));
 		mockUseSeerrRequestOptions.mockReturnValue({
 			data: {
+				coverage: "complete",
+				configuredServerCount: 2,
+				unavailableServerCount: 0,
 				servers: [
 					{
 						...defaultServer,

@@ -23,8 +23,10 @@
 
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createNotificationOutboxNativeFixture } from "../../notifications/__tests__/notification-outbox-native-fixture.js";
 import { NotificationDispatcher } from "../../notifications/notification-dispatcher.js";
 import { NotificationService } from "../../notifications/notification-service.js";
+import { RuleEngine } from "../../notifications/rule-engine.js";
 
 import { LibrarySyncScheduler, sendNewDownloadNotification } from "../sync-scheduler.js";
 
@@ -215,6 +217,27 @@ describe("LibrarySyncScheduler.triggerSync — cold-start adaptive cap", () => {
 		expect(map.get("inst-1")).toBe(250);
 		expect(callEffectiveMaxConcurrent(sched2, 100)).toBe(2);
 	});
+
+	it("reports a requested sync as pending before its instance lookup settles", async () => {
+		const { app } = makeMockApp();
+		let rejectLookup!: (reason: Error) => void;
+		const lookup = new Promise<never>((_resolve, reject) => {
+			rejectLookup = reject;
+		});
+		vi.mocked(app.prisma.serviceInstance.findUnique).mockReturnValue(
+			lookup as unknown as ReturnType<typeof app.prisma.serviceInstance.findUnique>,
+		);
+		sched.initialize(app);
+
+		const first = sched.triggerSync("inst-1");
+		expect(sched.isInstanceSyncing("inst-1")).toBe(true);
+		expect(await sched.triggerSync("inst-1")).toBeNull();
+		expect(app.prisma.serviceInstance.findUnique).toHaveBeenCalledTimes(1);
+
+		rejectLookup(new Error("lookup unavailable"));
+		await expect(first).rejects.toThrow("lookup unavailable");
+		expect(sched.isInstanceSyncing("inst-1")).toBe(false);
+	});
 });
 
 // ============================================================================
@@ -249,89 +272,265 @@ describe("LibrarySyncScheduler.activeSyncItemCounts lifecycle", () => {
 // ============================================================================
 
 describe("sendNewDownloadNotification", () => {
-	it("scopes the event to the owner and reaches the real Telegram sender", async () => {
-		const notificationSubscriptionFindMany = vi.fn().mockResolvedValue([
-			{
-				id: "sub-1",
-				channelId: "telegram-1",
-				eventType: "LIBRARY_NEW_CONTENT",
-				channel: {
-					id: "telegram-1",
-					userId: "user-1",
-					name: "Telegram",
-					type: "TELEGRAM",
-					enabled: true,
-					encryptedConfig: "encrypted-config",
-					configIv: "config-iv",
-				},
-			},
-		]);
-		const notificationLogCreate = vi.fn().mockResolvedValue({});
-		const notificationChannelUpdate = vi.fn().mockResolvedValue({});
-		const fetchSpy = vi
-			.spyOn(globalThis, "fetch")
-			.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
-		const service = new NotificationService(
-			{
-				notificationSubscription: { findMany: notificationSubscriptionFindMany },
-				notificationLog: { create: notificationLogCreate },
-				notificationChannel: { update: notificationChannelUpdate },
-			} as never,
-			{
-				decrypt: vi
-					.fn()
-					.mockReturnValue(JSON.stringify({ botToken: "telegram-token", chatId: "chat-123" })),
-			} as never,
+	let fixture: Awaited<ReturnType<typeof createNotificationOutboxNativeFixture>>;
+	let services: NotificationService[];
+	let service: NotificationService;
+	let statuses: number[];
+	let requests: Array<{ url: string; text: string; chatId: string; markerCommitted: boolean }>;
+	const logger = { info() {}, warn() {}, error() {}, debug() {} };
+
+	function createService() {
+		const current = new NotificationService(
+			fixture.prisma,
+			fixture.encryptor,
 			new NotificationDispatcher(),
-			{ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-			{ isDuplicate: vi.fn().mockReturnValue(false) } as never,
-			{ enqueue: vi.fn() } as never,
+			logger,
+			undefined,
+			undefined,
 			"https://dashboard.example.test",
+			new RuleEngine(),
+			undefined,
+			{ runtime: fixture.runtime, clock: fixture.clock },
 		);
-
-		try {
-			await sendNewDownloadNotification(
-				service,
-				{
-					newDownloads: [
-						{ title: "Movie <One>", itemType: "movie" },
-						{ title: "Movie Two", itemType: "movie" },
-					],
-				},
-				{ label: "Radarr", service: "RADARR", userId: "user-1" },
-			);
-
-			expect(notificationSubscriptionFindMany).toHaveBeenCalledWith({
-				where: {
-					eventType: "LIBRARY_NEW_CONTENT",
-					channel: { userId: "user-1" },
-				},
-				include: { channel: true },
+		services.push(current);
+		return current;
+	}
+	async function configure(channelId: string, userId: string, botToken = "telegram-token") {
+		const encrypted = fixture.encryptor.encrypt(JSON.stringify({ botToken, chatId: "chat-123" }));
+		await fixture.prisma.notificationChannel.update({
+			where: { id: channelId, userId },
+			data: { type: "TELEGRAM", encryptedConfig: encrypted.value, configIv: encrypted.iv },
+		});
+		await fixture.prisma.notificationSubscription.deleteMany({
+			where: { channelId, channel: { userId } },
+		});
+		await fixture.prisma.notificationSubscription.create({
+			data: { channelId, eventType: "LIBRARY_NEW_CONTENT" },
+		});
+	}
+	function produce(current = service) {
+		return sendNewDownloadNotification(
+			current,
+			{
+				newDownloads: [
+					{ title: "Movie <One>", itemType: "movie" },
+					{ title: "Movie Two", itemType: "movie" },
+				],
+			},
+			{ label: "Radarr", service: "RADARR", userId: fixture.userId },
+		);
+	}
+	function history() {
+		return fixture.prisma.notificationLog.findMany({
+			where: { channelId: fixture.channelId },
+			orderBy: { retryCount: "asc" },
+		});
+	}
+	function delivery() {
+		return fixture.prisma.notificationOutboxDelivery.findFirstOrThrow({
+			where: { userId: fixture.userId, channelId: fixture.channelId },
+		});
+	}
+	beforeEach(async () => {
+		fixture = await createNotificationOutboxNativeFixture();
+		services = [];
+		statuses = [];
+		requests = [];
+		await fixture.run(() => configure(fixture.channelId, fixture.userId));
+		service = createService();
+		// The real sender runs, but no HTTP request may leave this synthetic fixture.
+		vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+			const url = String(input);
+			if (
+				![
+					"https://api.telegram.org/bottelegram-token/sendMessage",
+					"https://api.telegram.org/botrotated-synthetic-token/sendMessage",
+					"https://api.telegram.org/botforeign-synthetic-token/sendMessage",
+				].includes(url)
+			)
+				throw new Error("Fixture refuses an unexpected HTTP destination");
+			if (init?.method !== "POST") throw new Error("Fixture refuses an unexpected HTTP method");
+			const body = JSON.parse(String(init.body)) as { text: string; chat_id: string };
+			const marker = await delivery();
+			requests.push({
+				url,
+				text: body.text,
+				chatId: body.chat_id,
+				markerCommitted: marker.state === "submitting" && marker.attemptToken !== null,
 			});
-			expect(fetchSpy).toHaveBeenCalledWith(
-				"https://api.telegram.org/bottelegram-token/sendMessage",
-				expect.objectContaining({
-					method: "POST",
-					body: expect.stringContaining("2 new download(s) on Radarr"),
-				}),
+			const status = statuses.shift() ?? 200;
+			return new Response(
+				JSON.stringify(status === 429 ? { parameters: { retry_after: 60 } } : { ok: true }),
+				{ status },
 			);
-			const request = fetchSpy.mock.calls[0]?.[1];
-			const body = JSON.parse(String(request?.body)) as { text: string };
-			expect(body.text).toContain("Movie &lt;One&gt;, Movie Two");
-			expect(body.text).toContain("https://dashboard.example.test/library");
-			expect(notificationLogCreate).toHaveBeenCalledWith({
-				data: expect.objectContaining({
-					channelId: "telegram-1",
+		});
+	});
+	afterEach(async () => {
+		for (const current of services) await current.shutdown();
+		vi.restoreAllMocks();
+		await fixture.close();
+	});
+
+	it("scopes durable work to its owner and reaches the real Telegram sender", async () =>
+		fixture.run(async () => {
+			const foreign = await fixture.createOwner();
+			await configure(foreign.channelId, foreign.userId, "foreign-synthetic-token");
+			await produce();
+			expect(requests).toHaveLength(1);
+			expect(requests[0]).toMatchObject({
+				url: "https://api.telegram.org/bottelegram-token/sendMessage",
+				chatId: "chat-123",
+				markerCommitted: true,
+			});
+			expect(requests[0]!.text).toContain("2 new download(s) on Radarr");
+			expect(requests[0]!.text).toContain("Movie &lt;One&gt;, Movie Two");
+			expect(requests[0]!.text).toContain("https://dashboard.example.test/library");
+			expect(await delivery()).toMatchObject({
+				state: "sent",
+				attemptOrdinal: 0,
+				outcomeCategory: "acknowledged",
+			});
+			expect(await history()).toEqual([
+				expect.objectContaining({
 					channelType: "TELEGRAM",
 					eventType: "LIBRARY_NEW_CONTENT",
 					status: "sent",
+					retryCount: 0,
 				}),
+			]);
+			expect(
+				await fixture.prisma.notificationChannel.findFirstOrThrow({
+					where: { id: fixture.channelId, userId: fixture.userId },
+				}),
+			).toMatchObject({ lastSendResult: "success" });
+			expect(
+				await fixture.prisma.notificationOutboxEvent.count({ where: { userId: foreign.userId } }),
+			).toBe(0);
+			expect(
+				await fixture.prisma.notificationLog.count({ where: { channelId: foreign.channelId } }),
+			).toBe(0);
+			await service.shutdown();
+			service = createService();
+			await service.start();
+			await service.drain();
+			expect(requests).toHaveLength(1);
+			expect(await history()).toHaveLength(1);
+		}));
+
+	it("recovers a rate-limited download after native restart using current encrypted config", async () => {
+		statuses.push(429);
+		await fixture.run(async () => {
+			await produce();
+			expect(await delivery()).toMatchObject({
+				state: "retry-waiting",
+				attemptOrdinal: 1,
+				nextAttemptAt: new Date("2026-10-10T12:01:00.000Z"),
+				attemptToken: null,
 			});
-		} finally {
-			service.dispose();
-			fetchSpy.mockRestore();
-		}
+			await configure(fixture.channelId, fixture.userId, "rotated-synthetic-token");
+		});
+		await service.shutdown();
+		expect(requests).toHaveLength(1);
+		await fixture.restart();
+		service = createService();
+		fixture.now = new Date("2026-10-10T12:00:59.999Z");
+		await service.start();
+		await service.drain();
+		expect(requests).toHaveLength(1);
+		await service.shutdown();
+		fixture.now = new Date("2026-10-10T12:01:00.000Z");
+		service = createService();
+		await service.start();
+		await service.drain();
+		expect(requests).toHaveLength(2);
+		expect(requests[1]).toMatchObject({
+			url: "https://api.telegram.org/botrotated-synthetic-token/sendMessage",
+			markerCommitted: true,
+		});
+		await fixture.run(async () => {
+			expect(await delivery()).toMatchObject({ state: "sent", attemptOrdinal: 1 });
+			expect(
+				(await history()).map((row) => ({ status: row.status, ordinal: row.retryCount })),
+			).toEqual([
+				{ status: "failed", ordinal: 0 },
+				{ status: "sent", ordinal: 1 },
+			]);
+		});
 	});
+
+	it("does not resend a download whose subscription was revoked before retry", async () =>
+		fixture.run(async () => {
+			statuses.push(429);
+			await produce();
+			await service.shutdown();
+			await fixture.prisma.notificationSubscription.deleteMany({
+				where: { channelId: fixture.channelId, channel: { userId: fixture.userId } },
+			});
+			fixture.now = new Date("2026-10-10T12:01:00.000Z");
+			service = createService();
+			await service.start();
+			await service.drain();
+			expect(requests).toHaveLength(1);
+			expect(await delivery()).toMatchObject({
+				state: "canceled",
+				attemptOrdinal: 1,
+				outcomeCategory: "recipient-unavailable",
+			});
+			expect((await history()).map((row) => row.status)).toEqual(["failed"]);
+		}));
+
+	it("rejects failed durable admission without a send or dedup poison and succeeds after repair", async () =>
+		fixture.run(async () => {
+			if (fixture.engine === "sqlite") {
+				await fixture.prisma.$executeRawUnsafe(
+					"CREATE TRIGGER library_download_admission_reject BEFORE INSERT ON \"NotificationOutboxEvent\" BEGIN SELECT RAISE(ABORT, 'synthetic admission rejection'); END",
+				);
+			} else {
+				await fixture.prisma.$executeRawUnsafe(
+					"CREATE FUNCTION library_download_admission_reject() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic admission rejection'; END $$",
+				);
+				await fixture.prisma.$executeRawUnsafe(
+					'CREATE TRIGGER library_download_admission_reject BEFORE INSERT ON "NotificationOutboxEvent" FOR EACH ROW EXECUTE FUNCTION library_download_admission_reject()',
+				);
+			}
+			try {
+				await expect(produce()).rejects.toMatchObject({ category: "storage-unavailable" });
+				expect(requests).toEqual([]);
+				expect(await history()).toEqual([]);
+				expect(
+					await fixture.prisma.notificationOutboxEvent.count({ where: { userId: fixture.userId } }),
+				).toBe(0);
+				expect(
+					await fixture.prisma.notificationChannel.findFirstOrThrow({
+						where: { id: fixture.channelId, userId: fixture.userId },
+					}),
+				).toMatchObject({ lastSentAt: null, lastSendResult: null });
+			} finally {
+				await fixture.prisma.$executeRawUnsafe(
+					fixture.engine === "sqlite"
+						? "DROP TRIGGER library_download_admission_reject"
+						: 'DROP TRIGGER library_download_admission_reject ON "NotificationOutboxEvent"',
+				);
+				if (fixture.engine === "postgresql")
+					await fixture.prisma.$executeRawUnsafe(
+						"DROP FUNCTION library_download_admission_reject()",
+					);
+			}
+			await produce();
+			expect(requests).toHaveLength(1);
+			expect(await delivery()).toMatchObject({ state: "sent", attemptOrdinal: 0 });
+		}));
+
+	it("rejects new download work after shutdown without publishing an accepted event", async () =>
+		fixture.run(async () => {
+			await service.shutdown();
+			await expect(produce()).rejects.toThrow("Notification service is shutting down");
+			expect(requests).toEqual([]);
+			expect(await history()).toEqual([]);
+			expect(
+				await fixture.prisma.notificationOutboxEvent.count({ where: { userId: fixture.userId } }),
+			).toBe(0);
+		}));
 });
 
 // ============================================================================

@@ -199,12 +199,21 @@ async function dispatchCacheRefresh(
 						instance,
 						// Request logging stays bound; provider diagnostics use the application logger.
 						log: app.log,
+						nativeInventoryMode: "force",
 					},
 					attempt,
 				),
 			log,
 			...(recovery
-				? { recovery: { provider: "plex" as const, userId, instanceId, handoff: recovery } }
+				? {
+						recovery: {
+							provider: "plex" as const,
+							userId,
+							instanceId,
+							authority,
+							handoff: recovery,
+						},
+					}
 				: {}),
 		});
 		log.info({ cacheType, settlement: "accepted" }, "pulse-action: cache refresh accepted");
@@ -229,13 +238,22 @@ async function dispatchCacheRefresh(
 							encryptor: app.encryptor,
 							instance,
 							log,
+							nativeInventoryMode: "force",
 						},
 						attempt,
 					),
 				),
 			log,
 			...(recovery
-				? { recovery: { provider: "jellyfin" as const, userId, instanceId, handoff: recovery } }
+				? {
+						recovery: {
+							provider: "jellyfin" as const,
+							userId,
+							instanceId,
+							authority,
+							handoff: recovery,
+						},
+					}
 				: {}),
 		});
 		log.info({ cacheType, settlement: "accepted" }, "pulse-action: cache refresh accepted");

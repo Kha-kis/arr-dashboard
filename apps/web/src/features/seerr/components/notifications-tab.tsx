@@ -13,6 +13,7 @@ import {
 } from "../../../hooks/api/useSeerr";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { AGENT_FIELDS } from "../lib/notification-agent-fields";
+import { notifySeerrActionError } from "../lib/seerr-action-error";
 import { AgentConfigDialog } from "./agent-config-dialog";
 
 const SEERR_GRADIENT = SERVICE_GRADIENTS.seerr;
@@ -22,7 +23,7 @@ interface NotificationsTabProps {
 }
 
 export const NotificationsTab = ({ instanceId }: NotificationsTabProps) => {
-	const { data, isLoading, isError } = useSeerrNotifications(instanceId);
+	const { data, isLoading, isError, isFetching, refetch } = useSeerrNotifications(instanceId);
 	const updateMutation = useUpdateSeerrNotification();
 	const testMutation = useTestSeerrNotification();
 	const [configuringAgent, setConfiguringAgent] = useState<SeerrNotificationAgent | null>(null);
@@ -37,30 +38,58 @@ export const NotificationsTab = ({ instanceId }: NotificationsTabProps) => {
 		);
 	}
 
-	if (isError) {
+	const agents = data?.agents ?? [];
+	const retry = (
+		<Button onClick={() => void refetch()} disabled={isFetching}>
+			Retry
+		</Button>
+	);
+
+	if (!data || (data.coverage === "unavailable" && !isError)) {
 		return (
-			<PremiumEmptyState
-				icon={AlertCircle}
-				title="Failed to Load Notifications"
-				description="Could not connect to the Seerr instance. Check your configuration in Settings."
-			/>
+			<div className="space-y-3">
+				<PremiumEmptyState
+					icon={AlertCircle}
+					title="Notification agents unavailable"
+					description="Notification settings could not be verified. Retry to read the current configuration."
+				/>
+				<div className="flex justify-center">{retry}</div>
+			</div>
 		);
 	}
 
-	const agents = data?.agents ?? [];
-
-	if (agents.length === 0) {
+	if (agents.length === 0 && !isError) {
 		return (
 			<PremiumEmptyState
 				icon={Bell}
-				title="No Notification Agents"
-				description="No notification agents configured in this Seerr instance."
+				title="No supported notification agents"
+				description="This Seerr instance does not support any known notification agents."
 			/>
 		);
 	}
 
 	return (
 		<>
+			{isError || data.coverage === "partial" ? (
+				<div
+					role="alert"
+					className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/40 p-4"
+				>
+					<div>
+						<p className="font-medium">
+							{isError
+								? "Last-known notification settings"
+								: "Some notification agents are unavailable"}
+						</p>
+						<p className="text-sm text-muted-foreground">
+							{isError
+								? "The latest read failed. Actions are disabled until settings can be verified again."
+								: `${data.unavailableAgents.map((agent) => agent.name).join(", ")} could not be verified. Available agents remain usable.`}
+						</p>
+					</div>
+					{retry}
+				</div>
+			) : null}
 			<div className="grid grid-cols-1 gap-3 md:grid-cols-2">
 				{agents.map((agent, index) => {
 					const ToggleIcon = agent.enabled ? ToggleRight : ToggleLeft;
@@ -137,6 +166,7 @@ export const NotificationsTab = ({ instanceId }: NotificationsTabProps) => {
 											variant="secondary"
 											size="sm"
 											onClick={() => setConfiguringAgent(agent)}
+											disabled={isError}
 											className="gap-1.5 border-border/50 bg-card/50 text-xs opacity-0 group-hover:opacity-100 transition-opacity duration-200"
 										>
 											<Settings className="h-3 w-3" />
@@ -147,13 +177,14 @@ export const NotificationsTab = ({ instanceId }: NotificationsTabProps) => {
 										<Button
 											variant="secondary"
 											size="sm"
-											disabled={testMutation.isPending}
+											disabled={isError || testMutation.isPending}
 											onClick={() =>
 												testMutation.mutate(
 													{ instanceId, agentId: String(agent.id) },
 													{
 														onSuccess: () => toast.success("Test notification sent"),
-														onError: () => toast.error("Test notification failed"),
+														onError: (error) =>
+															notifySeerrActionError(error, "Test notification failed"),
 													},
 												)
 											}
@@ -167,13 +198,21 @@ export const NotificationsTab = ({ instanceId }: NotificationsTabProps) => {
 										size="sm"
 										variant={agent.enabled ? "secondary" : "primary"}
 										icon={ToggleIcon}
-										disabled={updateMutation.isPending}
+										disabled={isError || updateMutation.isPending}
 										onClick={() =>
-											updateMutation.mutate({
-												instanceId,
-												agentId: String(agent.id),
-												config: { enabled: !agent.enabled },
-											})
+											updateMutation.mutate(
+												{
+													instanceId,
+													agentId: String(agent.id),
+													config: { enabled: !agent.enabled },
+												},
+												{
+													onSuccess: () =>
+														toast.success(agent.enabled ? "Agent disabled" : "Agent enabled"),
+													onError: (error) =>
+														notifySeerrActionError(error, "Failed to update agent"),
+												},
+											)
 										}
 									>
 										{agent.enabled ? "Disable" : "Enable"}
@@ -186,9 +225,9 @@ export const NotificationsTab = ({ instanceId }: NotificationsTabProps) => {
 			</div>
 
 			<AgentConfigDialog
-				agent={configuringAgent}
+				agent={isError ? null : (agents.find((agent) => agent.id === configuringAgent?.id) ?? null)}
 				instanceId={instanceId}
-				open={!!configuringAgent}
+				open={!isError && !!configuringAgent}
 				onOpenChange={(open) => {
 					if (!open) setConfiguringAgent(null);
 				}}

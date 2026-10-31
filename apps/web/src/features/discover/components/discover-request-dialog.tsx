@@ -16,7 +16,7 @@ import {
 	User,
 	X,
 } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useId, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
 	useCreateSeerrRequest,
@@ -27,7 +27,17 @@ import {
 import { useFocusTrap } from "../../../hooks/useFocusTrap";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
-import { getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
+import {
+	getLinuxSavePath,
+	getLinuxServerName,
+	getLinuxUsername,
+	useIncognitoMode,
+} from "../../../lib/incognito";
+import {
+	getRequestOptionsState,
+	hasVerifiedRequestOptions,
+	resolveRequestOptionsServer,
+} from "../../seerr/lib/request-options-state";
 import { getDisplayTitle } from "../lib/seerr-image-utils";
 
 // Sentinel value for "use Seerr's default" in dropdowns
@@ -53,7 +63,10 @@ export const DiscoverRequestDialog: React.FC<DiscoverRequestDialogProps> = ({
 
 	// Fetch request options (servers, profiles, root folders)
 	const optionsQuery = useSeerrRequestOptions(instanceId, item.mediaType);
-	const allServers = useMemo(() => optionsQuery.data?.servers ?? [], [optionsQuery.data?.servers]);
+	const { coverage, servers: allServers } = useMemo(
+		() => getRequestOptionsState(optionsQuery.data),
+		[optionsQuery.data],
+	);
 
 	// Split servers into regular and 4K
 	const regularServers = useMemo(() => allServers.filter((s) => !s.server.is4k), [allServers]);
@@ -84,13 +97,35 @@ export const DiscoverRequestDialog: React.FC<DiscoverRequestDialogProps> = ({
 	const activeServers = is4k ? fourKServers : regularServers;
 
 	// Determine the active server (selected or default)
-	const activeServer = useMemo(() => {
-		if (activeServers.length === 0) return undefined;
-		if (selectedServerId) {
-			return activeServers.find((s) => s.server.id === selectedServerId);
-		}
-		return activeServers.find((s) => s.server.isDefault) ?? activeServers[0];
-	}, [activeServers, selectedServerId]);
+	const activeServer = useMemo(
+		() => resolveRequestOptionsServer(activeServers, selectedServerId, coverage),
+		[activeServers, selectedServerId, coverage],
+	);
+	const verifiedSelection = hasVerifiedRequestOptions(
+		activeServer,
+		selectedProfileId,
+		selectedRootFolder,
+		selectedTags,
+	);
+	const defaultEmptyRoute =
+		coverage === "complete" &&
+		allServers.length === 0 &&
+		!is4k &&
+		selectedServerId === undefined &&
+		selectedProfileId === undefined &&
+		selectedRootFolder === undefined &&
+		selectedTags.size === 0;
+	const optionsBusy = optionsQuery.isLoading || optionsQuery.isFetching;
+	const unavailable = optionsQuery.isError || coverage === "unknown" || coverage === "unavailable";
+	const showRecovery =
+		!optionsQuery.isLoading &&
+		(unavailable || coverage === "partial" || (!verifiedSelection && !defaultEmptyRoute));
+	const profileAvailable =
+		selectedProfileId === undefined ||
+		activeServer?.profiles.some((p) => p.id === selectedProfileId);
+	const folderAvailable =
+		selectedRootFolder === undefined ||
+		activeServer?.rootFolders.some((f) => f.path === selectedRootFolder);
 
 	const toggleSeason = useCallback((seasonNumber: number) => {
 		setSelectedSeasons((prev) => {
@@ -112,20 +147,34 @@ export const DiscoverRequestDialog: React.FC<DiscoverRequestDialogProps> = ({
 		setSelectedSeasons(new Set());
 	}, []);
 
-	const canSubmit = isMovie || selectedSeasons.size > 0;
+	const canSubmit =
+		(isMovie || selectedSeasons.size > 0) &&
+		!optionsBusy &&
+		!unavailable &&
+		(defaultEmptyRoute || verifiedSelection);
 
 	const handleSubmit = useCallback(async () => {
+		if (!canSubmit || createRequest.isPending) return;
+		const bindVerifiedDefaults = coverage === "partial" && activeServer !== undefined;
 		try {
 			await createRequest.mutateAsync({
 				instanceId,
 				payload: {
 					mediaId: item.id,
 					mediaType: item.mediaType,
-					is4k: has4k ? is4k : undefined,
+					is4k: is4k || has4k ? is4k : undefined,
 					...(isMovie ? {} : { seasons: Array.from(selectedSeasons) }),
-					...(selectedServerId ? { serverId: selectedServerId } : {}),
-					...(selectedProfileId ? { profileId: selectedProfileId } : {}),
-					...(selectedRootFolder ? { rootFolder: selectedRootFolder } : {}),
+					...(bindVerifiedDefaults
+						? {
+								serverId: activeServer.server.id,
+								profileId: selectedProfileId ?? activeServer.server.activeProfileId,
+								rootFolder: selectedRootFolder ?? activeServer.server.activeDirectory,
+							}
+						: {
+								...(selectedServerId !== undefined ? { serverId: selectedServerId } : {}),
+								...(selectedProfileId !== undefined ? { profileId: selectedProfileId } : {}),
+								...(selectedRootFolder !== undefined ? { rootFolder: selectedRootFolder } : {}),
+							}),
 					...(selectedUserId ? { userId: selectedUserId } : {}),
 					...(selectedTags.size > 0 ? { tags: Array.from(selectedTags) } : {}),
 				},
@@ -137,6 +186,9 @@ export const DiscoverRequestDialog: React.FC<DiscoverRequestDialogProps> = ({
 		}
 	}, [
 		createRequest,
+		canSubmit,
+		coverage,
+		activeServer,
 		instanceId,
 		item.id,
 		item.mediaType,
@@ -249,7 +301,7 @@ export const DiscoverRequestDialog: React.FC<DiscoverRequestDialogProps> = ({
 					)}
 
 					{/* 4K toggle — only show if a 4K server is configured */}
-					{has4k && (
+					{(has4k || is4k) && (
 						<ToggleRow
 							icon={Monitor}
 							label="Request in 4K"
@@ -283,111 +335,169 @@ export const DiscoverRequestDialog: React.FC<DiscoverRequestDialogProps> = ({
 					)}
 
 					{/* Server / Quality / Root Folder options */}
+					{showRecovery && (
+						<div
+							role="alert"
+							className="space-y-2 rounded-lg border border-warning/40 bg-warning/5 p-3 text-sm text-foreground"
+						>
+							<p>
+								{unavailable
+									? "Request options are unavailable. Retry before submitting."
+									: coverage === "partial"
+										? "Some request options are unavailable. Select a verified server before submitting."
+										: "Selected request options are unavailable. Select verified options before submitting."}
+							</p>
+							{optionsQuery.data && (optionsQuery.isError || coverage === "unknown") && (
+								<p>Displayed choices are last-known and cannot be used until verified.</p>
+							)}
+							<button
+								type="button"
+								disabled={optionsBusy || createRequest.isPending}
+								onClick={() => {
+									void optionsQuery.refetch();
+								}}
+								className="rounded-lg border border-border/50 px-3 py-1.5 text-sm disabled:opacity-50"
+							>
+								{optionsBusy ? "Retrying…" : "Retry"}
+							</button>
+						</div>
+					)}
 					{optionsQuery.isLoading ? (
 						<div className="flex items-center justify-center py-4">
 							<Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
 						</div>
 					) : (
-						activeServer && (
+						activeServers.length > 0 && (
 							<div className="space-y-3">
 								{/* Server selector (only if multiple servers for this 4K mode) */}
-								{activeServers.length > 1 && (
+								{(activeServers.length > 1 || coverage !== "complete" || !activeServer) && (
 									<SelectField
 										icon={Server}
 										label="Server"
-										value={activeServer.server.id.toString()}
+										value={activeServer?.server.id.toString() ?? ""}
 										onChange={(v) => {
+											if (v === "") return;
 											setSelectedServerId(Number(v));
 											setSelectedProfileId(undefined);
 											setSelectedRootFolder(undefined);
 											setSelectedTags(new Set());
 										}}
-										options={activeServers.map((s) => ({
-											value: s.server.id.toString(),
-											label: s.server.name,
-										}))}
+										options={[
+											...(!activeServer ? [{ value: "", label: "Select a verified server" }] : []),
+											...activeServers.map((s, index) => ({
+												value: s.server.id.toString(),
+												label: incognitoMode
+													? `${getLinuxServerName(s.server.name)} ${index + 1}`
+													: s.server.name,
+											})),
+										]}
 										themeFrom={themeGradient.from}
 									/>
 								)}
 
 								{/* Quality Profile */}
-								{activeServer.profiles.length > 0 && (
-									<SelectField
-										icon={Sliders}
-										label="Quality Profile"
-										value={selectedProfileId?.toString() ?? USE_DEFAULT}
-										onChange={(v) =>
-											setSelectedProfileId(v === USE_DEFAULT ? undefined : Number(v))
-										}
-										options={[
-											{ value: USE_DEFAULT, label: "Default" },
-											...activeServer.profiles.map((p) => ({
-												value: p.id.toString(),
-												label: p.name,
-											})),
-										]}
-										themeFrom={themeGradient.from}
-									/>
-								)}
+								{activeServer && (
+									<>
+										{activeServer.profiles.length > 0 && (
+											<SelectField
+												icon={Sliders}
+												label="Quality Profile"
+												value={
+													profileAvailable ? (selectedProfileId?.toString() ?? USE_DEFAULT) : ""
+												}
+												onChange={(v) => {
+													if (v === "") return;
+													setSelectedServerId(activeServer.server.id);
+													setSelectedProfileId(v === USE_DEFAULT ? undefined : Number(v));
+												}}
+												options={[
+													...(!profileAvailable
+														? [{ value: "", label: "Select a verified profile" }]
+														: []),
+													{ value: USE_DEFAULT, label: "Default" },
+													...activeServer.profiles.map((p) => ({
+														value: p.id.toString(),
+														label: p.name,
+													})),
+												]}
+												themeFrom={themeGradient.from}
+											/>
+										)}
 
-								{/* Root Folder */}
-								{activeServer.rootFolders.length > 0 && (
-									<SelectField
-										icon={FolderOpen}
-										label="Root Folder"
-										value={selectedRootFolder ?? USE_DEFAULT}
-										onChange={(v) => setSelectedRootFolder(v === USE_DEFAULT ? undefined : v)}
-										options={[
-											{ value: USE_DEFAULT, label: "Default" },
-											...activeServer.rootFolders.map((f) => ({
-												value: f.path,
-												label: f.path,
-											})),
-										]}
-										themeFrom={themeGradient.from}
-									/>
-								)}
+										{/* Root Folder */}
+										{activeServer.rootFolders.length > 0 && (
+											<SelectField
+												icon={FolderOpen}
+												label="Root Folder"
+												value={folderAvailable ? (selectedRootFolder ?? USE_DEFAULT) : ""}
+												onChange={(v) => {
+													if (v === "") return;
+													setSelectedServerId(activeServer.server.id);
+													setSelectedRootFolder(v === USE_DEFAULT ? undefined : v);
+												}}
+												options={[
+													...(!folderAvailable
+														? [{ value: "", label: "Select a verified root folder" }]
+														: []),
+													{ value: USE_DEFAULT, label: "Default" },
+													...activeServer.rootFolders.map((f, index) => ({
+														value: f.path,
+														label: incognitoMode
+															? `${getLinuxSavePath(f.path)} ${index + 1}`
+															: f.path,
+													})),
+												]}
+												themeFrom={themeGradient.from}
+											/>
+										)}
 
-								{/* Tags */}
-								{activeServer.tags.length > 0 && (
-									<div className="space-y-1.5">
-										<label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-											<Tag className="h-3.5 w-3.5" />
-											Tags
-										</label>
-										<div className="flex flex-wrap gap-1.5">
-											{activeServer.tags.map((tag) => {
-												const isSelected = selectedTags.has(tag.id);
-												return (
-													<button
-														key={tag.id}
-														type="button"
-														onClick={() =>
-															setSelectedTags((prev) => {
-																const next = new Set(prev);
-																if (next.has(tag.id)) {
-																	next.delete(tag.id);
-																} else {
-																	next.add(tag.id);
-																}
-																return next;
-															})
-														}
-														className="rounded-md border px-2.5 py-1 text-xs font-medium transition-all duration-150"
-														style={{
-															borderColor: isSelected ? `${themeGradient.from}60` : "var(--border)",
-															backgroundColor: isSelected
-																? `${themeGradient.from}12`
-																: "transparent",
-															color: isSelected ? themeGradient.from : "var(--muted-foreground)",
-														}}
-													>
-														{incognitoMode ? getLinuxUsername(tag.label) : tag.label}
-													</button>
-												);
-											})}
-										</div>
-									</div>
+										{/* Tags */}
+										{activeServer.tags.length > 0 && (
+											<div className="space-y-1.5">
+												<label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+													<Tag className="h-3.5 w-3.5" />
+													Tags
+												</label>
+												<div className="flex flex-wrap gap-1.5">
+													{activeServer.tags.map((tag) => {
+														const isSelected = selectedTags.has(tag.id);
+														return (
+															<button
+																key={tag.id}
+																type="button"
+																onClick={() => {
+																	setSelectedServerId(activeServer.server.id);
+																	setSelectedTags((prev) => {
+																		const next = new Set(prev);
+																		if (next.has(tag.id)) {
+																			next.delete(tag.id);
+																		} else {
+																			next.add(tag.id);
+																		}
+																		return next;
+																	});
+																}}
+																className="rounded-md border px-2.5 py-1 text-xs font-medium transition-all duration-150"
+																style={{
+																	borderColor: isSelected
+																		? `${themeGradient.from}60`
+																		: "var(--border)",
+																	backgroundColor: isSelected
+																		? `${themeGradient.from}12`
+																		: "transparent",
+																	color: isSelected
+																		? themeGradient.from
+																		: "var(--muted-foreground)",
+																}}
+															>
+																{incognitoMode ? getLinuxUsername(tag.label) : tag.label}
+															</button>
+														);
+													})}
+												</div>
+											</div>
+										)}
+									</>
 								)}
 							</div>
 						)
@@ -485,29 +595,36 @@ const SelectField: React.FC<SelectFieldProps> = ({
 	onChange,
 	options,
 	themeFrom,
-}) => (
-	<div className="space-y-1.5">
-		<label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-			<Icon className="h-3.5 w-3.5" />
-			{label}
-		</label>
-		<div className="relative">
-			<select
-				value={value}
-				onChange={(e) => onChange(e.target.value)}
-				className="w-full appearance-none rounded-lg border border-border/50 bg-card/40 px-3 py-2 pr-8 text-sm text-foreground transition-colors hover:bg-card/60 focus:outline-none"
-				style={{ borderColor: `${themeFrom}30` }}
+}) => {
+	const fieldId = useId();
+	return (
+		<div className="space-y-1.5">
+			<label
+				htmlFor={fieldId}
+				className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
 			>
-				{options.map((opt) => (
-					<option key={opt.value} value={opt.value}>
-						{opt.label}
-					</option>
-				))}
-			</select>
-			<ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+				<Icon className="h-3.5 w-3.5" />
+				{label}
+			</label>
+			<div className="relative">
+				<select
+					id={fieldId}
+					value={value}
+					onChange={(e) => onChange(e.target.value)}
+					className="w-full appearance-none rounded-lg border border-border/50 bg-card/40 px-3 py-2 pr-8 text-sm text-foreground transition-colors hover:bg-card/60 focus:outline-none"
+					style={{ borderColor: `${themeFrom}30` }}
+				>
+					{options.map((opt) => (
+						<option key={opt.value} value={opt.value} disabled={opt.value === ""}>
+							{opt.label}
+						</option>
+					))}
+				</select>
+				<ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+			</div>
 		</div>
-	</div>
-);
+	);
+};
 
 interface SeasonRowProps {
 	season: SeerrSeasonSummary;

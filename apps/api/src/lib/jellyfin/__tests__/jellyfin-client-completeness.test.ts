@@ -5,6 +5,191 @@ import { JellyfinClient } from "../jellyfin-client.js";
 const logMock = { warn: vi.fn() };
 const log = logMock as unknown as FastifyBaseLogger;
 
+describe("JellyfinClient bounded on-deck transient recovery", () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		vi.clearAllMocks();
+	});
+
+	it.each([
+		["getResumeItems", "timeout"],
+		["getResumeItems", "transport"],
+		["getNextUp", "timeout"],
+		["getNextUp", "transport"],
+	] as const)("%s recovers one request-phase %s without losing items", async (method, kind) => {
+		const failure =
+			kind === "timeout"
+				? new DOMException("synthetic private value", "TimeoutError")
+				: new TypeError("synthetic private value", { cause: { code: "ECONNRESET" } });
+		const fetchMock = vi
+			.fn()
+			.mockRejectedValueOnce(failure)
+			.mockResolvedValueOnce(response({ Items: [movie(1)], TotalRecordCount: 1 }));
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new JellyfinClient("http://jellyfin.test", "api-key", log);
+
+		await expect(client[method]("user-1")).resolves.toEqual([
+			expect.objectContaining({ id: "movie-1", type: "Movie" }),
+		]);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(fetchMock.mock.calls[0]?.[0]).toBe(fetchMock.mock.calls[1]?.[0]);
+		for (const [, options] of fetchMock.mock.calls) expect(options.method).toBe("GET");
+		expect(JSON.stringify(logMock.warn.mock.calls)).not.toContain("synthetic private value");
+	});
+
+	it("retries only the interrupted page, retaining strict pagination and unique rows", async () => {
+		const first = Array.from({ length: 1000 }, (_, i) => movie(i + 1));
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(response({ Items: first, TotalRecordCount: 1001 }))
+			.mockRejectedValueOnce(new DOMException("synthetic", "TimeoutError"))
+			.mockResolvedValueOnce(response({ Items: [movie(1001)], TotalRecordCount: 1001 }));
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new JellyfinClient("http://jellyfin.test", "api-key", log);
+
+		const items = await client.getResumeItems("user-1");
+		expect(items).toHaveLength(1001);
+		expect(new Set(items.map((item) => item.id)).size).toBe(1001);
+		expect(
+			fetchMock.mock.calls.map(([url]) => new URL(String(url)).searchParams.get("StartIndex")),
+		).toEqual(["0", "1000", "1000"]);
+	});
+
+	it.each(["getResumeItems", "getNextUp"] as const)(
+		"%s stops after the second transport failure",
+		async (method) => {
+			const fetchMock = vi.fn().mockRejectedValue(new TypeError("synthetic transport"));
+			vi.stubGlobal("fetch", fetchMock);
+			const client = new JellyfinClient("http://jellyfin.test", "api-key", log);
+
+			await expect(client[method]("user-1")).rejects.toThrow(/page request failed/i);
+			expect(fetchMock).toHaveBeenCalledTimes(2);
+		},
+	);
+
+	it.each(["getResumeItems", "getNextUp"] as const)(
+		"%s honors caller cancellation without retry",
+		async (method) => {
+			const abort = new AbortController();
+			const fetchMock = vi.fn().mockImplementation(async () => {
+				abort.abort();
+				throw new DOMException("synthetic", "AbortError");
+			});
+			vi.stubGlobal("fetch", fetchMock);
+			const client = new JellyfinClient(
+				"http://jellyfin.test",
+				"api-key",
+				log,
+				undefined,
+				{},
+				"JELLYFIN",
+				abort.signal,
+			);
+
+			await expect(client[method]("user-1")).rejects.toThrow(/cancelled/i);
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+		},
+	);
+
+	it.each([
+		["authentication", () => new Response("synthetic", { status: 401 })],
+		["schema", () => response({ Items: [{ Id: "invalid" }], TotalRecordCount: 1 })],
+		[
+			"malformed JSON",
+			() => new Response("{", { headers: { "Content-Type": "application/json" } }),
+		],
+		[
+			"unexpected type",
+			() => new Response("synthetic", { headers: { "Content-Type": "text/plain" } }),
+		],
+	] as const)("does not retry a %s failure", async (_, failure) => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(failure())
+			.mockResolvedValueOnce(response({ Items: [movie(1)], TotalRecordCount: 1 }));
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new JellyfinClient("http://jellyfin.test", "api-key", log);
+
+		await expect(client.getResumeItems("user-1")).rejects.toThrow(/page request failed/i);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not recover contradictory pagination by publishing the earlier page", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(
+				response({
+					Items: Array.from({ length: 1000 }, (_, i) => movie(i + 1)),
+					TotalRecordCount: 1001,
+				}),
+			)
+			.mockRejectedValueOnce(new DOMException("synthetic", "TimeoutError"))
+			.mockResolvedValueOnce(response({ Items: [movie(1001)], TotalRecordCount: 1002 }));
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new JellyfinClient("http://jellyfin.test", "api-key", log);
+
+		await expect(client.getNextUp("user-1")).rejects.toThrow(/changed while it was being paged/i);
+		expect(fetchMock).toHaveBeenCalledTimes(3);
+	});
+
+	it("leaves ordinary library and identity reads without the on-deck retry", async () => {
+		const fetchMock = vi.fn().mockRejectedValue(new DOMException("synthetic", "TimeoutError"));
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new JellyfinClient("http://jellyfin.test", "api-key", log);
+
+		await expect(client.getLibraryItems("user-1", "library-1")).rejects.toThrow(
+			/page request failed/i,
+		);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		await expect(client.getServerInfo()).rejects.toMatchObject({ name: "TimeoutError" });
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+	});
+
+	it("uses a fresh request signal after the first attempt actually times out", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockImplementationOnce(
+				(_url, options: RequestInit) =>
+					new Promise((_resolve, reject) => {
+						options.signal!.addEventListener("abort", () => reject(options.signal!.reason), {
+							once: true,
+						});
+					}),
+			)
+			.mockImplementationOnce(async (_url, options: RequestInit) => {
+				options.signal!.throwIfAborted();
+				return response({ Items: [movie(1)], TotalRecordCount: 1 });
+			});
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new JellyfinClient("http://jellyfin.test", "api-key", log, 10);
+
+		await expect(client.getResumeItems("user-1")).resolves.toHaveLength(1);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(fetchMock.mock.calls[0]?.[1].signal).not.toBe(fetchMock.mock.calls[1]?.[1].signal);
+	});
+
+	it("stops when the caller cancels during retry backoff", async () => {
+		const abort = new AbortController();
+		const fetchMock = vi.fn().mockImplementation(async () => {
+			setTimeout(() => abort.abort(), 10);
+			throw new TypeError("synthetic transport");
+		});
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new JellyfinClient(
+			"http://jellyfin.test",
+			"api-key",
+			log,
+			undefined,
+			{},
+			"JELLYFIN",
+			abort.signal,
+		);
+
+		await expect(client.getNextUp("user-1")).rejects.toThrow(/cancelled/i);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+});
+
 function response(body: unknown): Response {
 	return new Response(JSON.stringify(body), {
 		status: 200,
@@ -138,9 +323,84 @@ describe("JellyfinClient authoritative inventory completeness", () => {
 		expect(requestUrl.searchParams.get("IncludeItemTypes")).toBe("Episode");
 		expect(requestUrl.searchParams.get("Recursive")).toBe("true");
 		expect(requestUrl.searchParams.get("EnableUserData")).toBe("true");
-		expect(requestUrl.searchParams.get("Fields")).toContain("ProviderIds");
+		expect(requestUrl.searchParams.get("Fields")).toBeNull();
+		expect(requestUrl.searchParams.get("EnableImages")).toBe("false");
 		expect(requestUrl.searchParams.get("StartIndex")).toBe("1000");
 		expect(requestUrl.searchParams.get("Limit")).toBe("1000");
+	});
+
+	it("accepts a bounded 2,000-item durable Episode page without changing other collectors", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			response({
+				Items: Array.from({ length: 2_000 }, (_, index) =>
+					strictEpisode({ Id: `episode-${index + 1}` }),
+				),
+				StartIndex: 0,
+				TotalRecordCount: 2_000,
+			}),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new JellyfinClient("http://jellyfin.test", "api-key", log);
+
+		const page = await client.getEpisodeItemsPageWithCoverage("user-1", "library-1", 0, 2_000);
+
+		expect(page.items).toHaveLength(2_000);
+		expect(new URL(String(fetchMock.mock.calls[0]?.[0])).searchParams.get("Limit")).toBe("2000");
+	});
+
+	it("requests a watched-only Episode page without weakening the strict projection", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			response({
+				Items: [strictEpisode()],
+				StartIndex: 0,
+				TotalRecordCount: 1,
+			}),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new JellyfinClient("http://jellyfin.test", "api-key", log) as JellyfinClient & {
+			getPlayedEpisodeItemsPageWithCoverage?: (
+				userId: string,
+				libraryId: string,
+				startIndex: number,
+			) => Promise<{ items: Array<{ played?: boolean }> }>;
+		};
+		expect(client.getPlayedEpisodeItemsPageWithCoverage).toEqual(expect.any(Function));
+
+		const result = await client.getPlayedEpisodeItemsPageWithCoverage!("user-1", "library-1", 0);
+		expect(result.items).toEqual([expect.objectContaining({ played: true })]);
+		const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+		expect(requestUrl.pathname).toBe("/Users/user-1/Items");
+		expect(requestUrl.searchParams.get("ParentId")).toBe("library-1");
+		expect(requestUrl.searchParams.get("IncludeItemTypes")).toBe("Episode");
+		expect(requestUrl.searchParams.get("Recursive")).toBe("true");
+		expect(requestUrl.searchParams.get("IsPlayed")).toBe("true");
+		expect(requestUrl.searchParams.get("EnableUserData")).toBe("true");
+		expect(requestUrl.searchParams.get("EnableImages")).toBe("false");
+		expect(requestUrl.searchParams.get("Fields")).toBeNull();
+	});
+
+	it("rejects an unplayed row returned by Jellyfin's watched filter", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue(
+				response({
+					Items: [strictEpisode({ UserData: { Played: false, PlayCount: 0 } })],
+					StartIndex: 0,
+					TotalRecordCount: 1,
+				}),
+			),
+		);
+		const client = new JellyfinClient("http://jellyfin.test", "api-key", log) as JellyfinClient & {
+			getPlayedEpisodeItemsPageWithCoverage?: (
+				userId: string,
+				libraryId: string,
+				startIndex: number,
+			) => Promise<unknown>;
+		};
+		expect(client.getPlayedEpisodeItemsPageWithCoverage).toEqual(expect.any(Function));
+		await expect(
+			client.getPlayedEpisodeItemsPageWithCoverage!("user-1", "library-1", 0),
+		).rejects.toThrow(/watched filter/i);
 	});
 
 	it("decodes only episode-authority fields when unrelated BaseItemDto fields are null", async () => {
@@ -352,7 +612,7 @@ describe("JellyfinClient authoritative inventory completeness", () => {
 		[-1, 1_000],
 		[0.5, 1_000],
 		[0, 0],
-		[0, 1_001],
+		[0, 2_001],
 		[0, 1.5],
 	] as const)("rejects invalid requested page bounds before network I/O", async (start, limit) => {
 		const fetchMock = vi.fn();

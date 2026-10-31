@@ -61,10 +61,14 @@ export type LibraryCacheMinAggregateOutputType = {
   cutoffUnmet: boolean | null
   infoHash: string | null
   infoHashSource: string | null
+  pathBackfillRetryAfter: Date | null
   torrentState: string | null
   torrentRatio: number | null
   torrentSyncedAt: Date | null
   data: string | null
+  episodeFileInventoryReceipt: string | null
+  episodeFileInventoryAttemptedAt: Date | null
+  episodeFileInventoryAttemptToken: string | null
   arrAddedAt: Date | null
   arrUpdatedAt: Date | null
   cachedAt: Date | null
@@ -89,10 +93,14 @@ export type LibraryCacheMaxAggregateOutputType = {
   cutoffUnmet: boolean | null
   infoHash: string | null
   infoHashSource: string | null
+  pathBackfillRetryAfter: Date | null
   torrentState: string | null
   torrentRatio: number | null
   torrentSyncedAt: Date | null
   data: string | null
+  episodeFileInventoryReceipt: string | null
+  episodeFileInventoryAttemptedAt: Date | null
+  episodeFileInventoryAttemptToken: string | null
   arrAddedAt: Date | null
   arrUpdatedAt: Date | null
   cachedAt: Date | null
@@ -117,10 +125,14 @@ export type LibraryCacheCountAggregateOutputType = {
   cutoffUnmet: number
   infoHash: number
   infoHashSource: number
+  pathBackfillRetryAfter: number
   torrentState: number
   torrentRatio: number
   torrentSyncedAt: number
   data: number
+  episodeFileInventoryReceipt: number
+  episodeFileInventoryAttemptedAt: number
+  episodeFileInventoryAttemptToken: number
   arrAddedAt: number
   arrUpdatedAt: number
   cachedAt: number
@@ -163,10 +175,14 @@ export type LibraryCacheMinAggregateInputType = {
   cutoffUnmet?: true
   infoHash?: true
   infoHashSource?: true
+  pathBackfillRetryAfter?: true
   torrentState?: true
   torrentRatio?: true
   torrentSyncedAt?: true
   data?: true
+  episodeFileInventoryReceipt?: true
+  episodeFileInventoryAttemptedAt?: true
+  episodeFileInventoryAttemptToken?: true
   arrAddedAt?: true
   arrUpdatedAt?: true
   cachedAt?: true
@@ -191,10 +207,14 @@ export type LibraryCacheMaxAggregateInputType = {
   cutoffUnmet?: true
   infoHash?: true
   infoHashSource?: true
+  pathBackfillRetryAfter?: true
   torrentState?: true
   torrentRatio?: true
   torrentSyncedAt?: true
   data?: true
+  episodeFileInventoryReceipt?: true
+  episodeFileInventoryAttemptedAt?: true
+  episodeFileInventoryAttemptToken?: true
   arrAddedAt?: true
   arrUpdatedAt?: true
   cachedAt?: true
@@ -219,10 +239,14 @@ export type LibraryCacheCountAggregateInputType = {
   cutoffUnmet?: true
   infoHash?: true
   infoHashSource?: true
+  pathBackfillRetryAfter?: true
   torrentState?: true
   torrentRatio?: true
   torrentSyncedAt?: true
   data?: true
+  episodeFileInventoryReceipt?: true
+  episodeFileInventoryAttemptedAt?: true
+  episodeFileInventoryAttemptToken?: true
   arrAddedAt?: true
   arrUpdatedAt?: true
   cachedAt?: true
@@ -334,10 +358,14 @@ export type LibraryCacheGroupByOutputType = {
   cutoffUnmet: boolean
   infoHash: string | null
   infoHashSource: string | null
+  pathBackfillRetryAfter: Date | null
   torrentState: string | null
   torrentRatio: number | null
   torrentSyncedAt: Date | null
   data: string
+  episodeFileInventoryReceipt: string | null
+  episodeFileInventoryAttemptedAt: Date | null
+  episodeFileInventoryAttemptToken: string | null
   arrAddedAt: Date | null
   arrUpdatedAt: Date | null
   cachedAt: Date
@@ -385,10 +413,14 @@ export type LibraryCacheWhereInput = {
   cutoffUnmet?: Prisma.BoolFilter<"LibraryCache"> | boolean
   infoHash?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
   infoHashSource?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
+  pathBackfillRetryAfter?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
   torrentState?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
   torrentRatio?: Prisma.FloatNullableFilter<"LibraryCache"> | number | null
   torrentSyncedAt?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
   data?: Prisma.StringFilter<"LibraryCache"> | string
+  episodeFileInventoryReceipt?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
+  episodeFileInventoryAttemptedAt?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
+  episodeFileInventoryAttemptToken?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
   arrAddedAt?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
   arrUpdatedAt?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
   cachedAt?: Prisma.DateTimeFilter<"LibraryCache"> | Date | string
@@ -414,10 +446,14 @@ export type LibraryCacheOrderByWithRelationInput = {
   cutoffUnmet?: Prisma.SortOrder
   infoHash?: Prisma.SortOrderInput | Prisma.SortOrder
   infoHashSource?: Prisma.SortOrderInput | Prisma.SortOrder
+  pathBackfillRetryAfter?: Prisma.SortOrderInput | Prisma.SortOrder
   torrentState?: Prisma.SortOrderInput | Prisma.SortOrder
   torrentRatio?: Prisma.SortOrderInput | Prisma.SortOrder
   torrentSyncedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   data?: Prisma.SortOrder
+  episodeFileInventoryReceipt?: Prisma.SortOrderInput | Prisma.SortOrder
+  episodeFileInventoryAttemptedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  episodeFileInventoryAttemptToken?: Prisma.SortOrderInput | Prisma.SortOrder
   arrAddedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   arrUpdatedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   cachedAt?: Prisma.SortOrder
@@ -447,10 +483,14 @@ export type LibraryCacheWhereUniqueInput = Prisma.AtLeast<{
   cutoffUnmet?: Prisma.BoolFilter<"LibraryCache"> | boolean
   infoHash?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
   infoHashSource?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
+  pathBackfillRetryAfter?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
   torrentState?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
   torrentRatio?: Prisma.FloatNullableFilter<"LibraryCache"> | number | null
   torrentSyncedAt?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
   data?: Prisma.StringFilter<"LibraryCache"> | string
+  episodeFileInventoryReceipt?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
+  episodeFileInventoryAttemptedAt?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
+  episodeFileInventoryAttemptToken?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
   arrAddedAt?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
   arrUpdatedAt?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
   cachedAt?: Prisma.DateTimeFilter<"LibraryCache"> | Date | string
@@ -476,10 +516,14 @@ export type LibraryCacheOrderByWithAggregationInput = {
   cutoffUnmet?: Prisma.SortOrder
   infoHash?: Prisma.SortOrderInput | Prisma.SortOrder
   infoHashSource?: Prisma.SortOrderInput | Prisma.SortOrder
+  pathBackfillRetryAfter?: Prisma.SortOrderInput | Prisma.SortOrder
   torrentState?: Prisma.SortOrderInput | Prisma.SortOrder
   torrentRatio?: Prisma.SortOrderInput | Prisma.SortOrder
   torrentSyncedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   data?: Prisma.SortOrder
+  episodeFileInventoryReceipt?: Prisma.SortOrderInput | Prisma.SortOrder
+  episodeFileInventoryAttemptedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  episodeFileInventoryAttemptToken?: Prisma.SortOrderInput | Prisma.SortOrder
   arrAddedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   arrUpdatedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   cachedAt?: Prisma.SortOrder
@@ -512,10 +556,14 @@ export type LibraryCacheScalarWhereWithAggregatesInput = {
   cutoffUnmet?: Prisma.BoolWithAggregatesFilter<"LibraryCache"> | boolean
   infoHash?: Prisma.StringNullableWithAggregatesFilter<"LibraryCache"> | string | null
   infoHashSource?: Prisma.StringNullableWithAggregatesFilter<"LibraryCache"> | string | null
+  pathBackfillRetryAfter?: Prisma.DateTimeNullableWithAggregatesFilter<"LibraryCache"> | Date | string | null
   torrentState?: Prisma.StringNullableWithAggregatesFilter<"LibraryCache"> | string | null
   torrentRatio?: Prisma.FloatNullableWithAggregatesFilter<"LibraryCache"> | number | null
   torrentSyncedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"LibraryCache"> | Date | string | null
   data?: Prisma.StringWithAggregatesFilter<"LibraryCache"> | string
+  episodeFileInventoryReceipt?: Prisma.StringNullableWithAggregatesFilter<"LibraryCache"> | string | null
+  episodeFileInventoryAttemptedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"LibraryCache"> | Date | string | null
+  episodeFileInventoryAttemptToken?: Prisma.StringNullableWithAggregatesFilter<"LibraryCache"> | string | null
   arrAddedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"LibraryCache"> | Date | string | null
   arrUpdatedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"LibraryCache"> | Date | string | null
   cachedAt?: Prisma.DateTimeWithAggregatesFilter<"LibraryCache"> | Date | string
@@ -539,10 +587,14 @@ export type LibraryCacheCreateInput = {
   cutoffUnmet?: boolean
   infoHash?: string | null
   infoHashSource?: string | null
+  pathBackfillRetryAfter?: Date | string | null
   torrentState?: string | null
   torrentRatio?: number | null
   torrentSyncedAt?: Date | string | null
   data: string
+  episodeFileInventoryReceipt?: string | null
+  episodeFileInventoryAttemptedAt?: Date | string | null
+  episodeFileInventoryAttemptToken?: string | null
   arrAddedAt?: Date | string | null
   arrUpdatedAt?: Date | string | null
   cachedAt?: Date | string
@@ -568,10 +620,14 @@ export type LibraryCacheUncheckedCreateInput = {
   cutoffUnmet?: boolean
   infoHash?: string | null
   infoHashSource?: string | null
+  pathBackfillRetryAfter?: Date | string | null
   torrentState?: string | null
   torrentRatio?: number | null
   torrentSyncedAt?: Date | string | null
   data: string
+  episodeFileInventoryReceipt?: string | null
+  episodeFileInventoryAttemptedAt?: Date | string | null
+  episodeFileInventoryAttemptToken?: string | null
   arrAddedAt?: Date | string | null
   arrUpdatedAt?: Date | string | null
   cachedAt?: Date | string
@@ -595,10 +651,14 @@ export type LibraryCacheUpdateInput = {
   cutoffUnmet?: Prisma.BoolFieldUpdateOperationsInput | boolean
   infoHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   infoHashSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  pathBackfillRetryAfter?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   torrentState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentRatio?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   torrentSyncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   data?: Prisma.StringFieldUpdateOperationsInput | string
+  episodeFileInventoryReceipt?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  episodeFileInventoryAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  episodeFileInventoryAttemptToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   arrAddedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   arrUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cachedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -624,10 +684,14 @@ export type LibraryCacheUncheckedUpdateInput = {
   cutoffUnmet?: Prisma.BoolFieldUpdateOperationsInput | boolean
   infoHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   infoHashSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  pathBackfillRetryAfter?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   torrentState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentRatio?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   torrentSyncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   data?: Prisma.StringFieldUpdateOperationsInput | string
+  episodeFileInventoryReceipt?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  episodeFileInventoryAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  episodeFileInventoryAttemptToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   arrAddedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   arrUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cachedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -652,10 +716,14 @@ export type LibraryCacheCreateManyInput = {
   cutoffUnmet?: boolean
   infoHash?: string | null
   infoHashSource?: string | null
+  pathBackfillRetryAfter?: Date | string | null
   torrentState?: string | null
   torrentRatio?: number | null
   torrentSyncedAt?: Date | string | null
   data: string
+  episodeFileInventoryReceipt?: string | null
+  episodeFileInventoryAttemptedAt?: Date | string | null
+  episodeFileInventoryAttemptToken?: string | null
   arrAddedAt?: Date | string | null
   arrUpdatedAt?: Date | string | null
   cachedAt?: Date | string
@@ -679,10 +747,14 @@ export type LibraryCacheUpdateManyMutationInput = {
   cutoffUnmet?: Prisma.BoolFieldUpdateOperationsInput | boolean
   infoHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   infoHashSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  pathBackfillRetryAfter?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   torrentState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentRatio?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   torrentSyncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   data?: Prisma.StringFieldUpdateOperationsInput | string
+  episodeFileInventoryReceipt?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  episodeFileInventoryAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  episodeFileInventoryAttemptToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   arrAddedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   arrUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cachedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -707,10 +779,14 @@ export type LibraryCacheUncheckedUpdateManyInput = {
   cutoffUnmet?: Prisma.BoolFieldUpdateOperationsInput | boolean
   infoHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   infoHashSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  pathBackfillRetryAfter?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   torrentState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentRatio?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   torrentSyncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   data?: Prisma.StringFieldUpdateOperationsInput | string
+  episodeFileInventoryReceipt?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  episodeFileInventoryAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  episodeFileInventoryAttemptToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   arrAddedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   arrUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cachedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -751,10 +827,14 @@ export type LibraryCacheCountOrderByAggregateInput = {
   cutoffUnmet?: Prisma.SortOrder
   infoHash?: Prisma.SortOrder
   infoHashSource?: Prisma.SortOrder
+  pathBackfillRetryAfter?: Prisma.SortOrder
   torrentState?: Prisma.SortOrder
   torrentRatio?: Prisma.SortOrder
   torrentSyncedAt?: Prisma.SortOrder
   data?: Prisma.SortOrder
+  episodeFileInventoryReceipt?: Prisma.SortOrder
+  episodeFileInventoryAttemptedAt?: Prisma.SortOrder
+  episodeFileInventoryAttemptToken?: Prisma.SortOrder
   arrAddedAt?: Prisma.SortOrder
   arrUpdatedAt?: Prisma.SortOrder
   cachedAt?: Prisma.SortOrder
@@ -787,10 +867,14 @@ export type LibraryCacheMaxOrderByAggregateInput = {
   cutoffUnmet?: Prisma.SortOrder
   infoHash?: Prisma.SortOrder
   infoHashSource?: Prisma.SortOrder
+  pathBackfillRetryAfter?: Prisma.SortOrder
   torrentState?: Prisma.SortOrder
   torrentRatio?: Prisma.SortOrder
   torrentSyncedAt?: Prisma.SortOrder
   data?: Prisma.SortOrder
+  episodeFileInventoryReceipt?: Prisma.SortOrder
+  episodeFileInventoryAttemptedAt?: Prisma.SortOrder
+  episodeFileInventoryAttemptToken?: Prisma.SortOrder
   arrAddedAt?: Prisma.SortOrder
   arrUpdatedAt?: Prisma.SortOrder
   cachedAt?: Prisma.SortOrder
@@ -815,10 +899,14 @@ export type LibraryCacheMinOrderByAggregateInput = {
   cutoffUnmet?: Prisma.SortOrder
   infoHash?: Prisma.SortOrder
   infoHashSource?: Prisma.SortOrder
+  pathBackfillRetryAfter?: Prisma.SortOrder
   torrentState?: Prisma.SortOrder
   torrentRatio?: Prisma.SortOrder
   torrentSyncedAt?: Prisma.SortOrder
   data?: Prisma.SortOrder
+  episodeFileInventoryReceipt?: Prisma.SortOrder
+  episodeFileInventoryAttemptedAt?: Prisma.SortOrder
+  episodeFileInventoryAttemptToken?: Prisma.SortOrder
   arrAddedAt?: Prisma.SortOrder
   arrUpdatedAt?: Prisma.SortOrder
   cachedAt?: Prisma.SortOrder
@@ -912,10 +1000,14 @@ export type LibraryCacheCreateWithoutInstanceInput = {
   cutoffUnmet?: boolean
   infoHash?: string | null
   infoHashSource?: string | null
+  pathBackfillRetryAfter?: Date | string | null
   torrentState?: string | null
   torrentRatio?: number | null
   torrentSyncedAt?: Date | string | null
   data: string
+  episodeFileInventoryReceipt?: string | null
+  episodeFileInventoryAttemptedAt?: Date | string | null
+  episodeFileInventoryAttemptToken?: string | null
   arrAddedAt?: Date | string | null
   arrUpdatedAt?: Date | string | null
   cachedAt?: Date | string
@@ -939,10 +1031,14 @@ export type LibraryCacheUncheckedCreateWithoutInstanceInput = {
   cutoffUnmet?: boolean
   infoHash?: string | null
   infoHashSource?: string | null
+  pathBackfillRetryAfter?: Date | string | null
   torrentState?: string | null
   torrentRatio?: number | null
   torrentSyncedAt?: Date | string | null
   data: string
+  episodeFileInventoryReceipt?: string | null
+  episodeFileInventoryAttemptedAt?: Date | string | null
+  episodeFileInventoryAttemptToken?: string | null
   arrAddedAt?: Date | string | null
   arrUpdatedAt?: Date | string | null
   cachedAt?: Date | string
@@ -995,10 +1091,14 @@ export type LibraryCacheScalarWhereInput = {
   cutoffUnmet?: Prisma.BoolFilter<"LibraryCache"> | boolean
   infoHash?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
   infoHashSource?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
+  pathBackfillRetryAfter?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
   torrentState?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
   torrentRatio?: Prisma.FloatNullableFilter<"LibraryCache"> | number | null
   torrentSyncedAt?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
   data?: Prisma.StringFilter<"LibraryCache"> | string
+  episodeFileInventoryReceipt?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
+  episodeFileInventoryAttemptedAt?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
+  episodeFileInventoryAttemptToken?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
   arrAddedAt?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
   arrUpdatedAt?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
   cachedAt?: Prisma.DateTimeFilter<"LibraryCache"> | Date | string
@@ -1022,10 +1122,14 @@ export type LibraryCacheCreateManyInstanceInput = {
   cutoffUnmet?: boolean
   infoHash?: string | null
   infoHashSource?: string | null
+  pathBackfillRetryAfter?: Date | string | null
   torrentState?: string | null
   torrentRatio?: number | null
   torrentSyncedAt?: Date | string | null
   data: string
+  episodeFileInventoryReceipt?: string | null
+  episodeFileInventoryAttemptedAt?: Date | string | null
+  episodeFileInventoryAttemptToken?: string | null
   arrAddedAt?: Date | string | null
   arrUpdatedAt?: Date | string | null
   cachedAt?: Date | string
@@ -1049,10 +1153,14 @@ export type LibraryCacheUpdateWithoutInstanceInput = {
   cutoffUnmet?: Prisma.BoolFieldUpdateOperationsInput | boolean
   infoHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   infoHashSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  pathBackfillRetryAfter?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   torrentState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentRatio?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   torrentSyncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   data?: Prisma.StringFieldUpdateOperationsInput | string
+  episodeFileInventoryReceipt?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  episodeFileInventoryAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  episodeFileInventoryAttemptToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   arrAddedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   arrUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cachedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1076,10 +1184,14 @@ export type LibraryCacheUncheckedUpdateWithoutInstanceInput = {
   cutoffUnmet?: Prisma.BoolFieldUpdateOperationsInput | boolean
   infoHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   infoHashSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  pathBackfillRetryAfter?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   torrentState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentRatio?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   torrentSyncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   data?: Prisma.StringFieldUpdateOperationsInput | string
+  episodeFileInventoryReceipt?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  episodeFileInventoryAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  episodeFileInventoryAttemptToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   arrAddedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   arrUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cachedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1103,10 +1215,14 @@ export type LibraryCacheUncheckedUpdateManyWithoutInstanceInput = {
   cutoffUnmet?: Prisma.BoolFieldUpdateOperationsInput | boolean
   infoHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   infoHashSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  pathBackfillRetryAfter?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   torrentState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentRatio?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   torrentSyncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   data?: Prisma.StringFieldUpdateOperationsInput | string
+  episodeFileInventoryReceipt?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  episodeFileInventoryAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  episodeFileInventoryAttemptToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   arrAddedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   arrUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   cachedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1133,10 +1249,14 @@ export type LibraryCacheSelect<ExtArgs extends runtime.Types.Extensions.Internal
   cutoffUnmet?: boolean
   infoHash?: boolean
   infoHashSource?: boolean
+  pathBackfillRetryAfter?: boolean
   torrentState?: boolean
   torrentRatio?: boolean
   torrentSyncedAt?: boolean
   data?: boolean
+  episodeFileInventoryReceipt?: boolean
+  episodeFileInventoryAttemptedAt?: boolean
+  episodeFileInventoryAttemptToken?: boolean
   arrAddedAt?: boolean
   arrUpdatedAt?: boolean
   cachedAt?: boolean
@@ -1162,10 +1282,14 @@ export type LibraryCacheSelectCreateManyAndReturn<ExtArgs extends runtime.Types.
   cutoffUnmet?: boolean
   infoHash?: boolean
   infoHashSource?: boolean
+  pathBackfillRetryAfter?: boolean
   torrentState?: boolean
   torrentRatio?: boolean
   torrentSyncedAt?: boolean
   data?: boolean
+  episodeFileInventoryReceipt?: boolean
+  episodeFileInventoryAttemptedAt?: boolean
+  episodeFileInventoryAttemptToken?: boolean
   arrAddedAt?: boolean
   arrUpdatedAt?: boolean
   cachedAt?: boolean
@@ -1191,10 +1315,14 @@ export type LibraryCacheSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.
   cutoffUnmet?: boolean
   infoHash?: boolean
   infoHashSource?: boolean
+  pathBackfillRetryAfter?: boolean
   torrentState?: boolean
   torrentRatio?: boolean
   torrentSyncedAt?: boolean
   data?: boolean
+  episodeFileInventoryReceipt?: boolean
+  episodeFileInventoryAttemptedAt?: boolean
+  episodeFileInventoryAttemptToken?: boolean
   arrAddedAt?: boolean
   arrUpdatedAt?: boolean
   cachedAt?: boolean
@@ -1220,17 +1348,21 @@ export type LibraryCacheSelectScalar = {
   cutoffUnmet?: boolean
   infoHash?: boolean
   infoHashSource?: boolean
+  pathBackfillRetryAfter?: boolean
   torrentState?: boolean
   torrentRatio?: boolean
   torrentSyncedAt?: boolean
   data?: boolean
+  episodeFileInventoryReceipt?: boolean
+  episodeFileInventoryAttemptedAt?: boolean
+  episodeFileInventoryAttemptToken?: boolean
   arrAddedAt?: boolean
   arrUpdatedAt?: boolean
   cachedAt?: boolean
   updatedAt?: boolean
 }
 
-export type LibraryCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "arrItemId" | "itemType" | "title" | "titleSlug" | "sortTitle" | "year" | "monitored" | "hasFile" | "status" | "qualityProfileId" | "qualityProfileName" | "sizeOnDisk" | "cutoffUnmet" | "infoHash" | "infoHashSource" | "torrentState" | "torrentRatio" | "torrentSyncedAt" | "data" | "arrAddedAt" | "arrUpdatedAt" | "cachedAt" | "updatedAt", ExtArgs["result"]["libraryCache"]>
+export type LibraryCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "arrItemId" | "itemType" | "title" | "titleSlug" | "sortTitle" | "year" | "monitored" | "hasFile" | "status" | "qualityProfileId" | "qualityProfileName" | "sizeOnDisk" | "cutoffUnmet" | "infoHash" | "infoHashSource" | "pathBackfillRetryAfter" | "torrentState" | "torrentRatio" | "torrentSyncedAt" | "data" | "episodeFileInventoryReceipt" | "episodeFileInventoryAttemptedAt" | "episodeFileInventoryAttemptToken" | "arrAddedAt" | "arrUpdatedAt" | "cachedAt" | "updatedAt", ExtArgs["result"]["libraryCache"]>
 export type LibraryCacheInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }
@@ -1264,10 +1396,14 @@ export type $LibraryCachePayload<ExtArgs extends runtime.Types.Extensions.Intern
     cutoffUnmet: boolean
     infoHash: string | null
     infoHashSource: string | null
+    pathBackfillRetryAfter: Date | null
     torrentState: string | null
     torrentRatio: number | null
     torrentSyncedAt: Date | null
     data: string
+    episodeFileInventoryReceipt: string | null
+    episodeFileInventoryAttemptedAt: Date | null
+    episodeFileInventoryAttemptToken: string | null
     arrAddedAt: Date | null
     arrUpdatedAt: Date | null
     cachedAt: Date
@@ -1713,10 +1849,14 @@ export interface LibraryCacheFieldRefs {
   readonly cutoffUnmet: Prisma.FieldRef<"LibraryCache", 'Boolean'>
   readonly infoHash: Prisma.FieldRef<"LibraryCache", 'String'>
   readonly infoHashSource: Prisma.FieldRef<"LibraryCache", 'String'>
+  readonly pathBackfillRetryAfter: Prisma.FieldRef<"LibraryCache", 'DateTime'>
   readonly torrentState: Prisma.FieldRef<"LibraryCache", 'String'>
   readonly torrentRatio: Prisma.FieldRef<"LibraryCache", 'Float'>
   readonly torrentSyncedAt: Prisma.FieldRef<"LibraryCache", 'DateTime'>
   readonly data: Prisma.FieldRef<"LibraryCache", 'String'>
+  readonly episodeFileInventoryReceipt: Prisma.FieldRef<"LibraryCache", 'String'>
+  readonly episodeFileInventoryAttemptedAt: Prisma.FieldRef<"LibraryCache", 'DateTime'>
+  readonly episodeFileInventoryAttemptToken: Prisma.FieldRef<"LibraryCache", 'String'>
   readonly arrAddedAt: Prisma.FieldRef<"LibraryCache", 'DateTime'>
   readonly arrUpdatedAt: Prisma.FieldRef<"LibraryCache", 'DateTime'>
   readonly cachedAt: Prisma.FieldRef<"LibraryCache", 'DateTime'>

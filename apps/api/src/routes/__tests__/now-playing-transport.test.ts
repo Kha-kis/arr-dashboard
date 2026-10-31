@@ -47,7 +47,7 @@ function createInstance(provider: Provider, baseUrl: string, encryptor: Encrypto
 	};
 }
 
-async function startLoopbackServer(provider: Provider) {
+async function startLoopbackServer(provider: Provider, payload?: unknown) {
 	let requestCount = 0;
 	const server = createServer((_request, response) => {
 		requestCount += 1;
@@ -60,9 +60,12 @@ async function startLoopbackServer(provider: Provider) {
 		response.statusCode = 200;
 		response.setHeader("content-type", "application/json");
 		response.end(
-			JSON.stringify(provider === "plex" ? { MediaContainer: { size: 0, Metadata: [] } } : []),
+			JSON.stringify(
+				payload ?? (provider === "plex" ? { MediaContainer: { size: 0, Metadata: [] } } : []),
+			),
 		);
 	});
+
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 	const address = server.address();
 	if (address === null || typeof address === "string") {
@@ -118,6 +121,120 @@ describe("now-playing loopback transport recovery", () => {
 		await Promise.all(servers.map((server) => closeServer(server)));
 		apps.length = 0;
 		servers.length = 0;
+	});
+
+	it("preserves native Plex quality and separates known zero from missing stream rates", async () => {
+		const row = {
+			sessionKey: "synthetic-session",
+			ratingKey: "synthetic-item",
+			title: "Synthetic movie",
+			type: "movie",
+			User: { id: 1, title: "Synthetic viewer", thumb: "" },
+			Player: { title: "Synthetic player", state: "playing" },
+			Media: [
+				{
+					selected: 1,
+					videoCodec: "h264",
+					audioCodec: "aac",
+					videoResolution: "1080",
+					Part: [{ selected: 1, decision: "directplay" }],
+				},
+			],
+		};
+		const loopback = await startLoopbackServer("plex", {
+			MediaContainer: {
+				size: 2,
+				Metadata: [
+					{ ...row, Session: { id: "synthetic-native-session", bandwidth: 0 } },
+					{ ...row, sessionKey: "synthetic-two" },
+				],
+			},
+		});
+		servers.push(loopback.server);
+		const app = await buildApp(
+			"plex",
+			loopback.baseUrl,
+			new Encryptor("a".repeat(32)),
+			registerPlexNowPlayingRoutes,
+		);
+		apps.push(app);
+		await app.inject({ method: "GET", url: "/" });
+		const result = await app.inject({ method: "GET", url: "/" });
+		expect(result.statusCode).toBe(200);
+		expect(result.json()).toMatchObject({
+			availability: { status: "complete" },
+			bandwidthBasis: "provider-reported",
+			bandwidthCoverage: {
+				status: "partial",
+				observedSessions: 2,
+				measuredSessions: 1,
+				knownTotalKbps: 0,
+			},
+			sessions: [
+				{
+					bandwidth: 0,
+					videoDecision: "direct play",
+					videoCodec: "h264",
+					audioCodec: "aac",
+					videoResolution: "1080",
+				},
+				{ videoDecision: "direct play" },
+			],
+		});
+		expect(result.json().sessions[1]).not.toHaveProperty("bandwidth");
+	});
+
+	it("does not fabricate Jellyfin decisions from missing flags or discard an explicit zero bitrate", async () => {
+		const item = { Id: "synthetic-item", Name: "Synthetic movie", Type: "Movie" };
+		const loopback = await startLoopbackServer("jellyfin", [
+			{ Id: "synthetic-one", NowPlayingItem: item },
+			{ Id: "synthetic-two", NowPlayingItem: item, TranscodingInfo: { Bitrate: 0 } },
+			{
+				Id: "synthetic-three",
+				NowPlayingItem: item,
+				PlayState: { PlayMethod: "DirectStream" },
+				TranscodingInfo: {
+					IsVideoDirect: true,
+					IsAudioDirect: false,
+					Bitrate: 1234500,
+					Width: 1920,
+					Height: 1080,
+					AudioCodec: "aac",
+				},
+			},
+		]);
+		servers.push(loopback.server);
+		const app = await buildApp(
+			"jellyfin",
+			loopback.baseUrl,
+			new Encryptor("a".repeat(32)),
+			registerJellyfinNowPlayingRoutes,
+		);
+		apps.push(app);
+		await app.inject({ method: "GET", url: "/" });
+		const result = await app.inject({ method: "GET", url: "/" });
+		expect(result.statusCode).toBe(200);
+		expect(result.json()).toMatchObject({
+			availability: { status: "complete" },
+			bandwidthBasis: "encoding-estimate",
+			bandwidthCoverage: {
+				status: "partial",
+				observedSessions: 3,
+				measuredSessions: 2,
+				knownTotalKbps: 1234.5,
+			},
+			sessions: [
+				{ videoDecision: "unknown", audioDecision: "unknown" },
+				{ videoDecision: "unknown", audioDecision: "unknown", bandwidth: 0 },
+				{
+					videoDecision: "copy",
+					audioDecision: "transcode",
+					bandwidth: 1234.5,
+					videoResolution: "1920x1080",
+				},
+			],
+		});
+		expect(result.json().sessions[0]).not.toHaveProperty("bandwidth");
 	});
 
 	it.each([

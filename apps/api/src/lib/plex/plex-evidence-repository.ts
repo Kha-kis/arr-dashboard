@@ -11,7 +11,12 @@ import {
 	createEvidenceFingerprintArrayAccumulator,
 	type EvidenceFingerprintArrayAccumulator,
 } from "../evidence-fingerprint.js";
-import type { PlexCache, PlexEpisodeCache, PrismaClientInstance } from "../prisma.js";
+import type {
+	PlexCache,
+	PlexEpisodeCache,
+	PrismaClientInstance,
+	ServiceInstance,
+} from "../prisma.js";
 import { authorizeTargetScopedWatchCountMutation } from "../provider-observation/evidence-capabilities.js";
 import {
 	countPlexCacheRows,
@@ -41,10 +46,12 @@ import {
 	readPlexGenerationTargetsForSelection,
 	verifyPersistedPlexGenerationTargets,
 } from "./plex-generation-target-ledger.js";
+import { isCurrentPlexPositiveEpisodeParentProof } from "./plex-positive-episode-display-proof.js";
 import {
 	decodePlexPositiveEpisodeGenerationMetadata,
 	type PlexPositiveEpisodeGenerationMetadata,
 } from "./plex-positive-episode-generation-metadata.js";
+import { plexConnectionFingerprint } from "./service-instance-fingerprint.js";
 
 type PlexAuthoritativeGenerationMetadataV5 = Extract<
 	PlexGenerationMetadataV5,
@@ -77,7 +84,16 @@ type PlexEvidencePrisma = Pick<
 	| "plexGenerationTarget"
 >;
 
-export type PlexEvidenceInstance = {
+export type PlexEvidenceInstance = Partial<
+	Pick<
+		ServiceInstance,
+		| "baseUrl"
+		| "encryptedApiKey"
+		| "encryptionIv"
+		| "encryptedHttpAuthCredentials"
+		| "httpAuthEncryptionIv"
+	>
+> & {
 	id: string;
 	userId: string;
 	service: string;
@@ -220,6 +236,12 @@ export type AvailablePositivePlexEpisodeEvidence = {
 		| Extract<PlexGenerationMetadataV5, { publicationLevel: "positive-only" }>
 		| PlexAuthoritativeGenerationMetadataV6
 		| PlexPositiveGenerationMetadataV6;
+	/** Current head remains independently verified even when display uses archived parent proof. */
+	currentParent?: {
+		generationId: string;
+		metadata: AvailablePositivePlexEpisodeEvidence["parentMetadata"];
+		generationStatus: AvailablePlexInstanceEvidence["generationStatus"];
+	};
 	rows: PlexEpisodeCache[];
 	generationStatus: AvailablePlexInstanceEvidence["generationStatus"];
 	evidence: PlexEvidenceSummary;
@@ -329,6 +351,7 @@ function hasCurrentEpisodeParentReaderAuthority(evidence: {
 		(evidence.metadata.version === 6 &&
 			evidence.metadata.publicationLevel === "positive-only" &&
 			evidence.metadata.completeness === "partial" &&
+			evidence.metadata.ambiguousTmdbCandidates !== null &&
 			evidence.evidence.availability === "current" &&
 			evidence.evidence.authority === "positive-only" &&
 			evidence.metadata.capabilities.length === 1 &&
@@ -391,6 +414,7 @@ function hasCurrentPositiveEpisodeReaderParentAuthority(
 			currentOrDisplayable &&
 			((metadata.publicationLevel === "positive-only" &&
 				(evidence.evidence.authority === "positive-only" || displayableLastKnown) &&
+				metadata.ambiguousTmdbCandidates !== null &&
 				metadata.capabilities.length === 1 &&
 				metadata.capabilities[0].domain === "episode-parents" &&
 				metadata.capabilities[0].field === "membership" &&
@@ -1404,8 +1428,21 @@ export async function loadTargetScopedPlexWatchCountMutationEvidenceBatch(
 			sectionTitle: string;
 			observedValue: number;
 		}>;
+		if (
+			published.metadata.publicationLevel === "positive-only" &&
+			published.metadata.ambiguousTmdbCandidates === null
+		)
+			return { available: false };
+		const ambiguousTmdbCandidates = new Set(
+			published.metadata.publicationLevel === "positive-only"
+				? (published.metadata.ambiguousTmdbCandidates ?? []).map(
+						(candidate) => `${candidate.mediaType}:${candidate.tmdbId}`,
+					)
+				: [],
+		);
 		for (const requestedTarget of requested) {
 			const key = `${requestedTarget.mediaType}:${requestedTarget.tmdbId}`;
+			if (ambiguousTmdbCandidates.has(key)) continue;
 			const targets = targetsByMediaTypeAndTmdbId.get(key) ?? [];
 			const matchingRows = rowsByMediaTypeAndTmdbId.get(key) ?? [];
 			if (targets.length !== 1 || matchingRows.length !== 1) continue;
@@ -2097,16 +2134,46 @@ async function loadPositiveEpisodeEvidenceInternal(
 		if (!decoded.ok) return parentUnavailable("malformed_metadata");
 		const metadata = decoded.metadata;
 		if (metadata.itemCount !== before.itemCount) return parentUnavailable("row_count_mismatch");
+		const changedParent = metadata.parentPlexGenerationId !== parentBefore.generationId;
+		let displayParentMetadata = parentBefore.metadata;
+		if (metadata.version === 6) {
+			const sourceFingerprint =
+				typeof instance.baseUrl === "string" &&
+				typeof instance.encryptedApiKey === "string" &&
+				typeof instance.encryptionIv === "string"
+					? plexConnectionFingerprint({
+							...instance,
+							baseUrl: instance.baseUrl,
+							encryptedApiKey: instance.encryptedApiKey,
+							encryptionIv: instance.encryptionIv,
+						})
+					: null;
+			if (
+				!isCurrentPlexPositiveEpisodeParentProof(metadata.parentProof, {
+					instanceId: instance.id,
+					connectionGeneration: instance.connectionGeneration,
+					identityGeneration: instance.identityGeneration,
+					providerIdentity: instance.expectedIdentity,
+					sourceFingerprint,
+					episodePublishedAt: before.lastRefreshedAt,
+					now,
+					maxAgeMs: options.maxAgeMs,
+				}) ||
+				Date.parse(metadata.coverageReceipt.observedAt) !== episodePublishedAt
+			)
+				return parentUnavailable("metadata_invalid");
+			if (changedParent && mode.allowLastKnownAttempt && parentPublishedAt >= episodePublishedAt) {
+				displayParentMetadata = metadata.parentProof.metadata;
+			}
+		}
 		if (
-			metadata.parentPlexGenerationId !== parentBefore.generationId ||
-			metadata.parentMetadataVersion !== parentBefore.metadata.version ||
-			metadata.parentPublicationLevel !== parentBefore.metadata.publicationLevel ||
-			(parentBefore.metadata.publicationLevel !== "positive-only" &&
-				parentBefore.metadata.publicationLevel !== "authoritative")
+			(changedParent && displayParentMetadata === parentBefore.metadata) ||
+			metadata.parentMetadataVersion !== displayParentMetadata.version ||
+			metadata.parentPublicationLevel !== displayParentMetadata.publicationLevel
 		) {
 			return parentUnavailable("parent_generation_unavailable");
 		}
-		if (metadata.parentTargetDigest !== parentBefore.metadata.targetDigest) {
+		if (metadata.parentTargetDigest !== displayParentMetadata.targetDigest) {
 			return parentUnavailable("target_digest_mismatch");
 		}
 		if (
@@ -2165,7 +2232,8 @@ async function loadPositiveEpisodeEvidenceInternal(
 		}
 		const displayLastKnown =
 			mode.allowLastKnownAttempt &&
-			(parentBefore.evidence.attemptState === "in_progress" ||
+			(changedParent ||
+				parentBefore.evidence.attemptState === "in_progress" ||
 				parentBefore.evidence.attemptState === "error" ||
 				parentBefore.evidence.reasonCodes.includes("latest_attempt_in_progress") ||
 				parentBefore.evidence.reasonCodes.includes("latest_attempt_failed") ||
@@ -2197,7 +2265,16 @@ async function loadPositiveEpisodeEvidenceInternal(
 			connectionGeneration: instance.connectionGeneration,
 			identityGeneration: instance.identityGeneration,
 			metadata,
-			parentMetadata: parentBefore.metadata,
+			parentMetadata: displayParentMetadata,
+			...(metadata.version === 6
+				? {
+						currentParent: {
+							generationId: parentBefore.generationId,
+							metadata: parentBefore.metadata,
+							generationStatus: parentBefore.generationStatus,
+						},
+					}
+				: {}),
 			rows,
 			generationStatus: {
 				instanceId: before.instanceId,

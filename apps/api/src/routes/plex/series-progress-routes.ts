@@ -67,24 +67,34 @@ export async function registerSeriesProgressRoutes(
 			log: request.log,
 		});
 		for (const instance of plexInstances) {
-			const exact = await authority.readInstanceSelectedEpisodes({
+			const exact = await authority.readInstanceSelectedEpisodeDisplay({
 				userId,
 				instanceId: instance.id,
 				showTmdbIds: tmdbIds,
 			});
-			evidence.push(exact);
 			if (exact.available && isCurrentAuthoritativePlexEvidence(exact.evidence)) {
+				evidence.push(exact);
 				episodes.push(...exact.rows);
 			} else {
 				const positive = await authority.readPositiveEpisodeDisplayEvidence({
 					userId,
 					instanceId: instance.id,
 				});
+				evidence.push(positive);
 				if (positive.available)
 					episodes.push(...positive.rows.filter((row) => row.watched === true));
 			}
 		}
 		const summary = summarizePlexEvidence(evidence);
+		// Usable cached rows do not make a retained or failed refresh current.
+		if (evidence.length > 1 && evidence.every((entry) => entry.available)) {
+			if (evidence.some((entry) => entry.evidence.availability === "last-known"))
+				summary.availability = "last-known";
+			if (evidence.some((entry) => entry.evidence.attemptState === "in_progress"))
+				summary.attemptState = "in_progress";
+			else if (evidence.some((entry) => entry.evidence.attemptState === "error"))
+				summary.attemptState = "error";
+		}
 		const progressMap = aggregateSeriesProgress(
 			episodes,
 			tmdbIds,

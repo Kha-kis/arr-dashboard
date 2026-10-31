@@ -1,5 +1,6 @@
 import type { FastifyPluginCallback } from "fastify";
 import { registerGrabRoutes } from "./search/grab-routes.js";
+import { registerGrabStatusRoutes } from "./search/grab-status-routes.js";
 import { registerIndexerRoutes } from "./search/indexer-routes.js";
 import { registerQueryRoutes } from "./search/query-routes.js";
 
@@ -20,6 +21,7 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 
 	// Register grab/download routes
 	app.register(registerGrabRoutes);
+	app.register(registerGrabStatusRoutes);
 
 	done();
 };

@@ -38,7 +38,7 @@ import type {
 	WatchEnrichmentResponse,
 	WatchHistoryResponse,
 } from "@arr/shared";
-import { apiRequest } from "./base";
+import { apiRequest, InvalidSuccessResponseError } from "./base";
 
 /**
  * Fetch native Plex watch enrichment; optional analytics are not a dependency.
@@ -68,9 +68,25 @@ export async function triggerPlexScan(
 	instanceId: string,
 	sectionId: string,
 ): Promise<PlexScanResponse> {
-	return apiRequest(`/api/plex/${instanceId}/sections/${sectionId}/refresh`, {
-		method: "POST",
-	});
+	const response = await apiRequest<unknown>(
+		`/api/plex/${instanceId}/sections/${sectionId}/refresh`,
+		{
+			method: "POST",
+			expectedSuccessStatus: 200,
+			requireJsonSuccess: true,
+		},
+	);
+	if (
+		!response ||
+		typeof response !== "object" ||
+		!("success" in response) ||
+		response.success !== true ||
+		!("message" in response) ||
+		typeof response.message !== "string"
+	) {
+		throw new InvalidSuccessResponseError();
+	}
+	return { success: true, message: response.message };
 }
 
 /**

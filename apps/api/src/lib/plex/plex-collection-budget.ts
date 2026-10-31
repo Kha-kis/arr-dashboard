@@ -10,7 +10,9 @@ const CANONICAL_COLLECTION_BUDGET_MS = 10 * 60 * 1000;
 export async function collectWithinPlexBudget<T>(
 	log: FastifyBaseLogger,
 	collect: (context: PlexReadContext) => Promise<T>,
+	signal?: AbortSignal,
 ): Promise<T> {
+	if (signal?.aborted) throw new Error("Plex canonical collection cancelled.");
 	const controller = new AbortController();
 	const startedAt = performance.now();
 	let lastRead: PlexReadPhase | "not-started" = "not-started";
@@ -30,13 +32,14 @@ export async function collectWithinPlexBudget<T>(
 		const result = await Promise.race([
 			deadline,
 			collect({
-				signal: controller.signal,
+				signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
 				onRequest: (phase) => {
 					lastRead = phase;
 					requests++;
 				},
 			}),
 		]);
+		if (signal?.aborted) throw new Error("Plex canonical collection cancelled.");
 		controller.signal.throwIfAborted();
 		return result;
 	} finally {
@@ -44,7 +47,11 @@ export async function collectWithinPlexBudget<T>(
 		log.info(
 			{
 				category: "plex-canonical-collection",
-				outcome: controller.signal.aborted ? "deadline-exceeded" : "settled",
+				outcome: signal?.aborted
+					? "cancelled"
+					: controller.signal.aborted
+						? "deadline-exceeded"
+						: "settled",
 				lastRead,
 				requests,
 				durationMs: Math.round(performance.now() - startedAt),

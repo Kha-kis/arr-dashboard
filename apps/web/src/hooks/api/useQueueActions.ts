@@ -2,11 +2,18 @@
 
 import type { MultiInstanceQueueResponse, QueueItem } from "@arr/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { performQueueAction, performQueueBulkAction } from "../../lib/api-client/dashboard";
+import { getErrorMessage } from "../../lib/error-utils";
 import { QUEUE_QUERY_KEY } from "../../lib/query-keys";
 
-type QueueActionType = "retry" | "delete" | "manualImport";
+type QueueActionType = "retry" | "delete";
+
+const assertQueueAction = (action: unknown): void => {
+	if (action !== "retry" && action !== "delete") {
+		throw new Error("Use Manual Import review to submit and track imports.");
+	}
+};
 
 export type QueueActionOptions = {
 	removeFromClient?: boolean;
@@ -21,15 +28,11 @@ type QueueActionVariables = {
 	options?: QueueActionOptions;
 };
 
-type QueueActionContext = {
-	previous?: MultiInstanceQueueResponse;
-};
-
-const getItemKey = (item: QueueItem): string | null => {
+const getItemKey = (item: Pick<QueueItem, "service" | "instanceId" | "id">): string | null => {
 	if (item.id === undefined || item.id === null) {
 		return null;
 	}
-	return `${item.service}:${item.instanceId}:${String(item.id)}`;
+	return JSON.stringify([item.service, item.instanceId, String(item.id)]);
 };
 
 const buildGroupKey = (item: QueueItem) => `${item.instanceId}:${item.service}`;
@@ -41,53 +44,14 @@ const defaultOptions: Required<QueueActionOptions> = {
 	search: false,
 };
 
-const applyOptimisticUpdate = (
-	previous: MultiInstanceQueueResponse,
-	variables: QueueActionVariables,
-): MultiInstanceQueueResponse => {
-	const keys = new Set(
-		variables.items.map((item) => getItemKey(item)).filter((key): key is string => Boolean(key)),
-	);
-
-	const transform = (list: QueueItem[]) => {
-		if (variables.action === "delete") {
-			return list.filter((item) => {
-				const key = getItemKey(item);
-				return key ? !keys.has(key) : true;
-			});
-		}
-
-		return list.map((item) => {
-			const key = getItemKey(item);
-			if (key && keys.has(key)) {
-				return {
-					...item,
-					status:
-						variables.action === "manualImport" ? "Manual import requested" : "Retry requested",
-				};
-			}
-			return item;
-		});
-	};
-
-	const instances = previous.instances.map((instance) => ({
-		...instance,
-		data: transform(instance.data),
-	}));
-
-	const aggregated = transform(previous.aggregated);
-
-	return {
-		instances,
-		aggregated,
-		totalCount: aggregated.length,
-	};
-};
-
 type QueueSearchPayload = {
 	seriesId?: number;
 	episodeIds?: number[];
 	movieId?: number;
+	albumId?: number;
+	artistId?: number;
+	bookId?: number;
+	authorId?: number;
 };
 
 const buildSearchPayload = (item: QueueItem): QueueSearchPayload | undefined => {
@@ -108,101 +72,48 @@ const buildSearchPayload = (item: QueueItem): QueueSearchPayload | undefined => 
 	if (item.service === "radarr" && typeof item.movieId === "number") {
 		return { movieId: item.movieId };
 	}
+	if (item.service === "lidarr") {
+		if (typeof item.albumId === "number") return { albumId: item.albumId };
+		if (typeof item.artistId === "number") return { artistId: item.artistId };
+	}
+	if (item.service === "readarr") {
+		if (typeof item.bookId === "number") return { bookId: item.bookId };
+		if (typeof item.authorId === "number") return { authorId: item.authorId };
+	}
 
 	return undefined;
 };
 
-const performActionRequests = async ({ action, items, options }: QueueActionVariables) => {
+export type QueueSearchWarning = "unconfirmed" | "unverified";
+type QueueActionOutcome = { completedKeys: string[]; warning: QueueSearchWarning | null };
+class QueueActionBatchError extends Error {
+	constructor(
+		readonly outcome: QueueActionOutcome,
+		message = "Some queue removals could not be completed. Refresh the queue and review the remaining items.",
+	) {
+		super(message);
+	}
+}
+
+const performActionRequests = async ({
+	action,
+	items,
+	options,
+}: QueueActionVariables): Promise<QueueActionOutcome | undefined> => {
+	assertQueueAction(action);
 	const mergedOptions = { ...defaultOptions, ...options };
 
 	const relevantItems =
 		action === "delete"
 			? items
-			: items.filter((item) => {
-					if (action === "manualImport") {
-						return Boolean(item.actions?.canManualImport && item.downloadId);
-					}
-
-					if (action === "retry") {
-						if (!item.actions) {
-							return true;
-						}
-						return Boolean(item.actions.canRetry);
-					}
-
-					return true;
-				});
+			: items.filter((item) => !item.actions || Boolean(item.actions.canRetry));
 
 	if (relevantItems.length === 0) {
 		return;
 	}
 
-	if (action === "manualImport") {
-		const manualGroups = new Map<
-			string,
-			{
-				instanceId: string;
-				service: QueueItem["service"];
-				itemId: string | number;
-				downloadId: string;
-			}
-		>();
-
-		const missingDownloadIds: QueueItem[] = [];
-
-		for (const item of relevantItems) {
-			const itemId = item.id;
-			const downloadId = item.downloadId;
-
-			if (itemId === undefined || itemId === null) {
-				continue;
-			}
-
-			if (!downloadId) {
-				missingDownloadIds.push(item);
-				continue;
-			}
-
-			const key = `${item.instanceId}:${item.service}:${downloadId}`;
-			if (!manualGroups.has(key)) {
-				manualGroups.set(key, {
-					instanceId: item.instanceId,
-					service: item.service,
-					itemId: itemId as string | number,
-					downloadId,
-				});
-			}
-		}
-
-		if (manualGroups.size === 0) {
-			if (missingDownloadIds.length > 0) {
-				throw new Error("Selected items do not expose a download identifier for manual import.");
-			}
-
-			return;
-		}
-
-		await Promise.all(
-			Array.from(manualGroups.values()).map((group) =>
-				performQueueAction({
-					instanceId: group.instanceId,
-					service: group.service,
-					itemId: group.itemId,
-					action,
-					downloadId: group.downloadId,
-					removeFromClient: mergedOptions.removeFromClient,
-					blocklist: mergedOptions.blocklist,
-					changeCategory: mergedOptions.changeCategory,
-					search: mergedOptions.search,
-				}),
-			),
-		);
-
-		return;
-	}
-
 	if (action === "delete" && mergedOptions.search) {
-		await Promise.all(
+		const results = await Promise.allSettled(
 			relevantItems.map((item) => {
 				const itemId = item.id;
 				if (itemId === undefined || itemId === null) {
@@ -223,7 +134,25 @@ const performActionRequests = async ({ action, items, options }: QueueActionVari
 			}),
 		);
 
-		return;
+		const outcome: QueueActionOutcome = { completedKeys: [], warning: null };
+		let failed = false;
+		for (let index = 0; index < results.length; index++) {
+			const result = results[index]!;
+			if (result.status === "rejected") {
+				failed = true;
+				continue;
+			}
+			const value = result.value;
+			if (value?.removal === "completed") {
+				const key = getItemKey(relevantItems[index]!);
+				if (key) outcome.completedKeys.push(key);
+			}
+			if (!value || value.removal === "unverified") outcome.warning = "unverified";
+			else if (value.search === "unconfirmed" && outcome.warning !== "unverified")
+				outcome.warning = "unconfirmed";
+		}
+		if (failed) throw new QueueActionBatchError(outcome);
+		return outcome;
 	}
 
 	const groups = new Map<
@@ -254,65 +183,97 @@ const performActionRequests = async ({ action, items, options }: QueueActionVari
 		}
 	}
 
-	const requests: Array<Promise<void>> = [];
+	const requests: Array<{ response: Promise<unknown>; completedKeys: string[] }> = [];
 
 	for (const group of groups.values()) {
+		let response: Promise<unknown>;
 		if (group.ids.length === 1) {
 			const [firstId] = group.ids;
 			if (firstId === undefined) {
 				continue;
 			}
-			requests.push(
-				performQueueAction({
-					instanceId: group.instanceId,
-					service: group.service,
-					itemId: firstId,
-					action,
-					removeFromClient: mergedOptions.removeFromClient,
-					blocklist: mergedOptions.blocklist,
-					changeCategory: mergedOptions.changeCategory,
-					search: mergedOptions.search,
-				}),
-			);
+			response = performQueueAction({
+				instanceId: group.instanceId,
+				service: group.service,
+				itemId: firstId,
+				action,
+				removeFromClient: mergedOptions.removeFromClient,
+				blocklist: mergedOptions.blocklist,
+				changeCategory: mergedOptions.changeCategory,
+				search: mergedOptions.search,
+			});
 		} else {
-			requests.push(
-				performQueueBulkAction({
-					instanceId: group.instanceId,
-					service: group.service,
-					ids: group.ids,
-					action,
-					removeFromClient: mergedOptions.removeFromClient,
-					blocklist: mergedOptions.blocklist,
-					changeCategory: mergedOptions.changeCategory,
-					search: mergedOptions.search,
-				}),
-			);
+			response = performQueueBulkAction({
+				instanceId: group.instanceId,
+				service: group.service,
+				ids: group.ids,
+				action,
+				removeFromClient: mergedOptions.removeFromClient,
+				blocklist: mergedOptions.blocklist,
+				changeCategory: mergedOptions.changeCategory,
+				search: mergedOptions.search,
+			});
 		}
+		requests.push({
+			response,
+			completedKeys:
+				action === "delete"
+					? group.ids
+							.map(
+								(id) => getItemKey({ service: group.service, instanceId: group.instanceId, id })!,
+							)
+							.filter(Boolean)
+					: [],
+		});
 	}
 
-	await Promise.all(requests);
+	const results = await Promise.allSettled(requests.map((request) => request.response));
+	const outcome: QueueActionOutcome = { completedKeys: [], warning: null };
+	let failure: string | undefined;
+	for (let index = 0; index < results.length; index++) {
+		const result = results[index]!;
+		if (result.status === "fulfilled")
+			outcome.completedKeys.push(...requests[index]!.completedKeys);
+		else
+			failure ??=
+				getErrorMessage(result.reason, "Failed to process queue action.") ||
+				"Failed to process queue action.";
+	}
+	if (failure !== undefined) throw new QueueActionBatchError(outcome, failure);
+	return outcome;
 };
 
 export const useQueueActions = () => {
 	const queryClient = useQueryClient();
+	const [searchWarning, setSearchWarning] = useState<QueueSearchWarning | null>(null);
+	const retainActionOutcome = (outcome: QueueActionOutcome) => {
+		if (outcome.warning)
+			setSearchWarning((current) => (current === "unverified" ? current : outcome.warning));
+		if (outcome.completedKeys.length === 0) return;
+		const completed = new Set(outcome.completedKeys);
+		const keep = (item: QueueItem) => !completed.has(getItemKey(item) ?? "");
+		queryClient.setQueryData<MultiInstanceQueueResponse>(QUEUE_QUERY_KEY, (current) => {
+			if (!current) return current;
+			const aggregated = current.aggregated.filter(keep);
+			return {
+				...current,
+				instances: current.instances.map((instance) => ({
+					...instance,
+					data: instance.data.filter(keep),
+				})),
+				aggregated,
+				totalCount: aggregated.length,
+			};
+		});
+	};
 
-	const mutation = useMutation<void, Error, QueueActionVariables, QueueActionContext>({
+	const mutation = useMutation<QueueActionOutcome | undefined, Error, QueueActionVariables>({
 		mutationFn: performActionRequests,
-		onMutate: async (variables) => {
-			await queryClient.cancelQueries({ queryKey: QUEUE_QUERY_KEY });
-			const previous = queryClient.getQueryData<MultiInstanceQueueResponse>(QUEUE_QUERY_KEY);
-
-			if (previous) {
-				const updated = applyOptimisticUpdate(previous, variables);
-				queryClient.setQueryData(QUEUE_QUERY_KEY, updated);
-			}
-
-			return { previous };
+		onError: (error) => {
+			if (error instanceof QueueActionBatchError) retainActionOutcome(error.outcome);
 		},
-		onError: (_error, _variables, context) => {
-			if (context?.previous) {
-				queryClient.setQueryData(QUEUE_QUERY_KEY, context.previous);
-			}
+		onSuccess: (outcome) => {
+			if (outcome) retainActionOutcome(outcome);
 		},
 		onSettled: () => {
 			queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
@@ -324,7 +285,7 @@ export const useQueueActions = () => {
 			if (items.length === 0) {
 				return Promise.resolve();
 			}
-			return mutation.mutateAsync({ action, items, options });
+			return mutation.mutateAsync({ action, items, options }).then(() => {});
 		},
 		[mutation],
 	);
@@ -344,5 +305,7 @@ export const useQueueActions = () => {
 		executeAsync,
 		isPending: mutation.isPending,
 		error: mutation.error,
+		searchWarning,
+		clearSearchWarning: useCallback(() => setSearchWarning(null), []),
 	};
 };

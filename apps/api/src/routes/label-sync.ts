@@ -9,6 +9,7 @@
 
 import type {
 	LabelSyncDestService,
+	LabelSyncRecovery,
 	LabelSyncRule as LabelSyncRuleDto,
 	LabelSyncRuleResponse,
 	LabelSyncRulesResponse,
@@ -27,6 +28,7 @@ import {
 	persistLabelSyncRunResult,
 } from "../lib/label-sync/persist-run-result.js";
 import { triggerLabelSyncForItem } from "../lib/label-sync/trigger-for-item.js";
+import { projectLabelSyncRecovery } from "../lib/label-sync/recovery-projection.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
 const serviceSchema = z.enum(["sonarr", "radarr", "plex", "jellyfin", "emby"]);
@@ -57,23 +59,26 @@ const ruleParams = z.object({
 	id: z.string().min(1),
 });
 
-function toDto(row: {
-	id: string;
-	userId: string;
-	name: string;
-	enabled: boolean;
-	sourceService: string;
-	sourceInstanceId: string | null;
-	sourceTagName: string;
-	destService: string;
-	destInstanceId: string;
-	destTagName: string;
-	lastRunAt: Date | null;
-	lastRunStatus: string | null;
-	lastRunMessage: string | null;
-	createdAt: Date;
-	updatedAt: Date;
-}): LabelSyncRuleDto {
+function toDto(
+	row: {
+		id: string;
+		userId: string;
+		name: string;
+		enabled: boolean;
+		sourceService: string;
+		sourceInstanceId: string | null;
+		sourceTagName: string;
+		destService: string;
+		destInstanceId: string;
+		destTagName: string;
+		lastRunAt: Date | null;
+		lastRunStatus: string | null;
+		lastRunMessage: string | null;
+		createdAt: Date;
+		updatedAt: Date;
+	},
+	recovery: LabelSyncRecovery,
+): LabelSyncRuleDto {
 	return {
 		id: row.id,
 		userId: row.userId,
@@ -86,6 +91,7 @@ function toDto(row: {
 		destInstanceId: row.destInstanceId,
 		destTagName: row.destTagName,
 		destinationMutationCapability: getLabelSyncDestinationMutationCapability(row.destService),
+		recovery,
 		lastRunAt: row.lastRunAt?.toISOString() ?? null,
 		lastRunStatus: (row.lastRunStatus ?? null) as LabelSyncRunStatus | null,
 		lastRunMessage: row.lastRunMessage ?? null,
@@ -163,7 +169,15 @@ export async function registerLabelSyncRoutes(app: FastifyInstance, _opts: Fasti
 			where: { userId },
 			orderBy: { createdAt: "desc" },
 		});
-		const response: LabelSyncRulesResponse = { rules: rows.map(toDto) };
+		const recovery = await projectLabelSyncRecovery(
+			app.prisma,
+			userId,
+			rows.map((row) => row.id),
+			request.log,
+		);
+		const response: LabelSyncRulesResponse = {
+			rules: rows.map((row) => toDto(row, recovery.get(row.id) ?? { availability: "unavailable" })),
+		};
 		return reply.send(response);
 	});
 
@@ -198,7 +212,10 @@ export async function registerLabelSyncRoutes(app: FastifyInstance, _opts: Fasti
 			},
 		});
 
-		const response: LabelSyncRuleResponse = { rule: toDto(created) };
+		const recovery = await projectLabelSyncRecovery(app.prisma, userId, [created.id], request.log);
+		const response: LabelSyncRuleResponse = {
+			rule: toDto(created, recovery.get(created.id) ?? { availability: "unavailable" }),
+		};
 		return reply.status(201).send(response);
 	});
 
@@ -270,7 +287,10 @@ export async function registerLabelSyncRoutes(app: FastifyInstance, _opts: Fasti
 				}),
 		);
 
-		const response: LabelSyncRuleResponse = { rule: toDto(updated) };
+		const recovery = await projectLabelSyncRecovery(app.prisma, userId, [updated.id], request.log);
+		const response: LabelSyncRuleResponse = {
+			rule: toDto(updated, recovery.get(updated.id) ?? { availability: "unavailable" }),
+		};
 		return reply.send(response);
 	});
 
@@ -340,7 +360,10 @@ export async function registerLabelSyncRoutes(app: FastifyInstance, _opts: Fasti
 			});
 		}
 
-		const response: LabelSyncRuleResponse = { rule: toDto(updated) };
+		const recovery = await projectLabelSyncRecovery(app.prisma, userId, [updated.id], request.log);
+		const response: LabelSyncRuleResponse = {
+			rule: toDto(updated, recovery.get(updated.id) ?? { availability: "unavailable" }),
+		};
 		return reply.send(response);
 	});
 

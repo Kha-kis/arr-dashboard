@@ -1,4 +1,9 @@
-import { calendarItemSchema, LIBRARY_SERVICES_UPPER } from "@arr/shared";
+import {
+	getCalendarAvailability,
+	LIBRARY_SERVICES_UPPER,
+	type MultiInstanceCalendarResponse,
+	scheduledCalendarItemSchema,
+} from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import {
@@ -15,7 +20,6 @@ import {
 	normalizeCalendarItem,
 } from "../../lib/dashboard/calendar-utils.js";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { validateAndCollect } from "../../lib/validation/validate-batch.js";
 
 const calendarQuerySchema = z.object({
 	start: z.string().optional(),
@@ -59,6 +63,14 @@ export const calendarRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const endIso = formatDateOnly(endDate);
 		const includeUnmonitored = unmonitored === true;
 
+		// Request-local metadata keeps the shared helper's array aggregation contract intact.
+		const coverage = new Map<
+			string,
+			Pick<
+				MultiInstanceCalendarResponse["instances"][number],
+				"availability" | "reason" | "rejectedItemCount"
+			>
+		>();
 		const response = await executeOnInstances(
 			app,
 			request.currentUser!.id,
@@ -66,37 +78,56 @@ export const calendarRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			async (client, instance) => {
 				const service = instance.service.toLowerCase() as CalendarService;
 
-				let rawItems: unknown[] = [];
+				let rawResponse: unknown;
 
-				if (isSonarrClient(client)) {
-					rawItems = await client.calendar.get({
-						start: startIso,
-						end: endIso,
-						unmonitored: includeUnmonitored,
-						includeSeries: true,
-						includeEpisodeFile: true,
+				try {
+					if (isSonarrClient(client)) {
+						rawResponse = await client.calendar.get({
+							start: startIso,
+							end: endIso,
+							unmonitored: includeUnmonitored,
+							includeSeries: true,
+							includeEpisodeFile: true,
+						});
+					} else if (isRadarrClient(client)) {
+						rawResponse = await client.calendar.get({
+							start: startIso,
+							end: endIso,
+							unmonitored: includeUnmonitored,
+						});
+					} else if (isLidarrClient(client)) {
+						rawResponse = await client.calendar.get({
+							start: startIso,
+							end: endIso,
+							unmonitored: includeUnmonitored,
+							includeArtist: true,
+						});
+					} else if (isReadarrClient(client)) {
+						rawResponse = await client.calendar.get({
+							start: startIso,
+							end: endIso,
+							unmonitored: includeUnmonitored,
+							includeAuthor: true,
+						});
+					}
+				} catch {
+					coverage.set(instance.id, {
+						availability: "unavailable",
+						reason: "provider-unavailable",
+						rejectedItemCount: 0,
 					});
-				} else if (isRadarrClient(client)) {
-					rawItems = await client.calendar.get({
-						start: startIso,
-						end: endIso,
-						unmonitored: includeUnmonitored,
-					});
-				} else if (isLidarrClient(client)) {
-					rawItems = await client.calendar.get({
-						start: startIso,
-						end: endIso,
-						unmonitored: includeUnmonitored,
-						includeArtist: true,
-					});
-				} else if (isReadarrClient(client)) {
-					rawItems = await client.calendar.get({
-						start: startIso,
-						end: endIso,
-						unmonitored: includeUnmonitored,
-						includeAuthor: true,
-					});
+					return [];
 				}
+				if (!Array.isArray(rawResponse)) {
+					coverage.set(instance.id, {
+						availability: "unavailable",
+						reason: "invalid-response",
+						rejectedItemCount: 0,
+					});
+					return [];
+				}
+				let rawItems: unknown[] = rawResponse;
+				rawResponse = undefined;
 
 				// Reduce peak heap (issue #427 follow-up). Sonarr's calendar
 				// payload with includeSeries+includeEpisodeFile inlines full
@@ -104,24 +135,30 @@ export const calendarRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				// per row. Drop each raw entry as soon as it's normalized so
 				// only one copy of the data is alive at a time, instead of
 				// raw + normalized for the duration of the closure.
-				const normalized: ReturnType<typeof normalizeCalendarItem>[] = [];
+				const items: ReturnType<typeof normalizeCalendarItem>[] = [];
+				let rejectedItemCount = 0;
 				for (let i = 0; i < rawItems.length; i++) {
-					normalized.push({
-						...normalizeCalendarItem(rawItems[i], service),
-						instanceId: instance.id,
-						instanceName: instance.label,
-					});
-					rawItems[i] = null;
+					try {
+						const parsed = scheduledCalendarItemSchema.safeParse({
+							...normalizeCalendarItem(rawItems[i], service),
+							instanceId: instance.id,
+							instanceName: instance.label,
+						});
+						if (parsed.success) items.push(parsed.data);
+						else rejectedItemCount++;
+					} catch {
+						rejectedItemCount++;
+					} finally {
+						rawItems[i] = null;
+					}
 				}
 				rawItems = [];
-
-				const { items } = validateAndCollect(
-					normalized,
-					calendarItemSchema,
-					`dashboard/calendar/${service}`,
-					request.log,
-					{ integration: "dashboard", category: "calendar", mode: "tolerant" },
-				);
+				coverage.set(instance.id, {
+					availability:
+						rejectedItemCount === 0 ? "available" : items.length > 0 ? "partial" : "unavailable",
+					reason: rejectedItemCount > 0 ? "invalid-items" : null,
+					rejectedItemCount,
+				});
 
 				// Sort by date
 				items.sort(compareCalendarItems);
@@ -136,12 +173,18 @@ export const calendarRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			instanceName: result.instanceName,
 			service: result.service as CalendarService,
 			data: result.success ? result.data : [],
+			...(coverage.get(result.instanceId) ?? {
+				availability: "unavailable" as const,
+				reason: "provider-unavailable" as const,
+				rejectedItemCount: 0,
+			}),
 		}));
 
 		return reply.send({
 			instances: results,
 			aggregated: response.aggregated,
 			totalCount: response.totalCount,
+			availability: getCalendarAvailability(results),
 		});
 	});
 

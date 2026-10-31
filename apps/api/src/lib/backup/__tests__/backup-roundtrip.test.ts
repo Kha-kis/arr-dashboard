@@ -910,6 +910,11 @@ const MODEL_EXPORTS = [
 			expect(await target.prisma.libraryCleanupMediaServerScanLease.count()).toBe(1);
 
 			await restoreDatabase(target.prisma, backup.data);
+			// The legacy direct helper's authentication semantics are unchanged.
+			// Session revocation belongs to the separate branded prepared adapter.
+			expect(
+				await target.prisma.session.findUnique({ where: { id: "issue815-session" } }),
+			).toMatchObject({ userId: "issue815-roundtrip-user" });
 			expect(await target.prisma.providerObservationRun.count()).toBe(0);
 			expect(await target.prisma.providerNativeInventorySnapshot.count()).toBe(0);
 			expect(await target.prisma.providerNativeInventoryItem.count()).toBe(0);

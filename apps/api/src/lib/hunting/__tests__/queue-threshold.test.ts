@@ -115,6 +115,61 @@ describe("executeHuntWithSdk — queue threshold (issue #438)", () => {
 		vi.restoreAllMocks();
 	});
 
+	it.each(["SONARR", "RADARR", "LIDARR", "READARR"])(
+		"%s rejects omitted/null wanted total before missing or upgrade search",
+		async (service) => {
+			for (const totalRecords of [undefined, null]) {
+				const wanted = vi.fn().mockResolvedValue({ records: [{ id: 1 }], totalRecords });
+				const execute = vi.fn();
+				const client = {
+					queue: { get: vi.fn().mockResolvedValue({ totalRecords: 0 }) },
+					wanted: { missing: wanted, cutoff: wanted, getMissing: wanted, getCutoffUnmet: wanted },
+					command: { execute },
+				};
+				for (const type of ["missing", "upgrade"] as const) {
+					const result = await callExecute(
+						makeMockApp(client),
+						type,
+						{},
+						{ ...sonarrInstance, service },
+					);
+					expect(result.status).toBe("error");
+					expect(result.message).toMatch(/wanted inventory.*invalid/i);
+					expect(result.itemsSearched).toBe(0);
+					expect(execute).not.toHaveBeenCalled();
+				}
+			}
+		},
+	);
+
+	it.each(["SONARR", "RADARR", "LIDARR", "READARR"])(
+		"%s reports incomplete wanted coverage as error and submits no search",
+		async (service) => {
+			const wanted = vi.fn().mockImplementation(async () => ({
+				records: Array.from({ length: 500 }, (_, id) => ({ id: id + 1 })),
+				totalRecords: 10_001,
+			}));
+			const execute = vi.fn();
+			const client = {
+				queue: { get: vi.fn().mockResolvedValue({ totalRecords: 0 }) },
+				wanted: { missing: wanted, cutoff: wanted, getMissing: wanted, getCutoffUnmet: wanted },
+				command: { execute },
+			};
+			for (const type of ["missing", "upgrade"] as const) {
+				const result = await callExecute(
+					makeMockApp(client),
+					type,
+					{},
+					{ ...sonarrInstance, service },
+				);
+				expect(result.status).toBe("error");
+				expect(result.message).toMatch(/wanted inventory.*incomplete/i);
+				expect(result.itemsSearched).toBe(0);
+				expect(execute).not.toHaveBeenCalled();
+			}
+		},
+	);
+
 	it("passes ACTIVE_QUEUE_STATUSES filter to queue.get so stuck/failed/completed items don't gate the hunt", async () => {
 		const queueGet = vi.fn().mockResolvedValue({ totalRecords: 5 });
 		const seriesGetAll = vi.fn().mockResolvedValue([]);

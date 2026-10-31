@@ -171,7 +171,7 @@ describe("gotifySender", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
-		expect(result.error).toContain("429");
+		expect(result.failureCategory).toBe("rate-limited");
 	});
 
 	it("returns retryable on 5xx", async () => {
@@ -186,7 +186,7 @@ describe("gotifySender", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
-		expect(result.error).toContain("500");
+		expect(result.failureCategory).toBe("provider-unavailable");
 	});
 
 	it("returns non-retryable on 4xx", async () => {
@@ -201,7 +201,7 @@ describe("gotifySender", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(false);
-		expect(result.error).toContain("400");
+		expect(result.failureCategory).toBe("rejected");
 	});
 
 	it("returns retryable on network error", async () => {
@@ -214,6 +214,6 @@ describe("gotifySender", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
-		expect(result.error).toContain("ECONNREFUSED");
+		expect(result.failureCategory).toBe("transport");
 	});
 });

@@ -10,15 +10,18 @@
 
 import type { FastifyInstance } from "fastify";
 import type { QueueCapableClient } from "../arr/client-factory.js";
+import { findImportSourceProtection } from "../arr/import-operations/repository.js";
+import { readImportCommandOutcome } from "../arr/manual-import-command.js";
+import {
+	CleanupMaintenanceConflictError,
+	withIndependentCleanupOperationGuard,
+} from "../library-cleanup/cleanup-maintenance-gate.js";
 import { loggers } from "../logger.js";
 import type { QueueCleanerConfig, ServiceInstance } from "../prisma.js";
-import { delay } from "../utils/delay.js";
 import { getErrorMessage } from "../utils/error-message.js";
-import { validateAndCollect } from "../validation/validate-batch.js";
 import { attemptAutoImport, evaluateAutoImportEligibility } from "./auto-import-handler.js";
 import { calculateQueueSummary, generateDetailedReason } from "./cleaner-formatters.js";
 import {
-	AUTO_IMPORT_DELAY_MS,
 	type CleanerResult,
 	type CleanerResultItem,
 	type EnhancedPreviewItem,
@@ -26,6 +29,12 @@ import {
 	MAX_AUTO_IMPORTS_PER_RUN,
 	type WhitelistPattern,
 } from "./constants.js";
+import {
+	acquireQueueSourceAction,
+	importConnectionFingerprint,
+	PROTECTED_IMPORT_STATES,
+	queueDownloadKey,
+} from "./import-receipt.js";
 import { resolveLibraryReferencedItemIds } from "./last-seed-gate.js";
 import {
 	checkWhitelist,
@@ -33,8 +42,12 @@ import {
 	isFutureEpisode,
 	parseDate,
 	type RawQueueItem,
-	rawQueueItemSchema,
 } from "./queue-item-utils.js";
+import {
+	queueItemFingerprint,
+	readCompleteQueue,
+	readCurrentQueueItem,
+} from "./queue-observation.js";
 import { normalizeDownloadId, resolveQuiAwareGateReasons } from "./qui-gate.js";
 import {
 	isUnsafeRetainedTorrentPolicy,
@@ -52,6 +65,44 @@ import {
 } from "./torrent-file-policy.js";
 
 const log = loggers.queueCleaner;
+
+const IMPORT_PREVIEW_DETAIL =
+	"Would attempt import after current candidate, file and safety verification; source retained. " +
+	"An accepted command is not verified file completion and never authorizes removal.";
+
+/** Keep row actions and counts aligned with execution's ordered admission caps. */
+function applyPreviewActionLimits<
+	T extends { action: EnhancedPreviewItem["action"]; reason: string; detailedReason?: string },
+>(
+	items: T[],
+	config: QueueCleanerConfig,
+): (Omit<T, "action"> & { action: EnhancedPreviewItem["action"] })[] {
+	let admittedActions = 0;
+	let importAttempts = 0;
+	return items.map((item) => {
+		if (item.action !== "remove" && item.action !== "import") return item;
+		let reason: string | undefined;
+		if (admittedActions >= config.maxRemovalsPerRun) {
+			reason = `Exceeded max removals per run (${config.maxRemovalsPerRun})`;
+		} else {
+			// Execution caps its candidate list before consuming the import budget.
+			admittedActions++;
+			if (item.action === "import") {
+				if (importAttempts >= MAX_AUTO_IMPORTS_PER_RUN) {
+					reason = "Per-run import budget exhausted; eligible source retained for a later run.";
+				} else importAttempts++;
+			}
+		}
+		return reason
+			? {
+					...item,
+					action: "skip",
+					reason,
+					...(item.detailedReason !== undefined ? { detailedReason: reason } : {}),
+				}
+			: item;
+	});
+}
 
 function isUnsafeRetainedTorrentAction(
 	item: Pick<CleanerResultItem, "protocol" | "rule">,
@@ -124,22 +175,128 @@ async function evaluateFilePolicyForEligibleItems(
 	return resultsByItem;
 }
 
-async function resolvePreviewGateReasons(
+async function resolveSafetyGateReasons(
 	app: FastifyInstance,
 	instance: ServiceInstance,
 	config: QueueCleanerConfig,
 	queueRecords: RawQueueItem[],
 	now: Date,
 	whitelistPatterns: WhitelistPattern[],
+	preparedOperationId?: string,
 ): Promise<Map<string, string>> {
 	const reasons = new Map<string, string>();
-	if (!config.quiAwareMode && !config.lastSeedProtection) return reasons;
+	const sourceItemIds = new Map<string, string[]>();
+	const sourceItems = new Map<string, RawQueueItem>();
+	for (const item of queueRecords) {
+		const key = queueDownloadKey(item);
+		if (key === null) continue;
+		const ids = sourceItemIds.get(key) ?? [];
+		ids.push(String(item.id));
+		sourceItemIds.set(key, ids);
+		sourceItems.set(String(item.id), item);
+	}
+	const sourceKeys = [...sourceItemIds.keys()];
+	try {
+		// Import protection applies to every protocol, before torrent-only safety checks.
+		for (let offset = 0; offset < sourceKeys.length; offset += 500) {
+			const protectedSources = await findImportSourceProtection(
+				app.prisma,
+				instance.userId,
+				sourceKeys.slice(offset, offset + 500),
+			);
+			const retryIds = [
+				...new Set(
+					protectedSources.flatMap((protection) =>
+						protection.automaticRetryInstanceId === instance.id
+							? (sourceItemIds.get(protection.downloadKey) ?? [])
+							: [],
+					),
+				),
+			];
+			const retryStrikes = new Map(
+				(retryIds.length && !preparedOperationId
+					? await app.prisma.queueCleanerStrike.findMany({
+							where: {
+								instanceId: instance.id,
+								instance: { userId: instance.userId },
+								downloadId: { in: retryIds },
+							},
+							take: retryIds.length,
+						})
+					: []
+				).map((strike) => [strike.downloadId, strike]),
+			);
+			for (const protection of protectedSources) {
+				// Only the shared service's final import gate recognizes its own
+				// preparing operation. Cleanup calls never pass this identity.
+				if (
+					preparedOperationId &&
+					protection.kind !== "legacy" &&
+					protection.operationId === preparedOperationId &&
+					protection.state === "preparing"
+				)
+					continue;
+				for (const id of sourceItemIds.get(protection.downloadKey) ?? []) {
+					if (protection.automaticRetryInstanceId === instance.id) {
+						// The final preparing gate has already consumed its new ordinal;
+						// submission's transaction still checks its current policy/history.
+						if (preparedOperationId) continue;
+						const item = sourceItems.get(id);
+						const fingerprint = item && queueItemFingerprint(item);
+						const strike = retryStrikes.get(id);
+						const rule = item && evaluateQueueItem(item, config, now)?.rule;
+						if (
+							item &&
+							fingerprint &&
+							(rule === "import_pending" || rule === "import_blocked") &&
+							evaluateAutoImportEligibility(
+								collectStatusTexts(item),
+								config,
+								strike?.downloadFingerprint === fingerprint ? strike : null,
+								now,
+							).eligible
+						)
+							continue;
+					}
+					reasons.set(
+						id,
+						protection.state === "not-submitted"
+							? "An automatic import was not submitted; source retained. Review the files and deliberately retry Manual Import, or resolve the source in ARR before cleanup."
+							: "Import evidence protects this queued source; cleanup authority is unavailable. Observe import progress and resolve the source in ARR before cleanup.",
+					);
+				}
+			}
+		}
+	} catch {
+		log.warn(
+			{ category: "import-protection-unavailable", sourceCount: sourceKeys.length },
+			"Import protection lookup unavailable; cleanup deferred",
+		);
+		for (const ids of sourceItemIds.values()) {
+			for (const id of ids)
+				reasons.set(
+					id,
+					"Import protection evidence is unavailable; source retained. Retry observation before cleanup.",
+				);
+		}
+	}
 
 	const isSonarr = instance.service === "SONARR";
 	const hashByItemId = new Map<string, string>();
 	for (const item of queueRecords) {
 		if (!isEligibleForFilePolicy(item, config, now, isSonarr, whitelistPatterns)) continue;
+		if (!queueItemFingerprint(item)) {
+			reasons.set(String(item.id), "Queue download identity is unavailable; action deferred");
+		}
 		const hash = normalizeDownloadId(item.downloadId);
+		if (
+			config.lastSeedProtection &&
+			item.protocol !== "usenet" &&
+			!(typeof item.protocol === "string" && item.protocol.toLowerCase() === "usenet") &&
+			!hash
+		) {
+			reasons.set(String(item.id), "last-seed protection: torrent identity is unavailable");
+		}
 		if (hash) hashByItemId.set(String(item.id), hash);
 	}
 	if (hashByItemId.size === 0) return reasons;
@@ -172,21 +329,41 @@ async function resolvePreviewGateReasons(
 
 	if (config.lastSeedProtection) {
 		try {
+			let unavailable = false;
 			const protectedIds = await resolveLibraryReferencedItemIds(
 				app.prisma,
 				instance.userId,
 				hashByItemId,
+				{
+					onUnavailable: () => {
+						unavailable = true;
+					},
+				},
 			);
+			if (unavailable) {
+				log.warn(
+					{ instanceId: instance.id, category: "reference-evidence-unavailable" },
+					"Last-seed reference lookup unavailable; cleanup deferred",
+				);
+			}
 			for (const id of protectedIds) {
 				if (!reasons.has(id)) {
-					reasons.set(id, "last-seed protection: *arr library still references this torrent");
+					reasons.set(
+						id,
+						unavailable
+							? "last-seed protection: reference evidence is unavailable"
+							: "last-seed protection: *arr library still references this torrent",
+					);
 				}
 			}
 		} catch (error) {
 			log.warn(
 				{ err: error, instanceId: instance.id },
-				"last-seed preview lookup failed unexpectedly; preview is proceeding without that gate",
+				"last-seed reference lookup failed; cleanup is deferred for safety",
 			);
+			for (const id of hashByItemId.keys()) {
+				reasons.set(id, "last-seed protection: reference evidence is unavailable");
+			}
 		}
 	}
 
@@ -215,6 +392,34 @@ export type {
  * 6. In live mode, removes matched items from the queue
  */
 export async function executeQueueCleaner(
+	app: FastifyInstance,
+	instance: ServiceInstance,
+	config: QueueCleanerConfig,
+): Promise<CleanerResult> {
+	if (config.dryRunMode) return executeQueueCleanerWithGuard(app, instance, config);
+	try {
+		// Independent ownership survives a parent request/scheduler timeout until provider work settles.
+		return await withIndependentCleanupOperationGuard(() =>
+			executeQueueCleanerWithGuard(app, instance, config),
+		);
+	} catch (error) {
+		if (!(error instanceof CleanupMaintenanceConflictError)) throw error;
+		return {
+			itemsCleaned: 0,
+			itemsSkipped: 0,
+			itemsWarned: 0,
+			cleanedItems: [],
+			skippedItems: [],
+			warnedItems: [],
+			isDryRun: false,
+			status: "error",
+			message:
+				"Queue Cleaner is unavailable during connection deletion or database maintenance. No queue action was started.",
+		};
+	}
+}
+
+async function executeQueueCleanerWithGuard(
 	app: FastifyInstance,
 	instance: ServiceInstance,
 	config: QueueCleanerConfig,
@@ -301,25 +506,9 @@ export async function executeQueueCleaner(
 	// Fetch queue
 	// For Radarr, include items that can't be matched to a known movie —
 	// these are often the stuck import-error items users report.
-	const isRadarr = instance.service === "RADARR";
-	const queueOptions: Record<string, unknown> = { pageSize: 1000 };
-	if (isRadarr) {
-		queueOptions.includeUnknownMovieItems = true;
-	}
-	let queueRecords: RawQueueItem[];
+	let queueRecords: Array<RawQueueItem & { id: number }>;
 	try {
-		const queue = await (
-			client.queue.get as (opts?: Record<string, unknown>) => Promise<{ records?: unknown[] }>
-		)(queueOptions);
-		const rawRecords = queue.records ?? [];
-		const { items: validatedRecords } = validateAndCollect(
-			rawRecords,
-			rawQueueItemSchema,
-			`queue/${instance.service}`,
-			log,
-			{ integration: "queue-cleaner", category: "queue-items" },
-		);
-		queueRecords = validatedRecords as RawQueueItem[];
+		queueRecords = await readCompleteQueue(client, instance.service);
 	} catch (error) {
 		const message = getErrorMessage(error, "Unknown error");
 		return {
@@ -335,7 +524,30 @@ export async function executeQueueCleaner(
 		};
 	}
 
-	if (queueRecords.length === 0) {
+	const matched: CleanerResultItem[] = [];
+	const skipped: CleanerResultItem[] = [];
+	let safetyDeferrals = 0;
+	const reconciledImports: CleanerResultItem[] = [];
+	const importProtectedIds = new Set<number>();
+	try {
+		// Cached existence only: an absent queue source does not settle a
+		// durable attempt, and a cleaner tick must not replay it or scan History.
+		const outstanding = await app.prisma.arrImportOperation.findMany({
+			where: {
+				userId: instance.userId,
+				originalInstanceId: instance.id,
+				origin: "queue-cleaner",
+				state: { notIn: ["completed", "not-submitted"] },
+			},
+			select: { id: true },
+			take: 1,
+		});
+		if (outstanding.length) safetyDeferrals++;
+	} catch {
+		log.warn(
+			{ category: "tracked-import-progress-unavailable" },
+			"Cached import progress unavailable; no cleanup attempted",
+		);
 		return {
 			itemsCleaned: 0,
 			itemsSkipped: 0,
@@ -344,13 +556,149 @@ export async function executeQueueCleaner(
 			skippedItems: [],
 			warnedItems: [],
 			isDryRun: config.dryRunMode,
-			status: "completed",
-			message: "Queue is empty",
+			status: "partial",
+			message:
+				"Cached import progress is unavailable; no queue mutations attempted. Retry observation before cleanup.",
+		};
+	}
+	try {
+		const receipts = await app.prisma.queueCleanerImportReceipt.findMany({
+			where: { instance: { userId: instance.userId }, state: { in: PROTECTED_IMPORT_STATES } },
+		});
+		for (const receipt of receipts) {
+			const id = receipt.queueId;
+			const current = queueRecords.filter((item) => queueDownloadKey(item) === receipt.downloadKey);
+			if (receipt.instanceId !== instance.id) {
+				for (const item of current) importProtectedIds.add(item.id);
+				if (current.length > 0) {
+					safetyDeferrals++;
+					skipped.push({
+						id: current[0]!.id,
+						title: typeof current[0]!.title === "string" ? current[0]!.title : "Unknown",
+						rule: "import_pending",
+						reason:
+							"Another connection has an import receipt for this source; action withheld until provider reconciliation.",
+					});
+				}
+				continue;
+			}
+			// Positive per-file completion is historical evidence, not current connection authority.
+			// Never degrade it after replacement or ask a new provider to re-prove it.
+			if (receipt.state === "completed") {
+				if (current.length > 0) {
+					for (const item of current) importProtectedIds.add(item.id!);
+					safetyDeferrals++;
+					skipped.push({
+						id,
+						title: receipt.downloadTitle,
+						rule: "import_pending",
+						reason:
+							"Prior import verified, but the same download remains queued; source retained for provider reconciliation.",
+					});
+				}
+				continue;
+			}
+			if (config.dryRunMode) {
+				for (const item of current) importProtectedIds.add(item.id!);
+				if (current.length > 0)
+					skipped.push({
+						id,
+						title: receipt.downloadTitle,
+						rule: "import_pending",
+						reason:
+							"Auto-import receipt is unresolved; source retained. Preview does not reconcile or change receipts.",
+					});
+				continue;
+			}
+			const outcome =
+				receipt.connectionFingerprint === importConnectionFingerprint(instance)
+					? await readImportCommandOutcome(
+							client,
+							instance.service.toLowerCase(),
+							receipt.commandId,
+							receipt.commandFingerprint,
+							receipt.lastAttemptAt,
+						)
+					: { state: "unknown" as const };
+			const changed = await app.prisma.queueCleanerImportReceipt.updateMany({
+				where: {
+					id: receipt.id,
+					instanceId: instance.id,
+					state: receipt.state,
+					commandId: receipt.commandId,
+					lastAttemptAt: receipt.lastAttemptAt,
+				},
+				data: {
+					state: outcome.state,
+					commandId: "commandId" in outcome ? outcome.commandId : receipt.commandId,
+				},
+			});
+			if (changed.count !== 1) throw new Error("Import receipt fence changed");
+			if (outcome.state === "completed") {
+				reconciledImports.push({
+					id,
+					title: receipt.downloadTitle,
+					rule: "import_pending",
+					reason: "Auto-import command completion verified by ARR.",
+				});
+				for (const item of current) importProtectedIds.add(item.id!);
+			} else if (outcome.state === "failed") {
+				for (const item of current) importProtectedIds.add(item.id);
+				safetyDeferrals++;
+				skipped.push({
+					id,
+					title: receipt.downloadTitle,
+					rule: "import_pending",
+					reason:
+						"Prior auto-import failed or partially completed; automatic retry and source removal withheld. Resolve the import in ARR before retrying.",
+				});
+			} else {
+				for (const item of current) importProtectedIds.add(item.id!);
+				safetyDeferrals++;
+				skipped.push({
+					id,
+					title: receipt.downloadTitle,
+					rule: "import_pending",
+					reason:
+						outcome.state === "pending"
+							? "Auto-import command is pending; source retained."
+							: "Auto-import outcome is unknown; source retained. Check provider command activity before retrying.",
+				});
+			}
+		}
+	} catch {
+		return {
+			itemsCleaned: reconciledImports.length,
+			itemsSkipped: skipped.length,
+			itemsWarned: 0,
+			cleanedItems: reconciledImports,
+			skippedItems: skipped,
+			warnedItems: [],
+			isDryRun: config.dryRunMode,
+			status: "error",
+			message: "Import receipt reconciliation is unavailable; no queue mutations attempted.",
 		};
 	}
 
-	const matched: CleanerResultItem[] = [];
-	const skipped: CleanerResultItem[] = [];
+	if (queueRecords.length === 0) {
+		return {
+			itemsCleaned: reconciledImports.length,
+			itemsSkipped: skipped.length,
+			itemsWarned: 0,
+			cleanedItems: reconciledImports,
+			skippedItems: skipped,
+			warnedItems: [],
+			isDryRun: config.dryRunMode,
+			status: safetyDeferrals > 0 ? "partial" : "completed",
+			message:
+				safetyDeferrals > 0
+					? "Import outcome remains uncertain despite an empty queue; source authority retained."
+					: reconciledImports.length > 0
+						? "Prior auto-import command completion verified by ARR."
+						: "Queue is empty",
+		};
+	}
+
 	const queueItemIds = new Set<string>();
 	const filePolicyResults = await evaluateFilePolicyForEligibleItems(
 		app,
@@ -361,11 +709,6 @@ export async function executeQueueCleaner(
 		whitelistPatterns,
 		allowedFileExtensions,
 	);
-	// Map matched queue item id (as string) → lowercase qBit info hash, used
-	// by the Phase 2.3 qui-aware gate below. Only populated for items whose
-	// *arr downloadId looks like a torrent hash (40/64 hex); NZB/magnet IDs
-	// stay absent so the gate naturally no-ops for non-torrent downloads.
-	const matchedHashByItemId = new Map<string, string>();
 
 	const isSonarr = instance.service === "SONARR";
 
@@ -376,6 +719,7 @@ export async function executeQueueCleaner(
 		const added = parseDate(item.added);
 
 		queueItemIds.add(idStr);
+		if (importProtectedIds.has(id)) continue;
 
 		// Age guard
 		if (added) {
@@ -436,135 +780,136 @@ export async function executeQueueCleaner(
 		if (evaluation) {
 			const protocol = typeof item.protocol === "string" ? item.protocol.toLowerCase() : undefined;
 			matched.push({ id, title, reason: evaluation.reason, rule: evaluation.rule, protocol });
-			const normalizedHash = normalizeDownloadId(item.downloadId);
-			if (normalizedHash) {
-				matchedHashByItemId.set(idStr, normalizedHash);
-			}
 		}
 	}
 
-	// qui-aware gate (Phase 2.3): when enabled, partition out matched items
-	// whose torrents qui has marked paused/error and surface them as skipped
-	// with an explicit reason. Runs before the strike system so no strike
-	// state is mutated for gated items.
-	if (config.quiAwareMode && matched.length > 0 && matchedHashByItemId.size > 0) {
-		try {
-			const gateReasons = await resolveQuiAwareGateReasons(
-				app.prisma,
-				instance.userId,
-				matchedHashByItemId,
-			);
-
-			if (gateReasons.size > 0) {
-				const remaining: CleanerResultItem[] = [];
-				for (const item of matched) {
-					const gateReason = gateReasons.get(String(item.id));
-					if (gateReason) {
-						skipped.push({
-							id: item.id,
-							title: item.title,
-							reason: `${item.reason} — skipped (${
-								gateReason === "evidence_unavailable"
-									? "qui-aware: qUI evidence is unavailable or stale"
-									: "qui-aware: torrent is paused or errored in qui"
-							})`,
-							rule: item.rule,
-						});
-					} else {
-						remaining.push(item);
-					}
-				}
-				matched.length = 0;
-				matched.push(...remaining);
-
-				log.info(
-					{
-						instanceId: instance.id,
-						gatedCount: gateReasons.size,
-						remainingMatched: matched.length,
-					},
-					"qui-aware gate skipped strikes for protected or unavailable qUI evidence",
-				);
-			}
-		} catch (error) {
-			log.warn(
-				{ err: error, instanceId: instance.id },
-				"qui-aware gate lookup failed; failing closed for correlated torrents",
-			);
-			const remaining: CleanerResultItem[] = [];
-			for (const item of matched) {
-				if (matchedHashByItemId.has(String(item.id))) {
-					skipped.push({
-						id: item.id,
-						title: item.title,
-						reason: `${item.reason} — skipped (qui-aware: qUI evidence is unavailable or stale)`,
-						rule: item.rule,
-					});
-				} else {
-					remaining.push(item);
-				}
-			}
-			matched.length = 0;
-			matched.push(...remaining);
-		}
+	const gateReasons = await resolveSafetyGateReasons(
+		app,
+		instance,
+		config,
+		queueRecords,
+		now,
+		whitelistPatterns,
+	);
+	const ungated: CleanerResultItem[] = [];
+	for (const item of matched) {
+		const reason = gateReasons.get(String(item.id));
+		if (reason) {
+			if (reason.includes("unavailable")) safetyDeferrals++;
+			skipped.push({ ...item, reason: `${item.reason} — skipped (${reason})` });
+		} else ungated.push(item);
 	}
+	matched.length = 0;
+	matched.push(...ungated);
 
-	// Last-seed protection (Phase 2.4): when enabled, skip striking any
-	// torrent whose hash is still referenced by *arr's library caches
-	// (LibraryCache for movies/artists/authors, EpisodeFileCache for
-	// series episodes). Allows strikes only on torrents *arr has
-	// orphaned (quality upgrade, manual delete, etc.) — the case where
-	// removal is the operator's stated intent.
-	//
-	// Runs AFTER qui-aware gate, BEFORE strikes — same staging as the
-	// existing gate. Cross-instance scope: queries the user's full
-	// library, not just `instance.userId`'s current *arr instance.
-	if (config.lastSeedProtection && matched.length > 0 && matchedHashByItemId.size > 0) {
+	const queueItemMap = new Map(queueRecords.map((item) => [Number(item.id), item]));
+	const revalidate = async (
+		candidate: CleanerResultItem,
+		preparedOperationId?: string,
+	): Promise<RawQueueItem | null> => {
+		const defer = () => {
+			safetyDeferrals++;
+			return null;
+		};
 		try {
-			const protectedItemIds = await resolveLibraryReferencedItemIds(
-				app.prisma,
-				instance.userId,
-				matchedHashByItemId,
-			);
-
-			if (protectedItemIds.size > 0) {
-				const remaining: CleanerResultItem[] = [];
-				for (const item of matched) {
-					if (protectedItemIds.has(String(item.id))) {
-						skipped.push({
-							id: item.id,
-							title: item.title,
-							reason: `${item.reason} — skipped (last-seed protection: *arr library still references this torrent)`,
-							rule: item.rule,
-						});
-					} else {
-						remaining.push(item);
-					}
-				}
-				matched.length = 0;
-				matched.push(...remaining);
-
-				log.info(
-					{
-						instanceId: instance.id,
-						protectedCount: protectedItemIds.size,
-						remainingMatched: matched.length,
-					},
-					"last-seed protection skipped strikes for *arr-referenced torrents",
-				);
+			const currentInstance = await app.prisma.serviceInstance.findUnique({
+				where: { id: instance.id, userId: instance.userId, enabled: true },
+			});
+			if (
+				!currentInstance ||
+				importConnectionFingerprint(currentInstance) !== importConnectionFingerprint(instance)
+			) {
+				skipped.push({
+					...candidate,
+					reason: "Connection owner, availability, or provider identity changed; action deferred.",
+				});
+				return defer();
 			}
-		} catch (error) {
-			// Even though the gate itself fails CLOSED (returns "protect
-			// all"), wrap the call in a defensive try/catch in case the
-			// gate's own try/catch is bypassed by a Prisma re-throw or
-			// unexpected schema mismatch. Surface as a loud warn so the
-			// operator can audit; cleanup continues with the unprotected
-			// behavior as a last resort.
-			log.warn(
-				{ err: error, instanceId: instance.id },
-				"last-seed protection lookup failed unexpectedly; proceeding without protection",
+			const observed = queueItemMap.get(candidate.id);
+			const current = await readCurrentQueueItem(client, instance.service, candidate.id);
+			if (
+				!observed ||
+				!current ||
+				!queueItemFingerprint(observed) ||
+				queueItemFingerprint(observed) !== queueItemFingerprint(current)
+			) {
+				skipped.push({
+					...candidate,
+					reason: "Queue target identity changed or is unavailable; action deferred.",
+				});
+				return defer();
+			}
+			const currentTime = new Date();
+			const downloadKey = queueDownloadKey(current);
+			const receipts = await app.prisma.queueCleanerImportReceipt.findMany({
+				where: {
+					instance: { userId: instance.userId },
+					downloadKey: downloadKey ?? "",
+					state: { in: PROTECTED_IMPORT_STATES },
+				},
+			});
+			if (!downloadKey || receipts.some((receipt) => receipt.downloadKey === downloadKey)) {
+				skipped.push({
+					...candidate,
+					reason:
+						"Source identity is unavailable or an import receipt requires provider reconciliation; action deferred.",
+				});
+				return defer();
+			}
+			if (!isEligibleForFilePolicy(current, config, currentTime, isSonarr, whitelistPatterns)) {
+				skipped.push({
+					...candidate,
+					reason: "Queue target is no longer eligible; action deferred.",
+				});
+				return defer();
+			}
+			const policies = await evaluateFilePolicyForEligibleItems(
+				app,
+				instance,
+				config,
+				[current],
+				currentTime,
+				whitelistPatterns,
+				allowedFileExtensions,
 			);
+			const policy = policies.get(current);
+			const currentRule =
+				policy?.status === "violation"
+					? "disallowed_file_extension"
+					: evaluateQueueItem(current, config, currentTime)?.rule;
+			const reasons = await resolveSafetyGateReasons(
+				app,
+				instance,
+				config,
+				[current],
+				currentTime,
+				whitelistPatterns,
+				preparedOperationId,
+			);
+			const reason = reasons.get(String(candidate.id));
+			if (policy?.status === "deferred" || currentRule !== candidate.rule || reason) {
+				skipped.push({
+					...candidate,
+					reason: reason ?? "Queue target rule or protection changed; action deferred.",
+				});
+				return defer();
+			}
+			return current;
+		} catch {
+			skipped.push({
+				...candidate,
+				reason: "Queue target identity or safety evidence is unavailable; action deferred.",
+			});
+			return defer();
 		}
+	};
+	if (!config.dryRunMode) {
+		const currentMatches: CleanerResultItem[] = [];
+		for (const candidate of matched) {
+			if (await revalidate(candidate)) currentMatches.push(candidate);
+		}
+		matched.length = 0;
+		matched.push(...currentMatches);
 	}
 
 	// Apply strike system if enabled
@@ -587,7 +932,11 @@ export async function executeQueueCleaner(
 
 					for (const item of matched) {
 						const itemIdStr = String(item.id);
-						const existingStrike = strikeMap.get(itemIdStr);
+						const priorStrike = strikeMap.get(itemIdStr);
+						const source = queueItemMap.get(item.id)!;
+						const downloadFingerprint = queueItemFingerprint(source)!;
+						const existingStrike =
+							priorStrike?.downloadFingerprint === downloadFingerprint ? priorStrike : undefined;
 						const newStrikeCount = (existingStrike?.strikeCount ?? 0) + 1;
 
 						if (newStrikeCount >= config.maxStrikes) {
@@ -602,10 +951,21 @@ export async function executeQueueCleaner(
 								txPendingStrikeDeletions.set(itemIdStr, existingStrike.id);
 							}
 						} else {
-							if (existingStrike) {
+							if (priorStrike) {
 								await tx.queueCleanerStrike.update({
-									where: { id: existingStrike.id },
+									where: { id: priorStrike.id },
 									data: {
+										downloadFingerprint,
+										downloadHash: normalizeDownloadId(source.downloadId),
+										...(!existingStrike
+											? {
+													importAttempts: 0,
+													lastImportAttempt: null,
+													lastImportError: null,
+													firstStrikeAt: now,
+													downloadTitle: item.title,
+												}
+											: {}),
 										strikeCount: newStrikeCount,
 										lastRule: item.rule,
 										lastReason: item.reason,
@@ -617,6 +977,8 @@ export async function executeQueueCleaner(
 										instanceId: instance.id,
 										downloadId: itemIdStr,
 										downloadTitle: item.title,
+										downloadFingerprint,
+										downloadHash: normalizeDownloadId(source.downloadId),
 										strikeCount: 1,
 										lastRule: item.rule,
 										lastReason: item.reason,
@@ -696,15 +1058,18 @@ export async function executeQueueCleaner(
 	if (config.dryRunMode) {
 		const dryRunWarned: CleanerResultItem[] = [];
 		let dryRunToRemove: CleanerResultItem[] = [];
+		const existingStrikes = await app.prisma.queueCleanerStrike.findMany({
+			where: { instanceId: instance.id },
+		});
+		const strikeMap = new Map(existingStrikes.map((s) => [s.downloadId, s]));
 
 		if (config.strikeSystemEnabled) {
-			const existingStrikes = await app.prisma.queueCleanerStrike.findMany({
-				where: { instanceId: instance.id },
-			});
-			const strikeMap = new Map(existingStrikes.map((s) => [s.downloadId, s]));
-
 			for (const item of matched) {
-				const existingStrike = strikeMap.get(String(item.id));
+				const priorStrike = strikeMap.get(String(item.id));
+				const existingStrike =
+					priorStrike?.downloadFingerprint === queueItemFingerprint(queueItemMap.get(item.id)!)
+						? priorStrike
+						: undefined;
 				const simulatedStrikeCount = (existingStrike?.strikeCount ?? 0) + 1;
 
 				if (simulatedStrikeCount >= config.maxStrikes) {
@@ -731,27 +1096,43 @@ export async function executeQueueCleaner(
 		const authorizedCandidates = dryRunToRemove.filter(
 			(item) => !isUnsafeRetainedTorrentAction(item, config),
 		);
-		const authorizedPreviewRemove = authorizedCandidates.slice(0, config.maxRemovalsPerRun);
-		const cappedSkip = authorizedCandidates.slice(config.maxRemovalsPerRun);
+		const plannedActions = applyPreviewActionLimits(
+			authorizedCandidates.map((item) => {
+				const source = queueItemMap.get(item.id)!;
+				const priorStrike = strikeMap.get(String(item.id));
+				const existingStrike =
+					priorStrike?.downloadFingerprint === queueItemFingerprint(source) ? priorStrike : null;
+				const wouldImport =
+					(item.rule === "import_pending" || item.rule === "import_blocked") &&
+					typeof source.downloadId === "string" &&
+					!!source.downloadId &&
+					evaluateAutoImportEligibility(collectStatusTexts(source), config, existingStrike, now)
+						.eligible;
+				return { ...item, action: wouldImport ? ("import" as const) : ("remove" as const) };
+			}),
+			config,
+		);
+		const previewRemoveCount = plannedActions.filter((item) => item.action === "remove").length;
+		const previewImportCount = plannedActions.filter((item) => item.action === "import").length;
 
 		return {
 			itemsCleaned: 0,
-			itemsSkipped:
-				authorizedPreviewRemove.length + policyBlocked.length + cappedSkip.length + skipped.length,
+			itemsSkipped: plannedActions.length + policyBlocked.length + skipped.length,
 			itemsWarned: dryRunWarned.length,
 			cleanedItems: [],
 			skippedItems: [
-				...authorizedPreviewRemove.map((i) => ({
-					...i,
-					reason: `[DRY RUN] Would remove: ${i.reason}${i.strikeCount ? ` (strike ${i.strikeCount}/${i.maxStrikes})` : ""}`,
+				...plannedActions.map(({ action, ...item }) => ({
+					...item,
+					reason:
+						action === "import"
+							? `[DRY RUN] ${IMPORT_PREVIEW_DETAIL}`
+							: action === "remove"
+								? `[DRY RUN] Would remove: ${item.reason}${item.strikeCount ? ` (strike ${item.strikeCount}/${item.maxStrikes})` : ""}`
+								: item.reason,
 				})),
 				...policyBlocked.map((item) => ({
 					...item,
 					reason: RETAINED_TORRENT_BLOCKLIST_ERROR,
-				})),
-				...cappedSkip.map((item) => ({
-					...item,
-					reason: `Exceeded max removals per run (${config.maxRemovalsPerRun})`,
 				})),
 				...skipped,
 			],
@@ -762,13 +1143,13 @@ export async function executeQueueCleaner(
 			isDryRun: true,
 			status: "completed",
 			message:
-				authorizedPreviewRemove.length > 0
-					? `Dry run: would remove ${authorizedPreviewRemove.length} item(s)${dryRunWarned.length > 0 ? `, warn ${dryRunWarned.length}` : ""}`
+				previewRemoveCount > 0 || previewImportCount > 0
+					? `Dry run: would remove ${previewRemoveCount} item(s), attempt import of ${previewImportCount} item(s) with source retained${dryRunWarned.length > 0 ? `, warn ${dryRunWarned.length}` : ""}`
 					: dryRunWarned.length > 0
 						? `Dry run: would warn ${dryRunWarned.length} item(s)`
 						: policyBlocked.length > 0
 							? `Dry run: would skip ${policyBlocked.length} item(s) blocked by the retained-torrent policy`
-							: "Dry run: no items match removal rules",
+							: "Dry run: no admitted actions; matching sources retained",
 		};
 	}
 
@@ -792,17 +1173,15 @@ export async function executeQueueCleaner(
 
 	// Live mode: remove items (with auto-import support)
 	let removeErrors = 0;
-	let autoImportSuccesses = 0;
+	const autoImportSuccesses = reconciledImports.length;
 	const cleaned: CleanerResultItem[] = [];
-	const autoImported: CleanerResultItem[] = [];
+	const autoImported: CleanerResultItem[] = [...reconciledImports];
 
 	const downloadIdMap = new Map<number, string>();
-	const queueItemMap = new Map<number, RawQueueItem>();
 	for (const queueItem of queueRecords) {
 		const queueId = typeof queueItem.id === "number" ? queueItem.id : 0;
 		const downloadId = typeof queueItem.downloadId === "string" ? queueItem.downloadId : null;
 		if (queueId > 0) {
-			queueItemMap.set(queueId, queueItem);
 			if (downloadId) {
 				downloadIdMap.set(queueId, downloadId);
 			}
@@ -817,119 +1196,142 @@ export async function executeQueueCleaner(
 	let autoImportAttemptsThisRun = 0;
 
 	for (const item of cappedToRemove) {
-		const isImportItem = item.rule === "import_pending" || item.rule === "import_blocked";
-		const downloadId = downloadIdMap.get(item.id) ?? null;
+		const observed = queueItemMap.get(item.id);
+		const releaseSource = observed ? acquireQueueSourceAction(instance.userId, observed) : null;
+		if (!releaseSource) {
+			safetyDeferrals++;
+			skipped.push({
+				...item,
+				reason:
+					"Source identity is unavailable or another source action is still in progress; action deferred.",
+			});
+			continue;
+		}
+		try {
+			const currentQueueItem = await revalidate(item);
+			if (!currentQueueItem) continue;
+			const isImportItem = item.rule === "import_pending" || item.rule === "import_blocked";
+			const downloadId = downloadIdMap.get(item.id) ?? null;
 
-		if (isImportItem && downloadId && autoImportAttemptsThisRun < MAX_AUTO_IMPORTS_PER_RUN) {
-			const itemIdStr = String(item.id);
-			const existingStrike = strikeMapForAutoImport.get(itemIdStr);
+			if (isImportItem && downloadId) {
+				const itemIdStr = String(item.id);
+				const priorStrike = strikeMapForAutoImport.get(itemIdStr);
+				const downloadFingerprint = queueItemFingerprint(currentQueueItem)!;
+				const existingStrike =
+					priorStrike?.downloadFingerprint === downloadFingerprint ? priorStrike : undefined;
 
-			const fullQueueItem = queueItemMap.get(item.id);
-			const statusTexts = fullQueueItem ? collectStatusTexts(fullQueueItem) : [];
+				const statusTexts = collectStatusTexts(currentQueueItem);
 
-			const eligibility = evaluateAutoImportEligibility(
-				statusTexts,
-				config,
-				existingStrike ?? null,
-				now,
-			);
-
-			if (eligibility.eligible) {
-				log.info(
-					{ instanceId: instance.id, downloadId, itemTitle: item.title },
-					"Attempting auto-import before removal",
+				const eligibility = evaluateAutoImportEligibility(
+					statusTexts,
+					config,
+					existingStrike ?? null,
+					now,
 				);
 
-				autoImportAttemptsThisRun++;
-				const importResult = await attemptAutoImport(app, instance, downloadId, item.title);
-
-				if (AUTO_IMPORT_DELAY_MS > 0) {
-					await delay(AUTO_IMPORT_DELAY_MS);
-				}
-
-				// Update strike record with import attempt info
-				try {
-					if (existingStrike) {
-						await app.prisma.queueCleanerStrike.update({
-							where: { id: existingStrike.id },
-							data: {
-								importAttempts: existingStrike.importAttempts + 1,
-								lastImportAttempt: now,
-								lastImportError: importResult.success
-									? null
-									: (importResult.error ?? "Unknown error"),
-							},
+				if (eligibility.eligible) {
+					if (autoImportAttemptsThisRun >= MAX_AUTO_IMPORTS_PER_RUN) {
+						safetyDeferrals++;
+						skipped.push({
+							...item,
+							reason: "Per-run import budget exhausted; eligible source retained for a later run.",
 						});
-					} else {
-						await app.prisma.queueCleanerStrike.create({
-							data: {
-								instanceId: instance.id,
-								downloadId: itemIdStr,
-								downloadTitle: item.title,
-								strikeCount: 0,
-								lastRule: item.rule,
-								lastReason: item.reason,
-								importAttempts: 1,
-								lastImportAttempt: now,
-								lastImportError: importResult.success
-									? null
-									: (importResult.error ?? "Unknown error"),
-							},
-						});
+						continue;
 					}
-				} catch (dbError) {
-					log.warn(
-						{ err: dbError, instanceId: instance.id, downloadId },
-						"Failed to update import attempt tracking",
+					log.info(
+						{ category: "automatic-import-admission" },
+						"Preparing automatic import; source retained until verified",
 					);
-				}
 
-				if (importResult.success) {
-					autoImportSuccesses++;
-					autoImported.push({
+					autoImportAttemptsThisRun++;
+					const importResult = await attemptAutoImport(app, instance, downloadId, item.title, {
+						queueId: item.id,
+						queueFingerprint: downloadFingerprint,
+						attemptOrdinal: (existingStrike?.importAttempts ?? 0) + 1,
+						sourcePermit: releaseSource,
+						currentQueueGate: async (_current, preparedOperationId) =>
+							(await revalidate(item, preparedOperationId)) !== null,
+					});
+					// The shared lifecycle owns persistence and per-file reconciliation.
+					// Acknowledgement, failure, or unavailable preparation never permits
+					// this invocation to fall through to removal or increment twice.
+					safetyDeferrals++;
+					skipped.push({
 						...item,
-						reason: `Auto-imported successfully (was: ${item.reason})`,
+						reason: importResult.safetyBlocked
+							? "Auto-import identity or media mapping, policy, or preparation is unavailable; source retained."
+							: importResult.commandState === "pending"
+								? "Auto-import command accepted but pending; source retained."
+								: importResult.commandState === "failed"
+									? "Auto-import command failed or partially completed; source retained for explicit review."
+									: "Auto-import outcome or per-file completion is unverified; source retained. Observe import progress.",
 					});
 					continue;
 				}
-				log.info(
-					{ instanceId: instance.id, downloadId, error: importResult.error },
-					"Auto-import failed, falling back to removal",
-				);
-			} else {
 				log.debug(
 					{ instanceId: instance.id, downloadId, reason: eligibility.reason },
 					"Auto-import not eligible",
 				);
 			}
-		}
 
-		// Normal removal flow
-		try {
-			const isTorrent = item.protocol === "torrent";
-			const isFilePolicyRemoval = item.rule === "disallowed_file_extension";
-			const useChangeCategory = !isFilePolicyRemoval && config.changeCategoryEnabled && isTorrent;
-			if (isUnsafeRetainedTorrentAction(item, config)) {
-				skipped.push({ ...item, reason: RETAINED_TORRENT_BLOCKLIST_ERROR });
+			// A preparation hint is never removal permission. Recheck the unconditional
+			// source fence under the held source permit: policy/counter snapshots may
+			// differ between fresh import admission and the removal fallthrough.
+			let removalProtected = true;
+			try {
+				const sourceKey = queueDownloadKey(currentQueueItem);
+				removalProtected =
+					!sourceKey ||
+					(await findImportSourceProtection(app.prisma, instance.userId, [sourceKey])).length > 0;
+			} catch {
+				// Unknown protection is not permission to delete or expose database detail.
+			}
+			if (removalProtected) {
+				safetyDeferrals++;
+				skipped.push({
+					...item,
+					reason:
+						"Import protection prevents removal or is unavailable; source retained. Review import progress or resolve the source in ARR before cleanup.",
+				});
 				continue;
 			}
 
-			await client.queue.delete(item.id, {
-				removeFromClient: isFilePolicyRemoval ? true : config.removeFromClient,
-				blocklist: config.addToBlocklist,
-				skipRedownload: !config.searchAfterRemoval,
-				changeCategory: useChangeCategory,
-			});
-			cleaned.push(item);
-		} catch (error) {
-			const errMsg = getErrorMessage(error, "Unknown error");
-			if (errMsg.includes("404") || errMsg.includes("Not Found")) {
-				cleaned.push({ ...item, reason: `${item.reason} (already removed)` });
-			} else {
-				removeErrors++;
-				skipped.push({ ...item, reason: `Remove failed: ${errMsg}` });
-				log.warn({ err: error, itemId: item.id, title: item.title }, "Failed to remove queue item");
+			// Normal removal flow: no import's partial failure/non-submission authorizes deletion.
+			try {
+				const isTorrent = item.protocol === "torrent";
+				const isFilePolicyRemoval = item.rule === "disallowed_file_extension";
+				const useChangeCategory = !isFilePolicyRemoval && config.changeCategoryEnabled && isTorrent;
+				if (isUnsafeRetainedTorrentAction(item, config)) {
+					skipped.push({ ...item, reason: RETAINED_TORRENT_BLOCKLIST_ERROR });
+					continue;
+				}
+
+				await client.queue.delete(item.id, {
+					removeFromClient: isFilePolicyRemoval ? true : config.removeFromClient,
+					blocklist: config.addToBlocklist,
+					skipRedownload: !config.searchAfterRemoval,
+					changeCategory: useChangeCategory,
+				});
+				cleaned.push(item);
+			} catch (error) {
+				const errMsg = getErrorMessage(error, "Unknown error");
+				if (errMsg.includes("404") || errMsg.includes("Not Found")) {
+					removeErrors++;
+					skipped.push({
+						...item,
+						reason: "Removal outcome is unverified: target was unavailable.",
+					});
+				} else {
+					removeErrors++;
+					skipped.push({ ...item, reason: `Remove failed: ${errMsg}` });
+					log.warn(
+						{ err: error, itemId: item.id, title: item.title },
+						"Failed to remove queue item",
+					);
+				}
 			}
+		} finally {
+			releaseSource();
 		}
 	}
 
@@ -958,8 +1360,12 @@ export async function executeQueueCleaner(
 		}
 	}
 
-	const status = removeErrors > 0 ? "partial" : "completed";
+	const status = removeErrors > 0 || safetyDeferrals > 0 ? "partial" : "completed";
 	const errorSuffix = removeErrors > 0 ? ` (${removeErrors} removal errors)` : "";
+	const deferredSuffix =
+		safetyDeferrals > 0
+			? ` (${safetyDeferrals} action(s) deferred for unavailable or changed safety evidence)`
+			: "";
 	const warnSuffix = warned.length > 0 ? `, ${warned.length} warned` : "";
 	const autoImportSuffix = autoImportSuccesses > 0 ? `, ${autoImportSuccesses} auto-imported` : "";
 
@@ -974,7 +1380,7 @@ export async function executeQueueCleaner(
 		warnedItems: warned,
 		isDryRun: false,
 		status,
-		message: `Removed ${cleaned.length} item(s) from queue${autoImportSuffix}${warnSuffix}${errorSuffix}`,
+		message: `Removed ${cleaned.length} item(s) from queue${autoImportSuffix}${warnSuffix}${errorSuffix}${deferredSuffix}`,
 	};
 }
 
@@ -1023,6 +1429,7 @@ export async function executeEnhancedPreview(
 					failed: 0,
 				},
 				wouldRemove: 0,
+				wouldImport: 0,
 				wouldWarn: 0,
 				wouldSkip: 0,
 				previewItems: [],
@@ -1067,6 +1474,7 @@ export async function executeEnhancedPreview(
 					failed: 0,
 				},
 				wouldRemove: 0,
+				wouldImport: 0,
 				wouldWarn: 0,
 				wouldSkip: 0,
 				previewItems: [],
@@ -1106,6 +1514,7 @@ export async function executeEnhancedPreview(
 					failed: 0,
 				},
 				wouldRemove: 0,
+				wouldImport: 0,
 				wouldWarn: 0,
 				wouldSkip: 0,
 				previewItems: [],
@@ -1124,25 +1533,10 @@ export async function executeEnhancedPreview(
 
 	// Try to fetch queue
 	// For Radarr, include items that can't be matched to a known movie.
-	const isRadarrPreview = instance.service === "RADARR";
-	const previewQueueOptions: Record<string, unknown> = { pageSize: 1000 };
-	if (isRadarrPreview) {
-		previewQueueOptions.includeUnknownMovieItems = true;
-	}
-	let queueRecords: RawQueueItem[];
+	let queueRecords: Array<RawQueueItem & { id: number }>;
 
 	try {
-		const queue = await (
-			client.queue.get as (opts?: Record<string, unknown>) => Promise<{ records?: unknown[] }>
-		)(previewQueueOptions);
-		const { items: previewValidated } = validateAndCollect(
-			queue.records ?? [],
-			rawQueueItemSchema,
-			`queue-preview/${instance.service}`,
-			log,
-			{ integration: "queue-cleaner", category: "queue-items" },
-		);
-		queueRecords = previewValidated as RawQueueItem[];
+		queueRecords = await readCompleteQueue(client, instance.service);
 	} catch (error) {
 		const errorMessage = getErrorMessage(error, "Unknown error");
 		log.warn(
@@ -1165,6 +1559,7 @@ export async function executeEnhancedPreview(
 				failed: 0,
 			},
 			wouldRemove: 0,
+			wouldImport: 0,
 			wouldWarn: 0,
 			wouldSkip: 0,
 			previewItems: [],
@@ -1192,7 +1587,7 @@ export async function executeEnhancedPreview(
 		whitelistPatterns,
 		allowedFileExtensions,
 	);
-	const previewGateReasons = await resolvePreviewGateReasons(
+	const previewGateReasons = await resolveSafetyGateReasons(
 		app,
 		instance,
 		config,
@@ -1205,6 +1600,19 @@ export async function executeEnhancedPreview(
 		where: { instanceId: instance.id },
 	});
 	const strikeMap = new Map(existingStrikes.map((s) => [s.downloadId, s]));
+	const importReceipts = await app.prisma.queueCleanerImportReceipt.findMany({
+		where: { instance: { userId: instance.userId }, state: { in: PROTECTED_IMPORT_STATES } },
+	});
+	for (const receipt of importReceipts) {
+		for (const current of queueRecords.filter(
+			(item) => queueDownloadKey(item) === receipt.downloadKey,
+		)) {
+			previewGateReasons.set(
+				String(current.id),
+				"Auto-import receipt requires provider reconciliation; source retained",
+			);
+		}
+	}
 
 	for (const item of queueRecords) {
 		const id = typeof item.id === "number" ? item.id : 0;
@@ -1381,7 +1789,9 @@ export async function executeEnhancedPreview(
 				continue;
 			}
 
-			const existingStrike = strikeMap.get(String(id));
+			const priorStrike = strikeMap.get(String(id));
+			const existingStrike =
+				priorStrike?.downloadFingerprint === queueItemFingerprint(item) ? priorStrike : undefined;
 			const simulatedStrikeCount = (existingStrike?.strikeCount ?? 0) + 1;
 			const wouldTriggerRemoval =
 				!config.strikeSystemEnabled || simulatedStrikeCount >= config.maxStrikes;
@@ -1427,17 +1837,21 @@ export async function executeEnhancedPreview(
 					existingStrike ?? null,
 					now,
 				);
-				autoImportEligible = eligibility.eligible;
+				autoImportEligible =
+					eligibility.eligible && typeof item.downloadId === "string" && !!item.downloadId;
 				autoImportReason = eligibility.reason;
 			}
 
 			previewItems.push({
 				id,
 				title,
-				action: config.strikeSystemEnabled ? (wouldTriggerRemoval ? "remove" : "warn") : "remove",
+				action: !wouldTriggerRemoval ? "warn" : autoImportEligible ? "import" : "remove",
 				rule: evaluation.rule,
 				reason: evaluation.reason,
-				detailedReason: generateDetailedReason(evaluation.rule, item, config, now),
+				detailedReason:
+					wouldTriggerRemoval && autoImportEligible
+						? IMPORT_PREVIEW_DETAIL
+						: generateDetailedReason(evaluation.rule, item, config, now),
 				queueAge: ageMins,
 				size,
 				sizeleft,
@@ -1481,9 +1895,11 @@ export async function executeEnhancedPreview(
 		}
 	}
 
-	const wouldRemove = previewItems.filter((i) => i.action === "remove").length;
-	const wouldWarn = previewItems.filter((i) => i.action === "warn").length;
-	const wouldSkip = previewItems.filter(
+	const plannedItems = applyPreviewActionLimits(previewItems, config);
+	const wouldRemove = plannedItems.filter((i) => i.action === "remove").length;
+	const wouldImport = plannedItems.filter((i) => i.action === "import").length;
+	const wouldWarn = plannedItems.filter((i) => i.action === "warn").length;
+	const wouldSkip = plannedItems.filter(
 		(i) => i.action === "skip" || i.action === "whitelist",
 	).length;
 
@@ -1493,10 +1909,11 @@ export async function executeEnhancedPreview(
 		instanceService,
 		instanceReachable: true,
 		queueSummary,
-		wouldRemove: Math.min(wouldRemove, config.maxRemovalsPerRun),
+		wouldRemove,
+		wouldImport,
 		wouldWarn,
-		wouldSkip: wouldSkip + Math.max(0, wouldRemove - config.maxRemovalsPerRun),
-		previewItems,
+		wouldSkip,
+		previewItems: plannedItems,
 		ruleSummary,
 		previewGeneratedAt: now.toISOString(),
 		configSnapshot: {

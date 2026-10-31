@@ -43,18 +43,7 @@ test.describe("Navigation - Sidebar", () => {
 		const dashboardLink = page.getByRole("link", { name: /dashboard/i });
 		await expect(dashboardLink).toBeVisible();
 
-		// Check for active styling (aria-current or class)
-		const isActive = await dashboardLink.evaluate((el) => {
-			return (
-				el.getAttribute("aria-current") === "page" ||
-				el.classList.contains("active") ||
-				el.classList.contains("bg-primary") ||
-				el.parentElement?.classList.contains("active")
-			);
-		});
-
-		// The link should have some active indication
-		expect(isActive || true).toBe(true); // Soft assertion
+		await expect(dashboardLink).toHaveAttribute("aria-current", "page");
 	});
 
 	test("should display app branding", async ({ page }) => {
@@ -99,11 +88,19 @@ test.describe("Navigation - Route Changes", () => {
 			// Verify page content loaded - look for heading or page identifier text
 			// Some pages may take longer to load content, so use extended timeout
 			const pageContent = page.locator("main");
-			const textVisible = await pageContent.getByText(heading).first().isVisible({ timeout: TIMEOUTS.long }).catch(() => false);
+			const textVisible = await pageContent
+				.getByText(heading)
+				.first()
+				.isVisible({ timeout: TIMEOUTS.long })
+				.catch(() => false);
 
 			// If main content not found, check the whole page (some pages render differently)
 			if (!textVisible) {
-				const pageTextVisible = await page.getByText(heading).first().isVisible({ timeout: 5000 }).catch(() => false);
+				const pageTextVisible = await page
+					.getByText(heading)
+					.first()
+					.isVisible({ timeout: 5000 })
+					.catch(() => false);
 				expect(pageTextVisible).toBe(true);
 			}
 		});
@@ -223,52 +220,140 @@ test.describe("Navigation - Deep Links", () => {
 	});
 });
 
-test.describe("Navigation - Mobile", () => {
-	test.beforeEach(async ({ page }) => {
-		await page.setViewportSize({ width: 375, height: 667 });
-	});
-
-	test("should have hamburger menu or collapsible sidebar on mobile", async ({ page }) => {
+// Modal and viewport regression coverage below uses the main authentication shell.
+test.describe("Navigation - Viewport and keyboard", () => {
+	test("keeps desktop navigation pinned with contained scrolling and an unlocked document", async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width: 1280, height: 480 });
 		await page.goto(ROUTES.dashboard);
-
-		// Look for hamburger menu button
-		const menuButton = page.getByRole("button", { name: /menu|toggle/i });
-		const hamburgerIcon = page.locator('[class*="hamburger"], [class*="menu-toggle"]');
-
-		const hasMenuButton = (await menuButton.count()) > 0;
-		const hasHamburger = (await hamburgerIcon.count()) > 0;
-
-		// On mobile, sidebar is hidden but main content should be visible
-		// Scope to main element to avoid hidden sidebar content
-		await expect(page.locator("main").getByText(/welcome back/i)).toBeVisible({
-			timeout: TIMEOUTS.medium,
+		const sidebar = page.locator("aside[data-sidebar]");
+		const nav = sidebar.getByRole("navigation");
+		await expect(sidebar).toBeVisible();
+		for (const group of await nav.getByRole("button", { expanded: false }).all())
+			await group.click();
+		await expect.poll(() => nav.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+		await expect(sidebar).toHaveCSS("position", "sticky");
+		await expect(nav).toHaveCSS("overscroll-behavior-y", "contain");
+		const initial = await sidebar.boundingBox();
+		expect(initial).not.toBeNull();
+		expect(initial!.y).toBe(0);
+		expect(initial!.height).toBe(480);
+		await nav.evaluate((el) => {
+			el.scrollTop = el.scrollHeight;
 		});
+		await expect.poll(() => nav.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+		await expect(sidebar.getByRole("link", { name: "Settings", exact: true })).toBeInViewport();
+		// Make document scrolling deterministic even with a small dashboard fixture.
+		await page.locator("main").evaluate((el) => {
+			el.style.minHeight = "200vh";
+		});
+		await page.evaluate(() => window.scrollTo(0, 200));
+		await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+		expect((await sidebar.boundingBox())!.y).toBe(0);
+		await expect(page.locator("body")).not.toHaveAttribute("data-scroll-locked");
 	});
 
-	test("should navigate using mobile menu", async ({ page }) => {
-		await page.goto(ROUTES.dashboard);
+	test.describe("Mobile", () => {
+		test.beforeEach(async ({ page }) => {
+			await page.setViewportSize({ width: 390, height: 844 });
+			await page.goto(ROUTES.dashboard);
+		});
 
-		// On mobile, sidebar is hidden by default - need to open hamburger menu first
-		const menuButton = page.getByRole("button", { name: /open menu|close menu|menu/i });
-
-		if ((await menuButton.count()) > 0) {
-			await menuButton.click();
-			await page.waitForTimeout(300); // Wait for slide animation
-
-			// Now the sidebar links should be visible
-			const libraryLink = page.getByRole("link", { name: /^Library$/i });
-			if (await libraryLink.isVisible()) {
-				await libraryLink.click();
-				await expect(page).toHaveURL(/\/library/);
+		test("aligns the header opener and primary account controls within the viewport", async ({
+			page,
+		}) => {
+			const header = page.getByRole("banner");
+			const opener = header.getByRole("button", { name: "Open menu", exact: true });
+			const privacy = header.getByTitle(/Hide sensitive data|Show real data/);
+			const signout = header.getByRole("button", { name: "Sign out", exact: true });
+			// Wait for authenticated controls before recording any layout bounds.
+			for (const control of [opener, privacy, signout]) await expect(control).toBeVisible();
+			const boxes = [];
+			for (const control of [opener, privacy, signout]) {
+				await expect(control).toBeVisible();
+				const box = await control.boundingBox();
+				expect(box).not.toBeNull();
+				expect(box!.x).toBeGreaterThanOrEqual(0);
+				expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+				boxes.push(box!);
 			}
-		} else {
-			// If no menu button, sidebar might always be visible - just try clicking
-			const libraryLink = page.getByRole("link", { name: /^Library$/i });
-			if (await libraryLink.isVisible()) {
-				await libraryLink.click();
-				await expect(page).toHaveURL(/\/library/);
-			}
-		}
+			expect(boxes[0].x + boxes[0].width).toBeLessThanOrEqual(boxes[1].x);
+			expect(boxes[1].x + boxes[1].width).toBeLessThanOrEqual(boxes[2].x);
+			const center = boxes[0].y + boxes[0].height / 2;
+			for (const box of boxes.slice(1))
+				expect(Math.abs(box.y + box.height / 2 - center)).toBeLessThanOrEqual(2);
+		});
+
+		test("cycles real focus and returns to the opener after Escape, close, and backdrop", async ({
+			page,
+		}) => {
+			const opener = page.getByRole("button", { name: "Open menu", exact: true });
+			await opener.focus();
+			await page.keyboard.press("Enter");
+			const dialog = page.getByRole("dialog", { name: "Navigation menu" });
+			const close = dialog.getByRole("button", { name: "Close menu" });
+			await expect(close).toBeFocused();
+			await page.keyboard.press("Shift+Tab");
+			await expect(dialog.getByRole("link", { name: "Settings", exact: true })).toBeFocused();
+			await page.keyboard.press("Tab");
+			await expect(close).toBeFocused();
+			await page.keyboard.press("Tab");
+			await expect(dialog.getByRole("button", { name: "Overview" })).toBeFocused();
+			await page.keyboard.press("Shift+Tab");
+			await expect(close).toBeFocused();
+			await page.keyboard.press("Escape");
+			await expect(dialog).toBeHidden();
+			await expect(opener).toBeFocused();
+			await opener.click();
+			await close.click();
+			await expect(dialog).toBeHidden();
+			await expect(opener).toBeFocused();
+			await opener.click();
+			await page.mouse.click(375, 400);
+			await expect(dialog).toBeHidden();
+			await expect(opener).toBeFocused();
+			await expect(page.locator("body")).not.toHaveAttribute("data-scroll-locked");
+		});
+
+		test("dismisses only the command palette before the underlying drawer", async ({ page }) => {
+			const opener = page.getByRole("button", { name: "Open menu", exact: true });
+			await opener.click();
+			const drawer = page.getByRole("dialog", { name: "Navigation menu" });
+			const close = drawer.getByRole("button", { name: "Close menu" });
+			await expect(close).toBeFocused();
+			await page.keyboard.press("Control+k");
+			const palette = page.getByRole("dialog", { name: "Command palette" });
+			const input = palette.getByPlaceholder("Type a command or search...");
+			await expect(input).toBeFocused();
+			await page.keyboard.press("Tab");
+			await expect(input).toBeFocused();
+			await page.keyboard.press("Shift+Tab");
+			await expect(input).toBeFocused();
+			await page.keyboard.press("Escape");
+			await expect(palette).toBeHidden();
+			await expect(drawer).toBeVisible();
+			await expect(close).toBeFocused();
+			await page.keyboard.press("Escape");
+			await expect(drawer).toBeHidden();
+			await expect(opener).toBeFocused();
+		});
+
+		test("closes on route selection and desktop resize without reopening", async ({ page }) => {
+			const opener = page.getByRole("button", { name: "Open menu", exact: true });
+			await opener.click();
+			const dialog = page.getByRole("dialog", { name: "Navigation menu" });
+			await dialog.getByRole("link", { name: "Library", exact: true }).click();
+			await expect(page).toHaveURL(/\/library/);
+			await expect(dialog).toBeHidden();
+			await opener.click();
+			await expect(dialog).toBeVisible();
+			await page.setViewportSize({ width: 1280, height: 844 });
+			await expect(dialog).toBeHidden();
+			await page.setViewportSize({ width: 390, height: 844 });
+			await expect(dialog).toBeHidden();
+			await expect(page.locator("body")).not.toHaveAttribute("data-scroll-locked");
+		});
 	});
 });
 
@@ -295,3 +380,4 @@ test.describe("Navigation - Query Parameters", () => {
 		expect(page.url()).toContain("service=sonarr");
 	});
 });
+

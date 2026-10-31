@@ -10,10 +10,15 @@ import { validateRequest } from "../../lib/utils/validate.js";
 export const registerProviderInventoryRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	app.get("/library/provider-inventory", async (request, reply) => {
 		const query = validateRequest(providerNativeInventoryRequestSchema, request.query);
-		const result = await readProviderInventoryConnections(app.prisma, {
-			...query,
-			userId: request.currentUser!.id,
-		});
+		const result = await readProviderInventoryConnections(
+			app.prisma,
+			{
+				...query,
+				userId: request.currentUser!.id,
+				includeAttempt: true,
+			},
+			request.log,
+		);
 		if (result.status === "unavailable") {
 			if (result.reason === "not-owned")
 				return reply.status(404).send({ error: "Instance not found" });

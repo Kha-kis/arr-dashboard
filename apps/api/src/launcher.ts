@@ -14,6 +14,13 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+	parseCombinedStartupMessage,
+	publishCombinedStartupResult,
+	readCombinedStartupChannel,
+	revokeCombinedStartupResult,
+	type CombinedStartupMessage,
+} from "./lib/lifecycle/combined-startup.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,26 +38,76 @@ let serverProcess: ReturnType<typeof spawn> | null = null;
 // Module-level state for coordinated shutdown and pending restart cancellation
 let isShuttingDown = false;
 let restartTimer: NodeJS.Timeout | null = null;
+const combinedChannel = readCombinedStartupChannel(process.env);
+let combinedSettings: CombinedStartupMessage | null = null;
+let combinedFailed = false;
+let combinedFailureTimer: NodeJS.Timeout | null = null;
+let forcedShutdown = false;
+
+type ShutdownFailureReason =
+	| "forced-child-termination"
+	| "handoff-revocation-failed"
+	| "combined-handoff-rejected";
+
+function revokeHandoff(): boolean {
+	if (!combinedChannel) return true;
+	try {
+		return revokeCombinedStartupResult(combinedChannel);
+	} catch {
+		combinedFailed = true;
+		logShutdownFailure("handoff-revocation-failed");
+		return false;
+	}
+}
+
+function terminateChild(child: ReturnType<typeof spawn>, signal: NodeJS.Signals) {
+	child.kill(signal);
+	const rawGrace = process.env.SHUTDOWN_GRACE;
+	const configuredGrace =
+		rawGrace !== undefined && /^[0-9]+$/.test(rawGrace) ? Number(rawGrace) : NaN;
+	// Leave the parent one second to join us. Reject values whose timer would
+	// overflow Node's signed 32-bit delay instead of forcing an immediate kill.
+	const grace =
+		Number.isSafeInteger(configuredGrace) && configuredGrace <= 2147483 ? configuredGrace : 7;
+	const delay = Math.max(0, grace * 1000 - 1000);
+	combinedFailureTimer ??= setTimeout(() => {
+		if (serverProcess === child) {
+			forcedShutdown = true;
+			logShutdownFailure("forced-child-termination");
+			child.kill("SIGKILL");
+		}
+	}, delay);
+}
 
 /**
- * Log a message to stdout prefixed with "[Launcher]".
- *
- * @param message - The text to log
+ * Best-effort output: logging must never interrupt process lifecycle control.
+ * Text retains its launcher prefix; fixed diagnostics are standalone JSON.
  */
-function log(message: string) {
-	console.log(`[Launcher] ${message}`);
+function log(
+	message: string | { category: "launcher-shutdown-failure"; reason: ShutdownFailureReason },
+) {
+	try {
+		console.log(typeof message === "string" ? `[Launcher] ${message}` : JSON.stringify(message));
+	} catch {
+		// Child termination, joins and failure exits remain authoritative without a sink.
+	}
+}
+
+function logShutdownFailure(reason: ShutdownFailureReason) {
+	log({ category: "launcher-shutdown-failure", reason });
 }
 
 // Handle launcher termination (registered once at module level)
 // These handlers use the module-level serverProcess variable to avoid accumulation
-process.on("SIGTERM", () => {
+function requestShutdown(signal: "SIGTERM" | "SIGINT") {
 	// Prevent duplicate shutdown attempts
 	if (isShuttingDown) {
 		return;
 	}
 
 	isShuttingDown = true;
-	log("Received SIGTERM, shutting down...");
+	revokeHandoff();
+	log(`Received ${signal}, shutting down...`);
 
 	// Cancel any pending restart to avoid race conditions
 	if (restartTimer) {
@@ -60,38 +117,15 @@ process.on("SIGTERM", () => {
 
 	// Attempt to kill the child process if it's running
 	if (serverProcess) {
-		serverProcess.kill("SIGTERM");
+		terminateChild(serverProcess, signal);
 	} else {
 		// No child process running (e.g., during restart delay), exit immediately
 		log("No child process running, exiting launcher");
-		process.exit(0);
+		process.exit(combinedFailed ? 1 : 0);
 	}
-});
-
-process.on("SIGINT", () => {
-	// Prevent duplicate shutdown attempts
-	if (isShuttingDown) {
-		return;
-	}
-
-	isShuttingDown = true;
-	log("Received SIGINT, shutting down...");
-
-	// Cancel any pending restart to avoid race conditions
-	if (restartTimer) {
-		clearTimeout(restartTimer);
-		restartTimer = null;
-	}
-
-	// Attempt to kill the child process if it's running
-	if (serverProcess) {
-		serverProcess.kill("SIGINT");
-	} else {
-		// No child process running (e.g., during restart delay), exit immediately
-		log("No child process running, exiting launcher");
-		process.exit(0);
-	}
-});
+}
+process.on("SIGTERM", () => requestShutdown("SIGTERM"));
+process.on("SIGINT", () => requestShutdown("SIGINT"));
 
 /**
  * Decides whether a new restart is permitted based on recent restart history.
@@ -142,25 +176,82 @@ function startServer() {
 		: ["--enable-source-maps", path.join(__dirname, "index.js")];
 
 	// Spawn the actual server process and assign to module-level variable
-	serverProcess = spawn(command, args, {
-		stdio: "inherit",
+	const child = spawn(command, args, {
+		stdio: combinedChannel ? ["inherit", "inherit", "inherit", "ipc"] : "inherit",
 		env: {
 			...process.env,
 			LAUNCHER_MANAGED: "true", // Signal to the app that it's managed by launcher
+			...(combinedChannel
+				? {
+						ARR_COMBINED_STARTUP_NONCE: combinedChannel.nonce,
+						ARR_COMBINED_STARTUP_PHASE: combinedSettings ? "restart" : "initial",
+					}
+				: {}),
+			...(combinedSettings
+				? {
+						API_PORT: String(combinedSettings.apiPort),
+						PORT: String(combinedSettings.webPort),
+						HOST: combinedSettings.listenAddress,
+						API_HOST: combinedSettings.listenAddress,
+					}
+				: {}),
 		},
 		cwd: isDev ? process.cwd() : undefined,
 	});
+	serverProcess = child;
+	if (combinedChannel) {
+		let received = false;
+		child.on("message", (input) => {
+			// A former child or shutdown callback can never publish readiness.
+			if (serverProcess !== child || isShuttingDown || child.exitCode !== null) return;
+			try {
+				if (received) throw new Error("Duplicate combined handoff.");
+				received = true;
+				const message = parseCombinedStartupMessage(input, combinedChannel.nonce);
+				if (combinedSettings) {
+					if (
+						message.apiPort !== combinedSettings.apiPort ||
+						message.webPort !== combinedSettings.webPort ||
+						message.listenAddress !== combinedSettings.listenAddress
+					)
+						throw new Error("Combined bindings changed.");
+				} else {
+					publishCombinedStartupResult(combinedChannel, message);
+					combinedSettings = message;
+				}
+			} catch {
+				combinedFailed = true;
+				isShuttingDown = true;
+				logShutdownFailure("combined-handoff-rejected");
+				revokeHandoff();
+				log("ERROR: Combined startup handoff rejected; joining the API child.");
+				terminateChild(child, "SIGTERM");
+			}
+		});
+	}
 
 	// Handle spawn errors (e.g., command not found, permission denied)
-	serverProcess.on("error", (err) => {
+	child.on("error", (err) => {
+		if (serverProcess !== child) return;
+		revokeHandoff();
 		log(`ERROR: Failed to spawn server process: ${err.message}`);
 		serverProcess = null;
 		process.exit(1);
 	});
 
-	serverProcess.on("exit", (code, signal) => {
+	child.on("exit", (code, signal) => {
+		if (serverProcess !== child) return;
+		const consumed = revokeHandoff();
 		// Clear the process reference immediately so signal handlers know there's no live child
 		serverProcess = null;
+		if (combinedFailureTimer) {
+			clearTimeout(combinedFailureTimer);
+			combinedFailureTimer = null;
+		}
+		if (combinedFailed || forcedShutdown) {
+			process.exit(1);
+			return;
+		}
 
 		if (signal) {
 			log(`Application killed by signal ${signal}`);
@@ -169,16 +260,21 @@ function startServer() {
 		}
 
 		if (code === RESTART_CODE) {
-			// Restart requested - check if we should allow it first
-			if (!shouldAllowRestart()) {
+			// Termination supersedes restart policy, even at the loop limit.
+			if (isShuttingDown) {
+				log("Shutdown in progress, skipping restart");
+				process.exit(0);
+				return;
+			}
+			if (combinedChannel && (!combinedSettings || !consumed)) {
+				log("ERROR: Initial API exited before combined startup completed.");
 				process.exit(1);
 				return;
 			}
 
-			// Check if shutdown was initiated before scheduling restart
-			if (isShuttingDown) {
-				log("Shutdown in progress, skipping restart");
-				process.exit(0);
+			// Restart requested - check if we should allow it first
+			if (!shouldAllowRestart()) {
+				process.exit(1);
 				return;
 			}
 

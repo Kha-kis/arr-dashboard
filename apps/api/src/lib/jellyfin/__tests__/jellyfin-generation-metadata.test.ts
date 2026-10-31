@@ -645,6 +645,41 @@ describe("Jellyfin and Emby generation metadata", () => {
 		expect(decodeJellyfinEpisodeGenerationMetadata(encoded)).toEqual({ ok: true, metadata: input });
 	});
 
+	it("round-trips generation-scoped V4 exact and positive episode envelopes only with an explicit storage discriminator", () => {
+		const exact = {
+			...episodeMetadataV2(),
+			version: 4,
+			storage: "generation-scoped",
+			sourceVersion: 3,
+		};
+		const positive = {
+			...episodeMetadataV3(),
+			version: 4,
+			storage: "generation-scoped",
+			sourceVersion: 3,
+		};
+		expect(
+			decodeJellyfinEpisodeGenerationMetadata(encodeJellyfinEpisodeGenerationMetadata(exact)),
+		).toEqual({
+			ok: true,
+			metadata: exact,
+		});
+		expect(
+			decodeJellyfinEpisodeGenerationMetadata(encodeJellyfinEpisodeGenerationMetadata(positive)),
+		).toEqual({
+			ok: true,
+			metadata: positive,
+		});
+		expect(
+			decodeJellyfinEpisodeGenerationMetadata(
+				JSON.stringify({
+					...exact,
+					storage: "legacy",
+				}),
+			),
+		).toEqual({ ok: false });
+	});
+
 	it.each([
 		["missing catalog provenance", { catalogProvenance: undefined }],
 		["authoritative publication", { publicationLevel: "authoritative", completeness: "complete" }],

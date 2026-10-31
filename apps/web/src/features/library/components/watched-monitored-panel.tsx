@@ -10,7 +10,7 @@ import type {
 	WatchedMonitoredItem,
 	WatchedMonitoredResponse,
 } from "../../../hooks/api/useWatchedMonitoredInsights";
-import { getErrorMessage } from "../../../lib/error-utils";
+import { showMonitoringUnconfirmedToast } from "../lib/monitoring-feedback";
 import { getLinuxInstanceName, getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
@@ -57,9 +57,9 @@ export function WatchedMonitoredPanel({
 				itemId: item.arrItemId,
 				monitored: false,
 			});
-			toast.success(`${item.title} unmonitored`);
-		} catch (error) {
-			toast.error(getErrorMessage(error, "Failed to unmonitor"));
+			toast.success("Monitoring disabled");
+		} catch {
+			showMonitoringUnconfirmedToast();
 		} finally {
 			setPendingId(null);
 		}

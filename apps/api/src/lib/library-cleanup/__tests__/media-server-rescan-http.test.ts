@@ -451,6 +451,9 @@ function publicationState(authority: OwnedProviderPublicationSnapshot) {
 		providerObservationRun: {
 			findMany: async () => [],
 		},
+		providerNativeInventoryRun: {
+			updateMany: async () => ({ count: 0 }),
+		},
 		cacheRefreshStatus: {
 			updateMany: async () => ({ count: 0 }),
 		},

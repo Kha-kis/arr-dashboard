@@ -472,7 +472,7 @@ function makeDeps(options: TestOptions = {}) {
 	};
 
 	let liveMovieExists = true;
-	let liveMovieMonitored: boolean | undefined;
+	let liveMovieMonitored: boolean | undefined = true;
 	const deleteMovie = vi.fn(async () => {
 		liveMovieExists = false;
 	});
@@ -552,7 +552,10 @@ function makeDeps(options: TestOptions = {}) {
 						};
 					}),
 			delete: deleteMovie,
-			update: vi.fn().mockResolvedValue({}),
+			update: vi.fn(async (_id: number, payload: { monitored?: boolean }) => {
+				if (typeof payload.monitored === "boolean") liveMovieMonitored = payload.monitored;
+				return payload;
+			}),
 		},
 		movieFile: {
 			getById: vi.fn().mockResolvedValue(targetMovieFile),
@@ -628,6 +631,34 @@ function makeDeps(options: TestOptions = {}) {
 		currentSeriesRule("rule-2", "unmonitor", "Example Movie"),
 	];
 	let createdApprovalCount = 0;
+	const monitoringRows = new Map<
+		number,
+		{ id: string; data: string; monitored: boolean; updatedAt: Date }
+	>();
+	const monitoringRow = (id: number) => {
+		let row = monitoringRows.get(id);
+		if (!row) {
+			row = {
+				id: "monitoring-" + id,
+				monitored: true,
+				updatedAt: new Date("2026-07-27T12:00:00.000Z"),
+				data: JSON.stringify({
+					id,
+					instanceId: targetInstance.id,
+					service: "radarr",
+					type: "movie",
+					monitored: true,
+					path: targetMovie.path,
+					remoteIds: { tmdbId: targetMovie.tmdbId },
+					_arrDashboardSource: {
+						serviceFingerprint: createArrServiceFingerprint(targetInstance as never),
+					},
+				}),
+			};
+			monitoringRows.set(id, row);
+		}
+		return row;
+	};
 	const deps: CleanupExecutorDeps = {
 		prisma: {
 			libraryCleanupConfig: {
@@ -655,9 +686,27 @@ function makeDeps(options: TestOptions = {}) {
 				update: vi.fn().mockResolvedValue({}),
 			},
 			libraryCache: {
+				findFirst: vi.fn(async ({ where }: { where: { arrItemId: number } }) => ({
+					...monitoringRow(where.arrItemId),
+				})),
 				findMany: vi.fn().mockResolvedValue([]),
 				deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
-				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				updateMany: vi.fn(
+					async ({
+						where,
+						data,
+					}: {
+						where: { id?: string; data?: string };
+						data: Record<string, unknown>;
+					}) => {
+						if (where.id) {
+							const row = [...monitoringRows.values()].find((r) => r.id === where.id);
+							if (!row || where.data !== row.data) return { count: 0 };
+							Object.assign(row, data);
+						}
+						return { count: 1 };
+					},
+				),
 			},
 			libraryCleanupLog: {
 				findFirst: vi.fn().mockResolvedValue(null),
@@ -678,6 +727,7 @@ function makeDeps(options: TestOptions = {}) {
 
 	return {
 		deps,
+		monitoringRow,
 		targetInstance,
 		deleteMovie,
 		deleteMovieFile,
@@ -5800,6 +5850,100 @@ describe("shared Plex deletion safety", () => {
 		).toBeLessThan(targetClient.movie.update.mock.invocationCallOrder[0]!);
 	});
 
+	it("does not complete or publish a nominal Radarr unmonitor that was not applied", async () => {
+		const fixture = makeDeps({ action: "unmonitor" });
+		const storedApproval = approvalRecord({
+			action: "unmonitor",
+			safetySnapshot: radarrTargetOnlySnapshot(),
+		});
+		configureApprovalStore(fixture.deps, storedApproval);
+		setRadarrMutationRules(fixture.deps, [monitoredUnmonitorRule()]);
+		fixture.targetClient.movie.update.mockResolvedValueOnce({ monitored: true } as never);
+
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval.status).not.toBe("executed");
+		expect(storedApproval).not.toHaveProperty("executedAt", expect.anything());
+		expect(fixture.targetClient.movie.update).toHaveBeenCalledOnce();
+		expect(fixture.monitoringRow(101).monitored).toBe(true);
+		expect(JSON.parse(fixture.monitoringRow(101).data).monitored).toBe(true);
+	});
+
+	it("keeps an unreadable Radarr outcome retryable and reconciles without a second PUT", async () => {
+		const fixture = makeDeps({ action: "unmonitor" });
+		const storedApproval = approvalRecord({
+			action: "unmonitor",
+			safetySnapshot: radarrTargetOnlySnapshot(),
+		});
+		configureApprovalStore(fixture.deps, storedApproval);
+		setRadarrMutationRules(fixture.deps, [monitoredUnmonitorRule()]);
+		const read = fixture.targetClient.movie.getById.getMockImplementation()!;
+		let unreadable = false;
+		fixture.targetClient.movie.getById.mockImplementation(async (...args) => {
+			if (unreadable) throw new Error("private read failure");
+			return read(...args);
+		});
+		fixture.targetClient.movie.update.mockImplementationOnce(async () => {
+			fixture.setLiveMovieMonitored(false);
+			unreadable = true;
+			return {} as never;
+		});
+
+		const unknown = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+		expect(unknown).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({ status: "retry_pending" });
+		expect(storedApproval).not.toHaveProperty("executedAt", expect.anything());
+		expect(storedApproval).toHaveProperty(
+			"lastExecutionError",
+			expect.stringContaining("outcome remains unknown"),
+		);
+		expect(storedApproval).not.toHaveProperty(
+			"lastExecutionError",
+			expect.stringContaining("private read failure"),
+		);
+		expect(fixture.monitoringRow(101).monitored).toBe(true);
+		expect(JSON.parse(fixture.monitoringRow(101).data).monitored).toBe(true);
+		unreadable = false;
+		const retry = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
+		expect(retry).toMatchObject({ removed: 0, reconciled: 1, failed: 0 });
+		expect(storedApproval).toMatchObject({ status: "executed" });
+		expect(fixture.targetClient.movie.update).toHaveBeenCalledOnce();
+		expect(fixture.monitoringRow(101).monitored).toBe(false);
+		expect(JSON.parse(fixture.monitoringRow(101).data).monitored).toBe(false);
+	});
+
+	it("preserves confirmed direct success with an actionable cache publication warning and no retry PUT", async () => {
+		const fixture = makeDeps({ action: "unmonitor" });
+		const intents = configureRetryStore(fixture.deps);
+		setRadarrMutationRules(fixture.deps, [monitoredUnmonitorRule()]);
+		fixture.monitoringRow(101).data = "invalid cached JSON";
+		const result = await executeDirectRemoval(
+			fixture.deps,
+			{ id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never,
+			"user-1",
+			[radarrUnmonitorFlaggedItem()],
+			1,
+			1,
+			Date.now(),
+		);
+		expect(result).toMatchObject({ itemsUnmonitored: 1, itemsSkipped: 0 });
+		const warning = result.warnings?.find((message) =>
+			message.includes("Library cache could not be verified or updated"),
+		);
+		expect(warning).toBeTruthy();
+		expect(intents[0]).toMatchObject({ status: "executed", lastExecutionError: warning });
+		expect(result.details[0]?.reason).toBe(warning);
+		expect(fixture.monitoringRow(101)).toMatchObject({
+			monitored: true,
+			data: "invalid cached JSON",
+		});
+		expect(
+			await executeRetryItems(fixture.deps, "user-1", [intents[0]!.id as string]),
+		).toMatchObject({ removed: 0, reconciled: 0, failed: 1 });
+		expect(fixture.targetClient.movie.update).toHaveBeenCalledOnce();
+	});
+
 	it("reconciles a queued Radarr unmonitor when the successful PUT response is lost", async () => {
 		const fixture = makeDeps({ action: "unmonitor" });
 		fixture.setLiveMovieMonitored(true);
@@ -5818,10 +5962,8 @@ describe("shared Plex deletion safety", () => {
 
 		expect(result).toMatchObject({ failed: 0 });
 		expect(fixture.targetClient.movie.update).toHaveBeenCalledOnce();
-		expect(fixture.deps.prisma.libraryCache.updateMany).toHaveBeenCalledWith({
-			where: { instanceId: "radarr-4k", arrItemId: 101, itemType: "movie" },
-			data: { monitored: false },
-		});
+		expect(fixture.monitoringRow(101).monitored).toBe(false);
+		expect(JSON.parse(fixture.monitoringRow(101).data).monitored).toBe(false);
 		expect(storedApproval).toMatchObject({ status: "executed", executionToken: null });
 	});
 
@@ -5866,10 +6008,8 @@ describe("shared Plex deletion safety", () => {
 
 		expect(result).toEqual({ removed: 0, reconciled: 1, failed: 0, errors: [] });
 		expect(fixture.targetClient.movie.update).not.toHaveBeenCalled();
-		expect(fixture.deps.prisma.libraryCache.updateMany).toHaveBeenCalledWith({
-			where: { instanceId: "radarr-4k", arrItemId: 101, itemType: "movie" },
-			data: { monitored: false },
-		});
+		expect(fixture.monitoringRow(101).monitored).toBe(false);
+		expect(JSON.parse(fixture.monitoringRow(101).data).monitored).toBe(false);
 		expect(fixture.deps.prisma.libraryCache.deleteMany).not.toHaveBeenCalled();
 		expect(storedRetry).toMatchObject({ status: "executed", executionToken: null });
 	});
@@ -6752,6 +6892,125 @@ describe("shared Plex deletion safety", () => {
 			]),
 		);
 	});
+
+	// Break caught: completed-state recording fallback must not erase this item's
+	// cache-repair warning from the real audit writer. Provider/store doubles are
+	// explicit; the native composition is additionally covered in private39–41.
+	for (const mode of ["direct", "queued", "reconciled"] as const) {
+		for (const cacheRefused of [false, true]) {
+			it(`retains same-item warning after recording failure: ${mode}, cacheRefused=${cacheRefused}`, async () => {
+				const fixture = makeDeps({ action: "unmonitor" });
+				const auditCreate = vi.fn().mockResolvedValue({});
+				Object.assign(fixture.deps.prisma, {
+					libraryCleanupAuditEvent: {
+						create: auditCreate,
+						findMany: vi.fn().mockResolvedValue([]),
+						deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+					},
+				});
+				const stored: Record<string, unknown> = approvalRecord({
+					action: "unmonitor",
+					safetySnapshot: radarrTargetOnlySnapshot(),
+					...(mode === "reconciled"
+						? { status: "retry_pending", lastExecutionError: INTERRUPTED_CLEANUP_RECOVERY_MESSAGE }
+						: {}),
+				});
+				const intents = mode === "direct" ? configureRetryStore(fixture.deps) : [stored];
+				if (mode !== "direct") {
+					configureApprovalStore(fixture.deps, stored);
+					vi.mocked(fixture.deps.prisma.libraryCleanupApproval.findMany).mockImplementation(
+						(async ({ where }: { where: { status?: string; id?: { in: string[] } } }) =>
+							(!where.status || stored.status === where.status) &&
+							(!where.id || where.id.in.includes(stored.id as string))
+								? [stored]
+								: []) as never,
+					);
+				}
+				setRadarrMutationRules(fixture.deps, [monitoredUnmonitorRule()]);
+				if (mode === "reconciled") fixture.setLiveMovieMonitored(false);
+				if (cacheRefused) fixture.monitoringRow(101).data = "invalid selected cached JSON";
+				const updateMany = vi.mocked(fixture.deps.prisma.libraryCleanupApproval.updateMany);
+				const forward = updateMany.getMockImplementation()!;
+				let failures = 0;
+				updateMany.mockImplementation((async (args: {
+					where: { id?: string };
+					data: { status?: string };
+				}) => {
+					if (args.data.status === "executed" && args.where.id === intents[0]?.id) {
+						failures++;
+						throw new Error("synthetic recording error, not actual contention");
+					}
+					return forward(args as never);
+				}) as never);
+				const result =
+					mode === "direct"
+						? await executeDirectRemoval(
+								fixture.deps,
+								{ id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never,
+								"user-1",
+								[radarrUnmonitorFlaggedItem()],
+								1,
+								1,
+								Date.now(),
+							)
+						: mode === "queued"
+							? await executeApprovedItems(fixture.deps, "user-1", [stored.id as string])
+							: await executeRetryItems(fixture.deps, "user-1", [stored.id as string]);
+				expect(failures).toBe(mode === "direct" ? 1 : 2);
+				expect(intents[0]?.status).not.toBe("executed");
+				expect(intents[0]?.executedAt).toBeFalsy();
+				expect(fixture.targetClient.movie.update).toHaveBeenCalledTimes(
+					mode === "reconciled" ? 0 : 1,
+				);
+				if (mode === "direct")
+					expect(result).toMatchObject({
+						itemsUnmonitored: 1,
+						details: [expect.objectContaining({ durableStateRecordingFailed: true })],
+					});
+				else
+					expect(result).toMatchObject({
+						removed: mode === "queued" ? 1 : 0,
+						...(mode === "reconciled" ? { reconciled: 1 } : {}),
+						failed: 1,
+					});
+				const events = auditCreate.mock.calls.map(([call]) => call.data);
+				const incomplete = events.find((event) => event.eventType === "execution_incomplete");
+				expect(incomplete).toMatchObject({ outcome: "failed" });
+				expect(
+					events.some(
+						(event) =>
+							event.eventType === "terminal_succeeded" ||
+							event.eventType === "reconciled_without_mutation",
+					),
+				).toBe(false);
+				if (cacheRefused) {
+					expect(incomplete.reason).toContain(
+						mode === "direct"
+							? "durable mutation intent status could not be confirmed"
+							: "could not record the executed approval state",
+					);
+					expect(incomplete.reason).toContain("Library cache could not be verified or updated");
+					if (mode === "direct")
+						expect((result as { details: Array<{ reason: string }> }).details[0]?.reason).toBe(
+							incomplete.reason,
+						);
+					expect(fixture.monitoringRow(101)).toMatchObject({
+						monitored: true,
+						data: "invalid selected cached JSON",
+					});
+				} else {
+					expect(incomplete.reason).not.toContain("Library cache could not be verified or updated");
+					if (mode === "direct")
+						expect(incomplete.reason).toBe(
+							"The upstream action completed, but its durable mutation intent status could not be confirmed.",
+						);
+					if (mode === "reconciled")
+						expect(incomplete.reason).toBe(INTERRUPTED_CLEANUP_RECOVERY_MESSAGE);
+				}
+				expect(incomplete.reason).not.toContain("synthetic recording error");
+			});
+		}
+	}
 
 	it("does not audit terminal success when direct ARR success cannot finalize durable intent", async () => {
 		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
@@ -9425,6 +9684,7 @@ describe("shared Plex deletion safety", () => {
 
 		it("expires missing monitoring evidence in direct and retry execution", async () => {
 			const fixture = makeDeps({ action: "unmonitor" });
+			fixture.setLiveMovieMonitored(undefined);
 			const rule = monitoredRule();
 			const retries = configureRetryStore(fixture.deps);
 			(

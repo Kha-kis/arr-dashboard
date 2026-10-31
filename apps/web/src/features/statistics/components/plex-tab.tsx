@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, CheckCircle2, TrendingUp } from "lucide-react";
+import { Activity, Info, TrendingUp } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
 	useLastWatched as _useLastWatched,
@@ -106,10 +106,11 @@ export const PlexTab = () => {
 					</p>
 					{hasTautulli && (
 						<p className="text-xs text-muted-foreground flex items-center gap-1.5">
-							<CheckCircle2 className="h-3 w-3 shrink-0" style={{ color: gradient.from }} />
+							<Info className="h-3 w-3 shrink-0" style={{ color: gradient.from }} />
 							<span>
-								Tautulli enrichment active — codec, LAN/WAN bandwidth, and platform metadata are
-								enriched on captured sessions.
+								Tautulli is configured as optional enrichment. When verified observations are
+								available, they can add codec, LAN/WAN bandwidth, and platform metadata to captured
+								sessions.
 							</span>
 						</p>
 					)}

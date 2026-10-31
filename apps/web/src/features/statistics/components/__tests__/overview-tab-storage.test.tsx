@@ -56,6 +56,23 @@ const baseProps = (
 	}) as unknown as Props;
 
 describe("OverviewTab — Storage transparency line", () => {
+	it("does not claim all systems healthy or exact storage when provider coverage is incomplete", () => {
+		render(
+			<OverviewTab
+				{...baseProps({ diskTotal: 0, diskFree: 0, diskUsed: 0, diskUsagePercent: 0 })}
+				incompleteServices={["sonarr"]}
+				configuredInstanceCounts={{ sonarr: 1, radarr: 0, lidarr: 0, readarr: 0, prowlarr: 0 }}
+			/>,
+			{ wrapper: Wrapper },
+		);
+		expect(screen.queryByText("All Systems Healthy")).not.toBeInTheDocument();
+		expect(screen.getByText(/Health coverage is incomplete/i)).toBeInTheDocument();
+		expect(screen.getByText(/Storage coverage incomplete/i)).toBeInTheDocument();
+		expect(
+			screen.getByText(/Statistics unavailable for one or more instances/i),
+		).toBeInTheDocument();
+	});
+
 	it("explains a de-duplicated total as 'N disks across M instances'", () => {
 		render(
 			<OverviewTab

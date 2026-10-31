@@ -49,6 +49,7 @@ SHIM_CTR="${WORK##*/}-shim"
 STARTUP_CTR="${WORK##*/}-startup"
 CONFIG_DIR="$WORK/config"
 SHIM_DIR="$WORK/shim"
+TOOLS_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 # Ports must not collide with anything else on the host; pick high unique ports.
 HOST_WEB_PORT=33080
@@ -237,7 +238,7 @@ assert_process_tree() {
     fi
 
     # The launcher must have exactly one inner index.js child.
-    inner_count=$(proc_count_cmdline "$ctr" "/app/api/dist/index.js")
+    inner_count=$(proc_count_cmdline "$ctr" "/app/api/providers/sqlite/dist/index.js")
     if [ "$inner_count" = "1" ]; then
         ok "launcher has exactly one inner index.js child"
     else
@@ -331,19 +332,32 @@ reset_shim_fixture() {
 
 start_shim_container() {
     reset_shim_fixture
+    # Prepare once from the unmodified image; only this disposable shim's
+    # launcher hash changes. Schema/client/worker admission remains enforced.
+    if [ ! -f "$SHIM_DIR/runtime-provider.json" ]; then
+        docker run --rm --network none --user "$(id -u):$(id -g)" \
+            -v "$TOOLS_DIR/test-provider-manifest.cjs":/fixture-tools/test-provider-manifest.cjs:ro \
+            -v "$TOOLS_DIR/validate-provider-runtime.cjs":/fixture-tools/validate-provider-runtime.cjs:ro \
+            -v "$SHIM_DIR":/fixture \
+            "$IMAGE" node /fixture-tools/test-provider-manifest.cjs \
+            /app/api/providers/sqlite sqlite /fixture/runtime-provider.json \
+            dist/launcher.js /fixture/launcher.js
+    fi
     docker rm -f "$SHIM_CTR" >/dev/null 2>&1 || true
     if [ "$ROOTLESS" = true ]; then
         docker run -d --name "$SHIM_CTR" --user 1000:1000 \
             -v "$CONFIG_DIR":/config \
-            -v "$SHIM_DIR/launcher.js":/app/api/dist/launcher.js \
-            -v "$SHIM_DIR/server.js":/app/web/server.js \
+            -v "$SHIM_DIR/launcher.js":/app/api/providers/sqlite/dist/launcher.js:ro \
+            -v "$SHIM_DIR/runtime-provider.json":/app/api/providers/sqlite/runtime-provider.json:ro \
+            -v "$SHIM_DIR/server.js":/app/web/server.js:ro \
             "$IMAGE" >/dev/null
     else
         docker run -d --name "$SHIM_CTR" \
             -v "$CONFIG_DIR":/config \
             -e PUID=1000 -e PGID=1000 \
-            -v "$SHIM_DIR/launcher.js":/app/api/dist/launcher.js \
-            -v "$SHIM_DIR/server.js":/app/web/server.js \
+            -v "$SHIM_DIR/launcher.js":/app/api/providers/sqlite/dist/launcher.js:ro \
+            -v "$SHIM_DIR/runtime-provider.json":/app/api/providers/sqlite/runtime-provider.json:ro \
+            -v "$SHIM_DIR/server.js":/app/web/server.js:ro \
             "$IMAGE" >/dev/null
     fi
 }

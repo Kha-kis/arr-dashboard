@@ -14,6 +14,7 @@ import {
 	hasAuthoritativeProviderCacheGeneration,
 	ProviderIdentityGuardError,
 	type ProviderIdentityGuardOptions,
+	verifyLiveProviderIdentity,
 	withGuardedProviderPublication,
 } from "../provider-identity-guard.js";
 
@@ -86,6 +87,9 @@ function prismaFor(
 			findMany: vi.fn(async () => (options.activeRunIds ?? []).map((id) => ({ id }))),
 			update: vi.fn(async ({ where }: { where: { id: string } }) => ({ id: where.id })),
 		},
+		providerNativeInventoryRun: {
+			updateMany: vi.fn(async () => ({ count: 1 })),
+		},
 		providerObservationUnit: {
 			updateMany: vi.fn(async () => ({ count: 1 })),
 		},
@@ -131,6 +135,139 @@ function expectGuardError(error: unknown, code: ProviderIdentityGuardError["code
 }
 
 describe("withGuardedProviderPublication", () => {
+	it("reports collection entry while held and publisher entry only inside the admitted transaction", async () => {
+		const row = instance();
+		const prisma = prismaFor(row);
+		const stages: string[] = [];
+		let release!: () => void;
+		let entered!: () => void;
+		const held = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const collecting = new Promise<void>((resolve) => {
+			entered = resolve;
+		});
+		identityModuleMocks.readProviderIdentity.mockResolvedValue(identity());
+		const options = { timeout: 1000, onStage: (stage: string) => stages.push(stage) };
+		let publisherStage: string | undefined;
+		const publication = withGuardedProviderPublication(
+			prisma as never,
+			row as never,
+			silentLog,
+			async () => {
+				entered();
+				await held;
+				return "private-snapshot";
+			},
+			async (_tx, snapshot) => {
+				publisherStage = stages.at(-1);
+				return snapshot;
+			},
+			options,
+		);
+		await collecting;
+		try {
+			expect(stages).toEqual(["before-identity-read", "collection"]);
+		} finally {
+			release();
+			await publication;
+		}
+		await expect(publication).resolves.toBe("private-snapshot");
+		expect(publisherStage).toBe("transaction-publisher-entered");
+		expect(stages).toEqual([
+			"before-identity-read",
+			"collection",
+			"after-identity-read",
+			"publication-admission",
+			"transaction-publisher-entered",
+		]);
+	});
+
+	it.each([
+		"identity-mismatch",
+		"after-identity-mismatch",
+		"authority-changed",
+		"success",
+		"publisher-failed",
+	] as const)("keeps %s behavior when every stage observer throws", async (scenario) => {
+		const row = instance();
+		const prisma = prismaFor(row);
+		const stages: string[] = [];
+		let published = false;
+		const publisherError = new Error("private publisher failure");
+		identityModuleMocks.readProviderIdentity.mockResolvedValue(
+			identity(scenario === "identity-mismatch" ? "replacement" : undefined),
+		);
+		if (scenario === "after-identity-mismatch") {
+			identityModuleMocks.readProviderIdentity
+				.mockResolvedValueOnce(identity())
+				.mockResolvedValueOnce(identity("replacement"));
+		}
+		const options = {
+			timeout: 1000,
+			onStage: (stage: string) => {
+				stages.push(stage);
+				throw new Error("private observer failure");
+			},
+		};
+		const publication = withGuardedProviderPublication(
+			prisma as never,
+			{ ...row } as never,
+			silentLog,
+			async () => {
+				if (scenario === "authority-changed") row.connectionGeneration++;
+				return "snapshot";
+			},
+			async () => {
+				published = true;
+				if (scenario === "publisher-failed") throw publisherError;
+				return "published";
+			},
+			options,
+		);
+		if (scenario === "success") await expect(publication).resolves.toBe("published");
+		else if (scenario === "publisher-failed")
+			await expect(publication).rejects.toBe(publisherError);
+		else
+			await expect(publication).rejects.toSatisfy((error: unknown) =>
+				expectGuardError(
+					error,
+					scenario === "identity-mismatch" || scenario === "after-identity-mismatch"
+						? "IDENTITY_MISMATCH"
+						: "PUBLICATION_SUPERSEDED",
+				),
+			);
+		expect(published).toBe(scenario === "success" || scenario === "publisher-failed");
+		expect(stages[0]).toBe("before-identity-read");
+		expect(stages.includes("transaction-publisher-entered")).toBe(published);
+	});
+
+	it("fences a durable scan on the same live identity and marks a replacement mismatched", async () => {
+		const row = instance();
+		const prisma = prismaFor(row);
+		const authority = createProviderPublicationAuthority(row as never);
+		await expect(
+			verifyLiveProviderIdentity(prisma as never, authority, async () => "plex-machine-a"),
+		).resolves.toBeUndefined();
+		await expect(
+			verifyLiveProviderIdentity(prisma as never, authority, async () => "plex-machine-b"),
+		).rejects.toSatisfy((error: unknown) => expectGuardError(error, "IDENTITY_MISMATCH"));
+		expect(row).toMatchObject({ identityStatus: "MISMATCH", expectedIdentity: "plex-machine-a" });
+	});
+	it("keeps a failed live identity read generic and non-authoritative", async () => {
+		const row = instance();
+		const prisma = prismaFor(row);
+		await expect(
+			verifyLiveProviderIdentity(
+				prisma as never,
+				createProviderPublicationAuthority(row as never),
+				async () => {
+					throw new Error("synthetic private provider detail");
+				},
+			),
+		).rejects.toSatisfy((error: unknown) => expectGuardError(error, "IDENTITY_UNAVAILABLE"));
+		expect(row).toMatchObject({ identityStatus: "VERIFIED" });
+	});
 	it("builds stored publication authority without decrypted credentials", () => {
 		const authority = createProviderPublicationAuthority({
 			...instance(),
@@ -358,6 +495,21 @@ describe("withGuardedProviderPublication", () => {
 			data: {
 				lastAttemptResult: "error",
 				lastAttemptErrorMessage: "identity-changed",
+			},
+		});
+		expect(prisma.providerNativeInventoryRun.updateMany).toHaveBeenCalledWith({
+			where: {
+				instanceId: "provider-1",
+				connectionGeneration: 4,
+				identityGeneration: 8,
+				activeSlotKey: { not: null },
+			},
+			data: {
+				state: "superseded",
+				activeSlotKey: null,
+				claimToken: null,
+				leaseUntil: null,
+				nextAttemptAt: null,
 			},
 		});
 	});

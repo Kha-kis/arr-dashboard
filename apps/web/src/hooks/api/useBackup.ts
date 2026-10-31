@@ -1,11 +1,129 @@
 import type {
 	CreateBackupRequest,
+	RestoreBackupFromFileRequest,
+	RestoreBackupRequest,
+	RestoreBackupResponse,
 	SetBackupPasswordRequest,
 	UpdateBackupSettingsRequest,
 } from "@arr/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { backupApi } from "../../lib/api-client/backup";
-import { backupKeys } from "../../lib/query-keys";
+import { useRef, useSyncExternalStore } from "react";
+import { backupApi, RestoreRequestRejectedError } from "../../lib/api-client/backup";
+import { reportProtectedUnauthorized } from "../../lib/auth-session-signal";
+import { authKeys, backupKeys } from "../../lib/query-keys";
+
+export type RestoreInput =
+	| { kind: "upload"; request: RestoreBackupRequest }
+	| { kind: "stored"; request: RestoreBackupFromFileRequest };
+
+export type RestoreHandoff =
+	| { kind: "published"; result: RestoreBackupResponse }
+	| { kind: "unconfirmed" }
+	| { kind: "rejected" };
+type RestoreState = { pending: boolean; handoff: RestoreHandoff | null };
+const emptyRestoreState: RestoreState = { pending: false, handoff: null };
+let restoreState = emptyRestoreState;
+const restoreListeners = new Set<() => void>();
+const readRestoreState = () => restoreState;
+const readServerRestoreState = () => emptyRestoreState;
+function subscribeRestore(listener: () => void) {
+	restoreListeners.add(listener);
+	return () => {
+		restoreListeners.delete(listener);
+	};
+}
+function updateRestoreState(state: RestoreState) {
+	restoreState = state;
+	for (const listener of restoreListeners) listener();
+}
+
+/** Tab-memory notice only; the UI offers dismissal after a fresh protected GET. */
+export function clearRestoreHandoff() {
+	if (!restoreState.pending) updateRestoreState(emptyRestoreState);
+}
+
+export function useRestoreState() {
+	return useSyncExternalStore(subscribeRestore, readRestoreState, readServerRestoreState);
+}
+
+/** Publication is never replayed; sensitive input never becomes mutation variables. */
+export function useRestoreBackup() {
+	const queryClient = useQueryClient();
+	const input = useRef<RestoreInput | null>(null);
+	const state = useRestoreState();
+	const quarantine = async () => {
+		await queryClient.cancelQueries();
+		queryClient.getQueryCache().clear();
+		queryClient.setQueryData(authKeys.currentUser, null);
+		// Existing AuthGate hides potentially replaced account data while checking
+		// the runtime. Neither this signal nor a notice proves restart/readiness.
+		reportProtectedUnauthorized();
+	};
+	const mutation = useMutation({
+		mutationKey: backupKeys.restore,
+		retry: false,
+		gcTime: 0,
+		mutationFn: () => {
+			const selection = input.current;
+			input.current = null;
+			if (!selection) throw new Error("No restore input selected.");
+			return selection.kind === "upload"
+				? backupApi.restoreBackup(selection.request)
+				: backupApi.restoreBackupFromFile(selection.request);
+		},
+		onSuccess: async (result) => {
+			// Publish the secret-free notice before auth recovery can unmount us.
+			updateRestoreState({ pending: true, handoff: { kind: "published", result } });
+			if (result.outcome !== "not-committed") await quarantine();
+		},
+		onError: async (error) => {
+			if (
+				error instanceof RestoreRequestRejectedError &&
+				([400, 409].includes(error.status) ||
+					(error.status === 429 && error.category === "restore-rate-limited"))
+			)
+				return;
+			updateRestoreState({
+				pending: true,
+				handoff: {
+					kind: error instanceof RestoreRequestRejectedError ? "rejected" : "unconfirmed",
+				},
+			});
+			await quarantine();
+		},
+	});
+	return {
+		isPending: state.pending,
+		isBlocked: state.handoff !== null,
+		handoff: state.handoff,
+		async mutateAsync(selection: RestoreInput) {
+			if (restoreState.pending || restoreState.handoff)
+				throw new Error("Restore is running or awaiting recovery. Do not repeat the request.");
+			updateRestoreState({ pending: true, handoff: null });
+			input.current = selection;
+			try {
+				return await mutation.mutateAsync();
+			} finally {
+				input.current = null;
+				mutation.reset();
+				updateRestoreState({ pending: false, handoff: restoreState.handoff });
+			}
+		},
+	};
+}
+
+/** Explicit protected observation only; absence never establishes non-commit. */
+export function useRestoreStatus(enabled = false) {
+	return useQuery({
+		queryKey: backupKeys.restoreStatus,
+		queryFn: () => backupApi.getRestoreStatus(),
+		enabled,
+		retry: false,
+		refetchOnMount: false,
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false,
+	});
+}
 
 /**
  * Retrieve the list of backups stored on the filesystem.

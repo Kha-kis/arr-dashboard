@@ -2,27 +2,36 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import pino from "pino";
 import Fastify from "fastify";
-import { registerAutoTagRoutes } from "../../../routes/auto-tag.js";
+import pino from "pino";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	createInjectAuthenticated,
-	setupAuthInjection,
 	registerTestErrorHandler,
+	setupAuthInjection,
 } from "../../../routes/__tests__/test-helpers.js";
-import { processWebhook } from "../../auto-tag/webhook-handler.js";
-import { executeAutoTagRule, type AutoTagRuleInput } from "../../auto-tag/execute-rule.js";
-import { AutoTagScheduler } from "../../auto-tag/auto-tag-scheduler.js";
-import { runRuleWithLock } from "../../auto-tag/run-with-lock.js";
+import { registerAutoTagRoutes } from "../../../routes/auto-tag.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
+import { AutoTagScheduler } from "../../auto-tag/auto-tag-scheduler.js";
+import { type AutoTagRuleInput, executeAutoTagRule } from "../../auto-tag/execute-rule.js";
+import { runRuleWithLock } from "../../auto-tag/run-with-lock.js";
+import { processWebhook } from "../../auto-tag/webhook-handler.js";
+import {
+	PlexAuthorityService,
+	type PositiveEpisodeDisplayAuthority,
+} from "../../plex/plex-authority-service.js";
 import type { PrismaClient } from "../../prisma.js";
-import { readProviderInventoryConnections } from "../inventory-connection-repository.js";
-import { loadNativePresenceContext, resolveNativePresence } from "../native-presence-evidence.js";
+import { createProviderPublicationAuthority } from "../../services/provider-identity-guard.js";
+import {
+	readCompleteNativeLibrary,
+	readProviderInventoryConnections,
+} from "../inventory-connection-repository.js";
 import {
 	beginNativeInventoryAttempt,
 	publishNativeInventoriesInTransaction,
 } from "../native-inventory.js";
+import { admitNativeInventoryRun } from "../native-inventory-job-repository.js";
+import { loadNativePresenceContext, resolveNativePresence } from "../native-presence-evidence.js";
 
 let prisma: PrismaClient;
 let directory: string;
@@ -140,13 +149,565 @@ afterAll(async () => {
 });
 
 describe("owned inventory connections on populated SQLite", () => {
-	it("joins only the owner's enabled ARR instance and retains unmapped media", async () => {
-		const page = await readProviderInventoryConnections(prisma, {
+	it("selects only referenced display parents beyond the first 200 rows without losing unknowns", async () => {
+		const instance = await prisma.serviceInstance.create({
+			data: {
+				id: "selected-parents",
+				userId: "owner",
+				service: "PLEX",
+				label: "Synthetic",
+				baseUrl: "http://fixture.invalid",
+				encryptedApiKey: "cipher",
+				encryptionIv: "iv",
+				identityStatus: "VERIFIED",
+				expectedIdentity: "selected-parents",
+				identityKind: "PLEX_MACHINE_IDENTIFIER",
+				identityVerifiedAt: now,
+			},
+		});
+		await prisma.serviceInstance.create({
+			data: {
+				id: "selected-sonarr",
+				userId: "owner",
+				service: "SONARR",
+				label: "Synthetic",
+				baseUrl: "http://fixture.invalid",
+				encryptedApiKey: "cipher",
+				encryptionIv: "iv",
+			},
+		});
+		await prisma.libraryCache.create({
+			data: {
+				instanceId: "selected-sonarr",
+				arrItemId: 401,
+				itemType: "series",
+				title: "Synthetic",
+				data: JSON.stringify({ tvdbId: 8401 }),
+			},
+		});
+		const parents = Array.from({ length: 401 }, (_, i) => ({
+			nativeId: `parent-${String(i).padStart(3, "0")}`,
+			mediaType: "series" as const,
+			libraryIds: ["shows"],
+			parentNativeId: null,
+			seasonNumber: null,
+			episodeNumber: null,
+			title: "Same title",
+			externalIds: { tvdb: [8001 + i] },
+		}));
+		const attempt = await beginNativeInventoryAttempt(prisma, {
 			userId: "owner",
-			instanceId: "plex",
-			domain: "library",
+			instance,
+			domains: ["library", "episode"],
 			now,
 		});
+		if (attempt.status !== "acquired") throw new Error("fixture claim unavailable");
+		await prisma.$transaction((tx) =>
+			publishNativeInventoriesInTransaction(tx, {
+				userId: "owner",
+				authority: attempt.authority,
+				attempt: attempt.attempt,
+				now,
+				snapshots: [
+					{ domain: "library", scopeKeys: ["shows"], rows: parents },
+					{
+						domain: "episode",
+						scopeKeys: ["shows"],
+						rows: ["parent-400", "parent-400", "missing"].map((parentNativeId, i) => ({
+							nativeId: `episode-${i}`,
+							mediaType: "episode" as const,
+							libraryIds: ["shows"],
+							parentNativeId,
+							seasonNumber: 1,
+							episodeNumber: i + 1,
+							title: "Synthetic",
+						})),
+					},
+				],
+			}),
+		);
+		const materialized: string[][] = [];
+		const observed = prisma.$extends({
+			query: {
+				providerNativeInventoryItem: {
+					async findMany({ args, query }) {
+						const result = await query(args);
+						if (result.some((row) => row.mediaType === "series"))
+							materialized.push(result.map((row) => row.nativeId ?? "<missing-native-id>"));
+						return result;
+					},
+				},
+			},
+		});
+		const result = await readProviderInventoryConnections(
+			observed as unknown as PrismaClient,
+			{
+				userId: "owner",
+				instanceId: instance.id,
+				domain: "episode",
+				now,
+			},
+			pino({ level: "silent" }),
+		);
+		expect(result).toMatchObject({
+			status: "available",
+			rows: [
+				{
+					nativeId: "episode-0",
+					connection: {
+						status: "matched",
+						arrItems: [{ instanceId: "selected-sonarr", arrItemId: 401 }],
+					},
+					watch: { state: "unknown" },
+				},
+				{ nativeId: "episode-1", connection: { status: "matched" }, watch: { state: "unknown" } },
+				{
+					nativeId: "episode-2",
+					connection: { status: "unknown", reason: "parent-unavailable" },
+					watch: { state: "unknown" },
+				},
+			],
+		});
+		// A display page must not materialize the rest of the parent publication.
+		expect(materialized.flat().filter((id) => id !== "parent-400")).toEqual([]);
+		expect(materialized.length).toBeLessThanOrEqual(2);
+		materialized.length = 0;
+		const complete = await readCompleteNativeLibrary(observed as unknown as PrismaClient, {
+			userId: "owner",
+			instanceId: instance.id,
+			now,
+		});
+		expect(complete?.rows).toHaveLength(401);
+		expect(complete?.rows.at(-1)?.nativeId).toBe("parent-400");
+		expect(materialized.length).toBe(3);
+		expect(
+			await readCompleteNativeLibrary(prisma, {
+				userId: "owner",
+				instanceId: instance.id,
+				now,
+				expectedGenerationId: "replaced",
+			}),
+		).toBeUndefined();
+		const duplicate = await prisma.libraryCache.create({
+			data: {
+				instanceId: "selected-sonarr",
+				arrItemId: 402,
+				itemType: "series",
+				title: "Another title",
+				data: JSON.stringify({ tvdbId: 8401 }),
+			},
+		});
+		const ambiguous = await readProviderInventoryConnections(
+			prisma,
+			{
+				userId: "owner",
+				instanceId: instance.id,
+				domain: "episode",
+				now,
+			},
+			pino({ level: "silent" }),
+		);
+		expect(ambiguous).toMatchObject({
+			status: "available",
+			rows: [
+				{ connection: { status: "ambiguous", reason: "multiple-arr-items" } },
+				{ connection: { status: "ambiguous" } },
+				{ connection: { status: "unknown", reason: "parent-unavailable" } },
+			],
+		});
+		await prisma.libraryCache.delete({ where: { id: duplicate.id } });
+		for (const domain of ["library", "episode"] as const) {
+			const snapshot = await prisma.providerNativeInventorySnapshot.findUniqueOrThrow({
+				where: { instanceId_domain: { instanceId: instance.id, domain } },
+			});
+			let changed = false;
+			const racing = prisma.$extends({
+				query: {
+					libraryCache: {
+						async findMany({ args, query }) {
+							const result = await query(args);
+							if (!changed) {
+								changed = true;
+								await prisma.providerNativeInventorySnapshot.update({
+									where: { id: snapshot.id },
+									data: { generationId: "changed-during-arr" },
+								});
+							}
+							return result;
+						},
+					},
+				},
+			});
+			const raced = await readProviderInventoryConnections(
+				racing as unknown as PrismaClient,
+				{
+					userId: "owner",
+					instanceId: instance.id,
+					domain: "episode",
+					now,
+				},
+				pino({ level: "silent" }),
+			);
+			expect(raced).toMatchObject(
+				domain === "library"
+					? {
+							status: "available",
+							rows: [
+								{
+									connection: { status: "unknown", reason: "parent-unavailable" },
+									watch: { state: "unknown" },
+								},
+								{ connection: { status: "unknown" }, watch: { state: "unknown" } },
+								{ connection: { status: "unknown" }, watch: { state: "unknown" } },
+							],
+						}
+					: { status: "unavailable", reason: "snapshot-changed" },
+			);
+			await prisma.providerNativeInventorySnapshot.update({
+				where: { id: snapshot.id },
+				data: { generationId: snapshot.generationId },
+			});
+		}
+	});
+
+	it("attaches a recorded connection summary to Jellyfin episodes without altering unknown rows", async () => {
+		const source = await prisma.serviceInstance.findUniqueOrThrow({ where: { id: "jellyfin" } });
+		const attempt = await beginNativeInventoryAttempt(prisma, {
+			userId: "owner",
+			instance: source,
+			domains: ["episode"],
+			now,
+		});
+		if (attempt.status !== "acquired") throw new Error("fixture claim unavailable");
+		await prisma.$transaction((tx) =>
+			publishNativeInventoriesInTransaction(tx, {
+				userId: "owner",
+				authority: attempt.authority,
+				attempt: attempt.attempt,
+				now,
+				snapshots: [
+					{
+						domain: "episode",
+						scopeKeys: ["shows"],
+						rows: [
+							{
+								nativeId: "jellyfin-episode",
+								mediaType: "episode",
+								libraryIds: ["shows"],
+								parentNativeId: "series",
+								seasonNumber: 1,
+								episodeNumber: 1,
+								title: "Synthetic",
+							},
+						],
+					},
+				],
+			}),
+		);
+		const input = { userId: "owner", instanceId: "jellyfin", domain: "episode" as const, now };
+		const noPublication = await readProviderInventoryConnections(
+			prisma,
+			input,
+			pino({ level: "silent" }),
+		);
+		expect(noPublication).toMatchObject({
+			status: "available",
+			watchCoverage: { status: "unavailable", reason: "no-publication" },
+			rows: [{ watch: { state: "unknown", freshness: "unavailable" } }],
+		});
+		await prisma.cacheRefreshStatus.create({
+			data: {
+				instanceId: "jellyfin",
+				cacheType: "jellyfin_episode",
+				lastRefreshedAt: now,
+				lastResult: "success",
+				lastAttemptResult: "success",
+				generationId: "canonical-generation",
+				connectionGeneration: source.connectionGeneration,
+				identityGeneration: source.identityGeneration,
+			},
+		});
+		await prisma.jellyfinNativeWatchPublication.create({
+			data: {
+				instanceId: "jellyfin",
+				activeRunId: "canonical-run",
+				activeCacheGenerationId: "canonical-generation",
+				activeObservedAt: now,
+				activeExpectedScopeCount: 1,
+				connectionGeneration: source.connectionGeneration,
+				identityGeneration: source.identityGeneration,
+			},
+		});
+		await prisma.jellyfinNativeWatchScopeReceipt.create({
+			data: {
+				instanceId: "jellyfin",
+				runId: "canonical-run",
+				userKeyDigest: "private-user",
+				libraryId: "shows",
+				expectedRawCount: 1,
+				observedRawCount: 1,
+				exact: false,
+				contentFingerprint: "a".repeat(64),
+				observedAt: now,
+				connectionGeneration: source.connectionGeneration,
+				identityGeneration: source.identityGeneration,
+			},
+		});
+		const recorded = await readProviderInventoryConnections(
+			prisma,
+			input,
+			pino({ level: "silent" }),
+		);
+		expect(recorded).toMatchObject({
+			status: "available",
+			watchCoverage: {
+				status: "available",
+				expectedScopes: 1,
+				verifiedScopes: 0,
+				incompleteScopes: 1,
+				diagnosticStatus: "unavailable",
+			},
+			rows: [{ watch: { state: "unknown", freshness: "unavailable" } }],
+		});
+	});
+	it("shows only ledger-validated Plex positive episodes on native rows", async () => {
+		const instance = await prisma.serviceInstance.create({
+			data: {
+				id: "plex-native-watch",
+				userId: "owner",
+				service: "PLEX",
+				label: "Synthetic Plex",
+				baseUrl: "http://plex.invalid",
+				encryptedApiKey: "cipher",
+				encryptionIv: "iv",
+				identityStatus: "VERIFIED",
+				expectedIdentity: "plex-native-watch-id",
+				identityKind: "PLEX_MACHINE_IDENTIFIER",
+				identityGeneration: 1,
+				connectionGeneration: 1,
+			},
+		});
+		const attempt = await beginNativeInventoryAttempt(prisma, {
+			userId: "owner",
+			instance,
+			domains: ["library", "episode"],
+			now,
+		});
+		if (attempt.status !== "acquired") throw new Error("fixture claim unavailable");
+		await prisma.$transaction((tx) =>
+			publishNativeInventoriesInTransaction(tx, {
+				userId: "owner",
+				authority: attempt.authority,
+				attempt: attempt.attempt,
+				now,
+				snapshots: [
+					{
+						domain: "library",
+						scopeKeys: ["shows"],
+						rows: [
+							{
+								nativeId: "show-42",
+								mediaType: "series",
+								libraryIds: ["shows"],
+								parentNativeId: null,
+								seasonNumber: null,
+								episodeNumber: null,
+								title: "Synthetic series",
+								externalIds: { tmdb: [42] },
+							},
+						],
+					},
+					{
+						domain: "episode",
+						scopeKeys: ["shows"],
+						rows: [1, 2].map((episodeNumber) => ({
+							nativeId: `episode-${episodeNumber}`,
+							mediaType: "episode" as const,
+							libraryIds: ["shows"],
+							parentNativeId: "show-42",
+							seasonNumber: 1,
+							episodeNumber,
+							title: "Synthetic episode",
+						})),
+					},
+				],
+			}),
+		);
+		const positive = {
+			available: true,
+			instanceId: instance.id,
+			generationId: "episode-generation",
+			connectionGeneration: 1,
+			identityGeneration: 1,
+			capability: {
+				domain: "episodes",
+				field: "watchCount",
+				semantics: "lower-bound",
+				operator: "greater_than",
+			},
+			partialReasons: [],
+			provenance: {
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				connectionGeneration: 1,
+				identityGeneration: 1,
+				parentPlexGenerationId: "parent-generation",
+				parentTargetDigest: "a".repeat(64),
+				parentTargetCount: 1,
+				episodeGenerationId: "episode-generation",
+				episodeDigest: "b".repeat(64),
+				publishedAt: now.toISOString(),
+			},
+			rows: [
+				{
+					showTmdbId: 42,
+					seasonNumber: 1,
+					episodeNumber: 1,
+					ratingKey: "episode-1",
+					title: "Synthetic episode",
+					watched: true,
+					watchedByUsers: "[]",
+					lastWatchedAt: null,
+					soleParentTarget: {
+						instanceId: instance.id,
+						generationId: "parent-generation",
+						showTmdbId: 42,
+						sectionId: "shows",
+						sectionUuid: "shows-uuid",
+						mediaType: "series",
+						tvdbId: null,
+						ratingKey: "show-42",
+					},
+				},
+			],
+			evidence: {
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				reasonCodes: [],
+				availability: "current",
+				authority: "positive-only",
+				attemptState: "partial",
+			},
+		} satisfies PositiveEpisodeDisplayAuthority;
+		const read = vi
+			.spyOn(PlexAuthorityService.prototype, "readPositiveEpisodeDisplayEvidence")
+			.mockResolvedValue(positive);
+		try {
+			const page = await readProviderInventoryConnections(
+				prisma,
+				{
+					userId: "owner",
+					instanceId: instance.id,
+					domain: "episode",
+					now,
+				},
+				pino({ level: "silent" }),
+			);
+			expect(page).toMatchObject({
+				status: "available",
+				rows: [
+					{
+						nativeId: "episode-1",
+						watch: {
+							state: "watched",
+							freshness: "current",
+							valueSemantics: "lower-bound",
+						},
+					},
+					{
+						nativeId: "episode-2",
+						watch: {
+							state: "unknown",
+							valueSemantics: "unknown",
+						},
+					},
+				],
+			});
+		} finally {
+			read.mockRestore();
+		}
+	});
+	it("keeps Plex episode watch explicitly unknown without a native parent publication", async () => {
+		const instance = await prisma.serviceInstance.create({
+			data: {
+				id: "plex-without-native-parent",
+				userId: "owner",
+				service: "PLEX",
+				label: "Synthetic Plex without parent",
+				baseUrl: "http://plex.invalid",
+				encryptedApiKey: "cipher",
+				encryptionIv: "iv",
+				identityStatus: "VERIFIED",
+				expectedIdentity: "plex-without-native-parent-id",
+				identityKind: "PLEX_MACHINE_IDENTIFIER",
+				identityGeneration: 1,
+				connectionGeneration: 1,
+			},
+		});
+		const attempt = await beginNativeInventoryAttempt(prisma, {
+			userId: "owner",
+			instance,
+			domains: ["episode"],
+			now,
+		});
+		if (attempt.status !== "acquired") throw new Error("fixture claim unavailable");
+		await prisma.$transaction((tx) =>
+			publishNativeInventoriesInTransaction(tx, {
+				userId: "owner",
+				authority: attempt.authority,
+				attempt: attempt.attempt,
+				now,
+				snapshots: [
+					{
+						domain: "episode",
+						scopeKeys: ["shows"],
+						rows: [
+							{
+								nativeId: "orphan-episode",
+								mediaType: "episode",
+								libraryIds: ["shows"],
+								parentNativeId: "missing-series",
+								seasonNumber: 1,
+								episodeNumber: 1,
+								title: "Synthetic episode",
+							},
+						],
+					},
+				],
+			}),
+		);
+		const page = await readProviderInventoryConnections(
+			prisma,
+			{
+				userId: "owner",
+				instanceId: instance.id,
+				domain: "episode",
+				now,
+			},
+			pino({ level: "silent" }),
+		);
+		expect(page).toMatchObject({
+			status: "available",
+			rows: [
+				{
+					nativeId: "orphan-episode",
+					connection: { status: "unknown", reason: "parent-unavailable" },
+					watch: { state: "unknown", freshness: "unavailable", valueSemantics: "unknown" },
+				},
+			],
+		});
+	});
+	it("joins only the owner's enabled ARR instance and retains unmapped media", async () => {
+		const page = await readProviderInventoryConnections(
+			prisma,
+			{
+				userId: "owner",
+				instanceId: "plex",
+				domain: "library",
+				now,
+			},
+			pino({ level: "silent" }),
+		);
 		expect(page).toMatchObject({
 			status: "available",
 			itemCount: 2,
@@ -160,14 +721,254 @@ describe("owned inventory connections on populated SQLite", () => {
 		});
 		if (page.status === "available") expect(page.rows[0]?.connection.arrItems).toHaveLength(1);
 	});
-	it("rejects another owner without exposing either inventory", async () => {
-		expect(
-			await readProviderInventoryConnections(prisma, {
-				userId: "other",
+	it("filters published Plex library rows without a unique TMDb ID while retaining snapshot authority", async () => {
+		const page = await readProviderInventoryConnections(
+			prisma,
+			{
+				userId: "owner",
 				instanceId: "plex",
 				domain: "library",
+				metadataFilter: "missing-tmdb",
+				limit: 1,
 				now,
+			},
+			pino({ level: "silent" }),
+		);
+		expect(page).toMatchObject({
+			status: "available",
+			itemCount: 2,
+			filteredItemCount: 1,
+			rows: [{ nativeId: "unmapped", connection: { status: "unknown" } }],
+			nextNativeId: null,
+		});
+		if (page.status !== "available") throw new Error("published page unavailable");
+		expect(
+			await readProviderInventoryConnections(
+				prisma,
+				{
+					userId: "owner",
+					instanceId: "plex",
+					domain: "library",
+					metadataFilter: "missing-tmdb",
+					expectedGenerationId: "replaced-generation",
+					now,
+				},
+				pino({ level: "silent" }),
+			),
+		).toEqual({ status: "unavailable", reason: "snapshot-changed" });
+		expect(
+			await readProviderInventoryConnections(
+				prisma,
+				{
+					userId: "other",
+					instanceId: "plex",
+					domain: "library",
+					metadataFilter: "missing-tmdb",
+					now,
+				},
+				pino({ level: "silent" }),
+			),
+		).toEqual({ status: "unavailable", reason: "not-owned" });
+	});
+	it("does not present the Plex metadata filter for an owned Jellyfin publication", async () => {
+		expect(
+			await readProviderInventoryConnections(
+				prisma,
+				{
+					userId: "owner",
+					instanceId: "jellyfin",
+					domain: "library",
+					metadataFilter: "missing-tmdb",
+					now,
+				},
+				pino({ level: "silent" }),
+			),
+		).toEqual({ status: "unavailable", reason: "unsupported-provider" });
+	});
+	it("reports the filter size limit without claiming that the publication changed", async () => {
+		const transaction = vi.spyOn(prisma, "$transaction").mockResolvedValueOnce({
+			status: "available",
+			generationId: "synthetic-generation",
+			itemCount: 100_001,
+			rows: [],
+			nextNativeId: null,
+		} as never);
+		try {
+			expect(
+				await readProviderInventoryConnections(
+					prisma,
+					{
+						userId: "owner",
+						instanceId: "plex",
+						domain: "library",
+						metadataFilter: "missing-tmdb",
+						now,
+					},
+					pino({ level: "silent" }),
+				),
+			).toEqual({ status: "unavailable", reason: "filter-limit-exceeded" });
+		} finally {
+			transaction.mockRestore();
+		}
+	});
+	it("keeps filtered counts and cursors pinned across multiple published pages", async () => {
+		const instance = await prisma.serviceInstance.create({
+			data: {
+				id: "plex-filter-pages",
+				userId: "owner",
+				service: "PLEX",
+				label: "Synthetic Plex",
+				baseUrl: "http://plex.invalid",
+				encryptedApiKey: "cipher",
+				encryptionIv: "iv",
+				identityStatus: "VERIFIED",
+				expectedIdentity: "plex-filter-pages-id",
+				identityKind: "PLEX_MACHINE_IDENTIFIER",
+			},
+		});
+		const attempt = await beginNativeInventoryAttempt(prisma, {
+			userId: "owner",
+			instance,
+			domains: ["library"],
+			now,
+		});
+		if (attempt.status !== "acquired") throw new Error("fixture claim unavailable");
+		await prisma.$transaction((tx) =>
+			publishNativeInventoriesInTransaction(tx, {
+				userId: "owner",
+				authority: attempt.authority,
+				attempt: attempt.attempt,
+				now,
+				snapshots: [
+					{
+						domain: "library",
+						scopeKeys: ["movies"],
+						rows: ["a", "b", "c", "d"].map((nativeId) => ({
+							nativeId,
+							mediaType: "movie" as const,
+							libraryIds: ["movies"],
+							parentNativeId: null,
+							seasonNumber: null,
+							episodeNumber: null,
+							title: "Synthetic movie",
+							...(nativeId === "d" ? { externalIds: { tmdb: [42] } } : {}),
+						})),
+					},
+				],
 			}),
+		);
+		let afterNativeId: string | undefined;
+		let expectedGenerationId: string | undefined;
+		for (const [index, nativeId] of ["a", "b", "c"].entries()) {
+			const page = await readProviderInventoryConnections(
+				prisma,
+				{
+					userId: "owner",
+					instanceId: instance.id,
+					domain: "library",
+					metadataFilter: "missing-tmdb",
+					limit: 1,
+					...(afterNativeId ? { afterNativeId, expectedGenerationId } : {}),
+					now,
+				},
+				pino({ level: "silent" }),
+			);
+			expect(page).toMatchObject({
+				status: "available",
+				itemCount: 4,
+				filteredItemCount: 3,
+				rows: [{ nativeId }],
+				nextNativeId: index < 2 ? nativeId : null,
+			});
+			if (page.status !== "available") throw new Error("published page unavailable");
+			afterNativeId = page.nextNativeId ?? undefined;
+			expectedGenerationId = page.generationId;
+		}
+	});
+	it("keeps a large published metadata filter within a bounded read-transaction budget", async () => {
+		const instance = await prisma.serviceInstance.create({
+			data: {
+				id: "plex-filter-budget",
+				userId: "owner",
+				service: "PLEX",
+				label: "Synthetic Plex",
+				baseUrl: "http://plex.invalid",
+				encryptedApiKey: "cipher",
+				encryptionIv: "iv",
+				identityStatus: "VERIFIED",
+				expectedIdentity: "plex-filter-budget-id",
+				identityKind: "PLEX_MACHINE_IDENTIFIER",
+			},
+		});
+		const attempt = await beginNativeInventoryAttempt(prisma, {
+			userId: "owner",
+			instance,
+			domains: ["library"],
+			now,
+		});
+		if (attempt.status !== "acquired") throw new Error("fixture claim unavailable");
+		await prisma.$transaction((tx) =>
+			publishNativeInventoriesInTransaction(tx, {
+				userId: "owner",
+				authority: attempt.authority,
+				attempt: attempt.attempt,
+				now,
+				snapshots: [
+					{
+						domain: "library",
+						scopeKeys: ["movies"],
+						rows: Array.from({ length: 601 }, (_, index) => ({
+							nativeId: `movie-${String(index).padStart(3, "0")}`,
+							mediaType: "movie" as const,
+							libraryIds: ["movies"],
+							parentNativeId: null,
+							seasonNumber: null,
+							episodeNumber: null,
+							title: "Synthetic movie",
+							...(index === 0 || index === 600 ? {} : { externalIds: { tmdb: [index] } }),
+						})),
+					},
+				],
+			}),
+		);
+		const transactions = vi.spyOn(prisma, "$transaction");
+		try {
+			const page = await readProviderInventoryConnections(
+				prisma,
+				{
+					userId: "owner",
+					instanceId: instance.id,
+					domain: "library",
+					metadataFilter: "missing-tmdb",
+					limit: 1,
+					now,
+				},
+				pino({ level: "silent" }),
+			);
+			expect(page).toMatchObject({
+				status: "available",
+				itemCount: 601,
+				filteredItemCount: 2,
+				rows: [{ nativeId: "movie-000" }],
+				nextNativeId: "movie-000",
+			});
+			expect(transactions.mock.calls.length).toBeLessThanOrEqual(3);
+		} finally {
+			transactions.mockRestore();
+		}
+	});
+	it("rejects another owner without exposing either inventory", async () => {
+		expect(
+			await readProviderInventoryConnections(
+				prisma,
+				{
+					userId: "other",
+					instanceId: "plex",
+					domain: "library",
+					now,
+				},
+				pino({ level: "silent" }),
+			),
 		).toEqual({ status: "unavailable", reason: "not-owned" });
 	});
 	it("retains last-known connections while a refresh is in progress", async () => {
@@ -179,12 +980,16 @@ describe("owned inventory connections on populated SQLite", () => {
 			now,
 		});
 		expect(
-			await readProviderInventoryConnections(prisma, {
-				userId: "owner",
-				instanceId: "plex",
-				domain: "library",
-				now,
-			}),
+			await readProviderInventoryConnections(
+				prisma,
+				{
+					userId: "owner",
+					instanceId: "plex",
+					domain: "library",
+					now,
+				},
+				pino({ level: "silent" }),
+			),
 		).toMatchObject({
 			status: "available",
 			freshness: "last-known",
@@ -413,11 +1218,15 @@ describe("native inventory to ARR tagging through the real evaluator and databas
 		});
 		try {
 			expect(
-				await readProviderInventoryConnections(prisma, {
-					userId: "owner",
-					instanceId: "plex",
-					domain: "library",
-				}),
+				await readProviderInventoryConnections(
+					prisma,
+					{
+						userId: "owner",
+						instanceId: "plex",
+						domain: "library",
+					},
+					pino({ level: "silent" }),
+				),
 			).toMatchObject({
 				status: "available",
 				freshness: "last-known",
@@ -437,6 +1246,43 @@ describe("native inventory to ARR tagging through the real evaluator and databas
 				where: { instanceId: "plex" },
 				data: { observedAt: now },
 			});
+		}
+	});
+	it("keeps a retained head readable but forbids auto-tags during a newer staged scan", async () => {
+		const instance = await prisma.serviceInstance.findUniqueOrThrow({ where: { id: "plex" } });
+		expect(
+			await admitNativeInventoryRun(
+				prisma,
+				createProviderPublicationAuthority(instance),
+				"paired",
+				new Date(now.getTime() + 1),
+			),
+		).toMatchObject({ status: "acquired" });
+		try {
+			expect(
+				await readProviderInventoryConnections(
+					prisma,
+					{
+						userId: "owner",
+						instanceId: "plex",
+						domain: "library",
+						now,
+					},
+					pino({ level: "silent" }),
+				),
+			).toMatchObject({
+				status: "available",
+				freshness: "last-known",
+				complete: false,
+			});
+			const remote = fixture({ missingTag: true });
+			expect(await remote.run()).toMatchObject({
+				status: "failed",
+				totals: { itemsSkipped: 1, tagsApplied: 0 },
+			});
+			expect(remote.state()).toMatchObject({ writes: 0, tagCreates: 0 });
+		} finally {
+			await prisma.providerNativeInventoryRun.deleteMany({ where: { instanceId: "plex" } });
 		}
 	});
 	it("reports lost acknowledgement as failure, then verifies the existing remote tag on retry", async () => {
@@ -715,24 +1561,32 @@ describe("episode connections across pagination", () => {
 				}),
 			);
 		}
-		const first = await readProviderInventoryConnections(prisma, {
-			userId: "owner",
-			instanceId: "plex",
-			domain: "episode",
-			limit: 1,
-			now,
-		});
+		const first = await readProviderInventoryConnections(
+			prisma,
+			{
+				userId: "owner",
+				instanceId: "plex",
+				domain: "episode",
+				limit: 1,
+				now,
+			},
+			pino({ level: "silent" }),
+		);
 		if (first.status !== "available" || !first.nextNativeId)
 			throw new Error("Fixture first page unavailable");
-		const second = await readProviderInventoryConnections(prisma, {
-			userId: "owner",
-			instanceId: "plex",
-			domain: "episode",
-			limit: 1,
-			now,
-			afterNativeId: first.nextNativeId,
-			expectedGenerationId: first.generationId,
-		});
+		const second = await readProviderInventoryConnections(
+			prisma,
+			{
+				userId: "owner",
+				instanceId: "plex",
+				domain: "episode",
+				limit: 1,
+				now,
+				afterNativeId: first.nextNativeId,
+				expectedGenerationId: first.generationId,
+			},
+			pino({ level: "silent" }),
+		);
 		expect(second).toMatchObject({
 			status: "available",
 			rows: [

@@ -13,8 +13,8 @@ export const DangerZoneSection: React.FC<{ copy: SeriesTorrentCopy; canAct: bool
 	canAct,
 }) => {
 	const actionMutation = useQuiTorrentAction();
-	const [confirm, setConfirm] = useState<"keep" | "files" | null>(null);
-	const handleDelete = (deleteFiles: boolean) => {
+	const [confirm, setConfirm] = useState<"keep" | null>(null);
+	const handleDelete = () => {
 		if (!canAct) return;
 		actionMutation.mutate(
 			{
@@ -22,11 +22,11 @@ export const DangerZoneSection: React.FC<{ copy: SeriesTorrentCopy; canAct: bool
 				qbitInstanceId: copy.qbitInstanceId!,
 				hash: copy.infoHash,
 				action: "delete",
-				payload: { deleteFiles },
+				payload: { deleteFiles: false },
 			},
 			{
 				onSuccess: () => {
-					toast.success(deleteFiles ? "Torrent and files deleted" : "Torrent removed (files kept)");
+					toast.success("Torrent removed (files kept)");
 					setConfirm(null);
 				},
 				onError: (err) => toast.error(err instanceof Error ? err.message : "Delete failed"),
@@ -45,31 +45,22 @@ export const DangerZoneSection: React.FC<{ copy: SeriesTorrentCopy; canAct: bool
 					>
 						Delete (keep files)
 					</Button>
-					<Button
-						size="sm"
-						variant="destructive"
-						disabled={!canAct}
-						onClick={() => setConfirm("files")}
-					>
+					<Button size="sm" variant="destructive" disabled>
 						Delete with files
 					</Button>
 				</div>
 			)}
+			<p className="text-muted-foreground">
+				Delete with files is unavailable because shared-storage ownership cannot be verified.
+			</p>
 			{confirm !== null && (
 				<div className="space-y-2 rounded bg-red-500/10 p-2">
 					<div className="text-red-200">
-						{confirm === "files"
-							? "This will delete the torrent AND all files on disk. Cannot be undone."
-							: "This will remove the torrent from qBit. Files on disk are kept."}
+						This will remove the torrent from qBit. Files on disk are kept.
 					</div>
 					<div className="flex gap-1.5">
-						<Button
-							size="sm"
-							variant="destructive"
-							disabled={!canAct}
-							onClick={() => handleDelete(confirm === "files")}
-						>
-							Yes, delete{confirm === "files" ? " everything" : ""}
+						<Button size="sm" variant="destructive" disabled={!canAct} onClick={handleDelete}>
+							Yes, delete
 						</Button>
 						<Button size="sm" variant="ghost" onClick={() => setConfirm(null)}>
 							Cancel

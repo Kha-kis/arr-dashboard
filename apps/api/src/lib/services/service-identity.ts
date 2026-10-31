@@ -34,8 +34,10 @@ export interface ProviderIdentityObservation {
 export async function readProviderIdentity(
 	instance: DecryptedOwnedServiceSnapshot,
 	log: FastifyBaseLogger,
+	signal?: AbortSignal,
 ): Promise<ProviderIdentityObservation> {
 	try {
+		signal?.throwIfAborted();
 		switch (instance.service) {
 			case "PLEX": {
 				const server = await new PlexClient(
@@ -44,6 +46,7 @@ export async function readProviderIdentity(
 					log,
 					undefined,
 					instance.httpAuthHeaders,
+					signal ? { signal, onRequest: () => {} } : undefined,
 				).getIdentity();
 				return observe("PLEX", "plex-machine-identifier", server.machineIdentifier, instance.label);
 			}
@@ -61,6 +64,8 @@ export async function readProviderIdentity(
 					log,
 					undefined,
 					instance.httpAuthHeaders,
+					undefined,
+					signal,
 				).getServerInfo();
 				return observe(
 					instance.service,
@@ -76,7 +81,7 @@ export async function readProviderIdentity(
 					log,
 					undefined,
 					instance.httpAuthHeaders,
-				).getServerIdentity();
+				).getServerIdentity(signal);
 				return observe(
 					"TAUTULLI",
 					"tautulli-pms-identifier",

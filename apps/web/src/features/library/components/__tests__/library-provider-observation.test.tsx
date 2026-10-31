@@ -8,6 +8,10 @@ import type {
 } from "@arr/shared";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { UnauthorizedError } from "../../../../lib/api-client/base";
+import { fetchLibraryItemByTmdbId } from "../../../../lib/api-client/library";
+
+const navigationState = vi.hoisted(() => ({ search: "" }));
 
 const queryState = vi.hoisted(() => ({
 	jellyfinWatch: {} as Record<string, unknown>,
@@ -24,7 +28,7 @@ const queryState = vi.hoisted(() => ({
 }));
 
 vi.mock("next/navigation", () => ({
-	useSearchParams: () => new URLSearchParams(),
+	useSearchParams: () => new URLSearchParams(navigationState.search),
 }));
 vi.mock("../../../../components/presentational/plex-evidence-notice", () => ({
 	PlexQueryEvidenceNotice: ({ error }: { error?: unknown }) =>
@@ -163,22 +167,23 @@ vi.mock("../provider-native-inventory-panel", () => ({ ProviderNativeInventoryPa
 
 import { LibraryClient } from "../library-client";
 
-const libraryItem = {
+const libraryItem: LibraryItem = {
 	id: 1,
 	type: "movie",
 	title: "Synthetic library item",
 	sortTitle: "Synthetic library item",
 	instanceId: "arr-instance",
+	instanceName: "Synthetic Radarr",
 	service: "radarr",
 	monitored: true,
 	remoteIds: { tmdbId: 101 },
-} as unknown as LibraryItem;
+};
 
-const seriesLibraryItem = {
+const seriesLibraryItem: LibraryItem = {
 	...libraryItem,
 	type: "series",
 	remoteIds: { tmdbId: 202 },
-} as unknown as LibraryItem;
+};
 
 function status(availability: ProviderObservationAvailability): ProviderObservationStatusEnvelope {
 	return {
@@ -277,6 +282,8 @@ function progressResponse(
 }
 
 beforeEach(() => {
+	navigationState.search = "";
+	vi.mocked(fetchLibraryItemByTmdbId).mockReset();
 	setQueries();
 	queryState.libraryItem = libraryItem;
 	queryState.contentProps = undefined;
@@ -288,6 +295,17 @@ beforeEach(() => {
 });
 
 describe("Library provider observation", () => {
+	it("handles a denied deep-link lookup without opening a detail modal", async () => {
+		navigationState.search = "tmdbId=42";
+		vi.mocked(fetchLibraryItemByTmdbId).mockRejectedValue(new UnauthorizedError());
+		render(<LibraryClient />);
+		await waitFor(() => expect(fetchLibraryItemByTmdbId).toHaveBeenCalledWith(42));
+		await act(async () => {
+			await Promise.resolve();
+		});
+		expect(queryState.detailProps).toBeUndefined();
+	});
+
 	it.each([
 		["native identifier", "jellyfin", "native-series", false],
 		["native nullable identifier", "jellyfin", null, false],
@@ -427,6 +445,85 @@ describe("Library provider observation", () => {
 		setQueries({
 			jellyfinWatch: watchResponse({}, providerStatus),
 			jellyfinProgress: progressResponse({}, providerStatus),
+		});
+
+		render(<LibraryClient />);
+
+		expect(screen.getByText(/Media-server data is unavailable/i)).toBeInTheDocument();
+	});
+
+	it("treats a current positive-only episode inventory as usable partial watch evidence", () => {
+		const episodeStatus: ProviderObservationStatusEnvelope = {
+			availability: "partial",
+			sources: [
+				{
+					instanceId: "private-provider-instance",
+					service: "jellyfin",
+					cacheType: "jellyfin_episode",
+					status: {
+						availability: "partial",
+						evidence: "positive-only",
+						observedAt: "2026-09-03T00:00:00.000Z",
+						ageSeconds: 10,
+						latestAttempt: "successful",
+						reasonCodes: ["coverage-incomplete", "positive-only"],
+						domains: [
+							{
+								domain: "episode-inventory",
+								availability: "current",
+								evidence: "positive-only",
+								valueSemantics: "lower-bound",
+								observedAt: "2026-09-03T00:00:00.000Z",
+								reasonCodes: ["coverage-incomplete"],
+							},
+						],
+					},
+				},
+			],
+		};
+		setQueries({
+			jellyfinWatch: watchResponse({}, episodeStatus),
+			jellyfinProgress: progressResponse({}, episodeStatus),
+		});
+
+		render(<LibraryClient />);
+
+		expect(screen.getByText(/Showing current mapped data/i)).toBeInTheDocument();
+		expect(screen.queryByText(/Media-server data is unavailable/i)).not.toBeInTheDocument();
+	});
+
+	it("does not let usable episode evidence hide an unavailable parent watch domain", () => {
+		const parent = currentLibraryStatusWithUnavailableWatchCount();
+		const episode = {
+			instanceId: "private-provider-instance",
+			service: "jellyfin" as const,
+			cacheType: "jellyfin_episode" as const,
+			status: {
+				availability: "partial" as const,
+				evidence: "positive-only" as const,
+				observedAt: "2026-09-03T00:00:00.000Z",
+				ageSeconds: 10,
+				latestAttempt: "successful" as const,
+				reasonCodes: ["coverage-incomplete" as const],
+				domains: [
+					{
+						domain: "episode-inventory" as const,
+						availability: "current" as const,
+						evidence: "positive-only" as const,
+						valueSemantics: "lower-bound" as const,
+						observedAt: "2026-09-03T00:00:00.000Z",
+						reasonCodes: ["coverage-incomplete" as const],
+					},
+				],
+			},
+		};
+		const mixed: ProviderObservationStatusEnvelope = {
+			availability: "partial",
+			sources: [...parent.sources, episode],
+		};
+		setQueries({
+			jellyfinWatch: watchResponse({}, mixed),
+			jellyfinProgress: progressResponse({}, mixed),
 		});
 
 		render(<LibraryClient />);

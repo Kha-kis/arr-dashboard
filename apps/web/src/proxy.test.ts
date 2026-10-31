@@ -17,6 +17,15 @@ describe("proxy session validation during Next prefetch", () => {
 		vi.restoreAllMocks();
 	});
 
+	it("lets an unauthenticated liveness HEAD request reach its route", async () => {
+		const fetchSpy = vi.fn();
+		vi.stubGlobal("fetch", fetchSpy);
+		const response = await proxy(new NextRequest("http://localhost/live", { method: "HEAD" }));
+		expect(response.status).toBe(200);
+		expect(response.headers.get("location")).toBeNull();
+		expect(fetchSpy).not.toHaveBeenCalled();
+	});
+
 	it("coalesces concurrent speculative RSC validations for one session", async () => {
 		const fetchSpy = vi.fn(async () => new Response(null, { status: 200 }));
 		vi.stubGlobal("fetch", fetchSpy);

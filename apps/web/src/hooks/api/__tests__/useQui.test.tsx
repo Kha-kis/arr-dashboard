@@ -33,9 +33,11 @@ import {
 	useQuiBulkAction,
 	useQuiCapabilities,
 	useQuiCategories,
+	useQuiRemoveTrackers,
 	useQuiEventStream,
 	useQuiRenameTorrent,
 	useQuiTags,
+	useQuiTorrentTrackers,
 	useQuiTorrentAction,
 } from "../useQui";
 
@@ -91,6 +93,12 @@ describe("query-key structure invariants", () => {
 		expect(specific.slice(0, broad.length)).toEqual([...broad]);
 	});
 
+	it("torrentTrackers.all is a prefix of torrentTrackers.byHash", () => {
+		const broad = quiKeys.torrentTrackers.all;
+		const specific = quiKeys.torrentTrackers.byHash("qui-1", 0, "abc");
+		expect(specific.slice(0, broad.length)).toEqual([...broad]);
+	});
+
 	it("crossSeed is a prefix of crossSeedAvailability and crossSeedDiscovery", () => {
 		const broad = quiKeys.crossSeed;
 		const availability = quiKeys.crossSeedAvailability();
@@ -101,6 +109,51 @@ describe("query-key structure invariants", () => {
 });
 
 describe("useQuiTorrentAction — single-torrent mutation", () => {
+	it("retains a rejected action without replay and invalidates cached action and drawer reads", async () => {
+		// Moving refresh to onSuccess or retrying an uncertain mutation must fail this contract.
+		const client = new QueryClient();
+		const invalidations = trackInvalidations(client);
+		const readKeys = [
+			["qui", "actions", "pause", "failed"],
+			["qui", "torrent-properties", "qui-1", 0, "abc"],
+			["qui", "torrent-files", "qui-1", 0, "abc"],
+		];
+		for (const key of readKeys) {
+			client.setQueryData(key, []);
+			expect(client.getQueryState(key)?.isInvalidated).toBe(false);
+		}
+		client.setQueryData(["dashboard", "statistics"], []);
+		const error = new Error("Action response unavailable; outcome uncertain");
+		const dispatch = vi.spyOn(quiApi, "postQuiTorrentAction").mockRejectedValue(error);
+		const args = {
+			quiInstanceId: "qui-1",
+			qbitInstanceId: 0,
+			hash: "abc",
+			action: "pause",
+		} as const;
+		const { result } = renderHook(() => useQuiTorrentAction(), {
+			wrapper: createWrapper(client),
+		});
+
+		result.current.mutate(args);
+		await waitFor(() => expect(result.current.isError).toBe(true));
+
+		expect(result.current.isSuccess).toBe(false);
+		expect(result.current.error).toBe(error);
+		expect(result.current.failureCount).toBe(1);
+		expect(dispatch).toHaveBeenCalledTimes(1);
+		expect(dispatch).toHaveBeenCalledWith(args);
+		expect(invalidations).toEqual([
+			["qui", "actions"],
+			["qui", "torrent-properties"],
+			["qui", "torrent-files"],
+		]);
+		for (const key of readKeys) {
+			expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+		}
+		expect(client.getQueryState(["dashboard", "statistics"])?.isInvalidated).toBe(false);
+	});
+
 	it("invalidates torrentProperties.all + torrentFiles.all + actions on settle", async () => {
 		const client = new QueryClient();
 		const invalidations = trackInvalidations(client);
@@ -163,6 +216,55 @@ describe("useQuiTorrentAction — single-torrent mutation", () => {
 });
 
 describe("useQuiBulkAction — bulk-torrent mutation", () => {
+	it("retains a rejected group without replay and invalidates cached drawer and cross-seed reads", async () => {
+		const client = new QueryClient();
+		const invalidations = trackInvalidations(client);
+		const readKeys = [
+			["qui", "actions", "pause", "failed"],
+			["qui", "torrent-properties", "qui-1", 0, "abc"],
+			["qui", "torrent-properties", "qui-1", 0, "def"],
+			["qui", "torrent-files", "qui-1", 0, "abc"],
+			["qui", "torrent-files", "qui-1", 0, "def"],
+			["qui", "cross-seed", "availability"],
+			["qui", "cross-seed", "discover"],
+		];
+		for (const key of readKeys) {
+			client.setQueryData(key, []);
+			expect(client.getQueryState(key)?.isInvalidated).toBe(false);
+		}
+		client.setQueryData(["dashboard", "statistics"], []);
+		const error = new Error("Group response unavailable; outcome uncertain");
+		const dispatch = vi.spyOn(quiApi, "postQuiBulkAction").mockRejectedValue(error);
+		const args = {
+			quiInstanceId: "qui-1",
+			qbitInstanceId: 0,
+			hashes: ["abc", "def"],
+			action: "pause" as const,
+		};
+		const { result } = renderHook(() => useQuiBulkAction(), {
+			wrapper: createWrapper(client),
+		});
+
+		result.current.mutate(args);
+		await waitFor(() => expect(result.current.isError).toBe(true));
+
+		expect(result.current.isSuccess).toBe(false);
+		expect(result.current.error).toBe(error);
+		expect(result.current.failureCount).toBe(1);
+		expect(dispatch).toHaveBeenCalledTimes(1);
+		expect(dispatch).toHaveBeenCalledWith(args);
+		expect(invalidations).toEqual([
+			["qui", "actions"],
+			["qui", "torrent-properties"],
+			["qui", "torrent-files"],
+			["qui", "cross-seed"],
+		]);
+		for (const key of readKeys) {
+			expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+		}
+		expect(client.getQueryState(["dashboard", "statistics"])?.isInvalidated).toBe(false);
+	});
+
 	it("invalidates torrentProperties.all + torrentFiles.all + crossSeed + actions on settle", async () => {
 		const client = new QueryClient();
 		const invalidations = trackInvalidations(client);
@@ -222,7 +324,50 @@ describe("useQuiBulkAction — bulk-torrent mutation", () => {
 });
 
 describe("useQuiRenameTorrent — rename mutation", () => {
-	it("invalidates torrentProperties.all + torrentFiles.all on settle", async () => {
+	it("retains a rejected rename without replay and invalidates cached drawer and media panels", async () => {
+		const client = new QueryClient();
+		const invalidations = trackInvalidations(client);
+		const readKeys = [
+			["qui", "actions", "rename", "failed"],
+			["qui", "torrent-properties", "qui-1", 0, "abc"],
+			["qui", "torrent-files", "qui-1", 0, "abc"],
+			["qui", "series-torrents", "sonarr-1", 10],
+			["qui", "movie-torrents", "radarr-1", 20],
+		];
+		for (const key of readKeys) {
+			client.setQueryData(key, []);
+			expect(client.getQueryState(key)?.isInvalidated).toBe(false);
+		}
+		client.setQueryData(["dashboard", "statistics"], []);
+		const error = new Error("Rename response unavailable; outcome uncertain");
+		const dispatch = vi.spyOn(quiApi, "postQuiRenameTorrent").mockRejectedValue(error);
+		const args = { quiInstanceId: "qui-1", qbitInstanceId: 0, hash: "abc", name: "new-name" };
+		const { result } = renderHook(() => useQuiRenameTorrent(), {
+			wrapper: createWrapper(client),
+		});
+
+		result.current.mutate(args);
+		await waitFor(() => expect(result.current.isError).toBe(true));
+
+		expect(result.current.isSuccess).toBe(false);
+		expect(result.current.error).toBe(error);
+		expect(result.current.failureCount).toBe(1);
+		expect(dispatch).toHaveBeenCalledTimes(1);
+		expect(dispatch).toHaveBeenCalledWith(args);
+		expect(invalidations).toEqual([
+			["qui", "actions"],
+			["qui", "torrent-properties"],
+			["qui", "series-torrents"],
+			["qui", "movie-torrents"],
+			["qui", "torrent-files"],
+		]);
+		for (const key of readKeys) {
+			expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+		}
+		expect(client.getQueryState(["dashboard", "statistics"])?.isInvalidated).toBe(false);
+	});
+
+	it("invalidates My Actions, panels, and torrent properties/files on settle", async () => {
 		// THE BUG the code-review caught: this hook used to invalidate
 		// only `["qui","torrent-state"]`, a key no query subscribed to.
 		// Drawer rename never refreshed until the next polling tick.
@@ -245,17 +390,58 @@ describe("useQuiRenameTorrent — rename mutation", () => {
 			expect(result.current.isSuccess || result.current.isError).toBe(true);
 		});
 
-		expect(
-			invalidations.some(
-				(k) => JSON.stringify(k) === JSON.stringify([...quiKeys.torrentProperties.all]),
-			),
-		).toBe(true);
+		for (const expected of [
+			quiKeys.actions(),
+			quiKeys.seriesTorrentsAll,
+			quiKeys.movieTorrentsAll,
+			quiKeys.torrentProperties.all,
+		]) {
+			expect(invalidations).toContainEqual([...expected]);
+		}
 		expect(
 			invalidations.some(
 				(k) => JSON.stringify(k) === JSON.stringify([...quiKeys.torrentFiles.all]),
 			),
 		).toBe(true);
 		expect(invalidations).not.toContainEqual(["qui", "torrent-state"]);
+	});
+});
+
+describe("drawer tracker hooks — query gates and settled invalidation", () => {
+	it("does not fetch tracker rows until both instance identifiers are present", async () => {
+		const client = new QueryClient();
+		vi.spyOn(quiApi, "fetchQuiTorrentTrackers").mockResolvedValue({ trackers: [] });
+		renderHook(
+			() => useQuiTorrentTrackers({ quiInstanceId: null, qbitInstanceId: 0, hash: "abc" }),
+			{
+				wrapper: createWrapper(client),
+			},
+		);
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(quiApi.fetchQuiTorrentTrackers).not.toHaveBeenCalled();
+	});
+
+	it("invalidates the point read, My Actions, and panels after tracker mutations settle", async () => {
+		const client = new QueryClient();
+		const invalidations = trackInvalidations(client);
+		vi.spyOn(quiApi, "postQuiRemoveTrackers").mockResolvedValue({ status: "success" });
+		const { result } = renderHook(() => useQuiRemoveTrackers(), { wrapper: createWrapper(client) });
+		result.current.mutate({
+			quiInstanceId: "qui-1",
+			qbitInstanceId: 0,
+			hash: "abc",
+			trackerSelectors: ["a".repeat(64)],
+		});
+		await waitFor(() => expect(result.current.isSuccess || result.current.isError).toBe(true));
+		for (const expected of [
+			quiKeys.actions(),
+			quiKeys.torrentProperties.all,
+			quiKeys.seriesTorrentsAll,
+			quiKeys.movieTorrentsAll,
+			quiKeys.torrentTrackers.all,
+		]) {
+			expect(invalidations).toContainEqual([...expected]);
+		}
 	});
 });
 

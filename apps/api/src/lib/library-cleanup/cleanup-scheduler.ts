@@ -101,8 +101,12 @@ export function buildCleanupNotification(
 
 export class CleanupScheduler {
 	private intervalId: NodeJS.Timeout | null = null;
+	private scheduleGeneration = 0;
+	private admissionClosed = false;
+	private pendingChecks = new Set<Promise<void>>();
+	private shutdownPromise: Promise<void> | null = null;
 	private _isRunning = false;
-	private notifyFn?: (payload: NotificationPayload) => Promise<void>;
+	private notifyFn?: (payload: NotificationPayload, userId?: string) => Promise<void>;
 	private trackTick: TickWrapper;
 	private quiClientFactory?: CleanupExecutorDeps["quiClientFactory"];
 	private quiFileHashIndexFactory?: CleanupExecutorDeps["quiFileHashIndexFactory"];
@@ -117,7 +121,7 @@ export class CleanupScheduler {
 		private arrClientFactory: ArrClientFactory,
 		private encryptor: Encryptor,
 		private logger: FastifyBaseLogger,
-		notifyFn?: (payload: NotificationPayload) => Promise<void>,
+		notifyFn?: (payload: NotificationPayload, userId?: string) => Promise<void>,
 		options?: {
 			trackTick?: TickWrapper;
 			quiClientFactory?: CleanupExecutorDeps["quiClientFactory"];
@@ -134,6 +138,7 @@ export class CleanupScheduler {
 	 * Start the cleanup scheduler.
 	 */
 	start(): void {
+		if (this.admissionClosed) return;
 		if (this.intervalId) {
 			this.logger.warn("Cleanup scheduler already running");
 			return;
@@ -141,17 +146,14 @@ export class CleanupScheduler {
 
 		this.logger.info("Starting library cleanup scheduler");
 
-		// Check immediately on startup
-		this.trackTick(() => this.checkAndRun()).catch((error) => {
-			this.logger.error({ err: error }, "Failed to run initial cleanup check");
-		});
-
+		const generation = ++this.scheduleGeneration;
 		// Then check every minute
 		this.intervalId = setInterval(() => {
-			this.trackTick(() => this.checkAndRun()).catch((error) => {
-				this.logger.error({ err: error }, "Failed to run scheduled cleanup check");
-			});
+			void this.runCheck(generation, "Failed to run scheduled cleanup check");
 		}, CHECK_INTERVAL_MS);
+
+		// Install admission before entering the startup recovery and due-run check.
+		void this.runCheck(generation, "Failed to run initial cleanup check");
 	}
 
 	/**
@@ -165,13 +167,50 @@ export class CleanupScheduler {
 		}
 	}
 
+	/** Close admission without delaying sibling plugins' preClose hooks. */
+	closeAdmission(): void {
+		this.admissionClosed = true;
+		this.stop();
+	}
+
+	/** Retain accepted recovery, execution, bookkeeping, and notification work. */
+	shutdown(): Promise<void> {
+		this.closeAdmission();
+		this.shutdownPromise ??= (async () => {
+			while (this.pendingChecks.size > 0) await Promise.all(this.pendingChecks);
+		})();
+		return this.shutdownPromise;
+	}
+
+	private async runCheck(generation: number, errorMessage: string): Promise<void> {
+		if (this.admissionClosed || !this.intervalId || generation !== this.scheduleGeneration) return;
+		let settle!: () => void;
+		const completion = new Promise<void>((resolve) => {
+			settle = resolve;
+		});
+		this.pendingChecks.add(completion);
+		try {
+			await this.trackTick(() => this.checkAndRun());
+		} catch (err) {
+			if (err instanceof CleanupMaintenanceConflictError) {
+				this.logger.debug("Library cleanup check paused during database maintenance");
+			} else {
+				this.logger.error({ err }, errorMessage);
+			}
+		} finally {
+			this.pendingChecks.delete(completion);
+			settle();
+		}
+	}
+
 	private async sendNotification(
 		payload: NotificationPayload,
 		failureMessage: string,
+		userId?: string,
 	): Promise<void> {
 		if (!this.notifyFn) return;
 		try {
-			await withCleanupOperationGuard(() => this.notifyFn!(payload));
+			await withCleanupOperationGuard(() => this.notifyFn!(payload, userId));
 		} catch (error) {
 			if (error instanceof CleanupMaintenanceConflictError) {
 				this.logger.debug("Database maintenance skipped a library-cleanup notification");
@@ -303,11 +342,78 @@ export class CleanupScheduler {
 	/**
 	 * Check if a cleanup run should execute and run it.
 	 */
+	private async runDueCleanup(onOwnerResolved?: (userId: string) => void): Promise<void> {
+		// Find any user's config that is enabled and due for a run.
+		// (Single-admin app, so there's at most one config.)
+		const config = await this.prisma.libraryCleanupConfig.findFirst({
+			where: { enabled: true },
+		});
+
+		if (!config) return;
+		onOwnerResolved?.(config.userId);
+
+		const now = new Date();
+		if (!config.nextRunAt || config.nextRunAt > now) return;
+
+		this._isRunning = true;
+
+		this.logger.info(
+			{ intervalHours: config.intervalHours, dryRunMode: config.dryRunMode },
+			"Running scheduled library cleanup",
+		);
+
+		try {
+			const result = await executeCleanupRun(
+				{
+					prisma: this.prisma,
+					arrClientFactory: this.arrClientFactory,
+					encryptor: this.encryptor,
+					quiClientFactory: this.quiClientFactory,
+					quiFileHashIndexFactory: this.quiFileHashIndexFactory,
+					auditTrigger: "scheduled",
+					skipPendingMediaServerRescanRetry: true,
+					log: this.logger,
+				},
+				config.userId,
+			);
+
+			// Calculate next run time
+			const nextRunAt = new Date(now.getTime() + config.intervalHours * 60 * 60 * 1000);
+
+			await this.prisma.libraryCleanupConfig.update({
+				where: { id: config.id },
+				data: { lastRunAt: now, nextRunAt },
+			});
+
+			this.logger.info(
+				{
+					itemsEvaluated: result.itemsEvaluated,
+					itemsFlagged: result.itemsFlagged,
+					itemsRemoved: result.itemsRemoved,
+					nextRunAt: nextRunAt.toISOString(),
+				},
+				"Scheduled library cleanup completed",
+			);
+
+			const notification = buildCleanupNotification(result);
+			if (notification) {
+				await this.sendNotification(
+					notification,
+					"Failed to send cleanup notification",
+					config.userId,
+				);
+			}
+		} finally {
+			this._isRunning = false;
+		}
+	}
+
 	private async checkAndRun(): Promise<void> {
 		if (this._isRunning) {
 			this.logger.debug("Cleanup already running, skipping check");
 			return;
 		}
+		let notificationOwnerId: string | undefined;
 
 		try {
 			await withCleanupOperationGuard(async () => {
@@ -353,6 +459,37 @@ export class CleanupScheduler {
 					);
 				}
 
+				// Skip no-op recovery writes when no approval is currently eligible.
+				// The update predicates below remain the execution-time authority.
+				const recoveryNow = new Date();
+				const stuckThreshold = new Date(recoveryNow.getTime() - 60 * 60 * 1000);
+				const staleRunLeaseThreshold = new Date(recoveryNow.getTime() - CLEANUP_RUN_LEASE_MS);
+				const recoverableConfigWhere = {
+					OR: [
+						{ runClaimToken: null },
+						{ runClaimedAt: null },
+						{ runClaimedAt: { lt: staleRunLeaseThreshold } },
+					],
+				};
+				const dueApproval = await this.prisma.libraryCleanupApproval.findFirst({
+					where: {
+						OR: [
+							{ status: "pending", expiresAt: { lt: recoveryNow } },
+							{
+								status: { in: ["approved", "executing", "retry_executing"] },
+								reviewedAt: { lt: stuckThreshold },
+								config: recoverableConfigWhere,
+							},
+						],
+					},
+					select: { id: true },
+				});
+				if (!dueApproval) {
+					await this.runDueCleanup((userId) => {
+						notificationOwnerId = userId;
+					});
+					return;
+				}
 				// Expire stale pending approvals
 				const expiryNow = new Date();
 				const expiryAuditRows = cleanupAuditEnabled(this.prisma)
@@ -413,15 +550,6 @@ export class CleanupScheduler {
 				// Recover stuck "executing" items (crash recovery: >1 hour since approval).
 				// The persisted safety snapshot is reconciled against the live file
 				// remainder when the operator approves it again.
-				const stuckThreshold = new Date(Date.now() - 60 * 60 * 1000);
-				const staleRunLeaseThreshold = new Date(Date.now() - CLEANUP_RUN_LEASE_MS);
-				const recoverableConfigWhere = {
-					OR: [
-						{ runClaimToken: null },
-						{ runClaimedAt: null },
-						{ runClaimedAt: { lt: staleRunLeaseThreshold } },
-					],
-				};
 				const approvedRecoveryAuditRows = cleanupAuditEnabled(this.prisma)
 					? await this.prisma.libraryCleanupApproval.findMany({
 							where: {
@@ -644,65 +772,9 @@ export class CleanupScheduler {
 					.catch((err) => {
 						this.logger.warn({ err }, "Failed to recover stuck record-only cleanup retries");
 					});
-
-				// Find any user's config that is enabled and due for a run.
-				// (Single-admin app, so there's at most one config.)
-				const config = await this.prisma.libraryCleanupConfig.findFirst({
-					where: { enabled: true },
+				await this.runDueCleanup((userId) => {
+					notificationOwnerId = userId;
 				});
-
-				if (!config) return;
-
-				const now = new Date();
-				if (!config.nextRunAt || config.nextRunAt > now) return;
-
-				this._isRunning = true;
-
-				this.logger.info(
-					{ intervalHours: config.intervalHours, dryRunMode: config.dryRunMode },
-					"Running scheduled library cleanup",
-				);
-
-				try {
-					const result = await executeCleanupRun(
-						{
-							prisma: this.prisma,
-							arrClientFactory: this.arrClientFactory,
-							encryptor: this.encryptor,
-							quiClientFactory: this.quiClientFactory,
-							quiFileHashIndexFactory: this.quiFileHashIndexFactory,
-							auditTrigger: "scheduled",
-							skipPendingMediaServerRescanRetry: true,
-							log: this.logger,
-						},
-						config.userId,
-					);
-
-					// Calculate next run time
-					const nextRunAt = new Date(now.getTime() + config.intervalHours * 60 * 60 * 1000);
-
-					await this.prisma.libraryCleanupConfig.update({
-						where: { id: config.id },
-						data: { lastRunAt: now, nextRunAt },
-					});
-
-					this.logger.info(
-						{
-							itemsEvaluated: result.itemsEvaluated,
-							itemsFlagged: result.itemsFlagged,
-							itemsRemoved: result.itemsRemoved,
-							nextRunAt: nextRunAt.toISOString(),
-						},
-						"Scheduled library cleanup completed",
-					);
-
-					const notification = buildCleanupNotification(result);
-					if (notification) {
-						await this.sendNotification(notification, "Failed to send cleanup notification");
-					}
-				} finally {
-					this._isRunning = false;
-				}
 			});
 		} catch (error) {
 			this._isRunning = false;
@@ -724,6 +796,7 @@ export class CleanupScheduler {
 					url: "/library",
 				},
 				"Failed to send cleanup error notification",
+				notificationOwnerId,
 			);
 		}
 	}

@@ -19,6 +19,7 @@ const queueCleanerSchedulerPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
 		// Pre-decorate with disabled state (will be updated on successful init)
 		app.decorate("queueCleanerEnabled", false);
+		let initializedScheduler: ReturnType<typeof getQueueCleanerScheduler> | null = null;
 
 		app.addHook("onReady", async () => {
 			try {
@@ -31,8 +32,13 @@ const queueCleanerSchedulerPlugin = fastifyPlugin(
 				});
 
 				const scheduler = getQueueCleanerScheduler();
-				scheduler.initialize(app);
+				const initialization = scheduler.initialize(app);
+				initializedScheduler = scheduler;
+				// Join required local recovery before bootstrap opens ordinary admission.
+				await initialization;
 				scheduler.setTrackTick((fn) => app.schedulerRegistry.track(JOB_ID.queueCleaner, fn));
+				// Retain result handoff before lookup, for timer and manual entry points.
+				scheduler.setTrackClean((fn) => app.notificationService.runProducer(fn));
 
 				// Use hasDecorator check to prevent potential double-decoration errors
 				if (!app.hasDecorator("queueCleanerScheduler")) {
@@ -58,16 +64,20 @@ const queueCleanerSchedulerPlugin = fastifyPlugin(
 			}
 		});
 
+		app.addHook("preClose", async () => {
+			// Begin draining now; do not serialize admission closure behind a sibling drain.
+			void initializedScheduler?.shutdown();
+		});
+
 		app.addHook("onClose", async () => {
-			if (app.queueCleanerScheduler) {
-				app.log.info("Stopping queue cleaner scheduler");
-				app.queueCleanerScheduler.stop();
-			}
+			if (!initializedScheduler) return;
+			app.log.info("Draining queue cleaner scheduler");
+			await initializedScheduler.shutdown();
 		});
 	},
 	{
 		name: "queue-cleaner-scheduler",
-		dependencies: ["prisma", "scheduler-registry"],
+		dependencies: ["prisma", "scheduler-registry", "notification-service"],
 	},
 );
 

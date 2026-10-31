@@ -152,6 +152,17 @@ function makeAppliedDeploymentBackup() {
 
 function createMockPrisma() {
 	const prisma = {
+		$executeRaw: vi.fn().mockResolvedValue(1),
+		searchGrabClaim: { findFirst: vi.fn().mockResolvedValue(null) },
+		arrImportOperation: {
+			findFirst: vi.fn().mockResolvedValue(null),
+			count: vi.fn().mockResolvedValue(0),
+		},
+		queueCleanerImportReceipt: {
+			count: vi.fn().mockResolvedValue(0),
+			findFirst: vi.fn().mockResolvedValue(null),
+		},
+		quiActionLog: { count: vi.fn().mockResolvedValue(0) },
 		libraryCleanupConfig: {
 			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -192,8 +203,13 @@ function createMockPrisma() {
 		trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
 		templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
 		providerNativeInventorySnapshot: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		providerNativeInventoryRun: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinNativeWatchPublication: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinNativeWatchScopeReceipt: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinNativeWatchRow: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinPositiveWatchRow: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		plexCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		plexEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		tautulliCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
@@ -622,13 +638,17 @@ describe("PUT /services/:id", () => {
 	it.each(["SONARR", "RADARR", "PROWLARR", "LIDARR", "READARR"] as const)(
 		"rotates %s once and clears only its History state for a normalized-distinct URL",
 		async (service) => {
-			mockRequireInstance.mockResolvedValue(
-				makeInstance({ service, baseUrl: `http://${service.toLowerCase()}.test:8989` }),
-			);
+			const existing = makeInstance({
+				service,
+				baseUrl: `http://${service.toLowerCase()}.test:8989`,
+			});
+			mockRequireInstance.mockResolvedValue(existing);
 			mockBuildUpdateData.mockReturnValue({ baseUrl: `http://${service.toLowerCase()}.test:9999` });
-			mockPrisma.serviceInstance.findFirst.mockResolvedValue(
-				makeInstance({ service, baseUrl: `http://${service.toLowerCase()}.test:9999` }),
-			);
+			mockPrisma.serviceInstance.findFirst
+				.mockResolvedValueOnce(existing)
+				.mockResolvedValue(
+					makeInstance({ service, baseUrl: `http://${service.toLowerCase()}.test:9999` }),
+				);
 
 			const res = await injectAuthenticated("PUT", "/services/inst-1", {
 				body: { baseUrl: `http://${service.toLowerCase()}.test:9999` },
@@ -656,9 +676,12 @@ describe("PUT /services/:id", () => {
 		"rotates and clears History when %s enabled state changes",
 		async (service) => {
 			const enabled = false;
-			mockRequireInstance.mockResolvedValue(makeInstance({ service, enabled: true }));
+			const existing = makeInstance({ service, enabled: true });
+			mockRequireInstance.mockResolvedValue(existing);
 			mockBuildUpdateData.mockReturnValue({ enabled });
-			mockPrisma.serviceInstance.findFirst.mockResolvedValue(makeInstance({ service, enabled }));
+			mockPrisma.serviceInstance.findFirst
+				.mockResolvedValueOnce(existing)
+				.mockResolvedValue(makeInstance({ service, enabled }));
 
 			const res = await injectAuthenticated("PUT", "/services/inst-1", { body: { enabled } });
 
@@ -851,13 +874,12 @@ describe("PUT /services/:id", () => {
 	] as const)(
 		"rotates %s once when the submitted %s identity changes",
 		async (service, credential) => {
-			mockRequireInstance.mockResolvedValue(
-				makeInstance({
-					service,
-					encryptedApiKey: "old-api-key-ciphertext",
-					encryptedHttpAuthCredentials: "old-http-auth-ciphertext",
-				}),
-			);
+			const existing = makeInstance({
+				service,
+				encryptedApiKey: "old-api-key-ciphertext",
+				encryptedHttpAuthCredentials: "old-http-auth-ciphertext",
+			});
+			mockRequireInstance.mockResolvedValue(existing);
 			mockBuildUpdateData.mockReturnValue(
 				credential === "apiKey"
 					? { encryptedApiKey: "new-api-key-ciphertext", encryptionIv: "new-api-key-iv" }
@@ -866,7 +888,9 @@ describe("PUT /services/:id", () => {
 							httpAuthEncryptionIv: "new-http-auth-iv",
 						},
 			);
-			mockPrisma.serviceInstance.findFirst.mockResolvedValue(makeInstance({ service }));
+			mockPrisma.serviceInstance.findFirst
+				.mockResolvedValueOnce(existing)
+				.mockResolvedValue(makeInstance({ service }));
 			vi.mocked(
 				(app as any).arrClientFactory.createConnectionCredentialIdentity,
 			).mockImplementation(
@@ -1495,6 +1519,7 @@ describe("DELETE /services/:id", () => {
 		mockPrisma.serviceInstance.findMany.mockResolvedValue([source, survivor]);
 		mockPrisma.serviceInstance.findFirst
 			.mockResolvedValueOnce(source)
+			.mockResolvedValueOnce(source)
 			.mockResolvedValueOnce(source);
 		mockPrisma.templateDeploymentHistory.findMany.mockResolvedValue([
 			{
@@ -1543,6 +1568,21 @@ describe("DELETE /services/:id", () => {
 // ===========================================================================
 
 describe("POST /services/test-connection", () => {
+	it("scopes a failed connection-test notification to the authenticated request owner", async () => {
+		mockTestConnection.mockResolvedValueOnce({
+			success: false,
+			error: "Fixture connection unavailable",
+		});
+		const res = await injectAuthenticated("POST", "/services/test-connection", {
+			body: { baseUrl: "http://fixture.invalid:8989", apiKey: "fixture-key", service: "sonarr" },
+		});
+		expect(res.statusCode).toBe(200);
+		expect(app.notificationService.notify).toHaveBeenCalledWith(
+			expect.objectContaining({ eventType: "SERVICE_CONNECTION_FAILED" }),
+			{ userId: "user-1" },
+		);
+	});
+
 	it("calls connection tester with valid http URL", async () => {
 		const res = await injectAuthenticated("POST", "/services/test-connection", {
 			body: {

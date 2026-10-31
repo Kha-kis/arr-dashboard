@@ -176,7 +176,7 @@ describe("ProviderObservationNotice", () => {
 		expect(screen.getAllByRole("status")).toHaveLength(1);
 		expect(screen.getByText(/Showing current mapped data/i)).toBeInTheDocument();
 		expect(
-			screen.getByText(/Media server: Some unsupported items were excluded/i),
+			screen.getByText(/Media server: Some observations were not verified/i),
 		).toBeInTheDocument();
 		expect(screen.queryByText(/Retry refresh/i)).not.toBeInTheDocument();
 		expect(screen.getByRole("status")).not.toHaveStyle({ backgroundColor: "#fef2f2" });

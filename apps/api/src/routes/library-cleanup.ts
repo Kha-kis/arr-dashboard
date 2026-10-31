@@ -1013,6 +1013,9 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 	app.put("/library-cleanup/rules/reorder", async (request, reply) => {
 		const userId = request.currentUser!.id;
 		const { ruleIds } = validateRequest(reorderRulesSchema, request.body);
+		if (new Set(ruleIds).size !== ruleIds.length) {
+			return reply.status(400).send({ error: "Rule IDs must be unique" });
+		}
 
 		const configRef = await app.prisma.libraryCleanupConfig.findUnique({
 			where: { userId },

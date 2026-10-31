@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Navigation and keyboard usability** — Desktop navigation stays within the
+  viewport and scrolls independently. The mobile menu opens from the header,
+  contains keyboard focus, and closes on navigation or desktop resize. The
+  command palette supports modal focus, Escape, and outside dismissal, and its
+  documentation action opens the canonical repository.
+
+- **Radarr language custom formats** — Deployment readback and new recovery
+  tokens accept one omitted `exceptLanguage` field materialized as Boolean
+  `false`. Explicit intent and other writable drift remain strict; existing
+  Radarr recovery tokens retain their original checks.
+
+- **Manual Search Grab provenance and durable recovery** — Grab now requires
+  the query result's opaque `grabSelector`, a UUID `intentId`, and its owned
+  `instanceId`; legacy raw release objects are refused. Scripts must retain the
+  same intent after a lost reply and read `/api/search/grab/intents/:intentId`.
+  Only durably acknowledged submissions return empty204. Unknown outcomes retain
+  a safety hold; a new submission requires fresh provenance and explicit duplicate
+  confirmation. See `docs/API-ROUTES.md` for migration and outcome handling.
+
+- **Protected Backup Restore and recovery** — Uploaded and stored backups share
+  an authenticated preparation and exclusive publication path. Restore preserves
+  destination secrets and safety holds, replaces backed-up accounts/settings and
+  revokes sessions. The operator API now returns a verified `committed`,
+  `not-committed` or `unavailable` result instead of generic success/metadata;
+  scripts must validate that result with its HTTP status. Restart requires fresh
+  sign-in using the restored account. Lost responses remain unconfirmed and are
+  never automatically retried; protected latest-positive status can confirm a
+  matching commit but cannot infer rollback. See `docs/API-ROUTES.md` for the
+  response/recovery contract and unchanged upload/stored size limits.
+- **Restore preparation memory** — Preparation releases transient encrypted
+  input references and avoids copying immutable string values between isolated
+  record containers, retaining authenticated validation and the existing
+  50 MiB encoded-upload / 200 MiB stored ciphertext/plaintext ceilings.
+
 - **Native media-server inventory**: Plex and Jellyfin library views include
   movies, series, and episodes that have no ARR or TMDB match. The additive
   `ProviderNativeInventorySnapshot` and `ProviderNativeInventoryItem` models

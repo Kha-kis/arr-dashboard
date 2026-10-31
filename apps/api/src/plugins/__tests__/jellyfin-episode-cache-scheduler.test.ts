@@ -9,6 +9,7 @@ import {
 const mocks = vi.hoisted(() => ({
 	refresh: vi.fn(),
 	runSingleFlight: vi.fn(),
+	cleanupEpisodeGenerations: vi.fn(),
 }));
 
 vi.mock("../../lib/jellyfin/jellyfin-episode-cache-refresher.js", () => ({
@@ -17,8 +18,16 @@ vi.mock("../../lib/jellyfin/jellyfin-episode-cache-refresher.js", () => ({
 vi.mock("../../lib/jellyfin/jellyfin-cache-singleflight.js", () => ({
 	runJellyfinCacheRefreshSingleFlight: mocks.runSingleFlight,
 }));
+vi.mock("../../lib/jellyfin/jellyfin-episode-generation-repository.js", async (importOriginal) => ({
+	...(await importOriginal<
+		typeof import("../../lib/jellyfin/jellyfin-episode-generation-repository.js")
+	>()),
+	cleanupObsoleteJellyfinEpisodeGenerations: mocks.cleanupEpisodeGenerations,
+}));
 
 import { dispatchPulseAction } from "../../lib/pulse/actions.js";
+import { KNOWN_JOBS } from "../../lib/scheduler-registry/job-definitions.js";
+import { SchedulerRegistry } from "../../lib/scheduler-registry/scheduler-registry.js";
 import type { FastifyWithEpisodeRefreshScheduler } from "../../lib/services/episode-refresh-scheduler-bridge.js";
 import jellyfinEpisodeCacheSchedulerPlugin, {
 	refreshScheduledJellyfinEpisodeCacheInstance,
@@ -104,6 +113,15 @@ describe("refreshScheduledJellyfinEpisodeCacheInstance", () => {
 		},
 	);
 
+	it("passes the configured database URL internally to the episode finalizer context", async () => {
+		const state = { ...app(), config: { DATABASE_URL: "file:/config/prod.db" } };
+		await refreshScheduledJellyfinEpisodeCacheInstance(state as never, instance() as never);
+
+		expect(mocks.refresh).toHaveBeenCalledWith(
+			expect.objectContaining({ databaseUrl: "file:/config/prod.db" }),
+		);
+	});
+
 	it("logs only bounded generic data when an owned refresh rejects", async () => {
 		const state = app();
 		const stored = instance();
@@ -171,11 +189,9 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 		void app.register(
 			fastifyPlugin(
 				async (server) => {
-					server.decorate("schedulerRegistry", {
-						track: vi.fn(
-							async (_jobId: string, callback: () => Promise<unknown>) => await callback(),
-						),
-					} as never);
+					const registry = new SchedulerRegistry();
+					for (const definition of KNOWN_JOBS) registry.register(definition);
+					server.decorate("schedulerRegistry", registry);
 				},
 				{ name: "scheduler-registry" },
 			),
@@ -515,14 +531,28 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
 		await app.ready();
 		const continuationTimerCount = timeoutSpy.mock.calls.filter(
-			([, delay]) => delay === 10_000 || delay === 30_000,
+			([, delay]) => delay === 1_000 || delay === 30_000,
 		).length;
 
 		await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
 		expect(mocks.refresh).toHaveBeenCalledTimes(2);
 		expect(
-			timeoutSpy.mock.calls.filter(([, delay]) => delay === 10_000 || delay === 30_000),
+			timeoutSpy.mock.calls.filter(([, delay]) => delay === 1_000 || delay === 30_000),
 		).toHaveLength(continuationTimerCount);
+	});
+
+	it("continues successful episode pages after one second", async () => {
+		findInstances.mockResolvedValue([instance("JELLYFIN")]);
+		mocks.refresh.mockResolvedValue({ complete: false, upserted: 0, errors: 0, progressed: true });
+		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+		await app.ready();
+
+		await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
+		expect(mocks.refresh).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(999);
+		expect(mocks.refresh).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(1);
+		expect(mocks.refresh).toHaveBeenCalledTimes(2);
 	});
 
 	it("uses cooldown admission at startup and on recurring ticks", async () => {
@@ -537,6 +567,20 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 		expect(mocks.refresh.mock.calls.map(([input]) => input.resumeFailed)).toEqual([true, false]);
 		expect(mocks.refresh.mock.calls[0]![0].automaticRenewal).toBe("provider-unavailable-cooldown");
 		expect(mocks.refresh.mock.calls[1]![0].automaticRenewal).toBe("provider-unavailable-cooldown");
+	});
+
+	it("replays obsolete generation cleanup before startup admission", async () => {
+		findInstances.mockResolvedValue([instance("JELLYFIN")]);
+		mocks.cleanupEpisodeGenerations.mockResolvedValue(1);
+		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+		await app.ready();
+
+		await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
+		expect(mocks.cleanupEpisodeGenerations).toHaveBeenCalledWith(app.prisma, {
+			userId: "user-1",
+			instanceId: "instance-1",
+		});
+		expect(mocks.refresh).toHaveBeenCalledOnce();
 	});
 
 	it("starts separate instances independently instead of serializing provider work", async () => {
@@ -562,7 +606,7 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 		}
 	});
 
-	it("honors persisted retry deadlines and stops when failed work is exhausted", async () => {
+	it("honors persisted retry deadlines, retains recovery mode, and stops when exhausted", async () => {
 		findInstances.mockResolvedValue([instance("JELLYFIN")]);
 		const delays = [30_000, 120_000, 600_000];
 		mocks.refresh.mockResolvedValue({ complete: false, upserted: 0, errors: 1 });
@@ -583,6 +627,12 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 		expect(mocks.refresh).toHaveBeenCalledTimes(3);
 		await vi.advanceTimersByTimeAsync(600_000);
 		expect(mocks.refresh).toHaveBeenCalledTimes(4);
+		for (const [index, [context]] of mocks.refresh.mock.calls.entries()) {
+			expect(context).toMatchObject({
+				resumeFailed: index === 0,
+				automaticRenewal: "provider-unavailable-cooldown",
+			});
+		}
 		await vi.advanceTimersByTimeAsync(600_000);
 		expect(mocks.refresh).toHaveBeenCalledTimes(4);
 	});
@@ -848,7 +898,7 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 		expect(mocks.refresh).toHaveBeenCalledTimes(2);
 	});
 
-	it("cancels a pending ten-second progress continuation during shutdown", async () => {
+	it("cancels a pending one-second progress continuation during shutdown", async () => {
 		mocks.refresh.mockResolvedValue({ complete: false, upserted: 0, errors: 0, progressed: true });
 		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
 		await app.ready();

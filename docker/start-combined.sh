@@ -99,14 +99,13 @@ else
     # This ensures correct permissions even when mounting pre-existing directories
     chown -R "${PUID}:${PGID}" /config
 
-    # NOTE: We intentionally do NOT chown /app/api recursively here.
-    # A recursive chown on /app/api (~40k+ files in node_modules) causes severe
+    # NOTE: Image-owned application code keeps its build-time ownership.
+    # Recursively changing dependency ownership (~40k+ files) causes severe
     # performance issues on Unraid's FUSE-based filesystem (shfs), creating
     # startup hangs that can last several minutes or indefinitely.
     # See: https://github.com/Kha-kis/arr-dashboard/issues/29
     #
-    # Instead, we only set permissions on specific Prisma directories when
-    # a database provider switch actually requires client regeneration (below).
+    # Both provider packages are prebuilt; no application write is needed.
 fi
 
 # Helper: run a command as the target user (su-exec when root, direct when rootless)
@@ -138,6 +137,11 @@ echo "Next image cache ready: $NEXT_IMAGE_CACHE (UID:$PUID GID:$PGID)"
 # ============================================
 # Process supervision helpers
 # ============================================
+
+API_PID=""
+WEB_PID=""
+STARTUP_CHANNEL_PREPARED=false
+SHUTDOWN_IN_PROGRESS=false
 
 # Seconds to allow a service to stop (after the sibling exits, or on an
 # intentional shutdown) before escalating to SIGKILL.
@@ -202,7 +206,7 @@ wait_for_exit() {
         sleep 1
         elapsed=$((elapsed + 1))
     done
-    return 1
+    ! process_is_alive "$pid"
 }
 
 # Reap a dead tracked process and record its exit status (128+signal for
@@ -224,7 +228,11 @@ reap_tracked() {
 # This is the one global shutdown window — it is NOT applied independently per
 # service, so a slow API cannot extend the total stop time beyond SHUTDOWN_GRACE.
 stop_services() {
-    signal_tracked "$WEB_PID" TERM
+    STOP_FAILED=0
+    WEB_TERM_SENT=false
+    if process_is_alive "$WEB_PID" && kill -s TERM "$WEB_PID" 2>/dev/null; then
+        WEB_TERM_SENT=true
+    fi
     signal_tracked "$API_PID" TERM
 
     elapsed=0
@@ -238,25 +246,66 @@ stop_services() {
 
     # Escalate any survivor to SIGKILL (bounded follow-up wait).
     if process_is_alive "$WEB_PID"; then
+        STOP_FAILED=1
         echo "  Web did not stop within ${SHUTDOWN_GRACE}s - sending SIGKILL" >&2
         signal_tracked "$WEB_PID" KILL
         wait_for_exit "$WEB_PID" 5
     fi
-    if process_is_alive "$API_PID"; then
+    # Give the launcher its bounded final join tick, including a configured
+    # zero-second grace. It escalates the actual API child before its own exit.
+    if process_is_alive "$API_PID" && ! wait_for_exit "$API_PID" 1; then
+        STOP_FAILED=1
         echo "  API did not stop within ${SHUTDOWN_GRACE}s - sending SIGKILL" >&2
         signal_tracked "$API_PID" KILL
         wait_for_exit "$API_PID" 5
     fi
 
     # Reap both so no orphan or zombie is left behind
-    reap_tracked "$WEB_PID"
-    reap_tracked "$API_PID"
+    if [ -n "$WEB_PID" ]; then
+        reap_tracked "$WEB_PID"
+        # Next completes SIGTERM cleanup with status 143. Accept that convention
+        # only after we signalled a live web service; never erase forced-stop
+        # failure or normalize an unexpected exit in the supervision loop.
+        case "$_REAPED" in
+            0) ;;
+            143) if [ "$WEB_TERM_SENT" != true ]; then STOP_FAILED=1; fi ;;
+            *) STOP_FAILED=1 ;;
+        esac
+    fi
+    if [ -n "$API_PID" ]; then reap_tracked "$API_PID"; if [ "$_REAPED" -ne 0 ]; then STOP_FAILED=1; fi; fi
+}
+
+cleanup_startup_channel() {
+    if [ "$STARTUP_CHANNEL_PREPARED" = true ]; then
+        if ! run_as_user node "$API_RUNTIME_DIR/dist/combined-startup.js" cleanup; then
+            echo "ERROR: Startup metadata could not be safely removed; preserving evidence" >&2
+            return 1
+        fi
+        STARTUP_CHANNEL_PREPARED=false
+    fi
+}
+
+startup_failure() {
+    echo "ERROR: API startup handoff did not complete; web was not started" >&2
+    echo "  - Destructive schema changes are intentionally rejected at startup" >&2
+    echo "  - An unacknowledged commit is unknown; do not assume rollback" >&2
+    echo "  - Keep services stopped and consult the release notes for an explicit upgrade path" >&2
+    stop_services
+    cleanup_startup_channel || true
+    exit 1
 }
 
 shutdown() {
+    if [ "$SHUTDOWN_IN_PROGRESS" = true ]; then return; fi
+    SHUTDOWN_IN_PROGRESS=true
     echo ""
     echo "Shutting down services..."
     stop_services
+    cleanup_startup_channel || true
+    if [ "$STOP_FAILED" -ne 0 ]; then
+        echo "ERROR: Services required forced or failed termination" >&2
+        exit 1
+    fi
     echo "Services stopped gracefully"
     exit 0
 }
@@ -264,7 +313,7 @@ shutdown() {
 trap shutdown SIGTERM SIGINT
 
 # ============================================
-# Database provider detection and Prisma setup
+# Database provider detection and immutable runtime selection
 # ============================================
 
 echo ""
@@ -275,203 +324,60 @@ cd /app/api
 # This handles cases where Unraid template sets DATABASE_URL="" which overrides Dockerfile default
 if [ -z "$DATABASE_URL" ]; then
     export DATABASE_URL="file:/config/prod.db"
-    echo "  - DATABASE_URL not set, defaulting to SQLite: $DATABASE_URL"
+    echo "  - DATABASE_URL not set, selecting the default SQLite database"
 fi
 
-# Detect if DATABASE_URL is PostgreSQL
-if echo "$DATABASE_URL" | grep -qE "^postgres(ql)?://"; then
-    echo "  - PostgreSQL database detected"
-    DB_PROVIDER="postgresql"
-else
-    echo "  - SQLite database detected"
-    DB_PROVIDER="sqlite"
-fi
+# Never infer SQLite from an unsupported connection scheme.
+case "$DATABASE_URL" in
+    postgres://*|postgresql://*) DB_PROVIDER="postgresql" ;;
+    file:*) DB_PROVIDER="sqlite" ;;
+    *) echo "ERROR: Unsupported database provider; services were not started" >&2; exit 1 ;;
+esac
+echo "  - Detected database provider: $DB_PROVIDER"
 
-# Check current datasource provider in schema (not the generator provider)
-# Look for provider inside datasource block specifically
-CURRENT_PROVIDER=$(grep -A2 'datasource db' prisma/schema.prisma | grep 'provider' | sed 's/.*provider = "\([^"]*\)".*/\1/')
-
-echo "  - Current schema provider: $CURRENT_PROVIDER"
-echo "  - Required provider: $DB_PROVIDER"
-
-# If provider needs to change, update schema and regenerate client
-if [ "$CURRENT_PROVIDER" != "$DB_PROVIDER" ]; then
-    echo "  - Switching Prisma datasource provider from $CURRENT_PROVIDER to $DB_PROVIDER..."
-
-    # Update only the datasource provider in schema.prisma (not the generator)
-    # Use a more robust sed pattern that handles different formatting
-    if ! sed -i '/datasource db/,/^}/ s/provider = "[^"]*"/provider = "'"$DB_PROVIDER"'"/' prisma/schema.prisma; then
-        echo "ERROR: Failed to update schema.prisma provider" >&2
-        if [ "$ROOTLESS" = true ]; then
-            echo "  In rootless mode, schema files may not be writable." >&2
-            echo "  Either rebuild the image with DATABASE_URL set, or ensure /app/api is writable." >&2
-        fi
-        exit 1
-    fi
-
-    # Verify the change was applied
-    NEW_PROVIDER=$(grep -A2 'datasource db' prisma/schema.prisma | grep 'provider' | sed 's/.*provider = "\([^"]*\)".*/\1/')
-    if [ "$NEW_PROVIDER" != "$DB_PROVIDER" ]; then
-        echo "ERROR: Schema provider update failed. Expected '$DB_PROVIDER' but got '$NEW_PROVIDER'" >&2
-        echo "  This may happen if the schema.prisma format is non-standard." >&2
-        exit 1
-    fi
-    echo "  - Schema updated successfully"
-
-    # sed -i replaces the schema with a root-owned file. Prisma 7 opens that
-    # schema with write access while loading prisma.config.ts, so hand the
-    # single file back to the remapped runtime user before generation.
-    if [ "$ROOTLESS" = false ]; then
-        chown "${PUID}:${PGID}" /app/api/prisma/schema.prisma
-    fi
-
-    # Regenerate Prisma client for new provider
-    echo "  - Regenerating Prisma client (this may take a moment)..."
-
-    # Set permissions ONLY on the specific Prisma client directories that need to be writable
-    # This is much faster than chown -R /app/api which causes Unraid startup hangs
-    # See: https://github.com/Kha-kis/arr-dashboard/issues/29
-    # Skip in rootless mode — the user already owns these files or they were built with correct ownership
-    if [ "$ROOTLESS" = false ]; then
-        echo "  - Setting permissions for Prisma client directories..."
-        for dir in /app/api/node_modules/.pnpm/@prisma+client@*/; do
-            [ -d "$dir" ] && chown -R "${PUID}:${PGID}" "$dir"
-        done
-        # Also handle the top-level @prisma directory symlinks
-        [ -d "/app/api/node_modules/@prisma" ] && chown -R "${PUID}:${PGID}" "/app/api/node_modules/@prisma"
-        # Ensure prisma directory is writable for any generated files
-        [ -d "/app/api/node_modules/.prisma" ] && chown -R "${PUID}:${PGID}" "/app/api/node_modules/.prisma"
-        # Ensure Prisma output directory is writable (Prisma 7 generates to src/generated/prisma/)
-        [ -d "/app/api/src/generated" ] && chown -R "${PUID}:${PGID}" "/app/api/src/generated"
-    fi
-
-    if ! run_as_user ./node_modules/.bin/prisma generate --schema prisma/schema.prisma; then
-        echo "ERROR: Failed to regenerate Prisma client" >&2
-        if [ "$ROOTLESS" = true ]; then
-            echo "  In rootless mode, ensure /app/api is writable by UID:$PUID" >&2
-        else
-            echo "  Check that /app/api has correct permissions for PUID:$PUID PGID:$PGID" >&2
-        fi
-        exit 1
-    fi
-else
-    echo "  - Prisma provider already set to $DB_PROVIDER (no change needed)"
-fi
-
-# tsup may place Prisma's generated config in a split chunk rather than the
-# entrypoint. Require one complete Prisma config module and verify it on every
-# startup so a failed provider switch is safe to retry.
-echo "  - Verifying bundled Prisma config for $DB_PROVIDER..."
-if ! /app/patch-prisma-provider-bundles.sh /app/api/dist "$DB_PROVIDER"; then
-    echo "ERROR: Failed to prepare bundled Prisma config for $DB_PROVIDER" >&2
-    if [ "$ROOTLESS" = true ]; then
-        echo "  In rootless mode, ensure /app/api/dist is writable by UID:$PUID" >&2
-    fi
+# The provider is an allowlisted value, never an operator-supplied code path.
+# Validate matching schema, compiled client, assets and manifest before any DB
+# actor or service starts. No generation, patching or code ownership change.
+API_RUNTIME_DIR="/app/api/providers/$DB_PROVIDER"
+readonly API_RUNTIME_DIR
+echo "  - Verifying packaged Prisma runtime for $DB_PROVIDER..."
+if ! run_as_user node /app/api/validate-provider-runtime.cjs "$API_RUNTIME_DIR" "$DB_PROVIDER"; then
+    echo "ERROR: Provider runtime validation failed; services were not started" >&2
     exit 1
 fi
 
-# Prisma 7 opens the schema with write access while loading prisma.config.ts
-# for `db push`, even when the datasource provider did not change. The image
-# files are owned by the build-time abc UID (911), but LinuxServer-style
-# PUID/PGID remapping changes abc to the operator's IDs at startup. Hand off
-# only the schema file instead of recursively chowning /app/api, which would
-# reintroduce the severe Unraid startup cost documented above.
-if [ "$ROOTLESS" = false ]; then
-    chown "${PUID}:${PGID}" /app/api/prisma/schema.prisma
-fi
-
 # ============================================
-# Database schema synchronization (run as abc user)
+# Prepare a private boot-scoped coordination channel (no database I/O)
 # ============================================
 
 echo ""
-echo "Synchronizing database schema..."
-# v2.24 broadens the TMDb and Trakt list-cache identity to include mediaType.
-# The previous unique indexes are stricter, so an existing row set that
-# satisfies them must also satisfy the replacements. Prisma still classifies
-# replacement unique indexes as potentially destructive. Apply this reviewed,
-# transactional PostgreSQL migration first so db push can remain fail-closed
-# without --accept-data-loss.
-if [ "$DB_PROVIDER" = "postgresql" ]; then
-    echo "  - Applying serialized PostgreSQL schema synchronization..."
-    if ! run_as_user node /app/api/sync-postgresql-schema.cjs; then
-        echo "ERROR: PostgreSQL schema synchronization failed" >&2
-        echo "  - The migration outcome may be unknown; the next startup will reconcile it safely" >&2
-        exit 1
-    fi
-    echo "  - PostgreSQL schema synchronized successfully"
-else
-    # Use 'db push' instead of 'migrate deploy' to support SQLite without a
-    # provider-specific migration history. Deliberately do NOT pass
-    # --accept-data-loss: destructive transitions require an explicit path.
-    if ! run_as_user ./node_modules/.bin/prisma db push --schema prisma/schema.prisma; then
-        echo "ERROR: Database schema synchronization failed" >&2
-        if [ "$ROOTLESS" = true ]; then
-            echo "  - In rootless mode, ensure the database file is readable/writable by UID:$PUID" >&2
-            echo "  - If switching from root to rootless, run: chown $PUID:$PGID /path/to/config/prod.db" >&2
-        fi
-        echo "  - Destructive schema changes are intentionally rejected at startup" >&2
-        echo "  - Restore the previous image and consult the release notes for an explicit upgrade path" >&2
-        echo "  - Ensure DATABASE_URL is correct and the database is accessible" >&2
-        echo "  - Detected database provider: $DB_PROVIDER" >&2
-        exit 1
-    fi
-    echo "  - Database schema synchronized successfully"
+echo "Preparing API-owned native startup..."
+if ! STARTUP_CONTEXT=$(run_as_user node "$API_RUNTIME_DIR/dist/combined-startup.js" prepare); then
+    startup_failure
 fi
-
-# ============================================
-# Read system settings from database
-# ============================================
-
-echo ""
-echo "Loading system settings from database..."
-
-# Read settings as JSON from database (script is in api dir to access prisma client)
-DB_SETTINGS=$(run_as_user node /app/api/read-base-path.cjs 2>/dev/null || echo '{"apiPort":null,"webPort":null,"listenAddress":null}')
-
-# Parse JSON values using node (since jq might not be available)
-DB_API_PORT=$(echo "$DB_SETTINGS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const v=JSON.parse(d).apiPort;console.log(v||'')})")
-DB_WEB_PORT=$(echo "$DB_SETTINGS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const v=JSON.parse(d).webPort;console.log(v||'')})")
-DB_LISTEN_ADDRESS=$(echo "$DB_SETTINGS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const v=JSON.parse(d).listenAddress;console.log(v||'')})")
-
-# Priority: Database settings > Environment variables > Defaults
-# Database settings take precedence because users configure them via the UI
-# Environment variables are typically Dockerfile defaults, not user-configured
-if [ -n "$DB_API_PORT" ]; then
-    export API_PORT="$DB_API_PORT"
-elif [ -z "$API_PORT" ]; then
-    export API_PORT="3001"
+STARTUP_TAB=$(printf '\t')
+IFS="$STARTUP_TAB" read -r ARR_COMBINED_STARTUP_DIR ARR_COMBINED_STARTUP_NONCE ARR_COMBINED_STARTUP_DEVICE ARR_COMBINED_STARTUP_INODE STARTUP_EXTRA <<EOF
+$STARTUP_CONTEXT
+EOF
+if [ -n "$STARTUP_EXTRA" ] || [ -z "$ARR_COMBINED_STARTUP_DIR" ] || [ -z "$ARR_COMBINED_STARTUP_NONCE" ] || [ -z "$ARR_COMBINED_STARTUP_DEVICE" ] || [ -z "$ARR_COMBINED_STARTUP_INODE" ]; then
+    startup_failure
 fi
-
-if [ -n "$DB_WEB_PORT" ]; then
-    export PORT="$DB_WEB_PORT"
-elif [ -z "$PORT" ]; then
-    export PORT="3000"
-fi
-
-if [ -n "$DB_LISTEN_ADDRESS" ]; then
-    export HOST="$DB_LISTEN_ADDRESS"
-elif [ -z "$HOST" ]; then
-    export HOST="0.0.0.0"
-fi
-
-echo "  - Listen Address: $HOST"
-echo "  - API Port: $API_PORT"
-echo "  - Web Port: $PORT"
+export ARR_COMBINED_STARTUP_DIR ARR_COMBINED_STARTUP_NONCE ARR_COMBINED_STARTUP_DEVICE ARR_COMBINED_STARTUP_INODE
+STARTUP_CHANNEL_PREPARED=true
 
 # ============================================
 # Start API server (as abc user)
 # ============================================
 
 echo ""
-echo "Starting API server on $HOST:$API_PORT..."
+echo "Starting API bootstrap (native validation and listen precede web startup)..."
 cd /app/api
 
 # Heap diagnostics (issue #427 follow-up).
 #
 # CWD = /config/heap-snapshots so V8's --heapsnapshot-signal writes land on
 # the persisted volume instead of the ephemeral /app/api inside the image.
-# Using the absolute /app/api/dist/index.js lets us change CWD without
+# Using the fixed provider package's absolute index.js lets us change CWD without
 # breaking module resolution for the bundled API.
 #
 # HEAP_AUTO_SNAPSHOT=1 appends --heapsnapshot-near-heap-limit=1 so V8
@@ -496,6 +402,7 @@ fi
 # Override via `MALLOC_ARENA_MAX=N` if you have a specific reason
 # (multi-CPU NUMA tuning, very high request concurrency).
 MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"
+export MALLOC_ARENA_MAX
 echo "  - MALLOC_ARENA_MAX: $MALLOC_ARENA_MAX (glibc arena cap — keeps RSS in check on long-running containers)"
 
 # Let stdout/stderr flow directly to the container — Pino handles file logging
@@ -503,7 +410,7 @@ echo "  - MALLOC_ARENA_MAX: $MALLOC_ARENA_MAX (glibc arena cap — keeps RSS in 
 # Previous approach redirected stdout to api.log, which conflicted with Pino's
 # worker-thread transport and caused both log files to remain empty.
 #
-# API service: /app/api/dist/launcher.js (the stable top-level process).
+# API service: the selected package's dist/launcher.js (stable top-level process).
 #   - The launcher spawns the inner API server, sets LAUNCHER_MANAGED=true, and
 #     restarts it internally on the application-requested exit code 42 (backup
 #     restore, manual restart). start.sh supervises the launcher, so a
@@ -517,46 +424,41 @@ echo "  - MALLOC_ARENA_MAX: $MALLOC_ARENA_MAX (glibc arena cap — keeps RSS in 
 #     run_as_user() function call would fork an untracked subshell instead —
 #     verified against the shipped image.)
 if [ "$ROOTLESS" = true ]; then
-    sh -c "cd /config/heap-snapshots && MALLOC_ARENA_MAX=$MALLOC_ARENA_MAX API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/launcher.js" &
+    sh -c 'cd /config/heap-snapshots && exec node "$1/dist/launcher.js"' sh "$API_RUNTIME_DIR" &
 else
-    su-exec abc sh -c "cd /config/heap-snapshots && MALLOC_ARENA_MAX=$MALLOC_ARENA_MAX API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/launcher.js" &
+    su-exec abc sh -c 'cd /config/heap-snapshots && exec node "$1/dist/launcher.js"' sh "$API_RUNTIME_DIR" &
 fi
 API_PID=$!
 echo "API started with PID $API_PID"
 
-# Give API a moment to start, then verify it's still running. Uses the
-# zombie-aware check: a process that exited but was not yet reaped would pass
-# kill -0, so inspect the /proc state explicitly (same as the supervision loop).
-sleep 3
-if ! process_is_alive "$API_PID"; then
-    echo ""
-    echo "ERROR: API process (PID $API_PID) died during startup!" >&2
-
-    # Temporarily disable set -e so wait's non-zero exit doesn't kill the script
-    set +e
-    wait "$API_PID" 2>/dev/null
-    API_EXIT=$?
-    set -e
-    echo "  API exit code: $API_EXIT" >&2
-
-    # Re-run the API in the foreground with a timeout to capture the actual error.
-    # Mirror the backgrounded launch above (cd into /config/heap-snapshots,
-    # use the absolute path to dist/launcher.js) so any heap snapshot V8 writes
-    # during the diagnostic re-run also lands on the persisted volume — and
-    # so this branch doesn't silently break if a future edit changes the
-    # outer shell's CWD between the two launch sites.
-    echo "=== Re-running API in foreground (10s timeout) ===" >&2
-    set +e
-    if [ "$ROOTLESS" = true ]; then
-        timeout 10 sh -c "cd /config/heap-snapshots && API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/launcher.js" 2>&1
-    else
-        timeout 10 su-exec abc sh -c "cd /config/heap-snapshots && API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/launcher.js" 2>&1
-    fi
-    RERUN_EXIT=$?
-    set -e
-    echo "=== Foreground API exit code: $RERUN_EXIT ===" >&2
-    exit 1
+# Bind the tracked process's birth identity. Short reads keep shell traps live;
+# the shared parser enforces a600-second monotonic deadline from preparation.
+if ! run_as_user node "$API_RUNTIME_DIR/dist/combined-startup.js" bind "$API_PID" "$$"; then
+    startup_failure
 fi
+while :; do
+    if ! process_is_alive "$API_PID"; then startup_failure; fi
+    if STARTUP_SETTINGS=$(run_as_user node "$API_RUNTIME_DIR/dist/combined-startup.js" read); then
+        break
+    else
+        STARTUP_STATUS=$?
+        if [ "$STARTUP_STATUS" -ne 2 ]; then startup_failure; fi
+    fi
+    sleep 1
+done
+IFS="$STARTUP_TAB" read -r API_PORT PORT HOST STARTUP_EXTRA <<EOF
+$STARTUP_SETTINGS
+EOF
+if [ -n "$STARTUP_EXTRA" ] || [ -z "$API_PORT" ] || [ -z "$PORT" ] || [ -z "$HOST" ]; then startup_failure; fi
+export API_PORT PORT HOST
+if ! process_is_alive "$API_PID"; then startup_failure; fi
+if ! run_as_user node "$API_RUNTIME_DIR/dist/combined-startup.js" consume; then startup_failure; fi
+STARTUP_CHANNEL_PREPARED=false
+echo "  - Listen Address: $HOST"
+echo "  - API Port: $API_PORT"
+echo "  - Web Port: $PORT"
+if ! run_as_user node /app/runtime-health.cjs publish "$PORT"; then startup_failure; fi
+if ! process_is_alive "$API_PID"; then startup_failure; fi
 
 # ============================================
 # Start Web server (as abc user)
@@ -569,9 +471,9 @@ cd /app/web
 # Backgrounded as a simple external command so WEB_PID is the node process
 # itself (not a subshell wrapper) — same rationale as the API launch above.
 if [ "$ROOTLESS" = true ]; then
-    sh -c "API_HOST=http://localhost:$API_PORT PORT=$PORT HOSTNAME=$HOST HOST=$HOST node server.js" &
+    sh -c "API_HOST=http://localhost:$API_PORT PORT=$PORT HOSTNAME=$HOST HOST=$HOST exec node server.js" &
 else
-    su-exec abc sh -c "API_HOST=http://localhost:$API_PORT PORT=$PORT HOSTNAME=$HOST HOST=$HOST node server.js" &
+    su-exec abc sh -c "API_HOST=http://localhost:$API_PORT PORT=$PORT HOSTNAME=$HOST HOST=$HOST exec node server.js" &
 fi
 WEB_PID=$!
 echo "Web started with PID $WEB_PID"

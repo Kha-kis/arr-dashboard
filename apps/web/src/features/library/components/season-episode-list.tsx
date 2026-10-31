@@ -12,6 +12,7 @@ import {
 import { getErrorMessage } from "../../../lib/error-utils";
 import { getLinuxIsoName, getLinuxSavePath } from "../../../lib/incognito";
 import { formatBytes } from "../lib/library-utils";
+import { showMonitoringUnconfirmedToast } from "../lib/monitoring-feedback";
 import { LibraryBadge } from "./library-badge";
 
 /**
@@ -79,9 +80,8 @@ export const SeasonEpisodeList = ({
 			toast.success(
 				`Episode ${!currentlyMonitored ? "monitoring enabled" : "monitoring disabled"}`,
 			);
-		} catch (error) {
-			const message = getErrorMessage(error, "Unknown error");
-			toast.error(`Failed to toggle monitoring: ${message}`);
+		} catch {
+			showMonitoringUnconfirmedToast();
 		} finally {
 			setPendingEpisodeMonitor(null);
 		}
@@ -121,8 +121,8 @@ export const SeasonEpisodeList = ({
 						className="rounded-lg border border-border/50 bg-background/10 text-sm"
 					>
 						{/* Primary row: episode info + badges + actions */}
-						<div className="flex items-center gap-3 px-3 py-2">
-							<div className="flex-1 min-w-0">
+						<div className="flex flex-wrap items-center gap-3 px-3 py-2 sm:flex-nowrap">
+							<div className="flex-1 min-w-0 basis-full sm:basis-0">
 								<div className="flex items-center gap-2">
 									<span className="font-medium text-foreground">E{episode.episodeNumber}</span>
 									<span className="text-muted-foreground truncate">

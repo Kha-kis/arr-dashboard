@@ -18,6 +18,7 @@ import {
 import { Input } from "../../../components/ui/input";
 import { PasswordInput } from "../../../components/ui/password-input";
 import { useLoginMutation, useSetupRequired } from "../../../hooks/api/useAuth";
+import { useRestoreState } from "../../../hooks/api/useBackup";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { authKeys } from "../../../lib/query-keys";
 import {
@@ -53,12 +54,14 @@ export const LoginForm = () => {
 	const searchParams = useSearchParams();
 	const queryClient = useQueryClient();
 	const loginMutation = useLoginMutation();
+	const restore = useRestoreState();
 	const { data: setupRequired, isLoading: setupLoading, error: setupError } = useSetupRequired();
 
 	const [username, setUsername] = useState("");
 	const [password, setPassword] = useState("");
 	const [rememberMe, setRememberMe] = useState(false);
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
+	const [recoverySignInComplete, setRecoverySignInComplete] = useState(false);
 
 	// OIDC and Passkey state
 	const [oidcProvider, setOIDCProvider] = useState<{
@@ -93,9 +96,21 @@ export const LoginForm = () => {
 		}
 	}, [setupLoading, setupRequired, router]);
 
+	const navigateAfterSignIn = () => {
+		// Keep the recovery reference until its explicit protected status check.
+		// The notice resets the old document only after verified dismissal.
+		if (restore.handoff) {
+			setRecoverySignInComplete(true);
+			setPasskeyLoading(false);
+		} else {
+			window.location.href = redirectTarget;
+		}
+	};
+
 	const handlePasswordLogin = async (event: React.FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 		setErrorMessage(null);
+		setRecoverySignInComplete(false);
 
 		const trimmedUsername = username.trim();
 		if (trimmedUsername.length === 0) {
@@ -110,8 +125,7 @@ export const LoginForm = () => {
 				rememberMe,
 			});
 			setPassword("");
-			// Use full page navigation to ensure cookie is sent
-			window.location.href = redirectTarget;
+			navigateAfterSignIn();
 		} catch (error) {
 			const message = getErrorMessage(
 				error,
@@ -138,6 +152,7 @@ export const LoginForm = () => {
 
 	const handlePasskeyLogin = async () => {
 		setErrorMessage(null);
+		setRecoverySignInComplete(false);
 		setPasskeyLoading(true);
 
 		try {
@@ -153,8 +168,7 @@ export const LoginForm = () => {
 			// Invalidate queries to update authentication state
 			await queryClient.invalidateQueries({ queryKey: authKeys.currentUser });
 
-			// Use full page navigation to ensure cookie is sent
-			window.location.href = redirectTarget;
+			navigateAfterSignIn();
 		} catch (error) {
 			const message = getErrorMessage(
 				error,
@@ -413,6 +427,11 @@ export const LoginForm = () => {
 								<AlertDescription>{errorMessage}</AlertDescription>
 							</Alert>
 						)}
+						{recoverySignInComplete ? (
+							<p role="status" className="text-sm text-muted-foreground">
+								Sign-in completed. Check recovered status before returning to the app.
+							</p>
+						) : null}
 
 						<Button
 							className="w-full gap-2 rounded-xl font-medium"

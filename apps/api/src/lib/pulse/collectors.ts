@@ -52,6 +52,8 @@ import {
 	loadUserGenerationObservations,
 } from "../plex/plex-persisted-observation-repository.js";
 import { decodePlexPositiveEpisodeGenerationMetadata } from "../plex/plex-positive-episode-generation-metadata.js";
+import { MAX_CONNECTION_ITEMS } from "../provider-observation/inventory-connection-repository.js";
+import { readNativeInventoryPage } from "../provider-observation/native-inventory.js";
 import { createQuiClient } from "../qui/client-factory.js";
 import { listQuiInstances } from "../qui/instance-helpers.js";
 import {
@@ -704,11 +706,44 @@ function projectJellyfinPulseItem(
 	const projection = status
 		? projectProviderObservationUi(status)
 		: { condition: "unavailable" as const };
+	const coverage = source.watchCoverage;
+	const incompleteWatch = coverage?.status === "available" && coverage.incompleteScopes > 0;
+	const activeWatch =
+		coverage?.status === "available" && !["idle", "failed"].includes(coverage.refreshPhase);
+	const watchGap =
+		incompleteWatch &&
+		projection.condition !== "identity-action-required" &&
+		projection.condition !== "retryable-failure" &&
+		projection.condition !== "collecting";
+	if (watchGap) {
+		return {
+			id: `cache-${provider}-watch-coverage-${item.instanceId}-${cacheType}`,
+			severity: "info",
+			category: "health",
+			title: `${item.instanceName}: ${cacheLabel} watch observations have incomplete recorded coverage`,
+			detail: activeWatch
+				? "Watch refresh work is already active or unconfirmed; recorded values remain visible."
+				: "Some watch observations were not verified. Recorded values remain visible.",
+			actionUrl: "/settings",
+			actionLabel: "View status",
+			source: provider,
+			timestamp: coverage.observedAt,
+			...(!activeWatch
+				? {
+						action: actionForCache(
+							item.instanceId,
+							"jellyfin_episode",
+							"Refresh watch observations",
+						),
+					}
+				: {}),
+		};
+	}
 	if (projection.condition === "current") return null;
 	const details = {
 		"informational-gap": {
 			suffix: "cache has informational coverage gaps",
-			detail: "Current mapped data remains available; unsupported items were excluded.",
+			detail: "Current mapped data remains available; some observations were not verified.",
 			severity: "info" as const,
 			actionLabel: "View status",
 		},
@@ -739,7 +774,7 @@ function projectJellyfinPulseItem(
 	} as const;
 	const detail = details[projection.condition];
 	const action =
-		projection.condition === "retryable-failure"
+		projection.condition === "retryable-failure" && !activeWatch
 			? actionForCache(
 					item.instanceId,
 					cacheType === "emby"
@@ -954,7 +989,7 @@ function projectTautulliPulseItem(
 
 const collectCacheStaleness: Collector = async (app, userId) => {
 	const observationNow = new Date();
-	const [cacheStatuses, tautulliInstances, jellyfinInstances] = await Promise.all([
+	const [cacheStatuses, tautulliInstances, jellyfinInstances, plexInstances] = await Promise.all([
 		app.prisma.cacheRefreshStatus.findMany({
 			where: {
 				instance: { userId, enabled: true },
@@ -973,6 +1008,10 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 				service: { in: ["JELLYFIN", "EMBY"] },
 			},
 			select: { id: true, label: true, service: true, createdAt: true },
+		}),
+		app.prisma.serviceInstance.findMany({
+			where: { userId, enabled: true, service: "PLEX" },
+			select: { id: true, label: true },
 		}),
 	]);
 	const jellyfinHealthSources = await readOwnedJellyfinCacheHealthSources({
@@ -1160,6 +1199,66 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 				...(action ? { action } : {}),
 			});
 		}
+	}
+
+	for (const instance of plexInstances) {
+		const actionUrl = `/library?inventoryInstanceId=${encodeURIComponent(instance.id)}&inventoryDomain=library&inventoryMetadataFilter=missing-tmdb#media-server-inventory`;
+		let inventory: Awaited<ReturnType<typeof readNativeInventoryPage>> | { status: "unavailable" };
+		try {
+			inventory = await readNativeInventoryPage(app.prisma, {
+				userId,
+				instanceId: instance.id,
+				domain: "library",
+				limit: 1,
+				now: observationNow,
+			});
+		} catch {
+			inventory = { status: "unavailable" };
+		}
+		if (inventory.status !== "available") {
+			items.push({
+				id: `plex-native-metadata-unavailable-${instance.id}`,
+				severity: "warning",
+				category: "health",
+				title: `${instance.label}: Plex inventory is unavailable`,
+				detail: "Published Plex inventory is unavailable; metadata status is unknown.",
+				actionUrl: "/library#media-server-inventory",
+				actionLabel: "View inventory",
+				source: "plex",
+				timestamp: observationNow.toISOString(),
+			});
+			continue;
+		}
+		if (inventory.itemCount < 1) continue;
+		if (inventory.itemCount > MAX_CONNECTION_ITEMS) {
+			items.push({
+				id: `plex-native-metadata-filter-unavailable-${instance.id}`,
+				severity: "warning",
+				category: "health",
+				title: `${instance.label}: Plex metadata filter is unavailable`,
+				detail:
+					"Published Plex inventory exceeds the bounded metadata filter; metadata status is unknown.",
+				actionUrl: "/library#media-server-inventory",
+				actionLabel: "View inventory",
+				source: "plex",
+				timestamp: inventory.observedAt.toISOString(),
+			});
+			continue;
+		}
+		const isCurrent = inventory.freshness === "current";
+		items.push({
+			id: `plex-native-metadata-${instance.id}`,
+			severity: "info",
+			category: "health",
+			title: `${instance.label}: Plex metadata review`,
+			detail: isCurrent
+				? "Open the published Plex library's bounded missing-TMDb filter."
+				: "Open the last-known Plex library's bounded missing-TMDb filter; current coverage is unknown.",
+			actionUrl,
+			actionLabel: "Review inventory",
+			source: "plex",
+			timestamp: inventory.observedAt.toISOString(),
+		});
 	}
 
 	for (const instance of tautulliInstances) {

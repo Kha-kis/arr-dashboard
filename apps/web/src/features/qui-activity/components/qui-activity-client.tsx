@@ -1,12 +1,14 @@
 "use client";
 
 import type {
-	QuiAction,
 	QuiActionLogEntry,
+	QuiActionStatus,
 	QuiActivityEvent,
 	QuiBackfillCompleteDetails,
+	QuiLoggedOperation,
 	QuiSyncCompleteDetails,
 } from "@arr/shared";
+import { QUI_ACTION_PENDING_GRACE_MS } from "@arr/shared";
 import {
 	type Activity,
 	AlertCircle,
@@ -33,6 +35,7 @@ import { useQuiStreamStatus } from "../../../contexts/QuiStreamContext";
 import {
 	type QuiEventStreamStatus,
 	useQuiActionLog,
+	useQuiActionReconciliation,
 	useQuiActivityFeed,
 	useQuiEventLog,
 } from "../../../hooks/api/useQui";
@@ -150,18 +153,38 @@ export const QuiActivityClient = () => {
 			 * `isActive` is false → no badge → no misleading "offline" pill. */}
 			{isActive ? <StreamStatusBadge status={streamStatus} /> : null}
 
-			{!services.isLoading && !hasEnabledQui ? (
+			{services.isError || (!services.isLoading && services.data === undefined) ? (
+				<Alert variant="danger">
+					<AlertDescription>
+						qui configuration unavailable.
+						{services.data !== undefined ? " Showing last-known configuration." : ""}
+						<Button
+							variant="secondary"
+							disabled={services.isFetching}
+							onClick={() => void services.refetch()}
+						>
+							Retry
+						</Button>
+					</AlertDescription>
+				</Alert>
+			) : null}
+
+			{services.isLoading ? (
+				<PremiumPageLoading cardCount={4} />
+			) : !hasEnabledQui ? (
 				// Replace the tabs entirely when no qui is configured.
 				// Rendering the tabs WITH the empty state above would let
 				// the operator click through three identical-looking
 				// "nothing here yet" panels — confusing rather than
 				// directive. One clear panel pointing at Settings is
 				// strictly better.
-				<PremiumEmptyState
-					icon={Database}
-					title="No qui instance configured"
-					description="Add a qui service in Settings → Services to populate the Activity feed, My Actions, and My Events tabs. Once an instance is enabled, this page becomes the live feed of every qui-related operation arr-dashboard performs for you."
-				/>
+				services.isError || services.data === undefined ? null : (
+					<PremiumEmptyState
+						icon={Database}
+						title="No qui instance configured"
+						description="Add a qui service in Settings → Services to populate the Activity feed, My Actions, and My Events tabs. Once an instance is enabled, this page becomes the live feed of every qui-related operation arr-dashboard performs for you."
+					/>
+				)
 			) : (
 				<>
 					<div
@@ -476,8 +499,8 @@ const ActivityFeedView = () => {
 // qui action (or removing one) requires updating exactly one place.
 // Without this, an enum extension lands silently and the dropdown's
 // `Record` keeps a stale value the route would 400 on.
-type ActionFilterId = QuiAction | "all";
-type StatusFilterId = "all" | "pending" | "success" | "failed";
+type ActionFilterId = QuiLoggedOperation | "all";
+type StatusFilterId = "all" | QuiActionStatus;
 
 const ACTION_LABELS: Record<ActionFilterId, string> = {
 	all: "All actions",
@@ -499,6 +522,10 @@ const ACTION_LABELS: Record<ActionFilterId, string> = {
 	setShareLimit: "Set share limit",
 	setLocation: "Set location",
 	delete: "Delete",
+	renameTorrent: "Rename torrent",
+	addTrackers: "Add trackers",
+	removeTrackers: "Remove trackers",
+	editTracker: "Edit tracker",
 };
 
 const STATUS_LABELS: Record<StatusFilterId, string> = {
@@ -506,18 +533,27 @@ const STATUS_LABELS: Record<StatusFilterId, string> = {
 	pending: "Pending",
 	success: "Success",
 	failed: "Failed",
+	uncertain: "Needs review",
+	operator_verified_applied: "Verified applied",
+	operator_verified_not_applied: "Verified not applied",
 };
 
 const ACTION_STATUS_TONE: Record<QuiActionLogEntry["status"], string> = {
 	pending: "text-blue-300 border-blue-500/30 bg-blue-500/5",
 	success: "text-emerald-300 border-emerald-500/30 bg-emerald-500/5",
 	failed: "text-red-300 border-red-500/30 bg-red-500/5",
+	uncertain: "text-amber-300 border-amber-500/30 bg-amber-500/5",
+	operator_verified_applied: "text-sky-300 border-sky-500/30 bg-sky-500/5",
+	operator_verified_not_applied: "text-sky-300 border-sky-500/30 bg-sky-500/5",
 };
 
 const ACTION_STATUS_ICON: Record<QuiActionLogEntry["status"], typeof Activity> = {
-	pending: Loader2,
+	pending: AlertCircle,
 	success: CheckCircle2,
 	failed: XCircle,
+	uncertain: AlertCircle,
+	operator_verified_applied: CheckCircle2,
+	operator_verified_not_applied: CheckCircle2,
 };
 
 const MyActionsView = () => {
@@ -528,6 +564,18 @@ const MyActionsView = () => {
 		action: actionFilter === "all" ? undefined : actionFilter,
 		status: statusFilter === "all" ? undefined : statusFilter,
 	});
+	const reconciliation = useQuiActionReconciliation();
+	const resolveAction = (actionLogId: string, decision: "applied" | "not_applied") => {
+		const outcome = decision === "applied" ? "applied" : "not applied";
+		if (
+			!window.confirm(
+				`Only continue after checking this exact torrent in qUI and verifying the action was ${outcome}. If you cannot verify it, cancel and leave the action held. This records your judgment, not a qUI-confirmed result.`,
+			)
+		) {
+			return;
+		}
+		reconciliation.mutate({ actionLogId, decision });
+	};
 
 	const entries = useMemo(() => feed.data?.pages.flatMap((p) => p.entries) ?? [], [feed.data]);
 
@@ -586,13 +634,29 @@ const MyActionsView = () => {
 				<PremiumEmptyState
 					icon={Wrench}
 					title="No torrent actions yet"
-					description="When you pause, resume, recheck, or reannounce a torrent from arr-dashboard, the audit entry will appear here — including the qui instance, the info hash, and any error message qui returned."
+					description="When you act on a torrent from arr-dashboard, its audit entry appears here. Interrupted actions remain held until their outcome is verified."
 				/>
 			) : (
 				<>
+					{reconciliation.isError ? (
+						<Alert variant="danger">
+							<AlertDescription>
+								Could not resolve this action. Refresh the log and verify its state before trying
+								again.
+							</AlertDescription>
+						</Alert>
+					) : null}
 					<ul className="space-y-2">
 						{entries.map((entry, idx) => (
-							<ActionRow key={entry.id} entry={entry} animationDelay={Math.min(idx, 12) * 30} />
+							<ActionRow
+								key={entry.id}
+								entry={entry}
+								animationDelay={Math.min(idx, 12) * 30}
+								onResolve={resolveAction}
+								isResolving={
+									reconciliation.isPending && reconciliation.variables?.actionLogId === entry.id
+								}
+							/>
 						))}
 					</ul>
 
@@ -636,10 +700,13 @@ const LoadMoreButton = ({
 interface ActionRowProps {
 	entry: QuiActionLogEntry;
 	animationDelay: number;
+	onResolve: (actionLogId: string, decision: "applied" | "not_applied") => void;
+	isResolving: boolean;
 }
 
-const ActionRow = ({ entry, animationDelay }: ActionRowProps) => {
+const ActionRow = ({ entry, animationDelay, onResolve, isResolving }: ActionRowProps) => {
 	const [isIncognito] = useIncognitoMode();
+	const [showFullHash, setShowFullHash] = useState(false);
 	const StatusIcon = ACTION_STATUS_ICON[entry.status];
 	// Incognito guidance per AGENTS.md — anonymize the qui instance
 	// label so screenshots don't leak operator setups. The hash is already
@@ -648,6 +715,10 @@ const ActionRow = ({ entry, animationDelay }: ActionRowProps) => {
 		? getLinuxInstanceName(entry.serviceInstanceLabel)
 		: entry.serviceInstanceLabel;
 	const tags = readTags(entry.payload);
+	const trackerCount = readTrackerCount(entry.payload);
+	const canResolve =
+		(entry.status === "pending" || entry.status === "uncertain") &&
+		Date.now() - new Date(entry.requestedAt).getTime() >= QUI_ACTION_PENDING_GRACE_MS;
 
 	return (
 		<li>
@@ -660,9 +731,7 @@ const ActionRow = ({ entry, animationDelay }: ActionRowProps) => {
 						)}
 						aria-hidden
 					>
-						<StatusIcon
-							className={cn("h-3.5 w-3.5", entry.status === "pending" ? "animate-spin" : "")}
-						/>
+						<StatusIcon className="h-3.5 w-3.5" />
 					</div>
 					<div className="flex-1 min-w-0">
 						<div className="flex items-baseline justify-between gap-3 flex-wrap">
@@ -679,11 +748,68 @@ const ActionRow = ({ entry, animationDelay }: ActionRowProps) => {
 							</time>
 						</div>
 						<div className="mt-1 text-xs text-muted-foreground font-mono break-all">
-							{shortenHash(entry.torrentHash)}
+							{showFullHash ? entry.torrentHash : shortenHash(entry.torrentHash)}
 							{tags ? <span className="ml-2 font-sans">tags: {tags}</span> : null}
+							{trackerCount !== null ? (
+								<span className="ml-2 font-sans">
+									{trackerCount} tracker{trackerCount === 1 ? "" : "s"}
+								</span>
+							) : null}
 						</div>
+						{entry.action === "renameTorrent" ||
+						entry.action === "addTrackers" ||
+						entry.action === "removeTrackers" ||
+						entry.action === "editTracker" ? (
+							<p className="mt-1 text-xs text-muted-foreground">
+								Exact names and announce URLs are not retained in the action history.
+							</p>
+						) : null}
+						{entry.status === "pending" || entry.status === "uncertain" ? (
+							<button
+								type="button"
+								className="mt-1 text-xs text-sky-300 underline"
+								onClick={() => setShowFullHash((shown) => !shown)}
+								aria-expanded={showFullHash}
+							>
+								{showFullHash ? "Hide full info hash" : "Show full info hash for verification"}
+							</button>
+						) : null}
 						{entry.status === "failed" && entry.error ? (
 							<div className="mt-1 text-xs text-red-300">{entry.error}</div>
+						) : null}
+						{entry.status === "pending" || entry.status === "uncertain" ? (
+							<div className="mt-2 space-y-2 text-xs text-amber-200">
+								<p>
+									Outcome not confirmed. This torrent is held against further dashboard actions.
+									Check the exact torrent and action in qUI; if unsure, leave it held. Recent
+									requests cannot be resolved until the in-flight grace period ends; refresh this
+									log if it remains pending.
+								</p>
+								{canResolve ? (
+									<div className="flex flex-wrap gap-2">
+										<Button
+											variant="secondary"
+											disabled={isResolving}
+											onClick={() => onResolve(entry.id, "applied")}
+										>
+											Verified applied
+										</Button>
+										<Button
+											variant="secondary"
+											disabled={isResolving}
+											onClick={() => onResolve(entry.id, "not_applied")}
+										>
+											Verified not applied
+										</Button>
+									</div>
+								) : null}
+							</div>
+						) : null}
+						{entry.status === "operator_verified_applied" ||
+						entry.status === "operator_verified_not_applied" ? (
+							<p className="mt-2 text-xs text-sky-300">
+								Operator-verified outcome; qUI did not confirm the original request.
+							</p>
 						) : null}
 					</div>
 				</div>
@@ -705,6 +831,21 @@ function readTags(payload: unknown): string | null {
 		typeof (payload as Record<string, unknown>).tags === "string"
 	) {
 		return (payload as { tags: string }).tags;
+	}
+	return null;
+}
+
+function readTrackerCount(payload: unknown): number | null {
+	if (
+		payload &&
+		typeof payload === "object" &&
+		"trackerCount" in payload &&
+		typeof (payload as Record<string, unknown>).trackerCount === "number" &&
+		Number.isInteger((payload as { trackerCount: number }).trackerCount) &&
+		(payload as { trackerCount: number }).trackerCount >= 1 &&
+		(payload as { trackerCount: number }).trackerCount <= 50
+	) {
+		return (payload as { trackerCount: number }).trackerCount;
 	}
 	return null;
 }

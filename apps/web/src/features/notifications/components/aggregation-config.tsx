@@ -1,8 +1,8 @@
 "use client";
 
-import type { NotificationEventType } from "@arr/shared";
+import type { AggregationConfigResponse, NotificationEventType } from "@arr/shared";
 import { Clock, Layers, Loader2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { GradientButton } from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import { INPUT_BASE_CLASSES } from "@/lib/theme-input-styles";
@@ -10,6 +10,7 @@ import {
 	useAggregationConfigs,
 	useUpdateAggregationConfigs,
 } from "../../../hooks/api/useNotifications";
+import { NotificationAggregationSaveUnverifiedError } from "../../../lib/api-client/notifications";
 
 const EVENT_LABELS: Record<string, string> = {
 	HUNT_CONTENT_FOUND: "Hunt: Content Found",
@@ -75,52 +76,119 @@ interface LocalConfig {
 
 export function AggregationConfig() {
 	const { gradient } = useThemeGradient();
-	const { data: configs = [], isLoading } = useAggregationConfigs();
+	const { data: configs, isLoading, isError, isFetching, refetch } = useAggregationConfigs();
 	const updateConfigs = useUpdateAggregationConfigs();
-	const [localConfigs, setLocalConfigs] = useState<LocalConfig[]>([]);
-	const [isDirty, setIsDirty] = useState(false);
-
-	// Sync remote → local when data loads
+	const [drafts, setDrafts] = useState<Partial<Record<NotificationEventType, LocalConfig>>>({});
+	const dispatchPending = useRef(false);
+	const saveBlocked = useRef(false);
+	const mounted = useRef(true);
+	const [isDispatching, setIsDispatching] = useState(false);
+	const [saveUnverified, setSaveUnverified] = useState(false);
+	const [reviewedConfigs, setReviewedConfigs] = useState<AggregationConfigResponse[]>();
+	const [reviewError, setReviewError] = useState(false);
 	useEffect(() => {
-		const merged = AGGREGATABLE_EVENTS.map((eventType) => {
-			const existing = configs.find((c) => c.eventType === eventType);
-			return {
+		mounted.current = true;
+		return () => {
+			mounted.current = false;
+		};
+	}, []);
+	const controlsBusy = isDispatching || updateConfigs.isPending;
+	const requiresReview = saveUnverified && reviewedConfigs === undefined;
+	// Only user edits belong in local state. Untouched rows follow remote data,
+	// while refetches cannot erase edited rows or certify absent data as disabled.
+	const localConfigs = AGGREGATABLE_EVENTS.map((eventType) => {
+		const existing = configs?.find((c) => c.eventType === eventType);
+		return (
+			drafts[eventType] ?? {
 				eventType,
 				windowSeconds: existing?.windowSeconds ?? 300,
 				maxBatchSize: existing?.maxBatchSize ?? 10,
 				enabled: existing?.enabled ?? false,
-			};
-		});
-		setLocalConfigs(merged);
-		setIsDirty(false);
-	}, [configs]);
-
-	const updateLocal = useCallback((eventType: string, patch: Partial<LocalConfig>) => {
-		setLocalConfigs((prev) =>
-			prev.map((c) => (c.eventType === eventType ? { ...c, ...patch } : c)),
+			}
 		);
-		setIsDirty(true);
-	}, []);
+	});
+	const isDirty = Object.keys(drafts).length > 0;
 
-	const handleSave = () => {
-		const enabled = localConfigs.filter((c) => c.enabled);
-		updateConfigs.mutate(
-			enabled.map((c) => ({
-				eventType: c.eventType,
-				windowSeconds: c.windowSeconds,
-				maxBatchSize: c.maxBatchSize,
-				enabled: true,
-			})),
-			{ onSuccess: () => setIsDirty(false) },
-		);
+	const updateLocal = (eventType: NotificationEventType, patch: Partial<LocalConfig>) => {
+		if (dispatchPending.current || updateConfigs.isPending) return;
+		const current = localConfigs.find((c) => c.eventType === eventType);
+		if (!current) return;
+		setDrafts((previous) => ({ ...previous, [eventType]: { ...current, ...patch } }));
+		if (updateConfigs.isError) updateConfigs.reset();
+	};
+
+	const handleSave = async () => {
+		if (
+			dispatchPending.current ||
+			saveBlocked.current ||
+			updateConfigs.isPending ||
+			!configs ||
+			!isDirty
+		)
+			return;
+		// Fence before mutate's observer can render pending, including local edits.
+		dispatchPending.current = true;
+		setIsDispatching(true);
+		setSaveUnverified(false);
+		setReviewedConfigs(undefined);
+		setReviewError(false);
+		const submitted = Object.values(drafts);
+		try {
+			await updateConfigs.mutateAsync(submitted);
+			if (mounted.current) setDrafts({});
+		} catch (error) {
+			if (mounted.current && error instanceof NotificationAggregationSaveUnverifiedError) {
+				saveBlocked.current = true;
+				setSaveUnverified(true);
+			}
+		} finally {
+			dispatchPending.current = false;
+			if (mounted.current) setIsDispatching(false);
+		}
+	};
+
+	const handleReview = async () => {
+		if (dispatchPending.current || updateConfigs.isPending) return;
+		dispatchPending.current = true;
+		saveBlocked.current = true;
+		setReviewedConfigs(undefined);
+		setIsDispatching(true);
+		setReviewError(false);
+		try {
+			const current = await updateConfigs.recheckAggregation();
+			if (mounted.current) {
+				setReviewedConfigs(current);
+				saveBlocked.current = false;
+			}
+		} catch {
+			if (mounted.current) setReviewError(true);
+		} finally {
+			dispatchPending.current = false;
+			if (mounted.current) setIsDispatching(false);
+		}
 	};
 
 	const inputClass = INPUT_BASE_CLASSES.input;
 
-	if (isLoading) {
+	if (isLoading || (!configs && !isError)) {
 		return (
-			<div className="flex items-center justify-center py-8">
+			<div
+				role="status"
+				aria-label="Loading aggregation settings"
+				className="flex items-center justify-center py-8"
+			>
 				<Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+			</div>
+		);
+	}
+
+	if (!configs) {
+		return (
+			<div role="alert" className="space-y-3 rounded-xl border border-border/30 p-4">
+				<p>Couldn&apos;t load event aggregation settings. Saved settings have not been verified.</p>
+				<GradientButton onClick={() => void refetch()} disabled={isFetching}>
+					Retry aggregation settings
+				</GradientButton>
 			</div>
 		);
 	}
@@ -129,6 +197,38 @@ export function AggregationConfig() {
 
 	return (
 		<div className="space-y-4">
+			{isError && (
+				<div role="alert" className="space-y-2 rounded-xl border border-border/30 p-3">
+					<p className="text-sm">
+						Showing last-known aggregation settings and your edits; refresh failed.
+					</p>
+					<GradientButton onClick={() => void refetch()} disabled={isFetching || controlsBusy}>
+						Retry aggregation settings
+					</GradientButton>
+				</div>
+			)}
+			{saveUnverified && (
+				<div role="alert" className="space-y-2 rounded-xl border border-border/30 p-3">
+					<p className="text-sm text-muted-foreground">
+						{requiresReview
+							? "Save outcome could not be verified. Changes may have been saved. Your edits are retained. Review current aggregation settings before a new save."
+							: "Current saved settings were checked. Review the values shown beside your edits before a new manual save; the earlier save outcome remains unverified."}
+					</p>
+					{reviewError && (
+						<p className="text-sm text-muted-foreground">
+							Couldn&apos;t review current aggregation settings. Your edits are retained.
+						</p>
+					)}
+					<GradientButton onClick={() => void handleReview()} disabled={controlsBusy}>
+						Review current aggregation settings
+					</GradientButton>
+				</div>
+			)}
+			{updateConfigs.isError && !saveUnverified && (
+				<p role="alert" className="text-sm text-muted-foreground">
+					Couldn&apos;t save event aggregation changes. Your edits are retained; retry Save Changes.
+				</p>
+			)}
 			<div className="flex items-center justify-between">
 				<div>
 					<h3 className="text-sm font-medium text-foreground flex items-center gap-2">
@@ -141,7 +241,10 @@ export function AggregationConfig() {
 					</p>
 				</div>
 				{isDirty && (
-					<GradientButton onClick={handleSave} disabled={updateConfigs.isPending}>
+					<GradientButton
+						onClick={() => void handleSave()}
+						disabled={controlsBusy || requiresReview}
+					>
 						{updateConfigs.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
 						Save Changes
 					</GradientButton>
@@ -164,6 +267,9 @@ export function AggregationConfig() {
 							{/* Toggle */}
 							<button
 								type="button"
+								aria-label={`Aggregate ${EVENT_LABELS[config.eventType] ?? config.eventType}`}
+								aria-pressed={config.enabled}
+								disabled={controlsBusy}
 								onClick={() => updateLocal(config.eventType, { enabled: !config.enabled })}
 								className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
 									config.enabled ? "" : "bg-border/50"
@@ -192,6 +298,8 @@ export function AggregationConfig() {
 									<div className="flex items-center gap-1.5">
 										<Clock className="h-3.5 w-3.5 text-muted-foreground" />
 										<select
+											aria-label={`${EVENT_LABELS[config.eventType] ?? config.eventType} aggregation window`}
+											disabled={controlsBusy}
 											value={config.windowSeconds}
 											onChange={(e) =>
 												updateLocal(config.eventType, {
@@ -214,6 +322,8 @@ export function AggregationConfig() {
 									<div className="flex items-center gap-1.5">
 										<span className="text-xs text-muted-foreground">max</span>
 										<input
+											aria-label={`${EVENT_LABELS[config.eventType] ?? config.eventType} maximum batch size`}
+											disabled={controlsBusy}
 											type="number"
 											min={2}
 											max={100}
@@ -231,6 +341,16 @@ export function AggregationConfig() {
 								</div>
 							)}
 						</div>
+						{drafts[config.eventType] && reviewedConfigs !== undefined && (
+							<p className="mt-2 text-xs text-muted-foreground">
+								{(() => {
+									const checked = reviewedConfigs.find((row) => row.eventType === config.eventType);
+									return checked
+										? `Checked saved values: ${checked.enabled ? "enabled" : "disabled"}; window ${checked.windowSeconds} seconds; maximum batch ${checked.maxBatchSize}.`
+										: "Checked saved values: not returned by this read. The earlier save outcome remains unverified.";
+								})()}
+							</p>
+						)}
 					</div>
 				))}
 			</div>

@@ -17,7 +17,10 @@ import {
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { PrismaClient } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
-import { withCleanupOperationGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
+import {
+	CleanupMaintenanceConflictError,
+	withCleanupOperationGuard,
+} from "../library-cleanup/cleanup-maintenance-gate.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { createCacheManager } from "./cache-manager.js";
 import { createTrashFetcher } from "./github-fetcher.js";
@@ -91,6 +94,11 @@ export class UpdateScheduler {
 	private logger: Logger;
 	private arrClientFactory?: ArrClientFactory;
 	private intervalId?: NodeJS.Timeout;
+	private scheduleGeneration = 0;
+	private admissionClosed = false;
+	private pendingChecks = new Set<Promise<void>>();
+	private shutdownPromise: Promise<void> | null = null;
+	private readonly versionReadAbort = new AbortController();
 	private stats: SchedulerStats = { isRunning: false };
 	private isCheckInProgress = false;
 
@@ -103,6 +111,7 @@ export class UpdateScheduler {
 		options?: { userId?: string; fallbackEventTypes?: NotificationEventType[] },
 	) => Promise<void>;
 	private trackTick: import("../scheduler-registry/scheduler-registry.js").TickWrapper;
+	private trackProducer: import("../scheduler-registry/scheduler-registry.js").TickWrapper;
 
 	constructor(
 		config: SchedulerConfig,
@@ -119,6 +128,7 @@ export class UpdateScheduler {
 				options?: { userId?: string; fallbackEventTypes?: NotificationEventType[] },
 			) => Promise<void>;
 			trackTick?: import("../scheduler-registry/scheduler-registry.js").TickWrapper;
+			trackProducer?: import("../scheduler-registry/scheduler-registry.js").TickWrapper;
 		},
 	) {
 		this.config = {
@@ -135,6 +145,7 @@ export class UpdateScheduler {
 		this.deploymentExecutor = options?.deploymentExecutor;
 		this.notifyFn = options?.notifyFn;
 		this.trackTick = options?.trackTick ?? (<T>(fn: () => Promise<T>) => fn());
+		this.trackProducer = options?.trackProducer ?? (<T>(fn: () => Promise<T>) => fn());
 	}
 
 	/**
@@ -173,6 +184,7 @@ export class UpdateScheduler {
 	 * Start the scheduler
 	 */
 	start(): void {
+		if (this.admissionClosed) return;
 		if (!this.config.enabled) {
 			this.logger.info("TRaSH Guides update scheduler is disabled");
 			return;
@@ -187,27 +199,17 @@ export class UpdateScheduler {
 			`Starting TRaSH Guides update scheduler (interval: ${this.config.intervalHours}h)`,
 		);
 
-		// Run immediately on start
-		this.trackTick(() => this.checkForUpdates()).catch((error) => {
-			this.logger.error(
-				{ err: error instanceof Error ? error : new Error(String(error)) },
-				"Initial update check failed",
-			);
-		});
-
 		// Schedule periodic checks
+		const generation = ++this.scheduleGeneration;
 		const intervalMs = this.config.intervalHours * 60 * 60 * 1000;
 		this.intervalId = setInterval(() => {
-			this.trackTick(() => this.checkForUpdates()).catch((error) => {
-				this.logger.error(
-					{ err: error instanceof Error ? error : new Error(String(error)) },
-					"Scheduled update check failed",
-				);
-			});
+			void this.runScheduledCheck(generation, "Scheduled update check failed");
 		}, intervalMs);
 
 		this.stats.isRunning = true;
 		this.stats.nextCheckAt = new Date(Date.now() + intervalMs);
+		// Install timer admission before entering the immediate startup wrapper.
+		void this.runScheduledCheck(generation, "Initial update check failed");
 
 		this.logger.info("TRaSH Guides update scheduler started successfully");
 	}
@@ -225,6 +227,61 @@ export class UpdateScheduler {
 		}
 	}
 
+	/** Close admission without delaying sibling plugins' preClose hooks. */
+	closeAdmission(): void {
+		this.admissionClosed = true;
+		this.stop();
+		this.stats.nextCheckAt = undefined;
+		// Only the initial read-only version preflight observes this signal.
+		// Accepted cache/deployment/notification work still drains to completion.
+		this.versionReadAbort.abort(new Error("TRaSH version read cancelled during shutdown"));
+	}
+
+	/** Retain accepted automatic and manual checks through their complete handoffs. */
+	shutdown(): Promise<void> {
+		this.closeAdmission();
+		this.shutdownPromise ??= (async () => {
+			while (this.pendingChecks.size > 0) await Promise.all(this.pendingChecks);
+		})();
+		return this.shutdownPromise;
+	}
+
+	private async runScheduledCheck(generation: number, errorMessage: string): Promise<void> {
+		if (this.admissionClosed || !this.intervalId || generation !== this.scheduleGeneration) return;
+		await this.runCheck(() => this.trackTick(() => this.checkForUpdates()), errorMessage);
+	}
+
+	private async runCheck(operation: () => Promise<void>, errorMessage?: string): Promise<void> {
+		if (this.admissionClosed) throw new Error("TRaSH update scheduler is shutting down");
+		// Register synchronously before either wrapper can enter an asynchronous dependency.
+		let settle!: () => void;
+		const completion = new Promise<void>((resolve) => {
+			settle = resolve;
+		});
+		this.pendingChecks.add(completion);
+		try {
+			await this.trackProducer(operation);
+		} catch (error) {
+			// Manual callers keep the existing rejection semantics; timers log failures.
+			if (!errorMessage) throw error;
+			if (this.versionReadAbort.signal.aborted && error === this.versionReadAbort.signal.reason) {
+				this.logger.debug("TRaSH version read cancelled during shutdown");
+			} else if (error instanceof CleanupMaintenanceConflictError) {
+				this.logger.debug("TRaSH update check paused during database maintenance");
+			} else {
+				this.logger.error(
+					{ err: error instanceof Error ? error : new Error(String(error)) },
+					errorMessage,
+				);
+			}
+		} finally {
+			// A settling accepted check must not resurrect a stopped timer's next-run status.
+			if (this.admissionClosed) this.stats.nextCheckAt = undefined;
+			this.pendingChecks.delete(completion);
+			settle();
+		}
+	}
+
 	/**
 	 * Get current scheduler statistics
 	 */
@@ -239,7 +296,19 @@ export class UpdateScheduler {
 	 */
 	async triggerCheck(): Promise<void> {
 		this.logger.info("Manual update check triggered");
-		await this.checkForUpdates();
+		await this.runCheck(() => this.checkForUpdates());
+	}
+
+	/** Failure does not cancel sibling queries/refreshes; keep them inside the guard and drain. */
+	private async settleTogether<T extends unknown[]>(
+		operations: { [K in keyof T]: Promise<T[K]> },
+	): Promise<T> {
+		try {
+			return await Promise.all(operations);
+		} catch (error) {
+			await Promise.allSettled(operations);
+			throw error;
+		}
 	}
 
 	/**
@@ -286,7 +355,7 @@ export class UpdateScheduler {
 			this.logger.info("Checking for TRaSH Guides updates...");
 
 			// Count templates by sync strategy (unique templates with at least one mapping of each type)
-			[templatesWithAutoStrategy, templatesWithNotifyStrategy] = await Promise.all([
+			[templatesWithAutoStrategy, templatesWithNotifyStrategy] = await this.settleTogether([
 				this.prisma.trashTemplate.count({
 					where: {
 						deletedAt: null,
@@ -315,14 +384,19 @@ export class UpdateScheduler {
 			]);
 
 			// Get latest version info
-			const latestCommit = await this.versionTracker.getLatestCommit();
+			const latestCommit = await this.versionTracker.getLatestCommit({
+				signal: this.versionReadAbort.signal,
+			});
+			// An injected dependency may ignore cancellation. Join it, but never
+			// let its late result begin cache or upstream mutation work afterward.
+			this.versionReadAbort.signal.throwIfAborted();
 			this.logger.debug(
 				`Latest TRaSH commit: ${latestCommit.commitHash} (${latestCommit.commitDate})`,
 			);
 
 			// Refresh caches for both services
 			this.logger.info("Refreshing TRaSH Guides caches...");
-			const [radarrCacheResult, sonarrCacheResult] = await Promise.all([
+			const [radarrCacheResult, sonarrCacheResult] = await this.settleTogether([
 				this.templateUpdater.refreshAllCaches("RADARR"),
 				this.templateUpdater.refreshAllCaches("SONARR"),
 			]);
@@ -536,6 +610,11 @@ export class UpdateScheduler {
 				});
 			}
 		} catch (error) {
+			// Planned cancellation of the read-only preflight is neither a completed
+			// check nor a failed deployment. Preserve the last real result.
+			if (this.versionReadAbort.signal.aborted && error === this.versionReadAbort.signal.reason) {
+				throw error;
+			}
 			this.logger.error(
 				{ err: error instanceof Error ? error : new Error(String(error)) },
 				"Update check failed",
@@ -1053,6 +1132,7 @@ export function createUpdateScheduler(
 			options?: { userId?: string; fallbackEventTypes?: NotificationEventType[] },
 		) => Promise<void>;
 		trackTick?: import("../scheduler-registry/scheduler-registry.js").TickWrapper;
+		trackProducer?: import("../scheduler-registry/scheduler-registry.js").TickWrapper;
 	},
 ): UpdateScheduler {
 	return new UpdateScheduler(

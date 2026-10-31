@@ -17,6 +17,7 @@ import { triggerLabelSyncForItem } from "../label-sync/trigger-for-item.js";
 import { buildLibraryItem } from "../library/library-item-builder.js";
 import { arrPolicyEvidenceFromRaw } from "../library-cleanup/arr-policy-evidence.js";
 import { getErrorMessage } from "../utils/error-message.js";
+import { movieCorrelationInputChanged } from "./infohash-backfill-by-path.js";
 
 // ============================================================================
 // Types
@@ -222,6 +223,22 @@ function logMemoryPhase(log: FastifyBaseLogger, instanceId: string, phase: strin
 		},
 		"Library sync memory usage",
 	);
+}
+
+function isTransientStatusWriteError(error: unknown): boolean {
+	if (!error || typeof error !== "object") return false;
+	const { code, cause } = error as { code?: unknown; cause?: unknown };
+	if (
+		code === "P1008" ||
+		code === "SQLITE_BUSY" ||
+		code === "SQLITE_BUSY_TIMEOUT" ||
+		code === "SQLITE_LOCKED"
+	) {
+		return true;
+	}
+	if (!cause || typeof cause !== "object") return false;
+	const { originalCode } = cause as { originalCode?: unknown };
+	return originalCode === "SQLITE_BUSY" || originalCode === "SQLITE_LOCKED";
 }
 
 // ============================================================================
@@ -432,6 +449,18 @@ export async function syncInstance(
 							cachedAt: sourceCapturedAt,
 							updatedAt: new Date(),
 						};
+						if (
+							service === "radarr" &&
+							item.type === "movie" &&
+							movieCorrelationInputChanged(existing.data, serializedItem)
+						) {
+							updateData.infoHash = null;
+							updateData.infoHashSource = null;
+							updateData.pathBackfillRetryAfter = null;
+							updateData.torrentState = null;
+							updateData.torrentRatio = null;
+							updateData.torrentSyncedAt = null;
+						}
 
 						await tx.libraryCache.update({
 							where: { id: existing.id },
@@ -623,17 +652,24 @@ export async function syncInstance(
 		result.durationMs = durationMs;
 		result.error = errorMessage;
 
-		await prisma.librarySyncStatus
-			.update({
-				where: { instanceId: instance.id },
-				data: {
-					syncInProgress: false,
-					lastError: errorMessage,
-				},
-			})
-			.catch((updateError) => {
-				log.error({ err: updateError }, "Failed to update sync status with error");
-			});
+		for (let attempt = 0; attempt < 5; attempt++) {
+			try {
+				await prisma.librarySyncStatus.update({
+					where: { instanceId: instance.id },
+					data: {
+						syncInProgress: false,
+						lastError: errorMessage,
+					},
+				});
+				break;
+			} catch (updateError) {
+				if (!isTransientStatusWriteError(updateError) || attempt === 4) {
+					log.error({ err: updateError }, "Failed to update sync status with error");
+					break;
+				}
+				await new Promise<void>((resolve) => setTimeout(resolve, 50 * 2 ** attempt));
+			}
+		}
 
 		log.error(
 			{ err: error, instanceId: instance.id, instanceName: instance.label },

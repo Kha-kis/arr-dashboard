@@ -16,7 +16,7 @@ import {
 	normalizeNativeInventoryExternalIds,
 } from "../provider-observation/native-inventory.js";
 import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
-import { parseUpstreamOrThrow } from "../validation/parse-upstream.js";
+import { parseUpstreamOrThrow, UpstreamValidationError } from "../validation/parse-upstream.js";
 import {
 	plexAccountsResponseSchema,
 	plexActivitiesResponseSchema,
@@ -38,6 +38,7 @@ import {
 	plexSettlementSectionsResponseSchema,
 	plexTargetMetadataResponseSchema,
 } from "./plex-schemas.js";
+import { projectSessionMeasurements } from "./plex-session-measurements.js";
 
 // ============================================================================
 // Response Types
@@ -166,13 +167,16 @@ export interface PlexSessionItem {
 	title: string;
 	grandparentTitle?: string;
 	type: string;
-	user: { id: number; title: string; thumb?: string };
+	user: { id: string | null; title: string; thumb?: string };
 	player: { title: string; platform: string; product: string; state: string };
 	state: "playing" | "paused" | "buffering";
 	viewOffset: number;
 	duration: number;
 	videoDecision: string;
 	audioDecision: string;
+	videoCodec?: string;
+	audioCodec?: string;
+	videoResolution?: string;
 	bandwidth?: number;
 	thumb?: string;
 }
@@ -202,6 +206,26 @@ export interface PlexNativeLibraryItem {
 	externalIds?: NativeInventoryExternalIds;
 }
 
+export type PlexNativeInventoryPageResult =
+	| {
+			status: "page";
+			domain: "library";
+			startIndex: number;
+			totalRecordCount: number;
+			items: PlexNativeLibraryItem[];
+	  }
+	| {
+			status: "page";
+			domain: "episode";
+			startIndex: number;
+			totalRecordCount: number;
+			items: PlexNativeEpisodeItem[];
+	  }
+	| {
+			status: "unavailable";
+			reason: "deadline-exceeded" | "provider-unavailable" | "coverage-incomplete";
+	  };
+
 /** Current metadata identity needed to bind a historical provider row. */
 export interface PlexTargetMetadata {
 	ratingKey: string;
@@ -227,7 +251,9 @@ const TARGET_METADATA_BATCH_SIZE = 100;
 const SAFETY_MAX_ITEMS = 100_000;
 const HISTORY_SORT = "viewedAt:desc";
 
-function plexExternalIds(guids: readonly PlexGuid[] | undefined): NativeInventoryExternalIds {
+export function plexExternalIds(
+	guids: readonly PlexGuid[] | undefined,
+): NativeInventoryExternalIds {
 	const tmdb: unknown[] = [];
 	const tvdb: unknown[] = [];
 	for (const guid of guids ?? []) {
@@ -239,6 +265,44 @@ function plexExternalIds(guids: readonly PlexGuid[] | undefined): NativeInventor
 	}
 	return normalizeNativeInventoryExternalIds({ tmdb, tvdb });
 }
+
+function validNativeInventoryContainer<T extends { ratingKey: string }>(
+	container: { offset: number; size: number; totalSize: number; Metadata?: T[] },
+	startIndex: number,
+	limit: number,
+): boolean {
+	const items = container.Metadata ?? [];
+	if (
+		container.offset !== startIndex ||
+		container.size !== items.length ||
+		container.totalSize > SAFETY_MAX_ITEMS ||
+		startIndex > container.totalSize ||
+		items.length > limit ||
+		startIndex + items.length > container.totalSize ||
+		(items.length === 0 && startIndex < container.totalSize)
+	)
+		return false;
+	return new Set(items.map((item) => item.ratingKey)).size === items.length;
+}
+
+function logPlexNativePageTiming(
+	log: FastifyBaseLogger,
+	domain: "library" | "episode",
+	rows: number,
+	elapsedMs: number,
+	status: "complete" | "failed",
+): void {
+	try {
+		log.info?.(
+			{ category: "native-inventory-page-timing", domain, rows, elapsedMs, status },
+			"Plex native inventory page read timing",
+		);
+	} catch {
+		// Diagnostic telemetry cannot change the provider-read result.
+	}
+}
+
+type PlexNativeReadPhase = "request" | "fetch" | "body" | "validation" | "normalization";
 
 /**
  * Extract a ratingKey from a Plex path like "/library/metadata/65486".
@@ -357,13 +421,14 @@ export class PlexClient {
 
 	/** Strict complete section-state probe used by live settlement authority. */
 	async getLibrarySettlementSections(
-		options: { uncached?: boolean } = {},
+		options: { uncached?: boolean; timeoutMs?: number } = {},
 	): Promise<PlexSettlementLibrary[]> {
 		return this.runOrdinaryRead(
 			"library-settlement-sections",
 			async () => {
 				const data = await this.request("/library/sections", {
 					schema: plexSettlementSectionsResponseSchema,
+					...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
 				});
 				const directories = data.MediaContainer.Directory ?? [];
 				this.assertCompleteSinglePageContainer(
@@ -387,11 +452,16 @@ export class PlexClient {
 	}
 
 	/** Strict complete activity probe used by live settlement authority. */
-	async getActivities(options: { uncached?: boolean } = {}): Promise<PlexActivity[]> {
+	async getActivities(
+		options: { uncached?: boolean; timeoutMs?: number } = {},
+	): Promise<PlexActivity[]> {
 		return this.runOrdinaryRead(
 			"activities",
 			async () => {
-				const data = await this.request("/activities", { schema: plexActivitiesResponseSchema });
+				const data = await this.request("/activities", {
+					schema: plexActivitiesResponseSchema,
+					...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+				});
 				const activities = data.MediaContainer.Activity ?? [];
 				this.assertCompleteSinglePageContainer(
 					data.MediaContainer,
@@ -561,29 +631,198 @@ export class PlexClient {
 		};
 	}
 
+	/** Read exactly one validated native page for a checkpointed paired inventory run. */
+	async readNativeInventoryPage(input: {
+		domain: "library" | "episode";
+		sectionId: string;
+		startIndex: number;
+		limit: number;
+		deadlineAt: number;
+	}): Promise<PlexNativeInventoryPageResult> {
+		if (
+			!input.sectionId ||
+			input.sectionId.length > 1024 ||
+			input.sectionId.includes("\0") ||
+			!Number.isSafeInteger(input.startIndex) ||
+			input.startIndex < 0 ||
+			!Number.isSafeInteger(input.limit) ||
+			input.limit < 1 ||
+			input.limit > 500 ||
+			!Number.isFinite(input.deadlineAt)
+		)
+			throw new Error("Plex native inventory page input is invalid");
+		if (Date.now() >= input.deadlineAt) {
+			return { status: "unavailable", reason: "deadline-exceeded" };
+		}
+		const url = new URL(
+			`/library/sections/${encodeURIComponent(input.sectionId)}/all`,
+			"http://plex.invalid",
+		);
+		if (input.domain === "library") url.searchParams.set("includeGuids", "1");
+		else url.searchParams.set("type", "4");
+		url.searchParams.set("X-Plex-Container-Start", String(input.startIndex));
+		url.searchParams.set("X-Plex-Container-Size", String(input.limit));
+		const path = `${url.pathname}${url.search}`;
+		const startedAt = Date.now();
+		let phase: PlexNativeReadPhase = "request";
+		const reportReadPhase = (next: PlexNativeReadPhase): void => {
+			phase = next;
+		};
+		// Observe a missed transport cap; never cancel or release accepted work.
+		const observationDelay =
+			Math.min(this.timeout, Math.max(1, input.deadlineAt - Date.now())) + 1_000;
+		const domain = input.domain === "library" ? "library" : "episode";
+		let observationTimer: ReturnType<typeof setTimeout> | undefined;
+		if (
+			Number.isFinite(observationDelay) &&
+			observationDelay > 1_000 &&
+			observationDelay <= 2_147_483_647
+		) {
+			observationTimer = setTimeout(() => {
+				try {
+					this.log.warn?.(
+						{
+							category: "plex-native-read-overdue",
+							domain,
+							phase,
+							elapsedMs: Math.max(0, Date.now() - startedAt),
+						},
+						"Plex native inventory read exceeded its request window",
+					);
+				} catch {
+					// Diagnostic telemetry cannot change the provider-read result.
+				}
+			}, observationDelay);
+			observationTimer.unref();
+		}
+		try {
+			const timeoutMs = Math.max(1, input.deadlineAt - Date.now());
+			if (input.domain === "library") {
+				const page = await this.request(path, {
+					schema: plexNativeLibraryItemsResponseSchema,
+					timeoutMs,
+					onReadPhase: reportReadPhase,
+				});
+				reportReadPhase("normalization");
+				const container = page.MediaContainer;
+				if (!validNativeInventoryContainer(container, input.startIndex, input.limit)) {
+					return { status: "unavailable", reason: "coverage-incomplete" };
+				}
+				const items = (container.Metadata ?? []).map((item) => {
+					const externalIds = plexExternalIds(item.Guid);
+					return {
+						ratingKey: item.ratingKey,
+						type: item.type,
+						title: item.title,
+						...(hasNativeInventoryExternalIds(externalIds) ? { externalIds } : {}),
+					};
+				});
+				logPlexNativePageTiming(
+					this.log,
+					input.domain,
+					items.length,
+					Date.now() - startedAt,
+					"complete",
+				);
+				return {
+					status: "page",
+					domain: "library",
+					startIndex: container.offset,
+					totalRecordCount: container.totalSize,
+					items,
+				};
+			}
+			const page = await this.request(path, {
+				schema: plexNativeEpisodeItemsResponseSchema,
+				timeoutMs,
+				onReadPhase: reportReadPhase,
+			});
+			reportReadPhase("normalization");
+			const container = page.MediaContainer;
+			if (!validNativeInventoryContainer(container, input.startIndex, input.limit)) {
+				return { status: "unavailable", reason: "coverage-incomplete" };
+			}
+			const items = (container.Metadata ?? []).map((item) => ({
+				ratingKey: item.ratingKey,
+				type: item.type,
+				title: item.title,
+				grandparentRatingKey: item.grandparentRatingKey,
+				seasonNumber: item.parentIndex,
+				episodeNumber: item.index,
+			}));
+			logPlexNativePageTiming(
+				this.log,
+				input.domain,
+				items.length,
+				Date.now() - startedAt,
+				"complete",
+			);
+			return {
+				status: "page",
+				domain: "episode",
+				startIndex: container.offset,
+				totalRecordCount: container.totalSize,
+				items,
+			};
+		} catch (error) {
+			logPlexNativePageTiming(this.log, input.domain, 0, Date.now() - startedAt, "failed");
+			return {
+				status: "unavailable",
+				reason:
+					Date.now() >= input.deadlineAt
+						? "deadline-exceeded"
+						: error instanceof UpstreamValidationError
+							? "coverage-incomplete"
+							: "provider-unavailable",
+			};
+		} finally {
+			if (observationTimer) clearTimeout(observationTimer);
+		}
+	}
+
 	private async getAuthoritativeMetadataTags(ratingKeys: readonly string[]) {
 		const tags = new Map<
 			string,
 			{ Collection?: Array<{ tag: string }>; Label?: Array<{ tag: string }> }
 		>();
-		for (let offset = 0; offset < ratingKeys.length; offset += METADATA_TAG_BATCH_SIZE) {
-			const chunk = ratingKeys.slice(offset, offset + METADATA_TAG_BATCH_SIZE);
-			const path = `/library/metadata/${chunk.map(encodeURIComponent).join(",")}?includeCollections=1&includeLabels=1`;
-			const data = await this.request(path, { schema: plexMetadataTagsResponseSchema });
-			const metadata = data.MediaContainer.Metadata ?? [];
-			if (data.MediaContainer.size !== metadata.length || metadata.length !== chunk.length) {
-				throw new Error("Plex metadata tag inventory was incomplete");
-			}
-			const expected = new Set(chunk);
-			for (const item of metadata) {
-				if (!expected.has(item.ratingKey) || tags.has(item.ratingKey)) {
-					throw new Error("Plex metadata tag inventory returned an unexpected or duplicate item");
+		let nextOffset = 0;
+		let failed = false;
+		const hydrate = async () => {
+			while (!failed && nextOffset < ratingKeys.length) {
+				// Claim synchronously before yielding so workers cannot share a batch.
+				const offset = nextOffset;
+				nextOffset += METADATA_TAG_BATCH_SIZE;
+				try {
+					const chunk = ratingKeys.slice(offset, offset + METADATA_TAG_BATCH_SIZE);
+					const path = `/library/metadata/${chunk.map(encodeURIComponent).join(",")}?includeCollections=1&includeLabels=1`;
+					const data = await this.request(path, { schema: plexMetadataTagsResponseSchema });
+					const metadata = data.MediaContainer.Metadata ?? [];
+					if (data.MediaContainer.size !== metadata.length || metadata.length !== chunk.length) {
+						throw new Error("Plex metadata tag inventory was incomplete");
+					}
+					const expected = new Set(chunk);
+					for (const item of metadata) {
+						if (!expected.has(item.ratingKey) || tags.has(item.ratingKey)) {
+							throw new Error(
+								"Plex metadata tag inventory returned an unexpected or duplicate item",
+							);
+						}
+						tags.set(item.ratingKey, {
+							...(item.Collection
+								? { Collection: item.Collection.map(({ tag }) => ({ tag })) }
+								: {}),
+							...(item.Label ? { Label: item.Label.map(({ tag }) => ({ tag })) } : {}),
+						});
+					}
+				} catch {
+					failed = true;
 				}
-				tags.set(item.ratingKey, {
-					...(item.Collection ? { Collection: item.Collection.map(({ tag }) => ({ tag })) } : {}),
-					...(item.Label ? { Label: item.Label.map(({ tag }) => ({ tag })) } : {}),
-				});
 			}
+		};
+		// Two bounded GET workers; drain both even when one rejects its batch.
+		await Promise.all([hydrate(), hydrate()]);
+		if (failed) {
+			throw new Error("Plex metadata tag inventory could not be verified");
 		}
 		if (tags.size !== ratingKeys.length) {
 			throw new Error("Plex metadata tag inventory did not cover every library item");
@@ -960,7 +1199,7 @@ export class PlexClient {
 			thumb: m.thumb,
 			user: m.User
 				? { id: m.User.id, title: m.User.title, thumb: m.User.thumb }
-				: { id: 0, title: "Unknown", thumb: undefined },
+				: { id: null, title: "Unknown", thumb: undefined },
 			player: m.Player
 				? {
 						title: m.Player.title,
@@ -970,8 +1209,7 @@ export class PlexClient {
 					}
 				: { title: "Unknown", platform: "unknown", product: "unknown", state: "unknown" },
 			state: (m.Player?.state ?? "unknown") as "playing" | "paused" | "buffering",
-			videoDecision: m.TranscodeSession?.videoDecision ?? "direct play",
-			audioDecision: m.TranscodeSession?.audioDecision ?? "direct play",
+			...projectSessionMeasurements(m),
 			bandwidth: m.Session?.bandwidth,
 		}));
 	}
@@ -1185,8 +1423,20 @@ export class PlexClient {
 	 */
 	async request<T>(
 		path: string,
-		options?: { method?: string; body?: Record<string, unknown>; schema?: z.ZodType<T> },
+		options?: {
+			method?: string;
+			body?: Record<string, unknown>;
+			schema?: z.ZodType<T>;
+			timeoutMs?: number;
+			onReadPhase?: (phase: PlexNativeReadPhase) => void;
+		},
 	): Promise<T> {
+		if (
+			options?.timeoutMs !== undefined &&
+			(!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0)
+		) {
+			throw new Error("Plex request timeout is invalid");
+		}
 		this.readContext?.signal.throwIfAborted();
 		this.readContext?.onRequest(readPhase(path));
 		const url = new URL(`${this.baseUrl}${path}`);
@@ -1197,12 +1447,14 @@ export class PlexClient {
 			...this.httpAuthHeaders,
 		};
 
+		const timeoutMs =
+			options?.timeoutMs === undefined ? this.timeout : Math.min(this.timeout, options.timeoutMs);
 		const fetchOptions: RequestInit = {
 			method: options?.method ?? "GET",
 			headers,
 			signal: this.readContext
-				? AbortSignal.any([this.readContext.signal, AbortSignal.timeout(this.timeout)])
-				: AbortSignal.timeout(this.timeout),
+				? AbortSignal.any([this.readContext.signal, AbortSignal.timeout(timeoutMs)])
+				: AbortSignal.timeout(timeoutMs),
 		};
 
 		if (options?.body) {
@@ -1210,6 +1462,14 @@ export class PlexClient {
 			fetchOptions.body = JSON.stringify(options.body);
 		}
 
+		const reportReadPhase = (phase: PlexNativeReadPhase): void => {
+			try {
+				options?.onReadPhase?.(phase);
+			} catch {
+				// Observation callbacks must not change transport or validation.
+			}
+		};
+		reportReadPhase("fetch");
 		const response = await fetch(url.toString(), fetchOptions);
 
 		if (!response.ok) {
@@ -1221,6 +1481,7 @@ export class PlexClient {
 		if (contentType.includes("application/json")) {
 			let raw: unknown;
 			try {
+				reportReadPhase("body");
 				raw = await response.json();
 			} catch {
 				throw new Error(
@@ -1231,6 +1492,7 @@ export class PlexClient {
 				throw new Error(`Plex API: schema required for JSON responses (path: ${path})`);
 			}
 			const category = path.split("?")[0] ?? path;
+			reportReadPhase("validation");
 			return parseUpstreamOrThrow(raw, options.schema, { integration: "plex", category });
 		}
 
@@ -1253,6 +1515,7 @@ export function createPlexClient(
 	encryptor: Encryptor,
 	instance: ClientInstanceData,
 	log: FastifyBaseLogger,
+	readSignal?: AbortSignal,
 ): PlexClient {
 	const token = encryptor.decrypt({
 		value: instance.encryptedApiKey,
@@ -1265,5 +1528,6 @@ export function createPlexClient(
 		log,
 		DEFAULT_TIMEOUT,
 		getStoredHttpAuthHeaders(encryptor, instance),
+		readSignal ? { signal: readSignal, onRequest: () => {} } : undefined,
 	);
 }

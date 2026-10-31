@@ -1,9 +1,10 @@
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { Prisma } from "../../../generated/prisma/client.js";
 
 const identityModuleMocks = vi.hoisted(() => ({
 	readProviderIdentity: vi.fn(),
@@ -14,7 +15,9 @@ vi.mock("../../services/service-identity.js", async (importOriginal) => ({
 	readProviderIdentity: identityModuleMocks.readProviderIdentity,
 }));
 
+import { SqliteSchemaFixture } from "../../__tests__/sqlite-schema-fixture.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
+import { jellyfinReaderFromTransaction } from "../../library-cleanup/cleanup-executor.js";
 import {
 	evaluateProviderCoverageReceipt,
 	evaluateProviderDomainCoverageMap,
@@ -34,42 +37,2140 @@ import {
 	buildObservationAuthorityKey,
 } from "../../provider-observation/observation-run-types.js";
 import { reconcileInterruptedProviderCacheRefreshAttempts } from "../../services/provider-cache-status.js";
+import { readOwnedJellyfinCacheHealthSources } from "../jellyfin-cache-health.js";
 import type { JellyfinEpisodeItemsPage } from "../jellyfin-client.js";
-import { createJellyfinEpisodeWorkItemRunner } from "../jellyfin-episode-cache-refresher.js";
+import { readOwnedJellyfinEpisodeDisplaySources } from "../jellyfin-display-evidence.js";
+import {
+	createJellyfinEpisodeWorkItemRunner as createProductionJellyfinEpisodeWorkItemRunner,
+	type JellyfinEpisodeWorkItemRunnerDependencies,
+} from "../jellyfin-episode-cache-refresher.js";
 import {
 	buildJellyfinEpisodeCatalogProvenance,
 	jellyfinEpisodeCatalogGenerationKey,
 } from "../jellyfin-episode-catalog-provenance.js";
 import {
+	acquireJellyfinEpisodePreparation,
+	prepareJellyfinEpisodeGeneration,
+} from "../jellyfin-episode-generation-repository.js";
+import { runJellyfinEpisodePageWorker } from "../jellyfin-episode-page-worker-transport.js";
+import {
 	fingerprintJellyfinEpisodeParentDependency,
 	jellyfinEpisodeParentGenerationKey,
 } from "../jellyfin-episode-parent-dependency.js";
-import { JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS } from "../jellyfin-episode-refresh-policy.js";
 import {
 	buildJellyfinEpisodeScopePlan,
+	commitPreparedJellyfinEpisodeRun,
+	type FinalizeJellyfinEpisodeRunInput,
 	finalizeJellyfinEpisodeRun,
+	hasPlausibleJellyfinEpisodePageCount,
 	invalidateJellyfinEpisodeRun,
+	type JellyfinEpisodeFinalizationTiming,
 	type JellyfinEpisodePageRejectionReason,
+	type PreparedJellyfinEpisodeRun,
+	prepareJellyfinEpisodeRun,
+	readCompletedJellyfinEpisodePublication,
+	settleInvalidJellyfinEpisodeRun,
 	stageJellyfinEpisodePage,
 	validateJellyfinEpisodeSavedV2Plan,
 	validateJellyfinEpisodeSavedV3Plan,
 } from "../jellyfin-episode-refresh-repository.js";
-import { readOwnedJellyfinObservation } from "../jellyfin-evidence-repository.js";
+import {
+	readOwnedJellyfinObservation,
+	readOwnedJellyfinObservationInTransaction,
+} from "../jellyfin-evidence-repository.js";
 import {
 	decodeJellyfinEpisodeGenerationMetadata,
 	decodeJellyfinLibraryGenerationMetadata,
+	encodeJellyfinEpisodeGenerationMetadata,
 	encodeJellyfinLibraryGenerationMetadata,
+	fingerprintJellyfinEpisodeRows,
 	fingerprintJellyfinLibraryGenerationMetadata,
 	fingerprintJellyfinLibraryRows,
 	hasAuthoritativeJellyfinLibraryReceipt,
 } from "../jellyfin-generation-metadata.js";
+import {
+	cleanupPublishedJellyfinEpisodeArtifacts,
+	prepareNativeWatchGeneration,
+} from "../jellyfin-native-watch-repository.js";
 
 const databases: Array<{ directory: string; prisma: ReturnType<typeof createTestPrismaClient> }> =
 	[];
+const schemaFixture = new SqliteSchemaFixture();
+beforeAll(() => schemaFixture.initialize(), 60_000);
+afterAll(() => schemaFixture.dispose());
+
+// Native repository fixtures deliberately use their synthetic page provider;
+// production composition has no direct-client fallback.
+function createJellyfinEpisodeWorkItemRunner(
+	deps: Pick<JellyfinEpisodeWorkItemRunnerDependencies, "createClient"> &
+		Partial<Pick<JellyfinEpisodeWorkItemRunnerDependencies, "readPage">>,
+) {
+	return createProductionJellyfinEpisodeWorkItemRunner({
+		...deps,
+		readPage:
+			deps.readPage ??
+			(async (input, client) =>
+				await client.getEpisodeItemsPageWithCoverage(
+					input.userId,
+					input.libraryId,
+					input.startIndex,
+					input.limit,
+				)),
+	});
+}
+
+function heldPageWorker() {
+	let entered!: () => void;
+	let stopped!: () => void;
+	const enteredPromise = new Promise<void>((resolve) => {
+		entered = resolve;
+	});
+	const stoppedPromise = new Promise<void>((resolve) => {
+		stopped = resolve;
+	});
+	const worker = Object.assign(new EventEmitter(), {
+		stdout: null,
+		stderr: null,
+		terminate: vi.fn(async () => {
+			stopped();
+			return 1;
+		}),
+	});
+	return { worker, entered, enteredPromise, stoppedPromise };
+}
+
+function heldWorkerPage(startIndex: number): JellyfinEpisodeItemsPage {
+	return {
+		startIndex,
+		totalRecordCount: 2,
+		items: [
+			{
+				type: "Episode",
+				id: `episode-${startIndex + 1}`,
+				seriesId: "series-1",
+				name: "Episode",
+				seasonNumber: 1,
+				episodeNumber: startIndex + 1,
+				played: false,
+				playCount: null,
+				lastPlayedDate: null,
+			},
+		],
+	};
+}
+
+async function pageWorkerRunnerFixture(v3 = false) {
+	const prisma = await database();
+	const seed = await completeFinalizerFixture(prisma);
+	if (v3) await bindV2Fixture(prisma, seed.run.id, seed.scopes);
+	await prisma.providerObservationRun.delete({ where: { id: seed.run.id } });
+	await prisma.cacheRefreshStatus.update({
+		where: { instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin_episode" } },
+		data: { lastAttemptResult: "success", lastAttemptErrorMessage: null },
+	});
+	const instance = await prisma.serviceInstance.update({
+		where: { id: "jellyfin-1" },
+		data: { expectedIdentity: "verified-provider", identityStatus: "VERIFIED" },
+	});
+	identityModuleMocks.readProviderIdentity.mockResolvedValue({
+		service: "JELLYFIN",
+		identityKind: "jellyfin-server-id",
+		rawIdentity: "verified-provider",
+		confirmationDigest: "a".repeat(64),
+		fingerprint: "a".repeat(12),
+	});
+	const client = {
+		getUsers: async () => [{ id: "user-1", name: "Current User" }],
+		getLibraries: async () => [{ id: "library-1" }],
+	};
+	const context = {
+		prisma,
+		instance,
+		encryptor: { decrypt: () => "plaintext" },
+		log: { error() {} } as never,
+		now: new Date("2026-09-07T12:00:00.000Z"),
+	};
+	return { prisma, client, context };
+}
+
+async function joinedFailureFixture(rejectedPage = false, v3 = false, code = "P1008") {
+	const { prisma, client, context } = await pageWorkerRunnerFixture(v3);
+	let unavailable = true;
+	let runWriteUnavailable = false;
+	let statusWriteUnavailable = false;
+	let writes = 0;
+	const cursors: number[] = [];
+	const failure = new Prisma.PrismaClientKnownRequestError("Synthetic persistence outage", {
+		code,
+		clientVersion: "test",
+	});
+	const injected = prisma.$extends({
+		query: {
+			cacheRefreshStatus: {
+				async updateMany({ args, query }) {
+					if (args.data.lastAttemptResult === "error" && statusWriteUnavailable) throw failure;
+					return await query(args);
+				},
+			},
+			providerObservationRun: {
+				async updateMany({ args, query }) {
+					if (args.data.state === "failed" && runWriteUnavailable) throw failure;
+					return await query(args);
+				},
+			},
+			providerObservationUnit: {
+				async updateMany({ args, query }) {
+					if (args.data.state === "failed") {
+						writes++;
+						if (unavailable) throw failure;
+					}
+					return await query(args);
+				},
+			},
+		},
+	});
+	const current = {
+		...context,
+		prisma: injected as unknown as typeof prisma,
+		log: { warn() {}, error() {} } as never,
+	};
+	const createRunner = () =>
+		createProductionJellyfinEpisodeWorkItemRunner({
+			createClient: () => client as never,
+			readPage: async (input) => {
+				cursors.push(input.startIndex);
+				if (cursors.length === 2) {
+					if (rejectedPage) return { startIndex: input.startIndex, totalRecordCount: 2, items: [] };
+					throw Object.assign(new Error("Synthetic provider timeout"), { name: "TimeoutError" });
+				}
+				return heldWorkerPage(input.startIndex);
+			},
+		});
+	const runner = createRunner();
+	expect(await runner(current)).toMatchObject({ progressed: true });
+	const published = await prisma.jellyfinEpisodeCache.findMany();
+	await expect(runner({ ...current, now: new Date("2026-09-07T12:00:01.000Z") })).rejects.toBe(
+		failure,
+	);
+	expect(writes).toBe(code === "P2002" ? 1 : 3);
+	const run = await prisma.providerObservationRun.findFirstOrThrow({
+		where: { instanceId: "jellyfin-1", activeSlotKey: { not: null } },
+	});
+	const collect = () =>
+		prisma.providerObservationUnit.findFirstOrThrow({ where: { runId: run.id, phase: "collect" } });
+	expect(await collect()).toMatchObject({
+		state: "running",
+		cursor: 1,
+		attemptCount: 0,
+		nextAttemptAt: new Date("2026-09-07T13:00:01.000Z"),
+	});
+	return {
+		prisma,
+		current,
+		runner,
+		createRunner,
+		published,
+		cursors,
+		failure,
+		run,
+		collect,
+		setAvailable: () => {
+			unavailable = false;
+		},
+		setRunWriteUnavailable: (value: boolean) => {
+			runWriteUnavailable = value;
+		},
+		setStatusWriteUnavailable: (value: boolean) => {
+			statusWriteUnavailable = value;
+		},
+		writes: () => writes,
+	};
+}
+
+describe("joined failure recovery", { timeout: 30_000 }, () => {
+	it.each([false, true])(
+		"recovers nonretryable settlement intent without provider replay after persistent failure=%s",
+		async (persistent) => {
+			const f = await joinedFailureFixture(false, false, "P2002");
+			const before = await f.collect();
+			const staged = await f.prisma.jellyfinEpisodeObservationStage.findMany({
+				where: { runId: f.run.id },
+			});
+			const status = () =>
+				f.prisma.cacheRefreshStatus.findUniqueOrThrow({
+					where: {
+						instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin_episode" },
+					},
+				});
+			const beforeStatus = await status();
+			expect(before.claimToken).not.toBeNull();
+			expect(beforeStatus.lastAttemptResult).toMatch(/^in_progress:/);
+			if (persistent) {
+				await expect(
+					f.runner({ ...f.current, now: new Date("2026-09-07T12:00:02.000Z") }),
+				).rejects.toBe(f.failure);
+				expect(f.writes()).toBe(2);
+				expect(await f.collect()).toEqual(before);
+				expect(await status()).toEqual(beforeStatus);
+			}
+			f.setAvailable();
+			expect(
+				await f.runner({ ...f.current, now: new Date("2026-09-07T12:00:03.000Z") }),
+			).toMatchObject({ state: "failed", reasonCode: "provider-unavailable", progressed: false });
+			expect(await f.collect()).toMatchObject({
+				id: before.id,
+				runId: f.run.id,
+				state: "failed",
+				claimToken: null,
+				attemptCount: 1,
+				cursor: 1,
+				completedPages: 1,
+				observedRawCount: 1,
+				expectedRawCount: 2,
+				nextAttemptAt: new Date("2026-09-07T12:00:31.000Z"),
+			});
+			expect(await status()).toMatchObject({
+				lastAttemptAt: beforeStatus.lastAttemptAt,
+				lastAttemptResult: "error",
+				lastAttemptErrorMessage: "collection-deferred",
+			});
+			expect(
+				await f.prisma.jellyfinEpisodeObservationStage.findMany({ where: { runId: f.run.id } }),
+			).toEqual(staged);
+			expect(await f.prisma.jellyfinEpisodeCache.findMany()).toEqual(f.published);
+			expect(f.cursors).toEqual([0, 1]);
+			expect(f.writes()).toBe(persistent ? 3 : 2);
+		},
+	);
+
+	it("returns the recovered outer attempt deadline with the production clock", async () => {
+		const f = await joinedFailureFixture(false, true);
+		await f.prisma.providerObservationUnit.update({
+			where: { id: (await f.collect()).id },
+			data: { attemptCount: 3 },
+		});
+		f.setAvailable();
+		const recovered = await f.runner({ ...f.current, now: undefined });
+		const failed = await f.prisma.providerObservationRun.findUniqueOrThrow({
+			where: { id: f.run.id },
+		});
+		const unit = await f.collect();
+		expect(recovered.renewalDeadline).toEqual(
+			new Date(Math.max(failed.updatedAt.getTime(), unit.updatedAt.getTime()) + 1_800_000),
+		);
+	});
+
+	it("settles the recovered outer attempt and resumes automatic renewal after exhausted retries", async () => {
+		const f = await joinedFailureFixture(false, true);
+		expect(f.run.parentGenerationId).toMatch(/^jellyfin-episode-parent-v3:/);
+		const unit = await f.collect();
+		await f.prisma.providerObservationUnit.update({
+			where: { id: unit.id },
+			data: { attemptCount: 3 },
+		});
+		f.setAvailable();
+		const recovered = await f.runner({
+			...f.current,
+			automaticRenewal: "provider-unavailable-cooldown",
+			resumeFailed: true,
+			now: new Date(Date.now() + 10_000),
+		});
+		const status = await f.prisma.cacheRefreshStatus.findUniqueOrThrow({
+			where: { instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin_episode" } },
+		});
+		expect(status).toMatchObject({
+			lastAttemptResult: "error",
+			lastAttemptErrorMessage: "provider-unavailable",
+		});
+		const failedRun = await f.prisma.providerObservationRun.findUniqueOrThrow({
+			where: { id: f.run.id },
+		});
+		const failedUnit = await f.collect();
+		expect(failedUnit).toMatchObject({ state: "failed", attemptCount: 4, nextAttemptAt: null });
+		expect(recovered.renewalDeadline).toEqual(
+			new Date(Math.max(failedRun.updatedAt.getTime(), failedUnit.updatedAt.getTime()) + 1_800_000),
+		);
+		expect(f.cursors).toEqual([0, 1]);
+		// Advance only the disposable ledger clock; no wall-clock wait or production data changes.
+		const failedAt = new Date("2026-09-07T12:00:01.000Z");
+		await f.prisma
+			.$executeRaw`UPDATE "provider_observation_runs" SET "updatedAt" = ${failedAt} WHERE "id" = ${f.run.id}`;
+		await f.prisma
+			.$executeRaw`UPDATE "provider_observation_units" SET "updatedAt" = ${failedAt} WHERE "id" = ${unit.id}`;
+		const resumed = await f.runner({
+			...f.current,
+			automaticRenewal: "provider-unavailable-cooldown",
+			resumeFailed: true,
+			now: new Date("2026-09-07T12:30:01.000Z"),
+		});
+		expect(resumed).toMatchObject({ progressed: true, state: "running" });
+		expect(resumed.renewalDeferred).toBeUndefined();
+		expect(f.cursors).toEqual([0, 1, 1]);
+		expect(await f.collect()).toMatchObject({ state: "complete", cursor: 2, attemptCount: 0 });
+		expect(await f.prisma.jellyfinEpisodeCache.findMany()).toEqual(f.published);
+	});
+
+	it("keeps the recovered outer attempt retryable if its status write fails without debiting twice", async () => {
+		const f = await joinedFailureFixture(true);
+		f.setAvailable();
+		f.setStatusWriteUnavailable(true);
+		const before = await f.collect();
+		const staged = await f.prisma.jellyfinEpisodeObservationStage.findMany({
+			where: { runId: f.run.id },
+		});
+		await expect(
+			f.runner({ ...f.current, now: new Date("2026-09-07T12:00:31.000Z") }),
+		).rejects.toBe(f.failure);
+		expect(await f.collect()).toEqual(before);
+		expect(
+			await f.prisma.jellyfinEpisodeObservationStage.findMany({ where: { runId: f.run.id } }),
+		).toEqual(staged);
+		f.setStatusWriteUnavailable(false);
+		await f.runner({ ...f.current, now: new Date("2026-09-07T12:01:01.000Z") });
+		expect(await f.collect()).toMatchObject({
+			state: "failed",
+			claimToken: null,
+			attemptCount: 1,
+			cursor: 0,
+		});
+		expect(
+			await f.prisma.cacheRefreshStatus.findUniqueOrThrow({
+				where: {
+					instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin_episode" },
+				},
+			}),
+		).toMatchObject({ lastAttemptResult: "error", lastAttemptErrorMessage: "collection-deferred" });
+		expect(f.cursors).toEqual([0, 1]);
+		expect(await f.prisma.jellyfinEpisodeCache.findMany()).toEqual(f.published);
+	});
+
+	it("rolls back reset and budget together if the recovery transaction fails after its unit write", async () => {
+		const f = await joinedFailureFixture(true);
+		f.setAvailable();
+		f.setRunWriteUnavailable(true);
+		const before = await f.collect();
+		const saved = await f.prisma.jellyfinEpisodeObservationStage.findMany({
+			where: { runId: f.run.id },
+		});
+		await expect(
+			f.runner({ ...f.current, now: new Date("2026-09-07T12:00:31.000Z") }),
+		).rejects.toBe(f.failure);
+		expect(await f.collect()).toEqual(before);
+		expect(
+			await f.prisma.jellyfinEpisodeObservationStage.findMany({ where: { runId: f.run.id } }),
+		).toEqual(saved);
+		expect(f.writes()).toBe(6);
+		f.setRunWriteUnavailable(false);
+		await f.runner({ ...f.current, now: new Date("2026-09-07T12:01:01.000Z") });
+		expect(await f.collect()).toMatchObject({
+			state: "failed",
+			claimToken: null,
+			attemptCount: 1,
+			cursor: 0,
+		});
+		expect(
+			await f.prisma.jellyfinEpisodeObservationStage.count({ where: { runId: f.run.id } }),
+		).toBe(0);
+		expect(await f.prisma.jellyfinEpisodeCache.findMany()).toEqual(f.published);
+	});
+
+	it("does not reset an exhausted retry budget when the database recovers", async () => {
+		const f = await joinedFailureFixture();
+		const unit = await f.collect();
+		await f.prisma.providerObservationUnit.update({
+			where: { id: unit.id },
+			data: { attemptCount: 3 },
+		});
+		f.setAvailable();
+		await f.runner({ ...f.current, now: new Date("2026-09-07T12:00:31.000Z") });
+		expect(await f.collect()).toMatchObject({
+			state: "failed",
+			claimToken: null,
+			attemptCount: 4,
+			nextAttemptAt: null,
+		});
+		await f.runner({ ...f.current, now: new Date("2026-09-07T12:01:01.000Z") });
+		expect(f.cursors).toEqual([0, 1]);
+		expect(await f.collect()).toMatchObject({ state: "failed", attemptCount: 4 });
+		expect(await f.prisma.jellyfinEpisodeCache.findMany()).toEqual(f.published);
+	});
+
+	it("does not apply one instance's failure to a peer sharing its provider", async () => {
+		const f = await joinedFailureFixture();
+		f.setAvailable();
+		const peer = await f.prisma.serviceInstance.create({
+			data: { ...f.current.instance, id: "jellyfin-peer", label: "Synthetic peer" },
+		});
+		const before = await f.collect();
+		await f.runner({ ...f.current, instance: peer, now: new Date("2026-09-07T12:00:31.000Z") });
+		expect(await f.collect()).toEqual(before);
+		expect(f.writes()).toBe(3);
+		await f.runner({ ...f.current, now: new Date("2026-09-07T12:01:01.000Z") });
+		expect(await f.collect()).toMatchObject({ claimToken: null, attemptCount: 1 });
+		expect(await f.prisma.jellyfinEpisodeCache.findMany()).toEqual(f.published);
+	});
+
+	it("refuses changed caller authority without replaying a retained failure", async () => {
+		const f = await joinedFailureFixture(true);
+		f.setAvailable();
+		const unit = await f.collect();
+		const changed = { ...f.current.instance, connectionGeneration: 2 };
+		expect(
+			await f.runner({
+				...f.current,
+				instance: changed,
+				now: new Date("2026-09-07T12:00:31.000Z"),
+			}),
+		).toMatchObject({ superseded: true, progressed: false });
+		expect(await f.collect()).toEqual(unit);
+		expect(f.writes()).toBe(3);
+		expect(f.cursors).toEqual([0, 1]);
+		expect(await f.prisma.jellyfinEpisodeCache.findMany()).toEqual(f.published);
+	});
+
+	it("uses startup reconciliation rather than inheriting another runner's local intent", async () => {
+		const f = await joinedFailureFixture();
+		f.setAvailable();
+		await reconcileInterruptedProviderCacheRefreshAttempts(f.prisma, {
+			now: () => new Date("2026-09-07T12:00:31.000Z"),
+		});
+		const fresh = f.createRunner();
+		expect(await fresh({ ...f.current, now: new Date("2026-09-07T12:00:31.000Z") })).toMatchObject({
+			progressed: true,
+		});
+		expect(f.cursors).toEqual([0, 1, 1]);
+		expect(await f.collect()).toMatchObject({ state: "complete", cursor: 2, attemptCount: 0 });
+		expect(
+			await f.runner({ ...f.current, now: new Date("2026-09-07T12:01:01.000Z") }),
+		).toMatchObject({ superseded: true });
+		expect(f.writes()).toBe(3);
+		expect(await f.prisma.jellyfinEpisodeCache.findMany()).toEqual(f.published);
+	});
+
+	it("cannot retain or settle failure until the provider worker physically exits", async () => {
+		const { prisma, client, context } = await pageWorkerRunnerFixture();
+		const worker = heldPageWorker();
+		let unavailable = true,
+			reads = 0,
+			writes = 0;
+		const failure = new Prisma.PrismaClientKnownRequestError("Synthetic persistence outage", {
+			code: "P1008",
+			clientVersion: "test",
+		});
+		const injected = prisma.$extends({
+			query: {
+				providerObservationUnit: {
+					async updateMany({ args, query }) {
+						if (args.data.state === "failed") {
+							writes++;
+							if (unavailable) throw failure;
+						}
+						return await query(args);
+					},
+				},
+			},
+		});
+		const current = { ...context, prisma: injected as unknown as typeof prisma };
+		const runner = createProductionJellyfinEpisodeWorkItemRunner({
+			createClient: () => client as never,
+			readPage: async (input) => {
+				if (++reads === 1) return heldWorkerPage(input.startIndex);
+				return await runJellyfinEpisodePageWorker(input, {
+					timeoutMs: 50,
+					createWorker: () => {
+						worker.entered();
+						return worker.worker;
+					},
+				});
+			},
+		});
+		await runner(current);
+		let settled = false;
+		const operation = runner({ ...current, now: new Date("2026-09-07T12:00:01.000Z") }).finally(
+			() => {
+				settled = true;
+			},
+		);
+		const rejection = expect(operation).rejects.toBe(failure);
+		try {
+			await worker.enteredPromise;
+			await worker.stoppedPromise;
+			expect(settled).toBe(false);
+			expect(writes).toBe(0);
+			await runner({ ...current, now: new Date("2026-09-07T12:00:31.000Z") });
+			expect(reads).toBe(2);
+			expect(writes).toBe(0);
+		} finally {
+			worker.worker.emit("exit", 0);
+		}
+		await rejection;
+		expect(writes).toBe(3);
+		unavailable = false;
+		expect(await runner({ ...current, now: new Date("2026-09-07T12:01:01.000Z") })).toMatchObject({
+			state: "failed",
+			progressed: false,
+		});
+		expect(reads).toBe(2);
+		expect(writes).toBe(4);
+		expect(
+			await prisma.providerObservationUnit.findFirstOrThrow({ where: { phase: "collect" } }),
+		).toMatchObject({ claimToken: null, attemptCount: 1, cursor: 1 });
+	});
+
+	it("settles on the next admitted call after all immediate writes failed, then resumes the saved page", async () => {
+		const f = await joinedFailureFixture();
+		f.setAvailable();
+		expect(
+			await f.runner({ ...f.current, now: new Date("2026-09-07T12:00:31.000Z") }),
+		).toMatchObject({ state: "failed", reasonCode: "provider-unavailable", progressed: false });
+		expect(await f.collect()).toMatchObject({
+			state: "failed",
+			claimToken: null,
+			cursor: 1,
+			completedPages: 1,
+			observedRawCount: 1,
+			attemptCount: 1,
+		});
+		expect(f.cursors).toEqual([0, 1]);
+		expect(f.writes()).toBe(4);
+		expect(
+			await f.prisma.jellyfinEpisodeObservationStage.count({ where: { runId: f.run.id } }),
+		).toBe(1);
+		expect(
+			await f.runner({ ...f.current, now: new Date("2026-09-07T12:01:01.000Z") }),
+		).toMatchObject({ progressed: true });
+		expect(f.cursors).toEqual([0, 1, 1]);
+		expect(await f.collect()).toMatchObject({ state: "complete", cursor: 2, attemptCount: 1 });
+		expect(await f.prisma.jellyfinEpisodeCache.findMany()).toEqual(f.published);
+	});
+
+	it("retains the same intent through repeated database outage without provider replay", async () => {
+		const f = await joinedFailureFixture();
+		await expect(
+			f.runner({ ...f.current, now: new Date("2026-09-07T12:00:31.000Z") }),
+		).rejects.toBe(f.failure);
+		expect(f.writes()).toBe(6);
+		expect(f.cursors).toEqual([0, 1]);
+		f.setAvailable();
+		expect(
+			await f.runner({ ...f.current, now: new Date("2026-09-07T12:01:01.000Z") }),
+		).toMatchObject({ state: "failed", progressed: false });
+		expect(await f.collect()).toMatchObject({ claimToken: null, attemptCount: 1, cursor: 1 });
+		expect(f.writes()).toBe(7);
+		expect(await f.prisma.jellyfinEpisodeCache.findMany()).toEqual(f.published);
+	});
+
+	it("retains rejected-page reset semantics across a later recovery call", async () => {
+		const f = await joinedFailureFixture(true);
+		f.setAvailable();
+		expect(
+			await f.runner({ ...f.current, now: new Date("2026-09-07T12:00:31.000Z") }),
+		).toMatchObject({ reasonCode: "coverage-incomplete", progressed: false });
+		expect(await f.collect()).toMatchObject({
+			state: "failed",
+			claimToken: null,
+			cursor: 0,
+			completedPages: 0,
+			observedRawCount: 0,
+			expectedRawCount: null,
+			attemptCount: 1,
+		});
+		expect(
+			await f.prisma.jellyfinEpisodeObservationStage.count({ where: { runId: f.run.id } }),
+		).toBe(0);
+		expect(f.cursors).toEqual([0, 1]);
+		expect(await f.prisma.jellyfinEpisodeCache.findMany()).toEqual(f.published);
+	});
+
+	it.each([
+		["claim", "P1008", 3],
+		["attempt", "P1008", 3],
+		["owner", "P1008", 3],
+		["generation", "P1008", 3],
+		["claim", "P2002", 1],
+		["attempt", "P2002", 1],
+		["owner", "P2002", 1],
+		["generation", "P2002", 1],
+	] as const)(
+		"does not settle after %s authority is replaced following %s",
+		async (change, code, initialWrites) => {
+			const f = await joinedFailureFixture(true, false, code);
+			f.setAvailable();
+			const unit = await f.collect();
+			if (change === "claim")
+				await f.prisma.providerObservationUnit.update({
+					where: { id: unit.id },
+					data: { claimToken: "replacement-claim" },
+				});
+			if (change === "attempt")
+				await f.prisma.cacheRefreshStatus.update({
+					where: {
+						instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin_episode" },
+					},
+					data: { lastAttemptResult: "in_progress:22222222-2222-4222-8222-222222222222" },
+				});
+			if (change === "owner") {
+				await f.prisma.user.create({
+					data: { id: "replacement-owner", username: "synthetic-owner" },
+				});
+				await f.prisma.serviceInstance.update({
+					where: { id: "jellyfin-1" },
+					data: { userId: "replacement-owner" },
+				});
+			}
+			if (change === "generation")
+				await f.prisma.serviceInstance.update({
+					where: { id: "jellyfin-1" },
+					data: { identityGeneration: 2 },
+				});
+			const before = await f.collect();
+			await f.runner({ ...f.current, now: new Date("2026-09-07T12:00:31.000Z") });
+			expect(await f.collect()).toEqual(before);
+			expect(f.writes()).toBe(initialWrites);
+			expect(f.cursors).toEqual([0, 1]);
+			expect(
+				await f.prisma.jellyfinEpisodeObservationStage.count({ where: { runId: f.run.id } }),
+			).toBe(1);
+			expect(await f.prisma.jellyfinEpisodeCache.findMany()).toEqual(f.published);
+		},
+	);
+
+	it.each(["P1008", "P2002"])(
+		"retains %s intent while cleanup authority temporarily refuses admission",
+		async (code) => {
+			const f = await joinedFailureFixture(false, false, code);
+			const initialWrites = f.writes();
+			f.setAvailable();
+			await f.prisma.libraryCleanupConfig.update({
+				where: { userId: "user-1" },
+				data: { runClaimToken: "another-operation" },
+			});
+			expect(
+				await f.runner({ ...f.current, now: new Date("2026-09-07T12:00:31.000Z") }),
+			).toMatchObject({ retryableDependencyFailure: true, progressed: false });
+			expect(f.writes()).toBe(initialWrites);
+			expect(f.cursors).toEqual([0, 1]);
+			await f.prisma.libraryCleanupConfig.update({
+				where: { userId: "user-1" },
+				data: { runClaimToken: null },
+			});
+			expect(
+				await f.runner({ ...f.current, now: new Date("2026-09-07T12:01:01.000Z") }),
+			).toMatchObject({ state: "failed", progressed: false });
+			expect(await f.collect()).toMatchObject({ claimToken: null, attemptCount: 1 });
+		},
+	);
+
+	it("concurrent recovery calls debit the provider failure only once", async () => {
+		const f = await joinedFailureFixture();
+		f.setAvailable();
+		await Promise.all([
+			f.runner({ ...f.current, now: new Date("2026-09-07T12:00:31.000Z") }),
+			f.runner({ ...f.current, now: new Date("2026-09-07T12:00:31.000Z") }),
+		]);
+		expect(await f.collect()).toMatchObject({
+			state: "failed",
+			claimToken: null,
+			attemptCount: 1,
+			cursor: 1,
+		});
+		expect(f.cursors).toEqual([0, 1]);
+		expect(await f.prisma.jellyfinEpisodeCache.findMany()).toEqual(f.published);
+	});
+
+	it.each(["P1008", "P2002"])(
+		"does not replay %s intent from a different database client",
+		async (code) => {
+			const f = await joinedFailureFixture(false, false, code);
+			const initialWrites = f.writes();
+			f.setAvailable();
+			await f.runner({ ...f.current, prisma: f.prisma, now: new Date("2026-09-07T12:00:31.000Z") });
+			expect(await f.collect()).toMatchObject({ state: "running", attemptCount: 0 });
+			expect(f.writes()).toBe(initialWrites);
+			expect(
+				await f.runner({ ...f.current, now: new Date("2026-09-07T12:01:01.000Z") }),
+			).toMatchObject({ state: "failed" });
+			expect(await f.collect()).toMatchObject({ claimToken: null, attemptCount: 1 });
+		},
+	);
+
+	it.each(["P1008", "P2002"])(
+		"keeps %s intent across a cancelled retry without consuming its failure budget",
+		async (code) => {
+			const f = await joinedFailureFixture(false, false, code);
+			const initialWrites = f.writes();
+			f.setAvailable();
+			const cancel = new AbortController();
+			cancel.abort();
+			await expect(
+				f.runner({
+					...f.current,
+					signal: cancel.signal,
+					now: new Date("2026-09-07T12:00:31.000Z"),
+				}),
+			).rejects.toMatchObject({ code: "PUBLICATION_CANCELLED" });
+			expect(f.writes()).toBe(initialWrites);
+			expect(await f.collect()).toMatchObject({ state: "running", attemptCount: 0 });
+			await f.runner({ ...f.current, now: new Date("2026-09-07T12:01:01.000Z") });
+			expect(await f.collect()).toMatchObject({ claimToken: null, attemptCount: 1 });
+		},
+	);
+});
+
+describe("native page-worker settlement and fences", { timeout: 30_000 }, () => {
+	it.each([
+		["P1008", 1],
+		["P1008", 2],
+		["P2028", 1],
+		["P2028", 2],
+	] as const)(
+		"recovers %s settlement contention after %i failed writes without an hour-long orphan",
+		async (code, failures) => {
+			const { prisma, client, context } = await pageWorkerRunnerFixture();
+			const cursors: number[] = [];
+			const runner = createProductionJellyfinEpisodeWorkItemRunner({
+				createClient: () => client as never,
+				readPage: async (input) => {
+					cursors.push(input.startIndex);
+					if (cursors.length === 2)
+						throw Object.assign(new Error("Synthetic provider timeout"), { name: "TimeoutError" });
+					return heldWorkerPage(input.startIndex);
+				},
+			});
+			expect(await runner(context)).toMatchObject({ progressed: true });
+			const run = await prisma.providerObservationRun.findFirstOrThrow({
+				where: { instanceId: "jellyfin-1", activeSlotKey: { not: null } },
+			});
+			const collect = () =>
+				prisma.providerObservationUnit.findFirstOrThrow({
+					where: { runId: run.id, phase: "collect" },
+				});
+			const published = await prisma.jellyfinEpisodeCache.findMany();
+			let settlementWrites = 0;
+			// Inject only the low-level transaction fault. Claims, rollback, retries,
+			// staging, attempt budgets and the production runner all remain real.
+			const contended = prisma.$extends({
+				query: {
+					providerObservationUnit: {
+						async updateMany({ args, query }) {
+							if (args.data.state === "failed" && ++settlementWrites <= failures)
+								throw new Prisma.PrismaClientKnownRequestError("Synthetic transaction contention", {
+									code,
+									clientVersion: "test",
+								});
+							return await query(args);
+						},
+					},
+				},
+			});
+			await expect(
+				runner({
+					...context,
+					prisma: contended as unknown as typeof prisma,
+					now: new Date("2026-09-07T12:00:01.000Z"),
+				}),
+			).resolves.toMatchObject({
+				state: "failed",
+				reasonCode: "provider-unavailable",
+				progressed: false,
+			});
+			expect(settlementWrites).toBe(failures + 1);
+			expect(await collect()).toMatchObject({
+				state: "failed",
+				claimToken: null,
+				cursor: 1,
+				completedPages: 1,
+				observedRawCount: 1,
+				expectedRawCount: 2,
+				attemptCount: 1,
+				nextAttemptAt: new Date("2026-09-07T12:00:31.000Z"),
+			});
+			expect(await prisma.jellyfinEpisodeObservationStage.count({ where: { runId: run.id } })).toBe(
+				1,
+			);
+			expect(await prisma.jellyfinEpisodeCache.findMany()).toEqual(published);
+			expect(await runner({ ...context, now: new Date("2026-09-07T12:00:30.999Z") })).toMatchObject(
+				{ progressed: false },
+			);
+			expect(cursors).toEqual([0, 1]);
+			expect(await runner({ ...context, now: new Date("2026-09-07T12:00:31.000Z") })).toMatchObject(
+				{ progressed: true },
+			);
+			expect(cursors).toEqual([0, 1, 1]);
+			expect(await collect()).toMatchObject({
+				state: "complete",
+				cursor: 2,
+				observedRawCount: 2,
+				attemptCount: 1,
+			});
+			expect(await prisma.jellyfinEpisodeCache.findMany()).toEqual(published);
+		},
+	);
+
+	it.each([
+		["P1008", 3],
+		["P2002", 1],
+	] as const)(
+		"keeps %s persistence failure explicit and bounded to %i attempts",
+		async (code, expectedAttempts) => {
+			const { prisma, client, context } = await pageWorkerRunnerFixture();
+			let settlementWrites = 0;
+			const failure = new Prisma.PrismaClientKnownRequestError("Synthetic persistence failure", {
+				code,
+				clientVersion: "test",
+			});
+			const unavailable = prisma.$extends({
+				query: {
+					providerObservationUnit: {
+						async updateMany({ args, query }) {
+							if (args.data.state === "failed") {
+								settlementWrites++;
+								throw failure;
+							}
+							return await query(args);
+						},
+					},
+				},
+			});
+			const runner = createProductionJellyfinEpisodeWorkItemRunner({
+				createClient: () => client as never,
+				readPage: async () => {
+					throw Object.assign(new Error("Synthetic provider timeout"), { name: "TimeoutError" });
+				},
+			});
+			const published = await prisma.jellyfinEpisodeCache.findMany();
+			await expect(
+				runner({ ...context, prisma: unavailable as unknown as typeof prisma }),
+			).rejects.toBe(failure);
+			expect(settlementWrites).toBe(expectedAttempts);
+			expect(
+				await prisma.providerObservationUnit.findFirstOrThrow({ where: { phase: "collect" } }),
+			).toMatchObject({
+				state: "running",
+				attemptCount: 0,
+				cursor: 0,
+				observedRawCount: 0,
+				nextAttemptAt: new Date("2026-09-07T13:00:00.000Z"),
+			});
+			expect(await prisma.jellyfinEpisodeCache.findMany()).toEqual(published);
+		},
+	);
+
+	it.each([false, true])(
+		"keeps rejected-page reset semantics when settlement remains unavailable=%s",
+		async (persistent) => {
+			const { prisma, client, context } = await pageWorkerRunnerFixture();
+			let pages = 0;
+			const runner = createProductionJellyfinEpisodeWorkItemRunner({
+				createClient: () => client as never,
+				readPage: async (input) => {
+					pages++;
+					return pages === 1
+						? heldWorkerPage(input.startIndex)
+						: { startIndex: input.startIndex, totalRecordCount: 2, items: [] };
+				},
+			});
+			expect(await runner(context)).toMatchObject({ progressed: true });
+			const published = await prisma.jellyfinEpisodeCache.findMany();
+			let writes = 0;
+			const failure = new Prisma.PrismaClientKnownRequestError("Synthetic contention", {
+				code: "P1008",
+				clientVersion: "test",
+			});
+			const contended = prisma.$extends({
+				query: {
+					providerObservationUnit: {
+						async updateMany({ args, query }) {
+							if (args.data.state === "failed" && (++writes === 1 || persistent)) throw failure;
+							return await query(args);
+						},
+					},
+				},
+			});
+			const operation = runner({
+				...context,
+				prisma: contended as unknown as typeof prisma,
+				now: new Date("2026-09-07T12:00:01.000Z"),
+			});
+			if (persistent) {
+				await expect(operation).rejects.toBe(failure);
+				expect(writes).toBe(3);
+				expect(await prisma.jellyfinEpisodeObservationStage.count()).toBe(1);
+			} else {
+				await expect(operation).resolves.toMatchObject({
+					reasonCode: "coverage-incomplete",
+					progressed: false,
+				});
+				expect(writes).toBe(2);
+				expect(await prisma.jellyfinEpisodeObservationStage.count()).toBe(0);
+				expect(
+					await prisma.providerObservationUnit.findFirstOrThrow({ where: { phase: "collect" } }),
+				).toMatchObject({
+					state: "failed",
+					claimToken: null,
+					cursor: 0,
+					observedRawCount: 0,
+					completedPages: 0,
+					expectedRawCount: null,
+					attemptCount: 1,
+					lastReasonCode: "coverage-incomplete",
+				});
+			}
+			expect(pages).toBe(2);
+			expect(await prisma.jellyfinEpisodeCache.findMany()).toEqual(published);
+		},
+	);
+
+	it("keeps a timed-out claim and saved page until exit, then retries the same cursor without overlap", async () => {
+		const { prisma, client, context } = await pageWorkerRunnerFixture();
+		const timed = heldPageWorker();
+		const delayed = heldPageWorker();
+		const cursors: number[] = [];
+		let activeWorkers = 0;
+		const runner = createProductionJellyfinEpisodeWorkItemRunner({
+			createClient: () => client as never,
+			readPage: async (input) => {
+				cursors.push(input.startIndex);
+				if (cursors.length === 1) return heldWorkerPage(input.startIndex);
+				expect(activeWorkers).toBe(0);
+				const control = cursors.length === 2 ? timed : delayed;
+				return await runJellyfinEpisodePageWorker(input, {
+					timeoutMs: cursors.length === 2 ? 50 : 10000,
+					createWorker: () => {
+						activeWorkers++;
+						control.worker.once("exit", () => {
+							activeWorkers--;
+						});
+						control.entered();
+						return control.worker;
+					},
+				});
+			},
+		});
+		expect(await runner(context)).toMatchObject({ state: "running", progressed: true });
+		const run = await prisma.providerObservationRun.findFirstOrThrow({
+			where: { activeSlotKey: { not: null } },
+		});
+		const collect = () =>
+			prisma.providerObservationUnit.findFirstOrThrow({
+				where: { runId: run.id, phase: "collect" },
+			});
+		const published = await prisma.jellyfinEpisodeCache.findMany();
+		let settled = false;
+		const pending = runner({ ...context, now: new Date("2026-09-07T12:00:01.000Z") }).finally(
+			() => {
+				settled = true;
+			},
+		);
+		try {
+			await timed.enteredPromise;
+			await timed.stoppedPromise;
+			expect(settled).toBe(false);
+			expect(activeWorkers).toBe(1);
+			expect(await collect()).toMatchObject({
+				state: "running",
+				cursor: 1,
+				completedPages: 1,
+				observedRawCount: 1,
+				expectedRawCount: 2,
+				attemptCount: 0,
+			});
+			expect(await prisma.jellyfinEpisodeObservationStage.count({ where: { runId: run.id } })).toBe(
+				1,
+			);
+			expect(await prisma.jellyfinEpisodeCache.findMany()).toEqual(published);
+			timed.worker.emit("message", { status: "page", page: heldWorkerPage(1) });
+		} finally {
+			timed.worker.emit("exit", 0);
+		}
+		expect(await pending).toMatchObject({
+			state: "failed",
+			reasonCode: "provider-unavailable",
+			progressed: false,
+		});
+		expect(activeWorkers).toBe(0);
+		expect(timed.worker.terminate).toHaveBeenCalledOnce();
+		expect(await collect()).toMatchObject({
+			state: "failed",
+			claimToken: null,
+			cursor: 1,
+			completedPages: 1,
+			observedRawCount: 1,
+			expectedRawCount: 2,
+			attemptCount: 1,
+			nextAttemptAt: new Date("2026-09-07T12:00:31.000Z"),
+		});
+		expect(await runner({ ...context, now: new Date("2026-09-07T12:00:30.999Z") })).toMatchObject({
+			progressed: false,
+		});
+		expect(cursors).toEqual([0, 1]);
+		settled = false;
+		const retry = runner({ ...context, now: new Date("2026-09-07T12:00:31.000Z") }).finally(() => {
+			settled = true;
+		});
+		try {
+			await delayed.enteredPromise;
+			delayed.worker.emit("message", { status: "page", page: heldWorkerPage(1) });
+			await Promise.resolve();
+			expect(settled).toBe(false);
+			expect(await collect()).toMatchObject({ state: "running", cursor: 1, completedPages: 1 });
+			expect(await prisma.jellyfinEpisodeObservationStage.count({ where: { runId: run.id } })).toBe(
+				1,
+			);
+		} finally {
+			delayed.worker.emit("exit", 0);
+		}
+		expect(await retry).toMatchObject({ state: "running", progressed: true, completedUnits: 1 });
+		expect(cursors).toEqual([0, 1, 1]);
+		expect(activeWorkers).toBe(0);
+		expect(await collect()).toMatchObject({
+			state: "complete",
+			cursor: 2,
+			completedPages: 2,
+			observedRawCount: 2,
+		});
+		expect(await prisma.jellyfinEpisodeObservationStage.count({ where: { runId: run.id } })).toBe(
+			2,
+		);
+		expect(await prisma.jellyfinEpisodeCache.findMany()).toEqual(published);
+	});
+
+	it.each(["identity", "owner"] as const)(
+		"rejects a successful page when %s changes before its worker exits",
+		async (change) => {
+			const { prisma, client, context } = await pageWorkerRunnerFixture();
+			const control = heldPageWorker();
+			const runner = createProductionJellyfinEpisodeWorkItemRunner({
+				createClient: () => client as never,
+				readPage: (input) =>
+					runJellyfinEpisodePageWorker(input, {
+						createWorker: () => {
+							control.entered();
+							return control.worker;
+						},
+					}),
+			});
+			const published = await prisma.jellyfinEpisodeCache.findMany();
+			const pending = runner(context);
+			try {
+				await control.enteredPromise;
+				control.worker.emit("message", { status: "page", page: heldWorkerPage(0) });
+				if (change === "owner") {
+					await prisma.user.create({ data: { id: "user-2", username: "second-owner" } });
+					await prisma.serviceInstance.update({
+						where: { id: "jellyfin-1" },
+						data: { userId: "user-2" },
+					});
+				} else
+					await prisma.serviceInstance.update({
+						where: { id: "jellyfin-1" },
+						data: { identityGeneration: 2 },
+					});
+				expect(await prisma.jellyfinEpisodeObservationStage.count()).toBe(0);
+			} finally {
+				control.worker.emit("exit", 0);
+			}
+			expect(await pending).toMatchObject({ progressed: false });
+			expect(await prisma.jellyfinEpisodeObservationStage.count()).toBe(0);
+			expect(await prisma.jellyfinEpisodeCache.findMany()).toEqual(published);
+		},
+	);
+});
+
+async function stagePreparedCommit(
+	prisma: ReturnType<typeof createTestPrismaClient>,
+	input: FinalizeJellyfinEpisodeRunInput,
+	prepared: Extract<PreparedJellyfinEpisodeRun, { kind: "ready" }>,
+) {
+	const lease = await acquireJellyfinEpisodePreparation(prisma, {
+		userId: input.userId,
+		instanceId: input.instance.id,
+		runId: input.runId,
+		generationId: prepared.cacheGenerationId,
+		now: new Date(),
+	});
+	if (!lease) throw new Error("Fixture did not acquire a preparation lease");
+	await prepareJellyfinEpisodeGeneration(prisma, {
+		userId: input.userId,
+		instanceId: input.instance.id,
+		runId: input.runId,
+		generationId: prepared.cacheGenerationId,
+		token: lease.token,
+		rows: prepared.publishedRows,
+		...(prepared.coveredShowTmdbIds ? { coveredShowTmdbIds: prepared.coveredShowTmdbIds } : {}),
+		expectedFingerprint: prepared.contentFingerprint,
+		observedAt: prepared.observedAt,
+		now: new Date(),
+	});
+	return { ...prepared, episodePreparationToken: lease.token };
+}
 
 describe("native inventory independence from Jellyfin watch finalization", {
 	timeout: 30_000,
 }, () => {
+	it("prepares a complete V3 run without changing visible publication", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await bindV3Fixture(prisma, seed.run.id);
+		await prisma.serviceInstance.update({
+			where: { id: "jellyfin-1" },
+			data: { identityStatus: "VERIFIED", expectedIdentity: "native-server" },
+		});
+		const input = {
+			prisma,
+			userId: "user-1",
+			instance: { id: "jellyfin-1" },
+			runId: seed.run.id,
+			scopes: seed.scopes,
+			attempt: seed.attempt,
+			now: seed.attempt.attemptedAt,
+		};
+		const before = await finalizerState(prisma, seed.run.id);
+
+		const prepared = await prepareJellyfinEpisodeRun(input);
+
+		expect(prepared.kind).toBe("ready");
+		if (prepared.kind === "ready") {
+			expect(prepared.nativePublication?.receipts).toHaveLength(1);
+			expect(JSON.parse(prepared.nativePublication!.receipts[0]!.diagnosticsJson!)).toMatchObject({
+				version: 1,
+				collectUnits: 1,
+				verifyUnits: 1,
+				collectStageRows: 1,
+				verifyStageRows: 1,
+				expectedCountsMatch: true,
+				excludedRows: 0,
+				changedObservationCoordinates: 0,
+			});
+			expect(prepared.nativePublication!.receipts[0]!.exact).toBe(true);
+		}
+		if (prepared.kind === "ready")
+			expect(decodeJellyfinEpisodeGenerationMetadata(prepared.generationMetadata)).toMatchObject({
+				ok: true,
+				metadata: { version: 4, storage: "generation-scoped", sourceVersion: 3 },
+			});
+		expect(await finalizerState(prisma, seed.run.id)).toEqual(before);
+		expect(
+			await prisma.jellyfinNativeWatchPublication.findUnique({
+				where: { instanceId: "jellyfin-1" },
+			}),
+		).toBeNull();
+	});
+
+	it("defers an oversized completed stage before allocating its rows or changing last-good", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await bindV3Fixture(prisma, seed.run.id);
+		await prisma.serviceInstance.update({
+			where: { id: "jellyfin-1" },
+			data: { identityStatus: "VERIFIED", expectedIdentity: "native-server" },
+		});
+		await prisma.providerObservationUnit.updateMany({
+			where: { runId: seed.run.id, ordinal: 0 },
+			data: {
+				expectedRawCount: 600_001,
+				observedRawCount: 600_001,
+				cursor: 600_001,
+				completedPages: 301,
+			},
+		});
+		const before = await finalizerState(prisma, seed.run.id);
+		const stageReader = vi.spyOn(prisma.jellyfinEpisodeObservationStage, "findMany");
+		const prepared = await prepareJellyfinEpisodeRun({
+			prisma,
+			userId: "user-1",
+			instance: { id: "jellyfin-1" },
+			runId: seed.run.id,
+			scopes: seed.scopes,
+			attempt: seed.attempt,
+			now: seed.attempt.attemptedAt,
+		});
+		expect(prepared.kind).toBe("not-published");
+		expect(stageReader).not.toHaveBeenCalled();
+		expect(await finalizerState(prisma, seed.run.id)).toEqual(before);
+	});
+
+	it("preserves an exact V3 projection across ordered stage cursor pages", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await bindV3Fixture(prisma, seed.run.id);
+		await prisma.serviceInstance.update({
+			where: { id: "jellyfin-1" },
+			data: { identityStatus: "VERIFIED", expectedIdentity: "native-server" },
+		});
+		const units = await prisma.providerObservationUnit.findMany({ where: { runId: seed.run.id } });
+		await prisma.providerObservationUnit.updateMany({
+			where: { runId: seed.run.id },
+			data: { expectedRawCount: 1_001, observedRawCount: 1_001, cursor: 1_001 },
+		});
+		for (const unit of units) {
+			await prisma.jellyfinEpisodeObservationStage.createMany({
+				data: Array.from({ length: 1_000 }, (_, index) => ({
+					runId: seed.run.id,
+					unitId: unit.id,
+					userKeyDigest: hash(["jellyfin-user", "user-1"]),
+					pass: unit.phase,
+					jellyfinId: `synthetic-${index + 2}`,
+					seriesId: "series-1",
+					seasonNumber: 1,
+					episodeNumber: index + 2,
+					title: "Synthetic",
+					played: true,
+					playCount: 1,
+					lastPlayedAt: seed.attempt.attemptedAt,
+					userName: "",
+				})),
+			});
+		}
+		const stageReader = vi.spyOn(prisma.jellyfinEpisodeObservationStage, "findMany");
+		const prepared = await prepareJellyfinEpisodeRun({
+			prisma,
+			userId: "user-1",
+			instance: { id: "jellyfin-1" },
+			runId: seed.run.id,
+			scopes: seed.scopes,
+			attempt: seed.attempt,
+			now: seed.attempt.attemptedAt,
+		});
+		expect(prepared.kind).toBe("ready");
+		if (prepared.kind !== "ready") return;
+		expect(prepared.publishedRows).toHaveLength(1_001);
+		expect(stageReader).not.toHaveBeenCalled();
+		expect(decodeJellyfinEpisodeGenerationMetadata(prepared.generationMetadata)).toMatchObject({
+			ok: true,
+			metadata: { version: 4, itemCount: 1_001, publicationLevel: "authoritative" },
+		});
+	});
+
+	it.skipIf(process.env.JELLYFIN_LOADED_BENCH !== "1")(
+		"prepares a synthetic QA-sized V3 stage within the worker memory budget",
+		{ timeout: 3_600_000 },
+		async () => {
+			const started = performance.now();
+			let peakRss = process.memoryUsage().rss;
+			const sample = setInterval(() => {
+				peakRss = Math.max(peakRss, process.memoryUsage().rss);
+			}, 250);
+			try {
+				const prisma = await database();
+				const seed = await completeFinalizerFixture(prisma);
+				await bindV3Fixture(prisma, seed.run.id);
+				await prisma.serviceInstance.update({
+					where: { id: "jellyfin-1" },
+					data: { identityStatus: "VERIFIED", expectedIdentity: "native-server" },
+				});
+				const rowsPerPass = 248_928;
+				const units = await prisma.providerObservationUnit.findMany({
+					where: { runId: seed.run.id },
+				});
+				await prisma.providerObservationUnit.updateMany({
+					where: { runId: seed.run.id },
+					data: {
+						expectedRawCount: rowsPerPass,
+						observedRawCount: rowsPerPass,
+						cursor: rowsPerPass,
+					},
+				});
+				for (const unit of units) {
+					for (let first = 1; first < rowsPerPass; first += 500) {
+						const count = Math.min(500, rowsPerPass - first);
+						await prisma.jellyfinEpisodeObservationStage.createMany({
+							data: Array.from({ length: count }, (_, offset) => {
+								const ordinal = first + offset;
+								return {
+									runId: seed.run.id,
+									unitId: unit.id,
+									userKeyDigest: hash(["jellyfin-user", "user-1"]),
+									pass: unit.phase,
+									jellyfinId: `synthetic-${ordinal}`,
+									seriesId: "series-1",
+									seasonNumber: Math.floor(ordinal / 1_000) + 1,
+									episodeNumber: (ordinal % 1_000) + 1,
+									title: "Synthetic episode with bounded title length",
+									played: true,
+									playCount: 1,
+									lastPlayedAt: seed.attempt.attemptedAt,
+									userName: "",
+								};
+							}),
+						});
+					}
+				}
+				const prepared = await prepareJellyfinEpisodeRun({
+					prisma,
+					userId: "user-1",
+					instance: { id: "jellyfin-1" },
+					runId: seed.run.id,
+					scopes: seed.scopes,
+					attempt: seed.attempt,
+					now: seed.attempt.attemptedAt,
+				});
+				peakRss = Math.max(peakRss, process.memoryUsage().rss);
+				expect(prepared.kind).toBe("ready");
+				if (prepared.kind !== "ready") return;
+				expect(prepared.publishedRows).toHaveLength(rowsPerPass);
+				expect(
+					await prisma.jellyfinEpisodeObservationStage.count({ where: { runId: seed.run.id } }),
+				).toBe(497_856);
+				process.stdout.write(
+					`JELLYFIN_LOADED_BENCH stageRows=497856 projectedRows=${prepared.publishedRows.length} peakRssMiB=${Math.ceil(peakRss / 1_048_576)} elapsedSeconds=${Math.ceil((performance.now() - started) / 1_000)}\n`,
+				);
+				expect(peakRss).toBeLessThan(2.5 * 1_024 ** 3);
+			} finally {
+				clearInterval(sample);
+			}
+		},
+	);
+
+	it("commits only a verified prepared V3 generation", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await bindV3Fixture(prisma, seed.run.id);
+		await prisma.serviceInstance.update({
+			where: { id: "jellyfin-1" },
+			data: { identityStatus: "VERIFIED", expectedIdentity: "native-server" },
+		});
+		const input = {
+			prisma,
+			userId: "user-1",
+			instance: { id: "jellyfin-1" },
+			runId: seed.run.id,
+			scopes: seed.scopes,
+			attempt: seed.attempt,
+			now: seed.attempt.attemptedAt,
+			testHooks: { commitClock: () => seed.attempt.attemptedAt },
+		};
+		const projected = await prepareJellyfinEpisodeRun(input);
+		if (projected.kind !== "ready") throw new Error("Fixture did not project a generation");
+		const prepared = await stagePreparedCommit(prisma, input, projected);
+		if (prepared.kind !== "ready" || !prepared.nativePublication)
+			throw new Error("Fixture did not prepare V3 publication");
+		await prisma.jellyfinEpisodeCache.create({
+			data: {
+				instanceId: input.instance.id,
+				showTmdbId: 1000,
+				seasonNumber: 1,
+				episodeNumber: 1,
+				jellyfinId: "legacy-row",
+				title: "Synthetic last-good row",
+				watched: true,
+				watchedByUsers: "[]",
+				connectionGeneration: 1,
+				identityGeneration: 1,
+			},
+		});
+		await prepareNativeWatchGeneration(prisma, {
+			...prepared.nativePublication!,
+			userId: input.userId,
+			preparationToken: prepared.episodePreparationToken!,
+		});
+		const advertised = JSON.parse(prepared.generationMetadata) as Record<string, unknown>;
+		const inconsistent = {
+			...prepared,
+			generationMetadata: JSON.stringify({ ...advertised, contentFingerprint: "0".repeat(64) }),
+		};
+		expect(
+			await prisma.$transaction((tx) => commitPreparedJellyfinEpisodeRun(tx, input, inconsistent)),
+		).toEqual({ published: false, itemCount: 0 });
+
+		const result = await prisma.$transaction((tx) =>
+			commitPreparedJellyfinEpisodeRun(tx, input, prepared),
+		);
+
+		expect(result).toEqual({ published: true, itemCount: 1 });
+		expect(
+			await prisma.jellyfinEpisodeCache.findMany({
+				where: { instanceId: input.instance.id },
+				select: { jellyfinId: true },
+			}),
+		).toContainEqual({ jellyfinId: "legacy-row" });
+		expect(
+			await prisma.jellyfinNativeWatchPublication.findUnique({
+				where: { instanceId: "jellyfin-1" },
+			}),
+		).toMatchObject({ activeRunId: seed.run.id });
+		expect(
+			await prisma.providerObservationRun.findUnique({ where: { id: seed.run.id } }),
+		).toMatchObject({ state: "complete", activeSlotKey: null });
+		expect(
+			await readCompletedJellyfinEpisodePublication(prisma, {
+				userId: input.userId,
+				instanceId: input.instance.id,
+				runId: input.runId,
+				attempt: input.attempt,
+			}),
+		).toBe(1);
+		const scoped = await readOwnedJellyfinEpisodeDisplaySources({
+			prisma,
+			userId: input.userId,
+			instances: [{ id: input.instance.id, label: "Synthetic", service: "JELLYFIN" }],
+			showTmdbIds: [prepared.publishedRows[0]!.showTmdbId],
+			now: seed.attempt.attemptedAt,
+		});
+		expect(scoped.sources[0]?.rows).toHaveLength(1);
+		expect(scoped.providerStatus?.sources[0]?.status.availability).toBe("current");
+		const instanceForHealth = await prisma.serviceInstance.findUniqueOrThrow({
+			where: { id: input.instance.id },
+			select: { id: true, label: true, createdAt: true },
+		});
+		const health = await readOwnedJellyfinCacheHealthSources({
+			prisma,
+			userId: input.userId,
+			instances: [{ ...instanceForHealth, service: "JELLYFIN" }],
+			now: seed.attempt.attemptedAt,
+		});
+		expect(health.find((entry) => entry.item.cacheType === "jellyfin_episode")?.item).toMatchObject(
+			{
+				lastResult: "success",
+				itemCount: 1,
+			},
+		);
+		const receipt = await prisma.jellyfinEpisodeGenerationShowReceipt.findFirstOrThrow({
+			where: { instanceId: input.instance.id, generationId: prepared.cacheGenerationId },
+		});
+		await prisma.jellyfinEpisodeGenerationShowReceipt.update({
+			where: { id: receipt.id },
+			data: { contentFingerprint: "0".repeat(64) },
+		});
+		const damaged = await readOwnedJellyfinEpisodeDisplaySources({
+			prisma,
+			userId: input.userId,
+			instances: [{ id: input.instance.id, label: "Synthetic", service: "JELLYFIN" }],
+			showTmdbIds: [prepared.publishedRows[0]!.showTmdbId],
+			now: seed.attempt.attemptedAt,
+		});
+		expect(damaged.providerStatus?.sources[0]?.status).toMatchObject({
+			availability: "partial",
+			evidence: "positive-only",
+		});
+		expect(damaged.sources[0]?.rows).toEqual([]);
+	});
+
+	it("keeps an older in-flight run readable without inventing native-watch authority", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await prisma.serviceInstance.update({
+			where: { id: "jellyfin-1" },
+			data: { identityStatus: "VERIFIED", expectedIdentity: "native-server" },
+		});
+		const input = {
+			prisma,
+			userId: "user-1",
+			instance: { id: "jellyfin-1" },
+			runId: seed.run.id,
+			scopes: seed.scopes,
+			attempt: seed.attempt,
+			now: seed.attempt.attemptedAt,
+			testHooks: { commitClock: () => seed.attempt.attemptedAt },
+		};
+		const projected = await prepareJellyfinEpisodeRun(input);
+		if (projected.kind !== "ready") throw new Error("Fixture did not prepare an older run");
+		expect(projected.nativePublication).toBeNull();
+		const prepared = await stagePreparedCommit(prisma, input, projected);
+		expect(
+			await prisma.$transaction((tx) => commitPreparedJellyfinEpisodeRun(tx, input, prepared)),
+		).toEqual({ published: true, itemCount: 1 });
+		const scoped = await readOwnedJellyfinEpisodeDisplaySources({
+			prisma,
+			userId: input.userId,
+			instances: [{ id: input.instance.id, label: "Synthetic", service: "JELLYFIN" }],
+			showTmdbIds: [prepared.publishedRows[0]!.showTmdbId],
+			now: seed.attempt.attemptedAt,
+		});
+		expect(scoped.sources[0]?.rows).toHaveLength(1);
+		expect(
+			await readCompletedJellyfinEpisodePublication(prisma, {
+				userId: input.userId,
+				instanceId: input.instance.id,
+				runId: input.runId,
+				attempt: input.attempt,
+			}),
+		).toBe(1);
+	});
+
+	it("keeps authoritative V4 episode completion actionable without legacy rows", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await bindV2Fixture(prisma, seed.run.id, seed.scopes);
+		await prisma.serviceInstance.update({
+			where: { id: "jellyfin-1" },
+			data: { identityStatus: "VERIFIED", expectedIdentity: "native-server" },
+		});
+		const input = {
+			prisma,
+			userId: "user-1",
+			instance: { id: "jellyfin-1" },
+			runId: seed.run.id,
+			scopes: seed.scopes,
+			attempt: seed.attempt,
+			now: seed.attempt.attemptedAt,
+			testHooks: { commitClock: () => seed.attempt.attemptedAt },
+		};
+		const projected = await prepareJellyfinEpisodeRun(input);
+		if (projected.kind !== "ready") throw new Error("Fixture did not prepare V2 publication");
+		const prepared = await stagePreparedCommit(prisma, input, projected);
+		await prisma.jellyfinEpisodeCache.deleteMany({ where: { instanceId: "jellyfin-1" } });
+		expect(
+			await prisma.$transaction((tx) => commitPreparedJellyfinEpisodeRun(tx, input, prepared)),
+		).toEqual({ published: true, itemCount: 1 });
+		expect(await prisma.jellyfinEpisodeCache.count({ where: { instanceId: "jellyfin-1" } })).toBe(
+			0,
+		);
+		const observation = await readOwnedJellyfinObservation({
+			prisma,
+			userId: "user-1",
+			instanceId: "jellyfin-1",
+			cacheType: "jellyfin_episode",
+			mode: "mutation",
+			now: seed.attempt.attemptedAt,
+		});
+		expect(observation).toMatchObject({
+			available: true,
+			mutationAvailable: true,
+			rows: [
+				{
+					showTmdbId: prepared.publishedRows[0]!.showTmdbId,
+					seasonNumber: 1,
+					episodeNumber: 1,
+				},
+			],
+		});
+		expect(observation?.authority?.generationId).toBe(seed.run.id);
+		const transactional = await prisma.$transaction((tx) =>
+			readOwnedJellyfinObservationInTransaction(jellyfinReaderFromTransaction(tx), {
+				userId: "user-1",
+				instanceId: "jellyfin-1",
+				cacheType: "jellyfin_episode",
+				mode: "mutation",
+				now: seed.attempt.attemptedAt,
+			}),
+		);
+		expect(transactional).toMatchObject({ available: true, mutationAvailable: true });
+		expect(transactional?.authority).toEqual(observation?.authority);
+		await prisma.jellyfinEpisodePreparation.update({
+			where: { runId: seed.run.id },
+			data: { state: "verified" },
+		});
+		const tampered = await readOwnedJellyfinObservation({
+			prisma,
+			userId: "user-1",
+			instanceId: "jellyfin-1",
+			cacheType: "jellyfin_episode",
+			mode: "mutation",
+			now: seed.attempt.attemptedAt,
+		});
+		expect(tampered).toMatchObject({ available: false, mutationAvailable: false, rows: [] });
+	});
+
+	it("serves one scoped show and health from a generation above the legacy 100k read cap", {
+		timeout: 180_000,
+	}, async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await bindV3Fixture(prisma, seed.run.id);
+		await prisma.serviceInstance.update({
+			where: { id: "jellyfin-1" },
+			data: { identityStatus: "VERIFIED", expectedIdentity: "native-server" },
+		});
+		const input = {
+			prisma,
+			userId: "user-1",
+			instance: { id: "jellyfin-1" },
+			runId: seed.run.id,
+			scopes: seed.scopes,
+			attempt: seed.attempt,
+			now: seed.attempt.attemptedAt,
+			testHooks: { commitClock: () => seed.attempt.attemptedAt },
+		};
+		const projected = await prepareJellyfinEpisodeRun(input);
+		if (projected.kind !== "ready" || !projected.nativePublication)
+			throw new Error("Fixture did not prepare an exact V3 generation");
+		const prepared = await stagePreparedCommit(prisma, input, projected);
+		await prepareNativeWatchGeneration(prisma, {
+			...prepared.nativePublication!,
+			userId: input.userId,
+			preparationToken: prepared.episodePreparationToken!,
+		});
+		expect(
+			await prisma.$transaction((tx) => commitPreparedJellyfinEpisodeRun(tx, input, prepared)),
+		).toEqual({ published: true, itemCount: 1 });
+
+		const parentBase = await prisma.jellyfinCache.findFirstOrThrow({
+			where: { instanceId: "jellyfin-1" },
+		});
+		const { id: _parentId, ...parentFields } = parentBase;
+		const additionalParents = Array.from({ length: 400 }, (_, index) => ({
+			...parentFields,
+			tmdbId: index + 1_000,
+			jellyfinId: `series-${index + 1_000}`,
+			title: "Synthetic series",
+		}));
+		await prisma.jellyfinCache.createMany({ data: additionalParents });
+		const parentRows = await prisma.jellyfinCache.findMany({ where: { instanceId: "jellyfin-1" } });
+		const parentStatus = await prisma.cacheRefreshStatus.findUniqueOrThrow({
+			where: { instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin" } },
+		});
+		const decodedParent = decodeJellyfinLibraryGenerationMetadata(parentStatus.generationMetadata);
+		if (!decodedParent.ok) throw new Error("Synthetic parent metadata is invalid");
+		const broaden = (unit: Record<string, unknown>, count: number) => ({
+			...unit,
+			expectedRawCount: count,
+			rawObserved: count,
+			sourceBindings: count,
+			canonicalEntities: count,
+		});
+		const parentReceipt = decodedParent.metadata.coverageReceipt as unknown as {
+			units: Array<Record<string, unknown>>;
+			domains: Array<Record<string, unknown> & { units: Array<Record<string, unknown>> }>;
+		};
+		const parentMetadataEncoded = encodeJellyfinLibraryGenerationMetadata({
+			...decodedParent.metadata,
+			itemCount: 401,
+			contentFingerprint: fingerprintJellyfinLibraryRows(
+				parentRows.map((row) => ({
+					...row,
+					mediaType: row.mediaType as "series" | "movie",
+				})),
+			),
+			coverageReceipt: {
+				...parentReceipt,
+				units: parentReceipt.units.map((unit) => broaden(unit, 401)),
+				publishedCanonicalEntities: 401,
+				domains: parentReceipt.domains.map((domain) => ({
+					...domain,
+					units: domain.units.map((unit) => broaden(unit, 401)),
+					publishedCanonicalEntities: 401,
+				})),
+			},
+		});
+		const widenedParent = decodeJellyfinLibraryGenerationMetadata(parentMetadataEncoded);
+		if (!widenedParent.ok) throw new Error("Widened synthetic parent is invalid");
+		await prisma.cacheRefreshStatus.update({
+			where: { id: parentStatus.id },
+			data: { itemCount: 401, generationMetadata: parentMetadataEncoded },
+		});
+
+		const extraRows = Array.from({ length: 100_000 }, (_, index) => ({
+			instanceId: "jellyfin-1",
+			generationId: prepared.cacheGenerationId,
+			showTmdbId: 1_000 + Math.floor(index / 250),
+			seasonNumber: 1,
+			episodeNumber: (index % 250) + 1,
+			jellyfinId: `synthetic-${index}`,
+			title: "Synthetic episode",
+			watched: false,
+			watchedByUsers: "[]",
+			lastWatchedAt: null,
+			connectionGeneration: 1,
+			identityGeneration: 1,
+		}));
+		for (let offset = 0; offset < extraRows.length; offset += 500)
+			await prisma.jellyfinEpisodeGenerationRow.createMany({
+				data: extraRows.slice(offset, offset + 500),
+			});
+		await prisma.jellyfinEpisodeGenerationShowReceipt.createMany({
+			data: Array.from({ length: 400 }, (_, index) => ({
+				instanceId: "jellyfin-1",
+				generationId: prepared.cacheGenerationId,
+				showTmdbId: index + 1_000,
+				rowCount: 250,
+				contentFingerprint: fingerprintJellyfinEpisodeRows(
+					extraRows.slice(index * 250, index * 250 + 250),
+				),
+			})),
+		});
+		const originalRows = await prisma.jellyfinEpisodeGenerationRow.findMany({
+			where: { instanceId: "jellyfin-1", generationId: prepared.cacheGenerationId, showTmdbId: 42 },
+		});
+		const fingerprint = fingerprintJellyfinEpisodeRows([...originalRows, ...extraRows]);
+		const episodeStatus = await prisma.cacheRefreshStatus.findUniqueOrThrow({
+			where: { instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin_episode" } },
+		});
+		const decodedEpisode = decodeJellyfinEpisodeGenerationMetadata(
+			episodeStatus.generationMetadata,
+		);
+		if (!decodedEpisode.ok || decodedEpisode.metadata.version !== 4)
+			throw new Error("Synthetic episode metadata is invalid");
+		const episodeReceipt = decodedEpisode.metadata.coverageReceipt as unknown as {
+			units: Array<Record<string, unknown>>;
+		};
+		const episodeMetadataEncoded = encodeJellyfinEpisodeGenerationMetadata({
+			...decodedEpisode.metadata,
+			itemCount: 100_001,
+			contentFingerprint: fingerprint,
+			parentLibraryMetadataFingerprint: fingerprintJellyfinLibraryGenerationMetadata(
+				widenedParent.metadata,
+			),
+			parentLibraryDependencyFingerprint: fingerprintJellyfinEpisodeParentDependency(
+				"jellyfin-1",
+				widenedParent.metadata,
+				parentRows.map((row) => ({ ...row, mediaType: row.mediaType as "series" | "movie" })),
+			),
+			coverageReceipt: {
+				...episodeReceipt,
+				units: episodeReceipt.units.map((unit) => broaden(unit, 100_001)),
+				publishedCanonicalEntities: 100_001,
+			},
+		});
+		await prisma.cacheRefreshStatus.update({
+			where: { id: episodeStatus.id },
+			data: { itemCount: 100_001, generationMetadata: episodeMetadataEncoded },
+		});
+		await prisma.jellyfinEpisodePreparation.update({
+			where: { runId: seed.run.id },
+			data: {
+				expectedRowCount: 100_001,
+				expectedReceiptCount: 401,
+				contentFingerprint: fingerprint,
+			},
+		});
+		const scoped = await readOwnedJellyfinEpisodeDisplaySources({
+			prisma,
+			userId: input.userId,
+			instances: [{ id: "jellyfin-1", label: "Synthetic", service: "JELLYFIN" }],
+			showTmdbIds: [42],
+			now: seed.attempt.attemptedAt,
+		});
+		expect(scoped.sources[0]?.rows).toHaveLength(1);
+		expect(scoped.providerStatus?.sources[0]?.status.availability).toBe("current");
+		const instanceForHealth = await prisma.serviceInstance.findUniqueOrThrow({
+			where: { id: "jellyfin-1" },
+			select: { id: true, label: true, createdAt: true },
+		});
+		const health = await readOwnedJellyfinCacheHealthSources({
+			prisma,
+			userId: input.userId,
+			instances: [{ ...instanceForHealth, service: "JELLYFIN" }],
+			now: seed.attempt.attemptedAt,
+		});
+		expect(health.find((entry) => entry.item.cacheType === "jellyfin_episode")?.item).toMatchObject(
+			{
+				lastResult: "success",
+				itemCount: 100_001,
+			},
+		);
+		const mutation = await readOwnedJellyfinObservation({
+			prisma,
+			userId: input.userId,
+			instanceId: "jellyfin-1",
+			cacheType: "jellyfin_episode",
+			mode: "mutation",
+			now: seed.attempt.attemptedAt,
+		});
+		expect(mutation?.mutationAvailable).toBe(false);
+	});
+
+	it("keeps the prior publication when the parent changes after preparation", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await bindV3Fixture(prisma, seed.run.id);
+		await prisma.serviceInstance.update({
+			where: { id: "jellyfin-1" },
+			data: { identityStatus: "VERIFIED", expectedIdentity: "native-server" },
+		});
+		const input = {
+			prisma,
+			userId: "user-1",
+			instance: { id: "jellyfin-1" },
+			runId: seed.run.id,
+			scopes: seed.scopes,
+			attempt: seed.attempt,
+			now: seed.attempt.attemptedAt,
+			testHooks: { commitClock: () => seed.attempt.attemptedAt },
+		};
+		const projected = await prepareJellyfinEpisodeRun(input);
+		if (projected.kind !== "ready" || !projected.nativePublication)
+			throw new Error("Fixture did not prepare V3 publication");
+		const prepared = await stagePreparedCommit(prisma, input, projected);
+		await prepareNativeWatchGeneration(prisma, {
+			...prepared.nativePublication!,
+			userId: input.userId,
+			preparationToken: prepared.episodePreparationToken!,
+		});
+		const before = await finalizerState(prisma, seed.run.id);
+		await prisma.cacheRefreshStatus.update({
+			where: { instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin" } },
+			data: { generationId: "new-parent-generation" },
+		});
+
+		const result = await prisma.$transaction((tx) =>
+			commitPreparedJellyfinEpisodeRun(tx, input, prepared),
+		);
+
+		expect(result).toEqual({ published: false, itemCount: 0 });
+		expect(
+			await prisma.jellyfinNativeWatchPublication.findUnique({
+				where: { instanceId: "jellyfin-1" },
+			}),
+		).toBeNull();
+		const after = await finalizerState(prisma, seed.run.id);
+		expect(after.run).toEqual(before.run);
+		expect(after.status).toEqual(before.status);
+		expect(after.rows).toEqual(before.rows);
+	});
+
+	it("rejects a parent that expires while an invisible generation is prepared", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await bindV3Fixture(prisma, seed.run.id);
+		await prisma.serviceInstance.update({
+			where: { id: "jellyfin-1" },
+			data: { identityStatus: "VERIFIED", expectedIdentity: "native-server" },
+		});
+		const input = {
+			prisma,
+			userId: "user-1",
+			instance: { id: "jellyfin-1" },
+			runId: seed.run.id,
+			scopes: seed.scopes,
+			attempt: seed.attempt,
+			now: seed.attempt.attemptedAt,
+		};
+		const projected = await prepareJellyfinEpisodeRun(input);
+		if (projected.kind !== "ready" || !projected.nativePublication)
+			throw new Error("Fixture did not prepare V3 publication");
+		const prepared = await stagePreparedCommit(prisma, input, projected);
+		await prepareNativeWatchGeneration(prisma, {
+			...prepared.nativePublication!,
+			userId: input.userId,
+			preparationToken: prepared.episodePreparationToken!,
+		});
+		const before = await finalizerState(prisma, seed.run.id);
+		vi.useFakeTimers({ toFake: ["Date"] });
+		try {
+			vi.setSystemTime(new Date("2026-09-08T00:02:01.000Z"));
+			const result = await prisma.$transaction((tx) =>
+				commitPreparedJellyfinEpisodeRun(tx, input, prepared),
+			);
+			expect(result).toEqual({ published: false, itemCount: 0 });
+		} finally {
+			vi.useRealTimers();
+		}
+		expect(await finalizerState(prisma, seed.run.id)).toEqual(before);
+		expect(
+			await prisma.jellyfinNativeWatchPublication.findUnique({
+				where: { instanceId: "jellyfin-1" },
+			}),
+		).toBeNull();
+	});
+
+	it.each(["attempt", "identity", "target", "unit", "owner"] as const)(
+		"rejects a prepared V3 commit after %s authority changes",
+		async (change) => {
+			const prisma = await database();
+			const seed = await completeFinalizerFixture(prisma);
+			await bindV3Fixture(prisma, seed.run.id);
+			await prisma.serviceInstance.update({
+				where: { id: "jellyfin-1" },
+				data: { identityStatus: "VERIFIED", expectedIdentity: "native-server" },
+			});
+			const input = {
+				prisma,
+				userId: "user-1",
+				instance: { id: "jellyfin-1" },
+				runId: seed.run.id,
+				scopes: seed.scopes,
+				attempt: seed.attempt,
+				now: seed.attempt.attemptedAt,
+				testHooks: { commitClock: () => seed.attempt.attemptedAt },
+			};
+			const projected = await prepareJellyfinEpisodeRun(input);
+			if (projected.kind !== "ready" || !projected.nativePublication)
+				throw new Error("Fixture did not prepare V3 publication");
+			const prepared = await stagePreparedCommit(prisma, input, projected);
+			await prepareNativeWatchGeneration(prisma, {
+				...prepared.nativePublication!,
+				userId: input.userId,
+				preparationToken: prepared.episodePreparationToken!,
+			});
+			if (change === "attempt") {
+				await prisma.cacheRefreshStatus.update({
+					where: {
+						instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin_episode" },
+					},
+					data: { lastAttemptResult: "in_progress:new-attempt" },
+				});
+			} else if (change === "identity") {
+				await prisma.serviceInstance.update({
+					where: { id: "jellyfin-1" },
+					data: { identityGeneration: { increment: 1 } },
+				});
+			} else if (change === "target") {
+				await prisma.providerObservationRun.update({
+					where: { id: seed.run.id },
+					data: { targetDigest: "new-target" },
+				});
+			} else if (change === "unit") {
+				await prisma.providerObservationUnit.updateMany({
+					where: { runId: seed.run.id, ordinal: 0 },
+					data: { state: "pending" },
+				});
+			}
+			const callInput = change === "owner" ? { ...input, userId: "other-owner" } : input;
+			const result = await prisma.$transaction((tx) =>
+				commitPreparedJellyfinEpisodeRun(tx, callInput, prepared),
+			);
+			expect(result).toEqual({ published: false, itemCount: 0 });
+			expect(
+				await prisma.jellyfinNativeWatchPublication.findUnique({
+					where: { instanceId: "jellyfin-1" },
+				}),
+			).toBeNull();
+			expect(
+				await prisma.providerObservationRun.findUnique({ where: { id: seed.run.id } }),
+			).toMatchObject({ state: "running" });
+		},
+	);
+
+	it("rolls back episode status and rows if prepared native rows vanish before the pointer switch", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await bindV3Fixture(prisma, seed.run.id);
+		await prisma.serviceInstance.update({
+			where: { id: "jellyfin-1" },
+			data: { identityStatus: "VERIFIED", expectedIdentity: "native-server" },
+		});
+		const input = {
+			prisma,
+			userId: "user-1",
+			instance: { id: "jellyfin-1" },
+			runId: seed.run.id,
+			scopes: seed.scopes,
+			attempt: seed.attempt,
+			now: seed.attempt.attemptedAt,
+			testHooks: { commitClock: () => seed.attempt.attemptedAt },
+		};
+		const projected = await prepareJellyfinEpisodeRun(input);
+		if (projected.kind !== "ready" || !projected.nativePublication)
+			throw new Error("Fixture did not prepare V3 publication");
+		const prepared = await stagePreparedCommit(prisma, input, projected);
+		await prepareNativeWatchGeneration(prisma, {
+			...prepared.nativePublication!,
+			userId: input.userId,
+			preparationToken: prepared.episodePreparationToken!,
+		});
+		await prisma.jellyfinNativeWatchRow.deleteMany({ where: { runId: seed.run.id } });
+		const before = await finalizerState(prisma, seed.run.id);
+
+		await expect(
+			prisma.$transaction((tx) => commitPreparedJellyfinEpisodeRun(tx, input, prepared)),
+		).rejects.toThrow();
+
+		expect(await finalizerState(prisma, seed.run.id)).toEqual(before);
+		expect(
+			await prisma.jellyfinNativeWatchPublication.findUnique({
+				where: { instanceId: "jellyfin-1" },
+			}),
+		).toBeNull();
+	});
+
+	it("does not invalidate staged work because the parent is temporarily unavailable", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await bindV3Fixture(prisma, seed.run.id);
+		await prisma.cacheRefreshStatus.update({
+			where: { instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin" } },
+			data: { lastAttemptResult: "error" },
+		});
+		const before = await finalizerState(prisma, seed.run.id);
+
+		const prepared = await prepareJellyfinEpisodeRun({
+			prisma,
+			userId: "user-1",
+			instance: { id: "jellyfin-1" },
+			runId: seed.run.id,
+			scopes: seed.scopes,
+			attempt: seed.attempt,
+			now: seed.attempt.attemptedAt,
+		});
+
+		expect(prepared.kind).toBe("not-published");
+		expect(await finalizerState(prisma, seed.run.id)).toEqual(before);
+	});
+
+	it("marks a proven-invalid owned run before bounded staging cleanup", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await prisma.providerObservationUnit.updateMany({
+			where: { runId: seed.run.id, ordinal: 0 },
+			data: { state: "pending" },
+		});
+		const input = {
+			prisma,
+			userId: "user-1",
+			instance: { id: "jellyfin-1" },
+			runId: seed.run.id,
+			scopes: seed.scopes,
+			attempt: seed.attempt,
+			now: seed.attempt.attemptedAt,
+		};
+		const stageCount = await prisma.jellyfinEpisodeObservationStage.count({
+			where: { runId: seed.run.id },
+		});
+		const prepared = await prepareJellyfinEpisodeRun(input);
+		if (prepared.kind !== "invalid") throw new Error("Fixture did not prove invalid run state");
+
+		expect(
+			await prisma.$transaction((tx) => settleInvalidJellyfinEpisodeRun(tx, input, prepared)),
+		).toBe(true);
+		expect(
+			await prisma.providerObservationRun.findUnique({ where: { id: seed.run.id } }),
+		).toMatchObject({ state: "invalidated", activeSlotKey: null });
+		expect(
+			await prisma.jellyfinEpisodeObservationStage.count({ where: { runId: seed.run.id } }),
+		).toBe(stageCount);
+		await cleanupPublishedJellyfinEpisodeArtifacts(prisma, "jellyfin-1", seed.run.id);
+		expect(
+			await prisma.jellyfinEpisodeObservationStage.count({ where: { runId: seed.run.id } }),
+		).toBe(0);
+	});
+	it("reports only aggregate finalization phase timing without changing publication", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await bindV3Fixture(prisma, seed.run.id);
+		await prisma.serviceInstance.update({
+			where: { id: "jellyfin-1" },
+			data: { identityStatus: "VERIFIED", expectedIdentity: "native-server" },
+		});
+		const records: JellyfinEpisodeFinalizationTiming[] = [];
+		const result = await finalizeJellyfinEpisodeRun({
+			prisma,
+			userId: "user-1",
+			instance: { id: "jellyfin-1" },
+			runId: seed.run.id,
+			scopes: seed.scopes,
+			attempt: seed.attempt,
+			now: seed.attempt.attemptedAt,
+			recordTiming: (timing) => records.push(timing),
+		});
+		expect(result).toEqual({ published: true, itemCount: 1 });
+		expect(records).toHaveLength(1);
+		expect(Object.keys(records[0] ?? {}).sort()).toEqual([
+			"authorityMs",
+			"computeMs",
+			"episodeWriteMs",
+			"nativeCandidates",
+			"nativeProjectionMs",
+			"nativeWatchDiagnostics",
+			"nativeWatchWriteMs",
+			"stageLoadMs",
+			"stageRows",
+			"totalMs",
+		]);
+		const { nativeWatchDiagnostics, ...numericTiming } = records[0]!;
+		for (const value of Object.values(numericTiming)) {
+			expect(Number.isSafeInteger(value)).toBe(true);
+			expect(value).toBeGreaterThanOrEqual(0);
+		}
+		expect(nativeWatchDiagnostics).toBeDefined();
+		for (const value of Object.values(nativeWatchDiagnostics ?? {})) {
+			expect(Number.isSafeInteger(value)).toBe(true);
+			expect(value).toBeGreaterThanOrEqual(0);
+		}
+		expect(records[0]?.stageRows).toBeGreaterThan(0);
+		expect(records[0]?.nativeCandidates).toBeGreaterThan(0);
+	});
+
 	it.each([
 		["normal", true],
 		["overlap", true],
@@ -187,6 +2288,21 @@ describe("native inventory independence from Jellyfin watch finalization", {
 				expect(result.published).toBe(scenario !== "scope-drift" && scenario !== "superseded");
 				expect(result).not.toHaveProperty("nativeInventoryRetryRequired");
 			}
+			const watchPublication = await prisma.jellyfinNativeWatchPublication.findUnique({
+				where: { instanceId: instance.id },
+			});
+			if (
+				scenario === "scope-drift" ||
+				scenario === "superseded" ||
+				scenario === "transaction-failure"
+			) {
+				expect(watchPublication).toBeNull();
+			} else {
+				expect(watchPublication).toMatchObject({ activeRunId: seed.run.id });
+				expect(
+					await prisma.jellyfinNativeWatchRow.count({ where: { instanceId: instance.id } }),
+				).toBe(scenario === "watch-drift" ? 0 : 1);
+			}
 			expect(await prisma.providerNativeInventorySnapshot.findMany()).toEqual(beforeSnapshots);
 			expect(
 				await prisma.providerNativeInventoryItem.findMany({ orderBy: { nativeId: "asc" } }),
@@ -287,7 +2403,7 @@ describe("saved V2 scope plan validation", () => {
 });
 
 describe("saved V3 scope plan validation", () => {
-	function fixture() {
+	function fixture(pageSize: 1_000 | 2_000 = 1_000) {
 		const catalogProvenance = buildJellyfinEpisodeCatalogProvenance(
 			[
 				{
@@ -319,6 +2435,7 @@ describe("saved V3 scope plan validation", () => {
 				parentLibraryDependencyFingerprint,
 				catalogProvenance,
 			},
+			pageSize,
 		);
 		const parentGenerationId = jellyfinEpisodeCatalogGenerationKey(catalogProvenance)!;
 		const authority = {
@@ -361,6 +2478,18 @@ describe("saved V3 scope plan validation", () => {
 			'"tmdbId":84',
 		);
 		expect(validateJellyfinEpisodeSavedV3Plan(input)).toBeNull();
+	});
+	it("preserves legacy 1,000-page runs and accepts only uniform pinned 2,000-page plans", () => {
+		const legacy = fixture();
+		expect(validateJellyfinEpisodeSavedV3Plan(legacy)?.plan).toEqual(
+			expect.objectContaining({ targetDigest: legacy.run.targetDigest }),
+		);
+		const larger = fixture(2_000);
+		expect(validateJellyfinEpisodeSavedV3Plan(larger)?.plan.units).toEqual(
+			larger.units.map(({ state: _state, ...unit }) => unit),
+		);
+		larger.units[1]!.scopePayload = legacy.units[1]!.scopePayload;
+		expect(validateJellyfinEpisodeSavedV3Plan(larger)).toBeNull();
 	});
 	it("accepts only claim-free failed V3 plans with a recorded failed unit", () => {
 		const input = fixture();
@@ -418,14 +2547,22 @@ describe("saved V3 scope plan validation", () => {
 	});
 });
 
+describe("durable Jellyfin episode page-count bounds", () => {
+	it.each([
+		[0, 1, true],
+		[4_000, 1, false],
+		[4_000, 2, true],
+		[4_000, 4, true],
+		[4_000, 4_001, false],
+	] as const)("checks %i observed rows and %i completed pages", (rows, pages, valid) => {
+		expect(hasPlausibleJellyfinEpisodePageCount(rows, pages, 2_000)).toBe(valid);
+	});
+});
+
 async function database() {
 	const directory = mkdtempSync(join(tmpdir(), "jellyfin-episode-stage-"));
 	const dbPath = join(directory, "test.db");
-	execFileSync("pnpm", ["exec", "prisma", "db", "push", "--schema", "prisma/schema.prisma"], {
-		cwd: process.cwd(),
-		env: { ...process.env, DATABASE_URL: `file:${dbPath}` },
-		stdio: "ignore",
-	});
+	schemaFixture.copyTo(dbPath);
 	const prisma = createTestPrismaClient(dbPath);
 	databases.push({ directory, prisma });
 	await prisma.user.create({
@@ -1799,31 +3936,29 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 	it("keeps V3 fallback for an unwatched cross-user native identity collision", async () => {
 		const prisma = await database();
 		const seed = await completeFinalizerFixture(prisma);
-		await bindV3Fixture(prisma, seed.run.id);
+		await prisma.user.create({
+			data: { id: "user-2", username: `episode-collision-${Date.now()}-${Math.random()}` },
+		});
+		const scopes = [
+			{ userId: "user-1", userName: "Alice", libraryId: "library-1" },
+			{ userId: "user-2", userName: "Bob", libraryId: "library-1" },
+		];
+		const { run } = await replaceRunWithV3Scopes(
+			prisma,
+			scopes,
+			{
+				"user-1": [{ jellyfinId: "episode-1", played: false, playCount: 0, lastPlayedAt: null }],
+				"user-2": [{ jellyfinId: "episode-1", played: false, playCount: 0, lastPlayedAt: null }],
+			},
+			seed.attempt.attemptedAt,
+		);
 		await prisma.serviceInstance.update({
 			where: { id: "jellyfin-1" },
 			data: { expectedIdentity: "verified-provider", identityStatus: "VERIFIED" },
 		});
 		await prisma.jellyfinEpisodeObservationStage.updateMany({
-			where: { runId: seed.run.id },
-			data: { played: false, playCount: 0, lastPlayedAt: null },
-		});
-		const stages = await prisma.jellyfinEpisodeObservationStage.findMany({
-			where: { runId: seed.run.id },
-		});
-		for (const stage of stages) {
-			const { id: _id, ...row } = stage;
-			await prisma.jellyfinEpisodeObservationStage.create({
-				data: {
-					...row,
-					userKeyDigest: hash(["jellyfin-user", "other-user"]),
-					episodeNumber: 2,
-				},
-			});
-		}
-		await prisma.providerObservationUnit.updateMany({
-			where: { runId: seed.run.id },
-			data: { cursor: 2, expectedRawCount: 2, observedRawCount: 2 },
+			where: { runId: run.id, userKeyDigest: hash(["jellyfin-user", "user-2"]) },
+			data: { episodeNumber: 2 },
 		});
 
 		await expect(
@@ -1831,8 +3966,8 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 				prisma,
 				userId: "user-1",
 				instance: { id: "jellyfin-1" },
-				runId: seed.run.id,
-				scopes: seed.scopes,
+				runId: run.id,
+				scopes,
 				attempt: seed.attempt,
 				now: seed.attempt.attemptedAt,
 			}),
@@ -1888,6 +4023,8 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 				select: { jellyfinId: true, episodeNumber: true },
 			}),
 		).toEqual([{ jellyfinId: "episode-2", episodeNumber: 2 }]);
+		expect(await prisma.jellyfinEpisodeObservationExclusion.count()).toBe(1);
+		await cleanupPublishedJellyfinEpisodeArtifacts(prisma, "jellyfin-1", seed.run.id);
 		expect(await prisma.jellyfinEpisodeObservationExclusion.count()).toBe(0);
 		const observation = await readOwnedJellyfinObservation({
 			prisma,
@@ -1936,6 +4073,8 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 			ok: true,
 			metadata: { completeness: "partial", publicationLevel: "positive-only" },
 		});
+		expect(await prisma.jellyfinEpisodeObservationExclusion.count()).toBe(2);
+		await cleanupPublishedJellyfinEpisodeArtifacts(prisma, "jellyfin-1", seed.run.id);
 		expect(await prisma.jellyfinEpisodeObservationExclusion.count()).toBe(0);
 	});
 
@@ -2312,10 +4451,6 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 		});
 	});
 
-	it("uses the ten-second successful-progress continuation delay", () => {
-		expect(JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS).toBe(10_000);
-	});
-
 	it("finalizes a V2 run after a volatile parent refresh without losing its staged work", async () => {
 		const prisma = await database();
 		const { attempt, run, scopes } = await completeFinalizerFixture(prisma);
@@ -2494,7 +4629,7 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 		},
 	);
 
-	it("terminally publishes 4,163 provider-cursor episodes through the production runner factory", async () => {
+	it("counts actual short 2,000-request pages through terminal publication", async () => {
 		const prisma = await database();
 		const seed = await completeFinalizerFixture(prisma);
 		const parent = await prisma.cacheRefreshStatus.findUniqueOrThrow({
@@ -2519,6 +4654,7 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 			where: { id: "jellyfin-1" },
 		});
 		const cursors: number[] = [];
+		const requestedLimits: number[] = [];
 		const client = {
 			getUsers: async () => [{ id: "user-1", name: "Current User" }],
 			getLibraries: async () => [{ id: "library-1" }],
@@ -2526,9 +4662,11 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 				_userId: string,
 				_libraryId: string,
 				cursor: number,
+				limit: number,
 			) => {
 				cursors.push(cursor);
-				const count = Math.min(1_000, 4_163 - cursor);
+				requestedLimits.push(limit);
+				const count = Math.min(1_000, limit, 4_163 - cursor);
 				return {
 					startIndex: cursor,
 					totalRecordCount: 4_163,
@@ -2610,6 +4748,7 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 			).toBe(4_163);
 		}
 		expect(cursors).toEqual([0, 1_000, 2_000, 3_000, 4_000, 0, 1_000, 2_000, 3_000, 4_000]);
+		expect(requestedLimits).toEqual(Array(10).fill(2_000));
 		expect((client as { getEpisodes?: unknown }).getEpisodes).toBeUndefined();
 
 		const terminal = await runner({
@@ -2627,6 +4766,23 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 			totalWork: 1,
 			publishedItemCount: 4_162,
 		});
+		const publishedStatus = await prisma.cacheRefreshStatus.findUniqueOrThrow({
+			where: { instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin_episode" } },
+		});
+		const publishedMetadata = decodeJellyfinEpisodeGenerationMetadata(
+			publishedStatus.generationMetadata,
+		);
+		expect(publishedMetadata.ok).toBe(true);
+		if (!publishedMetadata.ok) throw new Error("expected episode metadata");
+		expect(
+			publishedMetadata.metadata.coverageReceipt.units.map((unit) => ({
+				pagesAttempted: unit.pagesAttempted,
+				pagesCompleted: unit.pagesCompleted,
+			})),
+		).toEqual([
+			{ pagesAttempted: 5, pagesCompleted: 5 },
+			{ pagesAttempted: 5, pagesCompleted: 5 },
+		]);
 		expect(await prisma.jellyfinEpisodeCache.count({ where: { instanceId: "jellyfin-1" } })).toBe(
 			4_162,
 		);
@@ -2676,6 +4832,188 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 			authority: null,
 		});
 	});
+
+	it.each([false, true])(
+		"preserves native claimed-page settlement when a provider warning throws (database failure=%s)",
+		async (databaseFailure) => {
+			const prisma = await database();
+			const seed = await completeFinalizerFixture(prisma);
+			await bindV2Fixture(prisma, seed.run.id, seed.scopes);
+			await invalidateJellyfinEpisodeRun(prisma, seed.run.id, seed.attempt.attemptedAt);
+			await prisma.cacheRefreshStatus.update({
+				where: {
+					instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin_episode" },
+				},
+				data: { lastAttemptResult: "success", lastAttemptErrorMessage: null },
+			});
+			const instance = await prisma.serviceInstance.update({
+				where: { id: "jellyfin-1" },
+				data: { expectedIdentity: "verified-provider", identityStatus: "VERIFIED" },
+			});
+			identityModuleMocks.readProviderIdentity.mockResolvedValue({
+				service: "JELLYFIN",
+				identityKind: "jellyfin-server-id",
+				rawIdentity: "verified-provider",
+				confirmationDigest: "a".repeat(64),
+				fingerprint: "a".repeat(12),
+			});
+			const claims: Array<{ token: string; cursor: number; nextAttemptAt: Date | null }> = [];
+			const runner = createJellyfinEpisodeWorkItemRunner({
+				createClient: () =>
+					({
+						getUsers: async () => [{ id: "user-1", name: "Current User" }],
+						getLibraries: async () => [{ id: "library-1" }],
+						getEpisodeItemsPageWithCoverage: async (
+							_userId: string,
+							_libraryId: string,
+							cursor: number,
+						) => {
+							const claimed = await prisma.providerObservationUnit.findFirstOrThrow({
+								where: { state: "running", run: { activeSlotKey: { not: null } } },
+							});
+							expect(claimed.claimToken).toEqual(expect.any(String));
+							expect(claimed.cursor).toBe(cursor);
+							claims.push({
+								token: claimed.claimToken!,
+								cursor,
+								nextAttemptAt: claimed.nextAttemptAt,
+							});
+							if (claims.length === 2) throw new Error("private provider response unavailable");
+							return {
+								startIndex: cursor,
+								totalRecordCount: 2,
+								items: [
+									{
+										type: "Episode" as const,
+										id: `episode-${cursor + 1}`,
+										seriesId: "series-1",
+										name: "Episode",
+										seasonNumber: 1,
+										episodeNumber: cursor + 1,
+										played: true,
+										playCount: 1,
+										lastPlayedDate: null,
+									},
+								],
+							};
+						},
+					}) as never,
+			});
+			const warningError = new Error("diagnostic warning unavailable");
+			const warnings: unknown[][] = [];
+			const context = {
+				prisma,
+				encryptor: { decrypt: () => "plaintext" },
+				instance,
+				log: {
+					warn: (...args: unknown[]) => {
+						warnings.push(args);
+						throw warningError;
+					},
+					error: () => undefined,
+				} as never,
+				now: new Date("2026-09-07T12:00:00.000Z"),
+			};
+			expect(await runner(context)).toMatchObject({ state: "running", progressed: true });
+			const run = await prisma.providerObservationRun.findFirstOrThrow({
+				where: { activeSlotKey: { not: null }, state: "running" },
+			});
+			const readCollect = () =>
+				prisma.providerObservationUnit.findFirstOrThrow({
+					where: { runId: run.id, phase: "collect" },
+				});
+			expect(await readCollect()).toMatchObject({
+				state: "pending",
+				cursor: 1,
+				observedRawCount: 1,
+				expectedRawCount: 2,
+				completedPages: 1,
+			});
+			const publishedBefore = await prisma.jellyfinEpisodeCache.findMany();
+			if (databaseFailure)
+				await prisma.$executeRawUnsafe(
+					`CREATE TRIGGER block_claim_settlement BEFORE UPDATE ON provider_observation_units
+				 WHEN NEW.state = 'failed' BEGIN SELECT RAISE(ABORT, 'synthetic settlement blocked'); END`,
+				);
+			const failureNow = new Date("2026-09-07T12:00:01.000Z");
+			let failure: unknown;
+			let result: unknown;
+			try {
+				result = await runner({ ...context, now: failureNow });
+			} catch (error) {
+				failure = error;
+			}
+			const unit = await readCollect();
+			if (databaseFailure) {
+				expect(failure).toMatchObject({ name: expect.stringMatching(/^PrismaClient/) });
+				expect(failure).not.toBe(warningError);
+				expect(result).toBeUndefined();
+				expect(unit).toMatchObject({
+					state: "running",
+					claimToken: claims[1]!.token,
+					cursor: 1,
+					observedRawCount: 1,
+					attemptCount: 0,
+					nextAttemptAt: claims[1]!.nextAttemptAt,
+					lastReasonCode: null,
+				});
+				expect(
+					await prisma.providerObservationRun.findUniqueOrThrow({ where: { id: run.id } }),
+				).toMatchObject({ state: "running", lastReasonCode: null, nextAttemptAt: null });
+			} else {
+				expect(unit.state).toBe("failed");
+				expect(failure).toBeUndefined();
+				expect(result).toMatchObject({
+					state: "failed",
+					reasonCode: "provider-unavailable",
+					progressed: false,
+				});
+				expect(unit).toMatchObject({
+					claimToken: null,
+					cursor: 1,
+					observedRawCount: 1,
+					expectedRawCount: 2,
+					completedPages: 1,
+					attemptCount: 1,
+					nextAttemptAt: new Date("2026-09-07T12:00:31.000Z"),
+					lastReasonCode: "provider-unavailable",
+				});
+				expect(
+					await prisma.providerObservationRun.findUniqueOrThrow({ where: { id: run.id } }),
+				).toMatchObject({
+					state: "failed",
+					lastReasonCode: "provider-unavailable",
+					nextAttemptAt: unit.nextAttemptAt,
+				});
+				expect(
+					await runner({ ...context, now: new Date("2026-09-07T12:00:30.999Z") }),
+				).toMatchObject({ state: "failed", progressed: false });
+				expect(claims).toHaveLength(2);
+				expect(await runner({ ...context, now: unit.nextAttemptAt! })).toMatchObject({
+					state: "running",
+					progressed: true,
+					completedUnits: 1,
+					completedWork: 1,
+				});
+				expect(claims.map((claim) => claim.cursor)).toEqual([0, 1, 1]);
+				expect(claims[2]!.token).not.toBe(claims[1]!.token);
+				expect(await readCollect()).toMatchObject({
+					state: "complete",
+					claimToken: null,
+					cursor: 2,
+					observedRawCount: 2,
+					attemptCount: 1,
+				});
+			}
+			expect(warnings).toEqual([
+				[{ category: "provider-response-unavailable" }, "Jellyfin episode page unavailable"],
+			]);
+			expect(await prisma.jellyfinEpisodeObservationStage.count({ where: { runId: run.id } })).toBe(
+				databaseFailure ? 1 : 2,
+			);
+			expect(await prisma.jellyfinEpisodeCache.findMany()).toEqual(publishedBefore);
+		},
+	);
 
 	it("resumes a recovered future lease through the production runner factory without replacing staged pages", async () => {
 		const prisma = await database();
@@ -2918,24 +5256,23 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 						_userId: string,
 						_libraryId: string,
 						cursor: number,
+						limit: number,
 					) => {
 						pageCalls.push(cursor);
 						return {
 							startIndex: cursor,
-							totalRecordCount: 2,
-							items: [
-								{
-									type: "Episode" as const,
-									id: `episode-${cursor + 1}`,
-									seriesId: "series-1",
-									name: "Episode",
-									seasonNumber: 1,
-									episodeNumber: cursor + 1,
-									played: true,
-									playCount: 1,
-									lastPlayedDate: null,
-								},
-							],
+							totalRecordCount: 2_001,
+							items: Array.from({ length: Math.min(limit, 2_001 - cursor) }, (_, index) => ({
+								type: "Episode" as const,
+								id: `episode-${cursor + index + 1}`,
+								seriesId: "series-1",
+								name: "Episode",
+								seasonNumber: 1,
+								episodeNumber: cursor + index + 1,
+								played: true,
+								playCount: 1,
+								lastPlayedDate: null,
+							})),
 						};
 					},
 				}) as never,
@@ -2961,7 +5298,7 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 			where: { instanceId: "jellyfin-1", cacheType: "jellyfin_episode" },
 			include: { units: { orderBy: { ordinal: "asc" } } },
 		});
-		expect(firstRun.units[0]).toMatchObject({ state: "pending", cursor: 1 });
+		expect(firstRun.units[0]).toMatchObject({ state: "pending", cursor: 2_000 });
 		const parentStatus = await prisma.cacheRefreshStatus.findUniqueOrThrow({
 			where: { instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin" } },
 		});
@@ -3002,11 +5339,11 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 		expect(second).toMatchObject({ state: "running", completedUnits: 1, completedWork: 1 });
 		expect(secondRuns).toHaveLength(1);
 		expect(secondRuns[0]?.id).toBe(firstRun.id);
-		expect(secondRuns[0]?.units[0]).toMatchObject({ state: "complete", cursor: 2 });
+		expect(secondRuns[0]?.units[0]).toMatchObject({ state: "complete", cursor: 2_001 });
 		expect(secondRuns[0]?.units.map((unit) => unit.scopePayload)).toEqual(
 			firstRun.units.map((unit) => unit.scopePayload),
 		);
-		expect(pageCalls).toEqual([0, 1]);
+		expect(pageCalls).toEqual([0, 2_000]);
 	});
 
 	it("reuses a validated V2 page plan without rediscovering scopes", async () => {
@@ -3536,6 +5873,158 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 	);
 
 	it.each([
+		["due", new Date("2026-09-07T05:29:00.000Z")],
+		["due-fails", new Date("2026-09-07T05:29:00.000Z")],
+		["future", new Date("2026-09-07T05:31:00.000Z")],
+		["future-joined", new Date("2026-09-07T05:31:00.000Z")],
+	] as const)(
+		"keeps a retryable failed V3 run on its persisted retry path: %s",
+		async (mode, retryAt) => {
+			const prisma = await database();
+			const seed = await completeFinalizerFixture(prisma);
+			await bindV3Fixture(prisma, seed.run.id);
+			const instance = await prisma.serviceInstance.update({
+				where: { id: "jellyfin-1" },
+				data: { expectedIdentity: "verified-provider", identityStatus: "VERIFIED" },
+			});
+			const failedUnit = await prisma.providerObservationUnit.findFirstOrThrow({
+				where: { runId: seed.run.id, phase: "collect" },
+			});
+			await prisma.providerObservationUnit.update({
+				where: { id: failedUnit.id },
+				data: {
+					state: "failed",
+					cursor: 1,
+					expectedRawCount: 2,
+					observedRawCount: 1,
+					attemptCount: 2,
+					nextAttemptAt: retryAt,
+					claimToken: null,
+					lastReasonCode: "provider-unavailable",
+				},
+			});
+			await prisma.providerObservationUnit.updateMany({
+				where: { runId: seed.run.id, id: { not: failedUnit.id } },
+				data: { state: "pending", claimToken: null, nextAttemptAt: null },
+			});
+			await prisma.providerObservationRun.update({
+				where: { id: seed.run.id },
+				data: {
+					state: "failed",
+					completedUnits: 0,
+					completedWork: 0,
+					nextAttemptAt: retryAt,
+					lastReasonCode: "provider-unavailable",
+				},
+			});
+			await prisma.cacheRefreshStatus.update({
+				where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "jellyfin_episode" } },
+				data: { lastAttemptResult: "success", lastAttemptErrorMessage: null },
+			});
+			if (mode === "future-joined") {
+				await prisma.cacheRefreshStatus.update({
+					where: {
+						instanceId_cacheType: { instanceId: instance.id, cacheType: "jellyfin_episode" },
+					},
+					data: {
+						lastAttemptAt: new Date("2026-09-07T05:29:00.000Z"),
+						lastAttemptResult: "in_progress:11111111-1111-4111-8111-111111111111",
+						lastAttemptErrorMessage: null,
+					},
+				});
+			}
+			identityModuleMocks.readProviderIdentity.mockResolvedValue({
+				service: "JELLYFIN",
+				identityKind: "jellyfin-server-id",
+				rawIdentity: "verified-provider",
+				confirmationDigest: "a".repeat(64),
+				fingerprint: "a".repeat(12),
+			});
+			const page = vi.fn(async (_user: string, _library: string, cursor: number) => {
+				if (mode === "due-fails") throw new Error("temporary provider outage");
+				return {
+					startIndex: cursor,
+					totalRecordCount: 2,
+					items: [
+						{
+							type: "Episode" as const,
+							id: "episode-2",
+							seriesId: "series-1",
+							name: "Episode 2",
+							seasonNumber: 1,
+							episodeNumber: 2,
+							played: true,
+							playCount: 1,
+							lastPlayedDate: null,
+						},
+					],
+				};
+			});
+			const runner = createJellyfinEpisodeWorkItemRunner({
+				createClient: () =>
+					({
+						getUsers: async () => [{ id: "user-1", name: "Current User" }],
+						getLibraries: async () => [{ id: "library-1" }],
+						getEpisodeItemsPageWithCoverage: page,
+					}) as never,
+			});
+			const result = await runner({
+				prisma,
+				encryptor: { decrypt: () => "plaintext" },
+				instance,
+				log: { warn: () => undefined, error: () => undefined } as never,
+				automaticRenewal: "provider-unavailable-cooldown",
+				resumeFailed: true,
+				now: new Date("2026-09-07T05:30:00.000Z"),
+			});
+			expect(result.renewalDeferred).toBeUndefined();
+			if (mode === "due") {
+				expect(result).toMatchObject({ state: "running", progressed: true });
+				expect(page).toHaveBeenCalledOnce();
+				expect(page.mock.calls[0]?.[2]).toBe(1);
+			} else if (mode === "due-fails") {
+				expect(result).toMatchObject({ state: "failed", progressed: false });
+				expect(page).toHaveBeenCalledOnce();
+				expect(
+					await prisma.providerObservationRun.findUniqueOrThrow({ where: { id: seed.run.id } }),
+				).toMatchObject({ state: "failed", nextAttemptAt: expect.any(Date) });
+				expect(
+					await prisma.cacheRefreshStatus.findUniqueOrThrow({
+						where: {
+							instanceId_cacheType: { instanceId: instance.id, cacheType: "jellyfin_episode" },
+						},
+					}),
+				).toMatchObject({
+					lastAttemptResult: "error",
+					lastAttemptErrorMessage: "collection-deferred",
+				});
+			} else {
+				expect(result).toMatchObject({ state: "failed", progressed: false });
+				expect(page).not.toHaveBeenCalled();
+				expect(
+					await prisma.providerObservationRun.findUniqueOrThrow({ where: { id: seed.run.id } }),
+				).toMatchObject({ state: "failed", nextAttemptAt: retryAt });
+				expect(
+					await prisma.providerObservationUnit.findUniqueOrThrow({ where: { id: failedUnit.id } }),
+				).toMatchObject({ state: "failed", attemptCount: 2, nextAttemptAt: retryAt });
+				expect(
+					await prisma.cacheRefreshStatus.findUniqueOrThrow({
+						where: {
+							instanceId_cacheType: { instanceId: instance.id, cacheType: "jellyfin_episode" },
+						},
+					}),
+				).toMatchObject({
+					lastAttemptResult: "error",
+					lastAttemptErrorMessage: "collection-deferred",
+				});
+			}
+			expect(
+				await prisma.jellyfinEpisodeCache.findMany({ where: { instanceId: instance.id } }),
+			).toEqual([expect.objectContaining({ jellyfinId: "old" })]);
+		},
+	);
+
+	it.each([
 		["eligible", new Date("2026-09-07T05:30:00.000Z")],
 		["legacy-startup", new Date("2026-09-07T05:29:59.999Z")],
 		["deferred", new Date("2026-09-07T05:29:59.999Z")],
@@ -3618,10 +6107,25 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 			fingerprint: "a".repeat(12),
 		});
 		const before = await finalizerState(prisma, seed.run.id);
-		const page = vi.fn(async (_user: string, _library: string, cursor: number) => ({
+		const page = vi.fn(async (_user: string, _library: string, cursor: number, limit: number) => ({
 			startIndex: cursor,
 			totalRecordCount: 2,
 			items: [
+				...(cursor === 0 && limit === 2_000
+					? [
+							{
+								type: "Episode" as const,
+								id: "episode-1",
+								seriesId: "series-1",
+								name: "Episode 1",
+								seasonNumber: 1,
+								episodeNumber: 1,
+								played: true,
+								playCount: 1,
+								lastPlayedDate: null,
+							},
+						]
+					: []),
 				{
 					type: "Episode" as const,
 					id: "episode-2",
@@ -4042,7 +6546,7 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 		).toBeNull();
 	});
 
-	it("atomically replaces the populated cache, status, stages, and active run after equal passes", async () => {
+	it("atomically publishes cache and run, then reclaims stages after commit", async () => {
 		const prisma = await database();
 		const { attempt, run, scopes } = await completeFinalizerFixture(prisma);
 
@@ -4068,7 +6572,7 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 			}),
 		]);
 		expect(await prisma.jellyfinEpisodeObservationStage.count({ where: { runId: run.id } })).toBe(
-			0,
+			2,
 		);
 		expect(await prisma.providerObservationRun.findUnique({ where: { id: run.id } })).toMatchObject(
 			{
@@ -4083,6 +6587,10 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 				},
 			}),
 		).toMatchObject({ lastResult: "success", itemCount: 1, lastAttemptResult: "success" });
+		await cleanupPublishedJellyfinEpisodeArtifacts(prisma, "jellyfin-1", run.id);
+		expect(await prisma.jellyfinEpisodeObservationStage.count({ where: { runId: run.id } })).toBe(
+			0,
+		);
 	});
 
 	it("uses a caller-provided authority transaction for the final replacement", async () => {
@@ -5058,7 +7566,7 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 		expect(unitUpdate).not.toHaveBeenCalled();
 	});
 
-	it("stages one page and releases its claim for the next cursor without terminalizing the run", async () => {
+	it("stages one page and makes the next cursor due within one second without terminalizing the run", async () => {
 		const scope = { userId: "user-1", userName: "private", libraryId: "library-1" };
 		const plannedUnit = buildJellyfinEpisodeScopePlan([scope]).units[0]!;
 		const unitUpdate = vi.fn().mockResolvedValue({ count: 1 });
@@ -5086,6 +7594,7 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 					ordinal: 0,
 					scopeKey: "collect:user-1:library-1",
 					scopeDigest: plannedUnit.scopeDigest,
+					scopePayload: plannedUnit.scopePayload,
 					expectedTargets: 1,
 					cursor: 0,
 					expectedRawCount: null,
@@ -5108,7 +7617,7 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 			claimToken: "claim-1",
 			authorityKey: "authority-1",
 			scopeKey: "collect:user-1:library-1",
-			scopePayload: JSON.stringify({ userId: "user-1", libraryId: "library-1" }),
+			scopePayload: plannedUnit.scopePayload ?? null,
 			phase: "collect" as const,
 			cursor: 0,
 			expectedRawCount: null,
@@ -5149,9 +7658,7 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 					observedRawCount: 1,
 					state: "pending",
 					claimToken: null,
-					nextAttemptAt: new Date(
-						now.getTime() + JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS,
-					),
+					nextAttemptAt: new Date(now.getTime() + 1_000),
 				}),
 			}),
 		);

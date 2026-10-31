@@ -7,7 +7,10 @@
 
 import { LIBRARY_SERVICES_UPPER } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
-import { withIndependentCleanupOperationGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
+import {
+	CleanupMaintenanceConflictError,
+	withIndependentCleanupOperationGuard,
+} from "../library-cleanup/cleanup-maintenance-gate.js";
 import { createLogger } from "../logger.js";
 import type { NotificationService } from "../notifications/notification-service.js";
 import {
@@ -74,7 +77,13 @@ export class LibrarySyncScheduler {
 	private intervalId: NodeJS.Timeout | null = null;
 	private firstTickTimeoutId: NodeJS.Timeout | null = null;
 	private activeSyncs: Set<string> = new Set();
+	private pendingSyncs: Set<string> = new Set();
 	private trackTick: TickWrapper = passthroughTickWrapper;
+	private trackProducer: TickWrapper = passthroughTickWrapper;
+	private scheduleGeneration = 0;
+	private admissionClosed = false;
+	private pendingOperations = new Set<Promise<void>>();
+	private shutdownPromise: Promise<void> | null = null;
 
 	/**
 	 * Initialize the scheduler with the app instance
@@ -91,10 +100,16 @@ export class LibrarySyncScheduler {
 		this.trackTick = trackTick;
 	}
 
+	/** Retain accepted server-side notification producers through shutdown. */
+	setTrackProducer(trackProducer: TickWrapper): void {
+		this.trackProducer = trackProducer;
+	}
+
 	/**
 	 * Start the scheduler (begins polling for instances needing sync)
 	 */
 	start(app: FastifyInstance): void {
+		if (this.admissionClosed) return;
 		if (this.running) {
 			log.warn("Library sync scheduler already running");
 			return;
@@ -111,28 +126,25 @@ export class LibrarySyncScheduler {
 		);
 
 		// Delay the first tick — see FIRST_TICK_DELAY_MS comment for why.
+		const generation = ++this.scheduleGeneration;
 		this.firstTickTimeoutId = setTimeout(() => {
-			this.firstTickTimeoutId = null;
 			// Guard against stop() racing with the timeout firing. Without
 			// this check: stop() runs (sets `this.running = false` and clears
 			// `firstTickTimeoutId` which is already null here, so its
 			// clearTimeout is a no-op), then this callback continues and
 			// installs an interval that escapes shutdown cleanup. The interval
 			// would then pin the event loop open during graceful shutdown.
-			if (!this.running) {
+			if (this.admissionClosed || !this.running || generation !== this.scheduleGeneration) {
 				log.debug("First-tick callback fired after stop() — skipping interval install");
 				return;
 			}
-			this.trackTick(() => this.tick()).catch((error) => {
-				log.error({ err: error }, "Initial scheduler tick failed");
-			});
+			this.firstTickTimeoutId = null;
 
 			// Then check periodically
 			this.intervalId = setInterval(() => {
-				this.trackTick(() => this.tick()).catch((error) => {
-					log.error({ err: error }, "Scheduler tick failed");
-				});
+				void this.runScheduledTick(generation, "Scheduler tick failed");
 			}, SCHEDULER_TICK_INTERVAL_MS);
+			void this.runScheduledTick(generation, "Initial scheduler tick failed");
 		}, FIRST_TICK_DELAY_MS);
 	}
 
@@ -161,6 +173,48 @@ export class LibrarySyncScheduler {
 		this.running = false;
 	}
 
+	/** Stop admission without delaying sibling plugins' preClose hooks. */
+	closeAdmission(): void {
+		this.admissionClosed = true;
+		this.stop();
+	}
+
+	/** Drain accepted scheduled batches and manual requests before dependencies close. */
+	shutdown(): Promise<void> {
+		this.closeAdmission();
+		this.shutdownPromise ??= (async () => {
+			while (this.pendingOperations.size > 0) await Promise.all(this.pendingOperations);
+		})();
+		return this.shutdownPromise;
+	}
+
+	private async runAccepted<T>(operation: () => Promise<T>): Promise<T> {
+		let settle!: () => void;
+		const completion = new Promise<void>((resolve) => {
+			settle = resolve;
+		});
+		this.pendingOperations.add(completion);
+		try {
+			return await this.trackProducer(operation);
+		} finally {
+			this.pendingOperations.delete(completion);
+			settle();
+		}
+	}
+
+	private async runScheduledTick(generation: number, errorMessage: string): Promise<void> {
+		if (this.admissionClosed || !this.running || generation !== this.scheduleGeneration) return;
+		try {
+			await this.runAccepted(() => this.trackTick(() => this.tick()));
+		} catch (err) {
+			if (err instanceof CleanupMaintenanceConflictError) {
+				log.debug("Library sync tick paused during database maintenance");
+			} else {
+				log.error({ err }, errorMessage);
+			}
+		}
+	}
+
 	/**
 	 * Check if the scheduler is running
 	 */
@@ -172,43 +226,56 @@ export class LibrarySyncScheduler {
 	 * Trigger a manual sync for a specific instance
 	 */
 	async triggerSync(instanceId: string): Promise<SyncResult | null> {
+		if (this.admissionClosed) throw new Error("Library sync scheduler is shutting down");
 		if (!this.app) {
 			log.error("Scheduler not initialized");
 			return null;
 		}
+		const app = this.app;
 
 		// Check if already syncing
-		if (this.activeSyncs.has(instanceId)) {
+		if (this.isInstanceSyncing(instanceId)) {
 			log.warn({ instanceId }, "Sync already in progress for instance");
 			return null;
 		}
 
-		// Get instance + its sync status (so adaptive concurrency in
-		// concurrent tick()s sees this manual sync's known size).
-		const instance = await this.app.prisma.serviceInstance.findUnique({
-			where: { id: instanceId },
-			include: { librarySyncStatus: true },
-		});
+		// Make an accepted request visible before the awaited lookup. Until its
+		// size is known, reserve large-library capacity conservatively.
+		this.pendingSyncs.add(instanceId);
+		this.activeSyncItemCounts.set(instanceId, LARGE_LIBRARY_THRESHOLD);
+		try {
+			return await this.runAccepted(async () => {
+				// Get instance + its sync status (so adaptive concurrency in
+				// concurrent tick()s sees this manual sync's known size).
+				const instance = await app.prisma.serviceInstance.findUnique({
+					where: { id: instanceId },
+					include: { librarySyncStatus: true },
+				});
 
-		if (!instance) {
-			log.error({ instanceId }, "Instance not found");
-			return null;
+				if (!instance) {
+					log.error({ instanceId }, "Instance not found");
+					return null;
+				}
+
+				// Skip if not a library service (only Prowlarr has no library)
+				if (!(LIBRARY_SERVICES_UPPER as readonly string[]).includes(instance.service)) {
+					log.debug({ instanceId, service: instance.service }, "Skipping non-library instance");
+					return null;
+				}
+
+				// Mirror tick()'s pre-runSync bookkeeping so adaptive concurrency works
+				// even when a manual trigger races with a scheduled tick.
+				const status = instance.librarySyncStatus;
+				const knownItemCount = status?.lastFullSync
+					? (status.itemCount ?? 0)
+					: LARGE_LIBRARY_THRESHOLD;
+				this.activeSyncItemCounts.set(instance.id, knownItemCount);
+				return await this.runSync(instance);
+			});
+		} finally {
+			this.pendingSyncs.delete(instanceId);
+			this.activeSyncItemCounts.delete(instanceId);
 		}
-
-		// Skip if not a library service (only Prowlarr has no library)
-		if (!(LIBRARY_SERVICES_UPPER as readonly string[]).includes(instance.service)) {
-			log.debug({ instanceId, service: instance.service }, "Skipping non-library instance");
-			return null;
-		}
-
-		// Mirror tick()'s pre-runSync bookkeeping so adaptive concurrency works
-		// even when a manual trigger races with a scheduled tick. Cold-start
-		// instances (no lastFullSync yet) are treated as ≥ threshold so they
-		// don't accidentally co-spike with another large sync.
-		const status = instance.librarySyncStatus;
-		const knownItemCount = status?.lastFullSync ? (status.itemCount ?? 0) : LARGE_LIBRARY_THRESHOLD;
-		this.activeSyncItemCounts.set(instance.id, knownItemCount);
-		return this.runSync(instance);
 	}
 
 	/**
@@ -245,7 +312,7 @@ export class LibrarySyncScheduler {
 
 		// Don't start new syncs if we're at the absolute cap (covers the
 		// default-2 ceiling). Adaptive lowering happens per-candidate below.
-		if (this.activeSyncs.size >= MAX_CONCURRENT_SYNCS) {
+		if (this.getActiveSyncCount() >= MAX_CONCURRENT_SYNCS) {
 			log.debug(
 				{ activeCount: this.activeSyncs.size },
 				"Max concurrent syncs reached, skipping tick",
@@ -253,6 +320,7 @@ export class LibrarySyncScheduler {
 			return;
 		}
 
+		const childSyncs: Promise<unknown>[] = [];
 		try {
 			// Find instances due for sync
 			const now = new Date();
@@ -290,7 +358,7 @@ export class LibrarySyncScheduler {
 					? (status.itemCount ?? 0)
 					: LARGE_LIBRARY_THRESHOLD;
 				const effectiveCap = this.effectiveMaxConcurrent(candidateItemCount);
-				if (this.activeSyncs.size >= effectiveCap) {
+				if (this.getActiveSyncCount() >= effectiveCap) {
 					if (effectiveCap < MAX_CONCURRENT_SYNCS) {
 						log.debug(
 							{
@@ -306,7 +374,7 @@ export class LibrarySyncScheduler {
 				}
 
 				// Skip if already syncing
-				if (this.activeSyncs.has(instance.id)) {
+				if (this.isInstanceSyncing(instance.id)) {
 					continue;
 				}
 
@@ -342,18 +410,34 @@ export class LibrarySyncScheduler {
 					!lastSync || now.getTime() - lastSync.getTime() >= Math.max(intervalMs, minIntervalMs);
 
 				if (needsSync) {
+					// Admission may await native ownership before runSync marks this
+					// instance active. Reserve its slot now so later candidates cannot
+					// overrun this tick's adaptive capacity during that wait.
+					this.pendingSyncs.add(instance.id);
 					// Record the candidate's last-known size so other instances
 					// evaluated later in this tick see it as an active large sync.
 					// Cleared in runSync's finally.
 					this.activeSyncItemCounts.set(instance.id, candidateItemCount);
 					// Run sync in background (don't await to allow parallel processing)
-					this.runSync(instance).catch((error) => {
-						log.error({ err: error, instanceId: instance.id }, "Background sync failed");
-					});
+					childSyncs.push(
+						this.runSync(instance)
+							.catch((error) => {
+								log.error({ err: error, instanceId: instance.id }, "Background sync failed");
+							})
+							.finally(() => {
+								// Also covers rejection before runSync enters its guarded body.
+								this.pendingSyncs.delete(instance.id);
+								this.activeSyncItemCounts.delete(instance.id);
+							}),
+					);
 				}
 			}
 		} catch (error) {
 			log.error({ err: error }, "Error during scheduler tick");
+		} finally {
+			// Preserve parallel launches, but retain their producer context and guard
+			// until every accepted child has finished, including notification handoffs.
+			await Promise.allSettled(childSyncs);
 		}
 	}
 
@@ -421,14 +505,14 @@ export class LibrarySyncScheduler {
 	 * Get the number of active syncs
 	 */
 	getActiveSyncCount(): number {
-		return this.activeSyncs.size;
+		return new Set([...this.activeSyncs, ...this.pendingSyncs]).size;
 	}
 
 	/**
 	 * Check if a specific instance is currently syncing
 	 */
 	isInstanceSyncing(instanceId: string): boolean {
-		return this.activeSyncs.has(instanceId);
+		return this.activeSyncs.has(instanceId) || this.pendingSyncs.has(instanceId);
 	}
 }
 

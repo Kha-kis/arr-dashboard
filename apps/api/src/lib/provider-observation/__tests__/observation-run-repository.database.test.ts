@@ -872,12 +872,22 @@ describe("provider observation run repository SQLite lifecycle", { timeout: 30_0
 				observedRawCount: 7,
 			}),
 		).toBe(true);
+		await prisma.providerObservationUnit.update({
+			where: { id: first!.unitId },
+			data: { completedPages: 3 },
+		});
 		const second = await prisma.providerObservationUnit.findFirst({
 			where: { runId: run.id, ordinal: 1 },
 		});
 		await prisma.providerObservationUnit.update({
 			where: { id: second!.id },
-			data: { state: "complete", cursor: 1, expectedRawCount: 1, observedRawCount: 1 },
+			data: {
+				state: "complete",
+				cursor: 1,
+				expectedRawCount: 1,
+				observedRawCount: 1,
+				completedPages: 4,
+			},
 		});
 		await prisma.providerObservationRun.update({
 			where: { id: run.id },
@@ -947,6 +957,7 @@ describe("provider observation run repository SQLite lifecycle", { timeout: 30_0
 			cursor: 0,
 			expectedRawCount: null,
 			observedRawCount: 0,
+			completedPages: 0,
 			attemptCount: 1,
 			nextAttemptAt: retryAt,
 			lastReasonCode: "coverage-incomplete",
@@ -965,7 +976,13 @@ describe("provider observation run repository SQLite lifecycle", { timeout: 30_0
 		expect(remainingExclusions[0]?.unitId).toBe(second!.id);
 		expect(
 			await prisma.providerObservationUnit.findUnique({ where: { id: second!.id } }),
-		).toMatchObject({ state: "complete", cursor: 1, expectedRawCount: 1, observedRawCount: 1 });
+		).toMatchObject({
+			state: "complete",
+			cursor: 1,
+			expectedRawCount: 1,
+			observedRawCount: 1,
+			completedPages: 4,
+		});
 
 		const reclaimed = await claimObservationUnit(prisma, { runId: run.id, now: retryAt });
 		expect(reclaimed).not.toBeNull();
