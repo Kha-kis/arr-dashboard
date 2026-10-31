@@ -36,6 +36,7 @@ import type {
 } from "@arr/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { ApiError } from "../../lib/api-client/base";
 import {
 	fetchBandwidthAnalytics,
 	fetchBandwidthForecast,
@@ -110,8 +111,20 @@ export const usePlexSections = (enabled = true) => {
 // ============================================================================
 
 export const usePlexScanMutation = () => {
-	return useMutation<PlexScanResponse, Error, { instanceId: string; sectionId: string }>({
-		mutationFn: ({ instanceId, sectionId }) => triggerPlexScan(instanceId, sectionId),
+	const queryClient = useQueryClient();
+	return useMutation<
+		PlexScanResponse,
+		Error,
+		{ instanceId: string; sectionId: string; sectionUuid: string }
+	>({
+		mutationFn: ({ instanceId, sectionId, sectionUuid }) =>
+			triggerPlexScan(instanceId, sectionId, sectionUuid),
+		retry: false,
+		onError: (error) => {
+			if (error instanceof ApiError && error.status === 409) {
+				void queryClient.invalidateQueries({ queryKey: plexKeys.sections(), exact: true });
+			}
+		},
 	});
 };
 

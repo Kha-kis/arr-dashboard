@@ -311,6 +311,7 @@ export interface WatchEnrichmentResponse {
 
 export interface PlexSection {
 	sectionId: string;
+	sectionUuid: string;
 	sectionTitle: string;
 	mediaType: string;
 	instanceId: string;
@@ -319,6 +320,11 @@ export interface PlexSection {
 
 export interface PlexSectionsResponse {
 	sections: PlexSection[];
+	/** Independent section-catalog evidence; does not grant canonical mutation authority. */
+	catalog: {
+		availability: "current" | "last-known" | "unavailable";
+		observedAt: string | null;
+	};
 	evidence?: PlexEvidenceSummary;
 }
 

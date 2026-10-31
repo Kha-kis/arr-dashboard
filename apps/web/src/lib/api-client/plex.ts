@@ -67,11 +67,13 @@ export async function fetchPlexSections(): Promise<PlexSectionsResponse> {
 export async function triggerPlexScan(
 	instanceId: string,
 	sectionId: string,
+	sectionUuid: string,
 ): Promise<PlexScanResponse> {
 	const response = await apiRequest<unknown>(
 		`/api/plex/${instanceId}/sections/${sectionId}/refresh`,
 		{
 			method: "POST",
+			json: { sectionUuid },
 			expectedSuccessStatus: 200,
 			requireJsonSuccess: true,
 		},

@@ -311,6 +311,25 @@ truthful cache evidence through the corresponding health/status GET endpoints.
 | POST | `/jellyfin/cache/:instanceId/refresh` | Durably accept a Jellyfin/Emby cache refresh request |
 | POST | `/tautulli/cache/:instanceId/refresh` | Durably accept a Tautulli cache refresh request |
 
+### Plex section catalog and requested scan
+
+`GET /api/plex/sections` is a cache-only read of the enabled, owned Plex section
+catalog. Each option includes `sectionId` and `sectionUuid`. The response's
+`catalog` reports `availability` (`current`, `last-known`, or `unavailable`) and
+`observedAt` independently of canonical mapping/watch `evidence`. Complete
+receipt-backed catalog evidence can remain usable when mapping or watch evidence
+is partial. Retained values are explicitly last-known. Missing proof or an
+unavailable configured instance returns 503 rather than a silently truncated list.
+
+`POST /api/plex/:instanceId/sections/:sectionId/refresh` requires JSON
+`{ "sectionUuid": "<selected section UUID>" }`. Before requesting a scan, it
+reloads the owned catalog, checks the current Plex identity and exact live
+section key/UUID/type, and revalidates the stored connection. Changed or ambiguous
+targets return 409; unavailable validation returns 503 without a scan request.
+Success is returned only after provider acknowledgement. An unconfirmed write
+returns 502 and is not automatically retried; inspect Plex activity before an
+explicit retry. Catalog display does not grant watch-state or cleanup authority.
+
 ## Library (`/api/library`)
 
 | Route | Purpose |

@@ -20,11 +20,13 @@ const section = {
 	instanceId: "plex-fixture",
 	instanceName: "Synthetic Plex",
 	sectionId: "7",
+	sectionUuid: "synthetic-section-primary",
 	sectionTitle: "Synthetic film library",
 	mediaType: "movie",
 };
 const current: PlexSectionsResponse = {
 	sections: [section],
+	catalog: { availability: "current", observedAt: "2026-10-31T12:00:00.000Z" },
 	evidence: {
 		publicationLevel: "authoritative",
 		completeness: "complete",
@@ -38,11 +40,14 @@ let client: QueryClient;
 let plex: "enabled" | "disabled" | "absent";
 let sectionStatus: number;
 let sections: PlexSectionsResponse;
+let sectionWait: Promise<void> | undefined;
+let releaseSections: (() => void) | undefined;
 let scanStatus: number;
 let scanResponse: (() => Response) | undefined;
 let scanWait: Promise<void> | undefined;
 let releaseScan: (() => void) | undefined;
 let calls: { path: string; method: string }[];
+let scanBodies: unknown[];
 let unexpected: string[];
 const reply = (payload: unknown, status = 200) =>
 	new Response(JSON.stringify(payload), {
@@ -56,14 +61,17 @@ beforeEach(() => {
 	scanStatus = 200;
 	scanResponse = undefined;
 	sections = structuredClone(current);
+	sectionWait = undefined;
+	releaseSections = undefined;
 	scanWait = undefined;
 	releaseScan = undefined;
 	calls = [];
+	scanBodies = [];
 	unexpected = [];
 	client = new QueryClient({
 		defaultOptions: {
 			queries: { retry: false, retryDelay: 0, gcTime: Infinity },
-			mutations: { retry: false },
+			mutations: { retry: 2, retryDelay: 0 },
 		},
 	});
 	vi.stubGlobal("fetch", async (input: string, options?: RequestInit) => {
@@ -96,10 +104,12 @@ beforeEach(() => {
 				syncStatus: { isCached: true, syncInProgress: false, totalCachedItems: 0 },
 			});
 		if (path === "/api/library/sync/status") return reply({ instances: [] });
-		if (path === "/api/plex/sections")
+		if (path === "/api/plex/sections") {
+			await sectionWait;
 			return sectionStatus === 200
 				? reply(sections)
 				: reply({ error: "Synthetic section read unavailable" }, sectionStatus);
+		}
 		if (
 			[
 				"/api/plex/plex-fixture/sections/7/refresh",
@@ -107,6 +117,7 @@ beforeEach(() => {
 			].includes(path) &&
 			method === "POST"
 		) {
+			scanBodies.push(JSON.parse(String(options?.body)));
 			await scanWait;
 			if (scanResponse) return scanResponse();
 			return scanStatus === 200
@@ -126,6 +137,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
 	releaseScan?.();
+	releaseSections?.();
 	cleanup();
 	await client.cancelQueries();
 	client.clear();
@@ -167,6 +179,7 @@ describe("Library cold Plex controls", () => {
 						...section,
 						instanceId: "plex-secondary",
 						sectionId: "9",
+						sectionUuid: "synthetic-section-secondary",
 						instanceName: duplicateNames ? "Synthetic Plex" : "Synthetic secondary Plex",
 					},
 					section,
@@ -191,6 +204,7 @@ describe("Library cold Plex controls", () => {
 			expect(writes()).toEqual([
 				{ path: "/api/plex/plex-secondary/sections/9/refresh", method: "POST" },
 			]);
+			expect(scanBodies).toEqual([{ sectionUuid: "synthetic-section-secondary" }]);
 		},
 	);
 	it.each([
@@ -238,6 +252,7 @@ describe("Library cold Plex controls", () => {
 		expect(writes()).toEqual([
 			{ path: "/api/plex/plex-fixture/sections/7/refresh", method: "POST" },
 		]);
+		expect(scanBodies).toEqual([{ sectionUuid: "synthetic-section-primary" }]);
 	});
 	it("discovers configured sections from a genuinely cold query and writes only after selection", async () => {
 		expect(client.getQueryData(plexKeys.sections())).toBeUndefined();
@@ -328,10 +343,56 @@ describe("Library cold Plex controls", () => {
 		await waitFor(() => expect(screen.getByRole("button", { name: "Scan Plex" })).toBeEnabled());
 		expect(writes()).toEqual([]);
 	});
-	it.each([undefined, { ...current.evidence!, availability: "last-known" as const }])(
-		"does not treat missing or last-known evidence as current scan eligibility",
-		async (evidence) => {
-			sections = { sections: [section], evidence };
+	it.each([
+		undefined,
+		null,
+		{ availability: "unavailable", observedAt: null },
+		{ availability: "unknown", observedAt: current.catalog.observedAt },
+		{ availability: "current", observedAt: null },
+		{ availability: "current", observedAt: "not-a-timestamp" },
+		{ availability: "current", observedAt: 7 },
+		{ availability: "last-known", observedAt: null },
+		{ availability: "last-known", observedAt: "not-a-timestamp" },
+	])("disables unknown or malformed catalog eligibility: %j", async (catalog) => {
+		sections = { ...current, catalog } as PlexSectionsResponse;
+		mount();
+		await settle();
+		await waitFor(() => expect(client.getQueryState(plexKeys.sections())?.status).toBe("success"));
+		expect(screen.getByRole("button", { name: "Scan Plex" })).toBeDisabled();
+		expect(screen.getByRole("button", { name: /retry plex sections/i })).toBeEnabled();
+		expect(writes()).toEqual([]);
+	});
+	it("disables retained options during a section GET and enables them after read recovery", async () => {
+		mount();
+		const button = await screen.findByRole("button", { name: "Scan Plex" });
+		fireEvent.click(button);
+		await screen.findByRole("button", { name: /Synthetic film library/ });
+		sectionWait = new Promise<void>((resolve) => {
+			releaseSections = resolve;
+		});
+		let refetch: Promise<void>;
+		act(() => {
+			refetch = client.refetchQueries({ queryKey: plexKeys.sections() });
+		});
+		await waitFor(() => expect(button).toBeDisabled());
+		expect(
+			screen.queryByRole("button", { name: /Synthetic film library/ }),
+		).not.toBeInTheDocument();
+		expect(writes()).toEqual([]);
+		await act(async () => {
+			releaseSections!();
+			await refetch;
+		});
+		await waitFor(() => expect(button).toBeEnabled());
+		expect(writes()).toEqual([]);
+	});
+	it.each([undefined, "", "   ", 7])(
+		"disables the catalog if any option has invalid UUID %j",
+		async (sectionUuid) => {
+			sections = {
+				...current,
+				sections: [section, { ...section, sectionId: "9", sectionUuid }],
+			} as PlexSectionsResponse;
 			mount();
 			await settle();
 			await waitFor(() =>
@@ -341,21 +402,146 @@ describe("Library cold Plex controls", () => {
 			expect(writes()).toEqual([]);
 		},
 	);
-	it("surfaces an unconfirmed scan request without automatic replay", async () => {
-		scanStatus = 503;
+	it.each([
+		undefined,
+		{
+			...current.evidence!,
+			publicationLevel: "positive-only" as const,
+			completeness: "partial" as const,
+		},
+	])(
+		"offers a verified current catalog independently of canonical mapping/watch evidence",
+		async (evidence) => {
+			sections = { ...current, evidence };
+			mount();
+			await settle();
+			await waitFor(() =>
+				expect(client.getQueryState(plexKeys.sections())?.status).toBe("success"),
+			);
+			expect(screen.getByRole("button", { name: "Scan Plex" })).toBeEnabled();
+			expect(writes()).toEqual([]);
+		},
+	);
+	it("labels a last-known catalog and submits its UUID for server revalidation", async () => {
+		sections = {
+			...current,
+			catalog: { ...current.catalog, availability: "last-known" },
+			evidence: {
+				...current.evidence!,
+				publicationLevel: "unavailable",
+				availability: "last-known",
+			},
+		};
 		mount();
-		fireEvent.click(await screen.findByRole("button", { name: "Scan Plex" }));
-		fireEvent.click(await screen.findByRole("button", { name: /Synthetic film library/ }));
-		expect(await screen.findByRole("alert")).toHaveTextContent(/not confirmed/i);
-		expect(writes()).toHaveLength(1);
-		expect(screen.queryByText(/scan requested/i)).not.toBeInTheDocument();
-		scanStatus = 200;
-		fireEvent.click(screen.getByRole("button", { name: "Scan Plex" }));
+		const button = await screen.findByRole("button", { name: "Scan Plex" });
+		expect(button).toBeEnabled();
+		expect(screen.getByText(/last-known Plex section catalog/i)).toHaveTextContent(
+			/server rechecks.*before.*scan/i,
+		);
+		fireEvent.click(button);
 		fireEvent.click(await screen.findByRole("button", { name: /Synthetic film library/ }));
 		await screen.findByText(/scan requested/i);
-		expect(writes()).toHaveLength(2);
-		expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+		expect(scanBodies).toEqual([{ sectionUuid: "synthetic-section-primary" }]);
 	});
+	it.each([200, 503])(
+		"recovers a rejected UUID selection using GET only when recovery returns HTTP %s",
+		async (recoveryStatus) => {
+			mount();
+			fireEvent.click(await screen.findByRole("button", { name: "Scan Plex" }));
+			await screen.findByRole("button", { name: /Synthetic film library/ });
+			scanStatus = 409;
+			sectionStatus = recoveryStatus;
+			sections = {
+				...current,
+				sections: [{ ...section, sectionUuid: "synthetic-section-replacement" }],
+			};
+			sectionWait = new Promise<void>((resolve) => {
+				releaseSections = resolve;
+			});
+			fireEvent.click(screen.getByRole("button", { name: /Synthetic film library/ }));
+			await waitFor(() =>
+				expect(calls.filter((call) => call.path === "/api/plex/sections")).toHaveLength(2),
+			);
+			expect(
+				calls.filter((call) => call.path === "/api/plex/sections" || call.method === "POST"),
+			).toEqual([
+				{ path: "/api/plex/sections", method: "GET" },
+				{ path: "/api/plex/plex-fixture/sections/7/refresh", method: "POST" },
+				{ path: "/api/plex/sections", method: "GET" },
+			]);
+			expect(screen.getByRole("button", { name: "Scan Plex" })).toBeDisabled();
+			expect(
+				screen.queryByRole("button", { name: /Synthetic film library/ }),
+			).not.toBeInTheDocument();
+			expect(scanBodies).toEqual([{ sectionUuid: "synthetic-section-primary" }]);
+			await act(async () => {
+				releaseSections!();
+				await sectionWait;
+			});
+			expect(await screen.findByRole("alert")).toHaveTextContent(/no scan was requested/i);
+			expect(
+				screen.queryByText(/may have received|scan request not confirmed/i),
+			).not.toBeInTheDocument();
+			await waitFor(() =>
+				expect(client.getQueryState(plexKeys.sections())?.status).toBe(
+					recoveryStatus === 200 ? "success" : "error",
+				),
+			);
+			expect(writes()).toHaveLength(1);
+			if (recoveryStatus !== 200) {
+				expect(screen.getByRole("button", { name: "Scan Plex" })).toBeDisabled();
+				fireEvent.click(screen.getByRole("button", { name: "Scan Plex" }));
+				expect(
+					screen.queryByRole("button", { name: /Synthetic film library/ }),
+				).not.toBeInTheDocument();
+				expect(writes()).toHaveLength(1);
+				expect(screen.getByRole("button", { name: /retry plex sections/i })).toBeEnabled();
+				sectionStatus = 200;
+				fireEvent.click(screen.getByRole("button", { name: /retry plex sections/i }));
+			}
+			await waitFor(() => expect(screen.getByRole("button", { name: "Scan Plex" })).toBeEnabled());
+			expect(scanBodies).toEqual([{ sectionUuid: "synthetic-section-primary" }]);
+			expect(calls.filter((call) => call.path === "/api/plex/sections")).toHaveLength(
+				recoveryStatus === 200 ? 2 : 3,
+			);
+			scanStatus = 200;
+			fireEvent.click(screen.getByRole("button", { name: "Scan Plex" }));
+			expect(writes()).toHaveLength(1);
+			fireEvent.click(await screen.findByRole("button", { name: /Synthetic film library/ }));
+			await screen.findByText(/scan requested/i);
+			expect(scanBodies).toEqual([
+				{ sectionUuid: "synthetic-section-primary" },
+				{ sectionUuid: "synthetic-section-replacement" },
+			]);
+			expect(writes()).toHaveLength(2);
+		},
+	);
+	it.each([502, 503, "network"] as const)(
+		"surfaces an unconfirmed %s scan request without automatic replay",
+		async (failure) => {
+			if (failure === "network") {
+				scanResponse = () => {
+					throw new TypeError("Synthetic connection lost");
+				};
+			} else {
+				scanStatus = failure;
+			}
+			mount();
+			fireEvent.click(await screen.findByRole("button", { name: "Scan Plex" }));
+			fireEvent.click(await screen.findByRole("button", { name: /Synthetic film library/ }));
+			expect(await screen.findByRole("alert")).toHaveTextContent(/not confirmed/i);
+			expect(writes()).toHaveLength(1);
+			expect(calls.filter((call) => call.path === "/api/plex/sections")).toHaveLength(1);
+			expect(screen.queryByText(/scan requested/i)).not.toBeInTheDocument();
+			scanStatus = 200;
+			scanResponse = undefined;
+			fireEvent.click(screen.getByRole("button", { name: "Scan Plex" }));
+			fireEvent.click(await screen.findByRole("button", { name: /Synthetic film library/ }));
+			await screen.findByText(/scan requested/i);
+			expect(writes()).toHaveLength(2);
+			expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+		},
+	);
 	it("keeps a pending request distinct from completion and prevents a second selection", async () => {
 		scanWait = new Promise<void>((resolve) => {
 			releaseScan = resolve;

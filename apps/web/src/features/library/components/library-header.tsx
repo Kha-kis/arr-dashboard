@@ -1,6 +1,6 @@
 "use client";
 
-import type { LibraryService, TorrentStateCounts, QuiObservationStatus } from "@arr/shared";
+import type { LibraryService, QuiObservationStatus, TorrentStateCounts } from "@arr/shared";
 import {
 	ArrowDownAZ,
 	ArrowUpAZ,
@@ -19,8 +19,8 @@ import { PlexQueryEvidenceNotice } from "../../../components/presentational/plex
 import { Button, Input } from "../../../components/ui";
 import { usePlexAccounts, usePlexScanMutation, usePlexSections } from "../../../hooks/api/usePlex";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { ApiError } from "../../../lib/api-client/base";
 import { getLinuxInstanceName, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
-import { isCurrentAuthoritativePlexEvidence } from "../../../lib/plex-evidence";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
 import type { SyncStatus } from "../hooks/use-library-data";
@@ -208,27 +208,36 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 	const plexSectionsQuery = usePlexSections(hasPlexInstances);
 	const plexScanMutation = usePlexScanMutation();
 	const [scanDropdownOpen, setScanDropdownOpen] = useState(false);
+	const scanSelectionRejected =
+		plexScanMutation.error instanceof ApiError && plexScanMutation.error.status === 409;
 
 	const plexSections = plexSectionsQuery.data?.sections ?? [];
 	const plexInstanceIds = [...new Set(plexSections.map((section) => section.instanceId))].sort();
 	const hasPlexSections = hasPlexInstances && plexSections.length > 0;
+	const catalog = plexSectionsQuery.data?.catalog;
+	const catalogAvailable =
+		(catalog?.availability === "current" || catalog?.availability === "last-known") &&
+		typeof catalog.observedAt === "string" &&
+		Number.isFinite(Date.parse(catalog.observedAt)) &&
+		plexSections.every(
+			(section) => typeof section.sectionUuid === "string" && section.sectionUuid.trim().length > 0,
+		);
 	const canScanPlex =
 		hasPlexSections &&
 		!plexSectionsQuery.isError &&
 		!plexSectionsQuery.isFetching &&
-		isCurrentAuthoritativePlexEvidence(plexSectionsQuery.data?.evidence);
+		!plexScanMutation.isPending &&
+		catalogAvailable;
 	const sectionsUnavailable =
 		hasPlexInstances &&
-		(plexSectionsQuery.isError ||
-			(plexSectionsQuery.isSuccess &&
-				!isCurrentAuthoritativePlexEvidence(plexSectionsQuery.data?.evidence)));
+		(plexSectionsQuery.isError || (plexSectionsQuery.isSuccess && !catalogAvailable));
 	const plexGradient = SERVICE_GRADIENTS.plex;
 	const plexAccountsQuery = usePlexAccounts(hasPlexInstances && Boolean(onWatchedByFilterChange));
 	const plexUsers = plexAccountsQuery.data?.users ?? [];
 
-	const handleScanSection = (instanceId: string, sectionId: string) => {
+	const handleScanSection = (instanceId: string, sectionId: string, sectionUuid: string) => {
 		if (!canScanPlex || plexScanMutation.isPending) return;
-		plexScanMutation.mutate({ instanceId, sectionId });
+		plexScanMutation.mutate({ instanceId, sectionId, sectionUuid });
 		setScanDropdownOpen(false);
 	};
 
@@ -296,7 +305,13 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 												<button
 													key={`${section.instanceId}:${section.sectionId}`}
 													type="button"
-													onClick={() => handleScanSection(section.instanceId, section.sectionId)}
+													onClick={() =>
+														handleScanSection(
+															section.instanceId,
+															section.sectionId,
+															section.sectionUuid,
+														)
+													}
 													className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
 												>
 													<span className="truncate text-xs text-muted-foreground">
@@ -362,8 +377,14 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 				<PlexQueryEvidenceNotice
 					error={plexSectionsQuery.error}
 					evidence={plexSectionsQuery.data?.evidence}
-					label="Plex library sections"
+					label="Plex canonical mapping and watch evidence"
 				/>
+			)}
+			{hasPlexInstances && catalogAvailable && catalog?.availability === "last-known" && (
+				<p role="status" className="text-sm text-muted-foreground">
+					Showing the last-known Plex section catalog. The server rechecks the selected section and
+					Plex identity before requesting a scan.
+				</p>
 			)}
 			{sectionsUnavailable && (
 				<div
@@ -371,7 +392,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 					className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
 				>
 					<span>
-						Current Plex sections are unavailable. Scan controls need current verified sections.
+						Plex section catalog is unavailable. Retry the section read to recover scan controls.
 					</span>
 					<Button
 						type="button"
@@ -391,8 +412,9 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 			)}
 			{hasPlexInstances && plexScanMutation.isError && (
 				<p role="alert" className="text-sm text-warning">
-					Scan request not confirmed. Check Plex before requesting another scan; it may have
-					received the request.
+					{scanSelectionRejected
+						? "Scan selection rejected. No scan was requested. Select a section again after the section catalog reloads."
+						: "Scan request not confirmed. Check Plex before requesting another scan; it may have received the request."}
 				</p>
 			)}
 
