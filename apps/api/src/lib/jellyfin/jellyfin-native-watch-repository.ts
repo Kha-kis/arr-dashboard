@@ -16,6 +16,7 @@ const ROW_WRITE_CHUNK_SIZE = 100;
 const CLEANUP_BATCH_SIZE = 5_000;
 const LEASE_CHECKPOINT_CHUNKS = 10;
 const ADMISSION_RETRY_DELAYS_MS = [10, 20, 40] as const;
+const PREPARATION_TRANSACTION_MAX_WAIT_MS = 5_000;
 
 function isBusyAdmission(error: unknown): boolean {
 	const ownValue = (value: unknown, key: string): unknown => {
@@ -82,11 +83,16 @@ async function preparationTransaction(
 			let callbackEntered = false;
 			observe("requested");
 			try {
-				await prisma.$transaction((tx) => {
-					callbackEntered = true;
-					observe("callback-entered");
-					return operation(tx);
-				});
+				await prisma.$transaction(
+					(tx) => {
+						callbackEntered = true;
+						observe("callback-entered");
+						return operation(tx);
+					},
+					// Guarded admission precedes callback execution. Give it a bounded
+					// start budget without extending the transaction execution timeout.
+					{ maxWait: PREPARATION_TRANSACTION_MAX_WAIT_MS },
+				);
 				observe("succeeded");
 				return;
 			} catch (error) {

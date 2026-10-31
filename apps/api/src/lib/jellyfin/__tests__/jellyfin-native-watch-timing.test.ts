@@ -107,7 +107,8 @@ function fixture(
 			return page;
 		},
 		$transaction: async (...args: [(tx: object) => Promise<unknown>, ...unknown[]]) => {
-			expect(args).toHaveLength(1); // The original default timeout/options remain untouched.
+			expect(args).toHaveLength(2);
+			expect(args[1]).toEqual({ maxWait: 5_000 }); // The execution timeout remains the Prisma default.
 			const index = ++transactions;
 			trace.push("transaction-request");
 			if (index === options.failAt && options.failPhase === "request") throw error;
