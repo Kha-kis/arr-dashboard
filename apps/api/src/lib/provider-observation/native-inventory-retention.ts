@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import type { Prisma, PrismaClient } from "../prisma.js";
 import { NativeInventoryInputError } from "./native-inventory.js";
 
@@ -26,6 +27,53 @@ export type NativeInventoryRetentionSlice = {
 	nextCursor: NativeInventoryRetentionCursor | null;
 	hasMore: boolean;
 };
+
+/** A generic timeout, inherited value or accessor never permits a retry. */
+function isBusyAdmission(error: unknown): boolean {
+	const ownValue = (value: unknown, key: string): unknown => {
+		if (typeof value !== "object" || value === null) return undefined;
+		return Object.getOwnPropertyDescriptor(value, key)?.value;
+	};
+	try {
+		return (
+			ownValue(error, "code") === "P1008" &&
+			ownValue(
+				ownValue(ownValue(ownValue(error, "meta"), "driverAdapterError"), "cause"),
+				"originalCode",
+			) === "SQLITE_BUSY"
+		);
+	} catch {
+		return false;
+	}
+}
+
+async function retentionTransaction<T>(
+	prisma: PrismaClient,
+	operation: (tx: Transaction) => Promise<T>,
+	admission: { retryAvailable: boolean },
+	signal?: AbortSignal,
+): Promise<T> {
+	for (;;) {
+		let callbackEntered = false;
+		try {
+			return await prisma.$transaction(
+				async (tx) => {
+					callbackEntered = true;
+					return operation(tx);
+				},
+				{ isolationLevel: "Serializable", timeout: 10_000 },
+			);
+		} catch (error) {
+			if (callbackEntered || !admission.retryAvailable || !isBusyAdmission(error)) throw error;
+			// The rejected admission has settled. Never replay an entered body;
+			// a fresh transaction below must re-resolve every existing safety fence.
+			admission.retryAvailable = false;
+			if (signal?.aborted) throw CANCELLED;
+			await delay(20);
+			if (signal?.aborted) throw CANCELLED;
+		}
+	}
+}
 
 function validate(cutoff: Date, limit: number, maximum: number): void {
 	if (
@@ -215,6 +263,8 @@ export async function pruneNativeInventoryRetentionSlice(
 	};
 	if (options.signal?.aborted) return total;
 	const selected = await candidates(prisma, cutoff, scanLimit, total.nextCursor);
+	// One extra admission for the whole slice, not once per scanned candidate.
+	const admission = { retryAvailable: true };
 	total.hasMore = selected.length === scanLimit;
 	for (const candidate of selected) {
 		if (options.signal?.aborted) break;
@@ -223,7 +273,8 @@ export async function pruneNativeInventoryRetentionSlice(
 		total.nextCursor = { id: candidate.id };
 		const guard = bound(candidate, cutoff);
 		try {
-			const removed = await prisma.$transaction(
+			const removed = await retentionTransaction(
+				prisma,
 				async (tx) => {
 					const fresh = await tx.providerNativeInventoryRun.findFirst({
 						where: guard,
@@ -337,7 +388,8 @@ export async function pruneNativeInventoryRetentionSlice(
 					});
 					return { rows, runs, remaining: !!remainingPass || (!metadataRequired && runs === 0) };
 				},
-				{ isolationLevel: "Serializable", timeout: 10_000 },
+				admission,
+				options.signal,
 			);
 			total.deletedRows += removed.rows;
 			total.deletedRuns += removed.runs;
