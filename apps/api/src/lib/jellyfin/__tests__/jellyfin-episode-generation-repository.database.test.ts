@@ -110,6 +110,168 @@ afterEach(async () => {
 });
 
 describe("generation-scoped Jellyfin episode schema", { timeout: 30_000 }, () => {
+	it.each(["unpublished", "obsolete"] as const)(
+		"rejects already-aborted %s generation cleanup before any native transaction",
+		async (mode) => {
+			const { prisma } = await database();
+			const input = await leasedInput(prisma);
+			const controller = new AbortController();
+			const reason = new Error("Synthetic cleanup cancelled");
+			controller.abort(reason);
+			const transactions = vi.spyOn(prisma, "$transaction");
+			const preparations = vi.spyOn(prisma.jellyfinEpisodePreparation, "findMany");
+			const task =
+				mode === "unpublished"
+					? cleanupUnpublishedJellyfinEpisodeGeneration(prisma, input, {
+							signal: controller.signal,
+						})
+					: cleanupObsoleteJellyfinEpisodeGenerations(prisma, input, { signal: controller.signal });
+			await expect(task).rejects.toBe(reason);
+			expect(transactions).not.toHaveBeenCalled();
+			expect(preparations).not.toHaveBeenCalled();
+			expect(await prisma.jellyfinEpisodePreparation.count()).toBe(1);
+		},
+	);
+
+	it.each(["authority", "rows", "transaction"] as const)(
+		"joins issued generation %s work then cancels further batches and replays the remainder",
+		async (phase) => {
+			const { prisma } = await database();
+			const input = await leasedInput(prisma);
+			const rows = candidateRows(501);
+			await prepareJellyfinEpisodeGeneration(prisma, {
+				...input,
+				rows,
+				expectedFingerprint: fingerprintJellyfinEpisodeRows(rows),
+			});
+			await prisma.providerObservationRun.update({
+				where: { id: input.runId },
+				data: { state: "invalidated", activeSlotKey: null },
+			});
+			const controller = new AbortController(),
+				reason = new Error("Synthetic cleanup cancelled");
+			let release!: () => void,
+				issued!: () => void,
+				settled = false,
+				transactionsAdmitted = 0,
+				rowReads = 0;
+			const gate = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			const held = new Promise<void>((resolve) => {
+				issued = resolve;
+			});
+			const transaction = prisma.$transaction.bind(prisma);
+			const transactions = prisma as unknown as {
+				$transaction: (...args: unknown[]) => Promise<unknown>;
+			};
+			const transactionSpy = vi
+				.spyOn(transactions, "$transaction")
+				.mockImplementation(async (...args) => {
+					transactionsAdmitted++;
+					if (phase === "transaction" && transactionsAdmitted === 2) {
+						const operation = args[0] as (tx: unknown) => Promise<unknown>;
+						return Reflect.apply(transaction, prisma, [
+							async (tx: unknown) => {
+								const result = await operation(tx);
+								issued();
+								await gate;
+								return result;
+							},
+						]);
+					}
+					const result = await Reflect.apply(transaction, prisma, args);
+					if (phase === "authority" && transactionsAdmitted === 1) {
+						issued();
+						await gate;
+					}
+					return result;
+				});
+			const findMany = prisma.jellyfinEpisodeGenerationRow.findMany.bind(
+				prisma.jellyfinEpisodeGenerationRow,
+			);
+			const reads = prisma.jellyfinEpisodeGenerationRow as unknown as {
+				findMany: (...args: unknown[]) => PromiseLike<unknown>;
+			};
+			const readSpy = vi.spyOn(reads, "findMany").mockImplementation(async (...args) => {
+				rowReads++;
+				const result = await Reflect.apply(findMany, prisma.jellyfinEpisodeGenerationRow, args);
+				if (phase === "rows" && rowReads === 1) {
+					issued();
+					await gate;
+				}
+				return result;
+			});
+			const task = cleanupObsoleteJellyfinEpisodeGenerations(prisma, input, {
+				signal: controller.signal,
+			});
+			void task.then(
+				() => {
+					settled = true;
+				},
+				() => {
+					settled = true;
+				},
+			);
+			try {
+				await held;
+				controller.abort(reason);
+				await new Promise<void>((resolve) => setImmediate(resolve));
+				expect(settled).toBe(false);
+				release();
+				await expect(task).rejects.toBe(reason);
+				expect(transactionsAdmitted).toBe(phase === "transaction" ? 2 : 1);
+				expect(rowReads).toBe(phase === "authority" ? 0 : 1);
+			} finally {
+				release();
+				await task.catch(() => undefined);
+				transactionSpy.mockRestore();
+				readSpy.mockRestore();
+			}
+			expect(await prisma.jellyfinEpisodeGenerationRow.count()).toBe(
+				phase === "transaction" ? 1 : 501,
+			);
+			expect(await prisma.jellyfinEpisodePreparation.count()).toBe(1);
+			expect(await cleanupObsoleteJellyfinEpisodeGenerations(prisma, input)).toBe(1);
+			expect(await cleanupObsoleteJellyfinEpisodeGenerations(prisma, input)).toBe(0);
+			expect(await prisma.jellyfinEpisodeGenerationRow.count()).toBe(0);
+			expect(await prisma.jellyfinEpisodeGenerationShowReceipt.count()).toBe(0);
+			expect(await prisma.jellyfinEpisodePreparation.count()).toBe(0);
+		},
+	);
+
+	it("joins rollback and preserves a genuine native transaction error concurrent with cancellation", async () => {
+		const { prisma } = await database();
+		const input = await leasedInput(prisma);
+		await prisma.providerObservationRun.update({
+			where: { id: input.runId },
+			data: { state: "invalidated", activeSlotKey: null },
+		});
+		const controller = new AbortController(),
+			reason = new Error("Synthetic cleanup cancelled");
+		const transaction = prisma.$transaction.bind(prisma);
+		const transactions = prisma as unknown as {
+			$transaction: (...args: unknown[]) => Promise<unknown>;
+		};
+		let actualError: unknown;
+		vi.spyOn(transactions, "$transaction").mockImplementation(async () =>
+			transaction(async (tx) => {
+				try {
+					await tx.$queryRaw`SELECT * FROM synthetic_missing_generation_cleanup_table`;
+					throw new Error("Expected a real SQLite rejection");
+				} catch (error) {
+					actualError = error;
+					controller.abort(reason);
+					throw error;
+				}
+			}),
+		);
+		await expect(
+			cleanupUnpublishedJellyfinEpisodeGeneration(prisma, input, { signal: controller.signal }),
+		).rejects.not.toBe(reason);
+		expect(String(actualError)).toContain("synthetic_missing_generation_cleanup_table");
+		expect(await prisma.jellyfinEpisodePreparation.count()).toBe(1);
+	});
 	it("adds generation tables without changing legacy episode rows or status on replay", async () => {
 		const { prisma, dbPath } = await database();
 		await prisma.jellyfinEpisodeCache.create({

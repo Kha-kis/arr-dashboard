@@ -159,6 +159,170 @@ afterEach(async () => {
 });
 
 describe("native watch publication", { timeout: 30_000 }, () => {
+	it.each(["published", "completed"] as const)(
+		"rejects already-aborted %s cleanup without touching native rows",
+		async (mode) => {
+			const prisma = await database();
+			await seedCompletedRun(prisma, "retired-run", "retired-generation");
+			await prisma.$transaction((tx) =>
+				publishNativeWatchGeneration(tx, publication("retired-run", "retired-generation")),
+			);
+			const controller = new AbortController();
+			const reason = new Error("Synthetic cleanup cancelled");
+			controller.abort(reason);
+			const options = { signal: controller.signal };
+			const terminal = vi.spyOn(prisma.providerObservationRun, "findFirst");
+			const discovery = vi.spyOn(prisma, "$queryRaw");
+			const task =
+				mode === "published"
+					? cleanupPublishedJellyfinEpisodeArtifacts(
+							prisma,
+							"jellyfin-instance",
+							"retired-run",
+							options,
+						)
+					: cleanupCompletedJellyfinEpisodeArtifacts(prisma, "jellyfin-instance", options);
+			await expect(task).rejects.toBe(reason);
+			expect(terminal).not.toHaveBeenCalled();
+			expect(discovery).not.toHaveBeenCalled();
+			expect(await prisma.jellyfinNativeWatchRow.count()).toBe(1);
+		},
+	);
+
+	it("joins an issued native delete then cancels new batches and replays only the eligible remainder", async () => {
+		const prisma = await database();
+		for (const role of ["retired", "previous", "active"]) {
+			await seedCompletedRun(prisma, role, role);
+			await prisma.$transaction((tx) => publishNativeWatchGeneration(tx, publication(role, role)));
+		}
+		const candidate = publication("retired", "retired").candidates[0]!;
+		for (let offset = 0; offset < 5000; offset += 500) {
+			await prisma.jellyfinNativeWatchRow.createMany({
+				data: Array.from({ length: 500 }, (_, index) => ({
+					...candidate,
+					jellyfinId: `extra-${offset + index}`,
+					instanceId: "jellyfin-instance",
+					runId: "retired",
+					observedAt: now,
+					connectionGeneration: 1,
+					identityGeneration: 1,
+				})),
+			});
+		}
+		await prisma.user.create({ data: { id: "foreign-owner", username: "foreign-owner" } });
+		const instance = await prisma.serviceInstance.findUniqueOrThrow({
+			where: { id: "jellyfin-instance" },
+		});
+		await prisma.serviceInstance.create({
+			data: { ...instance, id: "foreign-instance", userId: "foreign-owner" },
+		});
+		await prisma.jellyfinNativeWatchRow.create({
+			data: {
+				...candidate,
+				instanceId: "foreign-instance",
+				runId: "retired",
+				observedAt: now,
+				connectionGeneration: 1,
+				identityGeneration: 1,
+			},
+		});
+		const controller = new AbortController();
+		const reason = new Error("Synthetic cleanup cancelled");
+		let release!: () => void,
+			issued!: () => void,
+			settled = false;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const held = new Promise<void>((resolve) => {
+			issued = resolve;
+		});
+		const execute = prisma.$executeRaw.bind(prisma);
+		const raw = prisma as unknown as { $executeRaw: (...args: unknown[]) => PromiseLike<unknown> };
+		let retiredBatches = 0;
+		const spy = vi.spyOn(raw, "$executeRaw").mockImplementation(async (...args) => {
+			const count = await Reflect.apply(execute, prisma, args);
+			if (
+				(args[0] as TemplateStringsArray)
+					.join("?")
+					.includes('DELETE FROM "jellyfin_native_watch_rows"')
+			) {
+				retiredBatches++;
+				if (retiredBatches === 1) {
+					expect(count).toBe(5000);
+					issued();
+					await gate;
+				}
+			}
+			return count;
+		});
+		const task = cleanupCompletedJellyfinEpisodeArtifacts(prisma, "jellyfin-instance", {
+			signal: controller.signal,
+		});
+		void task.then(
+			() => {
+				settled = true;
+			},
+			() => {
+				settled = true;
+			},
+		);
+		try {
+			await held;
+			controller.abort(reason);
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			expect(settled).toBe(false);
+			release();
+			await expect(task).rejects.toBe(reason);
+			expect(retiredBatches).toBe(1);
+		} finally {
+			release();
+			await task.catch(() => undefined);
+			spy.mockRestore();
+		}
+		expect(
+			await prisma.jellyfinNativeWatchRow.count({
+				where: { instanceId: "jellyfin-instance", runId: "retired" },
+			}),
+		).toBe(1);
+		await cleanupCompletedJellyfinEpisodeArtifacts(prisma, "jellyfin-instance");
+		await cleanupCompletedJellyfinEpisodeArtifacts(prisma, "jellyfin-instance");
+		expect(
+			(await prisma.jellyfinNativeWatchRow.findMany({ select: { instanceId: true, runId: true } }))
+				.map((row) => `${row.instanceId}/${row.runId}`)
+				.sort(),
+		).toEqual([
+			"foreign-instance/retired",
+			"jellyfin-instance/active",
+			"jellyfin-instance/previous",
+		]);
+	});
+
+	it("preserves a real native cleanup rejection when cancellation arrives concurrently", async () => {
+		const prisma = await database();
+		const controller = new AbortController();
+		const reason = new Error("Synthetic cleanup cancelled");
+		const query = prisma.$queryRaw.bind(prisma);
+		const raw = prisma as unknown as { $queryRaw: (...args: unknown[]) => PromiseLike<unknown> };
+		let actualError: unknown;
+		vi.spyOn(raw, "$queryRaw").mockImplementation(async () => {
+			try {
+				await query`SELECT * FROM synthetic_missing_cleanup_table`;
+				throw new Error("Expected a real SQLite rejection");
+			} catch (error) {
+				actualError = error;
+				controller.abort(reason);
+				throw error;
+			}
+		});
+		await expect(
+			cleanupCompletedJellyfinEpisodeArtifacts(prisma, "jellyfin-instance", {
+				signal: controller.signal,
+			}),
+		).rejects.not.toBe(reason);
+		expect(actualError).toBeDefined();
+		expect(String(actualError)).toContain("synthetic_missing_cleanup_table");
+	});
 	it.each(["direct", "prepared"])(
 		"persists constant-key diagnostics on the correct %s publication",
 		async (mode) => {

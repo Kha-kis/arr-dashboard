@@ -875,7 +875,9 @@ export async function cleanupPublishedJellyfinEpisodeArtifacts(
 	prisma: PrismaClient,
 	instanceId: string,
 	runId: string,
+	options: { signal?: AbortSignal } = {},
 ): Promise<void> {
+	options.signal?.throwIfAborted();
 	const terminal = await prisma.providerObservationRun.findFirst({
 		where: {
 			id: runId,
@@ -886,8 +888,10 @@ export async function cleanupPublishedJellyfinEpisodeArtifacts(
 		},
 		select: { id: true },
 	});
+	options.signal?.throwIfAborted();
 	if (!terminal) return;
 	for (;;) {
+		options.signal?.throwIfAborted();
 		const deleted = await prisma.$executeRaw`
 			DELETE FROM "jellyfin_episode_observation_stage"
 			WHERE "id" IN (
@@ -900,10 +904,12 @@ export async function cleanupPublishedJellyfinEpisodeArtifacts(
 				LIMIT ${CLEANUP_BATCH_SIZE}
 			)
 		`;
+		options.signal?.throwIfAborted();
 		if (deleted === 0) break;
 		await yieldBetweenCleanupBatches();
 	}
 	for (;;) {
+		options.signal?.throwIfAborted();
 		const deleted = await prisma.$executeRaw`
 			DELETE FROM "jellyfin_episode_observation_exclusions"
 			WHERE "id" IN (
@@ -916,10 +922,12 @@ export async function cleanupPublishedJellyfinEpisodeArtifacts(
 				LIMIT ${CLEANUP_BATCH_SIZE}
 			)
 		`;
+		options.signal?.throwIfAborted();
 		if (deleted === 0) break;
 		await yieldBetweenCleanupBatches();
 	}
 	for (;;) {
+		options.signal?.throwIfAborted();
 		const deleted = await prisma.$executeRaw`
 			DELETE FROM "jellyfin_native_watch_rows"
 			WHERE "id" IN (
@@ -940,10 +948,12 @@ export async function cleanupPublishedJellyfinEpisodeArtifacts(
 				LIMIT ${CLEANUP_BATCH_SIZE}
 			)
 		`;
+		options.signal?.throwIfAborted();
 		if (deleted === 0) break;
 		await yieldBetweenCleanupBatches();
 	}
 	for (;;) {
+		options.signal?.throwIfAborted();
 		const deleted = await prisma.$executeRaw`
 			DELETE FROM "jellyfin_native_watch_scope_receipts"
 			WHERE "id" IN (
@@ -964,6 +974,7 @@ export async function cleanupPublishedJellyfinEpisodeArtifacts(
 				LIMIT ${CLEANUP_BATCH_SIZE}
 			)
 		`;
+		options.signal?.throwIfAborted();
 		if (deleted === 0) break;
 		await yieldBetweenCleanupBatches();
 	}
@@ -978,8 +989,10 @@ export async function cleanupPublishedJellyfinEpisodeArtifacts(
 export async function cleanupCompletedJellyfinEpisodeArtifacts(
 	prisma: PrismaClient,
 	instanceId: string,
+	options: { signal?: AbortSignal } = {},
 ): Promise<void> {
 	for (;;) {
+		options.signal?.throwIfAborted();
 		const stageRuns = await prisma.$queryRaw<Array<{ runId: string }>>`
 		SELECT DISTINCT stage."runId" AS "runId"
 		FROM "jellyfin_episode_observation_stage" AS stage
@@ -989,6 +1002,7 @@ export async function cleanupCompletedJellyfinEpisodeArtifacts(
 			AND run."state" IN ('complete', 'invalidated')
 		LIMIT 32
 	`;
+		options.signal?.throwIfAborted();
 		const exclusionRuns = await prisma.$queryRaw<Array<{ runId: string }>>`
 		SELECT DISTINCT exclusion."runId" AS "runId"
 		FROM "jellyfin_episode_observation_exclusions" AS exclusion
@@ -998,6 +1012,7 @@ export async function cleanupCompletedJellyfinEpisodeArtifacts(
 			AND run."state" IN ('complete', 'invalidated')
 		LIMIT 32
 	`;
+		options.signal?.throwIfAborted();
 		const retiredRowRuns = await prisma.$queryRaw<Array<{ runId: string }>>`
 		SELECT DISTINCT row."runId" AS "runId"
 		FROM "jellyfin_native_watch_rows" AS row
@@ -1015,6 +1030,7 @@ export async function cleanupCompletedJellyfinEpisodeArtifacts(
 					OR row."runId" <> pointer."previousRunId")))
 		LIMIT 32
 	`;
+		options.signal?.throwIfAborted();
 		const retiredReceiptRuns = await prisma.$queryRaw<Array<{ runId: string }>>`
 		SELECT DISTINCT receipt."runId" AS "runId"
 		FROM "jellyfin_native_watch_scope_receipts" AS receipt
@@ -1032,6 +1048,7 @@ export async function cleanupCompletedJellyfinEpisodeArtifacts(
 					OR receipt."runId" <> pointer."previousRunId")))
 		LIMIT 32
 	`;
+		options.signal?.throwIfAborted();
 		const runIds = new Set([
 			...stageRuns.map((row) => row.runId),
 			...exclusionRuns.map((row) => row.runId),
@@ -1040,12 +1057,19 @@ export async function cleanupCompletedJellyfinEpisodeArtifacts(
 		]);
 		if (runIds.size === 0) break;
 		for (const runId of runIds)
-			await cleanupPublishedJellyfinEpisodeArtifacts(prisma, instanceId, runId);
+			await cleanupPublishedJellyfinEpisodeArtifacts(prisma, instanceId, runId, options);
 	}
+	options.signal?.throwIfAborted();
 	const pointer = await prisma.jellyfinNativeWatchPublication.findUnique({
 		where: { instanceId },
 		select: { activeRunId: true },
 	});
+	options.signal?.throwIfAborted();
 	if (pointer)
-		await cleanupPublishedJellyfinEpisodeArtifacts(prisma, instanceId, pointer.activeRunId);
+		await cleanupPublishedJellyfinEpisodeArtifacts(
+			prisma,
+			instanceId,
+			pointer.activeRunId,
+			options,
+		);
 }

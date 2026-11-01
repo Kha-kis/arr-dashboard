@@ -640,15 +640,21 @@ async function terminalCleanupAllowed(
 export async function cleanupUnpublishedJellyfinEpisodeGeneration(
 	prisma: PrismaClient,
 	input: Pick<PreparationInput, "userId" | "instanceId" | "runId" | "generationId">,
+	options: { signal?: AbortSignal } = {},
 ): Promise<boolean> {
-	if (!(await prisma.$transaction((tx) => terminalCleanupAllowed(tx, input)))) return false;
+	options.signal?.throwIfAborted();
+	const allowed = await prisma.$transaction((tx) => terminalCleanupAllowed(tx, input));
+	options.signal?.throwIfAborted();
+	if (!allowed) return false;
 	for (;;) {
+		options.signal?.throwIfAborted();
 		const rows = await prisma.jellyfinEpisodeGenerationRow.findMany({
 			where: { instanceId: input.instanceId, generationId: input.generationId },
 			select: { id: true },
 			orderBy: { id: "asc" },
 			take: EPISODE_STAGE_BATCH_SIZE,
 		});
+		options.signal?.throwIfAborted();
 		if (rows.length === 0) break;
 		await prisma.$transaction(async (tx) => {
 			if (!(await terminalCleanupAllowed(tx, input)))
@@ -661,14 +667,17 @@ export async function cleanupUnpublishedJellyfinEpisodeGeneration(
 				},
 			});
 		});
+		options.signal?.throwIfAborted();
 	}
 	for (;;) {
+		options.signal?.throwIfAborted();
 		const receipts = await prisma.jellyfinEpisodeGenerationShowReceipt.findMany({
 			where: { instanceId: input.instanceId, generationId: input.generationId },
 			select: { id: true },
 			orderBy: { id: "asc" },
 			take: EPISODE_STAGE_BATCH_SIZE,
 		});
+		options.signal?.throwIfAborted();
 		if (receipts.length === 0) break;
 		await prisma.$transaction(async (tx) => {
 			if (!(await terminalCleanupAllowed(tx, input)))
@@ -681,7 +690,9 @@ export async function cleanupUnpublishedJellyfinEpisodeGeneration(
 				},
 			});
 		});
+		options.signal?.throwIfAborted();
 	}
+	options.signal?.throwIfAborted();
 	await prisma.$transaction(async (tx) => {
 		if (!(await terminalCleanupAllowed(tx, input)))
 			throw new Error("Jellyfin episode generation cleanup authority changed");
@@ -693,6 +704,7 @@ export async function cleanupUnpublishedJellyfinEpisodeGeneration(
 			},
 		});
 	});
+	options.signal?.throwIfAborted();
 	return true;
 }
 
@@ -700,11 +712,14 @@ export async function cleanupUnpublishedJellyfinEpisodeGeneration(
 export async function cleanupObsoleteJellyfinEpisodeGenerations(
 	prisma: PrismaClient,
 	input: { userId: string; instanceId: string },
+	options: { signal?: AbortSignal } = {},
 ): Promise<number> {
+	options.signal?.throwIfAborted();
 	if (!input.userId.trim() || !input.instanceId.trim()) return 0;
 	let retired = 0;
 	let cursor: string | undefined;
 	for (;;) {
+		options.signal?.throwIfAborted();
 		const page = await prisma.jellyfinEpisodePreparation.findMany({
 			where: {
 				instanceId: input.instanceId,
@@ -714,13 +729,14 @@ export async function cleanupObsoleteJellyfinEpisodeGenerations(
 			orderBy: { runId: "asc" },
 			take: EPISODE_STAGE_BATCH_SIZE,
 		});
+		options.signal?.throwIfAborted();
 		if (page.length === 0) break;
 		for (const preparation of page) {
-			const removed = await cleanupUnpublishedJellyfinEpisodeGeneration(prisma, {
-				...input,
-				runId: preparation.runId,
-				generationId: preparation.generationId,
-			});
+			const removed = await cleanupUnpublishedJellyfinEpisodeGeneration(
+				prisma,
+				{ ...input, runId: preparation.runId, generationId: preparation.generationId },
+				options,
+			);
 			if (removed) retired += 1;
 		}
 		cursor = page[page.length - 1]!.runId;

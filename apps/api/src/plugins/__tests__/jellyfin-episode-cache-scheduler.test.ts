@@ -576,11 +576,16 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 		await app.ready();
 
 		await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
-		expect(mocks.cleanupEpisodeGenerations).toHaveBeenCalledWith(app.prisma, {
-			userId: "user-1",
-			instanceId: "instance-1",
-		});
+		expect(mocks.cleanupEpisodeGenerations).toHaveBeenCalledWith(
+			app.prisma,
+			{ userId: "user-1", instanceId: "instance-1" },
+			{ signal: expect.any(AbortSignal) },
+		);
+		const signal = mocks.cleanupEpisodeGenerations.mock.calls[0]![2].signal;
+		expect(signal.aborted).toBe(false);
 		expect(mocks.refresh).toHaveBeenCalledOnce();
+		await app.close();
+		expect(signal.aborted).toBe(true);
 	});
 
 	it("starts separate instances independently instead of serializing provider work", async () => {

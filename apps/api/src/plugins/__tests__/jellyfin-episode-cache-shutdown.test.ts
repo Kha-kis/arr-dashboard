@@ -11,6 +11,8 @@ import {
 	registerRestoreRuntimeActivation,
 } from "../../lib/backup/restore-runtime-bootstrap.js";
 import { createRuntimePrismaClient } from "../../lib/backup/restore-runtime-client.js";
+import { cleanupObsoleteJellyfinEpisodeGenerations } from "../../lib/jellyfin/jellyfin-episode-generation-repository.js";
+import { cleanupCompletedJellyfinEpisodeArtifacts } from "../../lib/jellyfin/jellyfin-native-watch-repository.js";
 import {
 	withCleanupMaintenanceGuard,
 	withCleanupOperationGuard,
@@ -181,6 +183,7 @@ async function boot(
 		preCloseGate?: Promise<void>;
 		failure?: Failure;
 		batches?: boolean;
+		holdAfterIssued?: boolean;
 	} = {},
 ) {
 	const native = await createNotificationOutboxNativeFixture();
@@ -477,10 +480,12 @@ async function boot(
 				scopeMatches &&
 				(scoped ? scopedHoldOccurrences : counts[name]) === target
 			) {
+				const issued = options.holdAfterIssued ? await operation() : undefined;
 				held = true;
 				heldInstanceId = instanceId;
 				await options.hold.gate;
 				if (options.hold.reject) throw new Error("Synthetic boundary unavailable");
+				if (options.holdAfterIssued) return issued as T;
 			}
 			return await operation();
 		} finally {
@@ -1067,6 +1072,70 @@ afterEach(async () => {
 	vi.useRealTimers();
 });
 describe("Jellyfin and Emby episode scheduler accepted lifetimes", () => {
+	it.each(["native", "lookalike"] as const)(
+		"reports a genuine %s cleanup failure during shutdown without admitting another stage",
+		async (failure) => {
+			const gate = deferred(),
+				issued = deferred();
+			const f = await boot({ artifacts: true });
+			const warning = vi.spyOn(f.app.log, "warn");
+			const raw = f.prisma as unknown as {
+				$queryRaw: (...args: unknown[]) => PromiseLike<unknown>;
+			};
+			vi.spyOn(raw, "$queryRaw").mockImplementation(async () => {
+				issued.resolve();
+				await gate.promise;
+				if (failure === "lookalike")
+					throw new DOMException("Synthetic unrelated error", "AbortError");
+				return f.native.prisma.$queryRaw`SELECT * FROM synthetic_missing_scheduler_cleanup_table`;
+			});
+			f.callback("startup")();
+			await issued.promise;
+			const closing = await f.closePending();
+			expect(closing.settled()).toBe(false);
+			gate.resolve();
+			await closing.promise;
+			expect(warning).toHaveBeenCalledWith(
+				{ category: "jellyfin-episode-post-publication-cleanup-failed" },
+				"Jellyfin episode post-publication cleanup deferred",
+			);
+			expect(f.counts.preparation).toBe(0);
+			expect(f.counts.page).toBe(0);
+			expect(f.state.afterTeardown).toBe(0);
+		},
+	);
+	for (const service of ["JELLYFIN", "EMBY"] as const) {
+		for (const phase of ["round", "artifactRead", "artifactDelete", "preparation"] as const) {
+			it(`stops ${service} cleanup admission after an issued ${phase} settles during shutdown and replays the remainder`, async () => {
+				const gate = deferred();
+				const f = await boot({
+					service,
+					artifacts: true,
+					batches: true,
+					holdAfterIssued: true,
+					hold: { phase, gate: gate.promise },
+				});
+				const warning = vi.spyOn(f.app.log, "warn");
+				await f.start("startup");
+				expect(await f.waitUntilHeld()).toBe(true);
+				const admitted = { ...f.counts };
+				const closing = await f.closePending();
+				expect(closing.settled()).toBe(false);
+				gate.resolve();
+				await closing.promise;
+				expect(f.counts).toEqual(admitted);
+				expect(warning).not.toHaveBeenCalled();
+				expect(f.state.pendingAtTeardown).toBe(0);
+				expect(f.state.afterTeardown).toBe(0);
+				expect(f.counts.page).toBe(0);
+				await f.native.run(async () => {
+					await cleanupCompletedJellyfinEpisodeArtifacts(f.native.prisma, f.request.instanceId);
+					await cleanupObsoleteJellyfinEpisodeGenerations(f.native.prisma, f.request);
+				});
+				await f.assertArtifacts([f.request.instanceId]);
+			}, 15_000);
+		}
+	}
 	for (const origin of ["continuation", "recovery", "manual"] as const) {
 		it(`reports accepted detached ${origin} as running until its page settles`, async () => {
 			const gate = deferred();
@@ -1266,6 +1335,7 @@ describe("Jellyfin and Emby episode scheduler accepted lifetimes", () => {
 			f = await boot({ artifacts: true, hold: { phase: "artifactDelete", gate: gate.promise } });
 		await f.start("startup");
 		expect(await f.waitUntilHeld()).toBe(true);
+		const admitted = { ...f.counts };
 		const closing = await f.closePending();
 		let secondSettled = false;
 		const second = f.app.close().then(() => {
@@ -1277,9 +1347,17 @@ describe("Jellyfin and Emby episode scheduler accepted lifetimes", () => {
 		gate.resolve();
 		await Promise.all([closing.promise, second]);
 		expect(f.state.afterTeardown).toBe(0);
-		expect(new Set(f.deletions.map((row) => row.kind))).toEqual(
-			new Set(["staging", "exclusions", "retired-rows", "receipts"]),
-		);
+		expect(f.counts).toEqual(admitted);
+		expect(new Set(f.deletions.map((row) => row.kind))).toEqual(new Set(["staging"]));
+		await f.native.run(async () => {
+			expect(
+				await f.native.prisma.jellyfinNativeWatchRow.count({
+					where: { instanceId: f.request.instanceId },
+				}),
+			).toBe(6);
+			await cleanupCompletedJellyfinEpisodeArtifacts(f.native.prisma, f.request.instanceId);
+			await cleanupObsoleteJellyfinEpisodeGenerations(f.native.prisma, f.request);
+		});
 		await f.assertArtifacts([f.request.instanceId]);
 	});
 	it("rejects an owner lookup settling after close without starting a page", async () => {
@@ -1446,7 +1524,7 @@ describe("Jellyfin and Emby episode scheduler accepted lifetimes", () => {
 		await f.idle();
 		await f.app.close();
 	});
-	it("finishes selected cleanup across owners but starts no new page after shutdown", async () => {
+	it("preserves stopped cleanup across owners for replay and starts no new page after shutdown", async () => {
 		const gate = deferred(),
 			f = await boot({
 				instances: 2,
@@ -1467,13 +1545,28 @@ describe("Jellyfin and Emby episode scheduler accepted lifetimes", () => {
 		});
 		expect(f.state.pending).toBe(1);
 		expect(f.pageInputs.map(({ userId }) => userId)).toEqual([f.owners[1]!.userId]);
+		const admitted = { ...f.counts };
 		const closing = await f.closePending();
 		expect(closing.settled()).toBe(false);
 		gate.resolve();
 		await closing.promise;
-		// Six real preparations require a page and terminal cursor read per owner.
-		expect(f.counts.preparation).toBe(4);
-		expect(f.preparationOwners).toEqual(new Set(f.instances.map((row) => row.id)));
+		expect(f.counts).toEqual(admitted);
+		expect(f.counts.preparation).toBe(2);
+		expect(f.preparationOwners).toEqual(new Set([f.instances[1]!.id]));
+		await f.native.run(async () => {
+			expect(
+				await f.native.prisma.jellyfinNativeWatchRow.count({
+					where: { instanceId: f.request.instanceId },
+				}),
+			).toBe(6);
+			for (const instance of f.instances) {
+				await cleanupCompletedJellyfinEpisodeArtifacts(f.native.prisma, instance.id);
+				await cleanupObsoleteJellyfinEpisodeGenerations(f.native.prisma, {
+					userId: instance.userId,
+					instanceId: instance.id,
+				});
+			}
+		});
 		await f.assertArtifacts(f.instances.map((row) => row.id));
 		expect(f.state.afterTeardown).toBe(0);
 		expect(f.pageInputs.map(({ userId }) => userId)).toEqual([f.owners[1]!.userId]);

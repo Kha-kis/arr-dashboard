@@ -338,29 +338,37 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 							where: { service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 						});
 
-						if (instances.length === 0) return;
+						if (closing || instances.length === 0) return;
 
 						await Promise.all(
 							instances.map(async (instance) => {
+								if (closing) return;
 								try {
-									await cleanupCompletedJellyfinEpisodeArtifacts(app.prisma, instance.id);
-								} catch {
+									await cleanupCompletedJellyfinEpisodeArtifacts(app.prisma, instance.id, {
+										signal: cancellation.signal,
+									});
+								} catch (error) {
+									if (cancellation.signal.aborted && error === cancellation.signal.reason) return;
 									app.log.warn(
 										{ category: "jellyfin-episode-post-publication-cleanup-failed" },
 										"Jellyfin episode post-publication cleanup deferred",
 									);
 								}
+								if (closing) return;
 								try {
-									await cleanupObsoleteJellyfinEpisodeGenerations(app.prisma, {
-										userId: instance.userId,
-										instanceId: instance.id,
-									});
-								} catch {
+									await cleanupObsoleteJellyfinEpisodeGenerations(
+										app.prisma,
+										{ userId: instance.userId, instanceId: instance.id },
+										{ signal: cancellation.signal },
+									);
+								} catch (error) {
+									if (cancellation.signal.aborted && error === cancellation.signal.reason) return;
 									app.log.warn(
 										{ category: "jellyfin-episode-generation-cleanup-failed" },
 										"Jellyfin episode generation cleanup deferred",
 									);
 								}
+								if (closing) return;
 								// Initial pages belong to the single tracked round. Detached
 								// continuations and bridge retries receive their own observation.
 								await admitRefreshInstance(
