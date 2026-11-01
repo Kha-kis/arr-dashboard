@@ -147,6 +147,60 @@ describe("Jellyfin episode finalizer worker execution", () => {
 		mocks.settleInvalid.mockResolvedValue(true);
 		mocks.cleanup.mockResolvedValue(undefined);
 	});
+	it("carries actual observed native preparation intervals in a successful worker result", async () => {
+		let now = 0;
+		const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+		try {
+			mocks.prepare.mockResolvedValueOnce({
+				kind: "ready",
+				cacheGenerationId: payload.runId,
+				publishedRows: [],
+				contentFingerprint: "synthetic",
+				observedAt: payload.now,
+				nativePublication: { candidates: [], receipts: [] },
+			});
+			mocks.prepareNative.mockImplementationOnce(
+				async (_prisma, _input, _stageObserver, observe) => {
+					observe({ kind: "row-chunk", phase: "requested" });
+					now = 10;
+					observe({ kind: "row-chunk", phase: "callback-entered" });
+					now = 50;
+					observe({ kind: "row-chunk", phase: "succeeded" });
+				},
+			);
+			const result = await executeJellyfinEpisodeFinalization(payload);
+			expect(result).toMatchObject({
+				status: "published",
+				itemCount: 17,
+				nativeWatchPreparationTiming: {
+					version: 1,
+					transactions: {
+						"row-chunk": {
+							requested: 1,
+							callbackEntered: 1,
+							succeeded: 1,
+							failed: 0,
+							admissionTotalMs: 10,
+							admissionMaxMs: 10,
+							callbackToSuccessTotalMs: 40,
+							callbackToSuccessMaxMs: 40,
+						},
+					},
+				},
+			});
+		} finally {
+			clock.mockRestore();
+		}
+	});
+	it.each(["no-native", "already-completed"])(
+		"omits native preparation timing for %s",
+		async (mode) => {
+			if (mode === "already-completed") mocks.readCompleted.mockResolvedValueOnce(17);
+			const result = await executeJellyfinEpisodeFinalization(payload);
+			expect(result).toMatchObject({ status: "published", itemCount: 17 });
+			expect(result).not.toHaveProperty("nativeWatchPreparationTiming");
+		},
+	);
 	it("refuses pre-aborted finalization before connecting or publishing", async () => {
 		const controller = new AbortController();
 		controller.abort();

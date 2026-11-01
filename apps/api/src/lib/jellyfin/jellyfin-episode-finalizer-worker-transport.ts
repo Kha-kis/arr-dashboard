@@ -4,8 +4,8 @@ import {
 	type RestoreRuntimeWorkerBinding,
 } from "../backup/restore-runtime-admission.js";
 import {
-	readRestoreRuntimeWorkerLoss,
 	type RestoreRuntimeLossReason,
+	readRestoreRuntimeWorkerLoss,
 	sanitizeRestoreRuntimeLossReason,
 } from "../backup/restore-runtime-loss.js";
 import {
@@ -16,6 +16,10 @@ import {
 	startFinalizerLoopObservation,
 } from "./finalizer-loop-observation.js";
 import type { JellyfinEpisodeFinalizationTiming } from "./jellyfin-episode-refresh-repository.js";
+import {
+	type NativeWatchPreparationTiming,
+	sanitizeNativeWatchPreparationTiming,
+} from "./jellyfin-native-watch-preparation-timing.js";
 import type { NativeWatchProjectionDiagnostics } from "./jellyfin-native-watch-projection.js";
 import type {
 	NativeWatchPreparationStage,
@@ -64,6 +68,7 @@ export type JellyfinEpisodeFinalizationWorkerResult =
 			status: "published";
 			itemCount: number;
 			timing?: JellyfinEpisodeFinalizationTiming;
+			nativeWatchPreparationTiming?: NativeWatchPreparationTiming;
 			finalizationCallMs: number;
 			outerOverheadMs: number;
 			cleanupMs: number;
@@ -430,10 +435,19 @@ function sanitizeWorkerResult(value: unknown): JellyfinEpisodeFinalizationWorker
 			? undefined
 			: sanitizeTiming(result.timing as Record<string, unknown>);
 	if (result.timing !== undefined && !timing) return null;
+	let nativeWatchPreparationTiming: NativeWatchPreparationTiming | undefined;
+	try {
+		nativeWatchPreparationTiming = sanitizeNativeWatchPreparationTiming(
+			Object.getOwnPropertyDescriptor(result, "nativeWatchPreparationTiming")?.value,
+		);
+	} catch {
+		// Optional diagnostics cannot invalidate an otherwise committed publication.
+	}
 	return {
 		status: "published",
 		itemCount: result.itemCount,
 		...(timing ? { timing } : {}),
+		...(nativeWatchPreparationTiming ? { nativeWatchPreparationTiming } : {}),
 		finalizationCallMs: result.finalizationCallMs,
 		outerOverheadMs: result.outerOverheadMs,
 		cleanupMs: result.cleanupMs,

@@ -940,71 +940,130 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		expect((client as { getEpisodes?: unknown }).getEpisodes).toBeUndefined();
 	});
 
-	it("offloads the guarded SQLite finalizer and returns only its committed summary", async () => {
-		const state = ownedFixture("JELLYFIN");
-		configureDurableRun(state);
-		const context = {
-			prisma: state.prisma,
-			encryptor: { decrypt: vi.fn() },
-			instance: state.instance,
-			log,
-		};
-		await refreshOwnedJellyfinEpisodeCache(context);
-		await refreshOwnedJellyfinEpisodeCache(context);
-		finalizerWorker.run.mockImplementationOnce(async () => {
-			if (durable.run) durable.run.state = "complete";
-			return {
-				status: "published",
-				itemCount: 17,
-				timing: {
-					authorityMs: 10,
-					stageLoadMs: 20,
-					computeMs: 30,
-					episodeWriteMs: 40,
-					nativeProjectionMs: 50,
-					nativeWatchWriteMs: 60,
-					totalMs: 210,
-					stageRows: 4,
-					nativeCandidates: 2,
-				},
-				finalizationCallMs: 250,
-				outerOverheadMs: 40,
-				cleanupMs: 80,
-				cleanupFailed: false,
+	it.each(["valid", "malformed", "accessor"])(
+		"offloads the guarded SQLite finalizer and logs only sanitized %s native timing",
+		async (mode) => {
+			(log.info as ReturnType<typeof vi.fn>).mockClear();
+			const zero = {
+				requested: 0,
+				callbackEntered: 0,
+				succeeded: 0,
+				failed: 0,
+				refusedStart: 0,
+				callbackFailed: 0,
+				admissionTotalMs: 0,
+				admissionMaxMs: 0,
+				callbackToSuccessTotalMs: 0,
+				callbackToSuccessMaxMs: 0,
+				refusedStartTotalMs: 0,
+				refusedStartMaxMs: 0,
+				callbackToFailureTotalMs: 0,
+				callbackToFailureMaxMs: 0,
 			};
-		});
+			const metric = {
+				version: 1,
+				transactions: {
+					"row-chunk": {
+						...zero,
+						requested: 1,
+						callbackEntered: 1,
+						succeeded: 1,
+						admissionTotalMs: 10,
+						admissionMaxMs: 10,
+						callbackToSuccessTotalMs: 40,
+						callbackToSuccessMaxMs: 40,
+					},
+					"receipt-chunk": { ...zero },
+					"lease-checkpoint": { ...zero },
+				},
+			};
+			const expectedMetric = structuredClone(metric);
+			Object.assign(metric, { privateValue: "must-not-cross" });
+			Object.assign(metric.transactions["row-chunk"], { privateValue: "must-not-cross" });
+			const getter = vi.fn(() => {
+				throw Error("must-not-cross");
+			});
+			const state = ownedFixture("JELLYFIN");
+			configureDurableRun(state);
+			const context = {
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log,
+			};
+			await refreshOwnedJellyfinEpisodeCache(context);
+			await refreshOwnedJellyfinEpisodeCache(context);
+			finalizerWorker.run.mockImplementationOnce(async () => {
+				if (durable.run) durable.run.state = "complete";
+				const workerResult = {
+					status: "published",
+					itemCount: 17,
+					timing: {
+						authorityMs: 10,
+						stageLoadMs: 20,
+						computeMs: 30,
+						episodeWriteMs: 40,
+						nativeProjectionMs: 50,
+						nativeWatchWriteMs: 60,
+						totalMs: 210,
+						stageRows: 4,
+						nativeCandidates: 2,
+					},
+					finalizationCallMs: 250,
+					outerOverheadMs: 40,
+					cleanupMs: 80,
+					cleanupFailed: false,
+				};
+				if (mode === "accessor")
+					Object.defineProperty(workerResult, "nativeWatchPreparationTiming", { get: getter });
+				else
+					Object.assign(workerResult, {
+						nativeWatchPreparationTiming: mode === "valid" ? metric : { ...metric, version: 2 },
+					});
+				return workerResult;
+			});
 
-		const result = await refreshOwnedJellyfinEpisodeCache({
-			...context,
-			databaseUrl: "file:/config/prod.db",
-		});
-
-		expect(result).toMatchObject({ complete: true, upserted: 17 });
-		expect(finalizerWorker.run).toHaveBeenCalledWith(
-			expect.objectContaining({
+			const result = await refreshOwnedJellyfinEpisodeCache({
+				...context,
 				databaseUrl: "file:/config/prod.db",
-				runId: "run-1",
-				userId: state.instance.userId,
-			}),
-			{ signal: undefined },
-		);
-		expect(log.info).toHaveBeenCalledWith(
-			expect.objectContaining({
-				category: "jellyfin-episode-finalizer-admission-timing",
-				outcome: "admitted",
-				durationMs: expect.any(Number),
-			}),
-			"Jellyfin episode finalizer admission timing",
-		);
-		expect(log.info).toHaveBeenCalledWith(
-			expect.objectContaining({
-				category: "jellyfin-episode-finalization-timing",
-				workerWaitMs: expect.any(Number),
-			}),
-			"Jellyfin episode finalization timing",
-		);
-		expect(durable.finalize).not.toHaveBeenCalled();
-	});
+			});
+
+			expect(result).toMatchObject({ complete: true, upserted: 17 });
+			expect(finalizerWorker.run).toHaveBeenCalledWith(
+				expect.objectContaining({
+					databaseUrl: "file:/config/prod.db",
+					runId: "run-1",
+					userId: state.instance.userId,
+				}),
+				{ signal: undefined },
+			);
+			expect(log.info).toHaveBeenCalledWith(
+				expect.objectContaining({
+					category: "jellyfin-episode-finalizer-admission-timing",
+					outcome: "admitted",
+					durationMs: expect.any(Number),
+				}),
+				"Jellyfin episode finalizer admission timing",
+			);
+			expect(log.info).toHaveBeenCalledWith(
+				expect.objectContaining({
+					category: "jellyfin-episode-finalization-timing",
+					workerWaitMs: expect.any(Number),
+				}),
+				"Jellyfin episode finalization timing",
+			);
+			expect(durable.finalize).not.toHaveBeenCalled();
+			const timingLogs = (log.info as ReturnType<typeof vi.fn>).mock.calls.filter(
+				([value]) => value.category === "jellyfin-episode-finalization-timing",
+			);
+			expect(timingLogs).toHaveLength(1);
+			if (mode === "valid")
+				expect(timingLogs[0]?.[0].nativeWatchPreparationTiming).toEqual(expectedMetric);
+			else expect(timingLogs[0]?.[0]).not.toHaveProperty("nativeWatchPreparationTiming");
+			expect(JSON.stringify(timingLogs)).not.toContain("must-not-cross");
+			expect(getter).not.toHaveBeenCalled();
+		},
+	);
 
 	it("reconciles an exact committed run when the worker publication acknowledgement is lost", async () => {
 		const state = ownedFixture("JELLYFIN");

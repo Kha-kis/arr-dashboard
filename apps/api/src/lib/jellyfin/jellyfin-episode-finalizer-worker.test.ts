@@ -86,6 +86,92 @@ const payload = {
 };
 
 describe("Jellyfin episode finalizer worker transport", () => {
+	it.each(["valid", "malformed", "accessor", "proxy"])(
+		"preserves publication and independent exit while sanitizing %s optional native timing",
+		async (mode) => {
+			const zero = {
+				requested: 0,
+				callbackEntered: 0,
+				succeeded: 0,
+				failed: 0,
+				refusedStart: 0,
+				callbackFailed: 0,
+				admissionTotalMs: 0,
+				admissionMaxMs: 0,
+				callbackToSuccessTotalMs: 0,
+				callbackToSuccessMaxMs: 0,
+				refusedStartTotalMs: 0,
+				refusedStartMaxMs: 0,
+				callbackToFailureTotalMs: 0,
+				callbackToFailureMaxMs: 0,
+			};
+			const metric = {
+				version: 1,
+				transactions: {
+					"row-chunk": {
+						...zero,
+						requested: 1,
+						callbackEntered: 1,
+						succeeded: 1,
+						admissionTotalMs: 10,
+						admissionMaxMs: 10,
+						callbackToSuccessTotalMs: 40,
+						callbackToSuccessMaxMs: 40,
+					},
+					"receipt-chunk": { ...zero },
+					"lease-checkpoint": { ...zero },
+				},
+			};
+			const expected = structuredClone(metric);
+			Object.assign(metric, { privateValue: "must-not-cross" });
+			Object.assign(metric.transactions["row-chunk"], { privateValue: "must-not-cross" });
+			const getter = vi.fn(() => {
+				throw Error("must-not-cross");
+			});
+			const message = {
+				status: "published",
+				itemCount: 17,
+				finalizationCallMs: 50,
+				outerOverheadMs: 0,
+				cleanupMs: 0,
+				cleanupFailed: false,
+			};
+			if (mode === "accessor")
+				Object.defineProperty(message, "nativeWatchPreparationTiming", { get: getter });
+			else
+				Object.assign(message, {
+					nativeWatchPreparationTiming:
+						mode === "proxy"
+							? new Proxy({}, { getOwnPropertyDescriptor: getter })
+							: mode === "malformed"
+								? { ...metric, version: 2 }
+								: metric,
+				});
+			const worker = new FakeWorker();
+			worker.terminate = vi.fn(async () => 0);
+			let settled = false;
+			const pending = runJellyfinEpisodeFinalizerWorker(payload, {
+				createWorker: () => worker as never,
+			}).finally(() => {
+				settled = true;
+			});
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			worker.emit("message", message);
+			await Promise.resolve();
+			expect(settled).toBe(false);
+			worker.emit("exit", 0);
+			const result = await pending;
+			expect(result).toEqual({
+				...message,
+				...(mode === "valid"
+					? { nativeWatchPreparationTiming: expected }
+					: { nativeWatchPreparationTiming: undefined }),
+			});
+			if (mode !== "valid") expect(result).not.toHaveProperty("nativeWatchPreparationTiming");
+			expect(JSON.stringify(result)).not.toContain("must-not-cross");
+			expect(getter).toHaveBeenCalledTimes(mode === "proxy" ? 1 : 0);
+		},
+	);
 	it.each([
 		["attach", "attach-failed"],
 		["constructor", "worker-construction-failed"],

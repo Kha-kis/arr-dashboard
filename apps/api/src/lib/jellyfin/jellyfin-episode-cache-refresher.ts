@@ -55,8 +55,8 @@ import {
 	jellyfinEpisodeCatalogScopesFromReceipt,
 } from "./jellyfin-episode-catalog-provenance.js";
 import {
-	finalizerTransportDiagnosticsFrom,
 	type FinalizerTransportFailureDiagnostics,
+	finalizerTransportDiagnosticsFrom,
 	type JellyfinEpisodeFinalizationWorkerPayload,
 	type JellyfinEpisodeFinalizerFailureCode,
 	type JellyfinEpisodeFinalizerFailureStage,
@@ -92,6 +92,10 @@ import {
 	hasJellyfinEpisodeParentReceipt,
 	type JellyfinLibraryRowFingerprintInput,
 } from "./jellyfin-generation-metadata.js";
+import {
+	type NativeWatchPreparationTiming,
+	sanitizeNativeWatchPreparationTiming,
+} from "./jellyfin-native-watch-preparation-timing.js";
 import { cleanupPublishedJellyfinEpisodeArtifacts } from "./jellyfin-native-watch-repository.js";
 
 export { JELLYFIN_EPISODE_PARENT_MUTATION_AUTHORITY_MAX_AGE_MS };
@@ -1087,6 +1091,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 				let outerOverheadMs: number | undefined;
 				let cleanupMs: number;
 				let cleanupFailed = false;
+				let nativeWatchPreparationTiming: NativeWatchPreparationTiming | undefined;
 				let finalized: { published: boolean; itemCount: number };
 				if (context.databaseUrl && !/^postgres(ql)?:\/\//i.test(context.databaseUrl)) {
 					if (snapshot.service !== "JELLYFIN" && snapshot.service !== "EMBY") {
@@ -1182,6 +1187,13 @@ export function createJellyfinEpisodeWorkItemRunner(
 						return await failAttempt("coverage-incomplete", run.id, runOwnsAttempt);
 					}
 					finalized = { published: true, itemCount: workerResult.itemCount };
+					try {
+						nativeWatchPreparationTiming = sanitizeNativeWatchPreparationTiming(
+							Object.getOwnPropertyDescriptor(workerResult, "nativeWatchPreparationTiming")?.value,
+						);
+					} catch {
+						// Injected or malformed optional diagnostics cannot change publication.
+					}
 					if (workerResult.timing) timingRef.current = workerResult.timing;
 					finalizationCallDurationMs = workerResult.finalizationCallMs;
 					outerOverheadMs = workerResult.outerOverheadMs;
@@ -1236,6 +1248,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 							{
 								category: "jellyfin-episode-finalization-timing",
 								...timingRef.current,
+								...(nativeWatchPreparationTiming ? { nativeWatchPreparationTiming } : {}),
 								finalizationCallMs: Math.max(0, Math.round(finalizationCallDurationMs)),
 								...(workerWaitMs === undefined ? {} : { workerWaitMs }),
 								outerOverheadMs: Math.max(

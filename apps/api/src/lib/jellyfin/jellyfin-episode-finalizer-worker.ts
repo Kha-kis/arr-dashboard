@@ -35,6 +35,7 @@ import {
 	readCompletedJellyfinEpisodePublication,
 	settleInvalidJellyfinEpisodeRun,
 } from "./jellyfin-episode-refresh-repository.js";
+import { createNativeWatchPreparationTiming } from "./jellyfin-native-watch-preparation-timing.js";
 import {
 	cleanupPublishedJellyfinEpisodeArtifacts,
 	JellyfinNativeWatchLeaseLostError,
@@ -121,6 +122,7 @@ async function finalizeAdmitted(
 		  }
 		| undefined;
 	const workerStartedAt = performance.now();
+	const nativePreparationTiming = createNativeWatchPreparationTiming();
 	try {
 		await prisma.$connect();
 		failurePhase = "publication";
@@ -244,6 +246,7 @@ async function finalizeAdmitted(
 							};
 						},
 						(event) => {
+							nativePreparationTiming.observe(event);
 							if (event.phase === "requested") {
 								nativeWatchTransaction = { kind: event.kind, requestedAt: performance.now() };
 							} else if (event.phase === "callback-entered" && nativeWatchTransaction) {
@@ -359,10 +362,12 @@ async function finalizeAdmitted(
 				nativeWatchWriteMs: nativeStagingMs,
 				totalMs: finalizationCallMs,
 			};
+		const nativeWatchPreparationTiming = nativePreparationTiming.snapshot();
 		return {
 			status: "published",
 			itemCount: finalized.itemCount,
 			...(timing ? { timing } : {}),
+			...(nativeWatchPreparationTiming ? { nativeWatchPreparationTiming } : {}),
 			finalizationCallMs,
 			outerOverheadMs: Math.max(
 				0,
