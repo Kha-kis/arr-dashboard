@@ -221,6 +221,7 @@ async function boot(
 		sent: string[] = [];
 	const cleanupResults: Array<{ count: number; cutoff: Date }> = [];
 	const sendEntries: Array<{ eventType: (typeof allowedEvents)[number]; owner: number }> = [];
+	const subscriptionEntries: string[] = [];
 	const providerEntries: string[] = [];
 	const failedPlexPayload = {
 		...wantPayloads.PLEX_CONCURRENT_PEAK,
@@ -494,6 +495,8 @@ async function boot(
 			const eventType = String(args?.where?.eventType);
 			expect(allowedEvents).toContain(eventType);
 			expect(args).toEqual({ where: { eventType }, include: { channel: true } });
+			// notify() has admitted and retained this branch before reaching its subscription read.
+			subscriptionEntries.push(eventType);
 			return observe(
 				"subscription",
 				async () => {
@@ -1115,6 +1118,7 @@ async function boot(
 		seeded,
 		cleanupResults,
 		sendEntries,
+		subscriptionEntries,
 		completeAccepted,
 		rejectedAccepted,
 		providerEntries,
@@ -1326,6 +1330,12 @@ describe("Session snapshot scheduler lifetime", () => {
 			const f = await boot({ hold: { phase, gate: gate.promise } });
 			f.callback("startup")();
 			await f.entered;
+			expect(
+				await waitForNative(() =>
+					allowedEvents.every((event) => f.subscriptionEntries.includes(event)),
+				),
+			).toBe(true);
+			expect([...f.subscriptionEntries].sort()).toEqual([...allowedEvents].sort());
 			let closed = false;
 			const close = f.app.close().then(() => {
 				closed = true;
@@ -1559,6 +1569,12 @@ describe("Session snapshot scheduler lifetime", () => {
 			const f = await boot({ hold: { phase, gate: gate.promise, reject: true } });
 			f.callback("startup")();
 			await f.entered;
+			expect(
+				await waitForNative(() =>
+					allowedEvents.every((event) => f.subscriptionEntries.includes(event)),
+				),
+			).toBe(true);
+			expect([...f.subscriptionEntries].sort()).toEqual([...allowedEvents].sort());
 			let closed = false;
 			const close = f.app.close().then(() => {
 				closed = true;

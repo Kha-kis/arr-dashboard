@@ -1,4 +1,4 @@
-import { setTimeout as delay } from "node:timers/promises";
+import { setTimeout as delay, setImmediate } from "node:timers/promises";
 import Database from "better-sqlite3";
 import { PrismaClient, type PrismaClientInstance } from "../prisma.js";
 import { createRecoverableSqliteAdapter, type SqliteStatementFence } from "../sqlite-adapter.js";
@@ -229,6 +229,8 @@ function createGuardedPrismaClient(
 					context.validateSqliteBinding(bindingRecord);
 				};
 				const ownershipGuard = async (loan?: () => void) => {
+					// Service pending I/O before proving authority, never after the final native fence.
+					if (yielding) await setImmediate();
 					context.assertTicket();
 					loan?.();
 					await context.assertOwned();

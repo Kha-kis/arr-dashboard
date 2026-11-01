@@ -131,6 +131,7 @@ describe("native-watch admission on guarded WAL SQLite", { timeout: 30_000 }, ()
 			let armed = false;
 			let injected = false;
 			let pendingAdmission: Promise<unknown> | undefined;
+			let discardedAdmissionSettled = false;
 			let delayedAdmissionMs = 0;
 			const connect = PrismaBetterSqlite3.prototype.connect;
 			vi.spyOn(PrismaBetterSqlite3.prototype, "connect").mockImplementation(async function (
@@ -146,7 +147,13 @@ describe("native-watch admission on guarded WAL SQLite", { timeout: 30_000 }, ()
 					// driver and Prisma enforce their actual start/rollback behavior.
 					const pending = (async () => {
 						await delay(admissionDelayMs);
-						return start(isolation);
+						const transaction = await start(isolation);
+						const rollback = transaction.rollback.bind(transaction);
+						vi.spyOn(transaction, "rollback").mockImplementation(async () => {
+							await rollback();
+							discardedAdmissionSettled = true;
+						});
+						return transaction;
 					})();
 					pendingAdmission = pending;
 					try {
@@ -178,10 +185,12 @@ describe("native-watch admission on guarded WAL SQLite", { timeout: 30_000 }, ()
 				} catch (error) {
 					failure = error;
 				} finally {
-					// Even RED must join a late driver start before releasing its runtime
-					// ticket. Prisma can then finish cancellation before fixture teardown.
+					// Joining raw BEGIN is not joining Prisma's asynchronous discarded
+					// admission. Retain the ticket until real rollback releases its mutex.
 					await pendingAdmission;
-					await new Promise<void>((resolve) => setImmediate(resolve));
+					if (expires) {
+						await vi.waitFor(() => expect(discardedAdmissionSettled).toBe(true));
+					}
 				}
 			});
 			expect(injected).toBe(true);
@@ -206,6 +215,7 @@ describe("native-watch admission on guarded WAL SQLite", { timeout: 30_000 }, ()
 				protectedRowsUnchanged: true,
 				admissionJoined: true,
 				transactionsSettled: true,
+				discardedAdmissionSettled,
 				losses: f.losses,
 			});
 			if (expires) {
