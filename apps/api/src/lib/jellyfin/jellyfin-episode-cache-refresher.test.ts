@@ -1235,6 +1235,20 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 				const carrier =
 					path === "transport" ? new Error("private worker launch detail") : { status: "failed" };
 				const getter = vi.fn(() => "private sentinel");
+				for (const [name, value] of [
+					["transportFailure", "runtime-bridge-unavailable"],
+					["runtimeLossReason", "worker-proof-timeout"],
+				] as const) {
+					Object.defineProperty(
+						carrier,
+						name,
+						scenario === "accessor"
+							? { get: getter }
+							: {
+									value: scenario === "malformed" ? "private sentinel" : value,
+								},
+					);
+				}
 				if (scenario === "accessor")
 					Object.defineProperty(carrier, "loopObservation", { get: getter });
 				else
@@ -1263,6 +1277,15 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 						? pair
 						: { parent: { state: "unavailable" }, worker: { state: "unavailable" } },
 				);
+				if (path === "transport" && (scenario === "valid" || scenario === "private-extra")) {
+					expect(fields).toMatchObject({
+						transportFailure: "runtime-bridge-unavailable",
+						runtimeLossReason: "worker-proof-timeout",
+					});
+				} else {
+					expect(fields).not.toHaveProperty("transportFailure");
+					expect(fields).not.toHaveProperty("runtimeLossReason");
+				}
 				expect(JSON.stringify(fields)).not.toContain("private");
 				expect(getter).not.toHaveBeenCalled();
 			}

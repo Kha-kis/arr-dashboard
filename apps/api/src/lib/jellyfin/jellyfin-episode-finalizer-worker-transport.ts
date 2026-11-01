@@ -4,6 +4,11 @@ import {
 	type RestoreRuntimeWorkerBinding,
 } from "../backup/restore-runtime-admission.js";
 import {
+	readRestoreRuntimeWorkerLoss,
+	type RestoreRuntimeLossReason,
+	sanitizeRestoreRuntimeLossReason,
+} from "../backup/restore-runtime-loss.js";
+import {
 	createFinalizerLoopObservationBuffer,
 	type FinalizerLoopDiagnostics,
 	readFinalizerLoopDiagnostics,
@@ -117,14 +122,67 @@ type WorkerLike = {
 	terminate(): Promise<number> | number;
 };
 
+type FinalizerTransportFailure =
+	| "attach-failed"
+	| "worker-construction-failed"
+	| "worker-error"
+	| "invalid-worker-result"
+	| "worker-exited-without-result"
+	| "runtime-bridge-unavailable"
+	| "bridge-close-failed";
+
+export type FinalizerTransportFailureDiagnostics = {
+	transportFailure?: FinalizerTransportFailure;
+	runtimeLossReason?: RestoreRuntimeLossReason;
+};
+
+/** Error carriers are untrusted: never invoke accessors or retain arbitrary fields. */
+export function finalizerTransportDiagnosticsFrom(
+	value: unknown,
+): FinalizerTransportFailureDiagnostics {
+	try {
+		if (typeof value !== "object" || value === null) return {};
+		const failure = Object.getOwnPropertyDescriptor(value, "transportFailure")?.value;
+		switch (failure) {
+			case "attach-failed":
+			case "worker-construction-failed":
+			case "worker-error":
+			case "invalid-worker-result":
+			case "worker-exited-without-result":
+			case "runtime-bridge-unavailable":
+			case "bridge-close-failed":
+				break;
+			default:
+				return {};
+		}
+		const reason = Object.getOwnPropertyDescriptor(value, "runtimeLossReason")?.value;
+		return {
+			transportFailure: failure,
+			...(failure === "runtime-bridge-unavailable" &&
+			typeof reason === "string" &&
+			reason === sanitizeRestoreRuntimeLossReason(reason)
+				? { runtimeLossReason: reason as RestoreRuntimeLossReason }
+				: {}),
+		};
+	} catch {
+		return {};
+	}
+}
+
 export class JellyfinEpisodeFinalizerWorkerError extends Error {
 	readonly category = "worker-failed";
 	readonly loopObservation: FinalizerLoopDiagnostics;
+	declare readonly transportFailure?: FinalizerTransportFailure;
+	declare readonly runtimeLossReason?: RestoreRuntimeLossReason;
 
-	constructor(loopObservation?: FinalizerLoopDiagnostics) {
+	constructor(
+		loopObservation?: FinalizerLoopDiagnostics,
+		diagnostics?: FinalizerTransportFailureDiagnostics,
+	) {
 		super("Jellyfin episode finalization worker failed");
 		this.name = "JellyfinEpisodeFinalizerWorkerError";
 		this.loopObservation = sanitizeFinalizerLoopDiagnostics(loopObservation);
+		Object.assign(this, finalizerTransportDiagnosticsFrom(diagnostics));
 	}
 }
 
@@ -155,9 +213,23 @@ export async function runJellyfinEpisodeFinalizerWorker(
 	let firstFailureObservation: FinalizerLoopDiagnostics | undefined;
 	const captureFailureObservation = () =>
 		(firstFailureObservation ??= readFinalizerLoopDiagnostics(parentBuffer, workerBuffer));
+	let firstTransportFailure: FinalizerTransportFailureDiagnostics | undefined;
+	const captureTransportFailure = (transportFailure: FinalizerTransportFailure) => {
+		if (!firstTransportFailure) {
+			firstTransportFailure = { transportFailure };
+			if (transportFailure === "runtime-bridge-unavailable" && bridge) {
+				const reason = readRestoreRuntimeWorkerLoss(new Int32Array(bridge.binding.fence));
+				if (reason) firstTransportFailure.runtimeLossReason = reason;
+			}
+		}
+		captureFailureObservation();
+		return firstTransportFailure;
+	};
+	let setupFailure: FinalizerTransportFailure = "attach-failed";
 	try {
 		bridge = await attachRestoreRuntimeWorker(payload.databaseUrl);
 		if (options.signal?.aborted) {
+			setupFailure = "bridge-close-failed";
 			await bridge.close();
 			return { status: "cancelled" };
 		}
@@ -170,6 +242,7 @@ export async function runJellyfinEpisodeFinalizerWorker(
 			runtimeBinding: bridge.binding,
 			loopObservationBuffer: workerBuffer,
 		};
+		setupFailure = "worker-construction-failed";
 		worker = (
 			options.createWorker ??
 			((url, workerData, transferList) => {
@@ -192,16 +265,28 @@ export async function runJellyfinEpisodeFinalizerWorker(
 			})
 		)(jellyfinEpisodeFinalizerWorkerUrl(), workerPayload, [bridge.binding.port]);
 	} catch {
-		const observation = captureFailureObservation();
+		const diagnostics = captureTransportFailure(setupFailure);
 		try {
 			await bridge?.close();
+		} catch {
+			// Cleanup failure cannot erase the first rejected admission/construction.
 		} finally {
 			stopParentObservation();
 		}
-		throw new JellyfinEpisodeFinalizerWorkerError(observation);
+		throw new JellyfinEpisodeFinalizerWorkerError(captureFailureObservation(), diagnostics);
 	}
 
 	let cancelRead: (() => void) | undefined;
+	const closeBridge = async () => {
+		try {
+			await bridge!.close();
+		} catch {
+			const diagnostics = captureTransportFailure("bridge-close-failed");
+			throw new JellyfinEpisodeFinalizerWorkerError(captureFailureObservation(), diagnostics);
+		} finally {
+			stopParentObservation();
+		}
+	};
 	try {
 		return await new Promise<JellyfinEpisodeFinalizationWorkerResult>((resolve, reject) => {
 			let settled = false;
@@ -223,7 +308,13 @@ export async function runJellyfinEpisodeFinalizerWorker(
 				if (settled || !exited) return;
 				settled = true;
 				if (result && !failed) resolve(result);
-				else reject(new JellyfinEpisodeFinalizerWorkerError(captureFailureObservation()));
+				else
+					reject(
+						new JellyfinEpisodeFinalizerWorkerError(
+							captureFailureObservation(),
+							captureTransportFailure("worker-exited-without-result"),
+						),
+					);
 			};
 			const requestStop = () => {
 				if (stopRequested || exited) return;
@@ -244,7 +335,7 @@ export async function runJellyfinEpisodeFinalizerWorker(
 			});
 			worker.on("error", () => {
 				if (settled) return;
-				captureFailureObservation();
+				captureTransportFailure("worker-error");
 				failed = true;
 				requestStop();
 			});
@@ -253,7 +344,7 @@ export async function runJellyfinEpisodeFinalizerWorker(
 				received = true;
 				result = sanitizeWorkerResult(message);
 				if (!result) {
-					captureFailureObservation();
+					captureTransportFailure("invalid-worker-result");
 					failed = true;
 				} else if (result.status === "failed") {
 					result = { ...result, loopObservation: captureFailureObservation() };
@@ -262,7 +353,7 @@ export async function runJellyfinEpisodeFinalizerWorker(
 			});
 			bridge!.onUnavailable(() => {
 				if (settled) return;
-				captureFailureObservation();
+				captureTransportFailure("runtime-bridge-unavailable");
 				failed = true;
 				requestStop();
 			});
@@ -272,11 +363,7 @@ export async function runJellyfinEpisodeFinalizerWorker(
 		if (cancelRead) options.signal?.removeEventListener("abort", cancelRead);
 		// Only the exit event reaches this point. Proof handlers also settle
 		// before the caller's accepted parent operation can end.
-		try {
-			await bridge.close();
-		} finally {
-			stopParentObservation();
-		}
+		await closeBridge();
 	}
 }
 

@@ -55,6 +55,8 @@ import {
 	jellyfinEpisodeCatalogScopesFromReceipt,
 } from "./jellyfin-episode-catalog-provenance.js";
 import {
+	finalizerTransportDiagnosticsFrom,
+	type FinalizerTransportFailureDiagnostics,
 	type JellyfinEpisodeFinalizationWorkerPayload,
 	type JellyfinEpisodeFinalizerFailureCode,
 	type JellyfinEpisodeFinalizerFailureStage,
@@ -1031,12 +1033,14 @@ export function createJellyfinEpisodeWorkItemRunner(
 				code?: JellyfinEpisodeFinalizerFailureCode,
 				nativeWatchDiagnostics?: NativeWatchStageFailureDiagnostics,
 				loopObservation?: FinalizerLoopDiagnostics,
+				transportDiagnostics?: FinalizerTransportFailureDiagnostics,
 			): Promise<JellyfinEpisodeWorkProgress> => {
 				try {
 					context.log.warn(
 						{
 							category: "jellyfin-episode-finalizer-worker-unavailable",
 							reasonCode,
+							...finalizerTransportDiagnosticsFrom(transportDiagnostics),
 							...(phase ? { phase } : {}),
 							...(stage ? { stage } : {}),
 							...(code ? { code } : {}),
@@ -1135,6 +1139,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 							undefined,
 							undefined,
 							finalizerLoopDiagnosticsFrom(error),
+							finalizerTransportDiagnosticsFrom(error),
 						);
 					}
 					workerWaitMs = Math.max(0, Math.round(performance.now() - workerWaitStartedAt));

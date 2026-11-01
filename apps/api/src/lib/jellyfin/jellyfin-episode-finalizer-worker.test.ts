@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { MessageChannel } from "node:worker_threads";
 import { describe, expect, it, vi } from "vitest";
+import { recordRestoreRuntimeWorkerLoss } from "../backup/restore-runtime-loss.js";
 
 const admission = vi.hoisted(() => ({ attach: vi.fn() }));
 vi.mock("../backup/restore-runtime-admission.js", () => ({
@@ -85,6 +86,117 @@ const payload = {
 };
 
 describe("Jellyfin episode finalizer worker transport", () => {
+	it.each([
+		["attach", "attach-failed"],
+		["constructor", "worker-construction-failed"],
+		["error", "worker-error"],
+		["invalid-message", "invalid-worker-result"],
+		["exit", "worker-exited-without-result"],
+		["unavailable", "runtime-bridge-unavailable"],
+		["close", "bridge-close-failed"],
+	] as const)(
+		"retains a closed diagnostic for %s without exposing error details",
+		async (mode, want) => {
+			const worker = new FakeWorker();
+			const { port1, port2 } = new MessageChannel();
+			const fence = new SharedArrayBuffer(8);
+			let unavailable = () => {};
+			if (mode === "attach")
+				admission.attach.mockRejectedValueOnce(new Error("private attach detail"));
+			else
+				admission.attach.mockResolvedValueOnce({
+					binding: {
+						databaseUrl: payload.databaseUrl,
+						record: { phase: "running" },
+						port: port2,
+						fence,
+					},
+					onUnavailable: (listener: () => void) => {
+						unavailable = listener;
+						return () => {};
+					},
+					close: async () => {
+						port1.close();
+						port2.close();
+						if (mode === "close") throw new Error("private cleanup detail");
+					},
+				});
+			const pending = runJellyfinEpisodeFinalizerWorker(payload, {
+				createWorker: () => {
+					if (mode === "constructor") throw new Error("private constructor detail");
+					return worker as never;
+				},
+			}).catch((error: unknown) => error);
+			try {
+				await new Promise<void>((resolve) => setImmediate(resolve));
+				if (mode === "error") worker.emit("error", new Error("private worker detail"));
+				if (mode === "invalid-message") worker.emit("message", { status: "private result" });
+				if (mode === "exit") worker.emit("exit", 1);
+				if (mode === "unavailable") {
+					recordRestoreRuntimeWorkerLoss(new Int32Array(fence), "worker-proof-timeout");
+					unavailable();
+				}
+				if (mode === "close") worker.emit("message", { status: "superseded" });
+				const error = await pending;
+				expect(error).toMatchObject({ category: "worker-failed", transportFailure: want });
+				if (mode === "unavailable")
+					expect(error).toHaveProperty("runtimeLossReason", "worker-proof-timeout");
+				else expect(error).not.toHaveProperty("runtimeLossReason");
+				expect(JSON.stringify(error)).not.toContain("private");
+			} finally {
+				port1.close();
+				port2.close();
+			}
+		},
+	);
+
+	it("keeps the first failure diagnostic through later errors and cleanup failure", async () => {
+		const worker = new FakeWorker();
+		worker.terminate.mockResolvedValue(0);
+		const { port1, port2 } = new MessageChannel();
+		let unavailable = () => {};
+		const fence = new SharedArrayBuffer(8);
+		admission.attach.mockResolvedValueOnce({
+			binding: {
+				databaseUrl: payload.databaseUrl,
+				record: { phase: "running" },
+				port: port2,
+				fence,
+			},
+			onUnavailable: (listener: () => void) => {
+				unavailable = listener;
+				return () => {};
+			},
+			close: async () => {
+				port1.close();
+				port2.close();
+				throw new Error("private cleanup detail");
+			},
+		});
+		let settled = false;
+		const pending = runJellyfinEpisodeFinalizerWorker(payload, {
+			createWorker: () => worker as never,
+		})
+			.catch((error: unknown) => error)
+			.finally(() => {
+				settled = true;
+			});
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		worker.emit("message", { status: "private invalid result" });
+		worker.emit("error", new Error("private secondary failure"));
+		recordRestoreRuntimeWorkerLoss(new Int32Array(fence), "worker-proof-timeout");
+		unavailable();
+		await Promise.resolve();
+		expect(settled).toBe(false);
+		worker.emit("exit", 1);
+		const error = await pending;
+		expect(error).toMatchObject({
+			transportFailure: "invalid-worker-result",
+			category: "worker-failed",
+		});
+		expect(error).not.toHaveProperty("runtimeLossReason");
+		expect(JSON.stringify(error)).not.toContain("private");
+	});
 	it("rejects pre-aborted finalization without attaching or spawning", async () => {
 		const controller = new AbortController();
 		controller.abort();
