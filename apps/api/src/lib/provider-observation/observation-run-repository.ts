@@ -10,13 +10,14 @@ import {
 	type ProviderPublicationAuthority,
 	withCurrentProviderPublicationAuthority,
 } from "../services/provider-identity-guard.js";
+import { withSqliteTransactionWriteIntent } from "../sqlite-transaction-intent.js";
 import {
 	buildObservationActiveSlotKey,
 	buildObservationAuthorityKey,
 	decodeProviderObservationReasonCode,
 	type ObservationRunAuthority,
-	type ObservationRunProvider,
 	type ObservationRunProgress,
+	type ObservationRunProvider,
 	type ObservationRunUnitSeed,
 	type ObservationUnitClaim,
 	observationCountSchema,
@@ -31,6 +32,10 @@ const MAX_CREATE_RETRIES = 3;
 
 type Db = PrismaClient;
 type Tx = Parameters<Db["$transaction"]>[0] extends (arg: infer T) => unknown ? T : never;
+
+function writeObservationTransaction<T>(prisma: Db, operation: (tx: Tx) => Promise<T>): Promise<T> {
+	return withSqliteTransactionWriteIntent(() => prisma.$transaction(operation));
+}
 
 function activeStateWhere() {
 	return { activeSlotKey: { not: null }, state: { in: ["running", "failed"] } };
@@ -172,7 +177,7 @@ export async function createOrLoadObservationRun(
 		throw new Error("Provider and cache type must match");
 	for (let attempt = 0; attempt < MAX_CREATE_RETRIES; attempt++) {
 		try {
-			return await prisma.$transaction(async (tx) => {
+			return await writeObservationTransaction(prisma, async (tx) => {
 				if (
 					!(await lockObservationAuthority(
 						tx,
@@ -227,7 +232,7 @@ export async function createOrLoadObservationRun(
 		} catch (error) {
 			if (attempt === MAX_CREATE_RETRIES - 1 || !isUniqueOrSerializationConflict(error))
 				throw error;
-			const winner = await prisma.$transaction(async (tx) => {
+			const winner = await writeObservationTransaction(prisma, async (tx) => {
 				if (
 					!(await lockObservationAuthority(
 						tx,
@@ -286,7 +291,7 @@ export async function claimObservationUnit(
 	input: { runId: string; now: Date; claimToken?: string },
 ): Promise<ObservationUnitClaim | null> {
 	const token = input.claimToken ?? randomBytes(32).toString("hex");
-	return await prisma.$transaction(async (tx) => {
+	return await writeObservationTransaction(prisma, async (tx) => {
 		const authorityRow = await tx.providerObservationRun.findFirst({
 			where: {
 				id: input.runId,
@@ -620,7 +625,7 @@ export async function renewExhaustedObservationRun(
 
 	const casLost = Symbol("automatic observation renewal CAS lost");
 	try {
-		return await prisma.$transaction(async (tx) => {
+		return await writeObservationTransaction(prisma, async (tx) => {
 			if (
 				!(await lockObservationAuthority(
 					tx,
@@ -1084,7 +1089,7 @@ export async function completeObservationUnit(
 ): Promise<boolean> {
 	const expectedRawCount = observationCountSchema.parse(input.expectedRawCount);
 	const observedRawCount = observationCountSchema.parse(input.observedRawCount);
-	return await prisma.$transaction(async (tx) => {
+	return await writeObservationTransaction(prisma, async (tx) => {
 		const result = await tx.providerObservationUnit.updateMany({
 			where: {
 				id: input.claim.unitId,
@@ -1139,7 +1144,10 @@ export async function failObservationUnit(
 	prisma: Db,
 	input: ObservationUnitFailureInput,
 ): Promise<boolean> {
-	return await prisma.$transaction(async (tx) => await failObservationUnitInTransaction(tx, input));
+	return await writeObservationTransaction(
+		prisma,
+		async (tx) => await failObservationUnitInTransaction(tx, input),
+	);
 }
 
 /** Retry a joined owner's failed settlement, never another owner's active claim. */
@@ -1334,7 +1342,8 @@ export async function invalidateObservationRuns(
 		exceptAuthorityKey?: string;
 	},
 ): Promise<number> {
-	return await prisma.$transaction(
+	return await writeObservationTransaction(
+		prisma,
 		async (tx) => await invalidateObservationRunsInTransaction(tx, input),
 	);
 }
@@ -1368,7 +1377,7 @@ export async function recoverAbandonedObservationRuns(prisma: Db): Promise<numbe
 	});
 	let recovered = 0;
 	for (const run of runs) {
-		recovered += await prisma.$transaction(async (tx) => {
+		recovered += await writeObservationTransaction(prisma, async (tx) => {
 			const authorityRow = await tx.providerObservationRun.findUnique({
 				where: { id: run.id },
 				select: {
