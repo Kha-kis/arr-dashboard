@@ -68,6 +68,60 @@ function classifyRefreshError(error: unknown): RefreshErrorCategory {
 	}
 }
 
+/** Diagnostic only: names and codes never grant admission or change retries. */
+function projectRefreshError(error: unknown) {
+	const fallback = { errorKind: "other", errorCode: "unknown" };
+	if (typeof error !== "object" || error === null) return fallback;
+	try {
+		// Do not invoke accessors, traverse arbitrary causes, or serialize the error.
+		const ownData = (key: string): unknown => {
+			const descriptor = Object.getOwnPropertyDescriptor(error, key);
+			return descriptor && "value" in descriptor ? descriptor.value : undefined;
+		};
+		const name = ownData("name");
+		const errorKind =
+			name === "RestoreRuntimeAdmissionError"
+				? "runtime-admission"
+				: name === "SqliteRestoreRuntimeOwnershipError"
+					? "sqlite-ownership"
+					: name === "PrismaClientKnownRequestError"
+						? "prisma-known-request"
+						: name === "PrismaClientUnknownRequestError"
+							? "prisma-unknown-request"
+							: name === "PrismaClientValidationError"
+								? "prisma-validation"
+								: name === "PrismaClientInitializationError"
+									? "prisma-initialization"
+									: "other";
+		const code = ownData(name === "PrismaClientInitializationError" ? "errorCode" : "code");
+		switch (code) {
+			case "P1000":
+			case "P1001":
+			case "P1002":
+			case "P1008":
+			case "P1017":
+			case "P2002":
+			case "P2003":
+			case "P2009":
+			case "P2010":
+			case "P2024":
+			case "P2025":
+			case "P2028":
+			case "P2034":
+			case "DB_BUSY":
+			case "SQLITE_BUSY":
+			case "SQLITE_BUSY_TIMEOUT":
+			case "SQLITE_BUSY_SNAPSHOT":
+			case "SQLITE_LOCKED":
+				return { errorKind, errorCode: code };
+			default:
+				return { errorKind, errorCode: "unknown" };
+		}
+	} catch {
+		return fallback;
+	}
+}
+
 export function plexEpisodeRefreshResultStatus(result: {
 	errors: number;
 	upserted: number;
@@ -188,6 +242,7 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 				}
 			} catch (error) {
 				const errorCategory = classifyRefreshError(error);
+				const errorDiagnostic = projectRefreshError(error);
 				const retryDelay = EXCEPTION_RETRY_DELAYS_MS[exceptionRetry];
 				if (retryDelay === undefined) {
 					app.log.error(
@@ -196,6 +251,7 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 							phase,
 							runnerStage: diagnostics.stage,
 							errorCategory,
+							...errorDiagnostic,
 						},
 						"Plex episode cache refresh exception retries exhausted",
 					);
@@ -206,6 +262,7 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 							phase,
 							runnerStage: diagnostics.stage,
 							errorCategory,
+							...errorDiagnostic,
 						},
 						"Plex episode cache refresh failed",
 					);
