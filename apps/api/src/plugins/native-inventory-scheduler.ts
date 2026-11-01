@@ -12,6 +12,7 @@ import {
 	type NativeInventoryRetentionSlice,
 } from "../lib/provider-observation/native-inventory-retention.js";
 import { runNativeInventoryRetentionWorker } from "../lib/provider-observation/native-inventory-retention-worker-transport.js";
+import { nativeInventoryRetentionDiagnosticsFrom } from "../lib/provider-observation/native-inventory-retention-diagnostics.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 
 const STARTUP_DELAY_MS = 30_000;
@@ -107,9 +108,12 @@ export async function runNativeInventoryRetentionTick(
 			{ category: "native-inventory-retention", deletedRows, deletedRuns, scannedRuns },
 			"Native inventory retention completed",
 		);
-	} catch {
+	} catch (error) {
 		app.log.error(
-			{ category: "native-inventory-retention-failed" },
+			{
+				category: "native-inventory-retention-failed",
+				...nativeInventoryRetentionDiagnosticsFrom(error),
+			},
 			"Native inventory retention failed",
 		);
 		// The registry exposes error messages in job status. Retain an honest

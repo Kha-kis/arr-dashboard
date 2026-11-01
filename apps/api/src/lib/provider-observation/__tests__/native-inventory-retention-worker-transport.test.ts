@@ -82,6 +82,146 @@ afterEach(() => {
 });
 
 describe("native retention worker lifetime and protocol", () => {
+	it("keeps a known transport error code without reading any error accessors", async () => {
+		const getter = vi.fn(() => {
+			throw new Error("private-getter");
+		});
+		admission.attach.mockRejectedValueOnce(
+			Object.defineProperty({ code: "SQLITE_BUSY" }, "message", { get: getter }),
+		);
+		await expect(runNativeInventoryRetentionWorker(payload)).rejects.toMatchObject({
+			transportFailure: "attach-failed",
+			failureCode: "SQLITE_BUSY",
+		});
+		expect(getter).not.toHaveBeenCalled();
+		const operation = start();
+		await turn();
+		operation.worker.emit("error", Object.defineProperty({}, "code", { get: getter }));
+		operation.worker.emit("exit", 1);
+		expect(await operation.pending).toMatchObject({
+			error: { transportFailure: "worker-error", failureCode: "unknown" },
+		});
+		expect(getter).not.toHaveBeenCalled();
+	});
+	it("retains worker failure provenance through exit and a second close failure", async () => {
+		close.mockRejectedValueOnce({ code: "SQLITE_BUSY", message: "synthetic-private-close" });
+		const operation = start();
+		await turn();
+		operation.worker.emit("message", {
+			status: "failed",
+			failurePhase: "retention",
+			failureCode: "P2028",
+		});
+		operation.worker.emit("error", new Error("synthetic-private-second"));
+		await turn();
+		expect(operation.settled()).toBe(false);
+		operation.worker.emit("exit", 1);
+		expect(await operation.pending).toMatchObject({
+			error: {
+				failurePhase: "retention",
+				failureCode: "P2028",
+				message: "Native inventory retention worker failed",
+			},
+		});
+	});
+	it.each([
+		{ status: "failed", failurePhase: "retention" },
+		{ status: "failed", failureCode: "P2028" },
+		{ status: "failed", failurePhase: "private", failureCode: "P2028" },
+		{ status: "failed", failurePhase: "retention", failureCode: "private" },
+		{ status: "failed", failurePhase: "retention", failureCode: "P2028", message: "private" },
+		{ status: "cancelled", failurePhase: "retention", failureCode: "P2028" },
+	])("refuses partial, unknown or private diagnostics: %j", async (message) => {
+		const operation = start();
+		await turn();
+		operation.worker.emit("message", message);
+		operation.worker.emit("exit", 0);
+		expect(await operation.pending).toMatchObject({
+			error: {
+				transportFailure: "invalid-worker-result",
+				failurePhase: "unknown",
+				failureCode: "unknown",
+			},
+		});
+	});
+	it("does not invoke result getters", async () => {
+		const getter = vi.fn(() => "retention");
+		const operation = start();
+		await turn();
+		operation.worker.emit(
+			"message",
+			Object.defineProperty({ status: "failed", failureCode: "P2028" }, "failurePhase", {
+				get: getter,
+				enumerable: true,
+			}),
+		);
+		operation.worker.emit("exit", 0);
+		expect(await operation.pending).toMatchObject({
+			error: { transportFailure: "invalid-worker-result" },
+		});
+		expect(getter).not.toHaveBeenCalled();
+	});
+	it.each([
+		["error", "worker-error"],
+		["messageerror", "worker-messageerror"],
+		["bridge", "runtime-bridge-unavailable"],
+		["missing", "worker-exited-without-result"],
+		["nonzero", "worker-nonzero-exit"],
+		["duplicate", "invalid-worker-result"],
+	] as const)(
+		"preserves the first %s transport failure if closing also fails",
+		async (event, expected) => {
+			close.mockRejectedValueOnce(new Error("synthetic-private-close"));
+			const operation = start();
+			await turn();
+			if (event === "nonzero" || event === "duplicate") operation.worker.emit("message", completed);
+			if (event === "duplicate") operation.worker.emit("message", completed);
+			if (event === "error" || event === "messageerror")
+				operation.worker.emit(event, { code: "P2028" });
+			if (event === "bridge") unavailable();
+			operation.worker.emit("exit", event === "nonzero" ? 1 : 0);
+			expect(await operation.pending).toMatchObject({
+				error: {
+					transportFailure: expected,
+					failurePhase: "unknown",
+					failureCode: event === "error" || event === "messageerror" ? "P2028" : "unknown",
+				},
+			});
+		},
+	);
+	it("accepts legacy failed messages as generic failures", async () => {
+		const operation = start();
+		await turn();
+		operation.worker.emit("message", { status: "failed" });
+		operation.worker.emit("exit", 0);
+		expect(await operation.pending).toMatchObject({
+			error: { failurePhase: "unknown", failureCode: "unknown" },
+		});
+	});
+	it("distinguishes attach, construction and close failures without leaking their errors", async () => {
+		admission.attach.mockRejectedValueOnce({ code: "P2028", message: "private" });
+		await expect(runNativeInventoryRetentionWorker(payload)).rejects.toMatchObject({
+			transportFailure: "attach-failed",
+			failurePhase: "unknown",
+			failureCode: "P2028",
+		});
+		close.mockRejectedValueOnce(new Error("private"));
+		await expect(
+			runNativeInventoryRetentionWorker(payload, {
+				createWorker: () => {
+					throw new Error("private");
+				},
+			}),
+		).rejects.toMatchObject({ transportFailure: "worker-construction-failed" });
+		close.mockRejectedValueOnce(new Error("private"));
+		const operation = start();
+		await turn();
+		operation.worker.emit("message", completed);
+		operation.worker.emit("exit", 0);
+		expect(await operation.pending).toMatchObject({
+			error: { transportFailure: "bridge-close-failed" },
+		});
+	});
 	it("pre-abort and failed admission spawn no worker", async () => {
 		const controller = new AbortController();
 		controller.abort();

@@ -47,6 +47,60 @@ beforeEach(() => {
 });
 
 describe("native retention scheduler admission", () => {
+	it("logs only finite own diagnostic fields and preserves the generic registry error", async () => {
+		const target = app();
+		target.config.DATABASE_URL = "file:/synthetic/fixture.db";
+		const getter = vi.fn(() => {
+			throw new Error("private-getter");
+		});
+		const error = Object.defineProperty(
+			{
+				failurePhase: "retention",
+				failureCode: "P2028",
+				transportFailure: "worker-error",
+				message: "private-error",
+				cause: "private-cause",
+			},
+			"url",
+			{ get: getter },
+		);
+		mocks.worker.mockRejectedValueOnce(error);
+		await expect(runNativeInventoryRetentionTick(target as never)).rejects.toThrow(
+			"Native inventory retention failed",
+		);
+		expect(target.log.error).toHaveBeenCalledWith(
+			{
+				category: "native-inventory-retention-failed",
+				failurePhase: "retention",
+				failureCode: "P2028",
+				transportFailure: "worker-error",
+			},
+			"Native inventory retention failed",
+		);
+		expect(getter).not.toHaveBeenCalled();
+		expect(JSON.stringify(target.log.error.mock.calls)).not.toContain("private");
+	});
+	it("collapses unknown, inherited and accessor diagnostics without invoking getters", async () => {
+		const target = app();
+		const getter = vi.fn(() => "P2028");
+		mocks.prune.mockRejectedValueOnce(
+			Object.defineProperty(Object.create({ transportFailure: "worker-error" }), "failureCode", {
+				get: getter,
+			}),
+		);
+		await expect(runNativeInventoryRetentionTick(target as never)).rejects.toThrow(
+			"Native inventory retention failed",
+		);
+		expect(target.log.error).toHaveBeenCalledWith(
+			{
+				category: "native-inventory-retention-failed",
+				failurePhase: "unknown",
+				failureCode: "unknown",
+			},
+			"Native inventory retention failed",
+		);
+		expect(getter).not.toHaveBeenCalled();
+	});
 	it("keeps PostgreSQL direct while routing SQLite through joined workers", async () => {
 		await runNativeInventoryRetentionTick(app() as never);
 		expect(mocks.prune).toHaveBeenCalledOnce();
@@ -227,7 +281,11 @@ describe("native retention scheduler admission", () => {
 		).rejects.toThrow("Native inventory retention failed");
 		expect(state.cursor).toEqual(cursor);
 		expect(target.log.error).toHaveBeenCalledWith(
-			{ category: "native-inventory-retention-failed" },
+			{
+				category: "native-inventory-retention-failed",
+				failurePhase: "unknown",
+				failureCode: "unknown",
+			},
 			"Native inventory retention failed",
 		);
 		expect(JSON.stringify(target.log.error.mock.calls)).not.toContain("synthetic-private-error");

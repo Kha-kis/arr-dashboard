@@ -7,6 +7,16 @@ import type {
 	NativeInventoryRetentionCursor,
 	NativeInventoryRetentionSlice,
 } from "./native-inventory-retention.js";
+import {
+	isNativeInventoryRetentionFailureCode,
+	isNativeInventoryRetentionFailurePhase,
+	nativeInventoryRetentionDiagnosticsFrom,
+	nativeInventoryRetentionFailureCode,
+	type NativeInventoryRetentionFailureDiagnostics,
+	type NativeInventoryRetentionTransportFailure,
+	NativeInventoryRetentionWorkerError,
+} from "./native-inventory-retention-diagnostics.js";
+export { NativeInventoryRetentionWorkerError } from "./native-inventory-retention-diagnostics.js";
 
 export type NativeInventoryRetentionWorkerPayload = {
 	databaseUrl: string;
@@ -19,7 +29,11 @@ export type NativeInventoryRetentionWorkerPayload = {
 export type NativeInventoryRetentionWorkerResult =
 	| ({ status: "completed" } & NativeInventoryRetentionSlice)
 	| { status: "cancelled" }
-	| { status: "failed" };
+	| { status: "failed" }
+	| ({ status: "failed" } & Pick<
+			NativeInventoryRetentionFailureDiagnostics,
+			"failurePhase" | "failureCode"
+	  >);
 type WorkerLike = {
 	stdout?: { resume(): unknown } | null;
 	stderr?: { resume(): unknown } | null;
@@ -29,25 +43,25 @@ type WorkerLike = {
 	terminate(): Promise<number> | number;
 };
 
-export class NativeInventoryRetentionWorkerError extends Error {
-	constructor() {
-		super("Native inventory retention worker failed");
-		this.name = "NativeInventoryRetentionWorkerError";
-	}
-}
-
-function record(value: unknown): value is Record<string, unknown> {
-	return (
-		typeof value === "object" &&
-		value !== null &&
-		Object.getPrototypeOf(value) === Object.prototype &&
-		Reflect.ownKeys(value).every((key) => {
+function record(value: unknown): Record<string, unknown> | null {
+	try {
+		if (
+			typeof value !== "object" ||
+			value === null ||
+			Object.getPrototypeOf(value) !== Object.prototype
+		)
+			return null;
+		const result: Record<string, unknown> = Object.create(null);
+		for (const key of Reflect.ownKeys(value)) {
 			const descriptor = Object.getOwnPropertyDescriptor(value, key);
-			return (
-				typeof key === "string" && descriptor !== undefined && Object.hasOwn(descriptor, "value")
-			);
-		})
-	);
+			if (typeof key !== "string" || !descriptor || !Object.hasOwn(descriptor, "value"))
+				return null;
+			result[key] = descriptor.value;
+		}
+		return result;
+	} catch {
+		return null;
+	}
 }
 function bounded(value: unknown, maximum: number, minimum = 0): value is number {
 	return (
@@ -55,22 +69,24 @@ function bounded(value: unknown, maximum: number, minimum = 0): value is number 
 	);
 }
 function cursor(value: unknown): value is NativeInventoryRetentionCursor | null {
+	const fields = record(value);
 	return (
 		value === null ||
-		(record(value) &&
-			Object.keys(value).length === 1 &&
-			typeof value.id === "string" &&
-			value.id.length > 0 &&
-			value.id.length <= 256)
+		(fields !== null &&
+			Object.keys(fields).length === 1 &&
+			typeof fields.id === "string" &&
+			fields.id.length > 0 &&
+			fields.id.length <= 256)
 	);
 }
 
 /** Internal protocol only: never copy arbitrary fields or error details. */
 export function parseNativeInventoryRetentionWorkerPayload(
-	value: unknown,
+	input: unknown,
 ): NativeInventoryRetentionWorkerPayload | null {
+	const value = record(input);
 	if (
-		!record(value) ||
+		!value ||
 		typeof value.databaseUrl !== "string" ||
 		!value.databaseUrl.startsWith("file:") ||
 		value.databaseUrl.length <= 5 ||
@@ -95,15 +111,24 @@ export function parseNativeInventoryRetentionWorkerPayload(
 }
 
 export function parseNativeInventoryRetentionWorkerResult(
-	value: unknown,
+	message: unknown,
 	input: NativeInventoryRetentionWorkerPayload,
 ): NativeInventoryRetentionWorkerResult | null {
-	if (!record(value)) return null;
+	const value = record(message);
+	if (!value) return null;
 	if (
 		(value.status === "cancelled" || value.status === "failed") &&
 		Object.keys(value).length === 1
 	)
-		return { status: value.status };
+		return value.status === "failed" ? { status: "failed" } : { status: "cancelled" };
+	if (
+		value.status === "failed" &&
+		Object.keys(value).length === 3 &&
+		isNativeInventoryRetentionFailurePhase(value.failurePhase) &&
+		isNativeInventoryRetentionFailureCode(value.failureCode)
+	) {
+		return { status: "failed", failurePhase: value.failurePhase, failureCode: value.failureCode };
+	}
 	if (
 		value.status !== "completed" ||
 		Object.keys(value).length !== 6 ||
@@ -162,27 +187,43 @@ export async function runNativeInventoryRetentionWorker(
 ): Promise<Exclude<NativeInventoryRetentionWorkerResult, { status: "failed" }>> {
 	if (options.signal?.aborted) return { status: "cancelled" };
 	const input = parseNativeInventoryRetentionWorkerPayload(payload);
-	if (!input) throw new NativeInventoryRetentionWorkerError();
+	if (!input)
+		throw new NativeInventoryRetentionWorkerError({
+			failurePhase: "unknown",
+			failureCode: "unknown",
+			transportFailure: "invalid-request",
+		});
 	let bridge: Awaited<ReturnType<typeof attachRestoreRuntimeWorker>> | undefined;
 	let worker: WorkerLike;
+	let firstFailure: NativeInventoryRetentionWorkerError | undefined;
+	const transportFailure = (failure: NativeInventoryRetentionTransportFailure, error?: unknown) =>
+		(firstFailure ??= new NativeInventoryRetentionWorkerError({
+			failurePhase: "unknown",
+			failureCode: nativeInventoryRetentionFailureCode(error),
+			transportFailure: failure,
+		}));
+	let setupFailure: NativeInventoryRetentionTransportFailure = "attach-failed";
 	try {
 		bridge = await attachRestoreRuntimeWorker(input.databaseUrl);
 		if (options.signal?.aborted) {
+			setupFailure = "bridge-close-failed";
 			await bridge.close();
 			return { status: "cancelled" };
 		}
+		setupFailure = "worker-construction-failed";
 		worker = (options.createWorker ?? createNativeInventoryRetentionWorker)(
 			nativeInventoryRetentionWorkerUrl(),
 			{ ...input, databaseUrl: bridge.binding.databaseUrl, runtimeBinding: bridge.binding },
 			[bridge.binding.port],
 		);
-	} catch {
+	} catch (error) {
+		const failure = transportFailure(setupFailure, error);
 		try {
 			await bridge?.close();
 		} catch {
-			/* Expose only the generic failure. */
+			/* Preserve the first failure while joining closure. */
 		}
-		throw new NativeInventoryRetentionWorkerError();
+		throw failure;
 	}
 	let cancel: (() => void) | undefined;
 	let unsubscribe: (() => void) | undefined;
@@ -194,8 +235,12 @@ export async function runNativeInventoryRetentionWorker(
 					failed = false,
 					stopRequested = false;
 				let result: Exclude<NativeInventoryRetentionWorkerResult, { status: "failed" }> | undefined;
-				const fail = () => {
+				const fail = (
+					failure: NativeInventoryRetentionWorkerError | NativeInventoryRetentionTransportFailure,
+					error?: unknown,
+				) => {
 					if (exited) return;
+					firstFailure ??= typeof failure === "string" ? transportFailure(failure, error) : failure;
 					failed = true;
 					result = undefined;
 					if (stopRequested) return;
@@ -219,25 +264,37 @@ export async function runNativeInventoryRetentionWorker(
 					if (exited) return;
 					exited = true;
 					if (!failed && result && code === 0) resolve(result);
-					else reject(new NativeInventoryRetentionWorkerError());
+					else
+						reject(
+							firstFailure ??
+								transportFailure(
+									code === 0 ? "worker-exited-without-result" : "worker-nonzero-exit",
+								),
+						);
 				});
-				worker.on("error", fail);
-				worker.on("messageerror", fail);
+				worker.on("error", (error) => fail("worker-error", error));
+				worker.on("messageerror", (error) => fail("worker-messageerror", error));
 				worker.on("message", (message) => {
 					if (exited || failed) return;
-					if (received) return fail();
+					if (received) return fail("invalid-worker-result");
 					received = true;
 					const parsed = parseNativeInventoryRetentionWorkerResult(message, input);
-					if (!parsed || parsed.status === "failed") return fail();
+					if (!parsed) return fail("invalid-worker-result");
+					if (parsed.status === "failed")
+						return fail(
+							new NativeInventoryRetentionWorkerError(
+								nativeInventoryRetentionDiagnosticsFrom(parsed),
+							),
+						);
 					result = parsed;
 				});
-				unsubscribe = bridge!.onUnavailable(fail);
+				unsubscribe = bridge!.onUnavailable(() => fail("runtime-bridge-unavailable"));
 				options.signal?.addEventListener("abort", cancel, { once: true });
 				try {
 					worker.stdout?.resume();
 					worker.stderr?.resume();
-				} catch {
-					fail();
+				} catch (error) {
+					fail("worker-error", error);
 				}
 				if (options.signal?.aborted) cancel();
 			},
@@ -245,8 +302,8 @@ export async function runNativeInventoryRetentionWorker(
 	} finally {
 		if (cancel) options.signal?.removeEventListener("abort", cancel);
 		unsubscribe?.();
-		await bridge.close().catch(() => {
-			throw new NativeInventoryRetentionWorkerError();
+		await bridge.close().catch((error) => {
+			throw transportFailure("bridge-close-failed", error);
 		});
 	}
 }
