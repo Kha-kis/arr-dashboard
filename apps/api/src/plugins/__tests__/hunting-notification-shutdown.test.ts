@@ -1197,6 +1197,7 @@ describe("Hunting accepted notification handoff", () => {
 		expect(f.counts.bookkeeping).toBe(1);
 		expect(f.state.afterTeardown).toBe(0);
 	});
+	// Two real native lifecycles share this budget; each progress guard remains 4s.
 	it("wires the new app's producer after a completed lifecycle", async () => {
 		const previous = await boot();
 		await previous.start();
@@ -1217,7 +1218,7 @@ describe("Hunting accepted notification handoff", () => {
 		]);
 		expect(previous.state.afterTeardown).toBe(0);
 		expect(next.state.afterTeardown).toBe(0);
-	});
+	}, 30_000);
 	it("naturally schedules at 60 seconds without overlapping and waits for the next eligible hunt", async () => {
 		// Added native cadence control; the original 37 named controls remain intact.
 		const gate = deferred();
