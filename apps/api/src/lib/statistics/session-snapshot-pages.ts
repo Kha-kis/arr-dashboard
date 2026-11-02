@@ -1,4 +1,5 @@
 import { parseSessionSnapshotMeasurement } from "../../plugins/lib/session-snapshot-measurements.js";
+import { withIsolatedRuntimePrismaReadTransaction } from "../backup/restore-runtime-client.js";
 import type { Prisma, PrismaClient } from "../prisma.js";
 
 const SESSION_SNAPSHOT_PAGE_SIZE = 500;
@@ -102,7 +103,8 @@ async function readScopedSessionSnapshotPages<
 	};
 	if (input.services.length === 0) return { instanceCount: 0, snapshotCount: 0, collection };
 
-	return prisma.$transaction(
+	return withIsolatedRuntimePrismaReadTransaction(
+		prisma,
 		async (tx) => {
 			const instances = await tx.serviceInstance.findMany({
 				where: { userId: input.userId, service: { in: [...input.services] }, enabled: true },

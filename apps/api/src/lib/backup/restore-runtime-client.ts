@@ -58,9 +58,18 @@ type RuntimePrismaClient = Readonly<{
 	prisma: PrismaClientInstance;
 	close(): Promise<void>;
 }>;
+type RuntimeTransactionOptions = {
+	maxWait?: number;
+	timeout?: number;
+	isolationLevel?: Prisma.TransactionIsolationLevel;
+};
 type SqliteClientRegistration = {
 	closed: boolean;
 	publication(): RuntimePrismaClient;
+	read<T>(
+		operation: (tx: Prisma.TransactionClient) => Promise<T>,
+		options?: RuntimeTransactionOptions,
+	): Promise<T>;
 };
 const ordinarySqliteClients = new WeakMap<object, SqliteClientRegistration>();
 
@@ -80,6 +89,18 @@ export async function withIsolatedRuntimePrismaTransaction<T>(
 	// The companion was registered before admission could close. An already
 	// accepted collection may reach this publication while the runtime drains.
 	return registration.publication().prisma.$transaction(operation, options);
+}
+
+/** Consistent statistics reads must not borrow the HTTP or publication connection. */
+export async function withIsolatedRuntimePrismaReadTransaction<T>(
+	prisma: Pick<PrismaClientInstance, "$transaction">,
+	operation: (tx: Prisma.TransactionClient) => Promise<T>,
+	options?: RuntimeTransactionOptions,
+): Promise<T> {
+	const registration = ordinarySqliteClients.get(prisma);
+	if (!registration) return prisma.$transaction(operation, options);
+	if (registration.closed) throw new RestoreRuntimeAdmissionError();
+	return registration.read(operation, options);
 }
 
 function projection(result: Awaited<ReturnType<Driver["queryRaw"]>>, columns: string[]) {
@@ -106,6 +127,48 @@ export function createRuntimePrismaClient(
 	// drain because materialization uses this existing slot, never a new claim.
 	let publication: RuntimePrismaClient | undefined;
 	let publicationClosePromise: Promise<void> | undefined;
+	// Statistics fan-out is bounded independently from ordinary HTTP queries.
+	// Reserve closure now; accepted work may first acquire a lane during drain.
+	type ReadLane = { busy: boolean; client?: RuntimePrismaClient };
+	type ReadWaiter = {
+		resolve(lane: ReadLane): void;
+		reject(error: RestoreRuntimeAdmissionError): void;
+	};
+	const readLanes: ReadLane[] = Array.from({ length: 4 }, () => ({ busy: false }));
+	const readWaiters = new Set<ReadWaiter>();
+	let readsClosePromise: Promise<void> | undefined;
+	const acquireReadLane = (maxWait: number): Promise<ReadLane> => {
+		if (registration.closed) return Promise.reject(new RestoreRuntimeAdmissionError());
+		const lane = readLanes.find((candidate) => !candidate.busy);
+		if (lane) {
+			lane.busy = true;
+			return Promise.resolve(lane);
+		}
+		return new Promise((resolve, reject) => {
+			const timer = setTimeout(() => {
+				readWaiters.delete(waiter);
+				reject(new RestoreRuntimeAdmissionError());
+			}, maxWait);
+			const waiter: ReadWaiter = {
+				resolve: (next) => {
+					clearTimeout(timer);
+					resolve(next);
+				},
+				reject: (error) => {
+					clearTimeout(timer);
+					reject(error);
+				},
+			};
+			readWaiters.add(waiter);
+		});
+	};
+	const releaseReadLane = (lane: ReadLane) => {
+		const next = readWaiters.values().next().value;
+		if (next && !registration.closed) {
+			readWaiters.delete(next);
+			next.resolve(lane);
+		} else lane.busy = false;
+	};
 	const registration: SqliteClientRegistration = {
 		closed: false,
 		publication: () => {
@@ -121,7 +184,34 @@ export function createRuntimePrismaClient(
 			);
 			return publication;
 		},
+		read: async (operation, transactionOptions) => {
+			const lane = await acquireReadLane(transactionOptions?.maxWait ?? 2_000);
+			try {
+				if (registration.closed) throw new RestoreRuntimeAdmissionError();
+				lane.client ??= createGuardedPrismaClient(
+					{ ...context, registerClose: () => () => undefined },
+					runtime,
+				);
+				return await lane.client.prisma.$transaction(operation, transactionOptions);
+			} finally {
+				releaseReadLane(lane);
+			}
+		},
 	};
+	const closeReads = () => {
+		registration.closed = true;
+		for (const waiter of readWaiters) waiter.reject(new RestoreRuntimeAdmissionError());
+		readWaiters.clear();
+		readsClosePromise ??= Promise.resolve().then(async () => {
+			const results = await Promise.allSettled(readLanes.map((lane) => lane.client?.close()));
+			if (results.some((result) => result.status === "rejected"))
+				throw new RestoreRuntimeAdmissionError();
+			for (const lane of readLanes) lane.client = undefined;
+			unregisterReads();
+		});
+		return readsClosePromise;
+	};
+	const unregisterReads = context.registerClose(closeReads);
 	const closePublication = () => {
 		registration.closed = true;
 		publicationClosePromise ??= Promise.resolve().then(async () => {
@@ -140,7 +230,7 @@ export function createRuntimePrismaClient(
 		close: () => {
 			registration.closed = true;
 			closePromise ??= Promise.resolve().then(async () => {
-				const closed = await Promise.allSettled([native.close(), closePublication()]);
+				const closed = await Promise.allSettled([native.close(), closePublication(), closeReads()]);
 				if (closed.some((result) => result.status === "rejected"))
 					throw new RestoreRuntimeAdmissionError();
 			});
