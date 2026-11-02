@@ -227,13 +227,22 @@ it("drains every concurrent handler across duplicate closes, including a late re
 		app.inject({ method: "POST", url: "/second" }),
 	]);
 	await Promise.all([firstStarted.promise, secondStarted.promise]);
+	expect(app.lifecycle.getShutdownStatus()).toEqual({ admissionClosed: false, pendingHandlers: 2 });
 	const close = app.close();
 	const duplicateClose = app.close();
 	try {
 		await closing.promise;
+		expect(app.lifecycle.getShutdownStatus()).toEqual({
+			admissionClosed: true,
+			pendingHandlers: 2,
+		});
 		first.resolve();
 		await firstSettled.promise;
 		await flushCloseCallbacks();
+		expect(app.lifecycle.getShutdownStatus()).toEqual({
+			admissionClosed: true,
+			pendingHandlers: 1,
+		});
 		expect(teardownCount).toBe(0);
 	} finally {
 		first.resolve();
@@ -242,6 +251,7 @@ it("drains every concurrent handler across duplicate closes, including a late re
 	}
 	expect((await responses).map((response) => response.statusCode)).toEqual([200, 500]);
 	expect(teardownCount).toBe(1);
+	expect(app.lifecycle.getShutdownStatus()).toEqual({ admissionClosed: true, pendingHandlers: 0 });
 });
 
 it("refuses a late handler after its asynchronous preHandler resumes during close", async () => {

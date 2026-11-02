@@ -34,6 +34,23 @@ export interface RetainedRestoreRuntimeOperation {
 	release(): Promise<void>;
 }
 
+type RestoreRuntimeShutdownStage =
+	| "activation"
+	| "controls"
+	| "replacement"
+	| "operations"
+	| "clients"
+	| "backend";
+export type RestoreRuntimeShutdownStatus = Readonly<{
+	phase: "idle" | RestoreRuntimeShutdownStage | "closed" | "failed";
+	failedPhase: RestoreRuntimeShutdownStage | null;
+	admissionClosed: boolean;
+	activeOperations: number;
+	retainedOperations: number;
+	registeredClients: number;
+	pendingClientCloses: number;
+}>;
+
 type RecordTransition = (record: Readonly<RestoreRuntimeRecord>) => Readonly<RestoreRuntimeRecord>;
 type OperationParticipation = {
 	initialRecord?: Readonly<RestoreRuntimeRecord>;
@@ -73,6 +90,9 @@ type RuntimeState = {
 	controls: Promise<void>;
 	activation?: Promise<void>;
 	closePromise?: Promise<void>;
+	shutdownPhase: RestoreRuntimeShutdownStatus["phase"];
+	failedShutdownPhase: RestoreRuntimeShutdownStage | null;
+	pendingClientCloses: number;
 	replacement?: { completion: Promise<void> };
 	lose(reason?: RestoreRuntimeLossReason): void;
 };
@@ -80,6 +100,31 @@ type Ticket = { state: RuntimeState; starting: boolean; active: boolean };
 const tickets = new AsyncLocalStorage<Ticket>();
 const runtimes = new WeakMap<RestoreRuntime, RuntimeState>();
 const runtimeActors = new WeakMap<RuntimeState, RestoreRuntime>();
+
+/** In-memory primitives only; observation grants no runtime or database authority. */
+export function getRestoreRuntimeShutdownStatus(
+	runtime: RestoreRuntime,
+): RestoreRuntimeShutdownStatus {
+	const state = stateOf(runtime);
+	return Object.freeze({
+		phase: state.shutdownPhase,
+		failedPhase: state.failedShutdownPhase,
+		admissionClosed: state.closing || state.lost,
+		activeOperations: state.active.size,
+		retainedOperations: state.retained.size,
+		registeredClients: state.clients.size,
+		pendingClientCloses: state.pendingClientCloses,
+	});
+}
+
+function observeClientClose(state: RuntimeState, close: () => Promise<void>): Promise<void> {
+	state.pendingClientCloses++;
+	return Promise.resolve()
+		.then(close)
+		.finally(() => {
+			state.pendingClientCloses--;
+		});
+}
 declare const replacementBrand: unique symbol;
 export type RestoreReplacementScope = Readonly<{ [replacementBrand]: true }>;
 type ReplacementState = {
@@ -690,6 +735,9 @@ async function createRuntimeActor(
 		clients: new Set(),
 		lossListeners: new Set(),
 		controls: Promise.resolve(),
+		shutdownPhase: "idle",
+		failedShutdownPhase: null,
+		pendingClientCloses: 0,
 		lose,
 	};
 	loss.bind(owned);
@@ -830,20 +878,34 @@ async function createRuntimeActor(
 				return Promise.reject(new RestoreRuntimeAdmissionError());
 			if (!owned.closePromise) {
 				runtime.closeAdmission();
+				let closePhase: RestoreRuntimeShutdownStage = "activation";
+				const phase = (next: RestoreRuntimeShutdownStage) => {
+					closePhase = next;
+					owned.shutdownPhase = next;
+				};
 				owned.closePromise = Promise.resolve()
 					.then(async () => {
+						phase("activation");
 						await owned.activation?.catch(() => {});
+						phase("controls");
 						await owned.controls;
+						phase("replacement");
 						await owned.replacement?.completion;
+						phase("operations");
 						await drain();
+						phase("clients");
 						const closed = await Promise.allSettled(
-							[...owned.clients].map((close) => Promise.resolve().then(close)),
+							[...owned.clients].map((close) => observeClientClose(owned, close)),
 						);
 						if (closed.some((result) => result.status === "rejected"))
 							throw new RestoreRuntimeAdmissionError();
+						phase("backend");
 						await backend.close();
+						owned.shutdownPhase = "closed";
 					})
 					.catch(() => {
+						owned.failedShutdownPhase = closePhase;
+						owned.shutdownPhase = "failed";
 						lose();
 						throw new RestoreRuntimeAdmissionError();
 					});
@@ -1072,7 +1134,7 @@ export async function withRestoreRuntimeReplacement<T>(
 	let closureFailed = false;
 	const closeClients = async () => {
 		const closed = await Promise.allSettled(
-			[...state.clients].map((close) => Promise.resolve().then(close)),
+			[...state.clients].map((close) => observeClientClose(state, close)),
 		);
 		if (closed.some((result) => result.status === "rejected")) {
 			closureFailed = true;

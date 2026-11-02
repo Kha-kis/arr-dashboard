@@ -1,8 +1,9 @@
-import { type ChildProcess, fork } from "node:child_process";
+import { type ChildProcess, fork, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { chmodSync, existsSync, mkdtempSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import { Client } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,8 +11,11 @@ import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import {
 	assertRestoreRuntimeOperation,
 	attachRestoreRuntimeWorker,
+	getRestoreRuntimeClientContext,
+	getRestoreRuntimeShutdownStatus,
 	openRestoreRuntime,
 	openRestoreRuntimeWorker,
+	retainRestoreRuntimeOperation,
 	type RestoreRuntime,
 } from "../restore-runtime-admission.js";
 import { acquirePostgresRestoreRuntimeOwnership } from "../restore-runtime-postgres.js";
@@ -656,6 +660,17 @@ describe("actor-owned restore runtime operation admission", () => {
 
 	it("keeps native ownership until the actual accepted promise settles and joins concurrent close calls", async () => {
 		const runtime = await running();
+		const initial = getRestoreRuntimeShutdownStatus(runtime);
+		expect(initial).toEqual({
+			phase: "idle",
+			failedPhase: null,
+			admissionClosed: false,
+			activeOperations: 0,
+			retainedOperations: 0,
+			registeredClients: 0,
+			pendingClientCloses: 0,
+		});
+		expect(Object.isFrozen(initial)).toBe(true);
 		const entered = deferred();
 		const finish = deferred();
 		const work = runtime.runOperation(async () => {
@@ -667,6 +682,14 @@ describe("actor-owned restore runtime operation admission", () => {
 		const close = runtime.close();
 		expect(runtime.close()).toBe(close);
 		try {
+			await vi.waitFor(() =>
+				expect(getRestoreRuntimeShutdownStatus(runtime)).toMatchObject({
+					phase: "operations",
+					admissionClosed: true,
+					activeOperations: 1,
+				}),
+			);
+			expect(initial).toMatchObject({ phase: "idle", activeOperations: 0 });
 			await expect(
 				postgres
 					? acquirePostgresRestoreRuntimeOwnership(url)
@@ -677,9 +700,148 @@ describe("actor-owned restore runtime operation admission", () => {
 		}
 		await work;
 		await close;
+		expect(getRestoreRuntimeShutdownStatus(runtime)).toMatchObject({
+			phase: "closed",
+			failedPhase: null,
+			activeOperations: 0,
+		});
 		const next = await start();
 		await next.bindDestination("fixture-destination");
 		await next.activate();
+	});
+
+	it("attributes a retained queue obligation after its parent has actually settled", async () => {
+		const runtime = await running();
+		const retained = await runtime.runOperation(() => retainRestoreRuntimeOperation()!);
+		const closing = runtime.close();
+		try {
+			await vi.waitFor(() =>
+				expect(getRestoreRuntimeShutdownStatus(runtime)).toMatchObject({
+					phase: "operations",
+					activeOperations: 0,
+					retainedOperations: 1,
+				}),
+			);
+		} finally {
+			await retained.release();
+			await closing;
+		}
+		expect(getRestoreRuntimeShutdownStatus(runtime)).toMatchObject({
+			phase: "closed",
+			retainedOperations: 0,
+		});
+	});
+
+	it("counts actual client settlements without releasing native ownership early", async () => {
+		const runtime = await running();
+		const context = getRestoreRuntimeClientContext(runtime);
+		const first = deferred(),
+			second = deferred();
+		let firstClosed = false;
+		const unregisterFirst = context.registerClose(async () => {
+			await first.promise;
+			firstClosed = true;
+		});
+		const unregisterSecond = context.registerClose(async () => {
+			await second.promise;
+		});
+		const closing = runtime.close();
+		const result = closing.then(
+			() => "closed",
+			() => "rejected",
+		);
+		expect(runtime.close()).toBe(closing);
+		try {
+			await vi.waitFor(() =>
+				expect(getRestoreRuntimeShutdownStatus(runtime)).toMatchObject({
+					phase: "clients",
+					registeredClients: 2,
+					pendingClientCloses: 2,
+				}),
+			);
+			first.resolve();
+			await vi.waitFor(() => expect(firstClosed).toBe(true));
+			expect(getRestoreRuntimeShutdownStatus(runtime)).toMatchObject({
+				phase: "clients",
+				pendingClientCloses: 1,
+			});
+			await expect(
+				postgres
+					? acquirePostgresRestoreRuntimeOwnership(url)
+					: acquireSqliteRestoreRuntimeOwnership(url),
+			).rejects.toBeDefined();
+		} finally {
+			first.resolve();
+			second.resolve();
+		}
+		expect(await result).toBe("closed");
+		expect(getRestoreRuntimeShutdownStatus(runtime)).toMatchObject({
+			phase: "closed",
+			failedPhase: null,
+			pendingClientCloses: 0,
+			admissionClosed: true,
+		});
+		unregisterFirst();
+		unregisterSecond();
+	});
+
+	it("attributes rejected native client closure while retaining failed-close fencing in a disposable child", () => {
+		const child = spawnSync(
+			process.execPath,
+			[
+				"--import",
+				import.meta.resolve("tsx/esm"),
+				"--input-type=module",
+				"--eval",
+				`
+			import {openRestoreRuntime,getRestoreRuntimeClientContext,getRestoreRuntimeShutdownStatus} from "./src/lib/backup/restore-runtime-admission.ts";
+			import {acquireSqliteRestoreRuntimeOwnership} from "./src/lib/backup/restore-runtime-sqlite.ts";
+			import {acquirePostgresRestoreRuntimeOwnership} from "./src/lib/backup/restore-runtime-postgres.ts";
+			const runtime=await openRestoreRuntime({databaseUrl:process.env.FIXTURE_DATABASE_URL});
+			await runtime.bindDestination("fixture-destination");await runtime.activate();
+			getRestoreRuntimeClientContext(runtime).registerClose(async()=>{throw new Error("Synthetic private client failure");});
+			const closing=runtime.close(),duplicate=runtime.close();
+			const rejected=await closing.then(()=>false,()=>true);
+			const retryRejected=await runtime.close().then(()=>false,()=>true);
+			const operationFenced=await runtime.runOperation(()=>1).then(()=>false,()=>true);
+			const acquire=process.env.FIXTURE_ENGINE==="postgres"?acquirePostgresRestoreRuntimeOwnership:acquireSqliteRestoreRuntimeOwnership;
+			const ownershipFenced=await acquire(process.env.FIXTURE_DATABASE_URL).then(async owner=>{await owner.close();return false;},()=>true);
+			process.stdout.write(JSON.stringify({sameClose:closing===duplicate,rejected,retryRejected,operationFenced,ownershipFenced,status:getRestoreRuntimeShutdownStatus(runtime)})+"\\n");
+			process.exit(0);
+		`,
+			],
+			{
+				cwd: fileURLToPath(new URL("../../../../", import.meta.url)),
+				env: {
+					NODE_ENV: "test",
+					DOTENV_CONFIG_PATH: "/dev/null",
+					FIXTURE_DATABASE_URL: url,
+					FIXTURE_ENGINE: postgres ? "postgres" : "sqlite",
+				},
+				encoding: "utf8",
+				timeout: 5000,
+			},
+		);
+		expect(child.error).toBeUndefined();
+		expect(child.signal).toBeNull();
+		expect(child.stderr).toBe("");
+		expect(child.status).toBe(0);
+		expect(JSON.parse(child.stdout)).toEqual({
+			sameClose: true,
+			rejected: true,
+			retryRejected: true,
+			operationFenced: true,
+			ownershipFenced: true,
+			status: {
+				phase: "failed",
+				failedPhase: "clients",
+				admissionClosed: true,
+				activeOperations: 0,
+				retainedOperations: 0,
+				registeredClients: 1,
+				pendingClientCloses: 0,
+			},
+		});
 	});
 
 	it("starts a distinct epoch after physical owner closure without replacing the persistent destination", async () => {

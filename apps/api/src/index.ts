@@ -1,6 +1,10 @@
 import "dotenv/config";
 import { envSchema } from "./config/env.js";
-import { openRestoreRuntime, type RestoreRuntime } from "./lib/backup/restore-runtime-admission.js";
+import {
+	getRestoreRuntimeShutdownStatus,
+	openRestoreRuntime,
+	type RestoreRuntime,
+} from "./lib/backup/restore-runtime-admission.js";
 import { loadRestoreRuntimeStartupSettings } from "./lib/backup/restore-runtime-bootstrap.js";
 import { logRestoreRuntimeLoss } from "./lib/backup/restore-runtime-loss.js";
 import { synchronizeRuntimeSchema } from "./lib/backup/runtime-schema-startup.js";
@@ -17,6 +21,7 @@ import {
 	resolveCombinedStartupSettings,
 	type CombinedStartupMessage,
 } from "./lib/lifecycle/combined-startup.js";
+import { type ShutdownPhase, startShutdownProgress } from "./lib/lifecycle/shutdown-progress.js";
 import { getAppVersionInfo } from "./lib/utils/version.js";
 import { buildServer } from "./server.js";
 
@@ -62,12 +67,51 @@ const start = async () => {
 		// must not restore Node's default immediate termination behavior.
 		shutdown ??= Promise.resolve()
 			.then(async () => {
-				runtime?.closeAdmission();
-				await initialization.catch(() => {});
-				if (app) await (app.hasDecorator("lifecycle") ? app.lifecycle.shutdown() : app.close());
-				// Also join an owner acquired before server construction, or before
-				// Prisma registered its normal terminal close hook.
-				await runtime?.close();
+				let phase: Exclude<ShutdownPhase, "complete" | "failed"> = "initialization";
+				let outcome: "complete" | "failed" | undefined;
+				let failedPhase: "initialization" | "fastify" | "runtime" | undefined;
+				const progress = startShutdownProgress({
+					read: () => ({
+						phase: outcome ?? phase,
+						...(failedPhase ? { failedPhase } : {}),
+						...(runtime ? { runtime: getRestoreRuntimeShutdownStatus(runtime) } : {}),
+						...(app?.hasDecorator("lifecycle") ? app.lifecycle.getShutdownStatus() : {}),
+						...(app?.hasDecorator("schedulerRegistry")
+							? {
+									runningSchedulers: app.schedulerRegistry
+										.list()
+										.filter((job) => job.state === "running").length,
+								}
+							: {}),
+					}),
+					report: (payload) => {
+						const log = app?.log ?? logger;
+						const data = { category: "shutdown-progress", ...payload };
+						if (payload.phase === "failed") log.error(data, "API shutdown progress");
+						else log.info(data, "API shutdown progress");
+					},
+				});
+				try {
+					runtime?.closeAdmission();
+					await initialization.catch(() => {});
+					phase = "fastify";
+					progress.report();
+					if (app) await (app.hasDecorator("lifecycle") ? app.lifecycle.shutdown() : app.close());
+					// Also join an owner acquired before server construction, or before
+					// Prisma registered its normal terminal close hook.
+					phase = "runtime";
+					progress.report();
+					await runtime?.close();
+					outcome = "complete";
+					progress.report();
+				} catch (error) {
+					failedPhase = phase;
+					outcome = "failed";
+					progress.report();
+					throw error;
+				} finally {
+					progress.stop();
+				}
 			})
 			.catch(() => {
 				failedShutdown = true;

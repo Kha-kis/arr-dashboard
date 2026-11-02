@@ -43,6 +43,14 @@ export class LifecycleService {
 		this.httpHandlerAdmissionClosed = true;
 	}
 
+	/** Observe actual handler lifetimes without admitting or draining work. */
+	getShutdownStatus(): Readonly<{ admissionClosed: boolean; pendingHandlers: number }> {
+		return Object.freeze({
+			admissionClosed: this.httpHandlerAdmissionClosed,
+			pendingHandlers: this.pendingHttpHandlers.size,
+		});
+	}
+
 	/** Wait before earlier-registered infrastructure (including Prisma) closes. */
 	async drainHttpHandlers(): Promise<void> {
 		this.closeHttpHandlerAdmission();

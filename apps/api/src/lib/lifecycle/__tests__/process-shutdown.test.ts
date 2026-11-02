@@ -7,6 +7,7 @@ import hydrationPlugin from "../../../plugins/inode-index-hydration.js";
 import lifecyclePlugin from "../../../plugins/lifecycle.js";
 import { installNonDatabaseRuntimeFixture } from "../../__tests__/runtime-admission-fixture.js";
 import { withCleanupMaintenanceGuard } from "../../library-cleanup/cleanup-maintenance-gate.js";
+import { SchedulerRegistry } from "../../scheduler-registry/scheduler-registry.js";
 
 // Actual index.ts + Fastify/lifecycle/hydration. Replace only configuration,
 // unrelated bootstrap, socket listen, process termination and process spawning.
@@ -15,6 +16,9 @@ const boundary = vi.hoisted(() => ({
 	app: null as FastifyInstance | null,
 	notifications: 0,
 	spawns: 0,
+	schemaGate: undefined as Promise<void> | undefined,
+	openGate: undefined as Promise<void> | undefined,
+	progress: [] as object[],
 }));
 vi.mock("dotenv/config", () => ({}));
 vi.mock("../../../config/env.js", () => ({
@@ -29,7 +33,10 @@ vi.mock("../../config/port-config.js", () => ({
 vi.mock("../../logger.js", () => ({
 	LOG_DIR: "synthetic",
 	LOG_LEVEL: "fatal",
-	logger: { error: vi.fn() },
+	logger: {
+		error: vi.fn(),
+		info: (payload: Record<string, unknown>) => boundary.progress.push(payload),
+	},
 }));
 vi.mock("../../utils/version.js", () => ({
 	getAppVersionInfo: () => ({ version: "synthetic", commitSha: "synthetic" }),
@@ -43,13 +50,20 @@ vi.mock("../../../server.js", () => ({
 // This suite already replaces server/database setup. Keep the new owner and
 // settings boundaries synthetic too; native entrypoint proof lives elsewhere.
 vi.mock("../../backup/restore-runtime-admission.js", () => ({
-	openRestoreRuntime: async () => boundary.app!.restoreRuntime,
+	openRestoreRuntime: async () => {
+		await boundary.openGate;
+		return boundary.app!.restoreRuntime;
+	},
+	getRestoreRuntimeShutdownStatus: () => undefined,
 }));
 vi.mock("../../backup/restore-runtime-bootstrap.js", () => ({
 	loadRestoreRuntimeStartupSettings: async () => null,
 }));
 vi.mock("../../backup/runtime-schema-startup.js", () => ({
-	synchronizeRuntimeSchema: async () => null,
+	synchronizeRuntimeSchema: async () => {
+		await boundary.schemaGate;
+		return null;
+	},
 }));
 vi.mock("node:child_process", async (original) => ({
 	...(await original<typeof import("node:child_process")>()),
@@ -85,6 +99,10 @@ async function boot(
 	options: {
 		readGate?: Promise<void>;
 		initGate?: Promise<void>;
+		schemaGate?: Promise<void>;
+		runtimeCloseGate?: Promise<void>;
+		runtimeOpenGate?: Promise<void>;
+		registry?: SchedulerRegistry;
 		readFails?: boolean;
 		closeFails?: boolean;
 		listenFails?: boolean;
@@ -98,6 +116,24 @@ async function boot(
 	vi.stubEnv("LAUNCHER_MANAGED", String(options.launcher ?? false));
 	const app = Fastify({ logger: false });
 	installNonDatabaseRuntimeFixture(app);
+	app.restoreRuntime = {
+		...app.restoreRuntime,
+		close: async () => {
+			await options.runtimeCloseGate;
+		},
+	};
+	boundary.schemaGate = options.schemaGate;
+	boundary.openGate = options.runtimeOpenGate;
+	if (options.registry) app.decorate("schedulerRegistry", options.registry);
+	vi.spyOn(app.log, "info").mockImplementation((payload) => {
+		if (
+			typeof payload === "object" &&
+			payload !== null &&
+			"category" in payload &&
+			payload.category === "shutdown-progress"
+		)
+			boundary.progress.push(payload);
+	});
 	const errors = vi.spyOn(app.log, "error");
 	const closeError = new Error("Synthetic close unavailable");
 	apps.push(app);
@@ -167,6 +203,9 @@ beforeEach(() => {
 	vi.resetModules();
 	boundary.notifications = 0;
 	boundary.spawns = 0;
+	boundary.schemaGate = undefined;
+	boundary.openGate = undefined;
+	boundary.progress.splice(0);
 	signals.clear();
 	exitCodes.splice(0);
 	startupErrors = 0;
@@ -207,6 +246,102 @@ afterEach(async () => {
 });
 
 describe.each(["SIGTERM", "SIGINT"] as const)("API termination: %s", (signal) => {
+	it("reports a held handler and aggregate scheduler work through repeated signals until actual close", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+		const gate = deferred();
+		const registry = new SchedulerRegistry();
+		const { app, close } = await boot({ registry });
+		registry.register({
+			id: "private-job",
+			label: "private-label",
+			description: "private-description",
+			concurrency: "parallel",
+		});
+		const scheduled = registry.track("private-job", async () => await gate.promise);
+		const handler = app.lifecycle.runHttpHandler(async () => await gate.promise);
+		emit(signal);
+		await settle();
+		expect(boundary.progress).toContainEqual(
+			expect.objectContaining({ phase: "fastify", pendingHandlers: 1, runningSchedulers: 1 }),
+		);
+		const count = boundary.progress.length;
+		emit(signal);
+		emit(signal === "SIGTERM" ? "SIGINT" : "SIGTERM");
+		await settle();
+		expect(boundary.progress).toHaveLength(count);
+		await vi.advanceTimersByTimeAsync(5000);
+		expect(boundary.progress).toHaveLength(count + 1);
+		expect(boundary.progress.at(-1)).toMatchObject({
+			phase: "fastify",
+			pendingHandlers: 1,
+			runningSchedulers: 1,
+		});
+		expect(JSON.stringify(boundary.progress)).not.toContain("private-");
+		expect(close).toHaveBeenCalledTimes(1);
+		expect(exitCodes).toEqual([]);
+		gate.resolve();
+		await Promise.all([handler, scheduled]);
+		await settle();
+		expect(boundary.progress.at(-1)).toMatchObject({
+			phase: "complete",
+			pendingHandlers: 0,
+			runningSchedulers: 0,
+		});
+		expect(vi.getTimerCount()).toBe(0);
+		expect(exitCodes).toEqual([0]);
+	});
+
+	it("reports initialization using the fallback logger until early initialization settles", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+		const schema = deferred();
+		await boot({ schemaGate: schema.promise });
+		emit(signal);
+		await settle();
+		expect(boundary.progress.at(-1)).toMatchObject({ phase: "initialization" });
+		await vi.advanceTimersByTimeAsync(5000);
+		expect(boundary.progress).toHaveLength(2);
+		expect(exitCodes).toEqual([]);
+		schema.resolve();
+		await settle();
+		expect(boundary.progress.at(-1)).toMatchObject({ phase: "complete" });
+		expect(vi.getTimerCount()).toBe(0);
+		expect(exitCodes).toEqual([0]);
+	});
+
+	it("joins an owner acquired during early initialization before stopping progress", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+		const open = deferred(),
+			close = deferred();
+		await boot({ runtimeOpenGate: open.promise, runtimeCloseGate: close.promise });
+		emit(signal);
+		await settle();
+		expect(boundary.progress.at(-1)).toMatchObject({ phase: "initialization" });
+		open.resolve();
+		await settle();
+		expect(boundary.progress.at(-1)).toMatchObject({ phase: "runtime" });
+		expect(exitCodes).toEqual([]);
+		close.resolve();
+		await settle();
+		expect(boundary.progress.at(-1)).toMatchObject({ phase: "complete" });
+		expect(vi.getTimerCount()).toBe(0);
+		expect(exitCodes).toEqual([0]);
+	});
+
+	it("attributes a separately held runtime close after Fastify has settled", async () => {
+		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+		const runtimeClose = deferred();
+		await boot({ runtimeCloseGate: runtimeClose.promise });
+		emit(signal);
+		await settle();
+		expect(boundary.progress.at(-1)).toMatchObject({ phase: "runtime" });
+		expect(exitCodes).toEqual([]);
+		runtimeClose.resolve();
+		await settle();
+		expect(boundary.progress.at(-1)).toMatchObject({ phase: "complete" });
+		expect(vi.getTimerCount()).toBe(0);
+		expect(exitCodes).toEqual([0]);
+	});
+
 	it.each([
 		{ category: "unattributed", error: new Error("Synthetic listener unavailable") },
 		{
@@ -266,6 +401,14 @@ describe.each(["SIGTERM", "SIGINT"] as const)("API termination: %s", (signal) =>
 		expect(close).toHaveBeenCalledTimes(1);
 		expect(exitCodes).toEqual([1]);
 		expect(errors).toHaveBeenCalledWith("API shutdown failed");
+		expect(errors).toHaveBeenCalledWith(
+			expect.objectContaining({
+				category: "shutdown-progress",
+				phase: "failed",
+				failedPhase: "fastify",
+			}),
+			"API shutdown progress",
+		);
 		expect(boundary.notifications).toBe(0);
 		expect(boundary.spawns).toBe(0);
 	});
@@ -391,7 +534,7 @@ const stubs=new Map([
  ["./lib/logger.js",'export const LOG_DIR="synthetic";export const LOG_LEVEL="fatal";export const logger={error(){}};'],
  ["./lib/utils/version.js",'export const getAppVersionInfo=()=>({version:"synthetic",commitSha:"synthetic"});'],
  ["./server.js",'export const buildServer=({env})=>{globalThis.fixtureApp.decorate("config",env);return globalThis.fixtureApp;};'],
- ["./lib/backup/restore-runtime-admission.js",'export const openRestoreRuntime=async()=>globalThis.fixtureApp.restoreRuntime;'],
+ ["./lib/backup/restore-runtime-admission.js",'export const openRestoreRuntime=async()=>globalThis.fixtureApp.restoreRuntime;export const getRestoreRuntimeShutdownStatus=()=>undefined;'],
  ["./lib/backup/restore-runtime-bootstrap.js",'export const loadRestoreRuntimeStartupSettings=async()=>null;'],
  ["./lib/backup/runtime-schema-startup.js",'export const synchronizeRuntimeSchema=async()=>null;'],
 ]);
