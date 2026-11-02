@@ -2,8 +2,9 @@
 
 import type { CustomQualityConfig } from "@arr/shared";
 import { AlertCircle, Check, Info, Loader2, RotateCcw, Save, Server, Sliders } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui";
+import { useUpdateInstanceOverrides } from "../../../hooks/api/useInstanceOverrides";
 import {
 	Dialog,
 	DialogContent,
@@ -13,8 +14,8 @@ import {
 	DialogTitle,
 } from "../../../components/ui/dialog";
 import {
+	type GetInstanceOverridesResponse,
 	getInstanceOverrides,
-	updateInstanceOverrides,
 } from "../../../lib/api-client/trash-guides";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { cn } from "../../../lib/utils";
@@ -30,14 +31,23 @@ interface InstanceQualityOverrideModalProps {
 	serviceType: "RADARR" | "SONARR";
 	/** The template's default quality config (used as starting point) */
 	templateDefaultConfig?: CustomQualityConfig;
-	onSaved?: () => void;
+	onSaved?: (readback: GetInstanceOverridesResponse) => void;
 }
 
 /**
  * Modal for editing instance-specific quality configuration overrides.
  * Starts with the template default and allows customization for this instance only.
  */
-export const InstanceQualityOverrideModal = ({
+export const InstanceQualityOverrideModal = (props: InstanceQualityOverrideModalProps) => (
+	<ScopedQualityOverrideModal
+		key={JSON.stringify([props.templateId, props.instanceId, props.open])}
+		{...props}
+	/>
+);
+
+// A target/open change starts a new editor session. Issued work still settles,
+// but its completion cannot update or confirm a different editor.
+const ScopedQualityOverrideModal = ({
 	open,
 	onClose,
 	templateId,
@@ -48,130 +58,157 @@ export const InstanceQualityOverrideModal = ({
 	templateDefaultConfig,
 	onSaved,
 }: InstanceQualityOverrideModalProps) => {
-	// State
 	const [config, setConfig] = useState<CustomQualityConfig>({
 		useCustomQualities: false,
 		items: [],
-		cutoffId: undefined,
 	});
 	const [hasOverride, setHasOverride] = useState(false);
 	const [isLoading, setIsLoading] = useState(true);
 	const [isSaving, setIsSaving] = useState(false);
+	const [awaitingReadback, setAwaitingReadback] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [hasChanges, setHasChanges] = useState(false);
 	const [mode, setMode] = useState<"default" | "override">("default");
+	const operation = useRef({ active: true, serial: 0, pending: false, acknowledged: false });
+	const presentation = useRef({ templateDefaultConfig, onSaved });
+	useEffect(() => {
+		presentation.current = { templateDefaultConfig, onSaved };
+	}, [templateDefaultConfig, onSaved]);
+	const { mutateAsync: updateOverrides } = useUpdateInstanceOverrides();
+	const current = useCallback(
+		(serial: number) => operation.current.active && operation.current.serial === serial,
+		[],
+	);
+	useEffect(() => {
+		const session = operation.current;
+		session.active = true;
+		return () => {
+			session.active = false;
+			session.serial++;
+		};
+	}, []);
 
-	// Load existing override - wrapped in useCallback for proper dependency tracking
-	const loadOverride = useCallback(async () => {
+	const readOverride = useCallback(
+		async (serial: number, confirm: boolean) => {
+			const readback = await getInstanceOverrides(templateId, instanceId);
+			if (!current(serial)) return;
+			// The API returns {} when there is no override. An optional nested identity,
+			// if present, must agree with the exact outer selected-link identities.
+			if (
+				readback.templateId !== templateId ||
+				readback.instanceId !== instanceId ||
+				!readback.overrides ||
+				typeof readback.overrides !== "object" ||
+				(readback.overrides.instanceId !== undefined &&
+					readback.overrides.instanceId !== instanceId)
+			) {
+				throw new Error("Override readback identity mismatch");
+			}
+			const override = readback.overrides.qualityConfigOverride;
+			setConfig(
+				override ??
+					presentation.current.templateDefaultConfig ?? { useCustomQualities: false, items: [] },
+			);
+			setHasOverride(Boolean(override));
+			setMode(override ? "override" : "default");
+			setHasChanges(false);
+			if (confirm) {
+				operation.current.acknowledged = false;
+				setAwaitingReadback(false);
+				presentation.current.onSaved?.(readback);
+			}
+		},
+		[templateId, instanceId, current],
+	);
+
+	useEffect(() => {
+		if (!open) return;
+		const session = operation.current;
+		const serial = ++session.serial;
 		setIsLoading(true);
 		setError(null);
+		void readOverride(serial, false)
+			.catch((err) => {
+				if (current(serial)) setError(getErrorMessage(err, "Failed to load override"));
+			})
+			.finally(() => {
+				if (current(serial)) setIsLoading(false);
+			});
+		return () => {
+			session.serial++;
+		};
+	}, [open, readOverride, current]);
 
-		try {
-			const response = await getInstanceOverrides(templateId, instanceId);
-			const override = response.overrides?.qualityConfigOverride;
-
-			if (override) {
-				// Instance has an existing override
-				setConfig(override);
-				setHasOverride(true);
-				setMode("override");
-			} else {
-				// No override - use template default
-				setConfig(
-					templateDefaultConfig ?? {
-						useCustomQualities: false,
-						items: [],
-						cutoffId: undefined,
-					},
-				);
-				setHasOverride(false);
-				setMode("default");
+	const confirmError = "Saved changes could not be confirmed. Retry readback without saving again.";
+	const saveQuality = useCallback(
+		async (qualityConfigOverride: CustomQualityConfig | null) => {
+			if (operation.current.pending || operation.current.acknowledged || !operation.current.active)
+				return;
+			operation.current.pending = true;
+			const serial = ++operation.current.serial;
+			setIsSaving(true);
+			setError(null);
+			try {
+				await updateOverrides({ templateId, instanceId, payload: { qualityConfigOverride } });
+				if (!current(serial)) return;
+				operation.current.acknowledged = true;
+				setAwaitingReadback(true);
+				await readOverride(serial, true);
+			} catch (err) {
+				if (current(serial))
+					setError(
+						operation.current.acknowledged
+							? confirmError
+							: getErrorMessage(err, "Failed to save override"),
+					);
+			} finally {
+				if (current(serial)) {
+					operation.current.pending = false;
+					setIsSaving(false);
+				}
 			}
-			setHasChanges(false);
-		} catch (err) {
-			setError(getErrorMessage(err, "Failed to load override"));
+		},
+		[templateId, instanceId, updateOverrides, readOverride, current],
+	);
+
+	const retryReadback = async () => {
+		if (operation.current.pending || !operation.current.acknowledged || !operation.current.active)
+			return;
+		operation.current.pending = true;
+		const serial = ++operation.current.serial;
+		setIsSaving(true);
+		setError(null);
+		try {
+			await readOverride(serial, true);
+		} catch {
+			if (current(serial)) setError(confirmError);
 		} finally {
-			setIsLoading(false);
+			if (current(serial)) {
+				operation.current.pending = false;
+				setIsSaving(false);
+			}
 		}
-	}, [templateId, instanceId, templateDefaultConfig]);
-
-	// Load existing override on open
-	useEffect(() => {
-		if (open && templateId && instanceId) {
-			loadOverride();
-		}
-	}, [open, templateId, instanceId, loadOverride]);
-
-	// Handle config changes
+	};
 	const handleConfigChange = useCallback((newConfig: CustomQualityConfig) => {
 		setConfig(newConfig);
 		setHasChanges(true);
 	}, []);
-
-	// Reset to use template default (clear override)
-	const resetToDefault = useCallback(async () => {
-		setIsSaving(true);
-		setError(null);
-
-		try {
-			await updateInstanceOverrides(templateId, instanceId, {
-				qualityConfigOverride: null, // Clear the override
-			});
-
-			setConfig(
-				templateDefaultConfig ?? {
-					useCustomQualities: false,
-					items: [],
-					cutoffId: undefined,
-				},
-			);
-			setHasOverride(false);
-			setMode("default");
-			setHasChanges(false);
-			onSaved?.();
-		} catch (err) {
-			setError(getErrorMessage(err, "Failed to reset override"));
-		} finally {
-			setIsSaving(false);
-		}
-	}, [templateId, instanceId, templateDefaultConfig, onSaved]);
-
-	// Save override
-	const saveOverride = useCallback(async () => {
-		setIsSaving(true);
-		setError(null);
-
-		try {
-			await updateInstanceOverrides(templateId, instanceId, {
-				qualityConfigOverride: {
-					...config,
-					useCustomQualities: true,
-					customizedAt: new Date().toISOString(),
-					origin: "instance",
-				},
-			});
-
-			setHasOverride(true);
-			setHasChanges(false);
-			onSaved?.();
-		} catch (err) {
-			setError(getErrorMessage(err, "Failed to save override"));
-		} finally {
-			setIsSaving(false);
-		}
-	}, [templateId, instanceId, config, onSaved]);
-
-	// Switch to override mode - start with template default
+	const resetToDefault = () => saveQuality(null);
+	const saveOverride = () =>
+		saveQuality({
+			...config,
+			useCustomQualities: true,
+			customizedAt: new Date().toISOString(),
+			origin: "instance",
+		});
 	const enableOverride = useCallback(() => {
 		setMode("override");
-		// Start with a copy of the template default
-		if (templateDefaultConfig && templateDefaultConfig.items.length > 0) {
+		if (templateDefaultConfig?.items.length)
 			setConfig({
 				...templateDefaultConfig,
 				customizedAt: new Date().toISOString(),
 				origin: "instance",
 			});
-		}
 		setHasChanges(true);
 	}, [templateDefaultConfig]);
 
@@ -182,7 +219,10 @@ export const InstanceQualityOverrideModal = ({
 		templateDefaultConfig.items.length > 0;
 
 	return (
-		<Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
+		<Dialog
+			open={open}
+			onOpenChange={(isOpen) => !isOpen && !operation.current.pending && onClose()}
+		>
 			<DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">
@@ -196,7 +236,10 @@ export const InstanceQualityOverrideModal = ({
 					</DialogDescription>
 				</DialogHeader>
 
-				<div className="flex-1 overflow-y-auto space-y-4 py-4">
+				<fieldset
+					disabled={isSaving || awaitingReadback}
+					className="flex-1 overflow-y-auto space-y-4 py-4"
+				>
 					{/* Loading state */}
 					{isLoading && (
 						<div className="flex items-center justify-center py-8">
@@ -298,7 +341,7 @@ export const InstanceQualityOverrideModal = ({
 										<button
 											type="button"
 											onClick={() => mode === "default" && enableOverride()}
-											disabled={isSaving}
+											disabled={isSaving || awaitingReadback}
 											className={cn(
 												"flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition",
 												mode === "override"
@@ -361,7 +404,7 @@ export const InstanceQualityOverrideModal = ({
 							)}
 						</>
 					)}
-				</div>
+				</fieldset>
 
 				<DialogFooter className="border-t border-border pt-4">
 					<div className="flex items-center justify-between w-full">
@@ -371,11 +414,16 @@ export const InstanceQualityOverrideModal = ({
 							)}
 						</div>
 						<div className="flex items-center gap-2">
+							{awaitingReadback && (
+								<Button variant="ghost" onClick={retryReadback} disabled={isSaving}>
+									Retry readback
+								</Button>
+							)}
 							{hasOverride && mode === "override" && (
 								<Button
 									variant="ghost"
 									onClick={resetToDefault}
-									disabled={isSaving}
+									disabled={isSaving || awaitingReadback}
 									className="gap-1 text-muted-foreground"
 								>
 									<RotateCcw className="h-4 w-4" />
@@ -391,7 +439,7 @@ export const InstanceQualityOverrideModal = ({
 								<Button
 									variant="primary"
 									onClick={saveOverride}
-									disabled={isSaving || !hasChanges}
+									disabled={isSaving || awaitingReadback || !hasChanges}
 									className="gap-1 bg-purple-600 hover:bg-purple-700"
 								>
 									{isSaving ? (
