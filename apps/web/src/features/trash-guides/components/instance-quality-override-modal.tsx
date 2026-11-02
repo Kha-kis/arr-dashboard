@@ -64,12 +64,19 @@ const ScopedQualityOverrideModal = ({
 	});
 	const [hasOverride, setHasOverride] = useState(false);
 	const [isLoading, setIsLoading] = useState(true);
+	const [initialReadConfirmed, setInitialReadConfirmed] = useState(false);
 	const [isSaving, setIsSaving] = useState(false);
 	const [awaitingReadback, setAwaitingReadback] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [hasChanges, setHasChanges] = useState(false);
 	const [mode, setMode] = useState<"default" | "override">("default");
-	const operation = useRef({ active: true, serial: 0, pending: false, acknowledged: false });
+	const operation = useRef({
+		active: true,
+		serial: 0,
+		pending: false,
+		acknowledged: false,
+		initialReadPending: false,
+	});
 	const presentation = useRef({ templateDefaultConfig, onSaved });
 	useEffect(() => {
 		presentation.current = { templateDefaultConfig, onSaved };
@@ -112,6 +119,7 @@ const ScopedQualityOverrideModal = ({
 			setHasOverride(Boolean(override));
 			setMode(override ? "override" : "default");
 			setHasChanges(false);
+			if (!confirm) setInitialReadConfirmed(true);
 			if (confirm) {
 				operation.current.acknowledged = false;
 				setAwaitingReadback(false);
@@ -121,28 +129,47 @@ const ScopedQualityOverrideModal = ({
 		[templateId, instanceId, current],
 	);
 
-	useEffect(() => {
-		if (!open) return;
+	const loadInitialOverride = useCallback(async () => {
 		const session = operation.current;
+		if (!session.active || session.initialReadPending) return;
+		session.initialReadPending = true;
 		const serial = ++session.serial;
 		setIsLoading(true);
 		setError(null);
-		void readOverride(serial, false)
-			.catch((err) => {
-				if (current(serial)) setError(getErrorMessage(err, "Failed to load override"));
-			})
-			.finally(() => {
-				if (current(serial)) setIsLoading(false);
-			});
+		try {
+			await readOverride(serial, false);
+		} catch (err) {
+			if (current(serial))
+				setError(
+					`Current quality settings are unknown. Retry loading before editing. ${getErrorMessage(err, "Failed to load override")}`,
+				);
+		} finally {
+			if (current(serial)) {
+				session.initialReadPending = false;
+				setIsLoading(false);
+			}
+		}
+	}, [readOverride, current]);
+
+	useEffect(() => {
+		if (!open) return;
+		const session = operation.current;
+		void loadInitialOverride();
 		return () => {
 			session.serial++;
+			session.initialReadPending = false;
 		};
-	}, [open, readOverride, current]);
+	}, [open, loadInitialOverride]);
 
 	const confirmError = "Saved changes could not be confirmed. Retry readback without saving again.";
 	const saveQuality = useCallback(
 		async (qualityConfigOverride: CustomQualityConfig | null) => {
-			if (operation.current.pending || operation.current.acknowledged || !operation.current.active)
+			if (
+				!initialReadConfirmed ||
+				operation.current.pending ||
+				operation.current.acknowledged ||
+				!operation.current.active
+			)
 				return;
 			operation.current.pending = true;
 			const serial = ++operation.current.serial;
@@ -168,7 +195,7 @@ const ScopedQualityOverrideModal = ({
 				}
 			}
 		},
-		[templateId, instanceId, updateOverrides, readOverride, current],
+		[templateId, instanceId, updateOverrides, readOverride, current, initialReadConfirmed],
 	);
 
 	const retryReadback = async () => {
@@ -237,7 +264,7 @@ const ScopedQualityOverrideModal = ({
 				</DialogHeader>
 
 				<fieldset
-					disabled={isSaving || awaitingReadback}
+					disabled={!initialReadConfirmed || isLoading || isSaving || awaitingReadback}
 					className="flex-1 overflow-y-auto space-y-4 py-4"
 				>
 					{/* Loading state */}
@@ -257,7 +284,7 @@ const ScopedQualityOverrideModal = ({
 					)}
 
 					{/* Content when loaded */}
-					{!isLoading && (
+					{initialReadConfirmed && !isLoading && (
 						<>
 							{/* No template quality config - allow loading from instance */}
 							{!hasTemplateQualityConfig && (
@@ -414,12 +441,17 @@ const ScopedQualityOverrideModal = ({
 							)}
 						</div>
 						<div className="flex items-center gap-2">
+							{!initialReadConfirmed && (
+								<Button variant="ghost" onClick={loadInitialOverride} disabled={isLoading}>
+									Retry loading
+								</Button>
+							)}
 							{awaitingReadback && (
 								<Button variant="ghost" onClick={retryReadback} disabled={isSaving}>
 									Retry readback
 								</Button>
 							)}
-							{hasOverride && mode === "override" && (
+							{initialReadConfirmed && hasOverride && mode === "override" && (
 								<Button
 									variant="ghost"
 									onClick={resetToDefault}
@@ -434,27 +466,28 @@ const ScopedQualityOverrideModal = ({
 								Cancel
 							</Button>
 							{/* Show save when: override mode with template config, OR no template config but has items */}
-							{((mode === "override" && hasTemplateQualityConfig) ||
-								(!hasTemplateQualityConfig && config.items.length > 0)) && (
-								<Button
-									variant="primary"
-									onClick={saveOverride}
-									disabled={isSaving || awaitingReadback || !hasChanges}
-									className="gap-1 bg-purple-600 hover:bg-purple-700"
-								>
-									{isSaving ? (
-										<>
-											<Loader2 className="h-4 w-4 animate-spin" />
-											Saving...
-										</>
-									) : (
-										<>
-											<Save className="h-4 w-4" />
-											Save Override
-										</>
-									)}
-								</Button>
-							)}
+							{initialReadConfirmed &&
+								((mode === "override" && hasTemplateQualityConfig) ||
+									(!hasTemplateQualityConfig && config.items.length > 0)) && (
+									<Button
+										variant="primary"
+										onClick={saveOverride}
+										disabled={isSaving || awaitingReadback || !hasChanges}
+										className="gap-1 bg-purple-600 hover:bg-purple-700"
+									>
+										{isSaving ? (
+											<>
+												<Loader2 className="h-4 w-4 animate-spin" />
+												Saving...
+											</>
+										) : (
+											<>
+												<Save className="h-4 w-4" />
+												Save Override
+											</>
+										)}
+									</Button>
+								)}
 						</div>
 					</div>
 				</DialogFooter>

@@ -1,6 +1,7 @@
 import type { CustomQualityConfig, TrashTemplate } from "@arr/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
 import { ColorThemeProvider } from "../../../../providers/color-theme-provider";
@@ -92,13 +93,18 @@ function wrap(node: React.ReactNode, client: QueryClient) {
 		</QueryClientProvider>
 	);
 }
-function mount(instanceId = "instance-a", onSaved = vi.fn(), templateId = "template-a") {
+function mount(
+	instanceId = "instance-a",
+	onSaved = vi.fn(),
+	templateId = "template-a",
+	strict = false,
+) {
 	const client = new QueryClient({
 		defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { retry: false } },
 	});
 	clients.push(client);
-	const node = (id: string, tid: string) =>
-		wrap(
+	const node = (id: string, tid: string) => {
+		const wrapped = wrap(
 			<InstanceQualityOverrideModal
 				open
 				onClose={() => {}}
@@ -112,6 +118,8 @@ function mount(instanceId = "instance-a", onSaved = vi.fn(), templateId = "templ
 			/>,
 			client,
 		);
+		return strict ? <StrictMode>{wrapped}</StrictMode> : wrapped;
+	};
 	const view = render(node(instanceId, templateId));
 	return {
 		...view,
@@ -142,6 +150,168 @@ afterEach(async () => {
 	expect(issued.size).toBe(0);
 	vi.unstubAllGlobals();
 	localStorage.clear();
+});
+
+describe("quality override confirmed initial read", () => {
+	// Break caught: effect cleanup leaves initial-read admission latched during Strict Mode replay.
+	it("recovers an initial read after strict effect replay without admitting a write", async () => {
+		let available = false,
+			puts = 0;
+		transport((_id, method) => {
+			if (method === "PUT") {
+				puts++;
+				return response({ success: true });
+			}
+			return available
+				? response(readback())
+				: response({ message: "Synthetic initial unavailable" }, 503);
+		});
+		const { onSaved } = mount("instance-a", vi.fn(), "template-a", true);
+		await screen.findByText(/current quality settings are unknown/i);
+		expect(
+			screen.queryByRole("button", { name: /Customize for This Instance/ }),
+		).not.toBeInTheDocument();
+		available = true;
+		fireEvent.click(screen.getByRole("button", { name: "Retry loading" }));
+		await ready();
+		expect(puts).toBe(0);
+		expect(onSaved).not.toHaveBeenCalled();
+	});
+	// Break caught: a failed or wrong-scope GET exposes editable fallback/default content.
+	it.each(["http", "template", "instance", "nested-instance"])(
+		"keeps %s initial read failure unknown and blocks editing until GET-only recovery",
+		async (failure) => {
+			let gets = 0,
+				puts = 0;
+			transport((_id, method) => {
+				if (method === "PUT") {
+					puts++;
+					return response({ success: true });
+				}
+				if (++gets > 1) return response(readback());
+				if (failure === "http") return response({ message: "Synthetic initial unavailable" }, 503);
+				const wrong = readback("instance-a", savedQuality);
+				if (failure === "template") wrong.templateId = "template-b";
+				if (failure === "instance") wrong.instanceId = "instance-b";
+				if (failure === "nested-instance") wrong.overrides.instanceId = "instance-b";
+				return response(wrong);
+			});
+			const { onSaved } = mount();
+			await waitFor(() =>
+				expect(screen.queryByText("Loading configuration...")).not.toBeInTheDocument(),
+			);
+			expect(
+				screen.queryByRole("button", { name: /Use Template Default/ }),
+			).not.toBeInTheDocument();
+			expect(
+				screen.queryByRole("button", { name: /Customize for This Instance/ }),
+			).not.toBeInTheDocument();
+			expect(
+				screen.queryByRole("button", { name: /Save Override|Reset to Template Default/ }),
+			).not.toBeInTheDocument();
+			expect(screen.queryByTitle("Enabled - click to disable")).not.toBeInTheDocument();
+			expect(screen.queryByText("Has Override")).not.toBeInTheDocument();
+			await screen.findByText(/current quality settings are unknown/i);
+			expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+			const retry = screen.getByRole("button", { name: "Retry loading" });
+			expect(retry).toBeEnabled();
+			fireEvent.click(retry);
+			await ready();
+			expect(gets).toBe(2);
+			expect(puts).toBe(0);
+			expect(onSaved).not.toHaveBeenCalled();
+			await save();
+			await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+			expect(puts).toBe(1);
+		},
+	);
+	// Break caught: retry writes, silently enables default editing while pending, or swallows a second failure.
+	it("keeps repeated and pending initial retries read-only until a valid selected response", async () => {
+		const held = hold(readback("instance-a", savedQuality));
+		let gets = 0,
+			puts = 0;
+		transport((_id, method) => {
+			if (method === "PUT") {
+				puts++;
+				return response({ success: true });
+			}
+			return ++gets <= 2
+				? response({ message: "Synthetic initial unavailable" }, 503)
+				: held.promise;
+		});
+		const { onSaved } = mount();
+		await waitFor(() =>
+			expect(screen.queryByText("Loading configuration...")).not.toBeInTheDocument(),
+		);
+		expect(
+			screen.queryByRole("button", { name: /Customize for This Instance/ }),
+		).not.toBeInTheDocument();
+		await screen.findByText(/current quality settings are unknown/i);
+		fireEvent.click(screen.getByRole("button", { name: "Retry loading" }));
+		await waitFor(() => expect(gets).toBe(2));
+		await screen.findByText(/current quality settings are unknown/i);
+		fireEvent.click(screen.getByRole("button", { name: "Retry loading" }));
+		await waitFor(() => expect(gets).toBe(3));
+		expect(screen.getByText("Loading configuration...")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Retry loading" })).toBeDisabled();
+		expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+		expect(
+			screen.queryByRole("button", {
+				name: /Save Override|Reset to Template Default|Customize for This Instance|Use Template Default/,
+			}),
+		).not.toBeInTheDocument();
+		expect(puts).toBe(0);
+		expect(onSaved).not.toHaveBeenCalled();
+		await act(async () => held.resolve(response(readback("instance-a", savedQuality))));
+		await screen.findByText("Has Override");
+		expect(screen.getByRole("button", { name: "Reset to Template Default" })).toBeEnabled();
+		expect(screen.queryByRole("button", { name: "Retry loading" })).not.toBeInTheDocument();
+		expect(puts).toBe(0);
+		expect(onSaved).not.toHaveBeenCalled();
+	});
+	// Break caught: a retry from a retired session confirms/overwrites a new target or calls its parent.
+	it.each(["target", "unmount"])(
+		"ignores late initial retry completion after %s",
+		async (change) => {
+			const held = hold(readback("instance-a", savedQuality));
+			let getsA = 0,
+				puts = 0;
+			transport((id, method) => {
+				if (method === "PUT") {
+					puts++;
+					return response({ success: true });
+				}
+				if (id === "instance-b") return response(readback("instance-b"));
+				return ++getsA === 1
+					? response({ message: "Synthetic initial unavailable" }, 503)
+					: held.promise;
+			});
+			const view = mount();
+			await waitFor(() =>
+				expect(screen.queryByText("Loading configuration...")).not.toBeInTheDocument(),
+			);
+			expect(
+				screen.queryByRole("button", { name: /Customize for This Instance/ }),
+			).not.toBeInTheDocument();
+			await screen.findByText(/current quality settings are unknown/i);
+			fireEvent.click(screen.getByRole("button", { name: "Retry loading" }));
+			await waitFor(() => expect(getsA).toBe(2));
+			if (change === "target") {
+				view.target("instance-b");
+				await ready();
+			} else view.unmount();
+			await act(async () => held.resolve(response(readback("instance-a", savedQuality))));
+			if (change === "target") {
+				expect(
+					screen.getByRole("dialog", { name: "Quality Settings for instance-b" }),
+				).toBeInTheDocument();
+				expect(screen.queryByText("Has Override")).not.toBeInTheDocument();
+				expect(screen.getByRole("button", { name: /Use Template Default/ })).toBeInTheDocument();
+			} else expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+			expect(puts).toBe(0);
+			expect(view.onSaved).not.toHaveBeenCalled();
+		},
+	);
 });
 
 describe("quality override confirmed selected-link readback", () => {
