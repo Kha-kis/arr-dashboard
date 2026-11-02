@@ -1071,7 +1071,9 @@ afterEach(async () => {
 	vi.unstubAllGlobals();
 	vi.useRealTimers();
 });
-describe("Jellyfin and Emby episode scheduler accepted lifetimes", () => {
+// Native runtime setup/teardown is real even while scheduler timers are virtual.
+// Keep a bounded fixture budget without changing any scheduler timing assertions.
+describe("Jellyfin and Emby episode scheduler accepted lifetimes", { timeout: 30_000 }, () => {
 	it.each(["native", "lookalike"] as const)(
 		"reports a genuine %s cleanup failure during shutdown without admitting another stage",
 		async (failure) => {

@@ -60,7 +60,7 @@ type RuntimePrismaClient = Readonly<{
 }>;
 type SqliteClientRegistration = {
 	closed: boolean;
-	publication: RuntimePrismaClient;
+	publication(): RuntimePrismaClient;
 };
 const ordinarySqliteClients = new WeakMap<object, SqliteClientRegistration>();
 
@@ -79,7 +79,7 @@ export async function withIsolatedRuntimePrismaTransaction<T>(
 	if (registration.closed) throw new RestoreRuntimeAdmissionError();
 	// The companion was registered before admission could close. An already
 	// accepted collection may reach this publication while the runtime drains.
-	return registration.publication.prisma.$transaction(operation, options);
+	return registration.publication().prisma.$transaction(operation, options);
 }
 
 function projection(result: Awaited<ReturnType<Driver["queryRaw"]>>, columns: string[]) {
@@ -101,16 +101,38 @@ export function createRuntimePrismaClient(
 		options?.sqliteTransactionIntent,
 	);
 	if (!context.databaseUrl.startsWith("file:")) return native;
-	// Reserve a bounded, purpose-specific client up front, but its native
-	// connection remains lazy. This never opens a new owner or admission ticket.
-	const publication = createGuardedPrismaClient(
-		context,
-		runtime,
-		undefined,
-		undefined,
-		options?.sqliteTransactionIntent,
-	);
-	const registration: SqliteClientRegistration = { closed: false, publication };
+	// Reserve its close lifetime before admission can close, not a second Prisma
+	// object for every reader-only client. Accepted work can first publish during
+	// drain because materialization uses this existing slot, never a new claim.
+	let publication: RuntimePrismaClient | undefined;
+	let publicationClosePromise: Promise<void> | undefined;
+	const registration: SqliteClientRegistration = {
+		closed: false,
+		publication: () => {
+			if (registration.closed) throw new RestoreRuntimeAdmissionError();
+			// Only close registration is already accounted for by the reserved slot;
+			// the actual context's ticket, owner and native fences are unchanged.
+			publication ??= createGuardedPrismaClient(
+				{ ...context, registerClose: () => () => undefined },
+				runtime,
+				undefined,
+				undefined,
+				options?.sqliteTransactionIntent,
+			);
+			return publication;
+		},
+	};
+	const closePublication = () => {
+		registration.closed = true;
+		publicationClosePromise ??= Promise.resolve().then(async () => {
+			await publication?.close();
+			// Failed physical close retains both this reference and its close slot.
+			publication = undefined;
+			unregisterPublication();
+		});
+		return publicationClosePromise;
+	};
+	const unregisterPublication = context.registerClose(closePublication);
 	ordinarySqliteClients.set(native.prisma, registration);
 	let closePromise: Promise<void> | undefined;
 	return Object.freeze({
@@ -118,7 +140,7 @@ export function createRuntimePrismaClient(
 		close: () => {
 			registration.closed = true;
 			closePromise ??= Promise.resolve().then(async () => {
-				const closed = await Promise.allSettled([native.close(), registration.publication.close()]);
+				const closed = await Promise.allSettled([native.close(), closePublication()]);
 				if (closed.some((result) => result.status === "rejected"))
 					throw new RestoreRuntimeAdmissionError();
 			});

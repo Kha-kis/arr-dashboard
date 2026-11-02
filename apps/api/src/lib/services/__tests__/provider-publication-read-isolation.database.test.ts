@@ -1,6 +1,6 @@
 import { setTimeout as delay, setImmediate as turn } from "node:timers/promises";
 import Fastify from "fastify";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerHealthRoutes } from "../../../routes/health.js";
 import {
 	closeScopedWriteFixtures,
@@ -9,9 +9,36 @@ import {
 } from "../../__tests__/scoped-write-intent-fixture.js";
 import { withCurrentProviderPublicationAuthority } from "../provider-identity-guard.js";
 
+const construction = vi.hoisted(() => ({ clients: 0 }));
+vi.mock("../../prisma.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../prisma.js")>();
+	return {
+		...actual,
+		PrismaClient: new Proxy(actual.PrismaClient, {
+			construct(target, argumentsList) {
+				construction.clients++;
+				return Reflect.construct(target, argumentsList);
+			},
+		}),
+	};
+});
+
 afterEach(closeScopedWriteFixtures);
 
-describe("provider publication foreground read isolation", () => {
+// Match the native schema-building fixture budget used by write-intent tests;
+// the foreground response assertion below remains independently bounded.
+describe("provider publication foreground read isolation", { timeout: 30_000 }, () => {
+	it("reserves an unused publication lifetime without constructing another Prisma client", async () => {
+		const f = await createScopedWriteFixture();
+		const before = construction.clients;
+		const ordinary = f.newClient();
+		expect(construction.clients).toBe(before + 1);
+		await ordinary.close();
+		expect(construction.clients).toBe(before + 1);
+		await f.runtime.close();
+		expect(construction.clients).toBe(before + 1);
+	});
+
 	// Lending the HTTP client's native handle to publication blocks both the
 	// real health handler and ordinary cache reads until the publisher commits.
 	it("serves committed cache and health while atomic publication remains held", async () => {
@@ -77,6 +104,7 @@ describe("provider publication foreground read isolation", () => {
 	it("reuses one publication companion and physically closes it with the parent", async () => {
 		const f = await createScopedWriteFixture();
 		interceptScopedWriteCompetition(f);
+		const beforePublication = construction.clients;
 		const result = await f.runtime.runOperation(() =>
 			withCurrentProviderPublicationAuthority(f.client.prisma, f.authority, async (tx) => {
 				await tx.plexCache.updateMany({
@@ -87,6 +115,7 @@ describe("provider publication foreground read isolation", () => {
 			}),
 		);
 		expect(result).toEqual({ matched: true, value: 3 });
+		expect(construction.clients).toBe(beforePublication + 1);
 		expect(f.applications.size).toBe(1);
 		expect(
 			await f.runtime.runOperation(() =>
@@ -103,6 +132,7 @@ describe("provider publication foreground read isolation", () => {
 		);
 		expect(f.applications.size).toBe(1);
 		await f.client.close();
+		expect(construction.clients).toBe(beforePublication + 1);
 		expect([...f.applications].every((db) => !db.open)).toBe(true);
 		let callbacks = 0;
 		await expect(
