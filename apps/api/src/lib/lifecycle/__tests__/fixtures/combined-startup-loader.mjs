@@ -17,7 +17,9 @@ const stubs = new Map([
 	],
 	[
 		"./lib/backup/restore-runtime-admission.js",
-		`export const openRestoreRuntime=async()=>({closeAdmission(){},close:async()=>{},runIndependentOperation:async work=>work()});`,
+		// This synthetic runtime is not branded for native shutdown observation.
+		// The real reporter must isolate an unavailable observer from the drain.
+		`export const openRestoreRuntime=async()=>({closeAdmission(){},close:async()=>{},runIndependentOperation:async work=>work()});export const getRestoreRuntimeShutdownStatus=()=>{throw new Error('Synthetic runtime observer unavailable');};`,
 	],
 	[
 		"./lib/backup/restore-runtime-bootstrap.js",

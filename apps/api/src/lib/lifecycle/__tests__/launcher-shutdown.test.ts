@@ -252,7 +252,9 @@ const stubs=new Map([
  ["./lib/logger.js",'export const LOG_DIR="synthetic";export const LOG_LEVEL="fatal";export const logger={error(){}};'],
  ["./lib/utils/version.js",'export const getAppVersionInfo=()=>({version:"synthetic",commitSha:"synthetic"});'],
  ["./server.js",'export const buildServer=({env})=>{globalThis.fixtureApp.decorate("config",env);return globalThis.fixtureApp;};'],
- ["./lib/backup/restore-runtime-admission.js",'export const openRestoreRuntime=async()=>globalThis.fixtureApp.restoreRuntime;'],
+ // The unbranded runtime has no native observation state. Keep the observer
+ // explicitly unavailable rather than fabricating a completed/idle shutdown.
+ ["./lib/backup/restore-runtime-admission.js",'export const openRestoreRuntime=async()=>globalThis.fixtureApp.restoreRuntime;export const getRestoreRuntimeShutdownStatus=()=>{throw new Error("Synthetic runtime observer unavailable");};'],
  ["./lib/backup/restore-runtime-bootstrap.js",'export const loadRestoreRuntimeStartupSettings=async()=>null;'],
  ["./lib/backup/runtime-schema-startup.js",'export const synchronizeRuntimeSchema=async()=>null;'],
 ]);

@@ -146,7 +146,10 @@ describe("native-watch admission on guarded WAL SQLite", { timeout: 30_000 }, ()
 					// Delay admission, not the callback or SQLite result. The real guarded
 					// driver and Prisma enforce their actual start/rollback behavior.
 					const pending = (async () => {
-						await delay(admissionDelayMs);
+						// A timer can return slightly early; hold the measured deadline
+						// without relaxing the duration assertion or production budget.
+						const readyAt = started + admissionDelayMs;
+						while (performance.now() < readyAt) await delay(readyAt - performance.now());
 						const transaction = await start(isolation);
 						const rollback = transaction.rollback.bind(transaction);
 						vi.spyOn(transaction, "rollback").mockImplementation(async () => {
