@@ -3,6 +3,7 @@
 import { createHash } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import type { Encryptor } from "../auth/encryption.js";
+import { RestoreRuntimeAdmissionError } from "../backup/restore-runtime-admission.js";
 import { Prisma, type PrismaClient, type ServiceInstance } from "../prisma.js";
 import { evaluateProviderCoverageReceipt } from "../provider-observation/coverage-receipt.js";
 import type { AutomaticObservationRenewalMode } from "../provider-observation/observation-run-repository.js";
@@ -252,6 +253,36 @@ function classifyJellyfinEpisodeStageFailure(error: unknown): JellyfinEpisodePag
 		}
 	}
 	return "episode-stage-unavailable";
+}
+
+function stageFailureDiagnostics(error: unknown) {
+	if (error instanceof RestoreRuntimeAdmissionError)
+		return { errorCategory: "runtime-admission", databaseCode: null, sqliteCode: null } as const;
+	if (!(error instanceof Prisma.PrismaClientKnownRequestError))
+		return { errorCategory: "other", databaseCode: null, sqliteCode: null } as const;
+	const databaseCode = [
+		"P1001",
+		"P1002",
+		"P1008",
+		"P1017",
+		"P2002",
+		"P2024",
+		"P2028",
+		"P2034",
+	].includes(error.code)
+		? error.code
+		: "other";
+	const adapter = error.meta?.driverAdapterError;
+	const cause = adapter && typeof adapter === "object" ? Reflect.get(adapter, "cause") : null;
+	const originalCode =
+		cause && typeof cause === "object" ? Reflect.get(cause, "originalCode") : null;
+	const sqliteCode =
+		originalCode === null || originalCode === undefined
+			? null
+			: ["SQLITE_BUSY", "SQLITE_BUSY_SNAPSHOT", "SQLITE_LOCKED"].includes(originalCode)
+				? originalCode
+				: "other";
+	return { errorCategory: "prisma-known", databaseCode, sqliteCode } as const;
 }
 
 function classifyJellyfinEpisodePageFailure(error: unknown): JellyfinEpisodePageFailureCategory {
@@ -1411,6 +1442,12 @@ export function createJellyfinEpisodeWorkItemRunner(
 								: classifyJellyfinEpisodePageFailure(error),
 						},
 						"Jellyfin episode page unavailable",
+					);
+				}
+				if (stagingPage && outcome === "failed" && typeof context.log.info === "function") {
+					context.log.info(
+						{ category: "jellyfin-episode-stage-failure", ...stageFailureDiagnostics(error) },
+						"Jellyfin episode staging failure category",
 					);
 				}
 			} catch {

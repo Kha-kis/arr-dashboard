@@ -1,6 +1,7 @@
 import type { FastifyBaseLogger } from "fastify";
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
+import { RestoreRuntimeAdmissionError } from "../backup/restore-runtime-admission.js";
 import { Prisma, type PrismaClient, type ServiceInstance } from "../prisma.js";
 import {
 	buildObservationActiveSlotKey,
@@ -1936,6 +1937,60 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		expect(durable.failUnit).toHaveBeenCalledOnce();
 		expect(result.progressed).toBe(false);
 	});
+
+	it.each([
+		["P1008", "prisma-known", "P1008", "SQLITE_BUSY"],
+		["P2024", "prisma-known", "P2024", null],
+		["P9999", "prisma-known", "other", "other"],
+		["runtime", "runtime-admission", null, null],
+		["unknown", "other", null, null],
+	])(
+		"logs a bounded staging failure class for %s without changing settlement",
+		async (code, errorCategory, databaseCode, sqliteCode) => {
+			const state = ownedFixture("JELLYFIN");
+			configureDurableRun(state);
+			const info = log.info as unknown as ReturnType<typeof vi.fn>;
+			info.mockClear();
+			const failure =
+				code === "runtime"
+					? new RestoreRuntimeAdmissionError()
+					: code === "unknown"
+						? new Error("PRIVATE_ERROR_DETAIL")
+						: new Prisma.PrismaClientKnownRequestError("PRIVATE_DATABASE_DETAIL", {
+								code: code!,
+								clientVersion: "test",
+								meta: {
+									target: "PRIVATE_COLUMN",
+									driverAdapterError: {
+										cause: {
+											originalCode:
+												code === "P1008"
+													? "SQLITE_BUSY"
+													: code === "P9999"
+														? "PRIVATE_DRIVER"
+														: null,
+										},
+									},
+								},
+							});
+			durable.stage.mockRejectedValueOnce(failure);
+			const result = await refreshOwnedJellyfinEpisodeCache({
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log,
+			});
+			expect(info).toHaveBeenCalledWith(
+				{ category: "jellyfin-episode-stage-failure", errorCategory, databaseCode, sqliteCode },
+				"Jellyfin episode staging failure category",
+			);
+			expect(JSON.stringify(info.mock.calls)).not.toContain("PRIVATE");
+			expect(durable.stage).toHaveBeenCalledOnce();
+			expect(durable.failUnit).toHaveBeenCalledOnce();
+			expect(durable.invalidate).not.toHaveBeenCalled();
+			expect(result.progressed).toBe(false);
+		},
+	);
 
 	it.each([
 		["P2002", "episode-stage-conflict"],

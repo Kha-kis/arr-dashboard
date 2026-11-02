@@ -1029,29 +1029,66 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 
 		// Resolve each item's file paths. Movies → LibraryCache.data.path
 		// + movieFile.relativePath. Series → all EpisodeFileCache rows.
-		// Both done in parallel.
+		// Read each kind as one set, retaining instance/item correlation.
 		interface ItemPaths {
 			key: string; // "type:id"
 			paths: string[];
 			pathInventoryComplete: boolean;
 		}
 		const itemPathsStartedAt = Date.now();
-		const itemPaths: ItemPaths[] = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
-			Promise.all(
-				body.items.map(async ({ arrInstanceId, itemId, itemType }) => {
+		const itemPaths: ItemPaths[] = await withIsolatedRuntimePrismaReadClient(
+			app.prisma,
+			async (prisma) => {
+				const movieItems = body.items.filter((item) => item.itemType === "movie");
+				const [movieRows, episodeRows] = await Promise.all([
+					movieItems.length > 0
+						? prisma.libraryCache.findMany({
+								where: {
+									itemType: "movie",
+									instance: { userId },
+									OR: movieItems.map((item) => ({
+										instanceId: item.arrInstanceId,
+										arrItemId: item.itemId,
+									})),
+								},
+								select: { instanceId: true, arrItemId: true, data: true },
+							})
+						: [],
+					seriesItems.length > 0
+						? prisma.episodeFileCache.findMany({
+								where: {
+									instance: { userId },
+									OR: seriesItems.map((item) => ({
+										instanceId: item.arrInstanceId,
+										arrSeriesId: item.itemId,
+									})),
+								},
+								select: {
+									instanceId: true,
+									arrSeriesId: true,
+									arrEpisodeFileId: true,
+									path: true,
+									size: true,
+								},
+							})
+						: [],
+				]);
+				const movies = new Map(
+					movieRows.map((row) => [`${row.instanceId}|movie:${row.arrItemId}`, row]),
+				);
+				const episodesBySeries = new Map<string, typeof episodeRows>();
+				for (const row of episodeRows) {
+					const key = `${row.instanceId}|series:${row.arrSeriesId}`;
+					const episodes = episodesBySeries.get(key) ?? [];
+					episodes.push(row);
+					episodesBySeries.set(key, episodes);
+				}
+				return body.items.map(({ arrInstanceId, itemId, itemType }) => {
 					// Key includes the *arr instance ID so two instances with
 					// overlapping arrItemIds don't collide in the summary map.
 					const key = `${arrInstanceId}|${itemType}:${itemId}`;
 					if (itemType === "movie") {
-						const row = await prisma.libraryCache.findFirst({
-							where: {
-								instanceId: arrInstanceId,
-								arrItemId: itemId,
-								itemType: "movie",
-								instance: { userId },
-							},
-							select: { data: true },
-						});
+						const row = movies.get(key);
 						if (!row) return { key, paths: [], pathInventoryComplete: false };
 						try {
 							const parsed = JSON.parse(row.data) as Record<string, unknown>;
@@ -1079,14 +1116,7 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 					// coverage requires a successful same-snapshot Sonarr sync receipt
 					// that matches every cached file identity, including the count.
 					const series = seriesAuthority.get(key);
-					const episodes = await prisma.episodeFileCache.findMany({
-						where: {
-							instanceId: arrInstanceId,
-							arrSeriesId: itemId,
-							instance: { userId },
-						},
-						select: { arrEpisodeFileId: true, path: true, size: true },
-					});
+					const episodes = episodesBySeries.get(key) ?? [];
 					return {
 						key,
 						paths: episodes.map((episode) => episode.path).filter(Boolean),
@@ -1096,8 +1126,8 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 							episodes,
 						),
 					};
-				}),
-			),
+				});
+			},
 		);
 		const itemPathsMs = Date.now() - itemPathsStartedAt;
 

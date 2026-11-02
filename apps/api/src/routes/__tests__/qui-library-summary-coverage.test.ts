@@ -1,6 +1,6 @@
 import { Writable } from "node:stream";
 import Fastify from "fastify";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { createEpisodeFileInventoryReceipt } from "../../lib/library-sync/episode-file-coverage.js";
 import {
 	createInjectAuthenticated,
@@ -36,6 +36,9 @@ let app: ReturnType<typeof Fastify>;
 let logs: Array<Record<string, unknown>>;
 let releasePendingReads: Array<() => void>;
 let authenticatedUser: { id: string; username: string };
+let movieRow: Mock<() => Promise<{ data: string }>>;
+let seriesRows: Mock<() => Promise<unknown[]>>;
+let episodeRows: Mock<() => Promise<Record<string, unknown>[]>>;
 function deferredRead<T>(value: T): Promise<T> {
 	return new Promise((resolve) => {
 		releasePendingReads.push(() => resolve(value));
@@ -43,7 +46,7 @@ function deferredRead<T>(value: T): Promise<T> {
 }
 let prisma: {
 	serviceInstance: { findMany: ReturnType<typeof vi.fn> };
-	libraryCache: { findFirst: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
+	libraryCache: { findMany: ReturnType<typeof vi.fn> };
 	episodeFileCache: { findMany: ReturnType<typeof vi.fn> };
 };
 
@@ -68,6 +71,11 @@ beforeEach(async () => {
 	});
 	mocks.getCachedTorrents.mockResolvedValue([{ hash: "synthetic-hash", instanceId: 3 }]);
 	mocks.getTrackers.mockResolvedValue([{ url: "https://tracker.invalid/announce" }]);
+	movieRow = vi.fn().mockResolvedValue({
+		data: JSON.stringify({ path: "/synthetic", movieFile: { relativePath: "file" } }),
+	});
+	seriesRows = vi.fn().mockResolvedValue([]);
+	episodeRows = vi.fn().mockResolvedValue([]);
 	prisma = {
 		serviceInstance: {
 			findMany: vi.fn().mockResolvedValue([
@@ -84,12 +92,31 @@ beforeEach(async () => {
 			]),
 		},
 		libraryCache: {
-			findFirst: vi.fn().mockResolvedValue({
-				data: JSON.stringify({ path: "/synthetic", movieFile: { relativePath: "file" } }),
+			findMany: vi.fn().mockImplementation(async ({ where }) => {
+				if (where.itemType !== "movie") return seriesRows();
+				return Promise.all(
+					where.OR.map(async (identity: { instanceId: string; arrItemId: number }) => ({
+						...identity,
+						...(await movieRow()),
+					})),
+				);
 			}),
-			findMany: vi.fn().mockResolvedValue([]),
 		},
-		episodeFileCache: { findMany: vi.fn().mockResolvedValue([]) },
+		episodeFileCache: {
+			findMany: vi
+				.fn()
+				.mockImplementation(async ({ where }) =>
+					(
+						await Promise.all(
+							where.OR.map(async (identity: { instanceId: string; arrSeriesId: number }) =>
+								(
+									await episodeRows()
+								).map((row: Record<string, unknown>) => ({ ...identity, ...row })),
+							),
+						)
+					).flat(),
+				),
+		},
 	};
 	logs = [];
 	app = Fastify({
@@ -248,7 +275,7 @@ describe("qUI Library tracker summary coverage", () => {
 		mocks.getTrackers.mockReturnValueOnce(deferredRead([{ url: "https://old.invalid/a" }]));
 		try {
 			expect((await boundedPoll()).json()).toMatchObject({ status: "building" });
-			prisma.libraryCache.findFirst.mockResolvedValueOnce({
+			movieRow.mockResolvedValueOnce({
 				data: JSON.stringify({ path: "/changed", movieFile: { relativePath: "file" } }),
 			});
 			// The replacement can join the old transport only as lower-bound work.
@@ -486,8 +513,8 @@ describe("qUI Library tracker summary coverage", () => {
 				sizeOnDisk: 100n,
 			}),
 		};
-		prisma.libraryCache.findMany.mockResolvedValue([row]);
-		prisma.episodeFileCache.findMany.mockResolvedValue(files);
+		seriesRows.mockResolvedValue([row]);
+		episodeRows.mockResolvedValue(files);
 		mocks.getTrackers.mockReturnValueOnce(deferredRead([{ url: "https://old.invalid/a" }]));
 		try {
 			expect((await boundedPoll(requested)).json()).toMatchObject({ status: "building" });
@@ -511,7 +538,7 @@ describe("qUI Library tracker summary coverage", () => {
 				expect((await summary()).json()).toMatchObject({ status: "not-configured" });
 			}
 			if (change === "movie path")
-				prisma.libraryCache.findFirst.mockResolvedValue({
+				movieRow.mockResolvedValue({
 					data: JSON.stringify({ path: "/changed", movieFile: { relativePath: "file" } }),
 				});
 			if (change === "hashes") {
@@ -529,7 +556,7 @@ describe("qUI Library tracker summary coverage", () => {
 					correlationComplete: false,
 				});
 			if (change === "series receipt")
-				prisma.libraryCache.findMany.mockResolvedValue([
+				seriesRows.mockResolvedValue([
 					{
 						...row,
 						episodeFileInventoryReceipt: null,
@@ -733,7 +760,7 @@ describe("qUI Library tracker summary coverage", () => {
 				correlationComplete: true,
 			};
 		});
-		prisma.libraryCache.findMany.mockResolvedValue([
+		seriesRows.mockResolvedValue([
 			{
 				instanceId: "arr-1",
 				arrItemId: 2,
@@ -741,7 +768,7 @@ describe("qUI Library tracker summary coverage", () => {
 				episodeFileInventoryReceipt: null,
 			},
 		]);
-		prisma.episodeFileCache.findMany.mockResolvedValue([
+		episodeRows.mockResolvedValue([
 			{ arrEpisodeFileId: 10, path: "/synthetic/episode.mkv", size: 100n },
 		]);
 		try {
@@ -945,7 +972,7 @@ describe("qUI Library tracker summary coverage", () => {
 			path: `/synthetic/episode-${index + 1}.mkv`,
 			size: 100n,
 		}));
-		prisma.episodeFileCache.findMany.mockResolvedValue(files);
+		episodeRows.mockResolvedValue(files);
 		let active = 0;
 		let peak = 0;
 		mocks.getHashes.mockImplementation(async () => {
@@ -969,7 +996,7 @@ describe("qUI Library tracker summary coverage", () => {
 	});
 
 	it("never calls a partially populated series file cache exact", async () => {
-		prisma.libraryCache.findMany.mockResolvedValue([
+		seriesRows.mockResolvedValue([
 			{
 				instanceId: "arr-1",
 				arrItemId: 2,
@@ -977,7 +1004,7 @@ describe("qUI Library tracker summary coverage", () => {
 				episodeFileInventoryReceipt: null,
 			},
 		]);
-		prisma.episodeFileCache.findMany.mockResolvedValue([
+		episodeRows.mockResolvedValue([
 			{ arrEpisodeFileId: 10, path: "/synthetic/episode.mkv", size: 100n },
 		]);
 		const response = await summary(seriesItem);
@@ -994,7 +1021,7 @@ describe("qUI Library tracker summary coverage", () => {
 			{ arrEpisodeFileId: 10, path: "/synthetic/episode-a.mkv", size: 100n },
 			{ arrEpisodeFileId: 11, path: "/synthetic/episode-b.mkv", size: 200n },
 		];
-		prisma.libraryCache.findMany.mockResolvedValue([
+		seriesRows.mockResolvedValue([
 			{
 				instanceId: "arr-1",
 				arrItemId: 2,
@@ -1005,14 +1032,14 @@ describe("qUI Library tracker summary coverage", () => {
 				}),
 			},
 		]);
-		prisma.episodeFileCache.findMany.mockResolvedValue(files);
+		episodeRows.mockResolvedValue(files);
 		const response = await summary(seriesItem);
 		expect(response.statusCode).toBe(200);
 		expect(response.json()).toMatchObject({
 			status: "available",
 			summaries: { "arr-1|series:2": { trackerCount: 1 } },
 		});
-		prisma.libraryCache.findMany.mockResolvedValue([
+		seriesRows.mockResolvedValue([
 			{
 				instanceId: "arr-1",
 				arrItemId: 2,
