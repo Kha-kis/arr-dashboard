@@ -1055,11 +1055,12 @@ export async function requireSeerrClient(
 	app: FastifyInstance,
 	userId: string,
 	instanceId: string,
-	options: { requireEnabled?: boolean } = {},
+	options: { requireEnabled?: boolean; prisma?: FastifyInstance["prisma"] } = {},
 ): Promise<SeerrClient> {
+	const lookup = options.prisma ? { prisma: options.prisma } : app;
 	const instance = options.requireEnabled
-		? await requireEnabledInstance(app, userId, instanceId)
-		: await requireInstance(app, userId, instanceId);
+		? await requireEnabledInstance(lookup, userId, instanceId)
+		: await requireInstance(lookup, userId, instanceId);
 	if (instance.service !== "SEERR") {
 		throw new AppValidationError("Instance is not a Seerr service");
 	}

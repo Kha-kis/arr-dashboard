@@ -78,7 +78,11 @@ describe("Seerr Library issue-count availability", () => {
 			},
 		});
 		expect(requireClient).toHaveBeenCalledTimes(1);
-		expect(requireClient.mock.calls[0]?.slice(1)).toEqual(["user-1", "seerr-1"]);
+		expect(requireClient.mock.calls[0]?.slice(1)).toEqual([
+			"user-1",
+			"seerr-1",
+			{ prisma: app.prisma },
+		]);
 		expect(mockClient.getMediaSummary).toHaveBeenCalledTimes(2);
 		expect(mockClient.getOpenIssueCounts).toHaveBeenCalledTimes(1);
 		const events = logs.filter((entry) => entry.msg === timingMessage);

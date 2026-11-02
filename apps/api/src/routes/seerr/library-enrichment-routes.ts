@@ -8,6 +8,7 @@
 import type { LibraryEnrichmentItem, LibraryEnrichmentResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import { withIsolatedRuntimePrismaReadClient } from "../../lib/backup/restore-runtime-client.js";
 import { requireSeerrClient } from "../../lib/seerr/seerr-client.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { runWithConcurrency } from "./lib/enrichment-helpers.js";
@@ -64,7 +65,9 @@ export async function registerLibraryEnrichmentRoutes(
 			return reply.status(400).send({ error: "All tmdbIds must be positive integers" });
 		}
 
-		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
+		const client = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			requireSeerrClient(app, request.currentUser!.id, instanceId, { prisma }),
+		);
 		const admissionMs = performance.now() - startedAt;
 
 		// Deduplicate items by key (same tmdbId+type may appear multiple times across instances)

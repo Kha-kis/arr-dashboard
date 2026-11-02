@@ -16,7 +16,7 @@ type ServiceInstanceFindFirstArgs = Prisma.ServiceInstanceFindFirstArgs;
 export async function requireInstance<
 	I extends Prisma.ServiceInstanceInclude | undefined = undefined,
 >(
-	app: FastifyInstance,
+	app: Pick<FastifyInstance, "prisma">,
 	userId: string,
 	instanceId: string,
 	include?: I,
@@ -49,7 +49,7 @@ export async function requireInstance<
 export async function requireEnabledInstance<
 	I extends Prisma.ServiceInstanceInclude | undefined = undefined,
 >(
-	app: FastifyInstance,
+	app: Pick<FastifyInstance, "prisma">,
 	userId: string,
 	instanceId: string,
 	include?: I,

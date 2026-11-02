@@ -12,6 +12,7 @@ import {
 	registerRestoreBootstrapPlugin,
 	registerRestoreRuntimeActivation,
 } from "../../lib/backup/restore-runtime-bootstrap.js";
+import * as runtimePrisma from "../../lib/backup/restore-runtime-client.js";
 import { createRuntimePrismaClient } from "../../lib/backup/restore-runtime-client.js";
 import { createNotificationOutboxNativeFixture } from "../../lib/notifications/__tests__/notification-outbox-native-fixture.js";
 import { resolveSecretsPath } from "../../lib/utils/secrets-path.js";
@@ -180,26 +181,15 @@ async function boot(options: FixtureOptions = {}) {
 			state.pending--;
 		}
 	}
-	const lookup = prisma.session.findUnique.bind(prisma.session);
-	const reads: { findUnique: AwaitOnly<typeof prisma.session.findUnique> } = prisma.session;
-	vi.spyOn(reads, "findUnique").mockImplementation((args) => {
-		expect(args).toEqual({
-			where: { id: hash },
-			include: {
-				user: {
-					select: {
-						id: true,
-						username: true,
-						mustChangePassword: true,
-						createdAt: true,
-						updatedAt: true,
-					},
-				},
-			},
-		});
-		return query("lookup", options.lookup, () =>
-			lookup({
-				...args,
+	const instrumentedReads = new WeakSet<object>();
+	function instrumentLookup(client: typeof prisma) {
+		const reads: { findUnique: AwaitOnly<typeof prisma.session.findUnique> } = client.session;
+		if (instrumentedReads.has(reads)) return;
+		instrumentedReads.add(reads);
+		const lookup = client.session.findUnique.bind(client.session);
+		vi.spyOn(reads, "findUnique").mockImplementation((args) => {
+			expect(args).toEqual({
+				where: { id: hash },
 				include: {
 					user: {
 						select: {
@@ -211,9 +201,36 @@ async function boot(options: FixtureOptions = {}) {
 						},
 					},
 				},
+			});
+			return query("lookup", options.lookup, () =>
+				lookup({
+					...args,
+					include: {
+						user: {
+							select: {
+								id: true,
+								username: true,
+								mustChangePassword: true,
+								createdAt: true,
+								updatedAt: true,
+							},
+						},
+					},
+				}),
+			);
+		});
+	}
+	instrumentLookup(prisma);
+	// Preserve real guarded acquisition and SQL; observe the delegate actually
+	// used for validation so lookup abort/drain gates cover isolated readers too.
+	const isolatedRead = runtimePrisma.withIsolatedRuntimePrismaReadClient;
+	vi.spyOn(runtimePrisma, "withIsolatedRuntimePrismaReadClient").mockImplementation(
+		(client, operation) =>
+			isolatedRead(client, (reader) => {
+				instrumentLookup(reader);
+				return operation(reader);
 			}),
-		);
-	});
+	);
 	if (native.engine === "sqlite") {
 		const connect = PrismaBetterSqlite3.prototype.connect;
 		vi.spyOn(PrismaBetterSqlite3.prototype, "connect").mockImplementation(async function (

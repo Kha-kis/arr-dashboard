@@ -6,6 +6,7 @@ import {
 	retainRestoreRuntimeOperation,
 	withRestoreRuntimeOperation,
 } from "../backup/restore-runtime-admission.js";
+import { withIsolatedRuntimePrismaReadClient } from "../backup/restore-runtime-client.js";
 
 /**
  * Base cookie options for session management.
@@ -265,20 +266,24 @@ export class SessionService {
 		}
 
 		const hashedToken = hashToken(unsigned.value);
-		const record = await this.prisma.session.findUnique({
-			where: { id: hashedToken },
-			include: {
-				user: {
-					select: {
-						id: true,
-						username: true,
-						mustChangePassword: true,
-						createdAt: true,
-						updatedAt: true,
+		// Validate committed session/user state without waiting on or borrowing
+		// an unrelated transaction held by the ordinary SQLite connection.
+		const record = await withIsolatedRuntimePrismaReadClient(this.prisma, (prisma) =>
+			prisma.session.findUnique({
+				where: { id: hashedToken },
+				include: {
+					user: {
+						select: {
+							id: true,
+							username: true,
+							mustChangePassword: true,
+							createdAt: true,
+							updatedAt: true,
+						},
 					},
 				},
-			},
-		});
+			}),
+		);
 
 		if (!record) {
 			return null;

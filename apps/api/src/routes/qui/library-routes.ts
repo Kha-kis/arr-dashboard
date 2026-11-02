@@ -2,6 +2,7 @@ import path from "node:path";
 import { normalizeTorrentState } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { withIsolatedRuntimePrismaReadClient } from "../../lib/backup/restore-runtime-client.js";
 import {
 	runEpisodeBackfillSweep,
 	runEpisodeFileSync,
@@ -884,22 +885,24 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 		const seriesItems = body.items.filter((item) => item.itemType === "series");
 		const seriesRows =
 			seriesItems.length > 0
-				? await app.prisma.libraryCache.findMany({
-						where: {
-							itemType: "series",
-							instance: { userId },
-							OR: seriesItems.map((item) => ({
-								instanceId: item.arrInstanceId,
-								arrItemId: item.itemId,
-							})),
-						},
-						select: {
-							instanceId: true,
-							arrItemId: true,
-							cachedAt: true,
-							episodeFileInventoryReceipt: true,
-						},
-					})
+				? await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+						prisma.libraryCache.findMany({
+							where: {
+								itemType: "series",
+								instance: { userId },
+								OR: seriesItems.map((item) => ({
+									instanceId: item.arrInstanceId,
+									arrItemId: item.itemId,
+								})),
+							},
+							select: {
+								instanceId: true,
+								arrItemId: true,
+								cachedAt: true,
+								episodeFileInventoryReceipt: true,
+							},
+						}),
+					)
 				: [];
 		const seriesAuthority = new Map(
 			seriesRows.map((row) => [`${row.instanceId}|series:${row.arrItemId}`, row]),
@@ -920,9 +923,11 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			.join(",");
 		// Check configuration before serving a cached result. Connection
 		// generation and path mapping are part of the cache's authority.
-		const enabledQuiInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "QUI", enabled: true },
-		});
+		const enabledQuiInstances = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			prisma.serviceInstance.findMany({
+				where: { userId, service: "QUI", enabled: true },
+			}),
+		);
 		const quiInstances = enabledQuiInstances.filter(
 			(instance) => instance.hasLocalFilesystemAccess,
 		);
@@ -1031,66 +1036,68 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			pathInventoryComplete: boolean;
 		}
 		const itemPathsStartedAt = Date.now();
-		const itemPaths: ItemPaths[] = await Promise.all(
-			body.items.map(async ({ arrInstanceId, itemId, itemType }) => {
-				// Key includes the *arr instance ID so two instances with
-				// overlapping arrItemIds don't collide in the summary map.
-				const key = `${arrInstanceId}|${itemType}:${itemId}`;
-				if (itemType === "movie") {
-					const row = await app.prisma.libraryCache.findFirst({
+		const itemPaths: ItemPaths[] = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			Promise.all(
+				body.items.map(async ({ arrInstanceId, itemId, itemType }) => {
+					// Key includes the *arr instance ID so two instances with
+					// overlapping arrItemIds don't collide in the summary map.
+					const key = `${arrInstanceId}|${itemType}:${itemId}`;
+					if (itemType === "movie") {
+						const row = await prisma.libraryCache.findFirst({
+							where: {
+								instanceId: arrInstanceId,
+								arrItemId: itemId,
+								itemType: "movie",
+								instance: { userId },
+							},
+							select: { data: true },
+						});
+						if (!row) return { key, paths: [], pathInventoryComplete: false };
+						try {
+							const parsed = JSON.parse(row.data) as Record<string, unknown>;
+							const path = typeof parsed.path === "string" ? parsed.path : null;
+							const movieFile = parsed.movieFile as Record<string, unknown> | null | undefined;
+							const relativePath =
+								movieFile &&
+								typeof movieFile === "object" &&
+								typeof movieFile.relativePath === "string"
+									? movieFile.relativePath
+									: null;
+							if (path && relativePath) {
+								return {
+									key,
+									paths: [`${path.replace(/\/+$/, "")}/${relativePath}`],
+									pathInventoryComplete: true,
+								};
+							}
+						} catch {
+							/* fall through */
+						}
+						return { key, paths: [], pathInventoryComplete: false };
+					}
+					// A nonempty series file cache is only positive evidence. Exact
+					// coverage requires a successful same-snapshot Sonarr sync receipt
+					// that matches every cached file identity, including the count.
+					const series = seriesAuthority.get(key);
+					const episodes = await prisma.episodeFileCache.findMany({
 						where: {
 							instanceId: arrInstanceId,
-							arrItemId: itemId,
-							itemType: "movie",
+							arrSeriesId: itemId,
 							instance: { userId },
 						},
-						select: { data: true },
+						select: { arrEpisodeFileId: true, path: true, size: true },
 					});
-					if (!row) return { key, paths: [], pathInventoryComplete: false };
-					try {
-						const parsed = JSON.parse(row.data) as Record<string, unknown>;
-						const path = typeof parsed.path === "string" ? parsed.path : null;
-						const movieFile = parsed.movieFile as Record<string, unknown> | null | undefined;
-						const relativePath =
-							movieFile &&
-							typeof movieFile === "object" &&
-							typeof movieFile.relativePath === "string"
-								? movieFile.relativePath
-								: null;
-						if (path && relativePath) {
-							return {
-								key,
-								paths: [`${path.replace(/\/+$/, "")}/${relativePath}`],
-								pathInventoryComplete: true,
-							};
-						}
-					} catch {
-						/* fall through */
-					}
-					return { key, paths: [], pathInventoryComplete: false };
-				}
-				// A nonempty series file cache is only positive evidence. Exact
-				// coverage requires a successful same-snapshot Sonarr sync receipt
-				// that matches every cached file identity, including the count.
-				const series = seriesAuthority.get(key);
-				const episodes = await app.prisma.episodeFileCache.findMany({
-					where: {
-						instanceId: arrInstanceId,
-						arrSeriesId: itemId,
-						instance: { userId },
-					},
-					select: { arrEpisodeFileId: true, path: true, size: true },
-				});
-				return {
-					key,
-					paths: episodes.map((episode) => episode.path).filter(Boolean),
-					pathInventoryComplete: hasCompleteEpisodeFileInventory(
-						series?.episodeFileInventoryReceipt,
-						series?.cachedAt,
-						episodes,
-					),
-				};
-			}),
+					return {
+						key,
+						paths: episodes.map((episode) => episode.path).filter(Boolean),
+						pathInventoryComplete: hasCompleteEpisodeFileInventory(
+							series?.episodeFileInventoryReceipt,
+							series?.cachedAt,
+							episodes,
+						),
+					};
+				}),
+			),
 		);
 		const itemPathsMs = Date.now() - itemPathsStartedAt;
 
