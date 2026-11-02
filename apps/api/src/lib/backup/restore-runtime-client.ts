@@ -1,6 +1,6 @@
 import { setTimeout as delay, setImmediate } from "node:timers/promises";
 import Database from "better-sqlite3";
-import { PrismaClient, type PrismaClientInstance } from "../prisma.js";
+import { type Prisma, PrismaClient, type PrismaClientInstance } from "../prisma.js";
 import { createRecoverableSqliteAdapter, type SqliteStatementFence } from "../sqlite-adapter.js";
 import { hasSqliteTransactionWriteIntent } from "../sqlite-transaction-intent.js";
 import {
@@ -54,6 +54,34 @@ const BINDING_COLUMNS = [
 const rollbackSql = (sql: string) => /^\s*ROLLBACK\s*;?\s*$/i.test(sql);
 const commitSql = (sql: string) => /^\s*COMMIT\s*;?\s*$/i.test(sql);
 
+type RuntimePrismaClient = Readonly<{
+	prisma: PrismaClientInstance;
+	close(): Promise<void>;
+}>;
+type SqliteClientRegistration = {
+	closed: boolean;
+	publication: RuntimePrismaClient;
+};
+const ordinarySqliteClients = new WeakMap<object, SqliteClientRegistration>();
+
+/** Keep atomic cache publication off the ordinary HTTP connection. */
+export async function withIsolatedRuntimePrismaTransaction<T>(
+	prisma: Pick<PrismaClientInstance, "$transaction">,
+	operation: (tx: Prisma.TransactionClient) => Promise<T>,
+	options?: {
+		maxWait?: number;
+		timeout?: number;
+		isolationLevel?: Prisma.TransactionIsolationLevel;
+	},
+): Promise<T> {
+	const registration = ordinarySqliteClients.get(prisma);
+	if (!registration) return prisma.$transaction(operation, options);
+	if (registration.closed) throw new RestoreRuntimeAdmissionError();
+	// The companion was registered before admission could close. An already
+	// accepted collection may reach this publication while the runtime drains.
+	return registration.publication.prisma.$transaction(operation, options);
+}
+
 function projection(result: Awaited<ReturnType<Driver["queryRaw"]>>, columns: string[]) {
 	if (result.rows.length !== 1 || result.rows[0]?.length !== columns.length)
 		throw new RestoreRuntimeAdmissionError();
@@ -63,18 +91,40 @@ function projection(result: Awaited<ReturnType<Driver["queryRaw"]>>, columns: st
 export function createRuntimePrismaClient(
 	runtime: RestoreRuntime,
 	options?: Readonly<{ sqliteTransactionIntent?: "write" }>,
-): Readonly<{
-	prisma: PrismaClientInstance;
-	close(): Promise<void>;
-}> {
+): RuntimePrismaClient {
 	const context = getRestoreRuntimeClientContext(runtime);
-	return createGuardedPrismaClient(
+	const native = createGuardedPrismaClient(
 		context,
 		runtime,
 		undefined,
 		undefined,
 		options?.sqliteTransactionIntent,
 	);
+	if (!context.databaseUrl.startsWith("file:")) return native;
+	// Reserve a bounded, purpose-specific client up front, but its native
+	// connection remains lazy. This never opens a new owner or admission ticket.
+	const publication = createGuardedPrismaClient(
+		context,
+		runtime,
+		undefined,
+		undefined,
+		options?.sqliteTransactionIntent,
+	);
+	const registration: SqliteClientRegistration = { closed: false, publication };
+	ordinarySqliteClients.set(native.prisma, registration);
+	let closePromise: Promise<void> | undefined;
+	return Object.freeze({
+		prisma: native.prisma,
+		close: () => {
+			registration.closed = true;
+			closePromise ??= Promise.resolve().then(async () => {
+				const closed = await Promise.allSettled([native.close(), registration.publication.close()]);
+				if (closed.some((result) => result.status === "rejected"))
+					throw new RestoreRuntimeAdmissionError();
+			});
+			return closePromise;
+		},
+	});
 }
 
 /** Best-effort session access metadata must never synchronously wait on a writer. */

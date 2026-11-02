@@ -1,4 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
+import { withIsolatedRuntimePrismaTransaction } from "../backup/restore-runtime-client.js";
 import type { Prisma, PrismaClient, ServiceInstance } from "../prisma.js";
 import { invalidateObservationRunsInTransaction } from "../provider-observation/observation-run-repository.js";
 import { withSqliteTransactionWriteIntent } from "../sqlite-transaction-intent.js";
@@ -224,7 +225,8 @@ export async function withCurrentProviderPublicationAuthority<T>(
 	assertVerified(instance);
 	const postgresql = isPostgresqlDatabase();
 	return await withSqliteTransactionWriteIntent(() =>
-		prisma.$transaction(
+		withIsolatedRuntimePrismaTransaction(
+			prisma,
 			async (tx) => {
 				const cleanupConfig = await tx.libraryCleanupConfig.upsert({
 					where: { userId: instance.userId },
