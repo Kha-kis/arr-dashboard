@@ -9,6 +9,7 @@
 import type { WatchEnrichmentItem } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import { withIsolatedRuntimePrismaReadClient } from "../../lib/backup/restore-runtime-client.js";
 import {
 	type JellyfinDisplayInstance,
 	readOwnedJellyfinLibraryDisplaySources,
@@ -72,18 +73,22 @@ export async function registerWatchEnrichmentRoutes(
 
 		const tmdbIdList = [...new Set(tmdbIds)];
 
-		const jellyfinInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true, label: true, service: true },
-		});
-		const displayEvidence =
-			jellyfinInstances.length > 0
-				? await readOwnedJellyfinLibraryDisplaySources({
-						prisma: app.prisma,
-						userId,
-						instances: jellyfinInstances as JellyfinDisplayInstance[],
-					})
-				: { sources: [], providerStatus: undefined };
+		const displayEvidence = await withIsolatedRuntimePrismaReadClient(
+			app.prisma,
+			async (prisma) => {
+				const jellyfinInstances = await prisma.serviceInstance.findMany({
+					where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
+					select: { id: true, label: true, service: true },
+				});
+				return jellyfinInstances.length > 0
+					? await readOwnedJellyfinLibraryDisplaySources({
+							prisma,
+							userId,
+							instances: jellyfinInstances as JellyfinDisplayInstance[],
+						})
+					: { sources: [], providerStatus: undefined };
+			},
+		);
 		const sourceStatuses = new Map(
 			displayEvidence.providerStatus?.sources.map((source) => [source.instanceId, source.status]) ??
 				[],

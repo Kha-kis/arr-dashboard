@@ -66,9 +66,9 @@ type RuntimeTransactionOptions = {
 type SqliteClientRegistration = {
 	closed: boolean;
 	publication(): RuntimePrismaClient;
-	read<T>(
-		operation: (tx: Prisma.TransactionClient) => Promise<T>,
-		options?: RuntimeTransactionOptions,
+	readClient<T>(
+		operation: (client: PrismaClientInstance) => Promise<T>,
+		maxWait?: number,
 	): Promise<T>;
 };
 const ordinarySqliteClients = new WeakMap<object, SqliteClientRegistration>();
@@ -91,7 +91,7 @@ export async function withIsolatedRuntimePrismaTransaction<T>(
 	return registration.publication().prisma.$transaction(operation, options);
 }
 
-/** Consistent statistics reads must not borrow the HTTP or publication connection. */
+/** Consistent reads must not borrow the HTTP or publication connection. */
 export async function withIsolatedRuntimePrismaReadTransaction<T>(
 	prisma: Pick<PrismaClientInstance, "$transaction">,
 	operation: (tx: Prisma.TransactionClient) => Promise<T>,
@@ -100,7 +100,25 @@ export async function withIsolatedRuntimePrismaReadTransaction<T>(
 	const registration = ordinarySqliteClients.get(prisma);
 	if (!registration) return prisma.$transaction(operation, options);
 	if (registration.closed) throw new RestoreRuntimeAdmissionError();
-	return registration.read(operation, options);
+	return registration.readClient(
+		(client) => client.$transaction(operation, options),
+		options?.maxWait,
+	);
+}
+
+/**
+ * Explicit cache-display reads use an exclusive guarded lane without adding a
+ * snapshot. Repository transactions and outside-snapshot postchecks retain
+ * their original semantics. Never use this callback for writes or provider I/O.
+ */
+export async function withIsolatedRuntimePrismaReadClient<T>(
+	prisma: PrismaClientInstance,
+	operation: (client: PrismaClientInstance) => Promise<T>,
+): Promise<T> {
+	const registration = ordinarySqliteClients.get(prisma);
+	if (!registration) return operation(prisma);
+	if (registration.closed) throw new RestoreRuntimeAdmissionError();
+	return registration.readClient(operation);
 }
 
 function projection(result: Awaited<ReturnType<Driver["queryRaw"]>>, columns: string[]) {
@@ -127,7 +145,7 @@ export function createRuntimePrismaClient(
 	// drain because materialization uses this existing slot, never a new claim.
 	let publication: RuntimePrismaClient | undefined;
 	let publicationClosePromise: Promise<void> | undefined;
-	// Statistics fan-out is bounded independently from ordinary HTTP queries.
+	// Cached-read fan-out is bounded independently from ordinary HTTP queries.
 	// Reserve closure now; accepted work may first acquire a lane during drain.
 	type ReadLane = { busy: boolean; client?: RuntimePrismaClient };
 	type ReadWaiter = {
@@ -184,15 +202,15 @@ export function createRuntimePrismaClient(
 			);
 			return publication;
 		},
-		read: async (operation, transactionOptions) => {
-			const lane = await acquireReadLane(transactionOptions?.maxWait ?? 2_000);
+		readClient: async (operation, maxWait) => {
+			const lane = await acquireReadLane(maxWait ?? 2_000);
 			try {
 				if (registration.closed) throw new RestoreRuntimeAdmissionError();
 				lane.client ??= createGuardedPrismaClient(
 					{ ...context, registerClose: () => () => undefined },
 					runtime,
 				);
-				return await lane.client.prisma.$transaction(operation, transactionOptions);
+				return await operation(lane.client.prisma);
 			} finally {
 				releaseReadLane(lane);
 			}

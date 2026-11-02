@@ -7,11 +7,7 @@ import {
 import { LidarrClient, ProwlarrClient, RadarrClient, ReadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyBaseLogger, FastifyInstance, FastifyPluginCallback } from "fastify";
 import { streamLibraryItems } from "../../lib/arr/library-stream.js";
-import {
-	fingerprintDashboardSources,
-	readDashboardSnapshot,
-} from "../../lib/statistics/dashboard-statistics-snapshot.js";
-import { requestDashboardStatisticsRefresh } from "../../lib/statistics/dashboard-statistics-refresh.js";
+import { withIsolatedRuntimePrismaReadClient } from "../../lib/backup/restore-runtime-client.js";
 import {
 	aggregateLidarrStatistics,
 	aggregateProwlarrStatistics,
@@ -29,6 +25,11 @@ import {
 	fetchReadarrStatisticsWithSdk,
 	fetchSonarrStatisticsWithSdk,
 } from "../../lib/statistics/dashboard-statistics.js";
+import { requestDashboardStatisticsRefresh } from "../../lib/statistics/dashboard-statistics-refresh.js";
+import {
+	fingerprintDashboardSources,
+	readDashboardSnapshot,
+} from "../../lib/statistics/dashboard-statistics-snapshot.js";
 import { buildCombinedDiskPayload } from "../../lib/statistics/statistics-utils.js";
 
 /** Retains the existing provider aggregation off the latency-sensitive GET path. */
@@ -536,17 +537,26 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 	app.get("/dashboard/statistics/snapshot", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const sources = await app.prisma.serviceInstance.findMany({
-			where: { enabled: true, userId },
-			select: { id: true, service: true, enabled: true, updatedAt: true },
+		const initial = await withIsolatedRuntimePrismaReadClient(app.prisma, async (prisma) => {
+			const sources = await prisma.serviceInstance.findMany({
+				where: { enabled: true, userId },
+				select: { id: true, service: true, enabled: true, updatedAt: true },
+			});
+			const fingerprint = fingerprintDashboardSources(sources);
+			return {
+				fingerprint,
+				snapshot: await readDashboardSnapshot(prisma, userId, fingerprint, new Date()),
+			};
 		});
-		const fingerprint = fingerprintDashboardSources(sources);
-		let snapshot = await readDashboardSnapshot(app.prisma, userId, fingerprint, new Date());
+		const { fingerprint } = initial;
+		let { snapshot } = initial;
 		if (snapshot.refreshDue) {
 			await requestDashboardStatisticsRefresh(app, userId, fingerprint, request.log, () =>
 				collectDashboardStatistics(app, userId, request.log),
 			);
-			snapshot = await readDashboardSnapshot(app.prisma, userId, fingerprint, new Date());
+			snapshot = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+				readDashboardSnapshot(prisma, userId, fingerprint, new Date()),
+			);
 		}
 		return reply.send(
 			dashboardStatisticsEnvelopeSchema.parse({

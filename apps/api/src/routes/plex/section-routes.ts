@@ -5,6 +5,7 @@
  */
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
+import { withIsolatedRuntimePrismaReadClient } from "../../lib/backup/restore-runtime-client.js";
 import { loadPlexSectionCatalog } from "../../lib/plex/plex-section-catalog.js";
 
 export async function registerSectionRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
@@ -17,7 +18,9 @@ export async function registerSectionRoutes(app: FastifyInstance, _opts: Fastify
 	app.get("/", async (request, reply) => {
 		const userId = request.currentUser!.id;
 
-		const catalog = await loadPlexSectionCatalog(app.prisma, { userId });
+		const catalog = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			loadPlexSectionCatalog(prisma, { userId }),
+		);
 		if (!catalog.available) {
 			return reply.status(503).send({
 				error: "Plex cache evidence is unavailable",
