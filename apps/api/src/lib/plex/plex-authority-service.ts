@@ -44,7 +44,7 @@ import {
 	loadPositiveEpisodeEvidence,
 	loadPositiveEpisodeParentEvidence,
 	loadTargetScopedPlexWatchCountMutationEvidenceBatch,
-	loadUserSelectedEvidence,
+	loadUserSelectedDisplayEvidence,
 	type PlexEpisodeParentPolicyBatchHandler,
 	type PlexInstanceEvidence,
 	type PlexPolicyBatchHandler,
@@ -1540,7 +1540,7 @@ export class PlexAuthorityService {
 		now?: Date;
 		maxAgeMs?: number;
 	}): Promise<SelectedPlexEvidence[]> {
-		return await loadUserSelectedEvidence(this.deps.prisma, input);
+		return await loadUserSelectedDisplayEvidence(this.deps.prisma, input);
 	}
 
 	async scanUserPolicy(input: {

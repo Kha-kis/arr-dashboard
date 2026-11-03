@@ -602,6 +602,29 @@ function publishedGenerationsMatch(
 	return null;
 }
 
+/** Display rows bind to the publication; latest-attempt provenance may advance during the read. */
+function selectedDisplayPublicationsMatch(
+	before: Pick<
+		AvailablePlexInstanceEvidence,
+		"generationId" | "publishedAt" | "itemCount" | "metadata"
+	>,
+	after: Pick<
+		AvailablePlexInstanceEvidence,
+		"generationId" | "publishedAt" | "itemCount" | "metadata"
+	>,
+): PlexCoverageReasonCode | null {
+	if (after.generationId !== before.generationId || after.itemCount !== before.itemCount) {
+		return "generation_changed";
+	}
+	if (after.publishedAt.getTime() !== before.publishedAt.getTime()) {
+		return "published_timestamp_changed";
+	}
+	if (JSON.stringify(after.metadata) !== JSON.stringify(before.metadata)) {
+		return "generation_changed";
+	}
+	return null;
+}
+
 function withDefaultFreshness<T extends { maxAgeMs?: number }>(input: T): T & { maxAgeMs: number } {
 	return {
 		...input,
@@ -1561,6 +1584,7 @@ async function loadOwnedSelectedEvidence(
 	instance: PlexEvidenceInstance,
 	selection: PlexCacheRowSelection,
 	options: { now?: Date; maxAgeMs?: number },
+	mode: "strict" | "display" = "strict",
 ): Promise<SelectedPlexEvidence> {
 	if (!instance.enabled) return unavailable("disabled_instance");
 	if (!isCurrentVerifiedPlexInstance(instance)) return unavailable("identity_generation_mismatch");
@@ -1588,7 +1612,10 @@ async function loadOwnedSelectedEvidence(
 		if (!publishedAfter.available) return publishedAfter;
 		const afterBinding = validateExplicitStatusGenerationBinding(instance, after!);
 		if (afterBinding) return unavailableForBinding(afterBinding, after, publishedAfter.metadata);
-		const generationMismatch = publishedGenerationsMatch(publishedBefore, publishedAfter);
+		const generationMismatch =
+			mode === "display"
+				? selectedDisplayPublicationsMatch(publishedBefore, publishedAfter)
+				: publishedGenerationsMatch(publishedBefore, publishedAfter);
 		if (generationMismatch)
 			return unavailableAfterPublication(generationMismatch, providerStatus, "rows-inconsistent");
 		if (totalCount !== publishedBefore.itemCount || boundCount !== totalCount) {
@@ -1614,6 +1641,8 @@ async function loadOwnedSelectedEvidence(
 			}
 		}
 
+		const finalStatus = mode === "display" ? after! : before!;
+		const finalPublished = mode === "display" ? publishedAfter : publishedBefore;
 		return {
 			available: true,
 			instanceId: instance.id,
@@ -1625,29 +1654,24 @@ async function loadOwnedSelectedEvidence(
 			identityGeneration: instance.identityGeneration,
 			metadata: publishedBefore.metadata,
 			generationStatus: {
-				instanceId: before!.instanceId,
-				lastRefreshedAt: before!.lastRefreshedAt,
-				lastResult: before!.lastResult,
-				lastErrorMessage: before!.lastErrorMessage,
-				lastAttemptAt: before!.lastAttemptAt,
-				lastAttemptResult: before!.lastAttemptResult,
-				lastAttemptErrorMessage: before!.lastAttemptErrorMessage,
-				itemCount: before!.itemCount,
-				connectionGeneration: before!.connectionGeneration,
-				identityGeneration: before!.identityGeneration,
-				generationId: before!.generationId,
-				generationMetadata: before!.generationMetadata,
+				instanceId: finalStatus.instanceId,
+				lastRefreshedAt: finalStatus.lastRefreshedAt,
+				lastResult: finalStatus.lastResult,
+				lastErrorMessage: finalStatus.lastErrorMessage,
+				lastAttemptAt: finalStatus.lastAttemptAt,
+				lastAttemptResult: finalStatus.lastAttemptResult,
+				lastAttemptErrorMessage: finalStatus.lastAttemptErrorMessage,
+				itemCount: finalStatus.itemCount,
+				connectionGeneration: finalStatus.connectionGeneration,
+				identityGeneration: finalStatus.identityGeneration,
+				generationId: finalStatus.generationId,
+				generationMetadata: finalStatus.generationMetadata,
 			},
 			sections: publishedBefore.metadata.sections,
-			providerStatus: projectPlexProviderObservationStatus({
-				status: before,
-				metadata: publishedBefore.metadata,
-				now: options.now,
-				maxAgeMs: options.maxAgeMs,
-			}),
+			providerStatus: finalPublished.providerStatus,
 			rows,
 			selection,
-			evidence: publishedBefore.evidence,
+			evidence: finalPublished.evidence,
 		};
 	} catch {
 		return providerStatus
@@ -1698,9 +1722,10 @@ export async function loadInstanceSelectedMutationEvidence(
 		: mutationUnavailable(evidence);
 }
 
-export async function loadUserSelectedEvidence(
+async function loadUserSelectedEvidenceForMode(
 	prisma: PlexEvidencePrisma,
 	input: { userId: string; selection: PlexCacheRowSelection; now?: Date; maxAgeMs?: number },
+	mode: "strict" | "display" = "strict",
 ): Promise<SelectedPlexEvidence[]> {
 	try {
 		const instances = (await prisma.serviceInstance.findMany({
@@ -1714,6 +1739,7 @@ export async function loadUserSelectedEvidence(
 				instance,
 				input.selection,
 				withDefaultFreshness(input),
+				mode,
 			);
 			evidence.push(entry.available ? entry : { ...entry, instanceId: instance.id });
 		}
@@ -1721,6 +1747,21 @@ export async function loadUserSelectedEvidence(
 	} catch {
 		return [unavailable("query_failed")];
 	}
+}
+
+export async function loadUserSelectedEvidence(
+	prisma: PlexEvidencePrisma,
+	input: { userId: string; selection: PlexCacheRowSelection; now?: Date; maxAgeMs?: number },
+): Promise<SelectedPlexEvidence[]> {
+	return loadUserSelectedEvidenceForMode(prisma, input);
+}
+
+/** Published rows for display only; settlement and mutation callers must use the strict APIs. */
+export async function loadUserSelectedDisplayEvidence(
+	prisma: PlexEvidencePrisma,
+	input: { userId: string; selection: PlexCacheRowSelection; now?: Date; maxAgeMs?: number },
+): Promise<SelectedPlexEvidence[]> {
+	return loadUserSelectedEvidenceForMode(prisma, input, "display");
 }
 
 export function hasAuthoritativeSelectedPlexEvidence(

@@ -16,6 +16,8 @@ import {
 	loadTargetScopedPlexWatchCountMutationEvidence,
 	loadTargetScopedPlexWatchCountMutationEvidenceBatch,
 	loadUserEvidence,
+	loadUserSelectedDisplayEvidence,
+	loadUserSelectedEvidence,
 	scanInstanceEpisodeParentPolicyEvidence,
 	scanInstancePolicyEvidence,
 	scanMutationPolicyEvidenceForOwnedInstances,
@@ -597,6 +599,17 @@ async function loadSelectedMutation(testFixture: ReturnType<typeof fixture>) {
 		now,
 		maxAgeMs: 3 * 60 * 60 * 1000,
 	});
+}
+
+async function loadSelectedDisplay(testFixture: ReturnType<typeof fixture>) {
+	testFixture.prisma.serviceInstance.findMany.mockResolvedValue([instance()]);
+	const results = await loadUserSelectedDisplayEvidence(testFixture.prisma as never, {
+		userId: "user-1",
+		selection: { kind: "targets", targets: [{ tmdbId: 42, mediaType: "movie" }] },
+		now,
+		maxAgeMs: 3 * 60 * 60 * 1000,
+	});
+	return results[0]!;
 }
 
 async function loadTargetScopedWatchCount(testFixture: ReturnType<typeof fixture>) {
@@ -1949,6 +1962,207 @@ describe("Plex evidence repository", () => {
 			}),
 		);
 	});
+
+	it.each([
+		[
+			"success",
+			"in_progress:next-attempt",
+			"last-known",
+			"unavailable",
+			"in_progress",
+			"running",
+			["latest_attempt_in_progress"],
+		],
+		[
+			"in_progress:next-attempt",
+			"success",
+			"current",
+			"authoritative",
+			"success",
+			"successful",
+			[],
+		],
+		[
+			"in_progress:next-attempt",
+			"error",
+			"last-known",
+			"unavailable",
+			"error",
+			"failed",
+			["latest_attempt_failed"],
+		],
+		["success", "success", "current", "authoritative", "success", "successful", []],
+	] as const)(
+		"keeps selected display rows across an attempt-only %s to %s change with final provenance",
+		async (beforeResult, afterResult, availability, authority, attemptState, latestAttempt, reasonCodes) => {
+			const before = status({ lastAttemptResult: beforeResult });
+			const after = status({
+				lastAttemptAt: new Date("2026-08-20T13:00:00.000Z"),
+				lastAttemptResult: afterResult,
+				lastAttemptErrorMessage: afterResult === "error" ? "offline" : null,
+			});
+
+			const result = await loadSelectedDisplay(fixture({ statuses: [before, after] }));
+
+			expect(result).toMatchObject({
+				available: true,
+				generationId: "generation-1",
+				itemCount: 1,
+				rows: [{ id: "row-1", tmdbId: 42 }],
+				generationStatus: {
+					lastAttemptAt: new Date("2026-08-20T13:00:00.000Z"),
+					lastAttemptResult: afterResult,
+					lastAttemptErrorMessage: afterResult === "error" ? "offline" : null,
+				},
+				evidence: {
+					availability,
+					authority,
+					attemptState,
+					reasonCodes,
+					publishedGeneration: { generationId: "generation-1", publicationLevel: "authoritative" },
+				},
+				providerStatus: { availability, latestAttempt },
+			});
+		},
+	);
+
+	it.each([
+		["generation", status({ generationId: "generation-2" }), "generation_changed"],
+		[
+			"publication timestamp",
+			status({ lastRefreshedAt: new Date("2026-08-20T12:01:00.000Z") }),
+			"published_timestamp_changed",
+		],
+		[
+			"publication metadata",
+			status({ generationMetadata: v5Metadata().replace("movies-uuid", "other-uuid") }),
+			"generation_changed",
+		],
+		["publication count", status({ itemCount: 2 }), "generation_changed"],
+		["connection", status({ connectionGeneration: 5 }), "connection_generation_mismatch"],
+		[
+			"missing connection",
+			status({ connectionGeneration: null }),
+			"connection_generation_mismatch",
+		],
+		["identity", status({ identityGeneration: 10 }), "identity_generation_mismatch"],
+		["missing identity", status({ identityGeneration: null }), "identity_generation_mismatch"],
+		["unavailable publication", null, "missing_status"],
+	] as const)(
+		"withholds selected display rows for a final %s change",
+		async (_name, after, reasonCode) => {
+			const result = await loadSelectedDisplay(fixture({ statuses: [status(), after] }));
+			expect(result).toMatchObject({ available: false, evidence: { reasonCodes: [reasonCode] } });
+			expect(result).not.toHaveProperty("rows");
+		},
+	);
+
+	it.each([
+		["connection", status({ connectionGeneration: null }), "connection_generation_mismatch"],
+		["identity", status({ identityGeneration: null }), "identity_generation_mismatch"],
+	] as const)(
+		"withholds selected display rows for a missing initial %s binding",
+		async (_name, before, reasonCode) => {
+			const result = await loadSelectedDisplay(fixture({ statuses: [before, status()] }));
+			expect(result).toMatchObject({ available: false, evidence: { reasonCodes: [reasonCode] } });
+		},
+	);
+
+	it.each([
+		["total", 2, 2],
+		["bound", 1, 0],
+	] as const)(
+		"withholds selected display rows when the %s count disagrees",
+		async (_name, totalCount, boundCount) => {
+			const repository = fixture();
+			repository.prisma.plexCache.count
+				.mockResolvedValueOnce(totalCount)
+				.mockResolvedValueOnce(boundCount);
+			const result = await loadSelectedDisplay(repository);
+			expect(result).toMatchObject({
+				available: false,
+				evidence: { reasonCodes: ["row_count_mismatch"] },
+			});
+		},
+	);
+
+	it.each([
+		["owner", row({ instanceId: "plex-2" }), "connection_generation_mismatch"],
+		["connection", row({ connectionGeneration: 5 }), "connection_generation_mismatch"],
+		["identity", row({ identityGeneration: 10 }), "identity_generation_mismatch"],
+	] as const)(
+		"withholds selected display rows with the wrong %s binding",
+		async (_name, changedRow, reasonCode) => {
+			const result = await loadSelectedDisplay(fixture({ rows: [changedRow] }));
+			expect(result).toMatchObject({ available: false, evidence: { reasonCodes: [reasonCode] } });
+		},
+	);
+
+	it("withholds selected display rows when their dependency fails", async () => {
+		const result = await loadSelectedDisplay(fixture({ rowError: new Error("offline") }));
+		expect(result).toMatchObject({
+			available: false,
+			evidence: { reasonCodes: ["query_failed"] },
+			providerStatus: { availability: "unavailable", reasonCodes: ["unknown-failure"] },
+		});
+	});
+
+	it.each(["in_progress:next-attempt", "error"])(
+		"withholds selected mutation authority after the latest attempt becomes %s",
+		async (lastAttemptResult) => {
+			const result = await loadSelectedMutation(
+				fixture({ statuses: [status(), status({ lastAttemptResult })] }),
+			);
+			expect(result).toMatchObject({ available: false, evidence: { authority: "unavailable" } });
+		},
+	);
+
+	it("retains strict full-reader refusal of an attempt-only change", async () => {
+		const result = await load(
+			fixture({ statuses: [status(), status({ lastAttemptResult: "in_progress:next-attempt" })] }),
+		);
+		expect(result).toMatchObject({
+			available: false,
+			evidence: { reasonCodes: ["generation_changed"] },
+		});
+	});
+
+	it.each([
+		["success", "in_progress:next-attempt"],
+		["in_progress:next-attempt", "success"],
+		["in_progress:next-attempt", "error"],
+	] as const)(
+		"keeps existing selected APIs strict across %s to %s attempts",
+		async (beforeResult, afterResult) => {
+			const input = {
+				userId: "user-1",
+				instanceId: "plex-1",
+				selection: {
+					kind: "targets" as const,
+					targets: [{ tmdbId: 42, mediaType: "movie" as const }],
+				},
+				now,
+			};
+			const statuses = [
+				status({ lastAttemptResult: beforeResult }),
+				status({ lastAttemptResult: afterResult }),
+			];
+			const instanceResult = await loadInstanceSelectedEvidence(
+				fixture({ statuses }).prisma as never,
+				input,
+			);
+			const userRepository = fixture({ statuses });
+			userRepository.prisma.serviceInstance.findMany.mockResolvedValue([instance()]);
+			const userResult = await loadUserSelectedEvidence(userRepository.prisma as never, input);
+			expect(instanceResult).toMatchObject({
+				available: false,
+				evidence: { reasonCodes: ["generation_changed"] },
+			});
+			expect(userResult).toMatchObject([
+				{ available: false, evidence: { reasonCodes: ["generation_changed"] } },
+			]);
+		},
+	);
 
 	it("fails closed for a disabled instance", async () => {
 		const result = await load(fixture({ instance: instance({ enabled: false }) }));
