@@ -1221,7 +1221,7 @@ describe("Plex episode scheduler accepted lifetimes", () => {
 		gate.resolve();
 		await f.idle();
 	});
-	it("suppresses overlapping rounds and permits a later interval after lookup rejection", async () => {
+	it("suppresses overlapping rounds and retries rejected lookup before the later interval", async () => {
 		const gate = deferred(),
 			f = await boot({ hold: { phase: "round", gate: gate.promise, reject: true } });
 		await f.start("startup");
@@ -1230,10 +1230,15 @@ describe("Plex episode scheduler accepted lifetimes", () => {
 		expect(f.counts.round).toBe(1);
 		gate.resolve();
 		await f.idle();
-		await f.advance(INTERVAL_MS - 1);
+		await f.advance(29_999);
 		expect(f.counts.round).toBe(1);
 		await f.advance(1);
 		expect(f.counts.round).toBe(2);
 		expect(f.counts.page).toBe(1);
+		await f.advance(INTERVAL_MS - 30_000 - 1);
+		expect(f.counts.round).toBe(2);
+		await f.advance(1);
+		expect(f.counts.round).toBe(3);
+		expect(f.counts.page).toBe(2);
 	});
 });

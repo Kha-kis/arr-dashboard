@@ -7,6 +7,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { SqliteSchemaFixture } from "../../__tests__/sqlite-schema-fixture.js";
 import { openRestoreRuntime } from "../../backup/restore-runtime-admission.js";
 import { createRuntimePrismaClient } from "../../backup/restore-runtime-client.js";
+import {
+	buildJellyfinEpisodeScopePlan,
+	stageJellyfinEpisodePage,
+} from "../../jellyfin/jellyfin-episode-refresh-repository.js";
 import { withSqliteTransactionWriteIntent } from "../../sqlite-transaction-intent.js";
 import {
 	claimObservationUnit,
@@ -41,7 +45,7 @@ const units = [
 	},
 ] as const;
 
-async function fixture() {
+async function fixture(service: "PLEX" | "JELLYFIN" = "PLEX") {
 	const directory = mkdtempSync(join(tmpdir(), "observation-native-write-"));
 	chmodSync(directory, 0o700);
 	const held = lstatSync(directory),
@@ -147,7 +151,7 @@ async function fixture() {
 				data: {
 					id: authority.instanceId,
 					userId: "native-observation-user",
-					service: "PLEX",
+					service,
 					label: "native-observation",
 					baseUrl: "http://synthetic.invalid",
 					encryptedApiKey: "synthetic",
@@ -235,6 +239,107 @@ async function fixture() {
 }
 
 describe("native observation transaction write admission", () => {
+	it("stages a Jellyfin page once when an ordinary guard read overlaps writer reservation", async () => {
+		const f = await fixture("JELLYFIN");
+		try {
+			const scope = {
+				userId: "native-jellyfin-user",
+				userName: "synthetic",
+				libraryId: "native-jellyfin-library",
+			};
+			const plan = buildJellyfinEpisodeScopePlan([scope]);
+			const run = await f.runtime.runOperation(() =>
+				createOrLoadObservationRun(f.prisma, {
+					authority: {
+						...authority,
+						provider: "jellyfin_episode",
+						cacheType: "jellyfin_episode",
+						targetDigest: plan.targetDigest,
+					},
+					units: plan.units,
+				}),
+			);
+			const now = new Date();
+			const claim = await f.runtime.runOperation(() =>
+				claimObservationUnit(f.prisma, { runId: run.id, now }),
+			);
+			expect(claim?.phase).toBe("collect");
+			const page = {
+				startIndex: 0,
+				totalRecordCount: 1,
+				items: [
+					{
+						id: "native-jellyfin-episode",
+						name: "synthetic",
+						type: "Episode" as const,
+						seriesId: "native-jellyfin-series",
+						seasonNumber: 1,
+						episodeNumber: 1,
+						played: true,
+						playCount: 1,
+						lastPlayedDate: null,
+					},
+				],
+			};
+			const { completion } = await f.startOverlappingRead();
+			const result = await f.runtime
+				.runOperation(() => stageJellyfinEpisodePage(f.prisma, claim!, scope, page, now))
+				.then(
+					(staged) => ({ staged, code: "none" }),
+					(error) => ({
+						staged: false,
+						code: error?.code === "SQLITE_BUSY_SNAPSHOT" ? error.code : "other",
+					}),
+				);
+			await expect(completion).resolves.toBe(1);
+			expect(f.overlapObservation()).toMatchObject({
+				guardPaused: true,
+				reservationReleased: true,
+			});
+			expect(result).toEqual({ staged: true, code: "none" });
+			expect(f.overlapObservation().guardReadInTransaction).toBe(false);
+			await expect(
+				f.runtime.runOperation(() => stageJellyfinEpisodePage(f.prisma, claim!, scope, page, now)),
+			).resolves.toBe(false);
+			const state = await f.runtime.runOperation(async () => ({
+				rows: await f.prisma.jellyfinEpisodeObservationStage.findMany({
+					where: { runId: run.id },
+					select: { unitId: true, jellyfinId: true, pass: true },
+				}),
+				unit: await f.prisma.providerObservationUnit.findUniqueOrThrow({
+					where: { id: claim!.unitId },
+					select: {
+						state: true,
+						claimToken: true,
+						cursor: true,
+						expectedRawCount: true,
+						observedRawCount: true,
+						completedPages: true,
+					},
+				}),
+				run: await f.prisma.providerObservationRun.findUniqueOrThrow({
+					where: { id: run.id },
+					select: { state: true, completedUnits: true, completedWork: true },
+				}),
+			}));
+			expect(state).toEqual({
+				rows: [{ unitId: claim!.unitId, jellyfinId: "native-jellyfin-episode", pass: "collect" }],
+				unit: {
+					state: "complete",
+					claimToken: null,
+					cursor: 1,
+					expectedRawCount: 1,
+					observedRawCount: 1,
+					completedPages: 1,
+				},
+				run: { state: "running", completedUnits: 1, completedWork: 1 },
+			});
+			expect(f.losses).toEqual([]);
+		} finally {
+			await f.close();
+		}
+	});
+
 	it("claims once when an ordinary guard read overlaps writer reservation", async () => {
 		const f = await fixture();
 		try {

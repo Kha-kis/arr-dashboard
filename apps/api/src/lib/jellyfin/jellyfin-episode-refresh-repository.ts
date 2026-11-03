@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
+import { withIsolatedRuntimePrismaTransaction } from "../backup/restore-runtime-client.js";
 import {
-	Prisma,
 	type JellyfinEpisodeObservationExclusion,
 	type JellyfinEpisodeObservationStage,
+	Prisma,
 	type PrismaClient,
 	type ProviderObservationUnit,
 } from "../prisma.js";
@@ -34,8 +35,8 @@ import {
 } from "./jellyfin-episode-parent-dependency.js";
 import { JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS } from "./jellyfin-episode-refresh-policy.js";
 import {
-	decodeJellyfinLibraryGenerationMetadata,
 	decodeJellyfinEpisodeGenerationMetadata,
+	decodeJellyfinLibraryGenerationMetadata,
 	encodeJellyfinEpisodeGenerationMetadata,
 	fingerprintJellyfinEpisodeRows,
 	fingerprintJellyfinLibraryGenerationMetadata,
@@ -44,13 +45,13 @@ import {
 	hasJellyfinEpisodeParentReceipt,
 	type JellyfinLibraryRowFingerprintInput,
 } from "./jellyfin-generation-metadata.js";
+import { serializeNativeWatchScopeDiagnostics } from "./jellyfin-native-watch-diagnostics.js";
 import {
 	deriveNativeWatchCandidates,
 	emptyNativeWatchProjectionDiagnostics,
 	type NativeWatchProjectionDiagnostics,
 	type NativeWatchScopedProjectionDiagnostics,
 } from "./jellyfin-native-watch-projection.js";
-import { serializeNativeWatchScopeDiagnostics } from "./jellyfin-native-watch-diagnostics.js";
 import {
 	type NativeWatchPublicationInput,
 	publishNativeWatchGeneration,
@@ -749,7 +750,7 @@ export async function stageJellyfinEpisodePage(
 	if (pageReason) return reportPageRejection(onRejected, pageReason);
 	const userKeyDigest = digest(["jellyfin-user", scope.userId]);
 	return await withSqliteTransactionWriteIntent(() =>
-		prisma.$transaction(async (tx) => {
+		withIsolatedRuntimePrismaTransaction(prisma, async (tx) => {
 			const run = await tx.providerObservationRun.findFirst({
 				where: {
 					id: claim.runId,

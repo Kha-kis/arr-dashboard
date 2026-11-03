@@ -139,6 +139,7 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 		const cancellation = new AbortController();
 		let intervalHandle: ReturnType<typeof setInterval> | null = null;
 		let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+		let roundRetryHandle: ReturnType<typeof setTimeout> | null = null;
 		let isRunning = false;
 		let closed = false;
 		const runningInstances = new Set<string>();
@@ -320,13 +321,14 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			}
 		}
 
-		async function refreshAllEpisodeCaches(resumeFailed: boolean) {
+		async function refreshAllEpisodeCaches(resumeFailed: boolean, roundRetry = 0) {
 			if (closed) return;
 			if (isRunning) {
 				app.log.warn("Plex episode cache refresh already running, skipping");
 				return;
 			}
 			isRunning = true;
+			let enumerationCompleted = false;
 			try {
 				await runAccepted(() =>
 					app.notificationService.runProducer(() =>
@@ -334,6 +336,7 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 							const instances = await app.prisma.serviceInstance.findMany({
 								where: { service: "PLEX", enabled: true },
 							});
+							enumerationCompleted = true;
 
 							if (instances.length === 0) {
 								app.log.debug("Plex episode cache refresh: no enabled Plex instances, skipping");
@@ -396,6 +399,28 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 					),
 				);
 			} catch (err) {
+				// Before enumeration completes no provider work has been admitted.
+				// Retry that read/admission boundary only, never a partly executed round.
+				if (!enumerationCompleted && !closed && !roundRetryHandle) {
+					const delay = EXCEPTION_RETRY_DELAYS_MS[roundRetry];
+					if (delay === undefined) {
+						app.log.error(
+							{ category: "plex-episode-cache-round-retry-exhausted" },
+							"Plex episode cache round admission retries exhausted",
+						);
+					} else {
+						roundRetryHandle = setTimeout(() => {
+							roundRetryHandle = null;
+							if (closed) return;
+							refreshAllEpisodeCaches(resumeFailed, roundRetry + 1).catch(() => {
+								app.log.error(
+									{ category: "plex-episode-cache-round-retry-failed" },
+									"Plex episode cache round retry failed",
+								);
+							});
+						}, delay);
+					}
+				}
 				if (err instanceof CleanupMaintenanceConflictError) {
 					app.log.debug("Plex episode cache round paused for database maintenance");
 					return;
@@ -457,12 +482,14 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			unregisterRetry();
 			if (timeoutHandle) clearTimeout(timeoutHandle);
 			if (intervalHandle) clearInterval(intervalHandle);
+			if (roundRetryHandle) clearTimeout(roundRetryHandle);
 			for (const handle of continuationHandles) clearTimeout(handle);
 			continuationHandles.clear();
 			retainedAttempts.clear();
 			pendingInstanceIds.clear();
 			timeoutHandle = null;
 			intervalHandle = null;
+			roundRetryHandle = null;
 		}
 
 		app.addHook("preClose", async () => closeAdmission());

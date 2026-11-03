@@ -136,6 +136,77 @@ describe("plexEpisodeRefreshResultStatus", () => {
 });
 
 describe("Plex episode scheduler continuations", () => {
+	it("retries startup enumeration before starting provider work and preserves resume intent", async () => {
+		const enumerate = app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>;
+		enumerate
+			.mockRejectedValueOnce(new Error("Synthetic enumeration contention"))
+			.mockResolvedValue([{ id: "a", label: "A" }]);
+		mocks.refresh.mockResolvedValue({
+			complete: true,
+			errors: 0,
+			upserted: 1,
+			refreshedShows: 1,
+			capacityDegraded: false,
+		});
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		expect(mocks.refresh).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(29_999);
+		expect(mocks.refresh).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(1);
+		expect(enumerate).toHaveBeenCalledTimes(2);
+		expect(mocks.refresh).toHaveBeenCalledOnce();
+		expect(mocks.refresh.mock.calls[0]![0].resumeFailed).toBe(true);
+	});
+
+	it("exhausts bounded round enumeration retries without starting provider work", async () => {
+		const enumerate = app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>;
+		enumerate.mockRejectedValue(new Error("Synthetic enumeration contention"));
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		for (const delay of [30_000, 2 * 60_000, 10 * 60_000]) await vi.advanceTimersByTimeAsync(delay);
+		expect(enumerate).toHaveBeenCalledTimes(4);
+		expect(mocks.refresh).not.toHaveBeenCalled();
+		expect(
+			serializedLogs
+				.map((line) => JSON.parse(line))
+				.filter((record) => record.category === "plex-episode-cache-round-retry-exhausted"),
+		).toHaveLength(1);
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+		expect(enumerate).toHaveBeenCalledTimes(4);
+	});
+
+	it("cancels a pending round enumeration retry during shutdown", async () => {
+		const enumerate = app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>;
+		enumerate.mockRejectedValue(new Error("Synthetic enumeration contention"));
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		await app.close();
+		await vi.advanceTimersByTimeAsync(20 * 60_000);
+		expect(enumerate).toHaveBeenCalledOnce();
+		expect(mocks.refresh).not.toHaveBeenCalled();
+	});
+
+	it("does not replay a round after enumeration and provider work have completed", async () => {
+		const enumerate = app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>;
+		enumerate.mockResolvedValue([{ id: "a", label: "A" }]);
+		mocks.refresh.mockResolvedValue({
+			complete: true,
+			errors: 0,
+			upserted: 1,
+			refreshedShows: 1,
+			capacityDegraded: false,
+		});
+		(app.prisma.cacheRefreshStatus.findMany as ReturnType<typeof vi.fn>).mockRejectedValue(
+			new Error("Synthetic stale-status read failure"),
+		);
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		await vi.advanceTimersByTimeAsync(20 * 60_000);
+		expect(enumerate).toHaveBeenCalledOnce();
+		expect(mocks.refresh).toHaveBeenCalledOnce();
+	});
+
 	it.each([
 		[new RestoreRuntimeAdmissionError(), "runtime-admission", "unknown"],
 		[new SqliteRestoreRuntimeOwnershipError(), "sqlite-ownership", "unknown"],
