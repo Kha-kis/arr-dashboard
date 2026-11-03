@@ -95,6 +95,19 @@ function createCanonicalPhaseObserver(
 	};
 }
 
+function collectionFailureType(error: unknown) {
+	try {
+		// Never read arbitrary exception names, text, stacks, causes, or metadata.
+		if (error instanceof TypeError) return "type-error";
+		if (error instanceof RangeError) return "range-error";
+		if (error instanceof SyntaxError) return "syntax-error";
+		return error instanceof Error ? "error" : "non-error";
+	} catch {
+		// Even instanceof can invoke a hostile proxy's getPrototypeOf trap.
+		return "unknown";
+	}
+}
+
 // ============================================================================
 // Aggregation Types
 // ============================================================================
@@ -236,6 +249,7 @@ export async function refreshJellyfinCache(
 					{
 						provider: instance.service === "EMBY" ? "emby" : "jellyfin",
 						onStage,
+						signal: context.signal,
 					},
 				),
 			async (tx, collected) => await publishJellyfinCache(tx, instance, collected),
@@ -355,7 +369,7 @@ async function runOwnedJellyfinCacheAttempt(
 					jellyfinClientForSnapshot(prepared, context.log, context.signal),
 					prepared.id,
 					context.log,
-					{ provider, attemptStartedAt: attempt.attemptedAt, onStage },
+					{ provider, attemptStartedAt: attempt.attemptedAt, onStage, signal: context.signal },
 				);
 				if (
 					!collected.completedAt ||
@@ -527,6 +541,8 @@ async function replaceJellyfinCacheRows(
 
 interface JellyfinCollectionOptions {
 	onStage?: (stage: JellyfinCanonicalPhase) => void;
+	/** Diagnostic context only; never authorizes or changes collection/publication. */
+	signal?: AbortSignal;
 	provider?: "jellyfin" | "emby";
 	attemptStartedAt?: Date;
 	observedAt?: Date;
@@ -615,7 +631,9 @@ export async function collectJellyfinCacheLiveEvidence(
 ): Promise<JellyfinCacheCollectionResult> {
 	const provider = options.provider ?? "jellyfin";
 	const observer = options.onStage ?? createCanonicalPhaseObserver(log, provider);
+	let lastStage: JellyfinCanonicalPhase = "user-discovery";
 	const onStage = (stage: JellyfinCanonicalPhase) => {
+		lastStage = stage;
 		try {
 			observer(stage);
 		} catch {
@@ -1091,9 +1109,21 @@ export async function collectJellyfinCacheLiveEvidence(
 					),
 			},
 		};
-	} catch {
+	} catch (error) {
 		errorMessages.push("refresh-failed");
-		log.error({ category: "refresh-failed" }, "Jellyfin cache refresh failed");
+		try {
+			log.error(
+				{
+					category: "refresh-failed",
+					stage: lastStage,
+					errorType: collectionFailureType(error),
+					...(options.signal === undefined ? {} : { signalAborted: options.signal.aborted }),
+				},
+				"Jellyfin cache refresh failed",
+			);
+		} catch {
+			// Diagnostics must not replace the original unknown collection result.
+		}
 		return unknown({ errors: errors + 1, errorMessages });
 	}
 }
