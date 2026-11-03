@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import Database from "better-sqlite3";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { Prisma } from "../../../generated/prisma/client.js";
 
@@ -286,6 +287,107 @@ async function joinedFailureFixture(rejectedPage = false, v3 = false, code = "P1
 		writes: () => writes,
 	};
 }
+
+describe("bounded native page-stage contention", { timeout: 30_000 }, () => {
+	it.each(["retry", "twice", "exhaustion", "cancel", "non-busy"] as const)(
+		"handles native page-stage %s without another provider read or duplicate progress",
+		async (mode) => {
+			const { prisma, client, context } = await pageWorkerRunnerFixture();
+			const writer = new Database(join(databases.at(-1)!.directory, "test.db"));
+			writer.pragma("journal_mode = WAL");
+			let writerHeld = false;
+			let stageAttempts = 0;
+			const controller = new AbortController();
+			const failures: unknown[] = [];
+			const cursors: number[] = [];
+			const injected = prisma.$extends({
+				query: {
+					jellyfinEpisodeObservationStage: {
+						async createMany({ args, query }) {
+							stageAttempts++;
+							if (
+								stageAttempts >= 2 &&
+								mode !== "non-busy" &&
+								(mode === "exhaustion" ||
+									stageAttempts === 2 ||
+									(mode === "twice" && stageAttempts === 3))
+							) {
+								writer.exec("BEGIN IMMEDIATE");
+								writerHeld = true;
+							}
+							try {
+								if (mode === "non-busy" && stageAttempts === 2) {
+									const rows = Array.isArray(args.data) ? args.data : [args.data];
+									return await query({ ...args, data: [...rows, ...rows] });
+								}
+								return await query(args);
+							} catch (error) {
+								failures.push(error);
+								throw error;
+							} finally {
+								if (writerHeld) {
+									writer.exec("ROLLBACK");
+									writerHeld = false;
+								}
+								if (mode === "cancel" && stageAttempts === 2) controller.abort();
+							}
+						},
+					},
+				},
+			});
+			const current = {
+				...context,
+				prisma: injected as unknown as typeof prisma,
+				signal: controller.signal,
+			};
+			const runner = createProductionJellyfinEpisodeWorkItemRunner({
+				createClient: () => client as never,
+				readPage: async (input) => {
+					cursors.push(input.startIndex);
+					return heldWorkerPage(input.startIndex);
+				},
+			});
+			try {
+				expect(await runner(current)).toMatchObject({ progressed: true });
+				const published = await prisma.jellyfinEpisodeCache.findMany();
+				const next = runner({ ...current, now: new Date("2026-09-07T12:00:01.000Z") });
+				if (mode === "cancel") {
+					await expect(next).rejects.toMatchObject({ code: "PUBLICATION_CANCELLED" });
+				} else {
+					await expect(next).resolves.toMatchObject({
+						progressed: mode === "retry" || mode === "twice",
+					});
+				}
+				expect(failures).toHaveLength(mode === "twice" ? 2 : mode === "exhaustion" ? 3 : 1);
+				expect(failures[0]).toMatchObject({
+					code: mode === "non-busy" ? "P2002" : "P1008",
+					...(mode === "non-busy"
+						? {}
+						: { meta: { driverAdapterError: { cause: { originalCode: "SQLITE_BUSY" } } } }),
+				});
+				expect(cursors).toEqual([0, 1]);
+				expect(stageAttempts).toBe(
+					mode === "retry" ? 3 : mode === "twice" || mode === "exhaustion" ? 4 : 2,
+				);
+				const progressed = mode === "retry" || mode === "twice";
+				expect(await prisma.jellyfinEpisodeObservationStage.count()).toBe(progressed ? 2 : 1);
+				expect(
+					await prisma.providerObservationUnit.findFirstOrThrow({ where: { phase: "collect" } }),
+				).toMatchObject({
+					state: progressed ? "complete" : mode === "cancel" ? "pending" : "failed",
+					cursor: progressed ? 2 : 1,
+					completedPages: progressed ? 2 : 1,
+					attemptCount: progressed || mode === "cancel" ? 0 : 1,
+					claimToken: null,
+				});
+				expect(await prisma.jellyfinEpisodeCache.findMany()).toEqual(published);
+			} finally {
+				if (writerHeld) writer.exec("ROLLBACK");
+				writer.close();
+			}
+		},
+	);
+});
 
 describe("joined failure recovery", { timeout: 30_000 }, () => {
 	it.each([false, true])(

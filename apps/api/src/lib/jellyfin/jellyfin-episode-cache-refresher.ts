@@ -1381,19 +1381,21 @@ export function createJellyfinEpisodeWorkItemRunner(
 					return await observeWorkStage(
 						"page-stage",
 						async () =>
-							await stageJellyfinEpisodePage(
-								context.prisma,
-								claim,
-								scope,
-								page,
-								now,
-								(reason: JellyfinEpisodePageRejectionReason) => {
-									if (typeof context.log.warn !== "function") return;
-									context.log.warn(
-										{ category: "episode-page-rejected", reason },
-										"Jellyfin episode page unavailable",
-									);
-								},
+							await retryJellyfinEpisodePageStaging(context, () =>
+								stageJellyfinEpisodePage(
+									context.prisma,
+									claim,
+									scope,
+									page,
+									now,
+									(reason: JellyfinEpisodePageRejectionReason) => {
+										if (typeof context.log.warn !== "function") return;
+										context.log.warn(
+											{ category: "episode-page-rejected", reason },
+											"Jellyfin episode page unavailable",
+										);
+									},
+								),
 							),
 					);
 				} finally {
@@ -1581,6 +1583,36 @@ async function settleJellyfinEpisodeUnitFailure(
 		context,
 		async () => await failObservationUnit(context.prisma, input),
 	);
+}
+
+async function retryJellyfinEpisodePageStaging<T>(
+	context: Pick<JellyfinEpisodePublicationContext, "signal" | "log">,
+	operation: () => Promise<T>,
+): Promise<T> {
+	// Only a known BUSY rollback retries the identical atomic page transaction.
+	// Its claim/identity fences run again; provider collection is not repeated.
+	for (let attempt = 0; ; attempt++) {
+		checkEpisodeCancellation(context.signal);
+		try {
+			return await operation();
+		} catch (error) {
+			const diagnostics = stageFailureDiagnostics(error);
+			if (
+				attempt >= 2 ||
+				diagnostics.databaseCode !== "P1008" ||
+				!["SQLITE_BUSY", "SQLITE_BUSY_SNAPSHOT"].includes(diagnostics.sqliteCode ?? "")
+			)
+				throw error;
+			try {
+				context.log.info(
+					{ category: "jellyfin-episode-stage-retry", attempt: attempt + 1, ...diagnostics },
+					"Retrying an atomic Jellyfin episode stage after database contention",
+				);
+			} catch {
+				// Diagnostics cannot alter retry, cancellation or publication authority.
+			}
+		}
+	}
 }
 
 async function retryJellyfinEpisodeFailureSettlement<T>(
