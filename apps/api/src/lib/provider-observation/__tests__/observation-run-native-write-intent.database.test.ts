@@ -59,19 +59,76 @@ async function fixture() {
 		onUnavailable: (event) => losses.push(event.reason),
 	});
 	let actualNative: Database.Database | undefined;
+	const nativeHandles = new Set<Database.Database>();
+	let overlapArmed = false,
+		guardPaused = false,
+		reservationReleased = false,
+		guardReadInTransaction = false;
+	let signalGuardPaused!: () => void, resumeGuard!: () => void, signalGuardRead!: () => void;
+	const paused = new Promise<void>((resolve) => {
+		signalGuardPaused = resolve;
+	});
+	const resume = new Promise<void>((resolve) => {
+		resumeGuard = resolve;
+	});
+	const guardRead = new Promise<void>((resolve) => {
+		signalGuardRead = resolve;
+	});
+	const driverHooks: Array<ReturnType<typeof vi.spyOn>> = [];
 	const connect = PrismaBetterSqlite3.prototype.connect;
 	const connectHook = vi
 		.spyOn(PrismaBetterSqlite3.prototype, "connect")
 		.mockImplementation(async function (this: PrismaBetterSqlite3) {
 			const driver = await connect.call(this),
 				handle = Reflect.get(driver, "client");
-			if (
-				!(handle instanceof Database) ||
-				handle.name !== path ||
-				(actualNative && actualNative !== handle)
-			)
+			if (!(handle instanceof Database) || handle.name !== path)
 				throw Error("Native observation handle unconfirmed");
-			actualNative = handle;
+			actualNative ??= handle;
+			nativeHandles.add(handle);
+			const queryRaw = driver.queryRaw.bind(driver);
+			driverHooks.push(
+				vi.spyOn(driver, "queryRaw").mockImplementation(async (query) => {
+					if (
+						overlapArmed &&
+						!guardPaused &&
+						handle === actualNative &&
+						!handle.inTransaction &&
+						query.sql.includes("FROM RestoreRuntimeControl")
+					) {
+						guardPaused = true;
+						signalGuardPaused();
+						await resume;
+						const result = await queryRaw(query);
+						guardReadInTransaction = handle.inTransaction;
+						writer.prepare("UPDATE NativeObservationProbe SET value=value+1 WHERE id=1").run();
+						signalGuardRead();
+						return result;
+					}
+					return queryRaw(query);
+				}),
+			);
+			const startTransaction = driver.startTransaction.bind(driver);
+			driverHooks.push(
+				vi.spyOn(driver, "startTransaction").mockImplementation(async (...args) => {
+					const transaction = await startTransaction(...args);
+					const executeRaw = transaction.executeRaw.bind(transaction);
+					driverHooks.push(
+						vi.spyOn(transaction, "executeRaw").mockImplementation(async (query) => {
+							if (
+								overlapArmed &&
+								!reservationReleased &&
+								query.sql === 'UPDATE "RestoreRuntimeControl" SET "id"="id" WHERE 0'
+							) {
+								reservationReleased = true;
+								resumeGuard();
+								await guardRead;
+							}
+							return executeRaw(query);
+						}),
+					);
+					return transaction;
+				}),
+			);
 			return driver;
 		});
 	const client = createRuntimePrismaClient(runtime);
@@ -113,6 +170,14 @@ async function fixture() {
 		prisma: client.prisma,
 		writer,
 		losses,
+		async startOverlappingRead() {
+			overlapArmed = true;
+			const completion = runtime.runOperation(() => client.prisma.user.count());
+			void completion.catch(() => undefined);
+			await paused;
+			return { completion };
+		},
+		overlapObservation: () => ({ guardPaused, reservationReleased, guardReadInTransaction }),
 		injectCommit() {
 			const prepare = Database.prototype.prepare;
 			hook = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
@@ -122,7 +187,7 @@ async function fixture() {
 				const statement = prepare.call(this, sql);
 				if (
 					!injected &&
-					this === actualNative &&
+					nativeHandles.has(this) &&
 					this.inTransaction &&
 					sql.includes("FROM RestoreRuntimeControl")
 				) {
@@ -148,9 +213,11 @@ async function fixture() {
 		},
 		observation: () => ({ actualNativeBound: Boolean(actualNative), injected, committed, blocked }),
 		async close() {
+			resumeGuard();
 			hook?.mockRestore();
 			await client.close();
 			await runtime.close();
+			for (const driverHook of driverHooks.reverse()) driverHook.mockRestore();
 			connectHook.mockRestore();
 			writer.close();
 			const current = lstatSync(directory);
@@ -168,6 +235,48 @@ async function fixture() {
 }
 
 describe("native observation transaction write admission", () => {
+	it("claims once when an ordinary guard read overlaps writer reservation", async () => {
+		const f = await fixture();
+		try {
+			const run = await f.runtime.runOperation(() =>
+				createOrLoadObservationRun(f.prisma, { authority, units }),
+			);
+			const { completion } = await f.startOverlappingRead();
+			const result = await f.runtime
+				.runOperation(() => claimObservationUnit(f.prisma, { runId: run.id, now: new Date() }))
+				.then(
+					(claim) => ({ claimed: Boolean(claim), code: "none" }),
+					(error) => ({
+						claimed: false,
+						code: error?.code === "SQLITE_BUSY_SNAPSHOT" ? error.code : "other",
+					}),
+				);
+			await expect(completion).resolves.toBe(1);
+			expect(f.overlapObservation()).toMatchObject({
+				guardPaused: true,
+				reservationReleased: true,
+			});
+			expect(result).toEqual({ claimed: true, code: "none" });
+			expect(f.overlapObservation().guardReadInTransaction).toBe(false);
+			expect(
+				await f.runtime.runOperation(() =>
+					f.prisma.providerObservationUnit.findMany({
+						where: { runId: run.id },
+						select: { state: true, attemptCount: true },
+					}),
+				),
+			).toEqual([{ state: "running", attemptCount: 0 }]);
+			await expect(
+				f.runtime.runOperation(() =>
+					claimObservationUnit(f.prisma, { runId: run.id, now: new Date() }),
+				),
+			).resolves.toBeNull();
+			expect(f.losses).toEqual([]);
+		} finally {
+			await f.close();
+		}
+	});
+
 	it.each(["run-open", "unit-claim", "complete", "fail", "invalidate", "recover"] as const)(
 		"reserves the writer before guard reads for %s",
 		async (boundary) => {

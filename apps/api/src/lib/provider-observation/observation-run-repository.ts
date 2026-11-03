@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { ProviderObservationReasonCode } from "@arr/shared";
+import { withIsolatedRuntimePrismaTransaction } from "../backup/restore-runtime-client.js";
 import type {
 	Prisma,
 	PrismaClient,
@@ -34,7 +35,9 @@ type Db = PrismaClient;
 type Tx = Parameters<Db["$transaction"]>[0] extends (arg: infer T) => unknown ? T : never;
 
 function writeObservationTransaction<T>(prisma: Db, operation: (tx: Tx) => Promise<T>): Promise<T> {
-	return withSqliteTransactionWriteIntent(() => prisma.$transaction(operation));
+	return withSqliteTransactionWriteIntent(() =>
+		withIsolatedRuntimePrismaTransaction(prisma, operation),
+	);
 }
 
 function activeStateWhere() {
