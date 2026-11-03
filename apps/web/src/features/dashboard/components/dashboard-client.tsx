@@ -307,7 +307,7 @@ const DashboardSkeleton = () => (
 		<div className="space-y-4">
 			<PremiumSkeleton variant="line" className="h-8 w-48" />
 			<PremiumSkeleton variant="line" className="h-10 w-64" />
-			<PremiumSkeleton variant="line" className="h-4 w-96" />
+			<PremiumSkeleton variant="line" className="h-4 w-96 max-w-full" />
 		</div>
 
 		{/* Stats skeleton */}
