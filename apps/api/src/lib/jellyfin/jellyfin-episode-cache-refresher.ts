@@ -33,6 +33,7 @@ import {
 	ProviderIdentityGuardError,
 	type ProviderPublicationAuthority,
 	sameProviderPublicationAuthority,
+	withGuardedProviderCollection,
 	withGuardedProviderPublication,
 } from "../services/provider-identity-guard.js";
 import { UpstreamValidationError } from "../validation/parse-upstream.js";
@@ -467,7 +468,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 				| "unit-claim"
 				| "guarded-read"
 				| "provider-read"
-				| "publication-fence"
+				| "collection-fence"
 				| "page-stage"
 				| "run-progress",
 			operation: () => Promise<T>,
@@ -1332,42 +1333,41 @@ export function createJellyfinEpisodeWorkItemRunner(
 		try {
 			const page = await (async () => {
 				try {
-					return await observeWorkStage(
-						"guarded-read",
-						async () =>
-							await withGuardedProviderPublication(
-								context.prisma,
-								snapshot,
-								context.log,
-								async () => {
-									const readStartedAt = performance.now();
-									try {
-										return await observeWorkStage(
-											"provider-read",
-											async () =>
-												await deps.readPage(
-													{
-														baseUrl: snapshot.baseUrl,
-														apiKey: snapshot.apiKey,
-														httpAuthHeaders: snapshot.httpAuthHeaders,
-														userId: scope.userId,
-														libraryId: scope.libraryId,
-														startIndex: claim.cursor,
-														limit: pageSize,
-													},
-													client,
-													context.signal,
-												),
-										);
-									} finally {
-										providerReadMs = performance.now() - readStartedAt;
-									}
-								},
-								async (_tx, collectedPage) =>
-									await observeWorkStage("publication-fence", async () => collectedPage),
-								guardOptions,
-							),
-					);
+					return await observeWorkStage("guarded-read", async () => {
+						const collectedPage = await withGuardedProviderCollection(
+							context.prisma,
+							snapshot,
+							context.log,
+							async () => {
+								const readStartedAt = performance.now();
+								try {
+									return await observeWorkStage(
+										"provider-read",
+										async () =>
+											await deps.readPage(
+												{
+													baseUrl: snapshot.baseUrl,
+													apiKey: snapshot.apiKey,
+													httpAuthHeaders: snapshot.httpAuthHeaders,
+													userId: scope.userId,
+													libraryId: scope.libraryId,
+													startIndex: claim.cursor,
+													limit: pageSize,
+												},
+												client,
+												context.signal,
+											),
+									);
+								} finally {
+									providerReadMs = performance.now() - readStartedAt;
+								}
+							},
+							guardOptions,
+						);
+						// Completed collection admission grants no durable publication;
+						// the separately fenced page-stage below owns persistent writes.
+						return await observeWorkStage("collection-fence", async () => collectedPage);
+					});
 				} finally {
 					guardMs = performance.now() - guardStartedAt;
 				}

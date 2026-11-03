@@ -1,5 +1,8 @@
 import type { FastifyBaseLogger } from "fastify";
-import { withIsolatedRuntimePrismaTransaction } from "../backup/restore-runtime-client.js";
+import {
+	withIsolatedRuntimePrismaReadTransaction,
+	withIsolatedRuntimePrismaTransaction,
+} from "../backup/restore-runtime-client.js";
 import type { Prisma, PrismaClient, ServiceInstance } from "../prisma.js";
 import { invalidateObservationRunsInTransaction } from "../provider-observation/observation-run-repository.js";
 import { withSqliteTransactionWriteIntent } from "../sqlite-transaction-intent.js";
@@ -101,6 +104,7 @@ export type ProviderPublicationStage =
 	| "before-identity-read"
 	| "collection"
 	| "after-identity-read"
+	| "collection-read-admission"
 	| "publication-admission"
 	| "transaction-publisher-entered"
 	| "failure-recording";
@@ -116,6 +120,65 @@ export type ProviderIdentityGuardOptions = {
 	maxWait?: number;
 	timeout?: number;
 };
+
+/**
+ * Validate collected input without reserving the database writer for a no-op
+ * publication. This returns no publication authority: the caller must still
+ * stage/publish under its own current-generation and claim fences. The normal
+ * refresh-attempt admission must already have created its cleanup config.
+ */
+export async function withGuardedProviderCollection<TSnapshot>(
+	prisma: GuardPrisma,
+	instance: OwnedProviderPublicationSnapshot,
+	log: FastifyBaseLogger,
+	collect: () => Promise<TSnapshot>,
+	options: ProviderIdentityGuardOptions = {},
+): Promise<TSnapshot> {
+	assertVerified(instance);
+	assertPublicationNotCancelled(options.signal);
+	observePublicationStage(options, "before-identity-read");
+	const before = await observeIdentity(instance, log, options.signal);
+	assertPublicationNotCancelled(options.signal);
+	await ensureExpectedIdentity(prisma, instance, before, options);
+	assertPublicationNotCancelled(options.signal);
+	observePublicationStage(options, "collection");
+	const snapshot = await collect().catch((error: unknown) => {
+		assertPublicationNotCancelled(options.signal);
+		throw error;
+	});
+	assertPublicationNotCancelled(options.signal);
+	observePublicationStage(options, "after-identity-read");
+	const after = await observeIdentity(instance, log, options.signal);
+	assertPublicationNotCancelled(options.signal);
+	await ensureExpectedIdentity(prisma, instance, after, options);
+	assertPublicationNotCancelled(options.signal);
+	observePublicationStage(options, "collection-read-admission");
+	const matched = await withIsolatedRuntimePrismaReadTransaction(
+		prisma,
+		async (tx) => {
+			assertPublicationNotCancelled(options.signal);
+			const cleanup = await tx.libraryCleanupConfig.findUnique({
+				where: { userId: instance.userId },
+				select: { runClaimToken: true },
+			});
+			if (!cleanup || cleanup.runClaimToken !== (options.cleanupRunClaimToken ?? null))
+				return false;
+			const current = await tx.serviceInstance.findFirst({
+				where: providerPublicationPredicate(instance),
+				select: { id: true },
+			});
+			assertPublicationNotCancelled(options.signal);
+			return current !== null;
+		},
+		{ isolationLevel: "Serializable", ...transactionOptions(options) },
+	);
+	if (!matched)
+		throw new ProviderIdentityGuardError(
+			"PUBLICATION_SUPERSEDED",
+			"Provider collection was superseded by a service or cleanup change.",
+		);
+	return snapshot;
+}
 
 /**
  * Collect upstream data and publish it only while the exact owned, verified
