@@ -94,7 +94,11 @@ describe("guarded provider publication WAL write intent", { timeout: 30_000 }, (
 					});
 				}),
 			);
-			expect(result).toEqual({ matched: false });
+			expect(result).toEqual(
+				kind === "cleanup-lease"
+					? { matched: false, reason: "cleanup-authority-unavailable" }
+					: { matched: false },
+			);
 			expect(callbacks).toBe(0);
 			expect(snapshotProtectedRows(f)).toEqual(before);
 			expect(f.losses).toEqual([]);

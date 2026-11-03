@@ -865,8 +865,8 @@ export async function inspectRecoverableObservationRunForCacheAttempt(
 	};
 }
 
-/** Joined cancellation releases no retry budget and cannot authorize a new owner. */
-export async function releaseCancelledObservationUnitClaim(
+/** Joined owned work releases no retry budget and cannot authorize a new owner. */
+export async function releaseJoinedObservationUnitClaim(
 	prisma: Db,
 	input: {
 		claim: ObservationUnitClaim;
@@ -874,7 +874,7 @@ export async function releaseCancelledObservationUnitClaim(
 		attempt: { attemptedAt: Date; resultMarker: string };
 		cleanupRunClaimToken?: string;
 	},
-): Promise<boolean> {
+): Promise<boolean | "deferred"> {
 	const cacheType = input.authority.service === "PLEX" ? "plex_episode" : "jellyfin_episode";
 	if (!["PLEX", "JELLYFIN", "EMBY"].includes(input.authority.service)) return false;
 	const publication = await withCurrentProviderPublicationAuthority(
@@ -902,7 +902,17 @@ export async function releaseCancelledObservationUnitClaim(
 		},
 		{ cleanupRunClaimToken: input.cleanupRunClaimToken },
 	);
+	if (!publication.matched && publication.reason === "cleanup-authority-unavailable")
+		return "deferred";
 	return publication.matched && publication.value;
+}
+
+/** Compatibility entry point for the existing joined-cancellation callers. */
+export async function releaseCancelledObservationUnitClaim(
+	prisma: Db,
+	input: Parameters<typeof releaseJoinedObservationUnitClaim>[1],
+): Promise<boolean> {
+	return (await releaseJoinedObservationUnitClaim(prisma, input)) === true;
 }
 
 /** Release only the exact claim proven to be inherited by startup recovery. */

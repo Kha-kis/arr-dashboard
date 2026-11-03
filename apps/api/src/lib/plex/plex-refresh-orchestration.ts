@@ -7,7 +7,7 @@ import {
 	createOrLoadObservationRun,
 	failObservationUnit,
 	hasExhaustedObservationRunRetries,
-	releaseCancelledObservationUnitClaim,
+	releaseJoinedObservationUnitClaim,
 } from "../provider-observation/observation-run-repository.js";
 import {
 	buildObservationAuthorityKey,
@@ -48,6 +48,7 @@ import { plexConnectionFingerprint } from "./service-instance-fingerprint.js";
 export type PlexEpisodeWorkDiagnostics = {
 	stage:
 		| "not-started"
+		| "claim-recovery"
 		| "attempt-claim"
 		| "parent-read"
 		| "planning"
@@ -417,6 +418,22 @@ async function currentOwnedPlexInstance(context: OwnedPlexRefreshContext) {
 export function createPlexEpisodeWorkItemRunner(
 	deps: PlexEpisodeWorkItemRunnerDependencies = defaultPlexEpisodeWorkItemRunnerDependencies,
 ) {
+	type JoinedClaim = Parameters<typeof releaseJoinedObservationUnitClaim>[1];
+	// Only this factory's joined failed invocations can populate this state. A
+	// fresh invocation must settle that exact fenced claim before provider work.
+	const pendingClaims = new WeakMap<PrismaClient, Map<string, JoinedClaim>>();
+	const releasePendingClaim = async (
+		context: OwnedPlexRefreshContext,
+		pending: JoinedClaim,
+		claims: Map<string, JoinedClaim>,
+	) => {
+		const result = await releaseJoinedObservationUnitClaim(context.prisma, pending);
+		if (result === "deferred") return false;
+		// A definite refusal means the old attempt/claim is stale or completed;
+		// the helper's current authority and token checks never grant a takeover.
+		if (claims.get(context.instance.id) === pending) claims.delete(context.instance.id);
+		return true;
+	};
 	const runNextPlexEpisodeWorkItemCore = async (
 		context: OwnedPlexRefreshContext,
 		preclaimedAttempt: PlexCacheRefreshAttempt | undefined,
@@ -868,6 +885,14 @@ export function createPlexEpisodeWorkItemRunner(
 		return await finalizeIfComplete(await runProgress(context.prisma, run.id));
 	};
 	return async (context: OwnedPlexRefreshContext, preclaimedAttempt?: PlexCacheRefreshAttempt) => {
+		const rememberedClaims = pendingClaims.get(context.prisma);
+		const remembered = rememberedClaims?.get(context.instance.id);
+		if (remembered && rememberedClaims) {
+			if (context.diagnostics) context.diagnostics.stage = "claim-recovery";
+			if (!(await releasePendingClaim(context, remembered, rememberedClaims))) {
+				throw new Error("Joined claim recovery is temporarily blocked by cleanup authority.");
+			}
+		}
 		const cancellation: {
 			authority?: ProviderPublicationAuthority;
 			attempt?: PlexCacheRefreshAttempt;
@@ -876,19 +901,28 @@ export function createPlexEpisodeWorkItemRunner(
 		try {
 			return await runNextPlexEpisodeWorkItemCore(context, preclaimedAttempt, cancellation);
 		} catch (error) {
-			if (
-				error instanceof ProviderIdentityGuardError &&
-				error.code === "PUBLICATION_CANCELLED" &&
-				cancellation.claim &&
-				cancellation.authority &&
-				cancellation.attempt
-			)
-				await releaseCancelledObservationUnitClaim(context.prisma, {
+			if (cancellation.claim && cancellation.authority && cancellation.attempt) {
+				const pending: JoinedClaim = {
 					claim: cancellation.claim,
 					authority: cancellation.authority,
 					attempt: cancellation.attempt,
 					cleanupRunClaimToken: context.cleanupRunClaimToken,
-				});
+				};
+				const claims = pendingClaims.get(context.prisma) ?? new Map<string, JoinedClaim>();
+				pendingClaims.set(context.prisma, claims);
+				claims.set(context.instance.id, pending);
+				if (error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_CANCELLED") {
+					// Retain the prior cancellation failure/propagation behavior.
+					await releasePendingClaim(context, pending, claims);
+				} else {
+					try {
+						await releasePendingClaim(context, pending, claims);
+					} catch {
+						// Keep the cleanup intent, but preserve the original failure.
+						// The next existing invocation retries cleanup before new work.
+					}
+				}
+			}
 			throw error;
 		}
 	};

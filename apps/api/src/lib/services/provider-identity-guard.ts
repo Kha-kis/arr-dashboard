@@ -14,7 +14,9 @@ import {
 } from "./service-identity.js";
 
 type GuardPrisma = Pick<PrismaClient, "$transaction">;
-type PublicationAuthorityResult<T> = { matched: true; value: T } | { matched: false };
+type PublicationAuthorityResult<T> =
+	| { matched: true; value: T }
+	| { matched: false; reason?: "cleanup-authority-unavailable" };
 
 /** Exact stored authority from an ownership-scoped service row; contains no plaintext credentials. */
 export type ProviderPublicationAuthority = {
@@ -309,7 +311,7 @@ export async function withCurrentProviderPublicationAuthority<T>(
 				});
 				const expectedRunClaimToken = options.cleanupRunClaimToken ?? null;
 				if (!cleanupAuthority || cleanupAuthority.runClaimToken !== expectedRunClaimToken) {
-					return { matched: false };
+					return { matched: false, reason: "cleanup-authority-unavailable" };
 				}
 				if (postgresql) {
 					await tx.$queryRawUnsafe(

@@ -142,7 +142,9 @@ describe("cached Dashboard card read acquisition", { timeout: 20_000 }, () => {
 								itemCount: 1,
 								connectionGeneration: 1,
 								identityGeneration: 1,
-								contentFingerprint: fingerprintJellyfinLibraryRows([jellyfinRow]),
+								contentFingerprint: fingerprintJellyfinLibraryRows([
+									{ ...jellyfinRow, mediaType: "movie" },
+								]),
 								coverageReceipt: receipt("jellyfin"),
 							});
 				await f.plain.cacheRefreshStatus.create({

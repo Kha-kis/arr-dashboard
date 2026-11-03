@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import Database from "better-sqlite3";
 import Fastify from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -31,15 +32,15 @@ vi.mock("../../services/service-identity.js", async (importOriginal) => ({
 	readProviderIdentity: identityMocks.readProviderIdentity,
 }));
 
+import scheduler from "../../../plugins/plex-episode-cache-scheduler.js";
 import { SqliteSchemaFixture } from "../../__tests__/sqlite-schema-fixture.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
-import scheduler from "../../../plugins/plex-episode-cache-scheduler.js";
-import type { EpisodeRefreshSchedulerBridge } from "../../services/episode-refresh-scheduler-bridge.js";
 import {
 	claimObservationUnit,
 	createOrLoadObservationRun,
 	recoverAbandonedObservationRuns,
 } from "../../provider-observation/observation-run-repository.js";
+import type { EpisodeRefreshSchedulerBridge } from "../../services/episode-refresh-scheduler-bridge.js";
 import { reconcileInterruptedProviderCacheRefreshAttempts } from "../../services/provider-cache-status.js";
 import { withGuardedProviderPublication } from "../../services/provider-identity-guard.js";
 import { PlexAuthorityService } from "../plex-authority-service.js";
@@ -923,6 +924,227 @@ describe("plex episode refresh repository", { timeout: 30_000 }, () => {
 			await prisma.providerObservationRun.findUniqueOrThrow({ where: { id: run.id } }),
 		).toMatchObject({ state: "running", activeSlotKey: expect.any(String) });
 	});
+
+	it.each([
+		"retry",
+		"cleanup-deferred",
+		"replacement-token",
+		"replacement-attempt",
+		"changed-generation",
+		"completed-unit",
+		"before-claim",
+	] as const)(
+		"retries its joined failed claim before lease expiry with %s",
+		async (mode) => {
+			const prisma = await database();
+			const targets = Array.from({ length: 101 }, (_, index) => ({
+				instanceId: "plex-1",
+				generationId: "parent-1",
+				showTmdbId: index + 1,
+				sectionId: "shows",
+				sectionUuid: "shows-uuid",
+				mediaType: "series" as const,
+				tvdbId: index + 1,
+				ratingKey: `show-${index + 1}`,
+			}));
+			const seed = await completedFinalizerFixtureForTargets(prisma, {
+				targets,
+				stages: targets.map((target, index) => ({
+					unitOrdinal: Math.floor(index / 50),
+					showTmdbId: target.showTmdbId,
+					parentRatingKey: target.ratingKey,
+					seasonNumber: 1,
+					episodeNumber: 1,
+					ratingKey: `seed-${index + 1}`,
+					title: "seed",
+					watchCount: 1,
+				})),
+			});
+			await prisma.providerObservationRun.delete({ where: { id: seed.run.id } });
+			await prisma.cacheRefreshStatus.update({
+				where: { instanceId_cacheType: { instanceId: "plex-1", cacheType: "plex_episode" } },
+				data: { lastAttemptResult: "success", lastAttemptErrorMessage: null },
+			});
+			const instance = await prisma.serviceInstance.findUniqueOrThrow({ where: { id: "plex-1" } });
+			const writer = new Database(join(databases.at(-1)!.directory, "test.db"));
+			writer.pragma("journal_mode = WAL");
+			let writerHeld = false;
+			let failNextCollection = false;
+			const calls: string[] = [];
+			const diagnostics = {
+				stage: "not-started" as const,
+			} as import("../plex-refresh-orchestration.js").PlexEpisodeWorkDiagnostics;
+			const runner = createPlexEpisodeWorkItemRunner({
+				createParentAuthority: () => ({
+					readPositiveEpisodeParents: async () =>
+						({
+							available: true as const,
+							generationId: "parent-1",
+							connectionGeneration: 2,
+							identityGeneration: 3,
+							targets: targets.map(({ showTmdbId, ...target }) => ({
+								...target,
+								tmdbId: showTmdbId,
+							})),
+						}) as never,
+				}),
+				createClient: () =>
+					({
+						getEpisodes: async (ratingKey: string) => {
+							calls.push(ratingKey);
+							if (failNextCollection) {
+								failNextCollection = false;
+								writer.exec("BEGIN IMMEDIATE");
+								writerHeld = true;
+								throw new Error("synthetic-provider-read-failure");
+							}
+							return [
+								{
+									ratingKey: `episode-${ratingKey}`,
+									title: "episode",
+									seasonNumber: 1,
+									episodeNumber: 1,
+									viewCount: 1,
+								},
+							];
+						},
+					}) as never,
+			});
+			const context = {
+				prisma,
+				instance,
+				diagnostics,
+				encryptor: { decrypt: () => "plaintext" },
+				log: { error: () => undefined } as never,
+			};
+			try {
+				await runner(context);
+				const run = await prisma.providerObservationRun.findFirstOrThrow({
+					where: { instanceId: "plex-1", cacheType: "plex_episode" },
+				});
+				expect(run).toMatchObject({ completedUnits: 1, completedWork: 50 });
+				if (mode === "before-claim") {
+					const other = await claimObservationUnit(prisma, {
+						runId: run.id,
+						now: new Date(),
+						claimToken: "other-live-worker",
+					});
+					expect(other).not.toBeNull();
+					const controller = new AbortController();
+					controller.abort();
+					await expect(runner({ ...context, signal: controller.signal })).rejects.toMatchObject({
+						code: "PUBLICATION_CANCELLED",
+					});
+					await runner(context);
+					expect(
+						await prisma.providerObservationUnit.findUniqueOrThrow({
+							where: { id: other!.unitId },
+						}),
+					).toMatchObject({ state: "running", claimToken: "other-live-worker" });
+					expect(calls).toHaveLength(50);
+					return;
+				}
+				failNextCollection = true;
+				await expect(runner(context)).rejects.toMatchObject({ code: "P1008" });
+				expect(diagnostics.stage).toBe("failure-recording");
+				const reserved = await prisma.providerObservationUnit.findFirstOrThrow({
+					where: { runId: run.id, state: "running" },
+				});
+				expect(reserved.claimToken).not.toBeNull();
+				expect(reserved.nextAttemptAt!.getTime()).toBeGreaterThan(Date.now() + 50 * 60_000);
+				writer.exec("ROLLBACK");
+				writerHeld = false;
+				if (mode === "cleanup-deferred") {
+					await prisma.libraryCleanupConfig.update({
+						where: { userId: instance.userId },
+						data: { runClaimToken: "temporary-cleanup" },
+					});
+					// Defer before new provider work, retaining the exact reservation
+					// and cleanup intent until the temporary exclusion ends.
+					await expect(runner(context)).rejects.toThrow("temporarily blocked");
+					expect(
+						await prisma.providerObservationUnit.findUniqueOrThrow({ where: { id: reserved.id } }),
+					).toMatchObject({ state: "running", claimToken: reserved.claimToken });
+					expect(calls).toHaveLength(51);
+					await prisma.libraryCleanupConfig.update({
+						where: { userId: instance.userId },
+						data: { runClaimToken: null },
+					});
+				}
+				if (mode === "replacement-token") {
+					await prisma.providerObservationUnit.update({
+						where: { id: reserved.id },
+						data: { claimToken: "replacement-live-worker" },
+					});
+				} else if (mode === "replacement-attempt") {
+					await prisma.cacheRefreshStatus.update({
+						where: { instanceId_cacheType: { instanceId: "plex-1", cacheType: "plex_episode" } },
+						data: {
+							lastAttemptAt: new Date(),
+							lastAttemptResult: "in_progress:22222222-2222-4222-8222-222222222222",
+						},
+					});
+				} else if (mode === "changed-generation") {
+					await prisma.serviceInstance.update({
+						where: { id: "plex-1" },
+						data: { connectionGeneration: 3 },
+					});
+				} else if (mode === "completed-unit") {
+					expect(
+						await stagePlexEpisodeUnit(
+							prisma,
+							{
+								runId: run.id,
+								unitId: reserved.id,
+								claimToken: reserved.claimToken!,
+								authorityKey: run.authorityKey,
+								scopeKey: reserved.scopeKey,
+								scopePayload: reserved.scopePayload,
+								phase: "collect",
+								cursor: reserved.cursor,
+								expectedRawCount: reserved.expectedRawCount,
+								observedRawCount: reserved.observedRawCount,
+							},
+							planPlexEpisodeRefresh(targets).units[1]!,
+							{ complete: true, refreshedTargets: 50, rows: [] },
+						),
+					).toBe(true);
+				}
+				await runner(context);
+				const resumed = await prisma.providerObservationRun.findUniqueOrThrow({
+					where: { id: run.id },
+				});
+				if (mode === "retry" || mode === "cleanup-deferred") {
+					expect(resumed).toMatchObject({
+						completedUnits: 2,
+						completedWork: 100,
+						state: "running",
+					});
+					expect(await prisma.plexEpisodeObservationStage.count({ where: { runId: run.id } })).toBe(
+						100,
+					);
+				} else if (mode === "completed-unit") {
+					expect(resumed).toMatchObject({ completedUnits: 3, completedWork: 101 });
+					expect(calls).toHaveLength(52);
+				} else {
+					expect(
+						await prisma.providerObservationUnit.findUniqueOrThrow({ where: { id: reserved.id } }),
+					).toMatchObject({
+						state: "running",
+						claimToken:
+							mode === "replacement-token" ? "replacement-live-worker" : reserved.claimToken,
+					});
+					expect(resumed).toMatchObject({ completedUnits: 1, completedWork: 50 });
+					expect(calls).toHaveLength(51);
+				}
+				expect(calls.filter((key) => Number(key.slice(5)) <= 50)).toHaveLength(50);
+			} finally {
+				if (writerHeld) writer.exec("ROLLBACK");
+				writer.close();
+			}
+		},
+		30_000,
+	);
 
 	it("resumes a recovered future lease through the production runner factory without replacing staged work", async () => {
 		const prisma = await database();
