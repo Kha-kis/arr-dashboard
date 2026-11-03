@@ -7,6 +7,7 @@
 import type { SeerrAttentionItem, SeerrUpdateRequestPayload } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import { withIsolatedRuntimePrismaReadClient } from "../../lib/backup/restore-runtime-client.js";
 import { SeerrMutationOutcomeUnknownError } from "../../lib/errors.js";
 import { logSeerrAction, seerrActionFailureDetail } from "../../lib/seerr/seerr-action-logger.js";
 import { requireSeerrClient } from "../../lib/seerr/seerr-client.js";
@@ -63,7 +64,9 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 	app.get("/:instanceId", async (request) => {
 		const { instanceId } = validateRequest(instanceIdParams, request.params);
 		const query = validateRequest(listRequestsQuery, request.query);
-		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
+		const client = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			requireSeerrClient(app, request.currentUser!.id, instanceId, { prisma }),
+		);
 		const result = await client.getRequests(query);
 		return client.enrichRequestsWithMedia(result);
 	});
@@ -71,14 +74,18 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 	// GET /api/seerr/requests/:instanceId/count — Aggregated counts
 	app.get("/:instanceId/count", async (request) => {
 		const { instanceId } = validateRequest(instanceIdParams, request.params);
-		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
+		const client = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			requireSeerrClient(app, request.currentUser!.id, instanceId, { prisma }),
+		);
 		return client.getRequestCount();
 	});
 
 	// GET /api/seerr/requests/:instanceId/attention — Requests needing admin intervention
 	app.get("/:instanceId/attention", async (request) => {
 		const { instanceId } = validateRequest(instanceIdParams, request.params);
-		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
+		const client = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			requireSeerrClient(app, request.currentUser!.id, instanceId, { prisma }),
+		);
 		const now = Date.now();
 
 		const failedResult = await client.getRequests({
@@ -120,7 +127,9 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 	// GET /api/seerr/requests/:instanceId/:requestId — Single request (enriched)
 	app.get("/:instanceId/:requestId", async (request) => {
 		const { instanceId, requestId } = validateRequest(requestIdParams, request.params);
-		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
+		const client = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			requireSeerrClient(app, request.currentUser!.id, instanceId, { prisma }),
+		);
 		const seerrRequest = await client.getRequest(requestId);
 		const enriched = await client.enrichRequestsWithMedia({
 			pageInfo: { pages: 1, pageSize: 1, results: 1, page: 1 },

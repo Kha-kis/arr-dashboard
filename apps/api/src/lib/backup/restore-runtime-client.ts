@@ -203,7 +203,10 @@ export function createRuntimePrismaClient(
 			return publication;
 		},
 		readClient: async (operation, maxWait) => {
-			const lane = await acquireReadLane(maxWait ?? 2_000);
+			// Session validation enters this same pool before route code. Let a
+			// normal display burst queue behind bounded reads without adding lanes
+			// or relaxing any SQL, ticket, ownership or transaction deadline.
+			const lane = await acquireReadLane(maxWait ?? 10_000);
 			try {
 				if (registration.closed) throw new RestoreRuntimeAdmissionError();
 				lane.client ??= createGuardedPrismaClient(
