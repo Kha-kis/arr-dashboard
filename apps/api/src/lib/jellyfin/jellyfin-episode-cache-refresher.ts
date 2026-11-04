@@ -677,7 +677,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 			authority,
 		);
 		const discoverScopes = async () =>
-			await withGuardedProviderPublication(
+			await withGuardedProviderCollection(
 				context.prisma,
 				snapshot,
 				context.log,
@@ -694,7 +694,6 @@ export function createJellyfinEpisodeWorkItemRunner(
 					}
 					return discovered;
 				},
-				async (_tx, discovered) => discovered,
 				guardOptions,
 			);
 		const savedPlan = await findSavedJellyfinEpisodeV2Plan(

@@ -288,6 +288,120 @@ async function joinedFailureFixture(rejectedPage = false, v3 = false, code = "P1
 	};
 }
 
+describe("guarded episode scope discovery", () => {
+	it.each([false, true])(
+		"stages the first page without a discovery-only authority write (catalog: %s)",
+		async (catalog) => {
+			const { prisma, client, context } = await pageWorkerRunnerFixture(catalog);
+			const published = await prisma.jellyfinEpisodeCache.findMany();
+			let scopeCollected = false;
+			let runCreated = false;
+			let blockedWrites = 0;
+			const injected = prisma.$extends({
+				query: {
+					libraryCleanupConfig: {
+						async upsert({ args, query }) {
+							// Fail only the no-op publication after discovery. Actual attempt,
+							// run creation, staging, and failure recording remain real writes.
+							if (scopeCollected && !runCreated && blockedWrites === 0) {
+								blockedWrites++;
+								throw new Prisma.PrismaClientKnownRequestError("Synthetic SQLITE_BUSY", {
+									code: "P1008",
+									clientVersion: "test",
+								});
+							}
+							return await query(args);
+						},
+					},
+					providerObservationRun: {
+						async create({ args, query }) {
+							runCreated = true;
+							return await query(args);
+						},
+					},
+				},
+			});
+			const runner = createProductionJellyfinEpisodeWorkItemRunner({
+				createClient: () =>
+					({
+						...client,
+						getLibraries: async () => {
+							const libraries = await client.getLibraries();
+							scopeCollected = true;
+							return libraries;
+						},
+					}) as never,
+				readPage: async (input) => heldWorkerPage(input.startIndex),
+			});
+			expect(
+				await runner({ ...context, prisma: injected as unknown as typeof prisma }),
+			).toMatchObject({
+				state: "running",
+				progressed: true,
+			});
+			const run = await prisma.providerObservationRun.findFirstOrThrow({
+				where: { instanceId: "jellyfin-1", activeSlotKey: { not: null } },
+			});
+			expect(
+				await prisma.providerObservationUnit.findFirstOrThrow({
+					where: { runId: run.id, phase: "collect" },
+				}),
+			).toMatchObject({ cursor: 1, observedRawCount: 1, attemptCount: 0 });
+			expect(await prisma.jellyfinEpisodeObservationStage.count({ where: { runId: run.id } })).toBe(
+				1,
+			);
+			expect(
+				await prisma.cacheRefreshStatus.findUniqueOrThrow({
+					where: {
+						instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin_episode" },
+					},
+				}),
+			).toMatchObject({ lastAttemptErrorMessage: null });
+			expect(await prisma.jellyfinEpisodeCache.findMany()).toEqual(published);
+			expect(blockedWrites).toBe(0);
+		},
+	);
+
+	it.each(["owner", "connection", "cleanup"] as const)(
+		"rejects scopes when %s authority changes during discovery",
+		async (changed) => {
+			const { prisma, client, context } = await pageWorkerRunnerFixture();
+			const published = await prisma.jellyfinEpisodeCache.findMany();
+			await prisma.user.create({ data: { id: "user-2", username: "other-owner" } });
+			let pageReads = 0;
+			const runner = createProductionJellyfinEpisodeWorkItemRunner({
+				createClient: () =>
+					({
+						...client,
+						getLibraries: async () => {
+							if (changed === "cleanup") {
+								await prisma.libraryCleanupConfig.update({
+									where: { userId: "user-1" },
+									data: { runClaimToken: "replacement-cleanup-claim" },
+								});
+							} else {
+								await prisma.serviceInstance.update({
+									where: { id: "jellyfin-1" },
+									data: changed === "owner" ? { userId: "user-2" } : { connectionGeneration: 2 },
+								});
+							}
+							return await client.getLibraries();
+						},
+					}) as never,
+				readPage: async (input) => {
+					pageReads++;
+					return heldWorkerPage(input.startIndex);
+				},
+			});
+			expect(await runner(context)).toMatchObject({ progressed: false });
+			expect(await prisma.providerObservationRun.count()).toBe(0);
+			expect(await prisma.jellyfinEpisodeObservationStage.count()).toBe(0);
+			expect(await prisma.jellyfinEpisodeCache.findMany()).toEqual(published);
+			expect(pageReads).toBe(0);
+		},
+	);
+});
+
 describe("bounded native page-stage contention", { timeout: 30_000 }, () => {
 	it.each(["claim", "attempt", "identity"] as const)(
 		"does not release changed %s authority after a local BUSY rollback",
