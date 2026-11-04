@@ -1455,10 +1455,16 @@ export function createJellyfinEpisodeWorkItemRunner(
 			} catch {
 				// Diagnostics cannot prevent fenced settlement or replace its database error.
 			}
-			if (stagingPage && isJellyfinEpisodeStageBusy(error)) {
-				// Local contention after a joined read is not a provider outage. Release
-				// only this still-owned claim; a committed stage already cleared its
-				// token. The scheduler already bounds these dependency retries.
+			if (
+				stagingPage &&
+				(isJellyfinEpisodeStageBusy(error) ||
+					(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028"))
+			) {
+				// Local contention/transaction expiry after a joined read is not a
+				// provider outage. Do not immediately replay an ambiguous timeout:
+				// release only this still-owned claim, preserving its durable cursor.
+				// A committed stage already cleared the token and cannot be released.
+				// The next bounded scheduler attempt revalidates the actual cursor.
 				await releaseJoinedObservationUnitClaim(context.prisma, {
 					claim,
 					authority,

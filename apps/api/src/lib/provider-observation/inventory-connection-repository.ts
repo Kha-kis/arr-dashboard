@@ -25,6 +25,7 @@ import {
 } from "./native-inventory.js";
 
 export const MAX_CONNECTION_ITEMS = 100_000;
+const ARR_CATALOG_BATCH_SIZE = 1000;
 type NativeReadInput = Parameters<typeof readNativeInventoryPage>[1];
 type InventoryConnectionReadInput = NativeReadInput & { metadataFilter?: "missing-tmdb" };
 
@@ -232,7 +233,7 @@ async function readOwnedArrCatalog(prisma: PrismaClient, userId: string) {
 				data: true,
 			},
 			orderBy: { id: "asc" },
-			take: 200,
+			take: ARR_CATALOG_BATCH_SIZE,
 		});
 		const items: ArrConnectionItem[] = [];
 		for (const row of page) {
@@ -243,7 +244,7 @@ async function readOwnedArrCatalog(prisma: PrismaClient, userId: string) {
 		if (count > MAX_CONNECTION_ITEMS) return undefined;
 		for (const [key, values] of createArrConnectionIndex(items))
 			index.set(key, [...(index.get(key) ?? []), ...values]);
-		if (page.length < 200) return index;
+		if (page.length < ARR_CATALOG_BATCH_SIZE) return index;
 		afterId = page[page.length - 1]?.id;
 	}
 }

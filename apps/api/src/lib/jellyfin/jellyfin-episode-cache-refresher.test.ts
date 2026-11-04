@@ -44,6 +44,7 @@ const durable = vi.hoisted(() => ({
 	invalidateAttempt: vi.fn(),
 	claimUnit: vi.fn(),
 	failUnit: vi.fn(),
+	releaseUnit: vi.fn(),
 	exhausted: vi.fn(),
 	renew: vi.fn(),
 	deadline: vi.fn(),
@@ -115,6 +116,7 @@ vi.mock("../provider-observation/observation-run-repository.js", () => ({
 	),
 	claimObservationUnit: durable.claimUnit,
 	failObservationUnit: durable.failUnit,
+	releaseJoinedObservationUnitClaim: durable.releaseUnit,
 	getAutomaticObservationRenewalDeadline: durable.deadline,
 	hasExhaustedObservationRunRetries: durable.exhausted,
 	renewExhaustedObservationRun: durable.renew,
@@ -796,6 +798,19 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			};
 		});
 		durable.failUnit.mockReset();
+		durable.releaseUnit.mockReset();
+		durable.releaseUnit.mockImplementation(async (_prisma, input) => {
+			const unit = durable.units.find(
+				(candidate) =>
+					candidate.id === input.claim.unitId &&
+					candidate.state === "running" &&
+					candidate.claimToken === input.claim.claimToken,
+			);
+			if (!unit) return false;
+			unit.state = "pending";
+			unit.claimToken = null;
+			return true;
+		});
 		durable.failUnit.mockImplementation(async (_prisma, input) => {
 			const unit = durable.units.find((candidate) => candidate.id === input.claim.unitId);
 			if (!unit || !durable.run) return false;
@@ -920,15 +935,7 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 	it("stages the episode page through collection admission without a no-op write publication", async () => {
 		const state = ownedFixture("JELLYFIN");
 		const client = configureDurableRun(state);
-		durable.guard
-			.mockImplementationOnce(
-				async (_prisma, _snapshot, _log, collect, publish) =>
-					await publish({ transaction: true }, await collect()),
-			)
-			.mockImplementation(async (_prisma, _snapshot, _log, collect) => {
-				await collect();
-				throw new RestoreRuntimeAdmissionError();
-			});
+		durable.guard.mockRejectedValue(new RestoreRuntimeAdmissionError());
 
 		const result = await refreshOwnedJellyfinEpisodeCache({
 			prisma: state.prisma,
@@ -941,8 +948,8 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledOnce();
 		expect(durable.stage).toHaveBeenCalledOnce();
 		expect(durable.finalize).not.toHaveBeenCalled();
-		expect(durable.collectionGuard).toHaveBeenCalledOnce();
-		expect(durable.guard).toHaveBeenCalledOnce();
+		expect(durable.collectionGuard).toHaveBeenCalledTimes(2);
+		expect(durable.guard).not.toHaveBeenCalled();
 	});
 
 	it("fetches and stages exactly one page per invocation, then finalizes only after collect and verify", async () => {
@@ -2023,7 +2030,12 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			);
 			expect(JSON.stringify(info.mock.calls)).not.toContain("PRIVATE");
 			expect(durable.stage).toHaveBeenCalledTimes(attempts);
-			expect(durable.failUnit).toHaveBeenCalledOnce();
+			if (code === "P1008" || code === "P1008-snapshot") {
+				expect(durable.failUnit).not.toHaveBeenCalled();
+				expect(durable.units[0]).toMatchObject({ state: "pending", claimToken: null });
+			} else {
+				expect(durable.failUnit).toHaveBeenCalledOnce();
+			}
 			expect(durable.invalidate).not.toHaveBeenCalled();
 			expect(result.progressed).toBe(false);
 		},
@@ -2054,11 +2066,17 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		});
 		expect(warn).toHaveBeenCalledWith({ category }, "Jellyfin episode page unavailable");
 		expect(JSON.stringify(warn.mock.calls)).not.toContain("PRIVATE");
-		expect(durable.failUnit).toHaveBeenCalledWith(state.prisma, {
-			claim: expect.any(Object),
-			reasonCode: "provider-unavailable",
-			now: expect.any(Date),
-		});
+		if (code === "P2028") {
+			expect(durable.failUnit).not.toHaveBeenCalled();
+			expect(durable.units[0]).toMatchObject({ state: "pending", claimToken: null });
+			expect(durable.recordedFailureCount).toBe(0);
+		} else {
+			expect(durable.failUnit).toHaveBeenCalledWith(state.prisma, {
+				claim: expect.any(Object),
+				reasonCode: "provider-unavailable",
+				now: expect.any(Date),
+			});
+		}
 		expect(durable.invalidate).not.toHaveBeenCalled();
 		expect(result.progressed).toBe(false);
 	});
@@ -2395,7 +2413,7 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 				resultMarker: "in_progress:test",
 			},
 		};
-		durable.guard.mockRejectedValueOnce(
+		durable.collectionGuard.mockRejectedValueOnce(
 			new ProviderIdentityGuardError(
 				"IDENTITY_UNAVAILABLE",
 				"Provider identity could not be read; cache publication was not attempted.",
@@ -2421,12 +2439,14 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 	it("invalidates staged evidence when identity changes between scope discovery and a page read", async () => {
 		const state = ownedFixture("JELLYFIN");
 		const client = configureDurableRun(state);
-		durable.collectionGuard.mockRejectedValueOnce(
-			new ProviderIdentityGuardError(
-				"IDENTITY_MISMATCH",
-				"Provider identity changed; cache publication was not attempted.",
-			),
-		);
+		durable.collectionGuard
+			.mockImplementationOnce(async (_prisma, _snapshot, _log, collect) => await collect())
+			.mockRejectedValueOnce(
+				new ProviderIdentityGuardError(
+					"IDENTITY_MISMATCH",
+					"Provider identity changed; cache publication was not attempted.",
+				),
+			);
 
 		const result = await refreshOwnedJellyfinEpisodeCache({
 			prisma: state.prisma,
@@ -2447,17 +2467,12 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 	it("invalidates staged evidence when live identity changes immediately before final publication", async () => {
 		const state = ownedFixture("JELLYFIN");
 		const client = configureDurableRun(state, 0);
-		durable.guard
-			.mockImplementationOnce(
-				async (_prisma, _snapshot, _log, collect, publish) =>
-					await publish({ transaction: true }, await collect()),
-			)
-			.mockRejectedValueOnce(
-				new ProviderIdentityGuardError(
-					"IDENTITY_MISMATCH",
-					"Provider identity changed; cache publication was not attempted.",
-				),
-			);
+		durable.guard.mockRejectedValueOnce(
+			new ProviderIdentityGuardError(
+				"IDENTITY_MISMATCH",
+				"Provider identity changed; cache publication was not attempted.",
+			),
+		);
 		const context = {
 			prisma: state.prisma,
 			encryptor: { decrypt: vi.fn() },
@@ -2478,17 +2493,12 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 	it("retains a fully staged run when final identity proof is temporarily unavailable", async () => {
 		const state = ownedFixture("JELLYFIN");
 		configureDurableRun(state, 0);
-		durable.guard
-			.mockImplementationOnce(
-				async (_prisma, _snapshot, _log, collect, publish) =>
-					await publish({ transaction: true }, await collect()),
-			)
-			.mockRejectedValueOnce(
-				new ProviderIdentityGuardError(
-					"IDENTITY_UNAVAILABLE",
-					"Provider identity could not be read; cache publication was not attempted.",
-				),
-			);
+		durable.guard.mockRejectedValueOnce(
+			new ProviderIdentityGuardError(
+				"IDENTITY_UNAVAILABLE",
+				"Provider identity could not be read; cache publication was not attempted.",
+			),
+		);
 		const context = {
 			prisma: state.prisma,
 			encryptor: { decrypt: vi.fn() },

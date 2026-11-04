@@ -149,6 +149,242 @@ afterAll(async () => {
 });
 
 describe("owned inventory connections on populated SQLite", () => {
+	describe("complete owned ARR catalogue pagination", () => {
+		const input = {
+			userId: "catalogue-owner",
+			instanceId: "catalogue-plex",
+			domain: "library" as const,
+			now,
+		};
+		const log = pino({ level: "silent" });
+
+		beforeAll(async () => {
+			await prisma.user.create({ data: { id: input.userId, username: input.userId } });
+			const common = {
+				userId: input.userId,
+				label: "Synthetic",
+				baseUrl: "http://fixture.invalid",
+				encryptedApiKey: "cipher",
+				encryptionIv: "iv",
+			};
+			const instance = await prisma.serviceInstance.create({
+				data: {
+					...common,
+					id: input.instanceId,
+					service: "PLEX",
+					identityStatus: "VERIFIED",
+					expectedIdentity: input.instanceId,
+					identityKind: "PLEX_MACHINE_IDENTIFIER",
+					identityVerifiedAt: now,
+				},
+			});
+			await prisma.serviceInstance.createMany({
+				data: [
+					{ ...common, id: "catalogue-radarr", service: "RADARR" },
+					{ ...common, id: "catalogue-radarr-2", service: "RADARR" },
+					{ ...common, id: "catalogue-disabled", service: "RADARR", enabled: false },
+				],
+			});
+			await prisma.libraryCache.createMany({
+				data: Array.from({ length: 2302 }, (_, index) => ({
+					id: `catalogue-${String(index).padStart(6, "0")}`,
+					instanceId: index === 2001 ? "catalogue-radarr-2" : "catalogue-radarr",
+					arrItemId: index + 1,
+					itemType: "movie",
+					title: "Synthetic",
+					data: JSON.stringify({
+						tmdbId: index === 1000 ? 10001 : index === 2001 ? 10002 : 10001 + index,
+					}),
+				})),
+			});
+			await prisma.libraryCache.createMany({
+				data: ["foreign", "catalogue-disabled"].map((instanceId) => ({
+					instanceId,
+					arrItemId: 9999,
+					itemType: "movie",
+					title: "Synthetic",
+					data: JSON.stringify({ tmdbId: 12302 }),
+				})),
+			});
+			const attempt = await beginNativeInventoryAttempt(prisma, {
+				userId: input.userId,
+				instance,
+				domains: ["library"],
+				now,
+			});
+			if (attempt.status !== "acquired") throw new Error("fixture claim unavailable");
+			await prisma.$transaction((tx) =>
+				publishNativeInventoriesInTransaction(tx, {
+					userId: input.userId,
+					authority: attempt.authority,
+					attempt: attempt.attempt,
+					now,
+					snapshots: [
+						{
+							domain: "library",
+							scopeKeys: ["movies"],
+							rows: [10001, 10002, 10003, 12302].map((tmdb) => ({
+								nativeId: String(tmdb),
+								mediaType: "movie" as const,
+								libraryIds: ["movies"],
+								parentNativeId: null,
+								seasonNumber: null,
+								episodeNumber: null,
+								title: "Synthetic",
+								externalIds: { tmdb: [tmdb] },
+							})),
+						},
+					],
+				}),
+			);
+		});
+
+		it("reads all 2302 owned candidates in at most three queries without losing later matches or ambiguity", async () => {
+			const pages: number[] = [];
+			const observed = prisma.$extends({
+				query: {
+					libraryCache: {
+						async findMany({ args, query }) {
+							const result = await query(args);
+							pages.push(result.length);
+							return result;
+						},
+					},
+				},
+			});
+			const page = await readProviderInventoryConnections(
+				observed as unknown as PrismaClient,
+				input,
+				log,
+			);
+			expect(page).toMatchObject({
+				status: "available",
+				rows: [
+					{
+						nativeId: "10001",
+						connection: {
+							status: "ambiguous",
+							reason: "multiple-arr-items",
+							arrItems: [{ arrItemId: 1 }, { arrItemId: 1001 }],
+						},
+					},
+					{
+						nativeId: "10002",
+						connection: {
+							status: "ambiguous",
+							arrItems: [
+								{ instanceId: "catalogue-radarr", arrItemId: 2 },
+								{ instanceId: "catalogue-radarr-2", arrItemId: 2002 },
+							],
+						},
+					},
+					{ nativeId: "10003", connection: { status: "matched" } },
+					{
+						nativeId: "12302",
+						connection: {
+							status: "matched",
+							arrItems: [{ instanceId: "catalogue-radarr", arrItemId: 2302 }],
+						},
+					},
+				],
+			});
+			expect(pages.reduce((total, size) => total + size, 0)).toBe(2302);
+			expect(pages.length).toBeLessThanOrEqual(3);
+		});
+
+		it("keeps every connection unknown when a later catalogue page fails", async () => {
+			let reads = 0;
+			const failing = prisma.$extends({
+				query: {
+					libraryCache: {
+						async findMany({ args, query }) {
+							if (++reads === 2) throw new Error("synthetic later-page failure");
+							return query(args);
+						},
+					},
+				},
+			});
+			const page = await readProviderInventoryConnections(
+				failing as unknown as PrismaClient,
+				input,
+				log,
+			);
+			expect(reads).toBe(2);
+			expect(page.status).toBe("available");
+			if (page.status !== "available") throw new Error("published page unavailable");
+			expect(page.rows).toHaveLength(4);
+			for (const row of page.rows)
+				expect(row.connection).toEqual({
+					status: "unknown",
+					reason: "arr-catalog-unavailable",
+					arrItems: [],
+				});
+		});
+
+		it("rejects a native generation replaced during a later catalogue page", async () => {
+			const snapshot = await prisma.providerNativeInventorySnapshot.findUniqueOrThrow({
+				where: { instanceId_domain: { instanceId: input.instanceId, domain: "library" } },
+			});
+			let reads = 0;
+			const racing = prisma.$extends({
+				query: {
+					libraryCache: {
+						async findMany({ args, query }) {
+							const result = await query(args);
+							if (++reads === 2)
+								await prisma.providerNativeInventorySnapshot.update({
+									where: { id: snapshot.id },
+									data: { generationId: "catalogue-replaced" },
+								});
+							return result;
+						},
+					},
+				},
+			});
+			try {
+				expect(
+					await readProviderInventoryConnections(racing as unknown as PrismaClient, input, log),
+				).toEqual({ status: "unavailable", reason: "snapshot-changed" });
+				expect(reads).toBeGreaterThanOrEqual(2);
+			} finally {
+				await prisma.providerNativeInventorySnapshot.update({
+					where: { id: snapshot.id },
+					data: { generationId: snapshot.generationId },
+				});
+			}
+		});
+
+		it("keeps an oversized catalogue unknown instead of returning truncated matches", async () => {
+			try {
+				for (let start = 2302; start < 100001; start += 1000)
+					await prisma.libraryCache.createMany({
+						data: Array.from({ length: Math.min(1000, 100001 - start) }, (_, offset) => ({
+							id: `overflow-${start + offset}`,
+							instanceId: "catalogue-radarr",
+							arrItemId: start + offset + 1,
+							itemType: "movie",
+							title: "Synthetic",
+							data: "{}",
+						})),
+					});
+				const page = await readProviderInventoryConnections(prisma, input, log);
+				expect(page.status).toBe("available");
+				if (page.status !== "available") throw new Error("published page unavailable");
+				expect(page.rows).toHaveLength(4);
+				for (const row of page.rows)
+					expect(row.connection).toEqual({
+						status: "unknown",
+						reason: "arr-catalog-unavailable",
+						arrItems: [],
+					});
+			} finally {
+				await prisma.libraryCache.deleteMany({
+					where: { instanceId: "catalogue-radarr", id: { startsWith: "overflow-" } },
+				});
+			}
+		}, 30_000);
+	});
+
 	it("selects only referenced display parents beyond the first 200 rows without losing unknowns", async () => {
 		const instance = await prisma.serviceInstance.create({
 			data: {

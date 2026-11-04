@@ -626,6 +626,131 @@ describe("bounded native page-stage contention", { timeout: 30_000 }, () => {
 	);
 });
 
+describe("joined page transaction timeout deferral", { timeout: 30_000 }, () => {
+	it.each(["rollback", "commit-acknowledgement", "claim", "attempt", "identity", "owner"] as const)(
+		"preserves the durable cursor after a page transaction timeout (%s)",
+		async (mode) => {
+			const { prisma, client, context } = await pageWorkerRunnerFixture();
+			const published = await prisma.jellyfinEpisodeCache.findMany();
+			const cursors: number[] = [];
+			if (mode === "owner")
+				await prisma.user.create({
+					data: { id: "replacement-owner", username: "replacement-owner" },
+				});
+			let armed = false;
+			let stageWrites = 0;
+			let injectedTimeouts = 0;
+			const timeout = new Prisma.PrismaClientKnownRequestError("Synthetic transaction timeout", {
+				code: "P2028",
+				clientVersion: "test",
+			});
+			const injected = prisma.$extends({
+				query: {
+					jellyfinEpisodeObservationStage: {
+						async createMany({ args, query }) {
+							stageWrites++;
+							const result = await query(args);
+							if (armed && mode !== "commit-acknowledgement") throw timeout;
+							return result;
+						},
+					},
+				},
+			});
+			const intercepted = new Proxy(injected, {
+				get(target, property, receiver) {
+					if (property !== "$transaction") return Reflect.get(target, property, receiver);
+					const transaction = Reflect.get(target, property);
+					if (typeof transaction !== "function") throw new Error("Synthetic transaction missing");
+					return async (...args: unknown[]) => {
+						const priorWrites = stageWrites;
+						try {
+							const result = await Reflect.apply(transaction, target, args);
+							// Lose only the acknowledgement of the actual committed page.
+							if (armed && mode === "commit-acknowledgement" && stageWrites > priorWrites)
+								throw timeout;
+							return result;
+						} catch (error) {
+							if (error === timeout) {
+								injectedTimeouts++;
+								// Change authority only after the real transaction has settled.
+								if (mode === "claim")
+									await prisma.providerObservationUnit.updateMany({
+										where: { state: "running", phase: "collect" },
+										data: { claimToken: "replacement-current-claim" },
+									});
+								if (mode === "attempt")
+									await prisma.cacheRefreshStatus.updateMany({
+										where: { cacheType: "jellyfin_episode" },
+										data: { lastAttemptResult: "replacement-current-attempt" },
+									});
+								if (mode === "identity")
+									await prisma.serviceInstance.update({
+										where: { id: context.instance.id },
+										data: { connectionGeneration: { increment: 1 } },
+									});
+								if (mode === "owner")
+									await prisma.serviceInstance.update({
+										where: { id: context.instance.id },
+										data: { userId: "replacement-owner" },
+									});
+							}
+							throw error;
+						}
+					};
+				},
+			});
+			const current = { ...context, prisma: intercepted as unknown as typeof prisma };
+			const runner = createProductionJellyfinEpisodeWorkItemRunner({
+				createClient: () => client as never,
+				readPage: async (input) => {
+					cursors.push(input.startIndex);
+					return { ...heldWorkerPage(input.startIndex), totalRecordCount: 3 };
+				},
+			});
+			expect(await runner(current)).toMatchObject({ progressed: true });
+			armed = true;
+			expect(await runner({ ...current, now: new Date("2026-09-07T12:00:01.000Z") })).toMatchObject(
+				{ state: "running", progressed: false, retryableDependencyFailure: true },
+			);
+			// A timeout is never immediately replayed, even after a successful commit.
+			expect(injectedTimeouts).toBe(1);
+			expect(stageWrites).toBe(2);
+			expect(cursors).toEqual([0, 1]);
+			const collect = await prisma.providerObservationUnit.findFirstOrThrow({
+				where: { phase: "collect" },
+			});
+			const committed = mode === "commit-acknowledgement";
+			const changed =
+				mode === "claim" || mode === "attempt" || mode === "identity" || mode === "owner";
+			expect(collect).toMatchObject({
+				state: changed ? "running" : "pending",
+				claimToken:
+					mode === "claim" ? "replacement-current-claim" : changed ? expect.any(String) : null,
+				cursor: committed ? 2 : 1,
+				completedPages: committed ? 2 : 1,
+				attemptCount: 0,
+			});
+			expect(await prisma.jellyfinEpisodeObservationStage.count()).toBe(committed ? 2 : 1);
+			expect(await prisma.jellyfinEpisodeCache.findMany()).toEqual(published);
+			if (mode === "attempt")
+				expect(
+					await prisma.cacheRefreshStatus.findFirstOrThrow({
+						where: { cacheType: "jellyfin_episode" },
+					}),
+				).toMatchObject({ lastAttemptResult: "replacement-current-attempt" });
+			if (!changed) {
+				armed = false;
+				expect(
+					await runner({ ...current, now: new Date("2026-09-07T12:00:31.000Z") }),
+				).toMatchObject({ state: "running", progressed: true });
+				expect(cursors).toEqual([0, 1, committed ? 2 : 1]);
+				expect(await prisma.jellyfinEpisodeObservationStage.count()).toBe(committed ? 3 : 2);
+				expect(await prisma.jellyfinEpisodeCache.findMany()).toEqual(published);
+			}
+		},
+	);
+});
+
 describe("joined failure recovery", { timeout: 30_000 }, () => {
 	it.each([false, true])(
 		"recovers nonretryable settlement intent without provider replay after persistent failure=%s",
