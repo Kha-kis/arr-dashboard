@@ -23,6 +23,7 @@ import {
 import type { PrismaClient } from "../../prisma.js";
 import { createProviderPublicationAuthority } from "../../services/provider-identity-guard.js";
 import {
+	type ProviderInventoryReadTiming,
 	readCompleteNativeLibrary,
 	readProviderInventoryConnections,
 } from "../inventory-connection-repository.js";
@@ -932,6 +933,78 @@ describe("owned inventory connections on populated SQLite", () => {
 				},
 			],
 		});
+	});
+	it.each([false, true])(
+		"observes only generic native, catalogue and postcheck timing (observer throws=%s)",
+		async (throws) => {
+			const timings: ProviderInventoryReadTiming[] = [];
+			const page = await readProviderInventoryConnections(
+				prisma,
+				{ userId: "owner", instanceId: "plex", domain: "library", now },
+				pino({ level: "silent" }),
+				(timing) => {
+					timings.push(timing);
+					if (throws) throw new Error("private diagnostic failure");
+				},
+			);
+			expect(page).toMatchObject({
+				status: "available",
+				itemCount: 2,
+				rows: [
+					{
+						nativeId: "mapped",
+						connection: { status: "matched", arrItems: [{ instanceId: "radarr", arrItemId: 10 }] },
+					},
+					{ nativeId: "unmapped", connection: { status: "unknown" } },
+				],
+			});
+			expect(timings.map((timing) => [timing.stage, timing.outcome])).toEqual([
+				["native-page", "returned"],
+				["arr-catalog", "returned"],
+				["native-postcheck", "returned"],
+			]);
+			for (const timing of timings) {
+				expect(Object.keys(timing).sort()).toEqual(["elapsedMs", "outcome", "stage"]);
+				expect(Number.isSafeInteger(timing.elapsedMs)).toBe(true);
+				expect(timing.elapsedMs).toBeGreaterThanOrEqual(0);
+			}
+		},
+	);
+	it("preserves the original native read error when its diagnostic observer throws", async () => {
+		const failure = new Error("private native read failure");
+		const timings: ProviderInventoryReadTiming[] = [];
+		const transaction = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(failure);
+		try {
+			await expect(
+				readProviderInventoryConnections(
+					prisma,
+					{ userId: "owner", instanceId: "plex", domain: "library", now },
+					pino({ level: "silent" }),
+					(timing) => {
+						timings.push(timing);
+						throw new Error("private observer failure");
+					},
+				),
+			).rejects.toBe(failure);
+			expect(timings).toEqual([
+				{ stage: "native-page", outcome: "error", elapsedMs: expect.any(Number) },
+			]);
+		} finally {
+			transaction.mockRestore();
+		}
+	});
+	it("observes only the native read on an unavailable owned page", async () => {
+		const timings: ProviderInventoryReadTiming[] = [];
+		const page = await readProviderInventoryConnections(
+			prisma,
+			{ userId: "other", instanceId: "plex", domain: "library", now },
+			pino({ level: "silent" }),
+			(timing) => timings.push(timing),
+		);
+		expect(page).toEqual({ status: "unavailable", reason: "not-owned" });
+		expect(timings).toEqual([
+			{ stage: "native-page", outcome: "returned", elapsedMs: expect.any(Number) },
+		]);
 	});
 	it("joins only the owner's enabled ARR instance and retains unmapped media", async () => {
 		const page = await readProviderInventoryConnections(

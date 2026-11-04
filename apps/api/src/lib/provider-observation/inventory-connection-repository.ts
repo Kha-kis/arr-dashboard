@@ -29,6 +29,12 @@ const ARR_CATALOG_BATCH_SIZE = 1000;
 type NativeReadInput = Parameters<typeof readNativeInventoryPage>[1];
 type InventoryConnectionReadInput = NativeReadInput & { metadataFilter?: "missing-tmdb" };
 
+export type ProviderInventoryReadTiming = {
+	stage: "native-page" | "arr-catalog" | "native-postcheck";
+	outcome: "returned" | "error";
+	elapsedMs: number;
+};
+
 /** Bounded, generation-pinned read. Partial pages never become a complete catalog. */
 export async function readCompleteNativeLibrary(
 	prisma: PrismaClient,
@@ -253,11 +259,37 @@ export async function readProviderInventoryConnections(
 	prisma: PrismaClient,
 	input: InventoryConnectionReadInput,
 	log: FastifyBaseLogger,
+	observe?: (timing: ProviderInventoryReadTiming) => void,
 ) {
+	async function observeRead<T>(
+		stage: ProviderInventoryReadTiming["stage"],
+		read: () => Promise<T>,
+	) {
+		if (!observe) return read();
+		const startedAt = performance.now();
+		let outcome: ProviderInventoryReadTiming["outcome"] = "error";
+		try {
+			const value = await read();
+			outcome = "returned";
+			return value;
+		} finally {
+			try {
+				observe({
+					stage,
+					outcome,
+					elapsedMs: Math.max(0, Math.round(performance.now() - startedAt)),
+				});
+			} catch {
+				// Diagnostics cannot change the read's original value or error.
+			}
+		}
+	}
 	const now = input.now ?? new Date();
-	const page = input.metadataFilter
-		? await readMissingTmdbLibraryPage(prisma, { ...input, now })
-		: await readNativeInventoryDisplayPage(prisma, { ...input, now });
+	const page = await observeRead("native-page", async () =>
+		input.metadataFilter
+			? await readMissingTmdbLibraryPage(prisma, { ...input, now })
+			: await readNativeInventoryDisplayPage(prisma, { ...input, now }),
+	);
 	if (page.status !== "available") return page;
 	const parentNativeIds = [
 		...new Set(page.rows.flatMap((row) => (row.parentNativeId ? [row.parentNativeId] : []))),
@@ -327,7 +359,10 @@ export async function readProviderInventoryConnections(
 	}
 	let arrIndex: Awaited<ReturnType<typeof readOwnedArrCatalog>>;
 	try {
-		arrIndex = await readOwnedArrCatalog(prisma, input.userId);
+		arrIndex = await observeRead(
+			"arr-catalog",
+			async () => await readOwnedArrCatalog(prisma, input.userId),
+		);
 	} catch {
 		arrIndex = undefined;
 	}
@@ -363,13 +398,17 @@ export async function readProviderInventoryConnections(
 		};
 	});
 	// Do not attach relationships to a native page superseded during the ARR read.
-	const latest = await readNativeInventoryDisplayPage(prisma, {
-		...input,
-		now,
-		limit: 1,
-		afterNativeId: undefined,
-		expectedGenerationId: page.generationId,
-	});
+	const latest = await observeRead(
+		"native-postcheck",
+		async () =>
+			await readNativeInventoryDisplayPage(prisma, {
+				...input,
+				now,
+				limit: 1,
+				afterNativeId: undefined,
+				expectedGenerationId: page.generationId,
+			}),
+	);
 	if (latest.status !== "available") return latest;
 	const watchCoverage: ProviderNativeWatchCoverage | undefined = includeWatchCoverage
 		? await readOwnedNativeWatchCoverage(prisma, {

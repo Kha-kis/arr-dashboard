@@ -30,6 +30,24 @@ export const registerProviderInventoryRoutes: FastifyPluginCallback = (app, _opt
 								includeAttempt: true,
 							},
 							request.log,
+							(timing) => {
+								try {
+									// Explicit projection and unbound logger: no inherited user ID,
+									// request arguments, rows or errors enter diagnostic records.
+									app.log.info(
+										{
+											category: "provider-inventory-read-subphase",
+											domain: query.domain,
+											stage: timing.stage,
+											outcome: timing.outcome,
+											elapsedMs: timing.elapsedMs,
+										},
+										"Provider inventory read subphase",
+									);
+								} catch {
+									// Diagnostic failure cannot fail an otherwise valid read.
+								}
+							},
 						);
 					} finally {
 						repositoryEndedAt = performance.now();

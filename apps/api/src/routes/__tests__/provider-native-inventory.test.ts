@@ -33,7 +33,12 @@ beforeEach(async () => {
 			write(line) {
 				const event = JSON.parse(line) as Record<string, unknown>;
 				events.push(event);
-				if (rejectTimingLog && event.category === "provider-inventory-read-timing")
+				if (
+					rejectTimingLog &&
+					["provider-inventory-read-timing", "provider-inventory-read-subphase"].includes(
+						String(event.category),
+					)
+				)
 					throw new Error("Synthetic timing logger failure");
 			},
 		},
@@ -99,6 +104,7 @@ describe("owned native inventory route", () => {
 				includeAttempt: true,
 			},
 			expect.objectContaining({ child: expect.any(Function) }),
+			expect.any(Function),
 		);
 		expect(res.json()).toMatchObject({
 			itemCount: 24343,
@@ -147,6 +153,7 @@ describe("owned native inventory route", () => {
 				metadataFilter: "missing-tmdb",
 			}),
 			expect.objectContaining({ child: expect.any(Function) }),
+			expect.any(Function),
 		);
 		expect(res.json()).toMatchObject({ itemCount: 2, filteredItemCount: 1 });
 	});
@@ -258,11 +265,47 @@ describe("owned native inventory route", () => {
 				includeAttempt: true,
 			},
 			expect.objectContaining({ child: expect.any(Function) }),
+			expect.any(Function),
 		);
 	});
 });
 
 describe("inventory read timing", () => {
+	it.each([false, true])(
+		"projects repository subphase timing without inherited user or private callback fields (logger throws=%s)",
+		async (throws) => {
+			rejectTimingLog = throws;
+			mocks.read.mockImplementation(async (_prisma, _input, _log, observe) => {
+				observe({
+					stage: "arr-catalog",
+					outcome: "returned",
+					elapsedMs: 25,
+					privateValue: "synthetic-private",
+				});
+				return { status: "unavailable", reason: "no-publication" };
+			});
+			const res = await createInjectAuthenticated(app)("GET", path);
+			expect(res.statusCode).toBe(200);
+			expect(res.json()).toEqual({ status: "unavailable", reason: "no-publication" });
+			const event = events.find((event) => event.category === "provider-inventory-read-subphase");
+			expect(event).toMatchObject({
+				domain: "episode",
+				stage: "arr-catalog",
+				outcome: "returned",
+				elapsedMs: 25,
+			});
+			expect(Object.keys(event!).sort()).toEqual([
+				"category",
+				"domain",
+				"elapsedMs",
+				"level",
+				"msg",
+				"outcome",
+				"stage",
+			]);
+		},
+	);
+
 	it("separates admission, guarded repository and release without changing the response", async () => {
 		let clock = 0;
 		vi.spyOn(performance, "now").mockImplementation(() => clock);
