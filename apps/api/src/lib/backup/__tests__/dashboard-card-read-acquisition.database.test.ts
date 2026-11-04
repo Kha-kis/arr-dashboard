@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import { registerRecentlyAddedRoutes } from "../../../routes/jellyfin/recently-added-routes.js";
 import { registerOnDeckRoutes } from "../../../routes/plex/on-deck-routes.js";
+import { registerRecentlyAddedRoutes as registerPlexRecentlyAddedRoutes } from "../../../routes/plex/recently-added-routes.js";
 import {
 	closeScopedWriteFixtures,
 	createScopedWriteFixture,
@@ -79,6 +80,7 @@ describe("cached Dashboard card read acquisition", { timeout: 20_000 }, () => {
 				collections: "[]",
 				labels: "[]",
 				onDeck: true,
+				addedAt: observedAt,
 				connectionGeneration: 1,
 				identityGeneration: 1,
 			};
@@ -172,8 +174,13 @@ describe("cached Dashboard card read acquisition", { timeout: 20_000 }, () => {
 		});
 		await app.register(registerOnDeckRoutes, { prefix: "/plex-on-deck" });
 		await app.register(registerRecentlyAddedRoutes, { prefix: "/jellyfin-recently-added" });
+		await app.register(registerPlexRecentlyAddedRoutes, { prefix: "/plex-recently-added" });
 		await app.ready();
-		const urls = ["/plex-on-deck/", "/jellyfin-recently-added/?limit=1"];
+		const urls = [
+			"/plex-on-deck/",
+			"/jellyfin-recently-added/?limit=1",
+			"/plex-recently-added/?limit=1",
+		];
 		const read = (url: string) => f.runtime.runOperation(() => app.inject({ method: "GET", url }));
 		let release = () => {};
 		let publication: Promise<unknown> | undefined;
@@ -186,8 +193,8 @@ describe("cached Dashboard card read acquisition", { timeout: 20_000 }, () => {
 					expect.objectContaining({
 						tmdbId: 1,
 						title: "Committed movie",
-						instanceId: index === 0 ? "synthetic-plex" : "synthetic-jellyfin",
-						instanceName: index === 0 ? "Committed plex" : "Committed jellyfin",
+						instanceId: index === 1 ? "synthetic-jellyfin" : "synthetic-plex",
+						instanceName: index === 1 ? "Committed jellyfin" : "Committed plex",
 					}),
 				]);
 			}
@@ -224,7 +231,7 @@ describe("cached Dashboard card read acquisition", { timeout: 20_000 }, () => {
 				}),
 			]);
 			const responses = await Promise.all(urls.map(read));
-			expect(responses.map((response) => response.statusCode)).toEqual([200, 200]);
+			expect(responses.map((response) => response.statusCode)).toEqual([200, 200, 200]);
 			for (const [index, response] of responses.entries()) {
 				expect(response.json().items).toEqual(baseline[index]!.json().items);
 				expect(response.body).not.toMatch(/Uncommitted|Foreign|foreign-/);
