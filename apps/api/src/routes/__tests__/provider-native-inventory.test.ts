@@ -1,4 +1,5 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
+import pino from "pino";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	createInjectAuthenticated,
@@ -6,25 +7,50 @@ import {
 	setupAuthInjection,
 } from "./test-helpers.js";
 
-const mocks = vi.hoisted(() => ({ read: vi.fn() }));
+const mocks = vi.hoisted(() => ({ read: vi.fn(), withRead: vi.fn() }));
 vi.mock("../../lib/provider-observation/inventory-connection-repository.js", () => ({
 	readProviderInventoryConnections: mocks.read,
+}));
+vi.mock("../../lib/backup/restore-runtime-client.js", () => ({
+	withIsolatedRuntimePrismaReadClient: mocks.withRead,
 }));
 
 import { registerProviderInventoryRoutes } from "../library/provider-inventory-routes.js";
 
 let app: FastifyInstance;
+const events: Array<Record<string, unknown>> = [];
+let rejectTimingLog = false;
+const timingEvent = () =>
+	events.find((event) => event.category === "provider-inventory-read-timing");
 beforeEach(async () => {
 	vi.clearAllMocks();
-	app = Fastify();
+	events.length = 0;
+	rejectTimingLog = false;
+	mocks.withRead.mockImplementation(async (prisma, read) => await read(prisma));
+	const log: FastifyBaseLogger = pino(
+		{ base: null, timestamp: false },
+		{
+			write(line) {
+				const event = JSON.parse(line) as Record<string, unknown>;
+				events.push(event);
+				if (rejectTimingLog && event.category === "provider-inventory-read-timing")
+					throw new Error("Synthetic timing logger failure");
+			},
+		},
+	);
+	app = Fastify({ loggerInstance: log });
 	app.decorate("prisma", {} as never);
 	setupAuthInjection(app);
+	app.addHook("preHandler", async (request) => {
+		if (request.currentUser) request.log = request.log.child({ userId: request.currentUser.id });
+	});
 	registerTestErrorHandler(app);
 	await app.register(registerProviderInventoryRoutes);
 	await app.ready();
 });
 afterEach(async () => {
 	await app.close();
+	vi.restoreAllMocks();
 });
 
 const path = "/library/provider-inventory?instanceId=plex-1&domain=episode";
@@ -79,6 +105,7 @@ describe("owned native inventory route", () => {
 			observedAt: "2026-09-14T12:00:00.000Z",
 			rows: [{ title: "Unmatched episode", watch: { state: "watched" } }],
 		});
+		expect(timingEvent()).toMatchObject({ outcome: "available", domain: "episode" });
 	});
 	it("passes the bounded missing-TMDb filter through the owned library route", async () => {
 		mocks.read.mockResolvedValue({
@@ -157,12 +184,14 @@ describe("owned native inventory route", () => {
 		const res = await createInjectAuthenticated(app)("GET", path);
 		expect(res.statusCode).toBe(500);
 		expect(res.json()).not.toHaveProperty("rows");
+		expect(timingEvent()).toMatchObject({ outcome: "error" });
 	});
 	it("hides unowned instances without publishing an empty catalog", async () => {
 		mocks.read.mockResolvedValue({ status: "unavailable", reason: "not-owned" });
 		const res = await createInjectAuthenticated(app)("GET", path);
 		expect(res.statusCode).toBe(404);
 		expect(res.json()).not.toHaveProperty("itemCount");
+		expect(timingEvent()).toMatchObject({ outcome: "unavailable" });
 	});
 	it("returns generic scan progress without treating staged rows as published zero", async () => {
 		mocks.read.mockResolvedValue({
@@ -208,6 +237,7 @@ describe("owned native inventory route", () => {
 			const res = await createInjectAuthenticated(app)("GET", path + query);
 			expect(res.statusCode).toBe(400);
 			expect(mocks.read).not.toHaveBeenCalled();
+			expect(timingEvent()).toBeUndefined();
 		},
 	);
 	it("pins subsequent pages to the supplied generation", async () => {
@@ -229,5 +259,100 @@ describe("owned native inventory route", () => {
 			},
 			expect.objectContaining({ child: expect.any(Function) }),
 		);
+	});
+});
+
+describe("inventory read timing", () => {
+	it("separates admission, guarded repository and release without changing the response", async () => {
+		let clock = 0;
+		vi.spyOn(performance, "now").mockImplementation(() => clock);
+		mocks.withRead.mockImplementation(async (prisma, read) => {
+			clock = 20;
+			const result = await read(prisma);
+			clock = 75;
+			return result;
+		});
+		mocks.read.mockImplementation(async () => {
+			clock = 70;
+			return { status: "unavailable", reason: "no-publication" };
+		});
+		const res = await createInjectAuthenticated(app)("GET", path);
+		expect(res.statusCode).toBe(200);
+		expect(res.json()).toEqual({ status: "unavailable", reason: "no-publication" });
+		expect(timingEvent()).toMatchObject({
+			category: "provider-inventory-read-timing",
+			domain: "episode",
+			outcome: "unavailable",
+			readAdmissionMs: 20,
+			repositoryMs: 50,
+			releaseMs: 5,
+			postReadMs: 0,
+			totalMs: 75,
+		});
+		expect(Object.keys(timingEvent()!).sort()).toEqual(
+			[
+				"category",
+				"domain",
+				"level",
+				"msg",
+				"outcome",
+				"postReadMs",
+				"readAdmissionMs",
+				"releaseMs",
+				"repositoryMs",
+				"totalMs",
+			].sort(),
+		);
+	});
+
+	it.each([
+		{ phase: "admission", readAdmissionMs: 40, repositoryMs: 0, releaseMs: 0 },
+		{ phase: "repository", readAdmissionMs: 0, repositoryMs: 40, releaseMs: 0 },
+		{ phase: "release", readAdmissionMs: 0, repositoryMs: 0, releaseMs: 40 },
+	])("preserves a $phase failure without logging private details", async (expected) => {
+		let clock = 0;
+		vi.spyOn(performance, "now").mockImplementation(() => clock);
+		const failure = new Error("synthetic-private-payload-and-credential");
+		mocks.read.mockImplementation(async () => {
+			if (expected.phase === "repository") {
+				clock = 40;
+				throw failure;
+			}
+			return { status: "unavailable", reason: "no-publication" };
+		});
+		mocks.withRead.mockImplementation(async (prisma, read) => {
+			if (expected.phase === "admission") {
+				clock = 40;
+				throw failure;
+			}
+			const result = await read(prisma);
+			if (expected.phase === "release") {
+				clock = 40;
+				throw failure;
+			}
+			return result;
+		});
+		const res = await createInjectAuthenticated(app)("GET", path);
+		expect(res.statusCode).toBe(500);
+		expect(timingEvent()).toMatchObject({
+			outcome: "error",
+			totalMs: 40,
+			postReadMs: 0,
+			readAdmissionMs: expected.readAdmissionMs,
+			repositoryMs: expected.repositoryMs,
+			releaseMs: expected.releaseMs,
+		});
+		expect(JSON.stringify(timingEvent())).not.toContain(failure.message);
+		expect(JSON.stringify(timingEvent())).not.toContain("plex-1");
+		expect(JSON.stringify(timingEvent())).not.toContain("user-1");
+	});
+
+	it("keeps a valid response when the diagnostic logger throws", async () => {
+		rejectTimingLog = true;
+		mocks.read.mockResolvedValue({ status: "unavailable", reason: "no-publication" });
+		const res = await createInjectAuthenticated(app)("GET", path);
+		expect(res.statusCode).toBe(200);
+		expect(res.json()).toEqual({ status: "unavailable", reason: "no-publication" });
+		expect(timingEvent()).toMatchObject({ outcome: "unavailable" });
 	});
 });
