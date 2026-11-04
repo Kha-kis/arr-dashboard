@@ -1,6 +1,8 @@
-import type { FastifyBaseLogger } from "fastify";
+import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
+import fastifyPlugin from "fastify-plugin";
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
+import jellyfinEpisodeCacheSchedulerPlugin from "../../plugins/jellyfin-episode-cache-scheduler.js";
 import { RestoreRuntimeAdmissionError } from "../backup/restore-runtime-admission.js";
 import { Prisma, type PrismaClient, type ServiceInstance } from "../prisma.js";
 import {
@@ -8,11 +10,15 @@ import {
 	buildObservationAuthorityKey,
 	type ObservationRunAuthority,
 } from "../provider-observation/observation-run-types.js";
+import { KNOWN_JOBS } from "../scheduler-registry/job-definitions.js";
+import { SchedulerRegistry } from "../scheduler-registry/scheduler-registry.js";
+import type { FastifyWithEpisodeRefreshScheduler } from "../services/episode-refresh-scheduler-bridge.js";
 import { ProviderIdentityGuardError } from "../services/provider-identity-guard.js";
 import { UpstreamValidationError } from "../validation/parse-upstream.js";
 import type { JellyfinClient } from "./jellyfin-client.js";
 import {
 	classifyJellyfinEpisodeScopeFailure,
+	createJellyfinEpisodeWorkItemRunner,
 	logJellyfinEpisodePrePageFailure,
 	refreshOwnedJellyfinEpisodeCache,
 } from "./jellyfin-episode-cache-refresher.js";
@@ -2040,6 +2046,415 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			expect(result.progressed).toBe(false);
 		},
 	);
+
+	it.each(["P1008", "P2028"])(
+		"finishes a deferred joined release before resuming a page after %s",
+		async (code) => {
+			const state = ownedFixture("JELLYFIN");
+			const client = configureDurableRun(state, 2_001);
+			const run = createJellyfinEpisodeWorkItemRunner();
+			const context = {
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log,
+				cleanupRunClaimToken: "cleanup-first",
+			};
+			await run(context);
+			const failure = new Prisma.PrismaClientKnownRequestError("private database failure", {
+				code,
+				clientVersion: "test",
+				meta: { driverAdapterError: { cause: { originalCode: "SQLITE_BUSY" } } },
+			});
+			const stageAttempts = code === "P1008" ? 3 : 1;
+			for (let attempt = 0; attempt < stageAttempts; attempt++)
+				durable.stage.mockRejectedValueOnce(failure);
+			durable.releaseUnit.mockResolvedValueOnce("deferred");
+
+			await expect(run(context)).resolves.toMatchObject({
+				progressed: false,
+				retryableDependencyFailure: true,
+			});
+			expect(durable.units[0]).toMatchObject({
+				state: "running",
+				cursor: 1_000,
+				observedRawCount: 1_000,
+				claimToken: "claim-unit-0",
+			});
+			const claimCalls = durable.claimUnit.mock.calls.length;
+			const providerCalls = client.getEpisodeItemsPageWithCoverage.mock.calls.length;
+			const stageCalls = durable.stage.mock.calls.length;
+
+			await expect(
+				run({ ...context, cleanupRunClaimToken: "cleanup-current" }),
+			).resolves.toMatchObject({
+				progressed: false,
+			});
+			expect(durable.units[0]).toMatchObject({
+				state: "pending",
+				cursor: 1_000,
+				observedRawCount: 1_000,
+				claimToken: null,
+			});
+			expect(durable.releaseUnit).toHaveBeenCalledTimes(2);
+			expect(durable.releaseUnit.mock.calls[1]![1]).toEqual({
+				...durable.releaseUnit.mock.calls[0]![1],
+				cleanupRunClaimToken: "cleanup-current",
+			});
+			expect(durable.claimUnit).toHaveBeenCalledTimes(claimCalls);
+			expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledTimes(providerCalls);
+			expect(durable.stage).toHaveBeenCalledTimes(stageCalls);
+			expect(durable.failUnit).not.toHaveBeenCalled();
+			expect(durable.recordedFailureCount).toBe(0);
+
+			await expect(run(context)).resolves.toMatchObject({ progressed: true });
+			expect(durable.units[0]).toMatchObject({ cursor: 2_000, observedRawCount: 2_000 });
+			expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenLastCalledWith(
+				"user-1",
+				"library-1",
+				1_000,
+				2_000,
+			);
+			expect(durable.releaseUnit).toHaveBeenCalledTimes(2);
+		},
+	);
+
+	it.each(["deferred", "transient-throw", "unexpected-throw"])(
+		"retains a joined release obligation across %s without spending provider retries",
+		async (outcome) => {
+			const state = ownedFixture("JELLYFIN");
+			const client = configureDurableRun(state);
+			const run = createJellyfinEpisodeWorkItemRunner();
+			const context = {
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log,
+			};
+			const timeout = new Prisma.PrismaClientKnownRequestError("private transaction timeout", {
+				code: "P2028",
+				clientVersion: "test",
+			});
+			durable.stage.mockRejectedValueOnce(timeout);
+			const releaseError =
+				outcome === "transient-throw" ? timeout : new Error("private release error");
+			if (outcome === "deferred") durable.releaseUnit.mockResolvedValueOnce("deferred");
+			else durable.releaseUnit.mockRejectedValueOnce(releaseError);
+
+			if (outcome === "unexpected-throw") await expect(run(context)).rejects.toBe(releaseError);
+			else
+				await expect(run(context)).resolves.toMatchObject({
+					retryableDependencyFailure: true,
+					progressed: false,
+				});
+			durable.releaseUnit.mockResolvedValueOnce("deferred");
+			await expect(run(context)).resolves.toMatchObject({
+				retryableDependencyFailure: true,
+				progressed: false,
+			});
+			expect(durable.units[0]).toMatchObject({
+				state: "running",
+				claimToken: "claim-unit-0",
+				cursor: 0,
+			});
+			await expect(run(context)).resolves.toMatchObject({ progressed: false });
+			expect(durable.units[0]).toMatchObject({ state: "pending", claimToken: null, cursor: 0 });
+			expect(durable.releaseUnit).toHaveBeenCalledTimes(3);
+			expect(durable.claimUnit).toHaveBeenCalledOnce();
+			expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledOnce();
+			expect(durable.stage).toHaveBeenCalledOnce();
+			expect(durable.failUnit).not.toHaveBeenCalled();
+			expect(durable.recordedFailureCount).toBe(0);
+		},
+	);
+
+	it.each([
+		{ userId: "different-owner" },
+		{ expectedIdentity: "different-server" },
+		{ connectionGeneration: 8 },
+		{ identityGeneration: 3 },
+	])("discards a deferred release when its authority changes (%j)", async (change) => {
+		const state = ownedFixture("JELLYFIN");
+		const client = configureDurableRun(state);
+		const run = createJellyfinEpisodeWorkItemRunner();
+		const context = {
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+		};
+		durable.stage.mockRejectedValueOnce(
+			new Prisma.PrismaClientKnownRequestError("timeout", { code: "P2028", clientVersion: "test" }),
+		);
+		durable.releaseUnit.mockResolvedValueOnce("deferred");
+		await run(context);
+
+		await expect(
+			run({ ...context, instance: { ...state.instance, ...change } }),
+		).resolves.toMatchObject({ superseded: true, progressed: false });
+		expect(durable.releaseUnit).toHaveBeenCalledOnce();
+		expect(durable.claimUnit).toHaveBeenCalledOnce();
+		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledOnce();
+		expect(durable.units[0]).toMatchObject({
+			state: "running",
+			claimToken: "claim-unit-0",
+			cursor: 0,
+		});
+	});
+
+	it("retires a deferred release without touching a replacement claim", async () => {
+		const state = ownedFixture("JELLYFIN");
+		const client = configureDurableRun(state);
+		const run = createJellyfinEpisodeWorkItemRunner();
+		const context = {
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+		};
+		durable.stage.mockRejectedValueOnce(
+			new Prisma.PrismaClientKnownRequestError("timeout", { code: "P2028", clientVersion: "test" }),
+		);
+		durable.releaseUnit.mockResolvedValueOnce("deferred");
+		await run(context);
+		durable.units[0]!.claimToken = "replacement-owner-claim";
+
+		const recovered = await run(context);
+		expect(recovered).toMatchObject({ retryableDependencyFailure: true, progressed: false });
+		expect(recovered.superseded).not.toBe(true);
+		expect(durable.units[0]).toMatchObject({
+			state: "running",
+			claimToken: "replacement-owner-claim",
+			cursor: 0,
+		});
+		expect(durable.releaseUnit.mock.calls[1]![1].claim.claimToken).toBe("claim-unit-0");
+		expect(durable.claimUnit).toHaveBeenCalledOnce();
+		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledOnce();
+	});
+
+	it("resumes the committed cursor after a lost stage acknowledgement and deferred release", async () => {
+		const state = ownedFixture("JELLYFIN");
+		const client = configureDurableRun(state, 2_001);
+		const run = createJellyfinEpisodeWorkItemRunner();
+		const context = {
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+		};
+		const stage = durable.stage.getMockImplementation()!;
+		durable.stage.mockImplementationOnce(async (...args) => {
+			await stage(...args);
+			durable.units[0]!.claimToken = null;
+			throw new Prisma.PrismaClientKnownRequestError("lost acknowledgement", {
+				code: "P2028",
+				clientVersion: "test",
+			});
+		});
+		durable.releaseUnit.mockResolvedValueOnce("deferred");
+		await run(context);
+		const recovered = await run(context);
+		expect(recovered).toMatchObject({ retryableDependencyFailure: true, progressed: false });
+		expect(recovered.superseded).not.toBe(true);
+		expect(durable.units[0]).toMatchObject({
+			state: "pending",
+			cursor: 1_000,
+			observedRawCount: 1_000,
+			claimToken: null,
+		});
+		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledOnce();
+
+		await expect(run(context)).resolves.toMatchObject({ progressed: true });
+		expect(durable.units[0]).toMatchObject({ cursor: 2_000, observedRawCount: 2_000 });
+		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenLastCalledWith(
+			"user-1",
+			"library-1",
+			1_000,
+			2_000,
+		);
+		expect(durable.releaseUnit).toHaveBeenCalledTimes(2);
+	});
+
+	it("continues the real scheduler from the committed cursor after lost acknowledgement", async () => {
+		vi.useFakeTimers();
+		const app: FastifyInstance = Fastify({ logger: false });
+		try {
+			const state = ownedFixture("JELLYFIN");
+			const client = configureDurableRun(state, 2_001);
+			const stage = durable.stage.getMockImplementation()!;
+			durable.stage.mockImplementationOnce(async (...args) => {
+				await stage(...args);
+				durable.units[0]!.claimToken = null;
+				throw new Prisma.PrismaClientKnownRequestError("lost acknowledgement", {
+					code: "P2028",
+					clientVersion: "test",
+				});
+			});
+			durable.releaseUnit.mockResolvedValueOnce("deferred");
+			const registry = new SchedulerRegistry();
+			for (const definition of KNOWN_JOBS) registry.register(definition);
+			for (const [name, decorate] of [
+				["prisma", () => app.decorate("prisma", state.prisma)],
+				["security", () => app.decorate("encryptor", { decrypt: vi.fn() } as never)],
+				["scheduler-registry", () => app.decorate("schedulerRegistry", registry)],
+			] as const) {
+				await app.register(
+					fastifyPlugin(
+						async () => {
+							decorate();
+						},
+						{ name },
+					),
+				);
+			}
+			await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+			await app.ready();
+			const admitted = await (
+				app as FastifyWithEpisodeRefreshScheduler
+			).episodeRefreshScheduler.retry("jellyfin_episode", {
+				userId: state.instance.userId,
+				instanceId: state.instance.id,
+			});
+			expect(admitted.status).toBe("accepted");
+			if (admitted.status === "accepted") await admitted.backgroundTask;
+			expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledOnce();
+			expect(durable.units[0]).toMatchObject({ state: "pending", cursor: 1_000, claimToken: null });
+
+			await vi.advanceTimersByTimeAsync(30_000);
+			expect(durable.releaseUnit).toHaveBeenCalledTimes(2);
+			expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledOnce();
+			await vi.advanceTimersByTimeAsync(120_000);
+			expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledTimes(2);
+			expect(durable.units[0]).toMatchObject({ cursor: 2_000, observedRawCount: 2_000 });
+			expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenLastCalledWith(
+				"user-1",
+				"library-1",
+				1_000,
+				2_000,
+			);
+			expect(durable.failUnit).not.toHaveBeenCalled();
+		} finally {
+			await app.close();
+			vi.useRealTimers();
+		}
+	});
+
+	it("does not transfer deferred releases to a replacement database client", async () => {
+		const state = ownedFixture("JELLYFIN");
+		const client = configureDurableRun(state);
+		const run = createJellyfinEpisodeWorkItemRunner();
+		const context = {
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+		};
+		durable.stage.mockRejectedValueOnce(
+			new Prisma.PrismaClientKnownRequestError("timeout", { code: "P2028", clientVersion: "test" }),
+		);
+		durable.releaseUnit.mockResolvedValueOnce("deferred");
+		await run(context);
+
+		await run({ ...context, prisma: { ...state.prisma } as PrismaClient });
+		expect(durable.releaseUnit).toHaveBeenCalledOnce();
+		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledTimes(2);
+		await run(context);
+		expect(durable.releaseUnit).toHaveBeenCalledTimes(2);
+		expect(durable.units[0]).toMatchObject({ state: "pending", claimToken: null, cursor: 0 });
+	});
+
+	it("keeps a deferred release when a later invocation is cancelled before settlement", async () => {
+		const state = ownedFixture("JELLYFIN");
+		const client = configureDurableRun(state);
+		const run = createJellyfinEpisodeWorkItemRunner();
+		const context = {
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+		};
+		durable.stage.mockRejectedValueOnce(
+			new Prisma.PrismaClientKnownRequestError("timeout", { code: "P2028", clientVersion: "test" }),
+		);
+		durable.releaseUnit.mockResolvedValueOnce("deferred");
+		await run(context);
+		await expect(run({ ...context, signal: AbortSignal.abort() })).rejects.toMatchObject({
+			code: "PUBLICATION_CANCELLED",
+		});
+		expect(durable.releaseUnit).toHaveBeenCalledOnce();
+		await run(context);
+		expect(durable.units[0]).toMatchObject({ state: "pending", claimToken: null, cursor: 0 });
+		expect(durable.releaseUnit).toHaveBeenCalledTimes(2);
+		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledOnce();
+	});
+
+	it("does not let an older release completion erase a newer obligation", async () => {
+		const state = ownedFixture("JELLYFIN");
+		const client = configureDurableRun(state);
+		client.getUsers.mockResolvedValue([
+			{ id: "user-1", name: "Alice" },
+			{ id: "user-2", name: "Bob" },
+		]);
+		const run = createJellyfinEpisodeWorkItemRunner();
+		const context = {
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+		};
+		const readPage = client.getEpisodeItemsPageWithCoverage.getMockImplementation()!;
+		const deferred = () => {
+			let resolve!: () => void;
+			const promise = new Promise<void>((done) => {
+				resolve = done;
+			});
+			return { promise, resolve };
+		};
+		const readEntered = deferred();
+		const finishRead = deferred();
+		client.getEpisodeItemsPageWithCoverage.mockImplementationOnce(async (...args) => {
+			readEntered.resolve();
+			await finishRead.promise;
+			return await readPage(...args);
+		});
+		const timeout = new Prisma.PrismaClientKnownRequestError("timeout", {
+			code: "P2028",
+			clientVersion: "test",
+		});
+		durable.stage.mockRejectedValueOnce(timeout).mockRejectedValueOnce(timeout);
+		const release = durable.releaseUnit.getMockImplementation()!;
+		const releaseEntered = deferred();
+		const finishRelease = deferred();
+		durable.releaseUnit
+			.mockImplementationOnce(async (...args) => {
+				releaseEntered.resolve();
+				await finishRelease.promise;
+				return await release(...args);
+			})
+			.mockResolvedValueOnce("deferred");
+
+		const first = run(context);
+		await readEntered.promise;
+		const second = run(context);
+		await releaseEntered.promise;
+		finishRead.resolve();
+		await first;
+		expect(durable.units[0]).toMatchObject({ state: "running", claimToken: "claim-unit-0" });
+		finishRelease.resolve();
+		await second;
+		expect(durable.units[1]).toMatchObject({ state: "pending", claimToken: null });
+
+		await run(context);
+		expect(durable.units[0]).toMatchObject({ state: "pending", claimToken: null, cursor: 0 });
+		expect(durable.releaseUnit.mock.calls.map((call) => call[1].claim.unitId)).toEqual([
+			"unit-1",
+			"unit-0",
+			"unit-0",
+		]);
+		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledTimes(2);
+		expect(durable.stage).toHaveBeenCalledTimes(2);
+		expect(durable.failUnit).not.toHaveBeenCalled();
+	});
 
 	it.each([
 		["P2002", "episode-stage-conflict"],

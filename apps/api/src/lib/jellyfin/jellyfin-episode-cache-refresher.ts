@@ -189,6 +189,12 @@ type PendingEpisodeFailure = {
 	failure: Parameters<typeof failObservationUnit>[1];
 };
 
+type PendingEpisodeRelease = {
+	authorityFingerprint: string;
+	attempt: ProviderCacheRefreshAttempt;
+	claim: ObservationUnitClaim;
+};
+
 function episodeAuthorityFingerprint(authority: ProviderPublicationAuthority): string {
 	return createHash("sha256").update(JSON.stringify(authority)).digest("hex");
 }
@@ -413,6 +419,74 @@ export function createJellyfinEpisodeWorkItemRunner(
 	// No page/catalog payload, plaintext connection, timer or admitted operation
 	// survives a call. A replacement client uses normal startup recovery instead.
 	const pendingFailures = new WeakMap<PrismaClient, Map<string, PendingEpisodeFailure>>();
+	const pendingReleases = new WeakMap<PrismaClient, Map<string, PendingEpisodeRelease>>();
+	function forgetPendingRelease(
+		context: JellyfinEpisodePublicationContext,
+		pending: PendingEpisodeRelease,
+	): void {
+		const releases = pendingReleases.get(context.prisma);
+		// A late completion must not retire a newer obligation for this instance.
+		if (releases?.get(context.instance.id) !== pending) return;
+		releases.delete(context.instance.id);
+		if (releases.size === 0) pendingReleases.delete(context.prisma);
+	}
+	async function settlePendingRelease(
+		context: JellyfinEpisodePublicationContext,
+		pending: PendingEpisodeRelease,
+	): Promise<JellyfinEpisodeWorkProgress> {
+		checkEpisodeCancellation(context.signal);
+		const authority = createProviderPublicationAuthority(context.instance);
+		const logOutcome = (
+			outcome: "released" | "deferred" | "superseded" | "not-released" | "transient-unavailable",
+		) => {
+			try {
+				context.log.info(
+					{ category: "jellyfin-episode-claim-release", outcome },
+					"Jellyfin episode joined claim release",
+				);
+			} catch {
+				// Diagnostics cannot change the release obligation or its fences.
+			}
+		};
+		if (episodeAuthorityFingerprint(authority) !== pending.authorityFingerprint) {
+			forgetPendingRelease(context, pending);
+			logOutcome("superseded");
+			return { ...emptyEpisodeProgress(), superseded: true };
+		}
+		let released: boolean | "deferred";
+		try {
+			released = await releaseJoinedObservationUnitClaim(context.prisma, {
+				claim: pending.claim,
+				authority,
+				attempt: pending.attempt,
+				// Reacquire current cleanup permission; never retain the old token.
+				cleanupRunClaimToken: context.cleanupRunClaimToken,
+			});
+		} catch (error) {
+			if (!isTransientEpisodeDatabaseFailure(error)) throw error;
+			logOutcome("transient-unavailable");
+			return { ...emptyEpisodeProgress(), state: "running", retryableDependencyFailure: true };
+		}
+		if (released === "deferred") {
+			logOutcome("deferred");
+			return { ...emptyEpisodeProgress(), state: "running", retryableDependencyFailure: true };
+		}
+		forgetPendingRelease(context, pending);
+		logOutcome(released ? "released" : "not-released");
+		return released
+			? {
+					...(await runProgress(context.prisma, pending.claim.runId)),
+					retryableDependencyFailure: true,
+					progressed: false,
+				}
+			: {
+					...emptyEpisodeProgress(),
+					// False also covers a committed stage with a lost acknowledgement.
+					// Let the bounded scheduler revalidate the actual authority/cursor.
+					state: "running",
+					retryableDependencyFailure: true,
+				};
+	}
 	function forgetPending(
 		context: JellyfinEpisodePublicationContext,
 		pending: PendingEpisodeFailure,
@@ -1465,17 +1539,20 @@ export function createJellyfinEpisodeWorkItemRunner(
 				// release only this still-owned claim, preserving its durable cursor.
 				// A committed stage already cleared the token and cannot be released.
 				// The next bounded scheduler attempt revalidates the actual cursor.
-				await releaseJoinedObservationUnitClaim(context.prisma, {
-					claim,
-					authority,
-					attempt,
-					cleanupRunClaimToken: context.cleanupRunClaimToken,
-				});
-				return {
-					...(await runProgress(context.prisma, run.id)),
-					retryableDependencyFailure: true,
-					progressed: false,
+				const pending: PendingEpisodeRelease = {
+					authorityFingerprint: episodeAuthorityFingerprint(authority),
+					attempt: { ...attempt, attemptedAt: new Date(attempt.attemptedAt) },
+					// The repository releases by claim/authority fences, not scope data.
+					// Do not keep a serialized scope catalogue between invocations.
+					claim: { ...claim, scopePayload: null },
 				};
+				let releases = pendingReleases.get(context.prisma);
+				if (!releases) {
+					releases = new Map();
+					pendingReleases.set(context.prisma, releases);
+				}
+				releases.set(authority.id, pending);
+				return await settlePendingRelease(context, pending);
 			}
 			cancellation.failure = {
 				claim,
@@ -1529,6 +1606,8 @@ export function createJellyfinEpisodeWorkItemRunner(
 		const preRenewal = { settle: async () => true };
 		const cancellation: EpisodeClaimState = {};
 		try {
+			const pendingRelease = pendingReleases.get(context.prisma)?.get(context.instance.id);
+			if (pendingRelease) return await settlePendingRelease(context, pendingRelease);
 			const recovered = await recoverPendingFailure(context);
 			if (recovered) return recovered;
 			return await runNextJellyfinEpisodeWorkItemCore(
