@@ -9,7 +9,9 @@ import {
 	historyResponseV2Schema,
 } from "@arr/shared";
 import type { Encryptor } from "../auth/encryption.js";
+import { withIsolatedRuntimePrismaReadTransaction } from "../backup/restore-runtime-client.js";
 import { decodeHistoryNormalizedPayload } from "../dashboard/history-utils.js";
+import type { PrismaClientInstance } from "../prisma.js";
 import {
 	deriveHistoryRowAuthority,
 	type HistoryReadFilter,
@@ -48,13 +50,6 @@ type ReadTransaction = {
 		findMany(args: UnknownRecord): Promise<unknown>;
 		count(args: UnknownRecord): Promise<unknown>;
 	};
-};
-
-type ReadPrisma = {
-	$transaction(
-		operation: (transaction: ReadTransaction) => Promise<unknown>,
-		options: { isolationLevel: "Serializable"; timeout: number },
-	): Promise<unknown>;
 };
 
 export type HistoryReadRepositoryInput = {
@@ -586,11 +581,11 @@ export async function readHistoryRepository(
 	try {
 		if (!isRecord(input) || !safeIdentifier(input.ownerId) || !isRecord(input.query))
 			return { kind: "unavailable" };
-		const prisma = input.prisma as ReadPrisma;
-		const result = await prisma.$transaction((tx) => readInTransaction(tx, input), {
-			isolationLevel: "Serializable",
-			timeout: TRANSACTION_TIMEOUT_MS,
-		});
+		const result = await withIsolatedRuntimePrismaReadTransaction(
+			input.prisma as Pick<PrismaClientInstance, "$transaction">,
+			(tx) => readInTransaction(tx as unknown as ReadTransaction, input),
+			{ isolationLevel: "Serializable", timeout: TRANSACTION_TIMEOUT_MS },
+		);
 		return validateRepositoryResult(result);
 	} catch {
 		return { kind: "unavailable" };
