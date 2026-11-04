@@ -6,6 +6,7 @@ import {
 	withImportConnectionWriteGuard,
 } from "../lib/arr/import-operations/connection-guards.js";
 import { requireInstance } from "../lib/arr/instance-helpers.js";
+import { withIsolatedRuntimePrismaReadClient } from "../lib/backup/restore-runtime-client.js";
 import { AppValidationError, ConflictError } from "../lib/errors.js";
 import { clearDurableHistoryObservationState } from "../lib/history/history-observation-lifecycle.js";
 import { isHistoryServiceType } from "../lib/history/history-source-contract.js";
@@ -506,17 +507,19 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	}
 
 	app.get("/services", async (request, reply) => {
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId: request.currentUser!.id },
-			include: {
-				tags: {
-					include: {
-						tag: true,
+		const instances = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			prisma.serviceInstance.findMany({
+				where: { userId: request.currentUser!.id },
+				include: {
+					tags: {
+						include: {
+							tag: true,
+						},
 					},
 				},
-			},
-			orderBy: { createdAt: "asc" },
-		});
+				orderBy: { createdAt: "asc" },
+			}),
+		);
 
 		const formatted = instances.map(formatServiceInstance);
 		return reply.send({ services: formatted });

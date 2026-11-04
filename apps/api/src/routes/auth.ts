@@ -6,6 +6,7 @@ import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
 import { hashPassword, verifyPassword } from "../lib/auth/password.js";
 import { getSessionMetadata } from "../lib/auth/session-metadata.js";
 import { parseUserAgent } from "../lib/auth/user-agent-parser.js";
+import { withIsolatedRuntimePrismaReadClient } from "../lib/backup/restore-runtime-client.js";
 import {
 	createJellyfinMutationRepository,
 	MutationRepositoryError,
@@ -48,7 +49,9 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.get("/setup-required", async (_request, reply) => {
-		const userCount = await app.prisma.user.count();
+		const userCount = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			prisma.user.count(),
+		);
 		return reply.send({
 			required: userCount === 0,
 			passwordPolicy: app.config.PASSWORD_POLICY,
@@ -293,14 +296,16 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(401).send({ error: "Unauthorized" });
 		}
 
-		const user = await app.prisma.user.findUnique({
-			where: { id: request.currentUser.id },
-			select: {
-				encryptedTmdbApiKey: true,
-				encryptedTraktAccessToken: true,
-				hashedPassword: true,
-			},
-		});
+		const user = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			prisma.user.findUnique({
+				where: { id: request.currentUser!.id },
+				select: {
+					encryptedTmdbApiKey: true,
+					encryptedTraktAccessToken: true,
+					hashedPassword: true,
+				},
+			}),
+		);
 
 		const hasTmdbApiKey = !!user?.encryptedTmdbApiKey;
 		const hasTraktAccessToken = !!user?.encryptedTraktAccessToken;

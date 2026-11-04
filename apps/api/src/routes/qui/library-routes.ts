@@ -700,9 +700,11 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			return reply.send({ trackers: cached.meta });
 		}
 
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { userId, service: "QUI", enabled: true },
-		});
+		const instance = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			prisma.serviceInstance.findFirst({
+				where: { userId, service: "QUI", enabled: true },
+			}),
+		);
 		if (!instance) {
 			// No qui — empty map. Panel falls back to auto-derived
 			// abbreviations from hostnames.
