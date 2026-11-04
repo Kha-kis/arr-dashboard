@@ -43,6 +43,10 @@ export function buildServer({env}){
   },afterConsumption?10:1000);
   return{config:env,hasDecorator:()=>false,close:async()=>{
     if(process.env.TEST_COMBINED_MODE==='duplicate')await new Promise(()=>{});
+    if(process.env.TEST_COMBINED_MODE==='delayed-close'){
+      process.stdout.write(JSON.stringify({event:'draining'})+'\\n');
+      await new Promise(resolve=>setTimeout(resolve,6500));
+    }
     clearInterval(timer);
   },log:{info(){},error(){},warn(){}},notificationService:{notify:async()=>{}},listen:async()=>{
     if(process.env.TEST_COMBINED_MODE==='wait'){

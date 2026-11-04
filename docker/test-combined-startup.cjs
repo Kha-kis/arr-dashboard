@@ -39,6 +39,7 @@ fixture(
 	`import {readCombinedStartupChannel,publishCombinedStartupResult} from ${JSON.stringify(protocol)};
 if(process.env.TEST_REAL_LAUNCHER==='true'){await import(${JSON.stringify(join(source, "apps/api/src/launcher.ts"))});}else{
 process.stdout.write('TEST_NATIVE_API\\n');
+process.stdout.write('TEST_SHUTDOWN_GRACE:'+process.env.SHUTDOWN_GRACE+'\\n');
 if(!process.env.ARR_COMBINED_STARTUP_NONCE)process.exit(0);
 process.on('SIGTERM',()=>{process.stdout.write('TEST_API_CLOSED\\n');process.exit(Number(process.env.TEST_API_STOP_CODE??(process.env.TEST_STOP_FAILURE==='true'?3:0)))});
 if(process.env.TEST_STARTUP_FAILURE==='true')process.exit(1);
@@ -88,6 +89,76 @@ function run(extra = {}) {
 			(r.stderr.match(/TEST_NATIVE_PRELAUNCH/g) ?? []).length,
 	};
 }
+for (const [configured, expected] of [
+	[undefined, "90"],
+	["", "90"],
+	["abc", "90"],
+	["-1", "90"],
+	["2147484", "90"],
+	["999999999999999999999999999", "90"],
+	["00012", "12"],
+	["0000", "0"],
+])
+	test(`shared shutdown window normalizes safely: ${configured}`, () => {
+		const result = run({ SHUTDOWN_GRACE: configured });
+		assert.equal(result.code, 1, "deliberate web exit remains fatal");
+		assert(result.out.includes(`TEST_SHUTDOWN_GRACE:${expected}\n`));
+		assert(result.out.includes("TEST_API_CLOSED"));
+	});
+
+test("default shared shutdown window joins real API drain past six seconds", async () => {
+	const child = spawn("/bin/bash", [join(source, "docker/start-combined.sh")], {
+		env: environment({
+			SHUTDOWN_GRACE: undefined,
+			TEST_REAL_LAUNCHER: "true",
+			TEST_COMBINED_MODE: "delayed-close",
+			TEST_WEB_HOLD: "true",
+			NODE_OPTIONS: `--disable-warning=ExperimentalWarning --import=${join(source, "apps/api/src/lib/lifecycle/__tests__/fixtures/combined-startup-loader.mjs")}`,
+		}),
+		stdio: ["ignore", "pipe", "pipe"],
+	});
+	let output = "",
+		errors = "",
+		signalled = false,
+		expired = false;
+	child.stdout.on("data", (bytes) => {
+		output += bytes;
+		if (!signalled && output.includes("TEST_WEB_STARTED")) {
+			signalled = true;
+			child.kill("SIGTERM");
+		}
+	});
+	child.stderr.on("data", (bytes) => {
+		errors += bytes;
+	});
+	const timer = setTimeout(() => {
+		expired = true;
+		child.kill("SIGKILL");
+	}, 15_000);
+	const result = await new Promise((resolve, reject) => {
+		child.once("error", reject);
+		child.once("close", (code, signal) => resolve({ code, signal }));
+	});
+	clearTimeout(timer);
+	assert(!expired && signalled, `Controlled fixture did not reach signal boundary: ${errors}`);
+	assert.deepEqual(result, { code: 0, signal: null });
+	assert(output.includes('"event":"draining"'));
+	assert(output.includes("Services stopped gracefully"));
+	assert(!errors.includes("SIGKILL"));
+	const children = output
+		.split("\n")
+		.filter((line) => line.startsWith('{"event":"child"'))
+		.map((line) => JSON.parse(line));
+	assert.equal(children.length, 1);
+	for (const event of children) assert.throws(() => process.kill(event.pid, 0));
+	assert.deepEqual(
+		[...output.matchAll(/SUPERVISOR_WAIT_COMPLETED pid=\d+ status=(\d+)/g)].map((match) =>
+			Number(match[1]),
+		),
+		[0, 0],
+	);
+});
+
 test("combined shell delegates one startup to the API and publishes health/web only after handoff", () => {
 	const r = run();
 	assert(r.native > 0, `controlled fixture did not reach validation: ${r.errors}`);

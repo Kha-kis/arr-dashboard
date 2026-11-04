@@ -68,7 +68,7 @@ function terminateChild(child: ReturnType<typeof spawn>, signal: NodeJS.Signals)
 	// Leave the parent one second to join us. Reject values whose timer would
 	// overflow Node's signed 32-bit delay instead of forcing an immediate kill.
 	const grace =
-		Number.isSafeInteger(configuredGrace) && configuredGrace <= 2147483 ? configuredGrace : 7;
+		Number.isSafeInteger(configuredGrace) && configuredGrace <= 2147483 ? configuredGrace : 90;
 	const delay = Math.max(0, grace * 1000 - 1000);
 	combinedFailureTimer ??= setTimeout(() => {
 		if (serverProcess === child) {

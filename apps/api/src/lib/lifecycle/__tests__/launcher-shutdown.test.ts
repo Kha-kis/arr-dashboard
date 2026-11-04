@@ -181,6 +181,18 @@ it("reports a spawn error without admitting a replacement", async () => {
 });
 
 describe("configured child shutdown grace", () => {
+	it("joins an admitted publication lasting sixty seconds with the default grace", async () => {
+		vi.stubEnv("SHUTDOWN_GRACE", undefined);
+		await boot();
+		emit("SIGTERM");
+		await vi.advanceTimersByTimeAsync(60_001);
+		expect(boundary.forwarded).toEqual(["SIGTERM"]);
+		expect(exits).toEqual([]);
+		currentChild().emit("exit", 0, null);
+		expect(exits).toEqual([0]);
+		expect(boundary.spawns).toBe(1);
+	});
+
 	it("allows a clean child beyond five seconds without renewing the deadline on duplicate signals", async () => {
 		vi.stubEnv("SHUTDOWN_GRACE", "12");
 		await boot();
@@ -203,14 +215,14 @@ describe("configured child shutdown grace", () => {
 		{ configured: "12", deadlineMs: 11000 },
 		{ configured: "00012", deadlineMs: 11000 },
 		{ configured: "2147483", deadlineMs: 2147482000 },
-		{ configured: undefined, deadlineMs: 6000 },
-		{ configured: "", deadlineMs: 6000 },
-		{ configured: "-1", deadlineMs: 6000 },
-		{ configured: "1.5", deadlineMs: 6000 },
-		{ configured: " 12", deadlineMs: 6000 },
-		{ configured: "abc", deadlineMs: 6000 },
-		{ configured: "2147484", deadlineMs: 6000 },
-		{ configured: "999999999999999999999999999", deadlineMs: 6000 },
+		{ configured: undefined, deadlineMs: 89000 },
+		{ configured: "", deadlineMs: 89000 },
+		{ configured: "-1", deadlineMs: 89000 },
+		{ configured: "1.5", deadlineMs: 89000 },
+		{ configured: " 12", deadlineMs: 89000 },
+		{ configured: "abc", deadlineMs: 89000 },
+		{ configured: "2147484", deadlineMs: 89000 },
+		{ configured: "999999999999999999999999999", deadlineMs: 89000 },
 	])(
 		"forces a hung child once at the finite deadline: $configured",
 		async ({ configured, deadlineMs }) => {
@@ -286,7 +298,8 @@ const originalClose=app.close.bind(app);
 app.close=(...args)=>{state.closeCalls++;return originalClose(...args);};
 globalThis.fixtureApp=app;
 const realExit=process.exit.bind(process);
-const failSafe=setTimeout(()=>realExit(2),3500);failSafe.unref();
+const releaseDelay=Number(process.env.TEST_RELEASE_DELAY_MS??0);
+const failSafe=setTimeout(()=>realExit(2),releaseDelay+3500);failSafe.unref();
 process.exit=code=>{
  const settled=state.reads===1&&state.pending===0&&state.closeCalls===1&&state.teardown&&state.network===0&&state.forbidden===0;
  realExit(settled?code:2);
@@ -305,6 +318,7 @@ import {writeSync} from "node:fs";
 const launcherUrl=new URL("./src/launcher.ts",import.meta.url).href;
 const signal=process.env.TEST_SIGNAL;
 const closeFails=process.env.TEST_CLOSE_FAILURE;
+const releaseDelay=Number(process.env.TEST_RELEASE_DELAY_MS??0);
 const state={spawns:0,forwarded:0,ready:false,drainHeld:false,childSettled:false,childCode:null,forbidden:0};
 const apiCode=API_CODE_PLACEHOLDER;
 const realExit=process.exit.bind(process);
@@ -315,9 +329,9 @@ globalThis.fixtureSpawn=(command,args,options)=>{
  state.spawns++;
  const child=spawn(process.execPath,["--import",import.meta.resolve("tsx/esm"),"--input-type=module","--eval",apiCode],{
   stdio:["pipe","pipe","pipe"],
-  env:{NODE_ENV:"test",LAUNCHER_MANAGED:"true",TEST_CLOSE_FAILURE:closeFails,LOG_LEVEL:"fatal"}
+  env:{NODE_ENV:"test",LAUNCHER_MANAGED:"true",TEST_CLOSE_FAILURE:closeFails,TEST_RELEASE_DELAY_MS:String(releaseDelay),LOG_LEVEL:"fatal"}
  });
- const watchdog=setTimeout(()=>{state.forbidden++;child.stdin.end("release\n");child.kill("SIGTERM");},2500);watchdog.unref();
+ const watchdog=setTimeout(()=>{state.forbidden++;child.stdin.end("release\n");child.kill("SIGTERM");},releaseDelay+2500);watchdog.unref();
  child.once("exit",()=>clearTimeout(watchdog));
  const realKill=child.kill.bind(child);
  child.kill=s=>{state.forwarded++;return realKill(s);};
@@ -336,7 +350,7 @@ globalThis.fixtureSpawn=(command,args,options)=>{
     state.drainHeld=true;
     process.kill(process.pid,signal);
     process.kill(process.pid,signal==="SIGTERM"?"SIGINT":"SIGTERM");
-    child.stdin.end("release\n");
+    setTimeout(()=>child.stdin.end("release\n"),releaseDelay);
    }else state.forbidden++;
   }
  });
@@ -350,6 +364,44 @@ registerHooks({resolve(specifier,context,next){
  return next(specifier,context);
 }});
 await import(launcherUrl);`;
+it("physically joins real API work held past the former six-second cutoff", () => {
+	const result = spawnSync(
+		process.execPath,
+		[
+			"--import",
+			import.meta.resolve("tsx/esm"),
+			"--input-type=module",
+			"--eval",
+			launcherParent.replace("API_CODE_PLACEHOLDER", JSON.stringify(apiChild)),
+		],
+		{
+			cwd: fileURLToPath(new URL("../../../../", import.meta.url)),
+			env: {
+				NODE_ENV: "production",
+				TEST_SIGNAL: "SIGTERM",
+				TEST_CLOSE_FAILURE: "false",
+				TEST_RELEASE_DELAY_MS: "6500",
+			},
+			encoding: "utf8",
+			timeout: 12_000,
+		},
+	);
+	expect(result.error).toBeUndefined();
+	expect(result.signal).toBeNull();
+	expect(result.stderr).toBe("");
+	expect(result.status).toBe(0);
+	expect(JSON.parse(result.stdout.trim())).toEqual({
+		phase: "launcher-exit",
+		code: 0,
+		spawns: 1,
+		forwarded: 1,
+		ready: true,
+		drainHeld: true,
+		childSettled: true,
+		childCode: 0,
+		forbidden: 0,
+	});
+}, 15_000);
 describe.each(["SIGTERM", "SIGINT"] as const)("actual launcher/API handoff: %s", (signal) => {
 	it.each([false, true])(
 		"joins the API drain and propagates its exit (close fails: %s)",

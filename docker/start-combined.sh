@@ -146,23 +146,32 @@ SHUTDOWN_IN_PROGRESS=false
 # Seconds to allow a service to stop (after the sibling exits, or on an
 # intentional shutdown) before escalating to SIGKILL.
 #
-# Docker's default Linux container stop timeout is 10 seconds. The internal
-# default intentionally stays below it (7s) so start.sh can finish its own
-# SIGKILL escalation, child reaping, logging, and exit before Docker force-kills
-# PID 1. Operators who raise SHUTDOWN_GRACE must also raise the external
-# timeout: `docker run --stop-timeout`, `docker stop --time`, Compose
-# `stop_grace_period`, or the equivalent orchestrator setting.
-SHUTDOWN_GRACE="${SHUTDOWN_GRACE:-7}"
+# Entered cache publication transactions may need up to 60 seconds. Allow
+# their real result and infrastructure closure before forcing a failed stop.
+# The launcher reserves one second of this shared window for its final join.
+# Compose and the documented Docker commands allow 120 seconds externally;
+# an image cannot override Docker's otherwise too-short 10-second default.
+SHUTDOWN_GRACE="${SHUTDOWN_GRACE:-90}"
 
 # Validate SHUTDOWN_GRACE is a non-negative integer. Invalid input (e.g. "abc",
 # "-1", "1.5", whitespace) must not break cleanup under `set -e`, so fall back
 # to the documented default rather than failing mid-shutdown.
 case "$SHUTDOWN_GRACE" in
     ''|*[!0-9]*)
-        echo "WARNING: invalid SHUTDOWN_GRACE='$SHUTDOWN_GRACE' (expected a non-negative integer); using default 7" >&2
-        SHUTDOWN_GRACE=7
+        echo "WARNING: invalid SHUTDOWN_GRACE (expected a bounded non-negative integer); using default 90" >&2
+        SHUTDOWN_GRACE=90
         ;;
 esac
+
+# Match the launcher's safe timer range. Strip leading zeroes before shell
+# arithmetic so an oversized value never overflows or disables bounded cleanup.
+SHUTDOWN_GRACE=$(printf '%s' "$SHUTDOWN_GRACE" | sed 's/^0*//')
+SHUTDOWN_GRACE=${SHUTDOWN_GRACE:-0}
+if [ "${#SHUTDOWN_GRACE}" -gt 7 ] || [ "$SHUTDOWN_GRACE" -gt 2147483 ]; then
+    echo "WARNING: invalid SHUTDOWN_GRACE (timer range exceeded); using default 90" >&2
+    SHUTDOWN_GRACE=90
+fi
+export SHUTDOWN_GRACE
 
 # Warn (but do not fail) when the operator configured a grace at or above
 # Docker's default 10s Linux stop timeout, which would leave no margin for
@@ -170,7 +179,7 @@ esac
 if [ "$SHUTDOWN_GRACE" -ge 10 ]; then
     echo "WARNING: SHUTDOWN_GRACE is ${SHUTDOWN_GRACE} seconds." >&2
     echo "  Docker's default Linux stop timeout is 10 seconds." >&2
-    echo "  Configure the container/orchestrator stop timeout above ${SHUTDOWN_GRACE} seconds" >&2
+    echo "  Configure the container/orchestrator stop timeout with cleanup margin (default: 120 seconds)" >&2
     echo "  or Docker may force-kill the container before graceful cleanup completes." >&2
 fi
 

@@ -34,6 +34,7 @@ prove that an older process has stopped.
 ```bash
 docker run -d \
   --name arr-dashboard \
+  --stop-timeout 120 \
   -p 3000:3000 \
   -v /path/to/config:/config \
   -e PUID=1000 \
@@ -57,6 +58,7 @@ No configuration needed. Database stored at `/config/prod.db`:
 ```bash
 docker run -d \
   --name arr-dashboard \
+  --stop-timeout 120 \
   -p 3000:3000 \
   -v /path/to/config:/config \
   khak1s/arr-dashboard:latest
@@ -69,6 +71,7 @@ Set `DATABASE_URL` to a PostgreSQL connection string. The container automaticall
 ```bash
 docker run -d \
   --name arr-dashboard \
+  --stop-timeout 120 \
   -p 3000:3000 \
   -v /path/to/config:/config \
   -e DATABASE_URL=postgresql://user:password@db-host:5432/arr_dashboard \
@@ -182,7 +185,22 @@ images together or reuse an inode-bound anchor after a database file replacement
 |----------|---------|-------------|
 | `GITHUB_TOKEN` | — | GitHub token for TRaSH Guides (higher rate limits) |
 | `APP_URL` | `http://localhost:3000` | Preferred public URL for OIDC callbacks (e.g., `https://dashboard.example.com`) |
-| `SHUTDOWN_GRACE` | `7` | Seconds to allow the API/web to stop before the container SIGKILLs them. Docker's default Linux stop timeout is 10s; if you raise `SHUTDOWN_GRACE`, also raise `docker run --stop-timeout`, `docker stop --time`, Compose `stop_grace_period`, or the equivalent orchestrator setting so the container can finish graceful cleanup before Docker force-kills it. |
+| `SHUTDOWN_GRACE` | `90` | Shared API/web shutdown window in seconds. The API child gets one second less for its final join. Configure the outer engine timeout to at least 120s for this default (`docker run --stop-timeout 120`, Compose `stop_grace_period: 120s`, or equivalent). Explicitly shorter values may force an otherwise valid cache transaction to stop; forced termination remains a failed stop. |
+
+Shutdown closes admission and joins already-entered work. A cache publication
+transaction may legitimately need up to 60 seconds; interrupting it after the
+former six-second API window was not a reliable upgrade path. Services that
+finish sooner exit immediately: 90 seconds is a deadline, not a fixed wait.
+Genuinely hung services are still terminated and reported as failed.
+
+The image cannot change Docker's default 10-second outer timeout. The supplied
+Compose file and commands above explicitly allow 120 seconds. Existing containers
+retain their creation-time timeout until updated with that configuration. For a
+one-off stop/restart, use `docker stop --time 120` or `docker restart --time 120`.
+If you increase `SHUTDOWN_GRACE` beyond 90, also leave sufficient outer cleanup
+margin; the supervisor may need child reaping and failure handling after the
+shared window expires. An old image still has its old internal deadline even
+when its external timeout is increased.
 
 ## Ports
 

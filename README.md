@@ -166,6 +166,7 @@ Now integrates with **[autobrr/qui](https://github.com/autobrr/qui)** as a feder
 ```bash
 docker run -d \
   --name arr-dashboard \
+  --stop-timeout 120 \
   -p 3000:3000 \
   -v /path/to/config:/config \
   -e PUID=1000 \
@@ -189,6 +190,7 @@ services:
     ports:
       - 3000:3000
     restart: unless-stopped
+    stop_grace_period: 120s
 ```
 
 Then start:
@@ -355,6 +357,7 @@ By default, Arr Dashboard uses SQLite stored at `/config/prod.db`. For larger de
 ```bash
 docker run -d \
   --name arr-dashboard \
+  --stop-timeout 120 \
   -p 3000:3000 \
   -v /path/to/config:/config \
   -e DATABASE_URL="postgresql://user:password@hostname:5432/arr_dashboard" \
@@ -438,6 +441,7 @@ Using PUID/PGID (starts as root, drops privileges):
 ```bash
 docker run -d \
   --name arr-dashboard \
+  --stop-timeout 120 \
   --security-opt=no-new-privileges:true \
   --cap-drop=ALL \
   -p 3000:3000 \
@@ -451,6 +455,7 @@ Using rootless mode (no root required):
 ```bash
 docker run -d \
   --name arr-dashboard \
+  --stop-timeout 120 \
   --user 1000:1000 \
   -p 3000:3000 \
   -v /path/to/config:/config \
