@@ -41,8 +41,9 @@ export function registerSessionValidationHook(app: FastifyInstance): void {
 		// Only the explicitly marked public liveness handler is independent of
 		// session/database admission. Never infer this from client URL input.
 		if (request.routeOptions.config.runtimeLiveness === true) return;
-		const resolved = await app.restoreRuntime.runIndependentOperation(() =>
-			app.sessionService.validateRequest(request),
+		const resolved = await app.restoreRuntime.runIndependentOperation(
+			() => app.sessionService.validateRequest(request),
+			"session-validation",
 		);
 		if (resolved) {
 			request.currentUser = resolved.session.user;

@@ -22,6 +22,7 @@ import {
 	serializeFileIdIndex,
 } from "../../library-sync/infohash-backfill-by-inode.js";
 import {
+	getRestoreRuntimeShutdownStatus,
 	openRestoreRuntime,
 	type RestoreRuntime,
 	type RetainedRestoreRuntimeOperation,
@@ -1221,6 +1222,18 @@ describe("actual Fastify native runtime Prisma adoption", () => {
 			});
 			await new Promise<void>((resolve) => setImmediate(resolve));
 			expect(closed).toBe(false);
+			expect(getRestoreRuntimeShutdownStatus(app.restoreRuntime)).toMatchObject({
+				activeOperations: 1,
+				retainedOperations: 0,
+				activeOperationGroups: [
+					{
+						source: "connection-warmup",
+						stage: "callback",
+						count: 1,
+						oldestMs: expect.any(Number),
+					},
+				],
+			});
 			await expect(acquireSqliteRestoreRuntimeOwnership(url)).rejects.toThrow();
 			release();
 			await warming;

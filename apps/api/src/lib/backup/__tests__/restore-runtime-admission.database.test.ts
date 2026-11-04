@@ -15,8 +15,8 @@ import {
 	getRestoreRuntimeShutdownStatus,
 	openRestoreRuntime,
 	openRestoreRuntimeWorker,
-	retainRestoreRuntimeOperation,
 	type RestoreRuntime,
+	retainRestoreRuntimeOperation,
 } from "../restore-runtime-admission.js";
 import { acquirePostgresRestoreRuntimeOwnership } from "../restore-runtime-postgres.js";
 import {
@@ -666,6 +666,7 @@ describe("actor-owned restore runtime operation admission", () => {
 			failedPhase: null,
 			admissionClosed: false,
 			activeOperations: 0,
+			activeOperationGroups: [],
 			retainedOperations: 0,
 			registeredClients: 0,
 			pendingClientCloses: 0,
@@ -708,6 +709,185 @@ describe("actor-owned restore runtime operation admission", () => {
 		const next = await start();
 		await next.bindDestination("fixture-destination");
 		await next.activate();
+	});
+
+	// Break caught: a shutdown count alone cannot distinguish admission from a
+	// detached callback, and diagnostic metadata must never grant early drain.
+	it("shutdown operation diagnostics distinguish admission from a held independent callback", async () => {
+		const runtime = await running();
+		const entered = deferred(),
+			finish = deferred();
+		const work = runtime.runIndependentOperation(async () => {
+			entered.resolve();
+			await finish.promise;
+			await assertRestoreRuntimeOperation(runtime);
+		}, "connection-warmup");
+		let close: Promise<void> | undefined;
+		try {
+			expect(getRestoreRuntimeShutdownStatus(runtime)).toMatchObject({
+				activeOperations: 1,
+				activeOperationGroups: [
+					{
+						source: "connection-warmup",
+						stage: "admission",
+						count: 1,
+						oldestMs: expect.any(Number),
+					},
+				],
+			});
+			await entered.promise;
+			close = runtime.close();
+			await vi.waitFor(() =>
+				expect(getRestoreRuntimeShutdownStatus(runtime)).toMatchObject({ phase: "operations" }),
+			);
+			const observed = getRestoreRuntimeShutdownStatus(runtime);
+			expect(observed).toMatchObject({
+				activeOperations: 1,
+				retainedOperations: 0,
+				activeOperationGroups: [
+					{
+						source: "connection-warmup",
+						stage: "callback",
+						count: 1,
+						oldestMs: expect.any(Number),
+					},
+				],
+			});
+			expect(Object.isFrozen(observed.activeOperationGroups)).toBe(true);
+			expect(Object.isFrozen(observed.activeOperationGroups[0])).toBe(true);
+			const age = observed.activeOperationGroups[0]!.oldestMs;
+			expect(Number.isSafeInteger(age) && age >= 0).toBe(true);
+			await expect(
+				postgres
+					? acquirePostgresRestoreRuntimeOwnership(url)
+					: acquireSqliteRestoreRuntimeOwnership(url),
+			).rejects.toBeDefined();
+		} finally {
+			finish.resolve();
+			await work;
+			await close;
+		}
+		expect(getRestoreRuntimeShutdownStatus(runtime)).toMatchObject({
+			activeOperations: 0,
+			activeOperationGroups: [],
+		});
+	});
+
+	it("shutdown operation diagnostics aggregate matching work without retaining callback data", async () => {
+		const runtime = await running();
+		const finish = deferred();
+		let entered = 0;
+		const callback = async () => {
+			entered++;
+			await finish.promise;
+		};
+		const work = [
+			runtime.runIndependentOperation(callback, "connection-warmup"),
+			runtime.runIndependentOperation(callback, "connection-warmup"),
+			runtime.runIndependentOperation(callback),
+		];
+		try {
+			await vi.waitFor(() => expect(entered).toBe(3));
+			const observed = getRestoreRuntimeShutdownStatus(runtime);
+			expect(observed).toMatchObject({
+				activeOperations: 3,
+				activeOperationGroups: [
+					{
+						source: "connection-warmup",
+						stage: "callback",
+						count: 2,
+						oldestMs: expect.any(Number),
+					},
+					{ source: "independent", stage: "callback", count: 1, oldestMs: expect.any(Number) },
+				],
+			});
+			finish.resolve();
+			await Promise.all(work);
+			expect(getRestoreRuntimeShutdownStatus(runtime)).toMatchObject({
+				activeOperations: 0,
+				activeOperationGroups: [],
+			});
+			expect(observed.activeOperationGroups[0]!.count).toBe(2);
+		} finally {
+			finish.resolve();
+			await Promise.all(work);
+		}
+	});
+
+	it.each([
+		"synthetic-private-owner/instance",
+		{
+			toString() {
+				throw new Error("Must not inspect diagnostic values");
+			},
+		},
+	])(
+		"shutdown operation diagnostics reject arbitrary source values without coercion (%#)",
+		async (source) => {
+			const runtime = await running();
+			await Reflect.apply(runtime.runIndependentOperation, runtime, [
+				async () => {
+					const observed = getRestoreRuntimeShutdownStatus(runtime);
+					expect(observed).toMatchObject({
+						activeOperationGroups: [
+							{ source: "independent", stage: "callback", count: 1, oldestMs: expect.any(Number) },
+						],
+					});
+					expect(JSON.stringify(observed)).not.toContain("synthetic-private-owner");
+				},
+				source,
+			]);
+		},
+	);
+
+	it("shutdown diagnostic labels cannot authorize starting or closed work", async () => {
+		const runtime = await start();
+		const callback = vi.fn();
+		await expect(runtime.runIndependentOperation(callback, "bootstrap")).rejects.toMatchObject({
+			statusCode: 503,
+		});
+		expect(callback).not.toHaveBeenCalled();
+		await runtime.close();
+		await expect(runtime.runIndependentOperation(callback, "operation")).rejects.toMatchObject({
+			statusCode: 503,
+		});
+		expect(getRestoreRuntimeShutdownStatus(runtime)).toMatchObject({
+			activeOperations: 0,
+			activeOperationGroups: [],
+		});
+	});
+
+	it("shutdown diagnostics keep retained execution and its obligation distinct", async () => {
+		const runtime = await running();
+		const retained = await runtime.runOperation(() => retainRestoreRuntimeOperation()!);
+		const entered = deferred(),
+			finish = deferred();
+		const work = retained.run(async () => {
+			entered.resolve();
+			await finish.promise;
+		});
+		let closing: Promise<void> | undefined;
+		try {
+			await entered.promise;
+			closing = runtime.close();
+			expect(getRestoreRuntimeShutdownStatus(runtime)).toMatchObject({
+				activeOperations: 1,
+				retainedOperations: 1,
+				activeOperationGroups: [
+					{ source: "retained", stage: "callback", count: 1, oldestMs: expect.any(Number) },
+				],
+			});
+		} finally {
+			finish.resolve();
+			await work;
+			await retained.release();
+			await closing;
+		}
+		expect(getRestoreRuntimeShutdownStatus(runtime)).toMatchObject({
+			activeOperations: 0,
+			retainedOperations: 0,
+			activeOperationGroups: [],
+		});
 	});
 
 	it("attributes a retained queue obligation after its parent has actually settled", async () => {

@@ -1,8 +1,8 @@
 import {
-	readRestoreRuntimeWorkerLoss,
-	recordRestoreRuntimeWorkerLoss,
 	type RestoreRuntimeLossDiagnostic,
 	type RestoreRuntimeLossReason,
+	readRestoreRuntimeWorkerLoss,
+	recordRestoreRuntimeWorkerLoss,
 	sanitizeRestoreRuntimeLossReason,
 } from "./restore-runtime-loss.js";
 
@@ -18,12 +18,34 @@ export class RestoreRuntimeAdmissionError extends Error {
 // separate native owner. Refuse this attempt without permanently fencing it.
 class RestoreRuntimeContentionError extends RestoreRuntimeAdmissionError {}
 
+const OPERATION_SOURCES = [
+	"bootstrap",
+	"operation",
+	"independent",
+	"retained",
+	"session-validation",
+	"connection-warmup",
+	"scheduler",
+	"cleanup-independent",
+] as const;
+export type RestoreRuntimeOperationSource = (typeof OPERATION_SOURCES)[number];
+type OperationStage = "admission" | "callback" | "participation-release" | "release-failed";
+type OperationGroup = Readonly<{
+	source: RestoreRuntimeOperationSource;
+	stage: OperationStage;
+	count: number;
+	oldestMs: number;
+}>;
+
 export interface RestoreRuntime {
 	runStarting<T>(operation: () => T | Promise<T>): Promise<T>;
 	bindDestination(identity: string): Promise<void>;
 	activate(): Promise<void>;
 	runOperation<T>(operation: () => T | Promise<T>): Promise<T>;
-	runIndependentOperation<T>(operation: () => T | Promise<T>): Promise<T>;
+	runIndependentOperation<T>(
+		operation: () => T | Promise<T>,
+		source?: RestoreRuntimeOperationSource,
+	): Promise<T>;
 	closeAdmission(): void;
 	drain(): Promise<void>;
 	close(): Promise<void>;
@@ -46,6 +68,7 @@ export type RestoreRuntimeShutdownStatus = Readonly<{
 	failedPhase: RestoreRuntimeShutdownStage | null;
 	admissionClosed: boolean;
 	activeOperations: number;
+	activeOperationGroups: readonly OperationGroup[];
 	retainedOperations: number;
 	registeredClients: number;
 	pendingClientCloses: number;
@@ -96,7 +119,14 @@ type RuntimeState = {
 	replacement?: { completion: Promise<void> };
 	lose(reason?: RestoreRuntimeLossReason): void;
 };
-type Ticket = { state: RuntimeState; starting: boolean; active: boolean };
+type Ticket = {
+	state: RuntimeState;
+	starting: boolean;
+	active: boolean;
+	source: RestoreRuntimeOperationSource;
+	stage: OperationStage;
+	startedAt: number;
+};
 const tickets = new AsyncLocalStorage<Ticket>();
 const runtimes = new WeakMap<RestoreRuntime, RuntimeState>();
 const runtimeActors = new WeakMap<RuntimeState, RestoreRuntime>();
@@ -106,11 +136,31 @@ export function getRestoreRuntimeShutdownStatus(
 	runtime: RestoreRuntime,
 ): RestoreRuntimeShutdownStatus {
 	const state = stateOf(runtime);
+	const now = performance.now();
+	const groups = new Map<
+		string,
+		{
+			source: RestoreRuntimeOperationSource;
+			stage: OperationStage;
+			count: number;
+			oldestMs: number;
+		}
+	>();
+	for (const ticket of state.active) {
+		const key = `${ticket.source}:${ticket.stage}`;
+		const age = Math.max(0, Math.floor(now - ticket.startedAt));
+		const group = groups.get(key);
+		if (group) {
+			group.count++;
+			group.oldestMs = Math.max(group.oldestMs, age);
+		} else groups.set(key, { source: ticket.source, stage: ticket.stage, count: 1, oldestMs: age });
+	}
 	return Object.freeze({
 		phase: state.shutdownPhase,
 		failedPhase: state.failedShutdownPhase,
 		admissionClosed: state.closing || state.lost,
 		activeOperations: state.active.size,
+		activeOperationGroups: Object.freeze([...groups.values()].map((group) => Object.freeze(group))),
 		retainedOperations: state.retained.size,
 		registeredClients: state.clients.size,
 		pendingClientCloses: state.pendingClientCloses,
@@ -622,6 +672,29 @@ function validTicket(state: RuntimeState): Ticket | undefined {
 	const ticket = tickets.getStore();
 	return ticket?.state === state && ticket.active ? ticket : undefined;
 }
+function createTicket(
+	state: RuntimeState,
+	starting: boolean,
+	source: RestoreRuntimeOperationSource,
+): Ticket {
+	return {
+		state,
+		starting,
+		active: true,
+		source,
+		stage: "admission",
+		startedAt: performance.now(),
+	};
+}
+
+function independentSource(value: unknown): RestoreRuntimeOperationSource {
+	// Metadata is not authority; never coerce or log a caller-supplied label.
+	return typeof value === "string" &&
+		OPERATION_SOURCES.includes(value as RestoreRuntimeOperationSource)
+		? (value as RestoreRuntimeOperationSource)
+		: "independent";
+}
+
 function finishTicket(ticket: Ticket): void {
 	ticket.active = false;
 	ticket.state.active.delete(ticket);
@@ -630,6 +703,20 @@ function finishTicket(ticket: Ticket): void {
 		ticket.state.waiters.clear();
 	}
 }
+
+async function releaseParticipation(
+	ticket: Ticket | undefined,
+	participation: OperationParticipation | undefined,
+): Promise<void> {
+	if (ticket) ticket.stage = "participation-release";
+	try {
+		await participation?.release();
+	} catch (error) {
+		if (ticket) ticket.stage = "release-failed";
+		throw error;
+	}
+}
+
 async function assertCurrent(
 	state: RuntimeState,
 	initialRecord?: Readonly<RestoreRuntimeRecord>,
@@ -756,6 +843,7 @@ async function createRuntimeActor(
 		starting: boolean,
 		independent: boolean,
 		operation: () => T | Promise<T>,
+		source: RestoreRuntimeOperationSource = starting ? "bootstrap" : "operation",
 	): Promise<T> => {
 		const inherited = tickets.getStore();
 		const current = validTicket(owned);
@@ -772,7 +860,7 @@ async function createRuntimeActor(
 				? owned.phase === "starting" && owned.startingAdmission
 				: owned.phase === "running" && owned.ordinaryAdmission);
 		if (!admitted()) throw new RestoreRuntimeAdmissionError();
-		const ticket: Ticket = { state: owned, starting, active: true };
+		const ticket = createTicket(owned, starting, source);
 		// Ownership validation itself uses native SQL. Track its physical lifetime
 		// before the first await so cutover cannot drain past an in-flight check.
 		// The ticket enters async context only after proof and admission revalidation.
@@ -784,10 +872,11 @@ async function createRuntimeActor(
 			if (!admitted()) throw new RestoreRuntimeAdmissionError();
 			// Prisma returns lazy thenables. Assimilate them inside the ticket's
 			// context, not in the caller's await after AsyncLocalStorage.run returns.
+			ticket.stage = "callback";
 			return await tickets.run(ticket, async () => await operation());
 		} finally {
 			// Keep the ticket tracked if physical participation closure is uncertain.
-			await participation?.release();
+			await releaseParticipation(ticket, participation);
 			finishTicket(ticket);
 		}
 	};
@@ -814,8 +903,16 @@ async function createRuntimeActor(
 	const runtime: Readonly<RestoreRuntime> = Object.freeze({
 		runStarting: <T>(operation: () => T | Promise<T>) => run(true, false, operation),
 		runOperation: <T>(operation: () => T | Promise<T>) => run(false, false, operation),
-		runIndependentOperation: <T>(operation: () => T | Promise<T>) =>
-			run(owned.phase === "starting" && validTicket(owned)?.starting === true, true, operation),
+		runIndependentOperation: <T>(
+			operation: () => T | Promise<T>,
+			source?: RestoreRuntimeOperationSource,
+		) =>
+			run(
+				owned.phase === "starting" && validTicket(owned)?.starting === true,
+				true,
+				operation,
+				independentSource(source),
+			),
 		bindDestination: (identity: string) =>
 			control(async () => {
 				await backend.mutate((record) => {
@@ -970,15 +1067,16 @@ export function retainRestoreRuntimeOperation(): RetainedRestoreRuntimeOperation
 				// transition waits before choosing its actual starting/running phase.
 				if (state.activation) await state.activation;
 				if (state.lost) throw new RestoreRuntimeAdmissionError();
-				ticket = { state, starting: state.phase === "starting", active: true };
+				ticket = createTicket(state, state.phase === "starting", "retained");
 				state.active.add(ticket);
 				executingTickets.add(ticket);
 				participation = await state.backend.retainOperation?.();
 				await assertCurrent(state, participation?.initialRecord);
 				if (state.lost || !ticket.active) throw new RestoreRuntimeAdmissionError();
+				ticket.stage = "callback";
 				return await tickets.run(ticket, async () => await operation());
 			} finally {
-				await participation?.release();
+				await releaseParticipation(ticket, participation);
 				if (ticket) {
 					finishTicket(ticket);
 					executingTickets.delete(ticket);
@@ -1003,7 +1101,7 @@ export function retainRestoreRuntimeOperation(): RetainedRestoreRuntimeOperation
 /** Compose existing producer guards with the module-owned actor context. */
 export function withRestoreRuntimeOperation<T>(
 	operation: () => Promise<T>,
-	options: { independent?: boolean } = {},
+	options: { independent?: boolean; source?: RestoreRuntimeOperationSource } = {},
 ): Promise<T> {
 	const inherited = tickets.getStore();
 	// Legacy callers without a runtime context receive no ticket. The guarded
@@ -1011,7 +1109,8 @@ export function withRestoreRuntimeOperation<T>(
 	if (!inherited) return operation();
 	const runtime = runtimeActors.get(inherited.state);
 	if (!runtime) throw new RestoreRuntimeAdmissionError();
-	if (options.independent || !inherited.active) return runtime.runIndependentOperation(operation);
+	if (options.independent || !inherited.active)
+		return runtime.runIndependentOperation(operation, options.source);
 	return inherited.starting ? runtime.runStarting(operation) : runtime.runOperation(operation);
 }
 

@@ -48,7 +48,7 @@ export async function warmConnectionsForUser(app: FastifyInstance, userId: strin
 			await Promise.all(warmPromises);
 
 			app.log.info({ userId, instanceCount: instances.length }, "Connections pre-warmed for user");
-		});
+		}, "connection-warmup");
 	} catch (error) {
 		// Never fail on warm-up errors
 		app.log.debug({ error }, "Connection warm-up error (non-critical)");

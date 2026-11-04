@@ -121,6 +121,7 @@ export async function withIndependentCleanupOperationGuard<T>(
 ): Promise<T> {
 	return withRestoreRuntimeOperation(() => runIndependentCleanupOperationGuard(operation), {
 		independent: true,
+		source: "cleanup-independent",
 	});
 }
 
