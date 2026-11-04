@@ -16,6 +16,7 @@ import {
 	getAutomaticObservationRenewalDeadline,
 	hasExhaustedObservationRunRetries,
 	releaseCancelledObservationUnitClaim,
+	releaseJoinedObservationUnitClaim,
 	renewExhaustedObservationRun,
 } from "../provider-observation/observation-run-repository.js";
 import type {
@@ -1455,6 +1456,22 @@ export function createJellyfinEpisodeWorkItemRunner(
 			} catch {
 				// Diagnostics cannot prevent fenced settlement or replace its database error.
 			}
+			if (stagingPage && isJellyfinEpisodeStageBusy(error)) {
+				// Local contention after a joined read is not a provider outage. Release
+				// only this still-owned claim; a committed stage already cleared its
+				// token. The scheduler already bounds these dependency retries.
+				await releaseJoinedObservationUnitClaim(context.prisma, {
+					claim,
+					authority,
+					attempt,
+					cleanupRunClaimToken: context.cleanupRunClaimToken,
+				});
+				return {
+					...(await runProgress(context.prisma, run.id)),
+					retryableDependencyFailure: true,
+					progressed: false,
+				};
+			}
 			cancellation.failure = {
 				claim,
 				reasonCode: "provider-unavailable",
@@ -1597,12 +1614,7 @@ async function retryJellyfinEpisodePageStaging<T>(
 			return await operation();
 		} catch (error) {
 			const diagnostics = stageFailureDiagnostics(error);
-			if (
-				attempt >= 2 ||
-				diagnostics.databaseCode !== "P1008" ||
-				!["SQLITE_BUSY", "SQLITE_BUSY_SNAPSHOT"].includes(diagnostics.sqliteCode ?? "")
-			)
-				throw error;
+			if (attempt >= 2 || !isJellyfinEpisodeStageBusy(error)) throw error;
 			try {
 				context.log.info(
 					{ category: "jellyfin-episode-stage-retry", attempt: attempt + 1, ...diagnostics },
@@ -1613,6 +1625,14 @@ async function retryJellyfinEpisodePageStaging<T>(
 			}
 		}
 	}
+}
+
+function isJellyfinEpisodeStageBusy(error: unknown): boolean {
+	const diagnostics = stageFailureDiagnostics(error);
+	return (
+		diagnostics.databaseCode === "P1008" &&
+		["SQLITE_BUSY", "SQLITE_BUSY_SNAPSHOT"].includes(diagnostics.sqliteCode ?? "")
+	);
 }
 
 async function retryJellyfinEpisodeFailureSettlement<T>(

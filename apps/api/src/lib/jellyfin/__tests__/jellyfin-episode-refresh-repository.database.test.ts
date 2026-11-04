@@ -289,6 +289,109 @@ async function joinedFailureFixture(rejectedPage = false, v3 = false, code = "P1
 }
 
 describe("bounded native page-stage contention", { timeout: 30_000 }, () => {
+	it.each(["claim", "attempt", "identity"] as const)(
+		"does not release changed %s authority after a local BUSY rollback",
+		async (changed) => {
+			const { prisma, client, context } = await pageWorkerRunnerFixture();
+			const writer = new Database(join(databases.at(-1)!.directory, "test.db"));
+			writer.pragma("journal_mode = WAL");
+			let failStage = false;
+			let rolledBack = 0;
+			const cursors: number[] = [];
+			const injected = prisma.$extends({
+				query: {
+					jellyfinEpisodeObservationStage: {
+						async createMany({ args, query }) {
+							if (!failStage) return await query(args);
+							writer.exec("BEGIN IMMEDIATE");
+							try {
+								return await query(args);
+							} finally {
+								writer.exec("ROLLBACK");
+							}
+						},
+					},
+				},
+			});
+			const intercepted = new Proxy(injected, {
+				get(target, property, receiver) {
+					if (property !== "$transaction") return Reflect.get(target, property, receiver);
+					const transaction = Reflect.get(target, property);
+					if (typeof transaction !== "function") throw new Error("Synthetic transaction missing");
+					return async (...args: unknown[]) => {
+						try {
+							return await Reflect.apply(transaction, target, args);
+						} catch (error) {
+							if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P1008") {
+								rolledBack++;
+								// Compete only after the failed transaction has actually rolled
+								// back, before the runner tries to release its joined claim.
+								if (rolledBack === 3) {
+									if (changed === "claim")
+										await prisma.providerObservationUnit.updateMany({
+											where: { state: "running", phase: "collect" },
+											data: { claimToken: "replacement-current-claim" },
+										});
+									if (changed === "attempt")
+										await prisma.cacheRefreshStatus.updateMany({
+											where: { cacheType: "jellyfin_episode" },
+											data: { lastAttemptResult: "replacement-current-attempt" },
+										});
+									if (changed === "identity")
+										await prisma.serviceInstance.update({
+											where: { id: context.instance.id },
+											data: { connectionGeneration: { increment: 1 } },
+										});
+								}
+							}
+							throw error;
+						}
+					};
+				},
+			});
+			const runner = createProductionJellyfinEpisodeWorkItemRunner({
+				createClient: () => client as never,
+				readPage: async (input) => {
+					cursors.push(input.startIndex);
+					return heldWorkerPage(input.startIndex);
+				},
+			});
+			try {
+				await expect(runner(context)).resolves.toMatchObject({ progressed: true });
+				const published = await prisma.jellyfinEpisodeCache.findMany();
+				failStage = true;
+				await expect(
+					runner({
+						...context,
+						prisma: intercepted as unknown as typeof prisma,
+						now: new Date("2026-09-07T12:00:01.000Z"),
+					}),
+				).resolves.toMatchObject({ progressed: false, retryableDependencyFailure: true });
+				expect(rolledBack).toBe(3);
+				expect(cursors).toEqual([0, 1]);
+				expect(
+					await prisma.providerObservationUnit.findFirstOrThrow({ where: { phase: "collect" } }),
+				).toMatchObject({
+					state: "running",
+					claimToken: changed === "claim" ? "replacement-current-claim" : expect.any(String),
+					cursor: 1,
+					completedPages: 1,
+					attemptCount: 0,
+				});
+				if (changed === "attempt")
+					expect(
+						await prisma.cacheRefreshStatus.findFirstOrThrow({
+							where: { cacheType: "jellyfin_episode" },
+						}),
+					).toMatchObject({ lastAttemptResult: "replacement-current-attempt" });
+				expect(await prisma.jellyfinEpisodeObservationStage.count()).toBe(1);
+				expect(await prisma.jellyfinEpisodeCache.findMany()).toEqual(published);
+			} finally {
+				writer.close();
+			}
+		},
+	);
+
 	it.each(["retry", "twice", "exhaustion", "cancel", "non-busy"] as const)(
 		"handles native page-stage %s without another provider read or duplicate progress",
 		async (mode) => {
@@ -297,6 +400,7 @@ describe("bounded native page-stage contention", { timeout: 30_000 }, () => {
 			writer.pragma("journal_mode = WAL");
 			let writerHeld = false;
 			let stageAttempts = 0;
+			let contentionReleased = false;
 			const controller = new AbortController();
 			const failures: unknown[] = [];
 			const cursors: number[] = [];
@@ -308,7 +412,7 @@ describe("bounded native page-stage contention", { timeout: 30_000 }, () => {
 							if (
 								stageAttempts >= 2 &&
 								mode !== "non-busy" &&
-								(mode === "exhaustion" ||
+								((mode === "exhaustion" && !contentionReleased) ||
 									stageAttempts === 2 ||
 									(mode === "twice" && stageAttempts === 3))
 							) {
@@ -356,6 +460,9 @@ describe("bounded native page-stage contention", { timeout: 30_000 }, () => {
 				} else {
 					await expect(next).resolves.toMatchObject({
 						progressed: mode === "retry" || mode === "twice",
+						...(mode === "exhaustion"
+							? { state: "running", retryableDependencyFailure: true }
+							: {}),
 					});
 				}
 				expect(failures).toHaveLength(mode === "twice" ? 2 : mode === "exhaustion" ? 3 : 1);
@@ -374,13 +481,29 @@ describe("bounded native page-stage contention", { timeout: 30_000 }, () => {
 				expect(
 					await prisma.providerObservationUnit.findFirstOrThrow({ where: { phase: "collect" } }),
 				).toMatchObject({
-					state: progressed ? "complete" : mode === "cancel" ? "pending" : "failed",
+					state: progressed
+						? "complete"
+						: mode === "cancel" || mode === "exhaustion"
+							? "pending"
+							: "failed",
 					cursor: progressed ? 2 : 1,
 					completedPages: progressed ? 2 : 1,
-					attemptCount: progressed || mode === "cancel" ? 0 : 1,
+					attemptCount: progressed || mode === "cancel" || mode === "exhaustion" ? 0 : 1,
 					claimToken: null,
 				});
 				expect(await prisma.jellyfinEpisodeCache.findMany()).toEqual(published);
+				if (mode === "exhaustion") {
+					contentionReleased = true;
+					await expect(
+						runner({ ...current, now: new Date("2026-09-07T12:00:31.000Z") }),
+					).resolves.toMatchObject({ state: "running", progressed: true });
+					expect(cursors).toEqual([0, 1, 1]);
+					expect(await prisma.jellyfinEpisodeObservationStage.count()).toBe(2);
+					expect(
+						await prisma.providerObservationUnit.findFirstOrThrow({ where: { phase: "collect" } }),
+					).toMatchObject({ state: "complete", cursor: 2, completedPages: 2, attemptCount: 0 });
+					expect(await prisma.jellyfinEpisodeCache.findMany()).toEqual(published);
+				}
 			} finally {
 				if (writerHeld) writer.exec("ROLLBACK");
 				writer.close();
