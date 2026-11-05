@@ -29,6 +29,7 @@ import { dispatchPulseAction } from "../../lib/pulse/actions.js";
 import { KNOWN_JOBS } from "../../lib/scheduler-registry/job-definitions.js";
 import { SchedulerRegistry } from "../../lib/scheduler-registry/scheduler-registry.js";
 import type { FastifyWithEpisodeRefreshScheduler } from "../../lib/services/episode-refresh-scheduler-bridge.js";
+import { ProviderIdentityGuardError } from "../../lib/services/provider-identity-guard.js";
 import jellyfinEpisodeCacheSchedulerPlugin, {
 	refreshScheduledJellyfinEpisodeCacheInstance,
 } from "../jellyfin-episode-cache-scheduler.js";
@@ -143,6 +144,79 @@ describe("refreshScheduledJellyfinEpisodeCacheInstance", () => {
 			{ instanceId: stored.id, category: "refresh-failed" },
 			"Jellyfin episode cache refresh failed for instance",
 		);
+	});
+
+	it.each(["JELLYFIN", "EMBY"] as const)(
+		"classifies typed %s shutdown cancellation without reporting success",
+		async (service) => {
+			const state = app();
+			const stored = instance(service);
+			const cancellation = new AbortController();
+			cancellation.abort();
+			mocks.refresh.mockRejectedValue(
+				new ProviderIdentityGuardError("PUBLICATION_CANCELLED", "private cancellation detail"),
+			);
+
+			const result = await refreshScheduledJellyfinEpisodeCacheInstance(
+				state as never,
+				stored as never,
+				true,
+				"none",
+				cancellation.signal,
+			);
+
+			expect(result).toBeNull();
+			expect(state.log.error).not.toHaveBeenCalled();
+			expect(state.log.info.mock.calls).toEqual([
+				[
+					{ instanceId: stored.id, category: "refresh-cancelled" },
+					"Jellyfin episode cache refresh cancelled during shutdown",
+				],
+			]);
+			expect(state.prisma).toEqual({});
+		},
+	);
+
+	it.each([
+		"absent signal",
+		"live signal",
+		"unrelated error during shutdown",
+		"spoofed cancellation code",
+		"other identity error during shutdown",
+	] as const)("retains refresh failure for %s", async (scenario) => {
+		const state = app();
+		const stored = instance();
+		const cancellation = new AbortController();
+		if (scenario !== "live signal") cancellation.abort();
+		const error =
+			scenario === "unrelated error during shutdown"
+				? new Error("private claim-release failure")
+				: scenario === "spoofed cancellation code"
+					? Object.assign(new Error("private failure"), { code: "PUBLICATION_CANCELLED" })
+					: new ProviderIdentityGuardError(
+							scenario === "other identity error during shutdown"
+								? "IDENTITY_UNAVAILABLE"
+								: "PUBLICATION_CANCELLED",
+							"private failure",
+						);
+		mocks.refresh.mockRejectedValue(error);
+
+		const result = await refreshScheduledJellyfinEpisodeCacheInstance(
+			state as never,
+			stored as never,
+			true,
+			"none",
+			scenario === "absent signal" ? undefined : cancellation.signal,
+		);
+
+		expect(result).toBeNull();
+		expect(state.log.info).not.toHaveBeenCalled();
+		expect(state.log.error.mock.calls).toEqual([
+			[
+				{ instanceId: stored.id, category: "refresh-failed" },
+				"Jellyfin episode cache refresh failed for instance",
+			],
+		]);
 	});
 });
 
@@ -901,6 +975,42 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 		await app.close();
 		await vi.advanceTimersByTimeAsync(30_000);
 		expect(mocks.refresh).toHaveBeenCalledTimes(2);
+	});
+
+	it("drains an in-flight typed cancellation on close without failure or a new retry", async () => {
+		findInstances.mockResolvedValue([instance("JELLYFIN")]);
+		let active = false;
+		mocks.refresh.mockImplementation(
+			async ({ signal }: { signal: AbortSignal }) =>
+				await new Promise((_resolve, reject) => {
+					active = true;
+					signal.addEventListener(
+						"abort",
+						() => {
+							active = false;
+							reject(new ProviderIdentityGuardError("PUBLICATION_CANCELLED", "cancelled"));
+						},
+						{ once: true },
+					);
+				}),
+		);
+		const info = vi.spyOn(app.log, "info");
+		const error = vi.spyOn(app.log, "error");
+		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
+		expect(active).toBe(true);
+		expect(mocks.refresh).toHaveBeenCalledOnce();
+
+		await app.close();
+		expect(active).toBe(false);
+		expect(error).not.toHaveBeenCalled();
+		expect(info).toHaveBeenCalledWith(
+			{ instanceId: "instance-1", category: "refresh-cancelled" },
+			"Jellyfin episode cache refresh cancelled during shutdown",
+		);
+		await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000);
+		expect(mocks.refresh).toHaveBeenCalledOnce();
 	});
 
 	it("cancels a pending one-second progress continuation during shutdown", async () => {

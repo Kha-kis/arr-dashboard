@@ -26,7 +26,10 @@ import {
 	type EpisodeRefreshRetryResult,
 	ensureEpisodeRefreshScheduler,
 } from "../lib/services/episode-refresh-scheduler-bridge.js";
-import { createProviderPublicationAuthority } from "../lib/services/provider-identity-guard.js";
+import {
+	createProviderPublicationAuthority,
+	ProviderIdentityGuardError,
+} from "../lib/services/provider-identity-guard.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const STARTUP_DELAY_MS = 6 * 60 * 1000; // 6 minutes (after jellyfin-cache populates)
@@ -69,7 +72,18 @@ export async function refreshScheduledJellyfinEpisodeCacheInstance(
 			"Jellyfin episode cache refresh completed",
 		);
 		return result;
-	} catch {
+	} catch (error) {
+		if (
+			signal?.aborted &&
+			error instanceof ProviderIdentityGuardError &&
+			error.code === "PUBLICATION_CANCELLED"
+		) {
+			app.log.info(
+				{ instanceId: instance.id, category: "refresh-cancelled" },
+				"Jellyfin episode cache refresh cancelled during shutdown",
+			);
+			return null;
+		}
 		app.log.error(
 			{ instanceId: instance.id, category: "refresh-failed" },
 			"Jellyfin episode cache refresh failed for instance",
