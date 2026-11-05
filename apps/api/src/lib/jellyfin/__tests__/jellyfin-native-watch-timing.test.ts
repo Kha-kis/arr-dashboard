@@ -164,21 +164,21 @@ describe("native-watch busy-start recovery", () => {
 		},
 	);
 
-	it("resumes the pending batch after 100 committed rows without resetting or duplicating prior work", async () => {
+	it("resumes the pending batch after 250 committed rows without resetting or duplicating prior work", async () => {
 		const f = fixture({ failAt: 3, failPhase: "request", failError: busyAdmission() });
-		f.input.candidates = Array.from({ length: 201 }, (_, index) => ({
+		f.input.candidates = Array.from({ length: 501 }, (_, index) => ({
 			...f.input.candidates[0]!,
 			jellyfinId: `episode-${String(index).padStart(3, "0")}`,
 		}));
-		f.input.receipts[0]!.expectedRawCount = 201;
-		f.input.receipts[0]!.observedRawCount = 201;
+		f.input.receipts[0]!.expectedRawCount = 501;
+		f.input.receipts[0]!.observedRawCount = 501;
 		const failedRows: number[] = [];
 		await prepareNativeWatchGeneration(f.db as never, f.input, undefined, (event) => {
 			if (event.phase === "failed") failedRows.push(f.rows.length);
 		});
-		expect(failedRows).toEqual([100]);
-		expect(f.rows).toHaveLength(201);
-		expect(new Set(f.rows.map((row) => Reflect.get(row, "jellyfinId"))).size).toBe(201);
+		expect(failedRows).toEqual([250]);
+		expect(f.rows).toHaveLength(501);
+		expect(new Set(f.rows.map((row) => Reflect.get(row, "jellyfinId"))).size).toBe(501);
 		expect(f.receipts).toHaveLength(1);
 		expect(f.trace.filter((entry) => entry === "row-delete")).toHaveLength(1);
 		expect(f.trace.filter((entry) => entry === "receipt-delete")).toHaveLength(1);
@@ -187,14 +187,14 @@ describe("native-watch busy-start recovery", () => {
 
 	it("exhausts three admission retries and retains the actual final error and completed batch", async () => {
 		const f = fixture();
-		f.input.candidates = Array.from({ length: 201 }, (_, index) => ({
+		f.input.candidates = Array.from({ length: 501 }, (_, index) => ({
 			...f.input.candidates[0]!,
 			jellyfinId: `episode-${index}`,
 		}));
 		const transaction = f.db.$transaction;
 		const failures: unknown[] = [];
 		f.db.$transaction = async (...args) => {
-			if (f.rows.length === 100) {
+			if (f.rows.length === 250) {
 				const error = busyAdmission();
 				failures.push(error);
 				throw error;
@@ -206,7 +206,7 @@ describe("native-watch busy-start recovery", () => {
 		);
 		expect(failures).toHaveLength(4);
 		expect(result).toBe(failures[3]);
-		expect(f.rows).toHaveLength(100);
+		expect(f.rows).toHaveLength(250);
 		expect(f.receipts).toHaveLength(0);
 		expect(f.trace.filter((entry) => entry === "row-delete")).toHaveLength(1);
 	});
@@ -473,16 +473,13 @@ describe("native-watch preparation transaction observation", () => {
 			"row-chunk",
 			"row-chunk",
 			"row-chunk",
-			"row-chunk",
-			"row-chunk",
-			"row-chunk",
 			"receipt-chunk",
 			"receipt-chunk",
 			"lease-checkpoint",
 			"lease-checkpoint",
 		]);
 		expect(writes).toEqual([
-			...Array.from({ length: 15 }, () => ({ stage: "row-chunk-write", count: 100 })),
+			...Array.from({ length: 6 }, () => ({ stage: "row-chunk-write", count: 250 })),
 			{ stage: "row-chunk-write", count: 1 },
 			{ stage: "row-chunk-write", count: 1 },
 			{ stage: "row-chunk-write", count: 1 },

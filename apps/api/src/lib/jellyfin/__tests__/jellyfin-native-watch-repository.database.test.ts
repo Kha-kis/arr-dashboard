@@ -497,6 +497,60 @@ describe("native watch publication", { timeout: 30_000 }, () => {
 		).toBe(1);
 	});
 
+	it("stages a thousand-row generation in at most five bounded transactions without publishing it", async () => {
+		const prisma = await database();
+		await seedCompletedRun(prisma, "old-run", "old-generation");
+		await prisma.$transaction((tx) =>
+			publishNativeWatchGeneration(tx, publication("old-run", "old-generation")),
+		);
+		const pointer = await prisma.jellyfinNativeWatchPublication.findUniqueOrThrow({
+			where: { instanceId: "jellyfin-instance" },
+		});
+		await seedRunningRun(prisma, "new-run");
+		const baseline = publication("new-run", "new-generation");
+		const input = {
+			...baseline,
+			userId: "owner",
+			candidates: Array.from({ length: 1_001 }, (_, index) => ({
+				...baseline.candidates[0]!,
+				jellyfinId: `episode-${String(index).padStart(5, "0")}`,
+				episodeNumber: index + 1,
+			})),
+			receipts: [{ ...baseline.receipts[0]!, expectedRawCount: 1_001, observedRawCount: 1_001 }],
+		};
+		let transactions = 0;
+		let largestChunk = 0;
+		await prepareNativeWatchGeneration(
+			prisma,
+			input,
+			(event) => {
+				if (event.stage === "row-chunk-write")
+					largestChunk = Math.max(largestChunk, event.count ?? 0);
+			},
+			(event) => {
+				if (event.kind === "row-chunk" && event.phase === "succeeded") transactions++;
+			},
+		);
+		// Bound repeated fenced commits without wall-clock assertions or a larger
+		// slow-write/cancellation unit. The existing loaded-write test caps cost.
+		expect(transactions).toBeLessThanOrEqual(5);
+		expect(largestChunk).toBeLessThanOrEqual(250);
+		expect(await prisma.jellyfinNativeWatchRow.count({ where: { runId: input.runId } })).toBe(
+			1_001,
+		);
+		expect(await prisma.jellyfinNativeWatchRow.count({ where: { runId: "old-run" } })).toBe(1);
+		expect(
+			await prisma.jellyfinNativeWatchScopeReceipt.findMany({
+				where: { instanceId: input.instanceId, runId: input.runId },
+			}),
+		).toMatchObject(input.receipts);
+		expect(
+			await prisma.jellyfinNativeWatchPublication.findUnique({
+				where: { instanceId: input.instanceId },
+			}),
+		).toEqual(pointer);
+	});
+
 	it("renews the exact preparation lease while staging native rows", async () => {
 		const prisma = await database();
 		await seedRunningRun(prisma, "new-run");

@@ -118,10 +118,10 @@ try {
 		await prisma.$executeRawUnsafe("DROP TRIGGER synthetic_native_watch_row_cost");
 		// A later transaction fails after part of that chunk has executed. Its
 		// rows must roll back and the earlier committed chunk must stay invisible.
-		const rejected = await inputFor("rejected", 250);
+		const rejected = await inputFor("rejected", 550);
 		await prisma.$executeRawUnsafe(`CREATE TRIGGER reject_later_native_watch_row
 			BEFORE INSERT ON jellyfin_native_watch_rows
-			WHEN NEW.runId = 'rejected' AND NEW.jellyfinId = 'episode-00150'
+			WHEN NEW.runId = 'rejected' AND NEW.jellyfinId = 'episode-00350'
 			BEGIN SELECT RAISE(ABORT, 'synthetic later chunk rejection'); END`);
 		let rejectedWrite = false;
 		try {

@@ -84,7 +84,7 @@ async function createNativeWatchAdmissionFixture() {
 		identityGeneration: 1,
 		observedAt: now,
 		expectedScopeCount: 1,
-		candidates: Array.from({ length: 201 }, (_, index) => ({
+		candidates: Array.from({ length: 501 }, (_, index) => ({
 			userKeyDigest: "digest",
 			libraryId: "library",
 			jellyfinId: `episode-${String(index).padStart(3, "0")}`,
@@ -99,8 +99,8 @@ async function createNativeWatchAdmissionFixture() {
 			{
 				userKeyDigest: "digest",
 				libraryId: "library",
-				expectedRawCount: 201,
-				observedRawCount: 201,
+				expectedRawCount: 501,
+				observedRawCount: 501,
 				exact: true,
 				contentFingerprint: "a".repeat(64),
 			},
@@ -181,7 +181,7 @@ describe("native-watch admission on guarded WAL SQLite", { timeout: 30_000 }, ()
 						},
 						(event) => {
 							if (event.kind !== "row-chunk") return;
-							if (event.phase === "requested" && committedRows() === 100) armed = true;
+							if (event.phase === "requested" && committedRows() === 250) armed = true;
 							rowPhases.push(event.phase);
 						},
 					);
@@ -245,7 +245,7 @@ describe("native-watch admission on guarded WAL SQLite", { timeout: 30_000 }, ()
 				]);
 			}
 			expect(rowResets).toBe(1);
-			expect(committedRows()).toBe(expires ? 100 : 201);
+			expect(committedRows()).toBe(expires ? 250 : 501);
 			expect(
 				await f.plain.jellyfinNativeWatchScopeReceipt.count({
 					where: { instanceId: input.instanceId, runId: input.runId },
@@ -284,7 +284,7 @@ describe("native-watch admission on guarded WAL SQLite", { timeout: 30_000 }, ()
 					if (event.stage === "own-row-reset") rowResets++;
 					// Stage callbacks inside the first transaction see zero committed rows;
 					// only the following batch can arm the real, separate WAL writer.
-					if (event.stage === "row-chunk-write" && !held && committedRows() === 100) {
+					if (event.stage === "row-chunk-write" && !held && committedRows() === 250) {
 						f.writer.exec("BEGIN IMMEDIATE");
 						held = true;
 					}
@@ -303,7 +303,7 @@ describe("native-watch admission on guarded WAL SQLite", { timeout: 30_000 }, ()
 				},
 			),
 		);
-		expect(failures).toEqual([{ committedRows: 100, released: true, rollbackSettled: true }]);
+		expect(failures).toEqual([{ committedRows: 250, released: true, rollbackSettled: true }]);
 		expect(phases.slice(0, 5)).toEqual([
 			"requested",
 			"failed",
@@ -314,7 +314,7 @@ describe("native-watch admission on guarded WAL SQLite", { timeout: 30_000 }, ()
 		expect(competition.nativeErrors).toContain("SQLITE_BUSY");
 		expect(competition.rollbacks).toBeGreaterThan(0);
 		expect(rowResets).toBe(1);
-		expect(committedRows()).toBe(201);
+		expect(committedRows()).toBe(501);
 		expect(
 			await f.plain.jellyfinNativeWatchScopeReceipt.count({ where: { instanceId, runId } }),
 		).toBe(1);
