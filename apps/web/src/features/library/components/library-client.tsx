@@ -152,6 +152,9 @@ export const LibraryClient: React.FC = () => {
 	const [selectedItemDetail, setItemDetail] = useState<LibraryItem | null>(null);
 	const [albumDetail, setAlbumDetail] = useState<LibraryItem | null>(null);
 	const [bookDetail, setBookDetail] = useState<LibraryItem | null>(null);
+	const [nativeInitialReadSettled, setNativeInitialReadSettled] = useState(false);
+	const [insightsEnabled, setInsightsEnabled] = useState(false);
+	const handleNativeInitialReadSettled = useCallback(() => setNativeInitialReadSettled(true), []);
 
 	// Deep link: auto-open detail modal when ?tmdbId= is in the URL
 	const searchParams = useSearchParams();
@@ -196,6 +199,11 @@ export const LibraryClient: React.FC = () => {
 		page: filters.page,
 		pageSize: filters.pageSize,
 	});
+	// Admit advisory reads only after the primary first attempts finish. Latch
+	// admission so later filters/reloads do not interrupt already useful insights.
+	useEffect(() => {
+		if (nativeInitialReadSettled && !data.isLoading) setInsightsEnabled(true);
+	}, [nativeInitialReadSettled, data.isLoading]);
 	const actions = useLibraryActions();
 	const quiStatus = data.quiObservationStatus?.status;
 	const appliedTorrentState = data.appliedFilters?.torrentState;
@@ -506,9 +514,9 @@ export const LibraryClient: React.FC = () => {
 				enrichmentFailures={enrichmentQuery.data?.enrichmentFailures}
 			/>
 
-			<ProviderNativeInventoryPanel />
+			<ProviderNativeInventoryPanel onInitialReadSettled={handleNativeInitialReadSettled} />
 
-			<LibraryInsightsSection />
+			<LibraryInsightsSection enabled={insightsEnabled} />
 
 			<div
 				className="animate-in fade-in slide-in-from-bottom-4 duration-500"

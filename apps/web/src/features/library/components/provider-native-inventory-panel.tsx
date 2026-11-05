@@ -158,7 +158,11 @@ function attemptReason(reason: ProviderNativeInventoryAttempt["reasonCode"]): st
 	}
 }
 
-export function ProviderNativeInventoryPanel() {
+export function ProviderNativeInventoryPanel({
+	onInitialReadSettled,
+}: {
+	onInitialReadSettled?: () => void;
+} = {}) {
 	const servicesQuery = useServicesQuery();
 	const [incognitoMode] = useIncognitoMode();
 	const supportedServices = useMemo(
@@ -233,6 +237,14 @@ export function ProviderNativeInventoryPanel() {
 	});
 
 	const data = inventoryQuery.data;
+	const initialReadSettled =
+		servicesQuery.isError ||
+		(servicesQuery.isSuccess &&
+			(supportedServices.length === 0 ||
+				(Boolean(selectedService) && (data !== undefined || inventoryQuery.isError))));
+	useEffect(() => {
+		if (initialReadSettled) onInitialReadSettled?.();
+	}, [initialReadSettled, onInitialReadSettled]);
 	const available = isAvailable(data) ? data : undefined;
 	const attempt = data?.attempt;
 	const serviceLabels = useMemo(
