@@ -267,6 +267,10 @@ export function ProviderNativeInventoryPanel() {
 	};
 
 	const handleReload = () => {
+		if (afterNativeId === null && expectedGenerationId === null) {
+			void inventoryQuery.refetch();
+			return;
+		}
 		resetPagination();
 		setRefreshKey((value) => value + 1);
 	};
@@ -456,6 +460,27 @@ export function ProviderNativeInventoryPanel() {
 														: ""}
 												</span>
 											</div>
+											{selectedService?.service === "plex" &&
+												domain === "library" &&
+												row.mediaType !== "episode" &&
+												row.externalIds?.tmdb?.length !== 1 && (
+													<div className="flex flex-col items-start gap-1 text-xs">
+														<Badge variant="warning">Metadata review needed</Badge>
+														<span className="text-muted-foreground">No unique TMDB mapping</span>
+														<details className="text-muted-foreground">
+															<summary className="cursor-pointer rounded-sm py-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring">
+																Check matching in Plex
+															</summary>
+															<p className="mt-1 break-words">
+																Review this item&apos;s metadata match in Plex, then allow the
+																normal cache refresh. A missing or conflicting TMDB ID does not
+																prove this item is unmatched. The notice clears after verified
+																inventory records a unique mapping. Reviewing metadata does not
+																change watch state or cleanup eligibility.
+															</p>
+														</details>
+													</div>
+												)}
 											{row.mediaType === "episode" && row.watch && (
 												<div className="flex flex-wrap items-center gap-2 text-xs">
 													<Badge

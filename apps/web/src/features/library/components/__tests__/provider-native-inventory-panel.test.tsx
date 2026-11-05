@@ -1,6 +1,7 @@
 import type { ProviderNativeInventoryResponse, ServiceInstanceSummary } from "@arr/shared";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
 
 const state = vi.hoisted(() => ({
 	incognito: false,
@@ -227,6 +228,87 @@ beforeEach(() => {
 });
 
 describe("ProviderNativeInventoryPanel", () => {
+	describe("Plex metadata review", () => {
+		it.each([undefined, {}, { tmdb: [] }, { tvdb: [42] }, { tmdb: [42, 99] }])(
+			"highlights recorded Plex library mapping gaps without relying on the ARR relationship: %j",
+			(externalIds) => {
+				state.data = available({
+					rows: [
+						{
+							...available().rows[0]!,
+							externalIds,
+							connection: { status: "matched", reason: "matched-identifiers", arrItems: [] },
+						},
+					],
+				});
+				render(<ProviderNativeInventoryPanel />, { wrapper: IncognitoProvider });
+				expect(screen.getByText("Metadata review needed")).toBeInTheDocument();
+				expect(screen.getByText("No unique TMDB mapping")).toBeInTheDocument();
+				expect(screen.getByText("Matched ARR item")).toBeInTheDocument();
+				expect(screen.getByText("Private movie title")).toBeInTheDocument();
+			},
+		);
+		it("does not mistake a missing ARR relationship for a missing Plex metadata match", () => {
+			state.data = available({
+				rows: [
+					{
+						...available().rows[0]!,
+						externalIds: { tmdb: [42] },
+						connection: { status: "unmatched", reason: "no-arr-match", arrItems: [] },
+					},
+				],
+			});
+			render(<ProviderNativeInventoryPanel />, { wrapper: IncognitoProvider });
+			expect(screen.queryByText("Metadata review needed")).not.toBeInTheDocument();
+			expect(screen.getByText("No ARR match")).toBeInTheDocument();
+		});
+		it.each(["jellyfin", "emby"] as const)(
+			"does not prescribe Plex matching for %s library items",
+			(provider) => {
+				state.services = [{ ...service(`${provider}-1`, "Private server"), service: provider }];
+				render(<ProviderNativeInventoryPanel />, { wrapper: IncognitoProvider });
+				expect(screen.queryByText("Metadata review needed")).not.toBeInTheDocument();
+				expect(screen.queryByText("Check matching in Plex")).not.toBeInTheDocument();
+			},
+		);
+		it("does not interpret a Plex episode's absent TMDB identifier as a library matching issue", () => {
+			state.data = available({
+				rows: [
+					{
+						...available().rows[0]!,
+						mediaType: "episode",
+						parentNativeId: "parent-1",
+						seasonNumber: 1,
+						episodeNumber: 1,
+					},
+				],
+			});
+			render(<ProviderNativeInventoryPanel />, { wrapper: IncognitoProvider });
+			fireEvent.change(screen.getByLabelText("Inventory domain"), { target: { value: "episode" } });
+			expect(screen.queryByText("Metadata review needed")).not.toBeInTheDocument();
+		});
+		it("offers manual matching guidance without claiming the item is definitely unmatched", () => {
+			render(<ProviderNativeInventoryPanel />, { wrapper: IncognitoProvider });
+			const disclosure = screen.getByText("Check matching in Plex");
+			const guidance = screen.getByText(/does not prove this item is unmatched/);
+			expect(guidance).not.toBeVisible();
+			fireEvent.click(disclosure);
+			expect(guidance).toBeVisible();
+			expect(screen.getByText(/allow the normal cache refresh/)).toBeVisible();
+			expect(screen.getByText(/does not change watch state or cleanup eligibility/)).toBeVisible();
+			expect(
+				screen.queryByRole("link", { name: "Check matching in Plex" }),
+			).not.toBeInTheDocument();
+		});
+		it("keeps actionable metadata warnings in incognito without revealing item titles", () => {
+			state.incognito = true;
+			render(<ProviderNativeInventoryPanel />, { wrapper: IncognitoProvider });
+			expect(screen.getByText("Metadata review needed")).toBeInTheDocument();
+			expect(screen.getByText("Check matching in Plex")).toBeInTheDocument();
+			expect(screen.getByText("masked-item.iso")).toBeInTheDocument();
+			expect(screen.queryByText("Private movie title")).not.toBeInTheDocument();
+		});
+	});
 	it("opens the linked provider and domain rather than the first available inventory", async () => {
 		window.history.replaceState(
 			{},
@@ -664,13 +746,11 @@ describe("ProviderNativeInventoryPanel", () => {
 		});
 	});
 
-	it("offers reload after a snapshot changes and masks provider names and titles in incognito", () => {
+	it("explains snapshot changes and masks provider names and titles in incognito", () => {
 		state.incognito = true;
 		state.data = { status: "unavailable", reason: "snapshot-changed" };
 		render(<ProviderNativeInventoryPanel />);
 
-		fireEvent.click(screen.getByText("Reload"));
-		expect(state.hookCalls.at(-1)?.refreshKey).toBe(1);
 		expect(
 			screen.getByText(
 				"The inventory changed while you were browsing. Reload to see the latest scan.",
