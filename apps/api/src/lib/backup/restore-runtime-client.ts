@@ -14,6 +14,7 @@ import {
 	createRuntimePostgresAdapter,
 	createRuntimeReplacementPostgresAdapter,
 } from "./restore-runtime-postgres-client.js";
+import { measureRuntimeReadTiming, startRuntimeReadTiming } from "./restore-runtime-read-timing.js";
 import { acquireSqliteRestoreOperationLock } from "./restore-runtime-sqlite.js";
 import { parseSqliteRestoreRuntimeRecord } from "./restore-runtime-sqlite-enrollment.js";
 
@@ -206,7 +207,9 @@ export function createRuntimePrismaClient(
 			// Session validation enters this same pool before route code. Let a
 			// normal display burst queue behind bounded reads without adding lanes
 			// or relaxing any SQL, ticket, ownership or transaction deadline.
-			const lane = await acquireReadLane(maxWait ?? 10_000);
+			const lane = await measureRuntimeReadTiming("lane-wait", () =>
+				acquireReadLane(maxWait ?? 10_000),
+			);
 			try {
 				if (registration.closed) throw new RestoreRuntimeAdmissionError();
 				lane.client ??= createGuardedPrismaClient(
@@ -352,7 +355,7 @@ function createGuardedPrismaClient(
 			}));
 	unregister = context.registerClose(close);
 	const connect = () => {
-		const opening = (async () => {
+		const opening = measureRuntimeReadTiming("connect", async () => {
 			if (closing) throw new RestoreRuntimeAdmissionError();
 			if (replacement) {
 				if (replacementConnected) throw new RestoreRuntimeAdmissionError();
@@ -412,53 +415,63 @@ function createGuardedPrismaClient(
 					context.validateSqliteBinding(bindingRecord);
 				};
 				const ownershipGuard = async (loan?: () => void) => {
-					// Service pending I/O before proving authority, never after the final native fence.
-					if (yielding) await setImmediate();
-					context.assertTicket();
-					loan?.();
-					await context.assertOwned();
-					// A normal disconnect can dispose this client while ownership proof
-					// yields. Reject late work without mistaking local closure for actor loss.
-					if (closing || disposePromise) throw new RestoreRuntimeAdmissionError();
+					const finishOwnerTiming = startRuntimeReadTiming("owner-proof");
 					try {
-						await participation?.assertHeld();
-					} catch {
-						context.unavailable("native-participation-unavailable");
-						throw new RestoreRuntimeAdmissionError();
+						// Service pending I/O before proving authority, never after the final native fence.
+						if (yielding) await measureRuntimeReadTiming("yield", () => setImmediate());
+						context.assertTicket();
+						loan?.();
+						await context.assertOwned();
+						// A normal disconnect can dispose this client while ownership proof
+						// yields. Reject late work without mistaking local closure for actor loss.
+						if (closing || disposePromise) throw new RestoreRuntimeAdmissionError();
+						try {
+							await participation?.assertHeld();
+						} catch {
+							context.unavailable("native-participation-unavailable");
+							throw new RestoreRuntimeAdmissionError();
+						}
+						context.assertTicket();
+						loan?.();
+					} finally {
+						finishOwnerTiming();
 					}
-					context.assertTicket();
-					loan?.();
 				};
 				const guard = async (loan?: () => void, sql?: string) => {
-					await ownershipGuard(loan);
-					const journal = await actual.queryRaw({
-						sql: `SELECT ${JOURNAL_COLUMNS.join(", ")} FROM RestoreRuntimeControl LIMIT 2`,
-						args: [],
-						argTypes: [],
-					});
+					const finishGuardTiming = startRuntimeReadTiming("guard");
 					try {
-						const record = parseSqliteRestoreRuntimeRecord(projection(journal, JOURNAL_COLUMNS));
-						if (replacement) replacement.validateStatementRecord(record, sql);
-						else context.validateRecord(record);
-					} catch {
-						context.unavailable("client-invalid-journal");
-						throw new RestoreRuntimeAdmissionError();
+						await ownershipGuard(loan);
+						const journal = await actual.queryRaw({
+							sql: `SELECT ${JOURNAL_COLUMNS.join(", ")} FROM RestoreRuntimeControl LIMIT 2`,
+							args: [],
+							argTypes: [],
+						});
+						try {
+							const record = parseSqliteRestoreRuntimeRecord(projection(journal, JOURNAL_COLUMNS));
+							if (replacement) replacement.validateStatementRecord(record, sql);
+							else context.validateRecord(record);
+						} catch {
+							context.unavailable("client-invalid-journal");
+							throw new RestoreRuntimeAdmissionError();
+						}
+						const binding = await actual.queryRaw({
+							sql: `SELECT ${BINDING_COLUMNS.join(", ")} FROM SqliteRestoreStorageBinding LIMIT 2`,
+							args: [],
+							argTypes: [],
+						});
+						try {
+							const record = projection(binding, BINDING_COLUMNS);
+							context.validateSqliteBinding(record);
+							bindingRecord = record;
+						} catch {
+							context.unavailable("storage-binding-invalid");
+							throw new RestoreRuntimeAdmissionError();
+						}
+						context.assertTicket();
+						loan?.();
+					} finally {
+						finishGuardTiming();
 					}
-					const binding = await actual.queryRaw({
-						sql: `SELECT ${BINDING_COLUMNS.join(", ")} FROM SqliteRestoreStorageBinding LIMIT 2`,
-						args: [],
-						argTypes: [],
-					});
-					try {
-						const record = projection(binding, BINDING_COLUMNS);
-						context.validateSqliteBinding(record);
-						bindingRecord = record;
-					} catch {
-						context.unavailable("storage-binding-invalid");
-						throw new RestoreRuntimeAdmissionError();
-					}
-					context.assertTicket();
-					loan?.();
 				};
 				const statement = async <T>(
 					query: Query,
@@ -472,7 +485,7 @@ function createGuardedPrismaClient(
 				): Promise<T> => {
 					if (!statementFences) {
 						assert();
-						return invoke(query);
+						return measureRuntimeReadTiming("statement-call", () => invoke(query));
 					}
 					const copied = { ...query, args: [...query.args], argTypes: [...query.argTypes] };
 					const assertAttempt = () => {
@@ -490,7 +503,7 @@ function createGuardedPrismaClient(
 					});
 					try {
 						assertAttempt();
-						return await invoke(copied);
+						return await measureRuntimeReadTiming("statement-call", () => invoke(copied));
 					} finally {
 						statementFences.delete(copied);
 					}
@@ -622,7 +635,7 @@ function createGuardedPrismaClient(
 				await dispose();
 				throw error;
 			}
-		})();
+		});
 		pending.add(opening);
 		void opening.then(
 			() => pending.delete(opening),

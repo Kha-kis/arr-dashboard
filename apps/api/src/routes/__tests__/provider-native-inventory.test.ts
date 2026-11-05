@@ -35,9 +35,11 @@ beforeEach(async () => {
 				events.push(event);
 				if (
 					rejectTimingLog &&
-					["provider-inventory-read-timing", "provider-inventory-read-subphase"].includes(
-						String(event.category),
-					)
+					[
+						"provider-inventory-read-timing",
+						"provider-inventory-read-subphase",
+						"provider-inventory-runtime-timing",
+					].includes(String(event.category))
 				)
 					throw new Error("Synthetic timing logger failure");
 			},
@@ -271,6 +273,26 @@ describe("owned native inventory route", () => {
 });
 
 describe("inventory read timing", () => {
+	it("emits only fixed runtime counters without changing unavailable data", async () => {
+		mocks.read.mockResolvedValue({ status: "unavailable", reason: "no-publication" });
+		const res = await createInjectAuthenticated(app)("GET", path);
+		expect(res.statusCode).toBe(200);
+		expect(res.json()).toEqual({ status: "unavailable", reason: "no-publication" });
+		const event = events.find((entry) => entry.category === "provider-inventory-runtime-timing");
+		expect(event).toMatchObject({ domain: "episode", spansOverlap: true });
+		expect(Object.keys(event!).sort()).toEqual(
+			["category", "domain", "level", "msg", "spansOverlap", "stages"].sort(),
+		);
+		expect(event!.stages).toEqual({
+			"lane-wait": { count: 0, totalMs: 0, maxMs: 0 },
+			connect: { count: 0, totalMs: 0, maxMs: 0 },
+			guard: { count: 0, totalMs: 0, maxMs: 0 },
+			yield: { count: 0, totalMs: 0, maxMs: 0 },
+			"statement-call": { count: 0, totalMs: 0, maxMs: 0 },
+			"owner-proof": { count: 0, totalMs: 0, maxMs: 0 },
+		});
+	});
+
 	it.each([false, true])(
 		"projects repository subphase timing without inherited user or private callback fields (logger throws=%s)",
 		async (throws) => {

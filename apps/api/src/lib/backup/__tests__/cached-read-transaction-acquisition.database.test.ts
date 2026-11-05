@@ -9,10 +9,48 @@ import {
 	withIsolatedRuntimePrismaReadClient,
 	withIsolatedRuntimePrismaReadTransaction,
 } from "../restore-runtime-client.js";
+import { type RuntimeReadTiming, withRuntimeReadTiming } from "../restore-runtime-read-timing.js";
 
 afterEach(closeScopedWriteFixtures);
 
 describe("ordinary cached reads during publication", { timeout: 20_000 }, () => {
+	it("measures real guarded reads without changing data, tickets or closure", async () => {
+		const f = await createScopedWriteFixture();
+		let stages!: RuntimeReadTiming;
+		const result = await withRuntimeReadTiming(
+			() =>
+				f.runtime.runOperation(() =>
+					withIsolatedRuntimePrismaReadClient(f.client.prisma, (client) =>
+						client.$transaction((tx) =>
+							tx.plexCache.findUnique({
+								where: { id: "synthetic-cache", instance: { userId: "synthetic-user" } },
+								select: { watchCount: true },
+							}),
+						),
+					),
+				),
+			(value) => {
+				stages = value;
+			},
+		);
+		expect(result).toEqual({ watchCount: 0 });
+		for (const stage of [
+			"lane-wait",
+			"connect",
+			"guard",
+			"yield",
+			"statement-call",
+			"owner-proof",
+		] as const) {
+			expect(stages[stage].count).toBeGreaterThan(0);
+			expect(stages[stage].totalMs).toBeGreaterThanOrEqual(stages[stage].maxMs);
+		}
+		await expect(
+			withIsolatedRuntimePrismaReadClient(f.client.prisma, (client) => client.plexCache.count()),
+		).rejects.toMatchObject({ statusCode: 503 });
+		expect(f.losses).toEqual([]);
+	});
+
 	it("preserves outside-snapshot postchecks, releases rejected callbacks, and retains ticket and close fences", async () => {
 		const f = await createScopedWriteFixture();
 		const selection = {

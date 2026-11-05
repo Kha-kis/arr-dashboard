@@ -4,6 +4,7 @@ import {
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { withIsolatedRuntimePrismaReadClient } from "../../lib/backup/restore-runtime-client.js";
+import { withRuntimeReadTiming } from "../../lib/backup/restore-runtime-read-timing.js";
 import { readProviderInventoryConnections } from "../../lib/provider-observation/inventory-connection-repository.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
@@ -19,40 +20,54 @@ export const registerProviderInventoryRoutes: FastifyPluginCallback = (app, _opt
 		try {
 			let result: Awaited<ReturnType<typeof readProviderInventoryConnections>>;
 			try {
-				result = await withIsolatedRuntimePrismaReadClient(app.prisma, async (prisma) => {
-					admittedAt = performance.now();
-					try {
-						return await readProviderInventoryConnections(
-							prisma,
+				result = await withRuntimeReadTiming(
+					() =>
+						withIsolatedRuntimePrismaReadClient(app.prisma, async (prisma) => {
+							admittedAt = performance.now();
+							try {
+								return await readProviderInventoryConnections(
+									prisma,
+									{
+										...query,
+										userId: request.currentUser!.id,
+										includeAttempt: true,
+									},
+									request.log,
+									(timing) => {
+										try {
+											// Explicit projection and unbound logger: no inherited user ID,
+											// request arguments, rows or errors enter diagnostic records.
+											app.log.info(
+												{
+													category: "provider-inventory-read-subphase",
+													domain: query.domain,
+													stage: timing.stage,
+													outcome: timing.outcome,
+													elapsedMs: timing.elapsedMs,
+												},
+												"Provider inventory read subphase",
+											);
+										} catch {
+											// Diagnostic failure cannot fail an otherwise valid read.
+										}
+									},
+								);
+							} finally {
+								repositoryEndedAt = performance.now();
+							}
+						}),
+					(stages) => {
+						app.log.info(
 							{
-								...query,
-								userId: request.currentUser!.id,
-								includeAttempt: true,
+								category: "provider-inventory-runtime-timing",
+								domain: query.domain,
+								spansOverlap: true,
+								stages,
 							},
-							request.log,
-							(timing) => {
-								try {
-									// Explicit projection and unbound logger: no inherited user ID,
-									// request arguments, rows or errors enter diagnostic records.
-									app.log.info(
-										{
-											category: "provider-inventory-read-subphase",
-											domain: query.domain,
-											stage: timing.stage,
-											outcome: timing.outcome,
-											elapsedMs: timing.elapsedMs,
-										},
-										"Provider inventory read subphase",
-									);
-								} catch {
-									// Diagnostic failure cannot fail an otherwise valid read.
-								}
-							},
+							"Provider inventory runtime timing",
 						);
-					} finally {
-						repositoryEndedAt = performance.now();
-					}
-				});
+					},
+				);
 			} finally {
 				releasedAt = performance.now();
 			}
