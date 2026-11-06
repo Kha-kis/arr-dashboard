@@ -50,6 +50,7 @@ async function fixture() {
 	const native = createRuntimePrismaClient(runtime);
 	const prisma = native.prisma;
 	cleanup.push(async () => {
+		if (writer.inTransaction) writer.exec("ROLLBACK");
 		await runtime.drain();
 		await native.close();
 		await runtime.close();
@@ -104,42 +105,41 @@ async function fixture() {
 	return { prisma, writer, runtime, run, now, observedAt, fingerprint, payload };
 }
 
-/** Interpose scheduling only; every read/write/error still comes from real guarded SQLite. */
-function raceWrite(prisma: PrismaClient, beforeWrite: () => void, initiallyArmed = true) {
+/** Hold a real competing writer before reservation; never manufacture a Prisma error. */
+function raceWrite(prisma: PrismaClient, writer: Database.Database, initiallyArmed = true) {
 	let armed = initiallyArmed;
 	const errors: unknown[] = [];
+	const prepare = Database.prototype.prepare;
+	vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+		this: Database.Database,
+		sql,
+	) {
+		const statement = prepare.call(this, sql);
+		if (this === writer || this.name !== writer.name || sql !== "BEGIN") return statement;
+		for (const method of ["run", "all"] as const) {
+			const invoke = statement[method];
+			Reflect.set(statement, method, function (this: typeof statement, ...args: unknown[]) {
+				const result = Reflect.apply(invoke, this, args);
+				if (armed) {
+					armed = false;
+					writer.exec("BEGIN IMMEDIATE");
+				}
+				return result;
+			});
+		}
+		return statement;
+	});
 	const raced = new Proxy(prisma, {
 		get(target, property, receiver) {
 			if (property !== "$transaction") return Reflect.get(target, property, receiver);
-			return (body: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
-				target.$transaction((tx) =>
-					body(
-						new Proxy(tx, {
-							get(transaction, model, txReceiver) {
-								const delegate = Reflect.get(transaction, model, txReceiver);
-								if (model !== "dashboardStatisticsSnapshot") return delegate;
-								return new Proxy(delegate, {
-									get(table, method, tableReceiver) {
-										const operation = Reflect.get(table, method, tableReceiver);
-										if (method !== "updateMany") return operation;
-										return async (...args: unknown[]) => {
-											if (armed) {
-												armed = false;
-												beforeWrite();
-											}
-											try {
-												return await Reflect.apply(operation, table, args);
-											} catch (error) {
-												errors.push(error);
-												throw error;
-											}
-										};
-									},
-								});
-							},
-						}),
-					),
-				);
+			return async (body: (tx: Prisma.TransactionClient) => Promise<unknown>) => {
+				try {
+					return await target.$transaction(body);
+				} catch (error) {
+					errors.push(error);
+					throw error;
+				}
+			};
 		},
 	});
 	return {
@@ -148,20 +148,16 @@ function raceWrite(prisma: PrismaClient, beforeWrite: () => void, initiallyArmed
 		arm: () => {
 			armed = true;
 		},
+		release: () => {
+			if (writer.inTransaction) writer.exec("ROLLBACK");
+		},
 	};
 }
 
-describe("Dashboard refresh stale WAL snapshot", { timeout: 30_000 }, () => {
-	it("keeps scheduled renewal alive after one real snapshot conflict and publishes beyond the initial lease", async () => {
+describe("Dashboard refresh real WAL contention", { timeout: 30_000 }, () => {
+	it("keeps scheduled renewal alive after one real writer refusal and publishes beyond the initial lease", async () => {
 		const f = await fixture();
-		const raced = raceWrite(
-			f.prisma,
-			() =>
-				f.writer
-					.prepare('UPDATE "User" SET "username"=? WHERE "id"=?')
-					.run("synthetic-edited", "owner"),
-			false,
-		);
+		const raced = raceWrite(f.prisma, f.writer, false);
 		vi.useFakeTimers({
 			toFake: ["Date", "setImmediate", "clearImmediate", "setInterval", "clearInterval"],
 		});
@@ -221,7 +217,8 @@ describe("Dashboard refresh stale WAL snapshot", { timeout: 30_000 }, () => {
 			expect(renew).toHaveBeenCalled();
 			await Promise.allSettled([renew.mock.results[0]!.value]);
 			expect(raced.errors).toHaveLength(1);
-			expect(raced.errors[0]).toMatchObject({ code: "SQLITE_BUSY_SNAPSHOT" });
+			expect(raced.errors[0]).toMatchObject({ code: "P1008" });
+			raced.release();
 			for (let tick = 0; tick < 4; tick++) {
 				await vi.advanceTimersByTimeAsync(30_000);
 				await Promise.allSettled(renew.mock.results.map((result) => result.value));
@@ -246,6 +243,7 @@ describe("Dashboard refresh stale WAL snapshot", { timeout: 30_000 }, () => {
 				expect(row.observedAt!.getTime()).toBeGreaterThan(f.now.getTime());
 			});
 		} finally {
+			raced.release();
 			release();
 			await vi.advanceTimersByTimeAsync(0);
 			renew.mockRestore();
@@ -255,18 +253,14 @@ describe("Dashboard refresh stale WAL snapshot", { timeout: 30_000 }, () => {
 	});
 	it("refuses the failed claim, preserves published data, and permits a fresh independent claim", async () => {
 		const f = await fixture();
-		const raced = raceWrite(f.prisma, () =>
-			f.writer
-				.prepare('UPDATE "User" SET "username"=? WHERE "id"=?')
-				.run("synthetic-edited", "owner"),
-		);
+		const raced = raceWrite(f.prisma, f.writer);
 		await expect(
 			f.run(() =>
 				snapshot.claimDashboardRefresh(raced.prisma, "owner", f.fingerprint, "loser", f.now),
 			),
 		).resolves.toBe(false);
 		expect(raced.errors).toHaveLength(1);
-		expect(raced.errors[0]).toMatchObject({ code: "SQLITE_BUSY_SNAPSHOT" });
+		expect(raced.errors[0]).toMatchObject({ code: "P1008" });
 		const read = await f.run(() =>
 			snapshot.readDashboardSnapshot(f.prisma, "owner", f.fingerprint, f.now),
 		);
@@ -283,6 +277,7 @@ describe("Dashboard refresh stale WAL snapshot", { timeout: 30_000 }, () => {
 				)
 			).claimToken,
 		).toBeNull();
+		raced.release();
 		expect(
 			await f.run(() =>
 				snapshot.claimDashboardRefresh(f.prisma, "owner", f.fingerprint, "fresh", f.now),
@@ -309,11 +304,7 @@ describe("Dashboard refresh stale WAL snapshot", { timeout: 30_000 }, () => {
 						data: { sourceFingerprint: null, payload: null, observedAt: null, result: null },
 					}),
 				);
-			const raced = raceWrite(f.prisma, () =>
-				f.writer
-					.prepare('UPDATE "User" SET "username"=? WHERE "id"=?')
-					.run("synthetic-edited", "owner"),
-			);
+			const raced = raceWrite(f.prisma, f.writer);
 			const app = Fastify({ logger: false });
 			cleanup.push(() => app.close());
 			setupAuthInjection(app, { id: "owner", username: "synthetic-owner" });
@@ -331,7 +322,7 @@ describe("Dashboard refresh stale WAL snapshot", { timeout: 30_000 }, () => {
 			const inject = createInjectAuthenticated(app);
 			const first = await f.run(() => inject("GET", "/dashboard/statistics/snapshot"));
 			await expect(queued.mock.results[0]!.value).resolves.toBe(false);
-			expect(raced.errors[0]).toMatchObject({ code: "SQLITE_BUSY_SNAPSHOT" });
+			expect(raced.errors[0]).toMatchObject({ code: "P1008" });
 			expect(first.statusCode).toBe(200);
 			expect(first.json()).toMatchObject(
 				published
@@ -343,6 +334,7 @@ describe("Dashboard refresh stale WAL snapshot", { timeout: 30_000 }, () => {
 					: { availability: "unavailable", observedAt: null, data: null },
 			);
 			expect(transport.fetch).not.toHaveBeenCalled();
+			raced.release();
 			const next = await f.run(() => inject("GET", "/dashboard/statistics/snapshot"));
 			expect(next.statusCode).toBe(200);
 			expect(next.json().availability).toBe(published ? "last-known" : "unavailable");
@@ -363,7 +355,7 @@ describe("Dashboard refresh stale WAL snapshot", { timeout: 30_000 }, () => {
 	);
 
 	it.each(["renew", "publish"] as const)(
-		"rolls back a stale %s and preserves its exact live claim for an independent retry",
+		"rolls back a refused %s and preserves its exact live claim for an independent retry",
 		async (phase) => {
 			const f = await fixture();
 			expect(
@@ -374,11 +366,7 @@ describe("Dashboard refresh stale WAL snapshot", { timeout: 30_000 }, () => {
 			const before = await f.run(() =>
 				f.prisma.dashboardStatisticsSnapshot.findUniqueOrThrow({ where: { userId: "owner" } }),
 			);
-			const raced = raceWrite(f.prisma, () =>
-				f.writer
-					.prepare('UPDATE "User" SET "username"=? WHERE "id"=?')
-					.run("synthetic-edited", "owner"),
-			);
+			const raced = raceWrite(f.prisma, f.writer);
 			const later = new Date(f.now.getTime() + 1000);
 			const attempt = (prisma: PrismaClient) =>
 				phase === "renew"
@@ -393,16 +381,19 @@ describe("Dashboard refresh stale WAL snapshot", { timeout: 30_000 }, () => {
 							"complete",
 							later,
 						);
-			await expect(f.run(() => attempt(raced.prisma))).rejects.toMatchObject({
-				code: "SQLITE_BUSY_SNAPSHOT",
-			});
+			if (phase === "renew") {
+				await expect(f.run(() => attempt(raced.prisma))).rejects.toMatchObject({ code: "P1008" });
+			} else {
+				await expect(f.run(() => attempt(raced.prisma))).resolves.toBe(false);
+			}
 			expect(raced.errors).toHaveLength(1);
-			expect(raced.errors[0]).toMatchObject({ code: "SQLITE_BUSY_SNAPSHOT" });
+			expect(raced.errors[0]).toMatchObject({ code: "P1008" });
 			expect(
 				await f.run(() =>
 					f.prisma.dashboardStatisticsSnapshot.findUniqueOrThrow({ where: { userId: "owner" } }),
 				),
 			).toEqual(before);
+			raced.release();
 			expect(await f.run(() => attempt(f.prisma))).toBe(true);
 		},
 	);

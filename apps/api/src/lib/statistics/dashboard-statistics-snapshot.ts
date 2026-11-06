@@ -6,9 +6,12 @@ import {
 } from "@arr/shared";
 import type {
 	DashboardStatisticsSnapshot,
+	Prisma,
 	PrismaClient,
 	ServiceInstance,
 } from "../../lib/prisma.js";
+import { withIsolatedRuntimePrismaTransaction } from "../backup/restore-runtime-client.js";
+import { withSqliteTransactionWriteIntent } from "../sqlite-transaction-intent.js";
 
 type DashboardStatisticsSource = Pick<ServiceInstance, "id" | "service" | "enabled" | "updatedAt">;
 
@@ -36,6 +39,16 @@ const CLAIM_LEASE_MS = 120_000;
 const COMPLETE_FRESH_MS = 15 * 60_000;
 const PARTIAL_RETRY_MS = 60_000;
 const LAST_KNOWN_MAX_MS = 24 * 60 * 60_000;
+
+/** Reserve a short known writer before guard reads pin a stale WAL snapshot. */
+function withStatisticsWrite<T>(
+	prisma: PrismaClient,
+	operation: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+	return withSqliteTransactionWriteIntent(() =>
+		withIsolatedRuntimePrismaTransaction(prisma, operation),
+	);
+}
 
 function isClaimConflict(error: unknown, snapshotConflictIsRefusal = false): boolean {
 	if (
@@ -76,7 +89,7 @@ export async function claimDashboardRefresh(
 			});
 			return true;
 		}
-		return await prisma.$transaction(async (tx) => {
+		return await withStatisticsWrite(prisma, async (tx) => {
 			const sources = await tx.serviceInstance.findMany({
 				where: { userId, enabled: true },
 				select: { id: true, service: true, enabled: true, updatedAt: true },
@@ -114,28 +127,25 @@ export async function renewDashboardRefreshClaim(
 	now: Date,
 ): Promise<boolean> {
 	if (!fingerprint || !token || !Number.isFinite(now.getTime())) return false;
-	try {
-		return await prisma.$transaction(async (tx) => {
-			const sources = await tx.serviceInstance.findMany({
-				where: { userId, enabled: true },
-				select: { id: true, service: true, enabled: true, updatedAt: true },
-			});
-			if (fingerprintDashboardSources(sources) !== fingerprint) return false;
-			const renewed = await tx.dashboardStatisticsSnapshot.updateMany({
-				where: {
-					userId,
-					claimFingerprint: fingerprint,
-					claimToken: token,
-					leaseUntil: { gt: now },
-				},
-				data: { leaseUntil: new Date(now.getTime() + CLAIM_LEASE_MS) },
-			});
-			return renewed.count === 1;
+	// A storage refusal is not proof of a lost lease. The existing heartbeat
+	// retries rejected renewals; only an actual failed source/token fence is false.
+	return withStatisticsWrite(prisma, async (tx) => {
+		const sources = await tx.serviceInstance.findMany({
+			where: { userId, enabled: true },
+			select: { id: true, service: true, enabled: true, updatedAt: true },
 		});
-	} catch (error) {
-		if (isClaimConflict(error)) return false;
-		throw error;
-	}
+		if (fingerprintDashboardSources(sources) !== fingerprint) return false;
+		const renewed = await tx.dashboardStatisticsSnapshot.updateMany({
+			where: {
+				userId,
+				claimFingerprint: fingerprint,
+				claimToken: token,
+				leaseUntil: { gt: now },
+			},
+			data: { leaseUntil: new Date(now.getTime() + CLAIM_LEASE_MS) },
+		});
+		return renewed.count === 1;
+	});
 }
 
 export async function publishDashboardSnapshot(
@@ -160,7 +170,7 @@ export async function publishDashboardSnapshot(
 	const parsed = dashboardStatisticsResponseSchema.safeParse(payload);
 	if (!parsed.success) return false;
 	try {
-		return await prisma.$transaction(async (tx) => {
+		return await withStatisticsWrite(prisma, async (tx) => {
 			const row = await tx.dashboardStatisticsSnapshot.findUnique({ where: { userId } });
 			if (
 				!row ||
