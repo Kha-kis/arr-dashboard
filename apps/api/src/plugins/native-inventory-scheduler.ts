@@ -39,27 +39,33 @@ export async function runNativeInventorySchedulerTick(
 	options: { signal?: AbortSignal } = {},
 ): Promise<void> {
 	if (options.signal?.aborted) return;
+	let failed = false;
 	try {
 		await schedulePeriodicNativeInventoryWork(app.prisma, new Date(), CADENCE, options);
 	} catch {
+		failed = true;
 		app.log.error(
 			{ category: "native-inventory-admission-failed" },
 			"Native inventory periodic admission failed",
 		);
 	}
-	if (options.signal?.aborted) return;
-	try {
-		const result = await runDueNativeInventoryWork(app, WORK_BUDGET, options);
-		app.log.info(
-			{ category: "native-inventory-work", ...result },
-			"Native inventory work tick completed",
-		);
-	} catch {
-		app.log.error(
-			{ category: "native-inventory-work-failed" },
-			"Native inventory work tick failed",
-		);
+	if (!options.signal?.aborted) {
+		try {
+			const result = await runDueNativeInventoryWork(app, WORK_BUDGET, options);
+			app.log.info(
+				{ category: "native-inventory-work", ...result },
+				"Native inventory work tick completed",
+			);
+		} catch {
+			failed = true;
+			app.log.error(
+				{ category: "native-inventory-work-failed" },
+				"Native inventory work tick failed",
+			);
+		}
 	}
+	// Keep independent work useful without reporting a failed tick as successful.
+	if (failed) throw new Error("Native inventory scheduler failed");
 }
 
 export async function runNativeInventoryRetentionTick(

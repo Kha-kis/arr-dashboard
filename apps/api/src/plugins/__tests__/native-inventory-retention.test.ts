@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SchedulerRegistry } from "../../lib/scheduler-registry/scheduler-registry.js";
 
 const mocks = vi.hoisted(() => ({
 	schedule: vi.fn(),
@@ -34,8 +35,19 @@ function app() {
 }
 beforeEach(() => {
 	vi.restoreAllMocks();
-	mocks.schedule.mockReset().mockResolvedValue(undefined);
-	mocks.work.mockReset().mockResolvedValue({ completed: 0 });
+	mocks.schedule.mockReset().mockResolvedValue({
+		accepted: 0,
+		coalesced: 0,
+		superseded: 0,
+		retryable: 0,
+		skipped: 0,
+	});
+	mocks.work.mockReset().mockResolvedValue({
+		completed: 0,
+		retryable: 0,
+		superseded: 0,
+		incomplete: 0,
+	});
 	mocks.prune.mockReset().mockResolvedValue({
 		deletedRows: 0,
 		deletedRuns: 0,
@@ -44,6 +56,91 @@ beforeEach(() => {
 		hasMore: false,
 	});
 	mocks.worker.mockReset();
+});
+
+describe("native scheduler status", () => {
+	function registry() {
+		const value = new SchedulerRegistry();
+		value.register({
+			id: "native-fixture",
+			label: "Native fixture",
+			description: "Synthetic native scheduler status",
+			concurrency: "singleton",
+		});
+		return value;
+	}
+
+	it.each(["admission", "work", "both"] as const)(
+		"records %s failure instead of publishing a successful tick",
+		async (phase) => {
+			const target = app();
+			const status = registry();
+			const privateError = new Error("synthetic-private-provider-details");
+			if (phase !== "work") mocks.schedule.mockRejectedValueOnce(privateError);
+			if (phase !== "admission") mocks.work.mockRejectedValueOnce(privateError);
+			await expect(
+				status.track("native-fixture", () => runNativeInventorySchedulerTick(target as never)),
+			).rejects.toThrow("Native inventory scheduler failed");
+			expect(status.getStatus("native-fixture")).toMatchObject({
+				totalRuns: 1,
+				totalFailures: 1,
+				consecutiveFailures: 1,
+				lastSuccessAt: null,
+				lastError: "Native inventory scheduler failed",
+			});
+			expect(mocks.work).toHaveBeenCalledOnce();
+			expect(JSON.stringify(status.getStatus("native-fixture"))).not.toContain("private");
+			expect(JSON.stringify(target.log.error.mock.calls)).not.toContain("private");
+		},
+	);
+
+	it("retains the failed phase when cancellation prevents independent work", async () => {
+		const cancellation = new AbortController();
+		const status = registry();
+		mocks.schedule.mockImplementationOnce(async () => {
+			cancellation.abort();
+			throw new Error("synthetic-private-admission");
+		});
+		await expect(
+			status.track("native-fixture", () =>
+				runNativeInventorySchedulerTick(app() as never, { signal: cancellation.signal }),
+			),
+		).rejects.toThrow("Native inventory scheduler failed");
+		expect(mocks.work).not.toHaveBeenCalled();
+		expect(status.getStatus("native-fixture")).toMatchObject({
+			totalFailures: 1,
+			lastSuccessAt: null,
+			lastError: "Native inventory scheduler failed",
+		});
+	});
+
+	it("retains failure history when a later real tick succeeds", async () => {
+		const status = registry();
+		mocks.work.mockRejectedValueOnce(new Error("synthetic-private-work"));
+		await expect(
+			status.track("native-fixture", () => runNativeInventorySchedulerTick(app() as never)),
+		).rejects.toThrow("Native inventory scheduler failed");
+		await expect(
+			status.track("native-fixture", () => runNativeInventorySchedulerTick(app() as never)),
+		).resolves.toBeUndefined();
+		expect(status.getStatus("native-fixture")).toMatchObject({
+			totalRuns: 2,
+			totalFailures: 1,
+			consecutiveFailures: 0,
+			lastSuccessAt: expect.any(String),
+			lastError: null,
+		});
+	});
+
+	it("does not admit work when cancellation already happened", async () => {
+		const cancellation = new AbortController();
+		cancellation.abort();
+		await expect(
+			runNativeInventorySchedulerTick(app() as never, { signal: cancellation.signal }),
+		).resolves.toBeUndefined();
+		expect(mocks.schedule).not.toHaveBeenCalled();
+		expect(mocks.work).not.toHaveBeenCalled();
+	});
 });
 
 describe("native retention scheduler admission", () => {
@@ -293,7 +390,9 @@ describe("native retention scheduler admission", () => {
 
 	it("runs maintenance independently after ordinary provider work failure", async () => {
 		mocks.work.mockRejectedValue(new Error("synthetic-private-error"));
-		await runNativeInventorySchedulerTick(app() as never);
+		await expect(runNativeInventorySchedulerTick(app() as never)).rejects.toThrow(
+			"Native inventory scheduler failed",
+		);
 		expect(mocks.prune).not.toHaveBeenCalled();
 		await runNativeInventoryRetentionTick(app() as never);
 		expect(mocks.prune).toHaveBeenCalledOnce();

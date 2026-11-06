@@ -21,7 +21,9 @@ describe("native inventory scheduler tick", () => {
 			.mockResolvedValue({ completed: 1, retryable: 2, superseded: 0, incomplete: 0 });
 		const log = { info: vi.fn(), error: vi.fn() };
 		const app = { prisma: {}, encryptor: {}, log };
-		await runNativeInventorySchedulerTick(app as never);
+		await expect(runNativeInventorySchedulerTick(app as never)).rejects.toThrow(
+			"Native inventory scheduler failed",
+		);
 		expect(orchestration.schedule).toHaveBeenCalledOnce();
 		expect(orchestration.runDue).toHaveBeenCalledOnce();
 		expect(log.error).toHaveBeenCalledWith(
