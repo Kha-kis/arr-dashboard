@@ -335,10 +335,23 @@ explicit retry. Catalog display does not grant watch-state or cleanup authority.
 | Route | Purpose |
 |-------|---------|
 | `/library` | Movies/series list |
+| `/library/poster/:instanceId/:itemType/:itemId` | Authenticated cached ARR root-item poster |
 | `/library/episodes` | Series episodes |
 | `/library/provider-inventory` | Owned Plex/Jellyfin/Emby native movie, series, or episode inventory |
 | `/library/monitor` | Toggle monitoring |
 | `/library/search` | Search for content |
+
+`GET /api/library` projects existing root-item posters to the authenticated poster
+route using the cache row's instance, type and ARR item ID. The TMDb deep-link
+lookup uses the same projection. An opaque artwork-source version lets changed
+cached artwork retry without exposing its URL. Poster delivery requires
+an owned, enabled Radarr/movie, Sonarr/series, Lidarr/artist or Readarr/author cache
+match. It reads only that instance's fixed media-cover path, with server-side
+credentials, no redirects, a five-second timeout and a four-MiB raster-image limit.
+It does not scan the provider, change cached metadata or persist image files.
+Successful images use private five-minute HTTP caching; missing images return 404,
+invalid upstream responses 502 and transport failures 503, all with generic errors
+and no-store caching. Nested album/book artwork is not covered by this route.
 
 `GET /api/library/provider-inventory` reads durable native evidence without contacting the provider. It normally reads a published exact snapshot. For Jellyfin episodes only, when a newer completed scan pass cannot establish exact coverage, it may instead display observed rows from that pass as `evidence: "positive-only"`, `complete: false`, and `freshness: "last-known"`. Those rows establish presence only; missing rows do not establish absence or grant cleanup authority. Supply `instanceId` and `domain=library|episode`; `limit` defaults to 100 and is capped at 200. Continue with both `afterNativeId` and the first page's `generationId` as `expectedGenerationId`, including for positive-only pages. A replaced snapshot or pass returns `status: "unavailable", reason: "snapshot-changed"`; restart at the first page.
 

@@ -33,6 +33,7 @@ import { normalizeAlbum } from "../../lib/library/album-normalizer.js";
 import { normalizeBook } from "../../lib/library/book-normalizer.js";
 import { normalizeEpisode } from "../../lib/library/episode-normalizer.js";
 import { buildMovieFile } from "../../lib/library/movie-normalizer.js";
+import { libraryPosterUrl } from "../../lib/library/poster-delivery.js";
 import {
 	effectiveLibraryQuery,
 	type LibraryQuiView,
@@ -260,6 +261,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 				const items: LibraryItem[] = cachedItems.map((item) => {
 					try {
 						const parsed = JSON.parse(item.data) as LibraryItem;
+						parsed.poster = libraryPosterUrl(item, parsed.poster);
 						parsed.cutoffUnmet = item.cutoffUnmet;
 						// qui torrent state (Phase 2.1) — surface the cached column on each
 						// item so the per-card badge can render from this single page query
@@ -399,8 +401,15 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 				? Prisma.sql`CAST("data"::json->'remoteIds'->>'tmdbId' AS INTEGER) = ${tmdbId}`
 				: Prisma.sql`CAST(json_extract(data, '$.remoteIds.tmdbId') AS INTEGER) = ${tmdbId}`;
 
-		const rows = await app.prisma.$queryRaw<Array<{ data: string }>>(
-			Prisma.sql`SELECT data FROM library_cache WHERE "instanceId" IN (${Prisma.join(instanceIds)}) AND ${jsonExtract} LIMIT 1`,
+		const rows = await app.prisma.$queryRaw<
+			Array<{
+				data: string;
+				instanceId: string;
+				arrItemId: number;
+				itemType: PrismaLibraryItemType;
+			}>
+		>(
+			Prisma.sql`SELECT data, "instanceId", "arrItemId", "itemType" FROM library_cache WHERE "instanceId" IN (${Prisma.join(instanceIds)}) AND ${jsonExtract} LIMIT 1`,
 		);
 
 		if (!rows[0]) {
@@ -408,6 +417,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 		}
 
 		const item = JSON.parse(rows[0].data) as LibraryItem;
+		item.poster = libraryPosterUrl(rows[0], item.poster);
 		return reply.send({ item });
 	});
 

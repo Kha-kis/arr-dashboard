@@ -10,6 +10,7 @@
  * 3. Text placeholder when no image is available
  */
 
+import { useState } from "react";
 import { getSeerrImageUrl, type PosterSize } from "../../discover/lib/seerr-image-utils";
 
 interface PosterImageProps {
@@ -27,20 +28,43 @@ interface PosterImageProps {
 	placeholder?: string;
 }
 
-export function PosterImage({
+export function PosterImage(props: PosterImageProps) {
+	// New artwork gets fresh attempts; late errors remain with the old source pair.
+	return (
+		<PosterImageWithFallback
+			key={JSON.stringify([props.tmdbPosterPath, props.arrPosterUrl, props.size])}
+			{...props}
+		/>
+	);
+}
+
+function PosterImageWithFallback({
 	tmdbPosterPath,
 	arrPosterUrl,
 	size = "w185",
 	alt,
 	imgClassName = "h-full w-full object-cover",
-	placeholder = "Poster",
+	placeholder = "Poster unavailable",
 }: PosterImageProps) {
-	const resolvedUrl = getSeerrImageUrl(tmdbPosterPath, size) ?? arrPosterUrl;
+	const [failedUrls, setFailedUrls] = useState<string[]>([]);
+	const resolvedUrl = [getSeerrImageUrl(tmdbPosterPath, size), arrPosterUrl].find(
+		(url) => url && !failedUrls.includes(url),
+	);
 
 	if (resolvedUrl) {
 		return (
 			/* eslint-disable-next-line @next/next/no-img-element -- External poster from TMDB or arr instance */
-			<img src={resolvedUrl} alt={alt} className={imgClassName} />
+			<img
+				key={resolvedUrl}
+				src={resolvedUrl}
+				alt={alt}
+				className={imgClassName}
+				onError={() => {
+					setFailedUrls((previous) =>
+						previous.includes(resolvedUrl) ? previous : [...previous, resolvedUrl],
+					);
+				}}
+			/>
 		);
 	}
 
