@@ -65,6 +65,31 @@ beforeEach(() => {
 });
 
 describe("native retention follower execution", () => {
+	// Break caught: the real worker catches the prune error but drops its
+	// bounded statement/entry evidence before returning the failed result.
+	it("retains bounded prune boundary evidence while preserving failed status and closure", async () => {
+		mocks.prune.mockRejectedValueOnce({
+			code: "P1008",
+			message: "synthetic-private-error",
+			retentionBoundary: {
+				operation: "stage-delete",
+				transactionEntered: true,
+				nativeCode: "unknown",
+			},
+		});
+		expect(await executeNativeInventoryRetentionSlice(payload)).toEqual({
+			status: "failed",
+			failurePhase: "retention",
+			failureCode: "P1008",
+			retentionBoundary: {
+				operation: "stage-delete",
+				transactionEntered: true,
+				nativeCode: "unknown",
+			},
+		});
+		expect(mocks.close).toHaveBeenCalledOnce();
+	});
+
 	it("posts sanitized runtime-open provenance from the real source worker before physical exit", async () => {
 		// An incomplete binding is refused before filesystem/client admission.
 		const worker = createNativeInventoryRetentionWorker(

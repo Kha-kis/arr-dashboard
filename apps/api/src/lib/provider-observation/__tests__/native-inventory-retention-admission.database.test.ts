@@ -18,6 +18,7 @@ import { openRestoreRuntime } from "../../backup/restore-runtime-admission.js";
 import { createRuntimePrismaClient } from "../../backup/restore-runtime-client.js";
 import type { Prisma, PrismaClient } from "../../prisma.js";
 import { pruneNativeInventoryRetentionSlice } from "../native-inventory-retention.js";
+import { nativeInventoryRetentionDiagnosticsFrom } from "../native-inventory-retention-diagnostics.js";
 
 const OLD = new Date(Date.now() - 30 * 86_400_000);
 const CUTOFF = new Date(Date.now() - 7 * 86_400_000);
@@ -298,9 +299,17 @@ describe("bounded native retention admission retry", () => {
 		await withFixture(async ({ prisma, writer, assertProtected }) => {
 			writer.exec("BEGIN IMMEDIATE");
 			const observed = observeTransactions(prisma);
-			await expect(
-				pruneNativeInventoryRetentionSlice(observed.prisma, CUTOFF),
-			).rejects.toMatchObject({ code: "P1008" });
+			const failure = await pruneNativeInventoryRetentionSlice(observed.prisma, CUTOFF).catch(
+				(error: unknown) => error,
+			);
+			expect(failure).toMatchObject({ code: "P1008" });
+			expect(nativeInventoryRetentionDiagnosticsFrom(failure)).toMatchObject({
+				retentionBoundary: {
+					operation: "transaction-start",
+					transactionEntered: false,
+					nativeCode: "SQLITE_BUSY",
+				},
+			});
 			expect(observed.observed).toEqual({ attempts: 2, callbacks: 0 });
 			writer.exec("ROLLBACK");
 			await assertProtected();
@@ -386,9 +395,17 @@ describe("bounded native retention admission retry", () => {
 	it("does not replay a native-busy failure after the retention callback entered", async () => {
 		await withFixture(async ({ prisma, assertProtected }) => {
 			const observed = observeTransactions(prisma, { enteredError: nativeBusy() });
-			await expect(
-				pruneNativeInventoryRetentionSlice(observed.prisma, CUTOFF),
-			).rejects.toMatchObject({ code: "P1008" });
+			const failure = await pruneNativeInventoryRetentionSlice(observed.prisma, CUTOFF).catch(
+				(error: unknown) => error,
+			);
+			expect(failure).toMatchObject({ code: "P1008" });
+			expect(nativeInventoryRetentionDiagnosticsFrom(failure)).toMatchObject({
+				retentionBoundary: {
+					operation: "run-recheck",
+					transactionEntered: true,
+					nativeCode: "SQLITE_BUSY",
+				},
+			});
 			expect(observed.observed).toEqual({ attempts: 1, callbacks: 1 });
 			await assertProtected();
 			expect(await prisma.providerNativeInventoryPass.count({ where: { id: "old-A-pass" } })).toBe(

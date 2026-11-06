@@ -46,7 +46,11 @@ export async function executeNativeInventoryRetentionSlice(
 			? await runtime.runStarting(operation)
 			: await runtime.runOperation(operation);
 	} catch (error) {
-		firstFailure = { failurePhase, failureCode: nativeInventoryRetentionFailureCode(error) };
+		firstFailure = {
+			...nativeInventoryRetentionDiagnosticsFrom(error),
+			failurePhase,
+			failureCode: nativeInventoryRetentionFailureCode(error),
+		};
 		return { status: "failed", ...firstFailure };
 	} finally {
 		// Outside the ordinary ticket: successful physical closure precedes any

@@ -82,6 +82,38 @@ afterEach(() => {
 });
 
 describe("native retention worker lifetime and protocol", () => {
+	// Break caught: a valid bounded failure is discarded as a protocol error
+	// or its original evidence is replaced before worker/bridge closure.
+	it("retains bounded boundary evidence through physical exit and a later close failure", async () => {
+		close.mockRejectedValueOnce({ code: "SQLITE_LOCKED", message: "synthetic-private-close" });
+		const operation = start();
+		await turn();
+		operation.worker.emit("message", {
+			status: "failed",
+			failurePhase: "retention",
+			failureCode: "P1008",
+			retentionBoundary: {
+				operation: "transaction-start",
+				transactionEntered: false,
+				nativeCode: "SQLITE_BUSY",
+			},
+		});
+		await turn();
+		expect(operation.settled()).toBe(false);
+		operation.worker.emit("exit", 0);
+		expect(await operation.pending).toMatchObject({
+			error: {
+				failurePhase: "retention",
+				failureCode: "P1008",
+				retentionBoundary: {
+					operation: "transaction-start",
+					transactionEntered: false,
+					nativeCode: "SQLITE_BUSY",
+				},
+			},
+		});
+	});
+
 	it("keeps a known transport error code without reading any error accessors", async () => {
 		const getter = vi.fn(() => {
 			throw new Error("private-getter");

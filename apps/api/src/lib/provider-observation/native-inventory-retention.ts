@@ -1,6 +1,10 @@
 import { setTimeout as delay } from "node:timers/promises";
 import type { Prisma, PrismaClient } from "../prisma.js";
 import { NativeInventoryInputError } from "./native-inventory.js";
+import {
+	rememberNativeInventoryRetentionBoundary,
+	type NativeInventoryRetentionOperation,
+} from "./native-inventory-retention-diagnostics.js";
 
 const MINIMUM_AGE_MS = 24 * 60 * 60_000;
 const CANCELLED = Symbol("native-retention-cancelled");
@@ -51,6 +55,7 @@ async function retentionTransaction<T>(
 	prisma: PrismaClient,
 	operation: (tx: Transaction) => Promise<T>,
 	admission: { retryAvailable: boolean },
+	boundary: { operation: NativeInventoryRetentionOperation },
 	signal?: AbortSignal,
 ): Promise<T> {
 	for (;;) {
@@ -59,12 +64,21 @@ async function retentionTransaction<T>(
 			return await prisma.$transaction(
 				async (tx) => {
 					callbackEntered = true;
-					return operation(tx);
+					const result = await operation(tx);
+					boundary.operation = "transaction-finish";
+					return result;
 				},
 				{ isolationLevel: "Serializable", timeout: 10_000 },
 			);
 		} catch (error) {
-			if (callbackEntered || !admission.retryAvailable || !isBusyAdmission(error)) throw error;
+			if (callbackEntered || !admission.retryAvailable || !isBusyAdmission(error)) {
+				rememberNativeInventoryRetentionBoundary(
+					error,
+					callbackEntered ? boundary.operation : "transaction-start",
+					callbackEntered,
+				);
+				throw error;
+			}
 			// The rejected admission has settled. Never replay an entered body;
 			// a fresh transaction below must re-resolve every existing safety fence.
 			admission.retryAvailable = false;
@@ -262,7 +276,12 @@ export async function pruneNativeInventoryRetentionSlice(
 		hasMore: false,
 	};
 	if (options.signal?.aborted) return total;
-	const selected = await candidates(prisma, cutoff, scanLimit, total.nextCursor);
+	const selected = await candidates(prisma, cutoff, scanLimit, total.nextCursor).catch(
+		(error: unknown) => {
+			rememberNativeInventoryRetentionBoundary(error, "candidate-enumeration", false);
+			throw error;
+		},
+	);
 	// One extra admission for the whole slice, not once per scanned candidate.
 	const admission = { retryAvailable: true };
 	total.hasMore = selected.length === scanLimit;
@@ -272,14 +291,19 @@ export async function pruneNativeInventoryRetentionSlice(
 		total.scannedRuns++;
 		total.nextCursor = { id: candidate.id };
 		const guard = bound(candidate, cutoff);
+		const boundary: { operation: NativeInventoryRetentionOperation } = {
+			operation: "transaction-start",
+		};
 		try {
 			const removed = await retentionTransaction(
 				prisma,
 				async (tx) => {
+					boundary.operation = "run-recheck";
 					const fresh = await tx.providerNativeInventoryRun.findFirst({
 						where: guard,
 						select: candidateSelect,
 					});
+					boundary.operation = "protected-check";
 					if (
 						!fresh ||
 						fresh.createdAt.getTime() !== candidate.createdAt.getTime() ||
@@ -291,6 +315,7 @@ export async function pruneNativeInventoryRetentionSlice(
 					// ORM @updatedAt behavior or changing legacy timestamp spellings.
 					// The serializable read above and every DELETE retain the complete
 					// owner/binding/age/reference guard; this statement is not authority.
+					boundary.operation = "writer-fence";
 					const lock = await tx.$executeRaw`
 						UPDATE "provider_native_inventory_runs" SET "state" = "state"
 						WHERE "id" = ${candidate.id} AND "instanceId" = ${candidate.instanceId}
@@ -298,13 +323,15 @@ export async function pruneNativeInventoryRetentionSlice(
 						AND "connectionGeneration" = ${candidate.connectionGeneration}
 						AND "identityGeneration" = ${candidate.identityGeneration}
 						AND "activeSlotKey" IS NULL AND "claimToken" IS NULL AND "leaseUntil" IS NULL
-					`;
+						`;
+					boundary.operation = "protected-check";
 					if (lock !== 1 || (await protectedRun(tx, fresh, cutoff)))
 						return { rows: 0, runs: 0, remaining: false };
 					if (options.signal?.aborted) throw CANCELLED;
 					let rows = 0,
 						runs = 0;
 					const room = () => rowLimit - total.deletedRows - rows;
+					boundary.operation = "pass-read";
 					const pass = await tx.providerNativeInventoryPass.findFirst({
 						where: { runId: candidate.id },
 						select: { id: true },
@@ -312,15 +339,23 @@ export async function pruneNativeInventoryRetentionSlice(
 					if (pass) {
 						const childWhere = { passId: pass.id, pass: { run: guard } };
 						const drain = async (
+							selectOperation: NativeInventoryRetentionOperation,
+							deleteOperation: NativeInventoryRetentionOperation,
 							find: (take: number) => Promise<Array<{ id: string }>>,
 							remove: (ids: string[]) => Promise<{ count: number }>,
 						) => {
 							if (options.signal?.aborted) throw CANCELLED;
 							if (room() < 1) return;
+							boundary.operation = selectOperation;
 							const ids = (await find(room())).map((row) => row.id);
-							if (ids.length) rows += (await remove(ids)).count;
+							if (ids.length) {
+								boundary.operation = deleteOperation;
+								rows += (await remove(ids)).count;
+							}
 						};
 						await drain(
+							"stage-select",
+							"stage-delete",
 							(take) =>
 								tx.providerNativeInventoryStageItem.findMany({
 									where: childWhere,
@@ -334,6 +369,8 @@ export async function pruneNativeInventoryRetentionSlice(
 								}),
 						);
 						await drain(
+							"seen-select",
+							"seen-delete",
 							(take) =>
 								tx.providerNativeInventorySeenItem.findMany({
 									where: childWhere,
@@ -347,6 +384,8 @@ export async function pruneNativeInventoryRetentionSlice(
 								}),
 						);
 						await drain(
+							"receipt-select",
+							"receipt-delete",
 							(take) =>
 								tx.providerNativeInventoryPageReceipt.findMany({
 									where: childWhere,
@@ -358,7 +397,8 @@ export async function pruneNativeInventoryRetentionSlice(
 									where: { ...childWhere, id: { in: ids } },
 								}),
 						);
-						if (room() > 0)
+						if (room() > 0) {
+							boundary.operation = "pass-delete";
 							rows += (
 								await tx.providerNativeInventoryPass.deleteMany({
 									where: {
@@ -371,9 +411,12 @@ export async function pruneNativeInventoryRetentionSlice(
 									},
 								})
 							).count;
+						}
 					}
+					boundary.operation = "attempt-metadata";
 					const metadataRequired = await keepAttemptMetadata(tx, fresh);
 					if (room() > 0 && !metadataRequired) {
+						boundary.operation = "run-delete";
 						runs = (
 							await tx.providerNativeInventoryRun.deleteMany({
 								where: { ...guard, passes: { none: {} } },
@@ -382,6 +425,7 @@ export async function pruneNativeInventoryRetentionSlice(
 						rows += runs;
 					}
 					if (options.signal?.aborted) throw CANCELLED;
+					boundary.operation = "remaining-pass-read";
 					const remainingPass = await tx.providerNativeInventoryPass.findFirst({
 						where: { runId: candidate.id },
 						select: { id: true },
@@ -389,6 +433,7 @@ export async function pruneNativeInventoryRetentionSlice(
 					return { rows, runs, remaining: !!remainingPass || (!metadataRequired && runs === 0) };
 				},
 				admission,
+				boundary,
 				options.signal,
 			);
 			total.deletedRows += removed.rows;

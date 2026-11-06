@@ -28,7 +28,35 @@ export type NativeInventoryRetentionFailureDiagnostics = {
 	failurePhase: NativeInventoryRetentionFailurePhase;
 	failureCode: NativeInventoryRetentionFailureCode;
 	transportFailure?: NativeInventoryRetentionTransportFailure;
+	retentionBoundary?: NativeInventoryRetentionBoundary;
 };
+
+const RETENTION_OPERATIONS = [
+	"candidate-enumeration",
+	"transaction-start",
+	"run-recheck",
+	"protected-check",
+	"writer-fence",
+	"stage-select",
+	"stage-delete",
+	"seen-select",
+	"seen-delete",
+	"receipt-select",
+	"receipt-delete",
+	"pass-delete",
+	"attempt-metadata",
+	"run-delete",
+	"remaining-pass-read",
+	"transaction-finish",
+	"pass-read",
+] as const;
+export type NativeInventoryRetentionOperation = (typeof RETENTION_OPERATIONS)[number];
+export type NativeInventoryRetentionBoundary = {
+	operation: NativeInventoryRetentionOperation;
+	transactionEntered: boolean;
+	nativeCode: "SQLITE_BUSY" | "SQLITE_BUSY_SNAPSHOT" | "SQLITE_LOCKED" | "unknown";
+};
+const retentionBoundaries = new WeakMap<object, NativeInventoryRetentionBoundary>();
 
 /** Never read an accessor, inherited property, error message or cause. */
 function ownData(value: unknown, key: string): unknown {
@@ -36,6 +64,69 @@ function ownData(value: unknown, key: string): unknown {
 		if (typeof value !== "object" || value === null) return undefined;
 		const descriptor = Object.getOwnPropertyDescriptor(value, key);
 		return descriptor && Object.hasOwn(descriptor, "value") ? descriptor.value : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/** Observational evidence only: never grants admission, retry or cleanup authority. */
+export function rememberNativeInventoryRetentionBoundary(
+	error: unknown,
+	operation: NativeInventoryRetentionOperation,
+	transactionEntered: boolean,
+): void {
+	if (typeof error !== "object" || error === null) return;
+	const nativeCode = ownData(
+		ownData(ownData(ownData(error, "meta"), "driverAdapterError"), "cause"),
+		"originalCode",
+	);
+	retentionBoundaries.set(error, {
+		operation,
+		transactionEntered,
+		nativeCode:
+			nativeCode === "SQLITE_BUSY" ||
+			nativeCode === "SQLITE_BUSY_SNAPSHOT" ||
+			nativeCode === "SQLITE_LOCKED"
+				? nativeCode
+				: "unknown",
+	});
+}
+
+/** Strict nested worker protocol; getters, inheritance and extra fields are refused. */
+export function parseNativeInventoryRetentionBoundary(
+	value: unknown,
+): NativeInventoryRetentionBoundary | undefined {
+	try {
+		if (
+			typeof value !== "object" ||
+			value === null ||
+			Object.getPrototypeOf(value) !== Object.prototype
+		)
+			return undefined;
+		const keys = Reflect.ownKeys(value);
+		if (
+			keys.length !== 3 ||
+			!keys.every(
+				(key) => key === "operation" || key === "transactionEntered" || key === "nativeCode",
+			)
+		)
+			return undefined;
+		const rawOperation = ownData(value, "operation"),
+			transactionEntered = ownData(value, "transactionEntered"),
+			nativeCode = ownData(value, "nativeCode");
+		const operation = RETENTION_OPERATIONS.find((name) => name === rawOperation);
+		if (
+			!operation ||
+			typeof transactionEntered !== "boolean" ||
+			!(
+				nativeCode === "SQLITE_BUSY" ||
+				nativeCode === "SQLITE_BUSY_SNAPSHOT" ||
+				nativeCode === "SQLITE_LOCKED" ||
+				nativeCode === "unknown"
+			)
+		)
+			return undefined;
+		return { operation, transactionEntered, nativeCode };
 	} catch {
 		return undefined;
 	}
@@ -93,10 +184,17 @@ export function nativeInventoryRetentionDiagnosticsFrom(
 	const phase = ownData(value, "failurePhase");
 	const code = ownData(value, "failureCode");
 	const transport = ownData(value, "transportFailure");
+	const retentionBoundary =
+		typeof value === "object" && value !== null
+			? parseNativeInventoryRetentionBoundary(
+					retentionBoundaries.get(value) ?? ownData(value, "retentionBoundary"),
+				)
+			: undefined;
 	return {
 		failurePhase: isNativeInventoryRetentionFailurePhase(phase) ? phase : "unknown",
 		failureCode: isNativeInventoryRetentionFailureCode(code) ? code : "unknown",
 		...(isTransportFailure(transport) ? { transportFailure: transport } : {}),
+		...(retentionBoundary ? { retentionBoundary } : {}),
 	};
 }
 
@@ -104,6 +202,7 @@ export class NativeInventoryRetentionWorkerError extends Error {
 	readonly failurePhase: NativeInventoryRetentionFailurePhase;
 	readonly failureCode: NativeInventoryRetentionFailureCode;
 	readonly transportFailure?: NativeInventoryRetentionTransportFailure;
+	readonly retentionBoundary?: NativeInventoryRetentionBoundary;
 	constructor(diagnostics?: NativeInventoryRetentionFailureDiagnostics) {
 		super("Native inventory retention worker failed");
 		this.name = "NativeInventoryRetentionWorkerError";
@@ -111,5 +210,6 @@ export class NativeInventoryRetentionWorkerError extends Error {
 		this.failurePhase = fields.failurePhase;
 		this.failureCode = fields.failureCode;
 		if (fields.transportFailure) this.transportFailure = fields.transportFailure;
+		if (fields.retentionBoundary) this.retentionBoundary = fields.retentionBoundary;
 	}
 }

@@ -12,6 +12,7 @@ import {
 	isNativeInventoryRetentionFailurePhase,
 	nativeInventoryRetentionDiagnosticsFrom,
 	nativeInventoryRetentionFailureCode,
+	parseNativeInventoryRetentionBoundary,
 	type NativeInventoryRetentionFailureDiagnostics,
 	type NativeInventoryRetentionTransportFailure,
 	NativeInventoryRetentionWorkerError,
@@ -32,7 +33,7 @@ export type NativeInventoryRetentionWorkerResult =
 	| { status: "failed" }
 	| ({ status: "failed" } & Pick<
 			NativeInventoryRetentionFailureDiagnostics,
-			"failurePhase" | "failureCode"
+			"failurePhase" | "failureCode" | "retentionBoundary"
 	  >);
 type WorkerLike = {
 	stdout?: { resume(): unknown } | null;
@@ -123,11 +124,19 @@ export function parseNativeInventoryRetentionWorkerResult(
 		return value.status === "failed" ? { status: "failed" } : { status: "cancelled" };
 	if (
 		value.status === "failed" &&
-		Object.keys(value).length === 3 &&
+		(Object.keys(value).length === 3 || Object.keys(value).length === 4) &&
 		isNativeInventoryRetentionFailurePhase(value.failurePhase) &&
 		isNativeInventoryRetentionFailureCode(value.failureCode)
 	) {
-		return { status: "failed", failurePhase: value.failurePhase, failureCode: value.failureCode };
+		const boundary = parseNativeInventoryRetentionBoundary(value.retentionBoundary);
+		if (Object.keys(value).length === 4 && !boundary) return null;
+		if (Object.keys(value).length === 3 && Object.hasOwn(value, "retentionBoundary")) return null;
+		return {
+			status: "failed",
+			failurePhase: value.failurePhase,
+			failureCode: value.failureCode,
+			...(boundary ? { retentionBoundary: boundary } : {}),
+		};
 	}
 	if (
 		value.status !== "completed" ||
