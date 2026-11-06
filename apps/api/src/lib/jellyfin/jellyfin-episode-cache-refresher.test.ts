@@ -370,6 +370,104 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			expect(JSON.stringify(stages)).not.toContain(value);
 	});
 
+	it.each([
+		["runtime", "runtime-admission", null, null],
+		["P1008", "prisma-known", "P1008", "SQLITE_BUSY_SNAPSHOT"],
+		["P2028", "prisma-known", "P2028", null],
+		["unknown", "other", null, null],
+		["throwing-metadata", "other", null, null],
+	])(
+		"logs a bounded failed unit claim for %s and preserves the original rejection",
+		async (kind, errorCategory, databaseCode, sqliteCode) => {
+			const state = ownedFixture("JELLYFIN");
+			configureDurableRun(state);
+			const failure =
+				kind === "runtime"
+					? new RestoreRuntimeAdmissionError()
+					: kind === "unknown"
+						? new Error("PRIVATE_ERROR_DETAIL")
+						: new Prisma.PrismaClientKnownRequestError("PRIVATE_DATABASE_DETAIL", {
+								code: kind === "throwing-metadata" ? "P1008" : kind!,
+								clientVersion: "test",
+								meta: {
+									target: "PRIVATE_COLUMN",
+									driverAdapterError: {
+										cause: { originalCode: kind === "P1008" ? "SQLITE_BUSY_SNAPSHOT" : null },
+									},
+								},
+							});
+			if (kind === "throwing-metadata") {
+				Object.defineProperty(failure, "meta", {
+					get: () => {
+						throw new Error("PRIVATE_METADATA_DETAIL");
+					},
+				});
+			}
+			durable.claimUnit.mockRejectedValueOnce(failure);
+			const lines: string[] = [];
+			const logger = pino(
+				{ level: "info", base: null, timestamp: false },
+				{ write: (line: string) => lines.push(line) },
+			);
+			await expect(
+				refreshOwnedJellyfinEpisodeCache({
+					prisma: state.prisma,
+					encryptor: { decrypt: vi.fn() },
+					instance: state.instance,
+					log: logger,
+				}),
+			).rejects.toBe(failure);
+			const stages = lines
+				.map((line) => JSON.parse(line) as Record<string, unknown>)
+				.filter((line) => line.category === "jellyfin-episode-work-stage");
+			expect(stages.map((line) => [line.stage, line.state])).toEqual([
+				["unit-claim", "entered"],
+				["unit-claim", "failed"],
+			]);
+			expect(stages[1]).toEqual({
+				level: 30,
+				msg: "Jellyfin episode work stage",
+				category: "jellyfin-episode-work-stage",
+				stage: "unit-claim",
+				state: "failed",
+				elapsedMs: expect.any(Number),
+				errorCategory,
+				databaseCode,
+				sqliteCode,
+			});
+			expect(JSON.stringify(stages)).not.toContain("PRIVATE");
+			expect(durable.claimUnit).toHaveBeenCalledOnce();
+			expect(pageWorker.run).not.toHaveBeenCalled();
+			expect(durable.failUnit).not.toHaveBeenCalled();
+			expect(durable.releaseUnit).not.toHaveBeenCalled();
+			expect(durable.units[0]).toMatchObject({ state: "pending", claimToken: null });
+		},
+	);
+
+	it("preserves a failed claim rejection when diagnostic logging throws", async () => {
+		const state = ownedFixture("JELLYFIN");
+		configureDurableRun(state);
+		const failure = new Error("PRIVATE_CLAIM_DETAIL");
+		durable.claimUnit.mockRejectedValueOnce(failure);
+		const logger = {
+			...log,
+			info: () => {
+				throw new Error("diagnostic sink unavailable");
+			},
+		} as unknown as FastifyBaseLogger;
+		await expect(
+			refreshOwnedJellyfinEpisodeCache({
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log: logger,
+			}),
+		).rejects.toBe(failure);
+		expect(durable.claimUnit).toHaveBeenCalledOnce();
+		expect(pageWorker.run).not.toHaveBeenCalled();
+		expect(durable.releaseUnit).not.toHaveBeenCalled();
+	});
+
 	it.each(["unit-claim", "provider-read", "page-stage"] as const)(
 		"logs an entry before a held %s settles without releasing its operation",
 		async (heldStage) => {

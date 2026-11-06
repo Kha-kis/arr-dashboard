@@ -549,14 +549,23 @@ export function createJellyfinEpisodeWorkItemRunner(
 			operation: () => Promise<T>,
 		): Promise<T> {
 			const startedAt = performance.now();
-			const record = (state: "entered" | "succeeded" | "failed") => {
+			const record = (state: "entered" | "succeeded" | "failed", failure?: unknown) => {
 				try {
+					let diagnostics: ReturnType<typeof stageFailureDiagnostics> | undefined;
+					if (state === "failed") {
+						try {
+							diagnostics = stageFailureDiagnostics(failure);
+						} catch {
+							diagnostics = { errorCategory: "other", databaseCode: null, sqliteCode: null };
+						}
+					}
 					context.log.info(
 						{
 							category: "jellyfin-episode-work-stage",
 							stage,
 							state,
 							elapsedMs: Math.max(0, Math.round(performance.now() - startedAt)),
+							...diagnostics,
 						},
 						"Jellyfin episode work stage",
 					);
@@ -566,12 +575,16 @@ export function createJellyfinEpisodeWorkItemRunner(
 			};
 			record("entered");
 			let state: "succeeded" | "failed" = "failed";
+			let failure: unknown;
 			try {
 				const value = await operation();
 				state = "succeeded";
 				return value;
+			} catch (error) {
+				failure = error;
+				throw error;
 			} finally {
-				record(state);
+				record(state, failure);
 			}
 		}
 		const now = context.now ?? new Date();
