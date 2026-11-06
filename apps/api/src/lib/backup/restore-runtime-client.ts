@@ -78,7 +78,7 @@ type SqliteClientRegistration = {
 const ordinarySqliteClients = new WeakMap<object, SqliteClientRegistration>();
 const unenteredPublicationStartRefusals = new WeakSet<object>();
 
-/** Exact guarded SQLite provenance, not permission to retry an arbitrary P2028. */
+/** Exact unentered SQLite provenance, not a generic timeout/admission retry. */
 export function isRetryableSqlitePublicationStartRefusal(error: unknown): boolean {
 	return (
 		typeof error === "object" && error !== null && unenteredPublicationStartRefusals.has(error)
@@ -184,7 +184,11 @@ export function createRuntimePrismaClient(
 		return new Promise((resolve, reject) => {
 			const timer = setTimeout(() => {
 				publicationWaiters.delete(waiter);
-				reject(new RestoreRuntimeAdmissionError());
+				const error = new RestoreRuntimeAdmissionError();
+				// Removed before lending the lane: no native start or callback ran.
+				// A close/ownership refusal never obtains this exact-object proof.
+				if (!registration.closed) unenteredPublicationStartRefusals.add(error);
+				reject(error);
 			}, maxWait);
 			const waiter: PublicationWaiter = {
 				resolve: () => {

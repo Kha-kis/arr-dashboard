@@ -83,6 +83,60 @@ async function fixture() {
 }
 
 describe("qUI observation guarded SQLite write admission", { timeout: 30_000 }, () => {
+	// Break caught: a safe lane refusal before any native transaction must be
+	// retried by the real sync, rather than invalidating a complete inventory.
+	it("publication admission retry recovers a queued lane refusal without reading the provider again", async () => {
+		const f = await fixture(),
+			before = snapshotProtectedRows(f),
+			beforeQui = await f.protectedQuiRows(),
+			entered = deferred(),
+			release = deferred();
+		let releaseTimer: ReturnType<typeof setTimeout> | undefined;
+		const active = f.runtime.runOperation(() =>
+			withIsolatedRuntimePrismaTransaction(f.client.prisma, async (tx) => {
+				entered.resolve();
+				await release.promise;
+				return tx.quiObservationPublication.count();
+			}),
+		);
+		const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+		inventory.mockReset().mockImplementation(async () => {
+			await entered.promise;
+			releaseTimer = setTimeout(release.resolve, 2600);
+			return { complete: true, torrents: [{ hash, state: "uploading", ratio: 1 }] };
+		});
+		let result: Awaited<ReturnType<typeof runQuiTorrentStateSync>>;
+		try {
+			await entered.promise;
+			result = await f.runtime.runOperation(() =>
+				runQuiTorrentStateSync({
+					prisma: f.client.prisma,
+					dbProvider: "sqlite",
+					log,
+				} as unknown as FastifyInstance),
+			);
+		} finally {
+			if (releaseTimer !== undefined) clearTimeout(releaseTimer);
+			release.resolve();
+			await active;
+		}
+		const head = await f.plain.quiObservationPublication.findUniqueOrThrow({
+			where: { userId: "synthetic-user" },
+		});
+		expect(result.errors).toBe(0);
+		expect(inventory).toHaveBeenCalledTimes(1);
+		expect(head).toMatchObject({ complete: true, rowCount: 1 });
+		expect(head.generation).not.toBe("previous");
+		expect(
+			await f.plain.quiTorrentObservation.findMany({ where: { userId: "synthetic-user" } }),
+		).toEqual([
+			expect.objectContaining({ generation: head.generation, infoHash: hash, state: "seeding" }),
+		]);
+		expect(snapshotProtectedRows(f)).toEqual(before);
+		expect(await f.protectedQuiRows()).toEqual(beforeQui);
+		expect(f.losses).toEqual([]);
+	});
+
 	// Break caught: a physically discarded, unentered prune start must not abort
 	// a complete scan; entered callbacks and committed earlier work never replay.
 	it.each([false, true])(
@@ -312,6 +366,7 @@ describe("qUI observation guarded SQLite write admission", { timeout: 30_000 }, 
 		const entered = deferred(),
 			release = deferred();
 		let expiredCalls = 0;
+		let failure: unknown;
 		const active = f.runtime.runOperation(() =>
 			withIsolatedRuntimePrismaTransaction(f.client.prisma, async (tx) => {
 				entered.resolve();
@@ -321,8 +376,8 @@ describe("qUI observation guarded SQLite write admission", { timeout: 30_000 }, 
 		);
 		try {
 			await entered.promise;
-			await expect(
-				f.runtime.runOperation(() =>
+			failure = await f.runtime
+				.runOperation(() =>
 					withIsolatedRuntimePrismaTransaction(
 						f.client.prisma,
 						async () => {
@@ -330,8 +385,10 @@ describe("qUI observation guarded SQLite write admission", { timeout: 30_000 }, 
 						},
 						{ maxWait: 40 },
 					),
-				),
-			).rejects.toBeInstanceOf(RestoreRuntimeAdmissionError);
+				)
+				.catch((error: unknown) => error);
+			expect(failure).toBeInstanceOf(RestoreRuntimeAdmissionError);
+			expect(isRetryableSqlitePublicationStartRefusal(failure)).toBe(true);
 			expect(expiredCalls).toBe(0);
 		} finally {
 			release.resolve();
@@ -344,6 +401,17 @@ describe("qUI observation guarded SQLite write admission", { timeout: 30_000 }, 
 				),
 			),
 		).toBe(2);
+		await expect(
+			f.runtime.runOperation(() =>
+				withIsolatedRuntimePrismaTransaction(f.client.prisma, async () => {
+					throw failure;
+				}),
+			),
+		).rejects.toBe(failure);
+		expect(isRetryableSqlitePublicationStartRefusal(failure)).toBe(false);
+		expect(isRetryableSqlitePublicationStartRefusal(new RestoreRuntimeAdmissionError())).toBe(
+			false,
+		);
 		expect(expiredCalls).toBe(0);
 		expect(f.losses).toEqual([]);
 	});
@@ -426,7 +494,9 @@ describe("qUI observation guarded SQLite write admission", { timeout: 30_000 }, 
 		await delay(20);
 		const closing = f.client.close();
 		try {
-			expect(await queued).toBeInstanceOf(RestoreRuntimeAdmissionError);
+			const failure = await queued;
+			expect(failure).toBeInstanceOf(RestoreRuntimeAdmissionError);
+			expect(isRetryableSqlitePublicationStartRefusal(failure)).toBe(false);
 			expect(queuedCalls).toBe(0);
 		} finally {
 			release.resolve();
