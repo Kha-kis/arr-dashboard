@@ -76,6 +76,14 @@ type SqliteClientRegistration = {
 	): Promise<T>;
 };
 const ordinarySqliteClients = new WeakMap<object, SqliteClientRegistration>();
+const unenteredPublicationStartRefusals = new WeakSet<object>();
+
+/** Exact guarded SQLite provenance, not permission to retry an arbitrary P2028. */
+export function isRetryableSqlitePublicationStartRefusal(error: unknown): boolean {
+	return (
+		typeof error === "object" && error !== null && unenteredPublicationStartRefusals.has(error)
+	);
+}
 
 /** Keep atomic cache publication off the ordinary HTTP connection. */
 export async function withIsolatedRuntimePrismaTransaction<T>(
@@ -254,6 +262,8 @@ export function createRuntimePrismaClient(
 			const maxWait = transactionOptions?.maxWait ?? 2000;
 			const began = performance.now();
 			await acquirePublication(maxWait);
+			let callbackEntered = false;
+			let startRefusal: object | undefined;
 			try {
 				if (registration.closed) throw new RestoreRuntimeAdmissionError();
 				const remaining = Math.floor(maxWait - (performance.now() - began));
@@ -268,16 +278,32 @@ export function createRuntimePrismaClient(
 					options?.sqliteTransactionIntent,
 					retainPublicationTransaction,
 				);
-				return await publication.prisma.$transaction(operation, {
-					...transactionOptions,
-					maxWait: remaining,
-				});
+				return await publication.prisma.$transaction(
+					(tx) => {
+						callbackEntered = true;
+						return operation(tx);
+					},
+					{
+						...transactionOptions,
+						maxWait: remaining,
+					},
+				);
+			} catch (error) {
+				if (typeof error === "object" && error !== null)
+					unenteredPublicationStartRefusals.delete(error);
+				if (!callbackEntered && error instanceof Error && "code" in error && error.code === "P2028")
+					startRefusal = error;
+				throw error;
 			} finally {
 				// Prisma can reject start on maxWait before its discarded native
 				// transaction is rolled back. Keep the lane and accepted ticket alive
 				// until physical startup/settlement, not just the caller promise, ends.
 				while (publicationTransactions.size > 0) await Promise.all(publicationTransactions);
 				releasePublication();
+				// Only after physical settlement may an opted-in caller retry work
+				// which never entered. Preserve the original error and every fence.
+				if (startRefusal && !callbackEntered && !registration.closed)
+					unenteredPublicationStartRefusals.add(startRefusal);
 			}
 		},
 		readClient: async (operation, maxWait) => {

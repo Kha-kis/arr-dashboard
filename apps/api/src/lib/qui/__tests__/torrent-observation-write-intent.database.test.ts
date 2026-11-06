@@ -1,4 +1,5 @@
 import { setTimeout as delay } from "node:timers/promises";
+import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	closeScopedWriteFixtures,
@@ -8,8 +9,21 @@ import {
 	snapshotProtectedRows,
 } from "../../__tests__/scoped-write-intent-fixture.js";
 import { RestoreRuntimeAdmissionError } from "../../backup/restore-runtime-admission.js";
-import { withIsolatedRuntimePrismaTransaction } from "../../backup/restore-runtime-client.js";
+import {
+	isRetryableSqlitePublicationStartRefusal,
+	withIsolatedRuntimePrismaTransaction,
+} from "../../backup/restore-runtime-client.js";
 import * as sqlite from "../../sqlite-adapter.js";
+const { inventory } = vi.hoisted(() => ({ inventory: vi.fn() }));
+vi.mock("../client-factory.js", () => ({
+	createQuiClient: () => ({ listTorrentInventory: inventory }),
+}));
+vi.mock("../instance-helpers.js", () => ({
+	listQuiInstances: async () => [
+		{ id: "synthetic-qui", userId: "synthetic-user", label: "Synthetic" },
+	],
+}));
+import { runQuiTorrentStateSync } from "../torrent-state-sync.js";
 import {
 	beginQuiObservationPublication,
 	captureQuiObservationTopology,
@@ -69,6 +83,130 @@ async function fixture() {
 }
 
 describe("qUI observation guarded SQLite write admission", { timeout: 30_000 }, () => {
+	// Break caught: a physically discarded, unentered prune start must not abort
+	// a complete scan; entered callbacks and committed earlier work never replay.
+	it.each([false, true])(
+		"publication admission retry bounds native prune start refusal (persistent=%s)",
+		async (persistent) => {
+			let armed = false,
+				starts = 0,
+				heldStarts = 0;
+			const createAdapter = sqlite.createRecoverableSqliteAdapter;
+			vi.spyOn(sqlite, "createRecoverableSqliteAdapter").mockImplementation((...args) => {
+				const adapter = createAdapter(...args),
+					connect = adapter.connect.bind(adapter);
+				vi.spyOn(adapter, "connect").mockImplementation(async () => {
+					const driver = await connect(),
+						start = driver.startTransaction.bind(driver);
+					return new Proxy(driver, {
+						get(target, property) {
+							if (property === "startTransaction")
+								return async (...args: Parameters<typeof start>) => {
+									const ordinal = armed ? ++starts : 0;
+									const transaction = await start(...args);
+									if (ordinal >= 2 && ordinal < 2 + (persistent ? 4 : 1)) {
+										heldStarts++;
+										await delay(2200);
+									}
+									return transaction;
+								};
+							const value = Reflect.get(target, property, target);
+							return typeof value === "function" ? value.bind(target) : value;
+						},
+					});
+				});
+				return adapter;
+			});
+			const f = await fixture(),
+				before = snapshotProtectedRows(f),
+				beforeQui = await f.protectedQuiRows();
+			const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+			inventory.mockReset().mockResolvedValue({
+				complete: true,
+				torrents: [{ hash, state: "uploading", ratio: 1 }],
+			});
+			armed = true;
+			const result = await f.runtime.runOperation(() =>
+				runQuiTorrentStateSync({
+					prisma: f.client.prisma,
+					dbProvider: "sqlite",
+					log,
+				} as unknown as FastifyInstance),
+			);
+			const head = await f.plain.quiObservationPublication.findUniqueOrThrow({
+				where: { userId: "synthetic-user" },
+			});
+			recordScopedWriteEvidence(
+				`qui-publication-admission-retry-${persistent ? "persistent" : "transient"}`,
+				{
+					starts,
+					heldStarts,
+					providerReads: inventory.mock.calls.length,
+					result,
+					complete: head.complete,
+					errorCodes: log.error.mock.calls.map((call) => call[0]?.err?.code ?? null),
+					nativeStartDelayInjected: true,
+					actualHostLockCauseReproduced: false,
+				},
+			);
+			expect(heldStarts).toBe(persistent ? 4 : 1);
+			if (result.errors) expect(log.error.mock.calls[0]?.[0]?.err).toMatchObject({ code: "P2028" });
+			expect(result.errors).toBe(persistent ? 1 : 0);
+			expect(inventory).toHaveBeenCalledTimes(1);
+			expect(head).toMatchObject({ complete: !persistent, rowCount: persistent ? 0 : 1 });
+			expect(head.generation).not.toBe("previous");
+			expect(
+				await f.plain.quiTorrentObservation.findMany({ where: { userId: "synthetic-user" } }),
+			).toEqual([
+				expect.objectContaining({
+					generation: persistent ? "previous" : head.generation,
+					infoHash: hash,
+					state: persistent ? "paused" : "seeding",
+				}),
+			]);
+			expect(snapshotProtectedRows(f)).toEqual(before);
+			expect(await f.protectedQuiRows()).toEqual(beforeQui);
+			expect(f.losses).toEqual([]);
+		},
+	);
+
+	it("publication admission retry never grants proof to an entered P2028 or a foreign error", async () => {
+		const f = await fixture(),
+			before = snapshotProtectedRows(f),
+			beforeQui = await f.protectedQuiRows();
+		const failure = Object.assign(new Error("Synthetic entered transaction failure"), {
+			code: "P2028",
+		});
+		let callbacks = 0;
+		await expect(
+			f.runtime.runOperation(() =>
+				withIsolatedRuntimePrismaTransaction(f.client.prisma, async (tx) => {
+					callbacks++;
+					await tx.quiTorrentObservation.updateMany({
+						where: { userId: "synthetic-user" },
+						data: { state: "seeding" },
+					});
+					throw failure;
+				}),
+			),
+		).rejects.toBe(failure);
+		expect(callbacks).toBe(1);
+		expect(isRetryableSqlitePublicationStartRefusal(failure)).toBe(false);
+		expect(
+			isRetryableSqlitePublicationStartRefusal(
+				Object.assign(new Error("Synthetic foreign timeout"), { code: "P2028" }),
+			),
+		).toBe(false);
+		expect(isRetryableSqlitePublicationStartRefusal(null)).toBe(false);
+		expect(isRetryableSqlitePublicationStartRefusal("P2028")).toBe(false);
+		expect(
+			await f.plain.quiTorrentObservation.findFirstOrThrow({ where: { userId: "synthetic-user" } }),
+		).toMatchObject({ state: "paused" });
+		expect(snapshotProtectedRows(f)).toEqual(before);
+		expect(await f.protectedQuiRows()).toEqual(beforeQui);
+		expect(f.losses).toEqual([]);
+	});
+
 	// Break caught: Prisma may refuse a native start before its physical
 	// admission/rollback settles. That connection must not be lent again yet.
 	it("joins timed-out native publication admission before lending the companion again", async () => {
@@ -147,9 +285,21 @@ describe("qUI observation guarded SQLite write admission", { timeout: 30_000 }, 
 		});
 		expect(result.beforeRelease).toEqual({ starts: 1, firstSettled: false });
 		expect(result.failure).toMatchObject({ code: "P2028" });
+		expect(isRetryableSqlitePublicationStartRefusal(result.failure)).toBe(true);
+		expect(isRetryableSqlitePublicationStartRefusal({ code: "P2028" })).toBe(false);
+		// An old refusal object cannot authorize replay if a later callback
+		// enters and throws that same object.
+		await expect(
+			f.runtime.runOperation(() =>
+				withIsolatedRuntimePrismaTransaction(f.client.prisma, async () => {
+					throw result.failure;
+				}),
+			),
+		).rejects.toBe(result.failure);
+		expect(isRetryableSqlitePublicationStartRefusal(result.failure)).toBe(false);
 		expect(result.nextCount).toBe(2);
 		expect(callbacks).toBe(0);
-		expect(starts).toBe(2);
+		expect(starts).toBe(3);
 		expect(snapshotProtectedRows(f)).toEqual(before);
 		expect(await f.protectedQuiRows()).toEqual(beforeQui);
 		expect(f.losses).toEqual([]);

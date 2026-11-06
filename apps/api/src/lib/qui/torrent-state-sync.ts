@@ -1,5 +1,6 @@
 import { type NormalizedTorrentState, normalizeTorrentState, type QuiTorrent } from "@arr/shared";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
+import { isRetryableSqlitePublicationStartRefusal } from "../backup/restore-runtime-client.js";
 import { Prisma, type Prisma as PrismaTypes } from "../prisma.js";
 import { logQuiActivity, type QuiSyncCompleteDetails } from "./activity-log.js";
 import { createQuiClient } from "./client-factory.js";
@@ -95,7 +96,11 @@ async function withSqliteWriteRetry<T>(
 			return await operation();
 		} catch (error) {
 			const delay = SQLITE_WRITE_RETRY_DELAYS_MS[retry];
-			if (dbProvider !== "sqlite" || delay === undefined || !isSqliteBusyWriteError(error)) {
+			if (
+				dbProvider !== "sqlite" ||
+				delay === undefined ||
+				(!isSqliteBusyWriteError(error) && !isRetryableSqlitePublicationStartRefusal(error))
+			) {
 				throw error;
 			}
 			// Yield before reacquiring native runtime fences and the database lock.

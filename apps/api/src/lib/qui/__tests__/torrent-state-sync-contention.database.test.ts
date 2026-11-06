@@ -406,6 +406,8 @@ describe("qUI native SQLite publication contention", () => {
 	);
 
 	it.each([
+		["sqlite", { code: "P2028" }],
+		["postgresql", { code: "P2028" }],
 		["sqlite", { code: "P1008" }],
 		[
 			"sqlite",
