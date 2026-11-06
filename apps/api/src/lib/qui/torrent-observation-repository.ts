@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
+import { withIsolatedRuntimePrismaTransaction } from "../backup/restore-runtime-client.js";
 import type { Prisma, PrismaClient } from "../prisma.js";
+import { withSqliteTransactionWriteIntent } from "../sqlite-transaction-intent.js";
 
 const HASH = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 const STATES = new Set([
@@ -66,6 +68,16 @@ function valid(row: QuiObservation): boolean {
 	);
 }
 
+/** Reserve before runtime guard reads; keep publication off the HTTP connection. */
+function withQuiObservationWriteTransaction<T>(
+	prisma: PrismaClient,
+	operation: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+	return withSqliteTransactionWriteIntent(() =>
+		withIsolatedRuntimePrismaTransaction(prisma, operation),
+	);
+}
+
 /** The conditional write acquires the database fence, not just the JS guard. */
 export async function withQuiObservationGenerationWrite<T>(
 	prisma: PrismaClient,
@@ -73,7 +85,7 @@ export async function withQuiObservationGenerationWrite<T>(
 	generation: string,
 	operation: (tx: Prisma.TransactionClient) => Promise<T>,
 ): Promise<T> {
-	return prisma.$transaction(async (tx) => {
+	return withQuiObservationWriteTransaction(prisma, async (tx) => {
 		const lock = await tx.quiObservationPublication.updateMany({
 			where: { userId, generation, complete: false },
 			data: { complete: false },
@@ -115,7 +127,7 @@ export async function beginQuiObservationPublication(
 ): Promise<string> {
 	if (!Number.isSafeInteger(rowCount) || rowCount < 0) refused();
 	const generation = randomUUID();
-	await prisma.$transaction(async (tx) => {
+	await withQuiObservationWriteTransaction(prisma, async (tx) => {
 		const topology = await captureQuiObservationTopology(tx, userId);
 		if (topology.sourceCount === 0 || topology.digest !== topologyDigest) refused();
 		const data = { generation, topologyDigest, rowCount, complete: false, observedAt: null };
@@ -211,7 +223,7 @@ export async function invalidateQuiObservationPublication(
 	expectedGeneration: string | null,
 ): Promise<string | null> {
 	const generation = randomUUID();
-	return prisma.$transaction(async (tx) => {
+	return withQuiObservationWriteTransaction(prisma, async (tx) => {
 		if (expectedGeneration === null) {
 			const existing = await tx.quiObservationPublication.findUnique({ where: { userId } });
 			if (existing) return null;
