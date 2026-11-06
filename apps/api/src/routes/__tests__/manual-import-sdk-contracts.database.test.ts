@@ -92,6 +92,7 @@ const encryptor = new Encryptor(Buffer.alloc(32, 9).toString("base64"));
 const run = <T>(action: () => Promise<T>) => runtime.runOperation(action);
 const receipts: unknown[] = [];
 
+// Real schema installation is intentionally exercised rather than mocked.
 beforeAll(async () => {
 	new Database(database).close();
 	await synchronizeRuntimeSchema(`file:${database}`);
@@ -99,7 +100,7 @@ beforeAll(async () => {
 	await runtime.bindDestination("synthetic-manual-import-sdk-contracts");
 	await runtime.activate();
 	native = createRuntimePrismaClient(runtime);
-});
+}, 30_000);
 beforeEach(async () => {
 	await run(async () => {
 		await native.prisma.user.deleteMany();
@@ -295,6 +296,7 @@ async function fixture(branch = branches[1]!) {
 }
 
 describe("Manual Import installed SDK HTTP and native operation contracts", () => {
+	// Bound real durable operations without changing application or provider deadlines.
 	// Catches wrong API versions, wrong mode/media mappings, or trusting browser quality.
 	it.each(branches)(
 		"sends the reviewed $service payload literally and persists pending, not success",
@@ -344,6 +346,7 @@ describe("Manual Import installed SDK HTTP and native operation contracts", () =
 				files: [{ verifiedAt: null }],
 			});
 		},
+		10_000,
 	);
 
 	// Dependency/target failure must occur before the durable submission fence or POST.
@@ -360,6 +363,7 @@ describe("Manual Import installed SDK HTTP and native operation contracts", () =
 			expect((await f.submit()).json()).toMatchObject({ state: "pending", verifiedFileCount: 0 });
 			expect(f.provider.events.filter((event) => event.method === "POST")).toHaveLength(1);
 		},
+		10_000,
 	);
 
 	// Once POST starts, refusal/loss/contradiction cannot authorize a blind replay.
@@ -409,5 +413,6 @@ describe("Manual Import installed SDK HTTP and native operation contracts", () =
 				),
 			).toBe(mode !== "post-refused");
 		},
+		10_000,
 	);
 });
