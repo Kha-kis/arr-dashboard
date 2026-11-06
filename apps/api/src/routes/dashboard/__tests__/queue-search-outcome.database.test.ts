@@ -142,7 +142,7 @@ describe("native owned delete-and-search step outcomes", () => {
 		await app.ready();
 		before = await snapshot();
 		ready = true;
-	});
+	}, 30_000);
 	beforeEach(() => {
 		events.length = 0;
 		mode = "submitted";

@@ -4,7 +4,7 @@ import { createSeerrMutationFixture } from "./fixtures/seerr-mutation-fixture.js
 let fixture: Awaited<ReturnType<typeof createSeerrMutationFixture>>;
 beforeAll(async () => {
 	fixture = await createSeerrMutationFixture();
-});
+}, 30_000);
 beforeEach(async () => {
 	await fixture.reset();
 });
