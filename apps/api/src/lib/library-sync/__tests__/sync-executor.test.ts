@@ -199,7 +199,7 @@ function createMockPrisma(
 						}) => Promise<unknown>;
 						create: (args: { data: Record<string, unknown> }) => Promise<unknown>;
 					};
-				}) => Promise<void>,
+				}) => Promise<unknown>,
 			) => {
 				const tx = {
 					libraryCache: {
@@ -211,7 +211,7 @@ function createMockPrisma(
 						},
 					},
 				};
-				await fn(tx);
+				return await fn(tx);
 			},
 		),
 	} as unknown as PrismaClient & {
