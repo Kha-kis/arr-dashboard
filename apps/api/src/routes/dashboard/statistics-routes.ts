@@ -25,7 +25,7 @@ import {
 	fetchReadarrStatisticsWithSdk,
 	fetchSonarrStatisticsWithSdk,
 } from "../../lib/statistics/dashboard-statistics.js";
-import { requestDashboardStatisticsRefresh } from "../../lib/statistics/dashboard-statistics-refresh.js";
+import { queueDashboardStatisticsRefresh } from "../../lib/statistics/dashboard-statistics-refresh.js";
 import {
 	fingerprintDashboardSources,
 	readDashboardSnapshot,
@@ -40,9 +40,9 @@ export async function collectDashboardStatistics(
 	options: { legacyTotals?: boolean } = {},
 ): Promise<{ data: DashboardStatisticsResponse; partial: boolean }> {
 	const includeFailedInTotals = options.legacyTotals === true;
-	const instances = await app.prisma.serviceInstance.findMany({
-		where: { enabled: true, userId },
-	});
+	const instances = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		prisma.serviceInstance.findMany({ where: { enabled: true, userId } }),
+	);
 
 	// Filter to ARR-compatible services only (integration services use different clients)
 	const arrInstances = instances.filter((i) =>
@@ -548,14 +548,10 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				snapshot: await readDashboardSnapshot(prisma, userId, fingerprint, new Date()),
 			};
 		});
-		const { fingerprint } = initial;
-		let { snapshot } = initial;
+		const { fingerprint, snapshot } = initial;
 		if (snapshot.refreshDue) {
-			await requestDashboardStatisticsRefresh(app, userId, fingerprint, request.log, () =>
+			void queueDashboardStatisticsRefresh(app, userId, fingerprint, request.log, () =>
 				collectDashboardStatistics(app, userId, request.log),
-			);
-			snapshot = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
-				readDashboardSnapshot(prisma, userId, fingerprint, new Date()),
 			);
 		}
 		return reply.send(

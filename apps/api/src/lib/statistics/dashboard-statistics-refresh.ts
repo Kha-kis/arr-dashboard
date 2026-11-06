@@ -12,6 +12,57 @@ import {
 type Collector = () => Promise<{ data: DashboardStatisticsResponse; partial: boolean }>;
 const RENEW_INTERVAL_MS = 30_000;
 const MAX_COLLECTION_MS = 10 * 60_000;
+const pendingAdmissions = new WeakMap<FastifyInstance, Map<string, Promise<boolean>>>();
+
+/** Schedule one tracked admission without making a cached GET wait for a writer. */
+export function queueDashboardStatisticsRefresh(
+	app: FastifyInstance,
+	userId: string,
+	fingerprint: string,
+	log: FastifyBaseLogger,
+	collect: Collector,
+): Promise<boolean> {
+	let pending = pendingAdmissions.get(app);
+	if (!pending) {
+		pending = new Map();
+		pendingAdmissions.set(app, pending);
+	}
+	const key = JSON.stringify([userId, fingerprint]);
+	const queued = pending.get(key);
+	if (queued) return queued;
+	// Reserve accepted work before the HTTP ticket ends. The existing refresh
+	// admits its own fenced provider lifetime before this outer reservation ends.
+	const runtimeOperation = retainRestoreRuntimeOperation();
+	const warn = () => {
+		try {
+			log.warn(
+				{ category: "dashboard-statistics-refresh-admission-failed" },
+				"Dashboard statistics refresh admission failed",
+			);
+		} catch {
+			// Diagnostics cannot change the cache or work-lifetime decision.
+		}
+	};
+	const work = (async () => {
+		try {
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			const admit = () => requestDashboardStatisticsRefresh(app, userId, fingerprint, log, collect);
+			return runtimeOperation ? await runtimeOperation.run(admit) : await admit();
+		} finally {
+			// Release outside the reservation's own execution to avoid self-join.
+			await runtimeOperation?.release();
+		}
+	})()
+		.catch(() => {
+			warn();
+			return false;
+		})
+		.finally(() => {
+			if (pending.get(key) === work) pending.delete(key);
+		});
+	pending.set(key, work);
+	return work;
+}
 
 /** Admit one refresh, then let the GET return before any provider work starts. */
 export async function requestDashboardStatisticsRefresh(

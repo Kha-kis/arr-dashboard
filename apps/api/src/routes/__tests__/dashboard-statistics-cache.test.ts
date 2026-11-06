@@ -69,26 +69,44 @@ describe("Dashboard statistics snapshot route", { timeout: 30_000 }, () => {
 	}
 
 	it("answers a cold GET while its provider read remains unresolved", async () => {
-		const { app } = await setup();
-		let releaseProvider = () => {};
-		mocks.fetchSonarr.mockImplementation(
-			() =>
-				new Promise((resolve) => {
-					releaseProvider = () => resolve(emptySonarrStatistics);
-				}),
-		);
-		const pending = createInjectAuthenticated(app)("GET", "/dashboard/statistics/snapshot");
-		const timeout = Symbol("provider-blocked");
-		const timer = new Promise<typeof timeout>((resolve) => setTimeout(() => resolve(timeout), 250));
-		const outcome = await Promise.race([pending, timer]);
-		releaseProvider();
-		const settled = await pending;
-		expect(outcome).not.toBe(timeout);
-		expect(settled.statusCode).toBe(200);
-		expect(settled.json()).toMatchObject({
-			availability: "collecting",
-			observedAt: null,
-			data: null,
+		const { app, prisma } = await setup();
+		let releaseProvider!: () => void;
+		const providerRead = new Promise((resolve) => {
+			releaseProvider = () => resolve(emptySonarrStatistics);
+		});
+		mocks.fetchSonarr.mockReturnValue(providerRead);
+		let timerHandle: ReturnType<typeof setTimeout> | undefined;
+		try {
+			const pending = createInjectAuthenticated(app)("GET", "/dashboard/statistics/snapshot");
+			const timeout = Symbol("provider-blocked");
+			const timer = new Promise<typeof timeout>((resolve) => {
+				timerHandle = setTimeout(() => resolve(timeout), 250);
+			});
+			const outcome = await Promise.race([pending, timer]);
+			const settled = await pending;
+			expect(outcome).not.toBe(timeout);
+			expect(settled.statusCode).toBe(200);
+			// Admission is queued, not yet a durable collecting claim.
+			expect(settled.json()).toMatchObject({
+				availability: "unavailable",
+				observedAt: null,
+				data: null,
+			});
+			await vi.waitFor(() => expect(mocks.fetchSonarr).toHaveBeenCalledTimes(1));
+			const collecting = await createInjectAuthenticated(app)(
+				"GET",
+				"/dashboard/statistics/snapshot",
+			);
+			expect(collecting.json()).toMatchObject({ availability: "collecting", data: null });
+		} finally {
+			if (timerHandle) clearTimeout(timerHandle);
+			releaseProvider();
+		}
+		await vi.waitFor(async () => {
+			expect(
+				(await prisma.dashboardStatisticsSnapshot.findUnique({ where: { userId: "user-1" } }))
+					?.result,
+			).toBe("complete");
 		});
 	});
 
@@ -96,7 +114,7 @@ describe("Dashboard statistics snapshot route", { timeout: 30_000 }, () => {
 		const { app, prisma } = await setup();
 		mocks.fetchSonarr.mockResolvedValue(emptySonarrStatistics);
 		const first = await createInjectAuthenticated(app)("GET", "/dashboard/statistics/snapshot");
-		expect(first.json().availability).toBe("collecting");
+		expect(first.json().availability).toBe("unavailable");
 		await vi.waitFor(async () => {
 			expect(
 				(await prisma.dashboardStatisticsSnapshot.findUnique({ where: { userId: "user-1" } }))
@@ -142,7 +160,7 @@ describe("Dashboard statistics snapshot route", { timeout: 30_000 }, () => {
 			return emptySonarrStatistics;
 		});
 		const first = await createInjectAuthenticated(app)("GET", "/dashboard/statistics/snapshot");
-		expect(first.json().availability).toBe("collecting");
+		expect(first.json().availability).toBe("unavailable");
 		await vi.waitFor(async () => {
 			expect(
 				(await prisma.dashboardStatisticsSnapshot.findUnique({ where: { userId: "user-1" } }))
@@ -165,7 +183,7 @@ describe("Dashboard statistics snapshot route", { timeout: 30_000 }, () => {
 				}),
 		);
 		const first = await createInjectAuthenticated(app)("GET", "/dashboard/statistics/snapshot");
-		expect(first.json().availability).toBe("collecting");
+		expect(first.json().availability).toBe("unavailable");
 		await vi.waitFor(() => expect(mocks.fetchSonarr).toHaveBeenCalledTimes(1));
 		const source = await prisma.serviceInstance.findFirstOrThrow({ where: { userId: "user-1" } });
 		await prisma.serviceInstance.update({

@@ -18,7 +18,7 @@ import { createRuntimePrismaClient } from "../../backup/restore-runtime-client.j
 import { synchronizeRuntimeSchema } from "../../backup/runtime-schema-startup.js";
 import type { Prisma, PrismaClient } from "../../prisma.js";
 import { emptySonarrStatistics } from "../dashboard-statistics.js";
-import { requestDashboardStatisticsRefresh } from "../dashboard-statistics-refresh.js";
+import * as refresh from "../dashboard-statistics-refresh.js";
 import * as snapshot from "../dashboard-statistics-snapshot.js";
 
 const transport = vi.hoisted(() => ({ fetch: vi.fn() }));
@@ -30,6 +30,7 @@ vi.mock("../dashboard-statistics.js", async (original) => ({
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
 	for (const close of cleanup.splice(0).reverse()) await close();
+	vi.restoreAllMocks();
 	transport.fetch.mockReset();
 });
 
@@ -182,7 +183,7 @@ describe("Dashboard refresh stale WAL snapshot", { timeout: 30_000 }, () => {
 		try {
 			expect(
 				await f.run(() =>
-					requestDashboardStatisticsRefresh(
+					refresh.requestDashboardStatisticsRefresh(
 						{ prisma: raced.prisma } as never,
 						"owner",
 						f.fingerprint,
@@ -300,6 +301,7 @@ describe("Dashboard refresh stale WAL snapshot", { timeout: 30_000 }, () => {
 		"serves honest cached availability and recovers on the next request (published: %s)",
 		async (published) => {
 			const f = await fixture();
+			const queued = vi.spyOn(refresh, "queueDashboardStatisticsRefresh");
 			if (!published)
 				await f.run(() =>
 					f.prisma.dashboardStatisticsSnapshot.update({
@@ -328,6 +330,7 @@ describe("Dashboard refresh stale WAL snapshot", { timeout: 30_000 }, () => {
 			transport.fetch.mockResolvedValue({ ...emptySonarrStatistics, totalSeries: 18 });
 			const inject = createInjectAuthenticated(app);
 			const first = await f.run(() => inject("GET", "/dashboard/statistics/snapshot"));
+			await expect(queued.mock.results[0]!.value).resolves.toBe(false);
 			expect(raced.errors[0]).toMatchObject({ code: "SQLITE_BUSY_SNAPSHOT" });
 			expect(first.statusCode).toBe(200);
 			expect(first.json()).toMatchObject(
@@ -342,7 +345,7 @@ describe("Dashboard refresh stale WAL snapshot", { timeout: 30_000 }, () => {
 			expect(transport.fetch).not.toHaveBeenCalled();
 			const next = await f.run(() => inject("GET", "/dashboard/statistics/snapshot"));
 			expect(next.statusCode).toBe(200);
-			expect(next.json().availability).toBe(published ? "last-known" : "collecting");
+			expect(next.json().availability).toBe(published ? "last-known" : "unavailable");
 			await vi.waitFor(async () => {
 				const row = await f.run(() =>
 					f.prisma.dashboardStatisticsSnapshot.findUniqueOrThrow({ where: { userId: "owner" } }),
