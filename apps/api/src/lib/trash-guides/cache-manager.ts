@@ -170,6 +170,7 @@ export class TrashCacheManager {
 
 	/**
 	 * Get cached data and its source commit from the same database row.
+	 * Reading does not establish that the upstream source is still current.
 	 */
 	async getSnapshot<T = unknown>(
 		serviceType: "RADARR" | "SONARR",
@@ -188,9 +189,6 @@ export class TrashCacheManager {
 		if (!cacheEntry) {
 			return null;
 		}
-
-		// Update last checked timestamp
-		await this.touchCache(serviceType, configType);
 
 		// Decompress and return data
 		try {

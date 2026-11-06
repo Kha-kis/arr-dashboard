@@ -1520,6 +1520,7 @@ export class TemplateUpdater {
 						z.array(trashQualitySizeSchema),
 					);
 					if (sameCacheProvenance(snapshot?.provenance ?? null, expectedProvenance)) {
+						await this.cacheManager.touchCache(serviceType, configType);
 						verifiedQualitySizeData = snapshot!.data;
 						verifiedConfigTypes.push(configType);
 						continue;

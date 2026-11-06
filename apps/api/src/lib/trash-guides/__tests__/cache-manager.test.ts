@@ -14,6 +14,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { PrismaClient } from "../../../lib/prisma.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import { TrashCacheManager } from "../cache-manager.js";
+import { TemplateUpdater } from "../template-updater.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -151,8 +152,118 @@ describe("TrashCacheManager Integration Tests", () => {
 			expect(isFresh).toBe(false);
 		});
 
-		// Note: Staleness test removed due to timing unreliability in CI/CD
-		// Staleness detection is tested indirectly through cache status isStale flag
+		it.each([true, false])(
+			"reads preserve verification age with compression=%s",
+			async (compressionEnabled) => {
+				const manager = new TrashCacheManager(prisma, { compressionEnabled });
+				const data = [{ trash_id: "cf-1", name: "Synthetic format" }];
+				const provenance = {
+					version: 1 as const,
+					repository: "TRaSH-Guides/Guides",
+					commitHash: "0123456789abcdef0123456789abcdef01234567",
+				};
+				await manager.setVerified("RADARR", "CUSTOM_FORMATS", data, provenance);
+				await prisma.trashCache.updateMany({
+					data: {
+						fetchedAt: new Date("2020-01-01T00:00:00Z"),
+						lastCheckedAt: new Date("2020-01-02T00:00:00Z"),
+					},
+				});
+				const before = await prisma.trashCache.findMany();
+				expect(await manager.isFresh("RADARR", "CUSTOM_FORMATS")).toBe(false);
+
+				await expect(manager.getSnapshot("RADARR", "CUSTOM_FORMATS")).resolves.toEqual({
+					data,
+					commitHash: provenance.commitHash,
+					provenance,
+				});
+				await expect(manager.get("RADARR", "CUSTOM_FORMATS")).resolves.toEqual(data);
+
+				expect(await prisma.trashCache.findMany()).toEqual(before);
+				expect(await manager.isFresh("RADARR", "CUSTOM_FORMATS")).toBe(false);
+				expect(await manager.getStatus("RADARR", "CUSTOM_FORMATS")).toMatchObject({
+					isStale: true,
+					lastChecked: "2020-01-02T00:00:00.000Z",
+				});
+				expect(await manager.getStats()).toMatchObject({ staleEntries: 1 });
+			},
+		);
+
+		it.each([true, false])(
+			"valid cached data remains readable when updates are refused with compression=%s",
+			async (compressionEnabled) => {
+				const manager = new TrashCacheManager(prisma, { compressionEnabled });
+				const data = [{ trash_id: "cf-1", name: "Synthetic format" }];
+				await manager.set("RADARR", "CUSTOM_FORMATS", data);
+				const before = await prisma.trashCache.findMany();
+				await prisma.$executeRawUnsafe(`
+					CREATE TRIGGER refuse_cache_updates BEFORE UPDATE ON trash_cache
+					BEGIN SELECT RAISE(ABORT, 'synthetic update refusal'); END
+				`);
+				try {
+					await expect(manager.touchCache("RADARR", "CUSTOM_FORMATS")).rejects.toThrow();
+					await expect(manager.getSnapshot("RADARR", "CUSTOM_FORMATS")).resolves.toEqual({
+						data,
+						commitHash: null,
+						provenance: null,
+					});
+					await expect(manager.get("RADARR", "CUSTOM_FORMATS")).resolves.toEqual(data);
+					expect(await prisma.trashCache.findMany()).toEqual(before);
+				} finally {
+					await prisma.$executeRawUnsafe("DROP TRIGGER refuse_cache_updates");
+				}
+			},
+		);
+
+		it("a verified unchanged upstream commit refreshes all cache check times without refetching", async () => {
+			const provenance = {
+				version: 1 as const,
+				repository: "TRaSH-Guides/Guides",
+				commitHash: "0123456789abcdef0123456789abcdef01234567",
+			};
+			const configTypes = [
+				"CUSTOM_FORMATS",
+				"CF_GROUPS",
+				"QUALITY_SIZE",
+				"QUALITY_PROFILES",
+				"CF_DESCRIPTIONS",
+				"CONFLICTS",
+			] as const;
+			for (const configType of configTypes) {
+				await cacheManager.setVerified("RADARR", configType, [], provenance);
+			}
+			const oldTime = new Date("2020-01-01T00:00:00Z");
+			await prisma.trashCache.updateMany({ data: { fetchedAt: oldTime, lastCheckedAt: oldTime } });
+			const before = await prisma.trashCache.findMany({ orderBy: { configType: "asc" } });
+			const updater = new TemplateUpdater(
+				prisma,
+				{ getLatestCommit: async () => ({ commitHash: provenance.commitHash }) } as never,
+				cacheManager,
+				{
+					getCommitProvenance: () => provenance,
+					fetchConfigsAtCommit: async () => {
+						throw new Error("Unexpected refetch");
+					},
+				} as never,
+			);
+			const checkStarted = Date.now();
+
+			await expect(updater.refreshAllCaches("RADARR")).resolves.toEqual({
+				refreshed: 0,
+				failed: 0,
+				errors: [],
+				verifiedConfigTypes: [...configTypes],
+				verifiedQualitySizeData: [],
+			});
+			const after = await prisma.trashCache.findMany({ orderBy: { configType: "asc" } });
+			expect(after).toHaveLength(6);
+			for (let index = 0; index < after.length; index++) {
+				const { lastCheckedAt, updatedAt: _updatedAt, ...row } = after[index]!;
+				const { lastCheckedAt: _oldCheck, updatedAt: _oldUpdate, ...priorRow } = before[index]!;
+				expect(row).toEqual(priorRow);
+				expect(lastCheckedAt.getTime()).toBeGreaterThanOrEqual(checkStarted);
+			}
+		});
 	});
 
 	describe("Cache Status", () => {
