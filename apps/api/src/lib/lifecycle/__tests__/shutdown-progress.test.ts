@@ -1,9 +1,57 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { startShutdownProgress } from "../shutdown-progress.js";
+import { getShutdownSchedulerStatus, startShutdownProgress } from "../shutdown-progress.js";
 
 afterEach(() => {
 	vi.restoreAllMocks();
 	vi.useRealTimers();
+});
+
+describe("shutdown scheduler categories", () => {
+	it("projects only running public categories without mutating private metadata", () => {
+		const jobs = Object.freeze([
+			Object.freeze({
+				id: "native-inventory",
+				state: "running" as const,
+				label: "private-label",
+				lastError: "private-error",
+			}),
+			Object.freeze({ id: "plex-cache", state: "idle" as const }),
+			Object.freeze({ id: "jellyfin-cache", state: "disabled" as const }),
+			Object.freeze({ id: "private-instance-job", state: "running" as const }),
+		]);
+		expect(getShutdownSchedulerStatus(jobs)).toEqual({
+			runningSchedulers: 2,
+			runningSchedulerKinds: [
+				{ kind: "native-inventory", count: 1 },
+				{ kind: "other", count: 1 },
+			],
+		});
+		expect(jobs[0]).toMatchObject({ label: "private-label", lastError: "private-error" });
+	});
+
+	it("collapses arbitrary IDs, including object keys, into one bounded category", () => {
+		const jobs = Array.from({ length: 512 }, (_, index) => ({
+			id: `private-${index}`,
+			state: "running" as const,
+		}));
+		jobs.push({ id: "__proto__", state: "running" });
+		jobs.push({ id: "constructor", state: "running" });
+		expect(getShutdownSchedulerStatus(jobs)).toEqual({
+			runningSchedulers: 514,
+			runningSchedulerKinds: [{ kind: "other", count: 514 }],
+		});
+	});
+
+	it("returns no active categories for empty or settled snapshots", () => {
+		expect(getShutdownSchedulerStatus([])).toEqual({
+			runningSchedulers: 0,
+			runningSchedulerKinds: [],
+		});
+		expect(getShutdownSchedulerStatus([{ id: "native-inventory", state: "idle" }])).toEqual({
+			runningSchedulers: 0,
+			runningSchedulerKinds: [],
+		});
+	});
 });
 
 describe("shutdown progress", () => {

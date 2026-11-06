@@ -14,14 +14,18 @@ import {
 	logPortConfig,
 	logSecurityConfig,
 } from "./lib/config/port-config.js";
-import { LOG_DIR, LOG_LEVEL, logger } from "./lib/logger.js";
 import {
+	type CombinedStartupMessage,
 	parseCombinedStartupMessage,
 	readCombinedStartupMode,
 	resolveCombinedStartupSettings,
-	type CombinedStartupMessage,
 } from "./lib/lifecycle/combined-startup.js";
-import { type ShutdownPhase, startShutdownProgress } from "./lib/lifecycle/shutdown-progress.js";
+import {
+	getShutdownSchedulerStatus,
+	type ShutdownPhase,
+	startShutdownProgress,
+} from "./lib/lifecycle/shutdown-progress.js";
+import { LOG_DIR, LOG_LEVEL, logger } from "./lib/logger.js";
 import { getAppVersionInfo } from "./lib/utils/version.js";
 import { buildServer } from "./server.js";
 
@@ -77,11 +81,7 @@ const start = async () => {
 						...(runtime ? { runtime: getRestoreRuntimeShutdownStatus(runtime) } : {}),
 						...(app?.hasDecorator("lifecycle") ? app.lifecycle.getShutdownStatus() : {}),
 						...(app?.hasDecorator("schedulerRegistry")
-							? {
-									runningSchedulers: app.schedulerRegistry
-										.list()
-										.filter((job) => job.state === "running").length,
-								}
+							? getShutdownSchedulerStatus(app.schedulerRegistry.list())
 							: {}),
 					}),
 					report: (payload) => {

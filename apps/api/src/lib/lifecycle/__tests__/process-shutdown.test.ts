@@ -246,7 +246,7 @@ afterEach(async () => {
 });
 
 describe.each(["SIGTERM", "SIGINT"] as const)("API termination: %s", (signal) => {
-	it("reports a held handler and aggregate scheduler work through repeated signals until actual close", async () => {
+	it("reports safe running job categories through repeated signals until actual close", async () => {
 		vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
 		const gate = deferred();
 		const registry = new SchedulerRegistry();
@@ -257,12 +257,33 @@ describe.each(["SIGTERM", "SIGINT"] as const)("API termination: %s", (signal) =>
 			description: "private-description",
 			concurrency: "parallel",
 		});
+		registry.register({
+			id: "native-inventory",
+			label: "private-native-label",
+			description: "private-native-description",
+			concurrency: "parallel",
+		});
+		registry.register({
+			id: "plex-cache",
+			label: "private-idle-label",
+			description: "private-idle-description",
+			concurrency: "parallel",
+		});
 		const scheduled = registry.track("private-job", async () => await gate.promise);
+		const native = registry.track("native-inventory", async () => await gate.promise);
 		const handler = app.lifecycle.runHttpHandler(async () => await gate.promise);
 		emit(signal);
 		await settle();
 		expect(boundary.progress).toContainEqual(
-			expect.objectContaining({ phase: "fastify", pendingHandlers: 1, runningSchedulers: 1 }),
+			expect.objectContaining({
+				phase: "fastify",
+				pendingHandlers: 1,
+				runningSchedulers: 2,
+				runningSchedulerKinds: [
+					{ kind: "native-inventory", count: 1 },
+					{ kind: "other", count: 1 },
+				],
+			}),
 		);
 		const count = boundary.progress.length;
 		emit(signal);
@@ -274,18 +295,23 @@ describe.each(["SIGTERM", "SIGINT"] as const)("API termination: %s", (signal) =>
 		expect(boundary.progress.at(-1)).toMatchObject({
 			phase: "fastify",
 			pendingHandlers: 1,
-			runningSchedulers: 1,
+			runningSchedulers: 2,
+			runningSchedulerKinds: [
+				{ kind: "native-inventory", count: 1 },
+				{ kind: "other", count: 1 },
+			],
 		});
 		expect(JSON.stringify(boundary.progress)).not.toContain("private-");
 		expect(close).toHaveBeenCalledTimes(1);
 		expect(exitCodes).toEqual([]);
 		gate.resolve();
-		await Promise.all([handler, scheduled]);
+		await Promise.all([handler, scheduled, native]);
 		await settle();
 		expect(boundary.progress.at(-1)).toMatchObject({
 			phase: "complete",
 			pendingHandlers: 0,
 			runningSchedulers: 0,
+			runningSchedulerKinds: [],
 		});
 		expect(vi.getTimerCount()).toBe(0);
 		expect(exitCodes).toEqual([0]);
