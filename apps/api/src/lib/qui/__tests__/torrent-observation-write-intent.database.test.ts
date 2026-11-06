@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { setTimeout as delay } from "node:timers/promises";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	closeScopedWriteFixtures,
 	createScopedWriteFixture,
@@ -6,6 +7,9 @@ import {
 	recordScopedWriteEvidence,
 	snapshotProtectedRows,
 } from "../../__tests__/scoped-write-intent-fixture.js";
+import { RestoreRuntimeAdmissionError } from "../../backup/restore-runtime-admission.js";
+import { withIsolatedRuntimePrismaTransaction } from "../../backup/restore-runtime-client.js";
+import * as sqlite from "../../sqlite-adapter.js";
 import {
 	beginQuiObservationPublication,
 	captureQuiObservationTopology,
@@ -16,6 +20,14 @@ import {
 afterEach(closeScopedWriteFixtures);
 
 const hash = "a".repeat(40);
+
+function deferred() {
+	let resolve!: () => void;
+	const promise = new Promise<void>((done) => {
+		resolve = done;
+	});
+	return { promise, resolve };
+}
 
 async function fixture() {
 	const f = await createScopedWriteFixture();
@@ -57,6 +69,355 @@ async function fixture() {
 }
 
 describe("qUI observation guarded SQLite write admission", { timeout: 30_000 }, () => {
+	// Break caught: Prisma may refuse a native start before its physical
+	// admission/rollback settles. That connection must not be lent again yet.
+	it("joins timed-out native publication admission before lending the companion again", async () => {
+		const held = deferred(),
+			release = deferred();
+		let armed = false,
+			starts = 0;
+		const createAdapter = sqlite.createRecoverableSqliteAdapter;
+		vi.spyOn(sqlite, "createRecoverableSqliteAdapter").mockImplementation((...args) => {
+			const adapter = createAdapter(...args),
+				connect = adapter.connect.bind(adapter);
+			vi.spyOn(adapter, "connect").mockImplementation(async () => {
+				const driver = await connect(),
+					start = driver.startTransaction.bind(driver);
+				return new Proxy(driver, {
+					get(target, property) {
+						if (property === "startTransaction")
+							return async (...args: Parameters<typeof start>) => {
+								const ordinal = armed ? ++starts : 0;
+								const transaction = await start(...args);
+								if (ordinal === 1) {
+									held.resolve();
+									await release.promise;
+								}
+								return transaction;
+							};
+						const value = Reflect.get(target, property, target);
+						return typeof value === "function" ? value.bind(target) : value;
+					},
+				});
+			});
+			return adapter;
+		});
+		const f = await fixture();
+		const before = snapshotProtectedRows(f),
+			beforeQui = await f.protectedQuiRows();
+		armed = true;
+		let callbacks = 0,
+			firstSettled = false;
+		const result = await f.runtime.runOperation(async () => {
+			const first = withIsolatedRuntimePrismaTransaction(
+				f.client.prisma,
+				async () => {
+					callbacks++;
+				},
+				{ maxWait: 40 },
+			)
+				.catch((error: unknown) => error)
+				.finally(() => {
+					firstSettled = true;
+				});
+			await held.promise;
+			await delay(100);
+			const second = withIsolatedRuntimePrismaTransaction(
+				f.client.prisma,
+				(tx) => tx.quiObservationPublication.count(),
+				{ maxWait: 1000 },
+			);
+			let beforeRelease: { starts: number; firstSettled: boolean };
+			try {
+				await delay(20);
+				beforeRelease = { starts, firstSettled };
+			} finally {
+				release.resolve();
+			}
+			const [failure, nextCount] = await Promise.all([first, second]);
+			return { beforeRelease, failure, nextCount };
+		});
+		recordScopedWriteEvidence("qui-publication-start-timeout", {
+			beforeRelease: result.beforeRelease,
+			starts,
+			callbacks,
+			failureCode:
+				result.failure instanceof Error && "code" in result.failure ? result.failure.code : null,
+			nextCount: result.nextCount,
+		});
+		expect(result.beforeRelease).toEqual({ starts: 1, firstSettled: false });
+		expect(result.failure).toMatchObject({ code: "P2028" });
+		expect(result.nextCount).toBe(2);
+		expect(callbacks).toBe(0);
+		expect(starts).toBe(2);
+		expect(snapshotProtectedRows(f)).toEqual(before);
+		expect(await f.protectedQuiRows()).toEqual(beforeQui);
+		expect(f.losses).toEqual([]);
+	});
+
+	// Break caught: a timed-out waiter must be removed, not enter after its
+	// caller has already been told that publication admission failed.
+	it("expires queued publication admission without later entering its callback", async () => {
+		const f = await fixture();
+		const entered = deferred(),
+			release = deferred();
+		let expiredCalls = 0;
+		const active = f.runtime.runOperation(() =>
+			withIsolatedRuntimePrismaTransaction(f.client.prisma, async (tx) => {
+				entered.resolve();
+				await release.promise;
+				return tx.quiObservationPublication.count();
+			}),
+		);
+		try {
+			await entered.promise;
+			await expect(
+				f.runtime.runOperation(() =>
+					withIsolatedRuntimePrismaTransaction(
+						f.client.prisma,
+						async () => {
+							expiredCalls++;
+						},
+						{ maxWait: 40 },
+					),
+				),
+			).rejects.toBeInstanceOf(RestoreRuntimeAdmissionError);
+			expect(expiredCalls).toBe(0);
+		} finally {
+			release.resolve();
+			await active;
+		}
+		expect(
+			await f.runtime.runOperation(() =>
+				withIsolatedRuntimePrismaTransaction(f.client.prisma, (tx) =>
+					tx.quiObservationPublication.count(),
+				),
+			),
+		).toBe(2);
+		expect(expiredCalls).toBe(0);
+		expect(f.losses).toEqual([]);
+	});
+
+	// Break caught: an entered callback failure must roll back once and release
+	// the shared connection to queued callers in order, without replaying work.
+	it("releases publication admission after rollback and serves queued callers in order", async () => {
+		const f = await fixture();
+		const entered = deferred(),
+			release = deferred();
+		const rejection = new Error("Synthetic queued publication rollback");
+		const order: string[] = [];
+		const first = f.runtime
+			.runOperation(() =>
+				withIsolatedRuntimePrismaTransaction(f.client.prisma, async (tx) => {
+					order.push("first");
+					await tx.quiTorrentObservation.updateMany({
+						where: { userId: "synthetic-user" },
+						data: { state: "seeding" },
+					});
+					entered.resolve();
+					await release.promise;
+					throw rejection;
+				}),
+			)
+			.catch((error: unknown) => error);
+		await entered.promise;
+		const second = f.runtime.runOperation(() =>
+			withIsolatedRuntimePrismaTransaction(f.client.prisma, async (tx) => {
+				order.push("second");
+				return tx.quiTorrentObservation.findFirstOrThrow({ where: { userId: "synthetic-user" } });
+			}),
+		);
+		const third = f.runtime.runOperation(() =>
+			withIsolatedRuntimePrismaTransaction(f.client.prisma, async (tx) => {
+				order.push("third");
+				return tx.quiObservationPublication.count();
+			}),
+		);
+		try {
+			await delay(20);
+			expect(order).toEqual(["first"]);
+		} finally {
+			release.resolve();
+		}
+		expect(await first).toBe(rejection);
+		expect(await second).toMatchObject({ state: "paused" });
+		expect(await third).toBe(2);
+		expect(order).toEqual(["first", "second", "third"]);
+		expect(f.losses).toEqual([]);
+	});
+
+	// Break caught: closing the client must immediately cancel queued admission
+	// even while the active callback is still held, and refuse future work.
+	it("cancels queued publication admission on client closure before releasing active work", async () => {
+		const f = await fixture();
+		const entered = deferred(),
+			release = deferred();
+		let queuedCalls = 0;
+		const first = f.runtime
+			.runOperation(() =>
+				withIsolatedRuntimePrismaTransaction(f.client.prisma, async () => {
+					entered.resolve();
+					await release.promise;
+				}),
+			)
+			.catch(() => undefined);
+		await entered.promise;
+		const queued = f.runtime
+			.runOperation(() =>
+				withIsolatedRuntimePrismaTransaction(
+					f.client.prisma,
+					async () => {
+						queuedCalls++;
+					},
+					{ maxWait: 1000 },
+				),
+			)
+			.catch((error: unknown) => error);
+		await delay(20);
+		const closing = f.client.close();
+		try {
+			expect(await queued).toBeInstanceOf(RestoreRuntimeAdmissionError);
+			expect(queuedCalls).toBe(0);
+		} finally {
+			release.resolve();
+		}
+		await first;
+		await closing;
+		await expect(
+			f.runtime.runOperation(() =>
+				withIsolatedRuntimePrismaTransaction(f.client.prisma, async () => {
+					queuedCalls++;
+				}),
+			),
+		).rejects.toBeInstanceOf(RestoreRuntimeAdmissionError);
+		expect(queuedCalls).toBe(0);
+	});
+
+	// Break caught: runtime admission closure must not cancel already-accepted
+	// queued publication or let drain finish before those transactions settle.
+	it("retains accepted queued publication admission through runtime drain", async () => {
+		const f = await fixture();
+		const entered = deferred(),
+			release = deferred();
+		let drained = false;
+		let draining!: Promise<void>;
+		const results = await f.runtime.runOperation(async () => {
+			const first = withIsolatedRuntimePrismaTransaction(f.client.prisma, async (tx) => {
+				entered.resolve();
+				await release.promise;
+				return tx.quiObservationPublication.count();
+			});
+			await entered.promise;
+			const second = withIsolatedRuntimePrismaTransaction(f.client.prisma, (tx) =>
+				tx.quiObservationPublication.count(),
+			);
+			f.runtime.closeAdmission();
+			draining = f.runtime.drain().then(() => {
+				drained = true;
+			});
+			try {
+				await delay(20);
+				expect(drained).toBe(false);
+			} finally {
+				release.resolve();
+			}
+			return Promise.all([first, second]);
+		});
+		await draining;
+		expect(results).toEqual([2, 2]);
+		expect(drained).toBe(true);
+		await expect(f.runtime.runOperation(() => 1)).rejects.toBeInstanceOf(
+			RestoreRuntimeAdmissionError,
+		);
+		expect(f.losses).toEqual([]);
+	});
+
+	it("serializes concurrent publication admission before guard reads can pin another writer", async () => {
+		let current: Awaited<ReturnType<typeof fixture>> | undefined;
+		let held = false;
+		let release!: () => void;
+		const barrier = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const createAdapter = sqlite.createRecoverableSqliteAdapter;
+		vi.spyOn(sqlite, "createRecoverableSqliteAdapter").mockImplementation((...args) => {
+			const adapter = createAdapter(...args),
+				connect = adapter.connect.bind(adapter);
+			vi.spyOn(adapter, "connect").mockImplementation(async () => {
+				const driver = await connect(),
+					start = driver.startTransaction.bind(driver);
+				return new Proxy(driver, {
+					get(target, property) {
+						if (property === "startTransaction")
+							return async (...args: Parameters<typeof start>) => {
+								const transaction = await start(...args);
+								if (!held && current) {
+									held = true;
+									await barrier;
+								}
+								return transaction;
+							};
+						const value = Reflect.get(target, property, target);
+						return typeof value === "function" ? value.bind(target) : value;
+					},
+				});
+			});
+			return adapter;
+		});
+		const f = await fixture();
+		current = f;
+		const protectedRows = snapshotProtectedRows(f),
+			protectedQuiRows = await f.protectedQuiRows();
+		const competition = interceptScopedWriteCompetition(f, { compete: true });
+		const first = f.runtime
+			.runOperation(() =>
+				beginQuiObservationPublication(
+					f.client.prisma,
+					"synthetic-user",
+					f.topology.digest,
+					1,
+					"previous",
+				),
+			)
+			.then(
+				(value) => ({ ok: true as const, value }),
+				() => ({ ok: false as const }),
+			);
+		let second: Promise<{ ok: boolean }> | undefined;
+		try {
+			await vi.waitFor(() => expect(held).toBe(true), { timeout: 5000, interval: 5 });
+			second = f.runtime
+				.runOperation(() =>
+					withIsolatedRuntimePrismaTransaction(f.client.prisma, (tx) =>
+						tx.quiObservationPublication.count(),
+					),
+				)
+				.then(
+					() => ({ ok: true }),
+					() => ({ ok: false }),
+				);
+			// Give the actual second admission an opportunity to reach its guard.
+			// The first transaction remains held regardless of scheduling speed.
+			await delay(100);
+		} finally {
+			release();
+		}
+		const results = await Promise.all([first, second]);
+		recordScopedWriteEvidence("qui-concurrent-publication-admission", {
+			held,
+			competition,
+			completed: results.map((r) => r?.ok ?? false),
+		});
+		expect(held).toBe(true);
+		expect(results.map((r) => r?.ok)).toEqual([true, true]);
+		expect(competition.commits).toBe(0);
+		expect(competition.blocked).toBe(1);
+		expect(competition.reservations).toBe(1);
+		expect(competition.nativeErrors).not.toContain("SQLITE_BUSY_SNAPSHOT");
+		expect(snapshotProtectedRows(f)).toEqual(protectedRows);
+		expect(await f.protectedQuiRows()).toEqual(protectedQuiRows);
+	});
+
 	// Break caught: a committed writer between runtime guard reads and the first
 	// publication write must not turn a valid fenced update into BUSY_SNAPSHOT.
 	it.each(["begin", "generation-write", "invalidate-new"] as const)(

@@ -66,7 +66,10 @@ type RuntimeTransactionOptions = {
 };
 type SqliteClientRegistration = {
 	closed: boolean;
-	publication(): RuntimePrismaClient;
+	publicationTransaction<T>(
+		operation: (tx: Prisma.TransactionClient) => Promise<T>,
+		options?: RuntimeTransactionOptions,
+	): Promise<T>;
 	readClient<T>(
 		operation: (client: PrismaClientInstance) => Promise<T>,
 		maxWait?: number,
@@ -89,7 +92,7 @@ export async function withIsolatedRuntimePrismaTransaction<T>(
 	if (registration.closed) throw new RestoreRuntimeAdmissionError();
 	// The companion was registered before admission could close. An already
 	// accepted collection may reach this publication while the runtime drains.
-	return registration.publication().prisma.$transaction(operation, options);
+	return registration.publicationTransaction(operation, options);
 }
 
 /** Consistent reads must not borrow the HTTP or publication connection. */
@@ -146,6 +149,60 @@ export function createRuntimePrismaClient(
 	// drain because materialization uses this existing slot, never a new claim.
 	let publication: RuntimePrismaClient | undefined;
 	let publicationClosePromise: Promise<void> | undefined;
+	const publicationTransactions = new Set<Promise<void>>();
+	const retainPublicationTransaction = () => {
+		let finish!: () => void;
+		const settled = new Promise<void>((resolve) => {
+			finish = resolve;
+		});
+		publicationTransactions.add(settled);
+		return () => {
+			publicationTransactions.delete(settled);
+			finish();
+		};
+	};
+	let publicationBusy = false;
+	type PublicationWaiter = {
+		resolve(): void;
+		reject(error: RestoreRuntimeAdmissionError): void;
+	};
+	const publicationWaiters = new Set<PublicationWaiter>();
+	const acquirePublication = (maxWait: number): Promise<void> => {
+		if (registration.closed) return Promise.reject(new RestoreRuntimeAdmissionError());
+		if (!publicationBusy) {
+			publicationBusy = true;
+			return Promise.resolve();
+		}
+		return new Promise((resolve, reject) => {
+			const timer = setTimeout(() => {
+				publicationWaiters.delete(waiter);
+				reject(new RestoreRuntimeAdmissionError());
+			}, maxWait);
+			const waiter: PublicationWaiter = {
+				resolve: () => {
+					clearTimeout(timer);
+					resolve();
+				},
+				reject: (error) => {
+					clearTimeout(timer);
+					reject(error);
+				},
+			};
+			publicationWaiters.add(waiter);
+		});
+	};
+	const releasePublication = () => {
+		const next = publicationWaiters.values().next().value;
+		if (next && !registration.closed) {
+			publicationWaiters.delete(next);
+			next.resolve();
+		} else publicationBusy = false;
+	};
+	const closePublicationAdmission = () => {
+		registration.closed = true;
+		for (const waiter of publicationWaiters) waiter.reject(new RestoreRuntimeAdmissionError());
+		publicationWaiters.clear();
+	};
 	// Cached-read fan-out is bounded independently from ordinary HTTP queries.
 	// Reserve closure now; accepted work may first acquire a lane during drain.
 	type ReadLane = { busy: boolean; client?: RuntimePrismaClient };
@@ -190,18 +247,38 @@ export function createRuntimePrismaClient(
 	};
 	const registration: SqliteClientRegistration = {
 		closed: false,
-		publication: () => {
-			if (registration.closed) throw new RestoreRuntimeAdmissionError();
-			// Only close registration is already accounted for by the reserved slot;
-			// the actual context's ticket, owner and native fences are unchanged.
-			publication ??= createGuardedPrismaClient(
-				{ ...context, registerClose: () => () => undefined },
-				runtime,
-				undefined,
-				undefined,
-				options?.sqliteTransactionIntent,
-			);
-			return publication;
+		publicationTransaction: async (operation, transactionOptions) => {
+			// The adapter's BEGIN mutex does not cover our preceding guard reads.
+			// Own the entire companion invocation so a guard cannot borrow another
+			// publication's open snapshot before its writer reservation.
+			const maxWait = transactionOptions?.maxWait ?? 2000;
+			const began = performance.now();
+			await acquirePublication(maxWait);
+			try {
+				if (registration.closed) throw new RestoreRuntimeAdmissionError();
+				const remaining = Math.floor(maxWait - (performance.now() - began));
+				if (remaining <= 0) throw new RestoreRuntimeAdmissionError();
+				// Close lifetime is already reserved; ticket, owner and native fences
+				// remain unchanged, including accepted work first publishing in drain.
+				publication ??= createGuardedPrismaClient(
+					{ ...context, registerClose: () => () => undefined },
+					runtime,
+					undefined,
+					undefined,
+					options?.sqliteTransactionIntent,
+					retainPublicationTransaction,
+				);
+				return await publication.prisma.$transaction(operation, {
+					...transactionOptions,
+					maxWait: remaining,
+				});
+			} finally {
+				// Prisma can reject start on maxWait before its discarded native
+				// transaction is rolled back. Keep the lane and accepted ticket alive
+				// until physical startup/settlement, not just the caller promise, ends.
+				while (publicationTransactions.size > 0) await Promise.all(publicationTransactions);
+				releasePublication();
+			}
 		},
 		readClient: async (operation, maxWait) => {
 			// Session validation enters this same pool before route code. Let a
@@ -223,7 +300,7 @@ export function createRuntimePrismaClient(
 		},
 	};
 	const closeReads = () => {
-		registration.closed = true;
+		closePublicationAdmission();
 		for (const waiter of readWaiters) waiter.reject(new RestoreRuntimeAdmissionError());
 		readWaiters.clear();
 		readsClosePromise ??= Promise.resolve().then(async () => {
@@ -237,7 +314,7 @@ export function createRuntimePrismaClient(
 	};
 	const unregisterReads = context.registerClose(closeReads);
 	const closePublication = () => {
-		registration.closed = true;
+		closePublicationAdmission();
 		publicationClosePromise ??= Promise.resolve().then(async () => {
 			await publication?.close();
 			// Failed physical close retains both this reference and its close slot.
@@ -252,7 +329,7 @@ export function createRuntimePrismaClient(
 	return Object.freeze({
 		prisma: native.prisma,
 		close: () => {
-			registration.closed = true;
+			closePublicationAdmission();
 			closePromise ??= Promise.resolve().then(async () => {
 				const closed = await Promise.allSettled([native.close(), closePublication(), closeReads()]);
 				if (closed.some((result) => result.status === "rejected"))
@@ -285,6 +362,7 @@ function createGuardedPrismaClient(
 	scope?: RestoreReplacementScope,
 	sqliteTimeout?: number,
 	sqliteTransactionIntent?: "write",
+	retainTransaction?: () => () => void,
 ): Readonly<{ prisma: PrismaClientInstance; close(): Promise<void> }> {
 	const replacement = "restoreId" in context ? context : undefined;
 	if (/^postgres(ql)?:\/\//i.test(context.databaseUrl)) {
@@ -513,77 +591,78 @@ function createGuardedPrismaClient(
 					get(target, property) {
 						if (property === "dispose") return dispose;
 						if (property === "startTransaction")
-							return async (isolation?: Parameters<Driver["startTransaction"]>[0]) => {
-								const writeIntent =
-									sqliteTransactionIntent === "write" ||
-									(!replacement && hasSqliteTransactionWriteIntent());
-								const loan = context.captureTicket();
-								await guard(loan);
-								context.assertTicket();
-								loan();
-								const transaction = await target.startTransaction(isolation);
-								const generation = ++transactionGeneration;
-								const assertTransaction = () => {
+							return (isolation?: Parameters<Driver["startTransaction"]>[0]) =>
+								trackNativeTransactionStart(async () => {
+									const writeIntent =
+										sqliteTransactionIntent === "write" ||
+										(!replacement && hasSqliteTransactionWriteIntent());
+									const loan = context.captureTicket();
+									await guard(loan);
 									context.assertTicket();
 									loan();
-									assertNative(true, generation);
-								};
-								const admitted = guardTransaction(
-									transaction,
-									(sql) => guard(loan, sql),
-									async () => {
-										context.unavailable("transaction-cleanup-failed");
-										await dispose();
-									},
-									assertTransaction,
-									(query, invoke, revalidate, assert, isClosedTransactionError) =>
-										statement(
-											query,
-											invoke,
-											revalidate,
-											assert,
-											true,
-											generation,
-											isClosedTransactionError,
-										),
-								);
-								try {
-									if (writeIntent) {
-										// Reserve the WAL writer before guard reads pin a snapshot.
-										// No row matches: coordinator state and row triggers stay untouched.
+									const transaction = await target.startTransaction(isolation);
+									const generation = ++transactionGeneration;
+									const assertTransaction = () => {
 										context.assertTicket();
 										loan();
-										await statement(
-											SQLITE_WRITE_INTENT,
-											(query) => transaction.executeRaw(query),
-											async () => {
-												// Recheck live owner/participation/stamps without pinning a
-												// main-file snapshot before the no-row writer reservation.
-												await ownershipGuard(loan);
-												if (!bindingRecord) throw new RestoreRuntimeAdmissionError();
-												context.validateSqliteBinding(bindingRecord);
-											},
-											assertTransaction,
-											true,
-											generation,
-											undefined,
-											// Settle before Prisma's default 2s start-admission deadline.
-											1000,
-										);
-									}
-									await guard(loan);
-								} catch (error) {
+										assertNative(true, generation);
+									};
+									const admitted = guardTransaction(
+										transaction,
+										(sql) => guard(loan, sql),
+										async () => {
+											context.unavailable("transaction-cleanup-failed");
+											await dispose();
+										},
+										assertTransaction,
+										(query, invoke, revalidate, assert, isClosedTransactionError) =>
+											statement(
+												query,
+												invoke,
+												revalidate,
+												assert,
+												true,
+												generation,
+												isClosedTransactionError,
+											),
+									);
 									try {
-										await admitted.rollback();
-									} catch (cleanupError) {
-										if (!writeIntent) throw cleanupError;
-										// Rollback already fails closed and disposes on uncertain cleanup.
-										// Preserve the opt-in admission or reservation failure.
+										if (writeIntent) {
+											// Reserve the WAL writer before guard reads pin a snapshot.
+											// No row matches: coordinator state and row triggers stay untouched.
+											context.assertTicket();
+											loan();
+											await statement(
+												SQLITE_WRITE_INTENT,
+												(query) => transaction.executeRaw(query),
+												async () => {
+													// Recheck live owner/participation/stamps without pinning a
+													// main-file snapshot before the no-row writer reservation.
+													await ownershipGuard(loan);
+													if (!bindingRecord) throw new RestoreRuntimeAdmissionError();
+													context.validateSqliteBinding(bindingRecord);
+												},
+												assertTransaction,
+												true,
+												generation,
+												undefined,
+												// Settle before Prisma's default 2s start-admission deadline.
+												1000,
+											);
+										}
+										await guard(loan);
+									} catch (error) {
+										try {
+											await admitted.rollback();
+										} catch (cleanupError) {
+											if (!writeIntent) throw cleanupError;
+											// Rollback already fails closed and disposes on uncertain cleanup.
+											// Preserve the opt-in admission or reservation failure.
+										}
+										throw error;
 									}
-									throw error;
-								}
-								return admitted;
-							};
+									return admitted;
+								}, retainTransaction);
 						if (property === "queryRaw" || property === "executeRaw")
 							return async (query: Query) => {
 								const loan = context.captureTicket();
@@ -661,6 +740,35 @@ function createGuardedPrismaClient(
 		throw new RestoreRuntimeAdmissionError();
 	}
 	return Object.freeze({ prisma, close });
+}
+
+/** Retain physical startup and settlement even if Prisma abandons its start. */
+async function trackNativeTransactionStart(
+	start: () => Promise<Transaction>,
+	retain?: () => () => void,
+): Promise<Transaction> {
+	const finish = retain?.();
+	try {
+		const transaction = await start();
+		if (!finish) return transaction;
+		return new Proxy(transaction, {
+			get(target, property) {
+				const value = Reflect.get(target, property, target);
+				if (property === "commit" || property === "rollback")
+					return async () => {
+						try {
+							return await Reflect.apply(value, target, []);
+						} finally {
+							finish();
+						}
+					};
+				return typeof value === "function" ? value.bind(target) : value;
+			},
+		});
+	} catch (error) {
+		finish?.();
+		throw error;
+	}
 }
 
 function guardTransaction(
