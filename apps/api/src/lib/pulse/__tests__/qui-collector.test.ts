@@ -42,6 +42,48 @@ beforeEach(() => {
 });
 
 describe("collectQuiSignals — rollup attention items (Phase 2.1b)", () => {
+	it.each([
+		{ count: 1, severity: "warning" },
+		{ count: 10, severity: "critical" },
+	])(
+		"describes failed webhook persistence honestly for $count deliveries",
+		async ({ count, severity }) => {
+			mockListQuiInstances.mockResolvedValue([
+				{ id: "qui-1", userId: "u", label: "main qui", baseUrl: "http://qui" },
+				{ id: "qui-2", userId: "u", label: "other qui", baseUrl: "http://other-qui" },
+			]);
+			mockCreateQuiClient.mockReturnValue({
+				listInstances: vi.fn().mockResolvedValue([{ id: 1, name: "qbit-a", connected: true }]),
+			});
+			const countActivity = vi.fn().mockResolvedValue(count);
+			const items = await collectQuiSignals(
+				{ prisma: { quiActivityLog: { count: countActivity } } } as never,
+				"u",
+				silentLog,
+			);
+			expect(items).toHaveLength(1);
+			expect(items[0]).toMatchObject({
+				id: "qui-webhook-drops",
+				severity,
+				category: "health",
+				title: `${count} qui webhook event${count === 1 ? "" : "s"} dropped in the last 24h`,
+				actionUrl: "/qui-activity",
+				source: "qui",
+			});
+			expect(items[0]?.detail).toContain("couldn't persist");
+			expect(items[0]?.detail).toContain("return an error to qUI");
+			expect(items[0]?.detail).toContain("sender retries are not guaranteed");
+			expect(items[0]?.detail).not.toMatch(/acknowledged|stop retry storms/i);
+			expect(countActivity).toHaveBeenCalledExactlyOnceWith({
+				where: {
+					userId: "u",
+					eventType: "qui_webhook_dropped",
+					createdAt: { gte: expect.any(Date) },
+				},
+			});
+		},
+	);
+
 	it("emits NOTHING when no qui instances are configured", async () => {
 		mockListQuiInstances.mockResolvedValue([]);
 		const items = await collectQuiSignals({} as never, "u", silentLog);

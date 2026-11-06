@@ -1743,9 +1743,9 @@ const collectQuiSignals: Collector = async (app, userId, log) => {
 
 	const items: PulseItem[] = [];
 
-	// Webhook-drop signal: if QuiEventLog insert failed at the receiver, we
-	// 200-suppress to qui so it doesn't retry-storm us, but we still log a
-	// `qui_webhook_dropped` activity row. Surface as Pulse so the operator
+	// Webhook-drop signal: a failed QuiEventLog insert returns an error to qUI
+	// and records a best-effort `qui_webhook_dropped` activity row. Sender
+	// retries are not guaranteed. Surface as Pulse so the operator
 	// sees the gap on their health dashboard, not just in pino logs.
 	// Window: last 24h, matches the activity log retention floor.
 	try {
@@ -1766,7 +1766,7 @@ const collectQuiSignals: Collector = async (app, userId, log) => {
 				category: "health",
 				title: `${droppedCount} qui webhook event${droppedCount === 1 ? "" : "s"} dropped in the last 24h`,
 				detail:
-					"The dashboard acknowledged these events to qui (to stop retry storms) but couldn't persist them — usually a disk-full / schema-drift / migration issue. Check arr-dashboard logs for the underlying DB error.",
+					"The dashboard couldn't persist these webhook deliveries. Failed saves return an error to qUI; sender retries are not guaranteed. Check the activity feed and arr-dashboard logs for persistence failure details.",
 				actionUrl: "/qui-activity",
 				actionLabel: "View qui Activity → Activity feed → qui_webhook_dropped",
 				source: "qui",
