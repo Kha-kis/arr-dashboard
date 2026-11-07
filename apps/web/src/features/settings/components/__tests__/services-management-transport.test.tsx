@@ -14,6 +14,26 @@ import { useServicesManagement } from "../../hooks/use-services-management";
 import { ServiceForm } from "../service-form";
 import { ServicesTab } from "../services-tab";
 
+const oauth = vi.hoisted(() => ({
+	status: "done" as const,
+	tokenRef: "synthetic-token-reference",
+	error: null,
+	servers: [
+		{
+			name: "Synthetic Plex",
+			clientIdentifier: "synthetic-server",
+			version: "1.0",
+			connections: [
+				{ uri: "http://plex.synthetic.invalid", local: true, relay: false, reachable: true },
+			],
+		},
+	],
+	startOAuth: vi.fn(),
+	cancel: vi.fn(),
+}));
+// Only the external consent popup is replaced; autofill and transport remain real.
+vi.mock("../../../../hooks/api/usePlexOAuth", () => ({ usePlexOAuth: () => oauth }));
+
 type Request = { url: string; method: string; body: unknown };
 const json = (body: unknown, status = 200) =>
 	new Response(status === 204 ? null : JSON.stringify(body), {
@@ -234,8 +254,8 @@ function Services() {
 					void m.handleSubmit(f.formState, f.selectedServiceForEdit, f.resetForm);
 				}}
 				onCancel={() => f.resetForm(f.formState.service)}
-				onTestConnection={() =>
-					void m.handleTestFormConnection(f.formState, f.selectedServiceForEdit)
+				onTestConnection={(draft) =>
+					void m.handleTestFormConnection(draft ?? f.formState, f.selectedServiceForEdit)
 				}
 				selectedService={f.selectedServiceForEdit}
 				services={list}
@@ -257,6 +277,353 @@ function Services() {
 function card(name: string) {
 	return within(screen.getByText(name).closest("div.group")!);
 }
+
+describe("composed OAuth autofill and explicit persistence", () => {
+	function oauthTransport() {
+		respond = async ({ url, method, body }) => {
+			if (method === "GET" && url === "/api/services") return json({ services });
+			if (url === "/api/plex/oauth/token") return json({ authToken: "synthetic-plex-key" });
+			if (url === "/api/seerr/oauth/fetch-key") {
+				if (gate) await gate.promise;
+				return json({ apiKey: "synthetic-seerr-key" });
+			}
+			if (url === "/api/services/test-connection")
+				return json({ success: true, message: "Synthetic connection verified", version: "1.0" });
+			if (method === "POST" && url === "/api/services") {
+				const p = body as Record<string, unknown>;
+				const created = {
+					...service("source-b", String(p.label), p.service as ServiceInstanceSummary["service"]),
+					baseUrl: String(p.baseUrl),
+				};
+				services = [...services, created];
+				return json({ service: created }, 201);
+			}
+			throw new Error(`Unexpected OAuth request ${method} ${url}`);
+		};
+	}
+	const connectionTests = () => writes().filter((r) => r.url.endsWith("/test-connection"));
+	const persisted = () => writes().filter((r) => r.url === "/api/services");
+
+	it("tests the selected Plex draft with its retrieved token and saves only explicitly", async () => {
+		oauthTransport();
+		show(<Services />);
+		await screen.findByText("Synthetic A");
+		fireEvent.click(screen.getByRole("button", { name: "plex" }));
+		fireEvent.click(screen.getByRole("button", { name: /http:\/\/plex.synthetic.invalid/ }));
+		await waitFor(() =>
+			expect(screen.getByLabelText(/^API Key/)).toHaveValue("synthetic-plex-key"),
+		);
+		await waitFor(() => expect(connectionTests()).toHaveLength(1));
+		expect(connectionTests()[0]?.body).toEqual({
+			service: "plex",
+			baseUrl: "http://plex.synthetic.invalid",
+			apiKey: "synthetic-plex-key",
+		});
+		await screen.findByText("Synthetic connection verified");
+		expect(screen.getByLabelText(/Label/)).toHaveValue("Synthetic Plex");
+		expect(persisted()).toHaveLength(0);
+		fireEvent.click(screen.getByRole("button", { name: "Add service" }));
+		await waitFor(() => expect(persisted()).toHaveLength(1));
+		expect(persisted()[0]?.body).toMatchObject({
+			label: "Synthetic Plex",
+			service: "plex",
+			baseUrl: "http://plex.synthetic.invalid",
+			apiKey: "synthetic-plex-key",
+		});
+	});
+
+	it("tests the Seerr parent draft with its fetched key and saves only explicitly", async () => {
+		oauthTransport();
+		show(<Services />);
+		await screen.findByText("Synthetic A");
+		fireEvent.click(screen.getByRole("button", { name: "seerr" }));
+		fireEvent.change(screen.getByLabelText(/Label/), { target: { value: "Synthetic Seerr" } });
+		fireEvent.change(screen.getByLabelText(/^Base URL/), {
+			target: { value: "http://seerr.synthetic.invalid" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Sign in to Seerr with Plex" }));
+		await waitFor(() =>
+			expect(screen.getByLabelText(/^API Key/)).toHaveValue("synthetic-seerr-key"),
+		);
+		await waitFor(() => expect(connectionTests()).toHaveLength(1));
+		expect(connectionTests()[0]?.body).toEqual({
+			service: "seerr",
+			baseUrl: "http://seerr.synthetic.invalid",
+			apiKey: "synthetic-seerr-key",
+		});
+		await screen.findByText("Synthetic connection verified");
+		expect(persisted()).toHaveLength(0);
+		fireEvent.click(screen.getByRole("button", { name: "Add service" }));
+		await waitFor(() => expect(persisted()).toHaveLength(1));
+		expect(persisted()[0]?.body).toMatchObject({
+			label: "Synthetic Seerr",
+			service: "seerr",
+			baseUrl: "http://seerr.synthetic.invalid",
+			apiKey: "synthetic-seerr-key",
+		});
+	});
+
+	it.each(["cancel", "url-change", "service-change"])(
+		"ignores late Seerr key after %s",
+		async (change) => {
+			oauthTransport();
+			gate = hold();
+			show(<Services />);
+			await screen.findByText("Synthetic A");
+			fireEvent.click(screen.getByRole("button", { name: "seerr" }));
+			fireEvent.change(screen.getByLabelText(/^Base URL/), {
+				target: { value: "http://seerr.synthetic.invalid" },
+			});
+			fireEvent.click(screen.getByRole("button", { name: "Sign in to Seerr with Plex" }));
+			await waitFor(() =>
+				expect(writes().filter((r) => r.url === "/api/seerr/oauth/fetch-key")).toHaveLength(1),
+			);
+			if (change === "cancel")
+				fireEvent.click(
+					within(screen.getByText("Fetching Seerr API key...").parentElement!).getByRole("button", {
+						name: "Cancel",
+					}),
+				);
+			if (change === "url-change")
+				fireEvent.change(screen.getByLabelText(/^Base URL/), {
+					target: { value: "http://other.synthetic.invalid" },
+				});
+			if (change === "service-change")
+				fireEvent.click(screen.getByRole("button", { name: "radarr" }));
+			await act(async () => {
+				gate!.release();
+				await Promise.allSettled([...active]);
+			});
+			expect(screen.getByLabelText(/^API Key/)).toHaveValue("");
+			expect(connectionTests()).toHaveLength(0);
+			expect(persisted()).toHaveLength(0);
+		},
+	);
+
+	it("does not let a cancelled Seerr attempt overwrite or complete its explicit retry", async () => {
+		oauthTransport();
+		const normal = respond;
+		const old = hold();
+		const current = hold();
+		let fetches = 0;
+		respond = async (request) => {
+			if (request.url !== "/api/seerr/oauth/fetch-key") return normal(request);
+			const first = ++fetches === 1;
+			await (first ? old : current).promise;
+			return json({ apiKey: first ? "obsolete-key" : "current-key" });
+		};
+		show(<Services />);
+		await screen.findByText("Synthetic A");
+		fireEvent.click(screen.getByRole("button", { name: "seerr" }));
+		fireEvent.change(screen.getByLabelText(/^Base URL/), {
+			target: { value: "http://seerr.synthetic.invalid" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Sign in to Seerr with Plex" }));
+		await waitFor(() => expect(fetches).toBe(1));
+		fireEvent.click(
+			within(screen.getByText("Fetching Seerr API key...").parentElement!).getByRole("button", {
+				name: "Cancel",
+			}),
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Sign in to Seerr with Plex" }));
+		await waitFor(() => expect(fetches).toBe(2));
+		await act(async () => {
+			old.release();
+			await old.promise;
+		});
+		expect(screen.getByLabelText(/^API Key/)).toHaveValue("");
+		expect(screen.getByText("Fetching Seerr API key...")).toBeInTheDocument();
+		expect(connectionTests()).toHaveLength(0);
+		await act(async () => {
+			current.release();
+			await current.promise;
+		});
+		await screen.findByText("Synthetic connection verified");
+		expect(screen.getByLabelText(/^API Key/)).toHaveValue("current-key");
+		expect(connectionTests()).toHaveLength(1);
+		expect(connectionTests()[0]?.body).toMatchObject({ apiKey: "current-key" });
+		expect(persisted()).toHaveLength(0);
+	});
+
+	it.each(["draft-edit", "service-change"])("ignores late Plex token after %s", async (change) => {
+		oauthTransport();
+		const normal = respond;
+		const token = hold();
+		respond = async (request) => {
+			if (request.url === "/api/plex/oauth/token") await token.promise;
+			return normal(request);
+		};
+		show(<Services />);
+		await screen.findByText("Synthetic A");
+		fireEvent.click(screen.getByRole("button", { name: "plex" }));
+		fireEvent.click(screen.getByRole("button", { name: /http:\/\/plex.synthetic.invalid/ }));
+		await waitFor(() =>
+			expect(writes().filter((r) => r.url === "/api/plex/oauth/token")).toHaveLength(1),
+		);
+		if (change === "draft-edit")
+			fireEvent.change(screen.getByLabelText(/Label/), { target: { value: "My current edit" } });
+		else fireEvent.click(screen.getByRole("button", { name: "radarr" }));
+		await act(async () => {
+			token.release();
+			await Promise.allSettled([...active]);
+		});
+		expect(screen.getByLabelText(/^API Key/)).toHaveValue("");
+		if (change === "draft-edit")
+			expect(screen.getByLabelText(/Label/)).toHaveValue("My current edit");
+		expect(connectionTests()).toHaveLength(0);
+		expect(persisted()).toHaveLength(0);
+	});
+
+	it("fences an obsolete Plex rescan response and retains the current single-consumer gate", async () => {
+		oauthTransport();
+		const normal = respond;
+		const old = hold();
+		const current = hold();
+		let fetches = 0;
+		respond = async (request) => {
+			if (request.url !== "/api/plex/oauth/token") return normal(request);
+			const first = ++fetches === 1;
+			await (first ? old : current).promise;
+			return json({ authToken: first ? "obsolete-token" : "current-token" });
+		};
+		show(<Services />);
+		await screen.findByText("Synthetic A");
+		fireEvent.click(screen.getByRole("button", { name: "plex" }));
+		fireEvent.click(screen.getByRole("button", { name: /http:\/\/plex.synthetic.invalid/ }));
+		await waitFor(() => expect(fetches).toBe(1));
+		fireEvent.click(screen.getByRole("button", { name: "Re-scan" }));
+		fireEvent.click(screen.getByRole("button", { name: /http:\/\/plex.synthetic.invalid/ }));
+		await waitFor(() => expect(fetches).toBe(2));
+		await act(async () => {
+			old.release();
+			await old.promise;
+		});
+		expect(screen.getByLabelText(/^API Key/)).toHaveValue("");
+		const connection = screen.getByRole("button", { name: /http:\/\/plex.synthetic.invalid/ });
+		expect(connection).toBeDisabled();
+		fireEvent.click(connection);
+		expect(fetches).toBe(2);
+		await act(async () => {
+			current.release();
+			await current.promise;
+		});
+		await screen.findByText("Synthetic connection verified");
+		expect(connectionTests()).toHaveLength(1);
+		expect(connectionTests()[0]?.body).toMatchObject({ apiKey: "current-token" });
+		expect(persisted()).toHaveLength(0);
+	});
+
+	it("keeps fetch and connection-test failures honest until explicit retries without saving", async () => {
+		oauthTransport();
+		const normal = respond;
+		let fetches = 0;
+		let tests = 0;
+		respond = async (request) => {
+			if (request.url === "/api/seerr/oauth/fetch-key" && ++fetches === 1)
+				return json({ error: "Synthetic key unavailable" }, 503);
+			if (request.url === "/api/services/test-connection" && ++tests === 1)
+				return json({ error: "Synthetic test unavailable" }, 503);
+			return normal(request);
+		};
+		show(<Services />);
+		await screen.findByText("Synthetic A");
+		fireEvent.click(screen.getByRole("button", { name: "seerr" }));
+		fireEvent.change(screen.getByLabelText(/^Base URL/), {
+			target: { value: "http://seerr.synthetic.invalid" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Sign in to Seerr with Plex" }));
+		await screen.findByText("Synthetic key unavailable");
+		expect(connectionTests()).toHaveLength(0);
+		expect(screen.getByLabelText(/^API Key/)).toHaveValue("");
+		fireEvent.click(screen.getByRole("button", { name: "Sign in to Seerr with Plex" }));
+		await screen.findByText("Synthetic test unavailable");
+		expect(fetches).toBe(2);
+		expect(connectionTests()).toHaveLength(1);
+		expect(persisted()).toHaveLength(0);
+		fireEvent.click(screen.getByRole("button", { name: /Test connection/i }));
+		await screen.findByText("Synthetic connection verified");
+		expect(connectionTests()).toHaveLength(2);
+		expect(persisted()).toHaveLength(0);
+	});
+
+	it.each(["plex", "seerr"] as const)(
+		"ignores failed credential completion after editing the %s draft",
+		async (kind) => {
+			oauthTransport();
+			const normal = respond;
+			const response = hold();
+			const endpoint = kind === "plex" ? "/api/plex/oauth/token" : "/api/seerr/oauth/fetch-key";
+			respond = async (request) => {
+				if (request.url !== endpoint) return normal(request);
+				await response.promise;
+				return json({ error: "Synthetic obsolete credential failure" }, 503);
+			};
+			show(<Services />);
+			await screen.findByText("Synthetic A");
+			fireEvent.click(screen.getByRole("button", { name: kind }));
+			if (kind === "plex")
+				fireEvent.click(screen.getByRole("button", { name: /http:\/\/plex.synthetic.invalid/ }));
+			else {
+				fireEvent.change(screen.getByLabelText(/^Base URL/), {
+					target: { value: "http://seerr.synthetic.invalid" },
+				});
+				fireEvent.click(screen.getByRole("button", { name: "Sign in to Seerr with Plex" }));
+			}
+			await waitFor(() => expect(writes().filter((r) => r.url === endpoint)).toHaveLength(1));
+			fireEvent.change(screen.getByLabelText(/Label/), { target: { value: "My current edit" } });
+			const popupStarts = oauth.startOAuth.mock.calls.length;
+			await act(async () => {
+				response.release();
+				await Promise.allSettled([...active]);
+			});
+			expect(screen.getByLabelText(/Label/)).toHaveValue("My current edit");
+			expect(screen.getByLabelText(/^API Key/)).toHaveValue("");
+			expect(screen.queryByText("Synthetic obsolete credential failure")).not.toBeInTheDocument();
+			expect(oauth.startOAuth.mock.calls).toHaveLength(popupStarts);
+			expect(connectionTests()).toHaveLength(0);
+			expect(persisted()).toHaveLength(0);
+		},
+	);
+
+	it.each(["plex", "seerr"] as const)(
+		"tests a reauthenticated %s edit and persists its new secret only on Save",
+		async (kind) => {
+			services.push(service("source-b", "Synthetic existing", kind));
+			oauthTransport();
+			const normal = respond;
+			respond = async (request) => {
+				if (request.method === "PUT" && request.url === "/api/services/source-b") {
+					const p = request.body as Record<string, unknown>;
+					services[1] = { ...services[1]!, label: String(p.label), baseUrl: String(p.baseUrl) };
+					return json({ service: services[1] });
+				}
+				return normal(request);
+			};
+			show(<Services />);
+			await screen.findByText("Synthetic existing");
+			fireEvent.click(card("Synthetic existing").getByRole("button", { name: "Edit" }));
+			expect(screen.getByPlaceholderText("Leave blank to keep current key")).toHaveValue("");
+			if (kind === "plex")
+				fireEvent.click(screen.getByRole("button", { name: /http:\/\/plex.synthetic.invalid/ }));
+			else fireEvent.click(screen.getByRole("button", { name: "Re-authenticate Seerr with Plex" }));
+			await screen.findByText("Synthetic connection verified");
+			expect(connectionTests()).toHaveLength(1);
+			expect(connectionTests()[0]?.body).toEqual({
+				service: kind,
+				baseUrl: kind === "plex" ? "http://plex.synthetic.invalid" : "http://synthetic.invalid",
+				apiKey: kind === "plex" ? "synthetic-plex-key" : "synthetic-seerr-key",
+			});
+			expect(writes().filter((r) => r.method === "PUT")).toHaveLength(0);
+			fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+			await waitFor(() => expect(writes().filter((r) => r.method === "PUT")).toHaveLength(1));
+			expect(writes().find((r) => r.method === "PUT")).toMatchObject({
+				url: "/api/services/source-b",
+				body: { apiKey: kind === "plex" ? "synthetic-plex-key" : "synthetic-seerr-key" },
+			});
+		},
+	);
+});
+
 describe("S1 maintained Services management transport", () => {
 	it("tests unsaved normalized connection, creates B once, preserves blank stored secret on refused/edit save and reads current list", async () => {
 		show(<Services />);

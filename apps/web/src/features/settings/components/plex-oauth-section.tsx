@@ -10,7 +10,7 @@
 
 import type { PlexDiscoveredServer, PlexServerConnection } from "@arr/shared";
 import { Check, Globe, Loader2, Monitor, Server, Wifi } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, AlertDescription } from "../../../components/ui";
 import { usePlexOAuth } from "../../../hooks/api/usePlexOAuth";
 import { retrievePlexToken } from "../../../lib/api-client/plex";
@@ -21,7 +21,7 @@ const PLEX_GRADIENT = SERVICE_GRADIENTS.plex;
 
 interface PlexOAuthSectionProps {
 	onServerSelected: (label: string, baseUrl: string, apiKey: string) => void;
-	onTestConnection: () => void;
+	isCurrentDraft: () => boolean;
 	mode: "add" | "edit";
 }
 
@@ -44,7 +44,7 @@ function pickBestConnection(connections: PlexServerConnection[]): PlexServerConn
 
 export const PlexOAuthSection = ({
 	onServerSelected,
-	onTestConnection,
+	isCurrentDraft,
 	mode,
 }: PlexOAuthSectionProps) => {
 	const isEdit = mode === "edit";
@@ -53,10 +53,28 @@ export const PlexOAuthSection = ({
 	const [selectedKey, setSelectedKey] = useState<string | null>(null);
 	const [consuming, setConsuming] = useState(false);
 	const [selectedUnreachable, setSelectedUnreachable] = useState(false);
+	const attemptRef = useRef(0);
+	const consumingRef = useRef(false);
+	useEffect(
+		() => () => {
+			attemptRef.current += 1;
+		},
+		[],
+	);
+	const beginOAuth = useCallback(() => {
+		attemptRef.current += 1;
+		consumingRef.current = false;
+		setConsuming(false);
+		setSelectedKey(null);
+		setSelectedUnreachable(false);
+		startOAuth();
+	}, [startOAuth]);
 
 	const handleSelectConnection = useCallback(
 		async (server: PlexDiscoveredServer, connection: PlexServerConnection) => {
-			if (!tokenRef || consuming) return;
+			if (!tokenRef || consumingRef.current) return;
+			const attempt = ++attemptRef.current;
+			consumingRef.current = true;
 
 			const key = `${server.clientIdentifier}:${connection.uri}`;
 			setSelectedKey(key);
@@ -64,20 +82,29 @@ export const PlexOAuthSection = ({
 			setConsuming(true);
 			try {
 				const { authToken } = await retrievePlexToken(tokenRef);
+				if (attemptRef.current !== attempt) return;
+				if (!isCurrentDraft()) {
+					setSelectedKey(null);
+					setSelectedUnreachable(false);
+					return;
+				}
 				onServerSelected(server.name, connection.uri, authToken);
-				// Auto-trigger connection test after form is pre-filled
-				setTimeout(onTestConnection, 100);
 			} catch {
+				if (attemptRef.current !== attempt) return;
 				// Token expired or retrieval failed — revert selection and restart flow
 				setSelectedKey(null);
 				setSelectedUnreachable(false);
+				if (!isCurrentDraft()) return;
 				cancel();
-				startOAuth();
+				beginOAuth();
 			} finally {
-				setConsuming(false);
+				if (attemptRef.current === attempt) {
+					consumingRef.current = false;
+					setConsuming(false);
+				}
 			}
 		},
-		[tokenRef, consuming, onServerSelected, onTestConnection, cancel, startOAuth],
+		[tokenRef, onServerSelected, isCurrentDraft, cancel, beginOAuth],
 	);
 
 	// Idle / error / cancelled — show the sign-in button
@@ -86,7 +113,7 @@ export const PlexOAuthSection = ({
 			<div className="space-y-3">
 				<button
 					type="button"
-					onClick={startOAuth}
+					onClick={beginOAuth}
 					className="flex w-full items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all duration-200 hover:brightness-110"
 					style={{
 						borderColor: PLEX_GRADIENT.from,
@@ -151,7 +178,7 @@ export const PlexOAuthSection = ({
 					</Alert>
 					<button
 						type="button"
-						onClick={startOAuth}
+						onClick={beginOAuth}
 						className="text-xs text-muted-foreground underline hover:text-foreground"
 					>
 						Try again
@@ -197,6 +224,7 @@ export const PlexOAuthSection = ({
 												key={key}
 												type="button"
 												onClick={() => handleSelectConnection(server, conn)}
+												disabled={consuming}
 												className="flex w-full items-center gap-1.5 rounded-md border px-2 py-2 text-left text-[11px] transition-all duration-200 hover:bg-accent/50 sm:gap-2 sm:px-3 sm:py-1.5 sm:text-xs"
 												style={
 													isSelected
@@ -264,11 +292,7 @@ export const PlexOAuthSection = ({
 				<div className="flex items-center gap-2">
 					<button
 						type="button"
-						onClick={() => {
-							setSelectedKey(null);
-							setSelectedUnreachable(false);
-							startOAuth();
-						}}
+						onClick={beginOAuth}
 						className="text-xs text-muted-foreground underline hover:text-foreground"
 					>
 						Re-scan

@@ -1,6 +1,7 @@
 "use client";
 
 import type { ServiceInstanceSummary } from "@arr/shared";
+import { useLayoutEffect, useRef } from "react";
 import {
 	Alert,
 	AlertDescription,
@@ -16,9 +17,9 @@ import {
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getLinuxUrl, useIncognitoMode } from "../../../lib/incognito";
 import { cn } from "../../../lib/utils";
+import type { IdentityFlow } from "../hooks/use-services-management";
 import { SERVICE_TYPES } from "../lib/settings-constants";
 import type { ServiceFormState } from "../lib/settings-utils";
-import type { IdentityFlow } from "../hooks/use-services-management";
 import {
 	getServicePlaceholders,
 	supportsHttpBasicAuth,
@@ -40,7 +41,7 @@ interface ServiceFormProps {
 	/** Handler for cancel button */
 	onCancel: () => void;
 	/** Handler for test connection button */
-	onTestConnection: () => void;
+	onTestConnection: (draft?: ServiceFormState) => void;
 	/** The service being edited (null if adding new) */
 	selectedService: ServiceInstanceSummary | null;
 	/** Existing configured services (for URL suggestions) */
@@ -103,6 +104,27 @@ export const ServiceForm = ({
 				}
 			: undefined;
 	const activeIdentityFlow = identityFlow?.instanceId === selectedService?.id ? identityFlow : null;
+	const committedDraft = useRef<{ form: ServiceFormState; target: string | undefined } | null>(
+		null,
+	);
+	useLayoutEffect(() => {
+		committedDraft.current = { form: formState, target: selectedService?.id };
+		return () => {
+			committedDraft.current = null;
+		};
+	}, [formState, selectedService?.id]);
+	const isCurrentOAuthDraft = () =>
+		committedDraft.current?.form === formState &&
+		committedDraft.current.target === selectedService?.id;
+	const applyOAuthDraft = (
+		fields: Partial<Pick<ServiceFormState, "label" | "baseUrl" | "apiKey">>,
+	) => {
+		// An async credential response belongs only to the draft that requested it.
+		if (!isCurrentOAuthDraft()) return;
+		const draft = { ...formState, ...fields };
+		onFormStateChange(() => draft);
+		onTestConnection(draft);
+	};
 
 	return (
 		<Card>
@@ -210,16 +232,12 @@ export const ServiceForm = ({
 					</div>
 					{formState.service === "plex" && (
 						<PlexOAuthSection
+							key={selectedService?.id ?? "new"}
 							mode={selectedService ? "edit" : "add"}
+							isCurrentDraft={isCurrentOAuthDraft}
 							onServerSelected={(label, baseUrl, apiKey) =>
-								onFormStateChange((prev) => ({
-									...prev,
-									label,
-									baseUrl,
-									apiKey,
-								}))
+								applyOAuthDraft({ label, baseUrl, apiKey })
 							}
-							onTestConnection={onTestConnection}
 						/>
 					)}
 					<SimpleFormField
@@ -275,16 +293,12 @@ export const ServiceForm = ({
 					)}
 					{formState.service === "seerr" && (
 						<SeerrAutoSetupSection
+							key={selectedService?.id ?? "new"}
 							seerrUrl={formState.baseUrl}
+							isCurrentDraft={isCurrentOAuthDraft}
 							httpAuth={stagedHttpAuth}
 							mode={selectedService ? "edit" : "add"}
-							onApiKeyFetched={(apiKey) =>
-								onFormStateChange((prev) => ({
-									...prev,
-									apiKey,
-								}))
-							}
-							onTestConnection={onTestConnection}
+							onApiKeyFetched={(apiKey) => applyOAuthDraft({ apiKey })}
 						/>
 					)}
 					<SimpleFormField
@@ -419,7 +433,7 @@ export const ServiceForm = ({
 						<Button
 							type="button"
 							variant="secondary"
-							onClick={onTestConnection}
+							onClick={() => onTestConnection()}
 							disabled={
 								isTesting ||
 								!formState.baseUrl ||
