@@ -515,6 +515,8 @@ describe("DELETE /auth/password", () => {
 		});
 
 		expect(res.statusCode).toBe(200);
+		expect(res.json().message).toMatch(/OIDC/);
+		expect(res.json().message).not.toMatch(/passkey/i);
 		expect(mockPrisma.oIDCProvider.updateMany).toHaveBeenCalledWith({
 			where: {
 				...oidcProvider,

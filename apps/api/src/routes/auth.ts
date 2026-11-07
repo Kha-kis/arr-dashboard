@@ -649,7 +649,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		return reply.send({
 			success: true,
-			message: "Password removed successfully. You can now only sign in using OIDC or passkeys.",
+			message: "Password removed successfully. Sign in using your linked OIDC account.",
 		});
 	});
 
