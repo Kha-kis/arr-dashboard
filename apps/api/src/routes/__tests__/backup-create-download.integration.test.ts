@@ -20,10 +20,9 @@ const TEST_PASSWORD = "synthetic-backup-evidence-password";
 async function pushSqliteSchema(databasePath: string): Promise<void> {
 	const apiDir = path.resolve(import.meta.dirname, "../../..");
 	await execFileAsync(
-		"pnpm",
+		process.execPath,
 		[
-			"exec",
-			"prisma",
+			path.join(apiDir, "node_modules/prisma/build/index.js"),
 			"db",
 			"push",
 			"--schema",

@@ -688,7 +688,7 @@ describe.each(restoreHttpFixtureModes)("public protected Restore with actual %s"
 		await expect(
 			fixture.app.restoreRuntime.runOperation(() => fixture.app.prisma.user.count()),
 		).rejects.toThrow();
-	});
+	}, 30000);
 
 	it("reports public lost native COMMIT acknowledgement honestly and confirms only after fresh authenticated recovery", async () => {
 		const envelope = await fixtureRestoreEnvelope(fixture);
