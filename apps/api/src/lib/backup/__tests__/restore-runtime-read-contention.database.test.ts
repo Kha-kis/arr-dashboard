@@ -127,29 +127,39 @@ describe("native SQLite read-proof contention recovery", () => {
 		}
 	});
 
-	it("revalidates a changed runtime record after a wait and remains permanently fenced", async () => {
-		const f = await fixture();
-		let calls = 0;
-		try {
-			f.writer.exec("BEGIN EXCLUSIVE");
-			f.after(10, () => {
-				f.writer.exec("ROLLBACK");
-				f.main.exec(
-					"UPDATE RestoreRuntimeControl SET runtimeEpoch='55555555-5555-4555-8555-555555555555'",
-				);
+	it.each([10, 150])(
+		"revalidates a changed runtime record after a %ims wait and remains permanently fenced",
+		async (ms) => {
+			const f = await fixture();
+			let calls = 0;
+			let changed!: () => void;
+			const changedPromise = new Promise<void>((resolve) => {
+				changed = resolve;
 			});
-			await expect(f.runtime.runOperation(() => ++calls)).rejects.toMatchObject({
-				statusCode: 503,
-			});
-			expect(f.losses).toEqual(["runtime-record-check-failed"]);
-			await expect(f.runtime.runOperation(() => ++calls)).rejects.toMatchObject({
-				statusCode: 503,
-			});
-			expect(calls).toBe(0);
-		} finally {
-			await f.close();
-		}
-	});
+			try {
+				f.writer.exec("BEGIN EXCLUSIVE");
+				f.after(ms, () => {
+					f.writer.exec("ROLLBACK");
+					f.main.exec(
+						"UPDATE RestoreRuntimeControl SET runtimeEpoch='55555555-5555-4555-8555-555555555555'",
+					);
+					changed();
+				});
+				await expect(f.runtime.runOperation(() => ++calls)).rejects.toMatchObject({
+					statusCode: 503,
+				});
+				// Exhaustion can refuse before the other actor changes its record.
+				await changedPromise;
+				await expect(f.runtime.runOperation(() => ++calls)).rejects.toMatchObject({
+					statusCode: 503,
+				});
+				expect(f.losses).toEqual(["runtime-record-check-failed"]);
+				expect(calls).toBe(0);
+			} finally {
+				await f.close();
+			}
+		},
+	);
 
 	it("revalidates native owner identity after a wait rather than using a cached proof", async () => {
 		const f = await fixture();

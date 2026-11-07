@@ -1,11 +1,11 @@
-import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import Database from "better-sqlite3";
 import { expect, vi } from "vitest";
 import { openRestoreRuntime } from "../backup/restore-runtime-admission.js";
 import { createRuntimePrismaClient } from "../backup/restore-runtime-client.js";
+import { synchronizeRuntimeSchema } from "../backup/runtime-schema-startup.js";
 import { createProviderPublicationAuthority } from "../services/provider-identity-guard.js";
 import { createTestPrismaClient } from "./test-prisma.js";
 
@@ -30,13 +30,8 @@ export async function createScopedWriteFixture(options: { writeIntent?: boolean 
 	const path = join(directory, "synthetic.sqlite");
 	const entry: Entry = { directory, path, clients: [], applications: new Set(), losses: [] };
 	entries.push(entry);
-	const api = resolve(import.meta.dirname, "../../..");
-	execFileSync("pnpm", ["exec", "prisma", "db", "push", "--schema", "prisma/schema.prisma"], {
-		cwd: api,
-		env: { ...process.env, DATABASE_URL: `file:${path}`, DOTENV_CONFIG_PATH: "/dev/null" },
-		stdio: "pipe",
-		timeout: 30_000,
-	});
+	// Use the application's real native bootstrap, not a Prisma CLI per fixture.
+	await synchronizeRuntimeSchema(`file:${path}`);
 	chmodSync(path, 0o600);
 	const writer = new Database(path, { timeout: 0 });
 	entry.writer = writer;
