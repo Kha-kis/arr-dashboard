@@ -2,8 +2,9 @@
 
 import { Eye, EyeOff, Menu } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useCurrentUser, useLogoutMutation } from "../../hooks/api/useAuth";
+import { navigateToSignedOutPage } from "../../lib/auth-navigation";
 import { getLinuxUsername, useIncognitoMode } from "../../lib/incognito";
 import { Button } from "../ui/button";
 import { DialogTrigger } from "../ui/dialog";
@@ -11,7 +12,6 @@ import { DialogTrigger } from "../ui/dialog";
 export const TopBar = () => {
 	const { data: user } = useCurrentUser();
 	const pathname = usePathname();
-	const router = useRouter();
 	const logoutMutation = useLogoutMutation();
 	const [incognitoMode, setIncognitoMode] = useIncognitoMode();
 
@@ -24,7 +24,7 @@ export const TopBar = () => {
 	const handleLogout = async () => {
 		try {
 			await logoutMutation.mutateAsync();
-			router.replace("/login");
+			navigateToSignedOutPage();
 		} catch (error) {
 			console.error("Logout failed", error);
 		}

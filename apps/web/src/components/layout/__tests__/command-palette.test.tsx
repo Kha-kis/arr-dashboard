@@ -7,9 +7,14 @@ import { IncognitoProvider } from "../../../contexts/IncognitoContext";
 import { ColorThemeProvider } from "../../../providers/color-theme-provider";
 import { CommandPalette, useCommandPalette } from "../command-palette";
 
-const { push, logout } = vi.hoisted(() => ({ push: vi.fn(), logout: vi.fn() }));
+const { push, logout, navigateToSignedOutPage } = vi.hoisted(() => ({
+	push: vi.fn(),
+	logout: vi.fn(),
+	navigateToSignedOutPage: vi.fn(),
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("../../../lib/api-client/auth", () => ({ logout }));
+vi.mock("../../../lib/auth-navigation", () => ({ navigateToSignedOutPage }));
 
 function Harness() {
 	const { open, setOpen } = useCommandPalette();
@@ -27,6 +32,7 @@ beforeEach(() => {
 	localStorage.clear();
 	document.documentElement.removeAttribute("data-oled");
 	client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+	client.setQueryDefaults(["synthetic"], { gcTime: Number.POSITIVE_INFINITY });
 	vi.stubGlobal(
 		"ResizeObserver",
 		class {
@@ -44,6 +50,9 @@ beforeEach(() => {
 		configurable: true,
 	});
 	logout.mockResolvedValue(undefined);
+	navigateToSignedOutPage.mockImplementation(() => {
+		expect(client.getQueryData(["synthetic"])).toBeUndefined();
+	});
 });
 afterEach(() => {
 	cleanup();
@@ -81,9 +90,9 @@ describe("Command palette modal", () => {
 		const second = vi.fn();
 		const view = mount(<CommandPalette open onOpenChange={first} />);
 		view.rerender(<CommandPalette open onOpenChange={second} />);
-		const escape = new KeyboardEvent("keydown", { key: "Escape", cancelable: true });
-		act(() => window.dispatchEvent(escape));
-		expect(escape.defaultPrevented).toBe(true);
+		const escapeEvent = new KeyboardEvent("keydown", { key: "Escape", cancelable: true });
+		act(() => window.dispatchEvent(escapeEvent));
+		expect(escapeEvent.defaultPrevented).toBe(true);
 		expect(first).not.toHaveBeenCalled();
 		expect(second).toHaveBeenCalledExactlyOnceWith(false);
 	});
@@ -94,13 +103,13 @@ describe("Command palette modal", () => {
 		const underlying = vi.fn();
 		document.addEventListener("keydown", underlying, true);
 		try {
-			const escape = new KeyboardEvent("keydown", {
+			const escapeEvent = new KeyboardEvent("keydown", {
 				key: "Escape",
 				bubbles: true,
 				cancelable: true,
 			});
-			act(() => input.dispatchEvent(escape));
-			expect(escape.defaultPrevented).toBe(true);
+			act(() => input.dispatchEvent(escapeEvent));
+			expect(escapeEvent.defaultPrevented).toBe(true);
 			expect(underlying).not.toHaveBeenCalled();
 			expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 			await waitFor(() => expect(opener).toHaveFocus());
@@ -221,8 +230,20 @@ describe("Command palette modal", () => {
 		client.setQueryData(["synthetic"], "cached");
 		await open();
 		fireEvent.click(screen.getByRole("option", { name: "Log Out" }));
-		await waitFor(() => expect(push).toHaveBeenCalledWith("/login"));
+		await waitFor(() => expect(navigateToSignedOutPage).toHaveBeenCalledOnce());
 		expect(logout).toHaveBeenCalledOnce();
 		expect(client.getQueryData(["synthetic"])).toBeUndefined();
+	});
+
+	it("preserves cached evidence and the existing fallback when logout is refused", async () => {
+		logout.mockRejectedValueOnce(new Error("Synthetic logout unavailable"));
+		client.setQueryData(["synthetic"], "cached");
+		mount();
+		await open();
+		fireEvent.click(screen.getByRole("option", { name: "Log Out" }));
+		await waitFor(() => expect(push).toHaveBeenCalledWith("/login"));
+		expect(logout).toHaveBeenCalledOnce();
+		expect(navigateToSignedOutPage).not.toHaveBeenCalled();
+		expect(client.getQueryData(["synthetic"])).toBe("cached");
 	});
 });

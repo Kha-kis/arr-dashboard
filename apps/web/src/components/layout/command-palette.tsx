@@ -32,6 +32,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { useOLEDMode } from "../../hooks/useOLEDMode";
 import { useThemeGradient } from "../../hooks/useThemeGradient";
 import { logout } from "../../lib/api-client/auth";
+import { navigateToSignedOutPage } from "../../lib/auth-navigation";
 import { cn } from "../../lib/utils";
 import { type ColorTheme, useColorTheme } from "../../providers/color-theme-provider";
 
@@ -169,7 +170,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 		try {
 			await logout();
 			queryClient.clear();
-			router.push("/login");
+			navigateToSignedOutPage();
 		} catch {
 			// Still redirect on error
 			router.push("/login");
