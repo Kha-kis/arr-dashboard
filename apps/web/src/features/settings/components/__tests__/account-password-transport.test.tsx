@@ -2,12 +2,13 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { CurrentUser } from "@arr/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Toaster, toast } from "../../../../components/ui/toast";
 import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
 import { useCurrentUser } from "../../../../hooks/api/useAuth";
+import { oidcKeys } from "../../../../lib/query-keys";
 import { ColorThemeProvider } from "../../../../providers/color-theme-provider";
 import { useAccountManagement } from "../../hooks/use-account-management";
 import { AccountTab } from "../account-tab";
@@ -136,6 +137,20 @@ function show(ui: ReactNode) {
 }
 
 let user: CurrentUser;
+const linkedOIDC = (enabled = true, linked = true) => ({
+	provider: {
+		id: 1,
+		displayName: "Synthetic OIDC",
+		clientId: "synthetic-client",
+		issuer: "https://oidc.synthetic.invalid",
+		redirectUri: "https://dashboard.synthetic.invalid/auth/oidc/callback",
+		scopes: "openid,email,profile",
+		enabled,
+		createdAt: "2026-10-25T12:00:00Z",
+		updatedAt: "2026-10-25T12:00:00Z",
+	},
+	linked,
+});
 let refused: boolean;
 let gate: ReturnType<typeof hold> | null;
 beforeEach(() => {
@@ -153,7 +168,7 @@ beforeEach(() => {
 		if (method === "GET" && url === "/auth/me") return json({ user });
 		if (method === "GET" && url === "/auth/setup-required")
 			return json({ required: false, passwordPolicy: "strict" });
-		if (method === "GET" && url === "/api/oidc-providers") return json({ provider: null });
+		if (method === "GET" && url === "/api/oidc-providers") return json(linkedOIDC());
 		if (method === "GET" && url === "/auth/passkey/credentials")
 			return json({
 				credentials: [
@@ -172,6 +187,7 @@ beforeEach(() => {
 			const fields = body as Record<string, unknown>;
 			user = {
 				...user,
+				...(typeof fields.newPassword === "string" ? { hasPassword: true } : {}),
 				...(typeof fields.username === "string" ? { username: fields.username } : {}),
 				...(fields.tmdbApiKey ? { hasTmdbApiKey: true } : {}),
 			};
@@ -202,6 +218,157 @@ function Password() {
 	const q = useCurrentUser();
 	return <PasswordSection currentUser={q.data} />;
 }
+
+describe("remaining password branches and truthful removal eligibility", () => {
+	it("adds a password without a current secret, preserves refusal and clears after explicit pending retry/readback", async () => {
+		user = { ...user, hasPassword: false };
+		show(<Password />);
+		const add = await screen.findByRole("button", { name: "Add Password" });
+		const next = screen.getByPlaceholderText("At least 8 characters");
+		const confirmation = screen.getByPlaceholderText("Re-enter password");
+		expect(screen.queryByPlaceholderText("Enter current password")).not.toBeInTheDocument();
+		fireEvent.change(next, { target: { value: "SyntheticNew2!" } });
+		fireEvent.change(confirmation, { target: { value: "SyntheticNew2!" } });
+		refused = true;
+		fireEvent.click(add);
+		await screen.findByText("Synthetic account refusal");
+		expect(next).toHaveValue("SyntheticNew2!");
+		expect(confirmation).toHaveValue("SyntheticNew2!");
+		refused = false;
+		gate = hold();
+		fireEvent.click(add);
+		await waitFor(() => expect(add).toBeDisabled());
+		fireEvent.click(add);
+		await act(async () => {
+			gate!.release();
+		});
+		gate = null;
+		await screen.findByRole("button", { name: "Change Password" });
+		expect(next).toHaveValue("");
+		expect(confirmation).toHaveValue("");
+		expect(writes()).toEqual(
+			[1, 2].map(() => ({
+				url: "/auth/account",
+				method: "PATCH",
+				body: { newPassword: "SyntheticNew2!" },
+			})),
+		);
+	});
+
+	it.each(["none", "passkey-only", "unlinked OIDC", "disabled OIDC"])(
+		"does not offer password removal with %s instead of a linked enabled OIDC account",
+		async (mode) => {
+			const normal = respond;
+			respond = async (request) => {
+				if (request.url === "/api/oidc-providers") {
+					if (mode === "unlinked OIDC") return json(linkedOIDC(true, false));
+					if (mode === "disabled OIDC") return json(linkedOIDC(false, true));
+					return json({ provider: null, linked: false });
+				}
+				if (mode === "none" && request.url === "/auth/passkey/credentials")
+					return json({ credentials: [] });
+				return normal(request);
+			};
+			const { client } = show(<Password />);
+			await screen.findByPlaceholderText("Enter current password");
+			await waitFor(() => expect(client.isFetching()).toBe(0));
+			expect(screen.queryByRole("button", { name: "Remove Password" })).not.toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: "Confirm Removal" })).not.toBeInTheDocument();
+			expect(writes()).toHaveLength(0);
+		},
+	);
+
+	it.each([false, true])(
+		"blocks removal on unavailable OIDC status (cached=%s) and recovers with reads only",
+		async (cached) => {
+			let failRead = !cached;
+			const normal = respond;
+			respond = async (request) =>
+				request.url === "/api/oidc-providers" && failRead
+					? json({ error: "Synthetic OIDC status unavailable" }, 503)
+					: normal(request);
+			const { client } = show(<Password />);
+			await screen.findByPlaceholderText("Enter current password");
+			if (cached) {
+				await screen.findByRole("button", { name: "Remove Password" });
+				failRead = true;
+				await act(async () => {
+					await client.invalidateQueries({ queryKey: oidcKeys.provider });
+				});
+			}
+			await waitFor(() => expect(client.isFetching()).toBe(0));
+			expect(screen.queryByRole("button", { name: "Remove Password" })).not.toBeInTheDocument();
+			const retry = screen.getByRole("button", { name: "Retry OIDC status" });
+			failRead = false;
+			fireEvent.click(retry);
+			await screen.findByRole("button", { name: "Remove Password" });
+			expect(writes()).toHaveLength(0);
+			expect(requests.filter((r) => r.url === "/api/oidc-providers")).toHaveLength(cached ? 3 : 2);
+		},
+	);
+
+	it("Cancel clears the local removal secret and validation error without a DELETE", async () => {
+		show(<Password />);
+		fireEvent.click(await screen.findByRole("button", { name: "Remove Password" }));
+		fireEvent.click(screen.getByRole("button", { name: "Confirm Removal" }));
+		await screen.findByText("Please enter your current password");
+		fireEvent.change(screen.getByPlaceholderText("Enter your current password"), {
+			target: { value: "SyntheticOld1!" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+		expect(screen.queryByPlaceholderText("Enter your current password")).not.toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "Remove Password" }));
+		expect(screen.getByPlaceholderText("Enter your current password")).toHaveValue("");
+		expect(screen.queryByText("Please enter your current password")).not.toBeInTheDocument();
+		expect(writes()).toHaveLength(0);
+	});
+
+	it("Show and Hide operate on each actual password input without submitting", async () => {
+		show(<Password />);
+		await screen.findByPlaceholderText("Enter current password");
+		for (const placeholder of [
+			"Enter current password",
+			"At least 8 characters",
+			"Re-enter new password",
+		]) {
+			const field = screen.getByPlaceholderText(placeholder);
+			fireEvent.change(field, { target: { value: "SyntheticNew2!" } });
+			expect(field).toHaveAttribute("type", "password");
+			fireEvent.click(within(field.parentElement!).getByRole("button", { name: "Show password" }));
+			expect(field).toHaveAttribute("type", "text");
+			expect(field).toHaveValue("SyntheticNew2!");
+			fireEvent.click(within(field.parentElement!).getByRole("button", { name: "Hide password" }));
+			expect(field).toHaveAttribute("type", "password");
+		}
+		expect(writes()).toHaveLength(0);
+	});
+
+	it.each([false, true])(
+		"associates each password label to its actual field (existing=%s)",
+		async (existing) => {
+			user = { ...user, hasPassword: existing };
+			show(<Password />);
+			await screen.findByRole("button", { name: existing ? "Change Password" : "Add Password" });
+			expect(screen.getByLabelText(existing ? "New Password" : "Password")).toHaveAttribute(
+				"type",
+				"password",
+			);
+			expect(
+				screen.getByLabelText(existing ? "Confirm New Password" : "Confirm Password"),
+			).toHaveAttribute("type", "password");
+			if (existing) {
+				expect(screen.getByLabelText("Current Password")).toHaveAttribute("type", "password");
+				fireEvent.click(await screen.findByRole("button", { name: "Remove Password" }));
+				expect(screen.getByLabelText("Confirm Current Password")).toHaveAttribute(
+					"type",
+					"password",
+				);
+			}
+			expect(writes()).toHaveLength(0);
+		},
+	);
+});
+
 describe("S2 maintained account/password transport", () => {
 	it("sends changed fields only, preserves refused editable credential draft, then clears sensitive fields after explicit success/readback", async () => {
 		show(<Account />);

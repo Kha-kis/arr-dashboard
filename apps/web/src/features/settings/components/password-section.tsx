@@ -1,9 +1,8 @@
 "use client";
 
 import type { CurrentUser } from "@arr/shared";
-import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Check, Key, Loader2, Lock, Shield, Trash2, X } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { PremiumSection } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
@@ -15,7 +14,6 @@ import {
 } from "../../../hooks/api/useAuth";
 import { useOIDCProviders } from "../../../hooks/api/useOIDCProviders";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { getPasskeyCredentials } from "../../../lib/api-client/auth";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { validatePassword } from "../lib/settings-utils";
@@ -35,6 +33,7 @@ interface PasswordSectionProps {
  */
 export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const fieldId = useId();
 
 	// Password change/add state
 	const [currentPassword, setCurrentPassword] = useState("");
@@ -52,17 +51,15 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 
 	const updateAccountMutation = useUpdateAccountMutation();
 	const removePasswordMutation = useRemovePasswordMutation();
-	const { data: oidcProviderData } = useOIDCProviders();
+	const oidcQuery = useOIDCProviders();
+	const oidcProviderData = oidcQuery.data;
 	const { data: setupData } = useSetupRequired();
 	const passwordPolicy = setupData?.passwordPolicy ?? "strict";
-	const { data: passkeys = [] } = useQuery({
-		queryKey: ["passkey-credentials"],
-		queryFn: getPasskeyCredentials,
-	});
-
-	const hasOIDC = oidcProviderData?.provider != null && oidcProviderData.provider.enabled;
-	const hasPasskeys = passkeys.length > 0;
-	const hasAlternativeAuth = hasOIDC || hasPasskeys;
+	// Match the server's lockout safeguard: passkeys still require a password.
+	const canRemovePassword =
+		!oidcQuery.isError &&
+		oidcProviderData?.linked === true &&
+		oidcProviderData.provider?.enabled === true;
 
 	const handlePasswordUpdate = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -140,6 +137,7 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 		e.preventDefault();
 		setRemovePasswordError(null);
 		setRemovePasswordSuccess(null);
+		if (!canRemovePassword) return;
 
 		if (!removePasswordValue) {
 			setRemovePasswordError("Please enter your current password");
@@ -198,10 +196,14 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 						<div className="space-y-4">
 							{currentUser?.hasPassword && (
 								<div className="space-y-2">
-									<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+									<label
+										htmlFor={`${fieldId}-current`}
+										className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+									>
 										Current Password
 									</label>
 									<PasswordInput
+										id={`${fieldId}-current`}
 										value={currentPassword}
 										onChange={(e) => setCurrentPassword(e.target.value)}
 										placeholder="Enter current password"
@@ -211,10 +213,14 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 							)}
 
 							<div className="space-y-2">
-								<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+								<label
+									htmlFor={`${fieldId}-new`}
+									className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+								>
 									{currentUser?.hasPassword ? "New Password" : "Password"}
 								</label>
 								<PasswordInput
+									id={`${fieldId}-new`}
 									value={newPassword}
 									onChange={(e) => setNewPassword(e.target.value)}
 									placeholder="At least 8 characters"
@@ -228,10 +234,14 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 							</div>
 
 							<div className="space-y-2">
-								<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+								<label
+									htmlFor={`${fieldId}-confirm`}
+									className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+								>
 									{currentUser?.hasPassword ? "Confirm New Password" : "Confirm Password"}
 								</label>
 								<PasswordInput
+									id={`${fieldId}-confirm`}
 									value={confirmPassword}
 									onChange={(e) => setConfirmPassword(e.target.value)}
 									placeholder={
@@ -305,12 +315,12 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 								<div>
 									<h3 className="font-semibold text-foreground">Remove Password</h3>
 									<p className="text-xs text-muted-foreground">
-										Remove your password and use only OIDC or passkeys to sign in.
+										Remove your password only after linking an enabled OIDC sign-in method.
 									</p>
 								</div>
 							</div>
 
-							{hasAlternativeAuth ? (
+							{canRemovePassword ? (
 								<>
 									<div
 										className="rounded-xl p-3 text-sm"
@@ -320,25 +330,14 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 										}}
 									>
 										<p className="text-muted-foreground">
-											Alternative authentication methods available:
-											{hasOIDC && (
-												<span className="ml-2 inline-flex items-center gap-1 text-foreground">
-													<Check
-														className="h-3 w-3"
-														style={{ color: SEMANTIC_COLORS.success.from }}
-													/>
-													OIDC provider
-												</span>
-											)}
-											{hasPasskeys && (
-												<span className="ml-2 inline-flex items-center gap-1 text-foreground">
-													<Check
-														className="h-3 w-3"
-														style={{ color: SEMANTIC_COLORS.success.from }}
-													/>
-													Passkeys
-												</span>
-											)}
+											Your account is linked to an enabled OIDC provider.
+											<span className="ml-2 inline-flex items-center gap-1 text-foreground">
+												<Check
+													className="h-3 w-3"
+													style={{ color: SEMANTIC_COLORS.success.from }}
+												/>
+												Linked OIDC account
+											</span>
 										</p>
 									</div>
 
@@ -360,10 +359,14 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 									) : (
 										<div className="space-y-4 animate-in fade-in slide-in-from-top-2">
 											<div className="space-y-2">
-												<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+												<label
+													htmlFor={`${fieldId}-remove`}
+													className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+												>
 													Confirm Current Password
 												</label>
 												<Input
+													id={`${fieldId}-remove`}
 													type="password"
 													value={removePasswordValue}
 													onChange={(e) => setRemovePasswordValue(e.target.value)}
@@ -380,8 +383,8 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 													}}
 												>
 													<AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-													This action cannot be undone. You will only be able to sign in using OIDC
-													or passkeys.
+													After removal, sign in with your linked OIDC account. Passkeys require a
+													password.
 												</div>
 											</div>
 
@@ -463,10 +466,25 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 										className="h-5 w-5 shrink-0"
 										style={{ color: SEMANTIC_COLORS.warning.from }}
 									/>
-									<p className="text-muted-foreground">
-										Cannot remove password without alternative authentication method. Please add an
-										OIDC provider or passkey first.
-									</p>
+									<div className="space-y-2">
+										<p className="text-muted-foreground">
+											{oidcQuery.isError
+												? "OIDC sign-in status is unavailable. Keep your password until the status can be verified."
+												: oidcQuery.isPending
+													? "Checking OIDC sign-in status before password removal."
+													: "Link your account to an enabled OIDC provider before removing your password. Passkeys require password authentication."}
+										</p>
+										{oidcQuery.isError && (
+											<Button
+												type="button"
+												variant="outline"
+												disabled={oidcQuery.isFetching}
+												onClick={() => void oidcQuery.refetch()}
+											>
+												Retry OIDC status
+											</Button>
+										)}
+									</div>
 								</div>
 							)}
 						</div>
