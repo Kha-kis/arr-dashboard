@@ -108,10 +108,10 @@ describe("Passkey registration rejection after options", () => {
 			fireEvent.change(screen.getByPlaceholderText("Passkey name (e.g., iPhone, YubiKey)"), {
 				target: { value: "Synthetic new key" },
 			});
-			fireEvent.click(screen.getByRole("button", { name: "Add Passkey", exact: true }));
+			fireEvent.click(screen.getByRole("button", { name: "Add Passkey" }));
 			await waitFor(() => expect(startRegistration).toHaveBeenCalledTimes(1));
 			expect(startRegistration).toHaveBeenCalledWith({ optionsJSON: options });
-			expect(screen.getByRole("button", { name: "Registering...", exact: true })).toBeDisabled();
+			expect(screen.getByRole("button", { name: "Registering..." })).toBeDisabled();
 			expect(requests.filter((r) => r.method === "POST")).toEqual([
 				{
 					url: "/auth/passkey/register/options",
@@ -128,16 +128,16 @@ describe("Passkey registration rejection after options", () => {
 			await screen.findByText(message);
 			expect(screen.getByText("Synthetic existing key")).toBeInTheDocument();
 			expect(screen.queryByText("Passkey registered successfully!")).not.toBeInTheDocument();
-			expect(screen.getByRole("button", { name: "Add Passkey", exact: true })).toBeEnabled();
+			expect(screen.getByRole("button", { name: "Add Passkey" })).toBeEnabled();
 			expect(requests.filter((r) => r.url === "/auth/passkey/register/verify")).toHaveLength(0);
 
 			vi.mocked(startRegistration).mockResolvedValueOnce(registered);
-			fireEvent.click(screen.getByRole("button", { name: "Add Passkey", exact: true }));
+			fireEvent.click(screen.getByRole("button", { name: "Add Passkey" }));
 			await screen.findByText("Passkey registered successfully!");
 			await screen.findByText("Synthetic new key");
 			expect(screen.getByText("Synthetic existing key")).toBeInTheDocument();
 			expect(screen.queryByText(message)).not.toBeInTheDocument();
-			expect(screen.getByRole("button", { name: "Add Passkey", exact: true })).toBeEnabled();
+			expect(screen.getByRole("button", { name: "Add Passkey" })).toBeEnabled();
 			expect(requests.filter((r) => r.method === "POST")).toEqual([
 				{
 					url: "/auth/passkey/register/options",
