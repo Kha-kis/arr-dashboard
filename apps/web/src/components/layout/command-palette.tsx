@@ -1,7 +1,7 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { useQueryClient } from "@tanstack/react-query";
 import { Command } from "cmdk";
 import {
 	BarChart3,
@@ -35,6 +35,7 @@ import { logout } from "../../lib/api-client/auth";
 import { navigateToSignedOutPage } from "../../lib/auth-navigation";
 import { cn } from "../../lib/utils";
 import { type ColorTheme, useColorTheme } from "../../providers/color-theme-provider";
+import { toast } from "../ui/toast";
 
 /**
  * Navigation items matching sidebar
@@ -172,10 +173,9 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 			queryClient.clear();
 			navigateToSignedOutPage();
 		} catch {
-			// Still redirect on error
-			router.push("/login");
+			toast.error("Sign out could not be confirmed. Please try again.");
 		}
-	}, [queryClient, router]);
+	}, [queryClient]);
 
 	const handleRefreshData = useCallback(() => {
 		queryClient.invalidateQueries();

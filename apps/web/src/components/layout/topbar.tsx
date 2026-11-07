@@ -8,6 +8,7 @@ import { navigateToSignedOutPage } from "../../lib/auth-navigation";
 import { getLinuxUsername, useIncognitoMode } from "../../lib/incognito";
 import { Button } from "../ui/button";
 import { DialogTrigger } from "../ui/dialog";
+import { toast } from "../ui/toast";
 
 export const TopBar = () => {
 	const { data: user } = useCurrentUser();
@@ -25,8 +26,8 @@ export const TopBar = () => {
 		try {
 			await logoutMutation.mutateAsync();
 			navigateToSignedOutPage();
-		} catch (error) {
-			console.error("Logout failed", error);
+		} catch {
+			toast.error("Sign out could not be confirmed. Please try again.");
 		}
 	};
 

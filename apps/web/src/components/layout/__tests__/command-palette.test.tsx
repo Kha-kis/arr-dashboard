@@ -5,6 +5,7 @@ import type { PropsWithChildren } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IncognitoProvider } from "../../../contexts/IncognitoContext";
 import { ColorThemeProvider } from "../../../providers/color-theme-provider";
+import { Toaster, toast } from "../../ui/toast";
 import { CommandPalette, useCommandPalette } from "../command-palette";
 
 const { push, logout, navigateToSignedOutPage } = vi.hoisted(() => ({
@@ -29,6 +30,7 @@ function Harness() {
 }
 let client: QueryClient;
 beforeEach(() => {
+	toast.dismiss();
 	localStorage.clear();
 	document.documentElement.removeAttribute("data-oled");
 	client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
@@ -43,7 +45,13 @@ beforeEach(() => {
 	);
 	vi.stubGlobal(
 		"matchMedia",
-		vi.fn(() => ({ matches: true, addListener() {}, removeListener() {} })),
+		vi.fn(() => ({
+			matches: true,
+			addListener() {},
+			removeListener() {},
+			addEventListener() {},
+			removeEventListener() {},
+		})),
 	);
 	Object.defineProperty(Element.prototype, "scrollIntoView", {
 		value: vi.fn(),
@@ -55,6 +63,7 @@ beforeEach(() => {
 	});
 });
 afterEach(() => {
+	toast.dismiss();
 	cleanup();
 	client.clear();
 	vi.restoreAllMocks();
@@ -66,7 +75,10 @@ function Providers({ children }: PropsWithChildren) {
 		<QueryClientProvider client={client}>
 			<ThemeProvider forcedTheme="dark">
 				<ColorThemeProvider>
-					<IncognitoProvider>{children}</IncognitoProvider>
+					<IncognitoProvider>
+						{children}
+						<Toaster />
+					</IncognitoProvider>
 				</ColorThemeProvider>
 			</ThemeProvider>
 		</QueryClientProvider>
@@ -235,15 +247,23 @@ describe("Command palette modal", () => {
 		expect(client.getQueryData(["synthetic"])).toBeUndefined();
 	});
 
-	it("preserves cached evidence and the existing fallback when logout is refused", async () => {
+	it("explains unconfirmed logout without discarding evidence, then allows an explicit acknowledged retry", async () => {
 		logout.mockRejectedValueOnce(new Error("Synthetic logout unavailable"));
 		client.setQueryData(["synthetic"], "cached");
 		mount();
 		await open();
 		fireEvent.click(screen.getByRole("option", { name: "Log Out" }));
-		await waitFor(() => expect(push).toHaveBeenCalledWith("/login"));
+		await screen.findByText("Sign out could not be confirmed. Please try again.");
+		expect(screen.queryByText("Synthetic logout unavailable")).not.toBeInTheDocument();
 		expect(logout).toHaveBeenCalledOnce();
 		expect(navigateToSignedOutPage).not.toHaveBeenCalled();
+		expect(push).not.toHaveBeenCalled();
 		expect(client.getQueryData(["synthetic"])).toBe("cached");
+		await open();
+		fireEvent.click(screen.getByRole("option", { name: "Log Out" }));
+		await waitFor(() => expect(navigateToSignedOutPage).toHaveBeenCalledOnce());
+		expect(logout).toHaveBeenCalledTimes(2);
+		expect(push).not.toHaveBeenCalled();
+		expect(client.getQueryData(["synthetic"])).toBeUndefined();
 	});
 });

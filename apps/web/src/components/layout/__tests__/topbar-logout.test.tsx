@@ -6,6 +6,7 @@ import { IncognitoProvider } from "../../../contexts/IncognitoContext";
 import { authKeys } from "../../../lib/query-keys";
 import { ColorThemeProvider } from "../../../providers/color-theme-provider";
 import { Dialog } from "../../ui/dialog";
+import { Toaster, toast } from "../../ui/toast";
 import { TopBar } from "../topbar";
 
 const { clientReplace, navigateToSignedOutPage } = vi.hoisted(() => ({
@@ -20,6 +21,7 @@ vi.mock("../../../lib/auth-navigation", () => ({ navigateToSignedOutPage }));
 
 let client: QueryClient;
 afterEach(() => {
+	toast.dismiss();
 	cleanup();
 	client?.clear();
 	vi.restoreAllMocks();
@@ -51,9 +53,14 @@ it("retains a refused session and navigates outside the client router only after
 	vi.stubGlobal("fetch", fetch);
 	vi.stubGlobal(
 		"matchMedia",
-		vi.fn(() => ({ matches: true, addListener() {}, removeListener() {} })),
+		vi.fn(() => ({
+			matches: true,
+			addListener() {},
+			removeListener() {},
+			addEventListener() {},
+			removeEventListener() {},
+		})),
 	);
-	const expectedFailure = vi.spyOn(console, "error").mockImplementation(() => {});
 	navigateToSignedOutPage.mockImplementation(() => {
 		expect(client.getQueryData(authKeys.currentUser)).toBeNull();
 	});
@@ -65,6 +72,7 @@ it("retains a refused session and navigates outside the client router only after
 						<Dialog>
 							<TopBar />
 						</Dialog>
+						<Toaster />
 					</IncognitoProvider>
 				</ColorThemeProvider>
 			</ThemeProvider>
@@ -72,8 +80,8 @@ it("retains a refused session and navigates outside the client router only after
 	);
 
 	fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
-	await waitFor(() => expect(expectedFailure).toHaveBeenCalledOnce());
-	expect(expectedFailure).toHaveBeenCalledWith("Logout failed", expect.any(Error));
+	await screen.findByText("Sign out could not be confirmed. Please try again.");
+	expect(screen.queryByText("Synthetic logout unavailable")).not.toBeInTheDocument();
 	await waitFor(() => expect(screen.getByRole("button", { name: "Sign out" })).toBeEnabled());
 	expect(requests).toBe(1);
 	expect(client.getQueryData(authKeys.currentUser)).toEqual(user);
