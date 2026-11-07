@@ -151,14 +151,20 @@ export const SettingsClient = () => {
 					<div role="tabpanel" id="settings-panel-services" aria-labelledby="settings-tab-services">
 						<GettingStartedBanner
 							services={services}
-							onSelectService={(service) => serviceFormState.resetForm(service)}
+							onSelectService={(service) => {
+								servicesManagement.dismissIdentityFlow();
+								serviceFormState.resetForm(service);
+							}}
 						/>
 						<div className="grid gap-4 sm:gap-6 xl:grid-cols-[2fr_1fr]">
 							<ServicesTab
 								services={services}
 								isLoading={servicesLoading}
 								onTestConnection={servicesManagement.handleTestConnection}
-								onEdit={serviceFormState.handleEdit}
+								onEdit={(instance) => {
+									servicesManagement.dismissIdentityFlow();
+									serviceFormState.handleEdit(instance);
+								}}
 								onToggleDefault={servicesManagement.toggleDefault}
 								onToggleEnabled={servicesManagement.toggleEnabled}
 								onDelete={handleDeleteService}
@@ -175,7 +181,10 @@ export const SettingsClient = () => {
 								formState={serviceFormState.formState}
 								onFormStateChange={serviceFormState.setFormState}
 								onSubmit={handleServiceFormSubmit}
-								onCancel={() => serviceFormState.resetForm(serviceFormState.formState.service)}
+								onCancel={() => {
+									servicesManagement.dismissIdentityFlow();
+									serviceFormState.resetForm(serviceFormState.formState.service);
+								}}
 								onTestConnection={(draft) =>
 									servicesManagement.handleTestFormConnection(
 										draft ?? serviceFormState.formState,

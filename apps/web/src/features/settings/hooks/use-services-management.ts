@@ -99,9 +99,11 @@ export const useServicesManagement = (currentForm?: {
 		selectedServiceId?: string;
 	} | null>(null);
 	const formTestSequence = useRef(0);
+	const identitySequence = useRef(0);
 	useEffect(
 		() => () => {
 			formTestSequence.current += 1;
+			identitySequence.current += 1;
 		},
 		[],
 	);
@@ -111,6 +113,10 @@ export const useServicesManagement = (currentForm?: {
 		(testedForm !== null &&
 			testedForm.selectedServiceId === currentForm.selectedServiceId &&
 			sameConnectionDraft(testedForm.formState, currentForm.formState));
+	const dismissIdentityFlow = () => {
+		identitySequence.current += 1;
+		setIdentityFlow(null);
+	};
 
 	const handleSubmit = async (
 		formState: ServiceFormState,
@@ -180,6 +186,7 @@ export const useServicesManagement = (currentForm?: {
 			return;
 		}
 
+		const identityRequest = ++identitySequence.current;
 		let identityReplacementPayload: UpdateServicePayload | undefined;
 		try {
 			if (selectedServiceForEdit) {
@@ -199,6 +206,7 @@ export const useServicesManagement = (currentForm?: {
 
 			resetForm(basePayload.service);
 		} catch (error) {
+			if (identityRequest !== identitySequence.current) return;
 			const conflict = getIdentityConflict(error);
 			if (conflict?.candidate && identityReplacementPayload && selectedServiceForEdit) {
 				setIdentityFlow({
@@ -407,13 +415,25 @@ export const useServicesManagement = (currentForm?: {
 	};
 
 	const inspectIdentity = async (instance: ServiceInstanceSummary) => {
+		const request = ++identitySequence.current;
+		const priorFlow = identityFlow?.instanceId === instance.id ? identityFlow : null;
+		// An earlier candidate cannot authorize confirmation during a new inspection.
+		setIdentityFlow(
+			priorFlow
+				? {
+						...priorFlow,
+						requiresReinspection: true,
+						message: "Inspect the provider again before confirming.",
+					}
+				: null,
+		);
 		try {
-			const priorFlow = identityFlow?.instanceId === instance.id ? identityFlow : null;
 			const stagedReplacementCandidate =
 				priorFlow?.mode === "replace" && priorFlow.requiresReinspection
 					? priorFlow.replacementPayload
 					: undefined;
 			const inspection = await inspectServiceIdentity(instance.id, stagedReplacementCandidate);
+			if (request !== identitySequence.current) return;
 			setIdentityFlow({
 				instanceId: instance.id,
 				mode: priorFlow?.mode ?? (instance.identity.status === "mismatch" ? "replace" : "verify"),
@@ -428,12 +448,14 @@ export const useServicesManagement = (currentForm?: {
 						: "Confirm this provider identity to verify the saved connection.",
 			});
 		} catch (error) {
+			if (request !== identitySequence.current) return;
 			toast.error(getErrorMessage(error, "Unable to inspect provider identity"));
 		}
 	};
 
 	const confirmIdentity = async () => {
 		if (!identityFlow || identityFlow.requiresReinspection) return;
+		const request = ++identitySequence.current;
 		const confirmation = {
 			confirmationDigest: identityFlow.candidate.confirmationDigest,
 			expectedConnectionGeneration: identityFlow.connectionGeneration,
@@ -449,8 +471,9 @@ export const useServicesManagement = (currentForm?: {
 			} else {
 				await verifyIdentityMutation.mutateAsync({ id: identityFlow.instanceId, ...confirmation });
 			}
-			setIdentityFlow(null);
+			if (request === identitySequence.current) setIdentityFlow(null);
 		} catch (error) {
+			if (request !== identitySequence.current) return;
 			const conflict = getIdentityConflict(error);
 			if (conflict) {
 				setIdentityFlow((current) =>
@@ -482,7 +505,7 @@ export const useServicesManagement = (currentForm?: {
 		identityFlow,
 		inspectIdentity,
 		confirmIdentity,
-		dismissIdentityFlow: () => setIdentityFlow(null),
+		dismissIdentityFlow,
 		deleteServiceMutation,
 		testingConnection,
 		testResult,

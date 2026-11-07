@@ -240,11 +240,17 @@ function Services() {
 				services={list}
 				isLoading={q.isLoading}
 				onTestConnection={m.handleTestConnection}
-				onEdit={f.handleEdit}
+				onEdit={(instance) => {
+					m.dismissIdentityFlow();
+					f.handleEdit(instance);
+				}}
 				onToggleDefault={m.toggleDefault}
 				onToggleEnabled={m.toggleEnabled}
 				onDelete={(s) => void m.handleDeleteService(s, f.selectedServiceForEdit, f.resetForm)}
-				onInspectIdentity={m.inspectIdentity}
+				onInspectIdentity={(instance) => {
+					f.handleEdit(instance);
+					void m.inspectIdentity(instance);
+				}}
 				testingConnection={m.testingConnection}
 				testResult={m.testResult}
 				mutationPending={m.updateServiceMutation.isPending || m.deleteServiceMutation.isPending}
@@ -257,7 +263,10 @@ function Services() {
 					m.resetFormTestResult();
 					void m.handleSubmit(f.formState, f.selectedServiceForEdit, f.resetForm);
 				}}
-				onCancel={() => f.resetForm(f.formState.service)}
+				onCancel={() => {
+					m.dismissIdentityFlow();
+					f.resetForm(f.formState.service);
+				}}
 				onTestConnection={(draft) =>
 					void m.handleTestFormConnection(draft ?? f.formState, f.selectedServiceForEdit)
 				}
@@ -281,6 +290,282 @@ function Services() {
 function card(name: string) {
 	return within(screen.getByText(name).closest("div.group")!);
 }
+
+describe("identity cancellation and current candidate feedback", () => {
+	const inspected = (fingerprint = "111111111111", digest = "a".repeat(64)) => ({
+		candidate: {
+			service: "JELLYFIN",
+			identityKind: "jellyfin-server-id",
+			fingerprint,
+			confirmationDigest: digest,
+		},
+		connectionGeneration: 4,
+		identityGeneration: 2,
+	});
+	const inspect = () =>
+		fireEvent.click(card("Synthetic A").getByRole("button", { name: /Verify identity/ }));
+	const confirm = () => screen.getByRole("button", { name: "Confirm verification" });
+	const inspectUrl = "/api/services/source-a/identity/inspect";
+	const verifyUrl = "/api/services/source-a/identity/verify";
+	beforeEach(() => {
+		services = [
+			{
+				...service("source-a", "Synthetic A", "jellyfin"),
+				identity: {
+					status: "unverified",
+					kind: null,
+					fingerprint: null,
+					verifiedAt: null,
+					lastCheckedAt: null,
+				},
+			},
+		];
+		respond = async ({ url, method }) => {
+			if (method === "GET" && url === "/api/services") return json({ services });
+			if (method === "POST" && url === inspectUrl) return json(inspected());
+			throw new Error(`Unexpected identity request ${method} ${url}`);
+		};
+	});
+	async function opened() {
+		show(<Services />);
+		await screen.findByText("Synthetic A");
+		inspect();
+		await screen.findByText(/Candidate: jellyfin-server-id/);
+	}
+	async function release(response: ReturnType<typeof hold>) {
+		await act(async () => {
+			response.release();
+			await Promise.allSettled([...active]);
+		});
+	}
+
+	it("Keep editing dismisses the candidate, preserves the draft and never confirms implicitly", async () => {
+		await opened();
+		fireEvent.change(screen.getByLabelText(/Label/), { target: { value: "Still editing" } });
+		fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+		expect(screen.queryByText(/Candidate:/)).not.toBeInTheDocument();
+		expect(screen.getByLabelText(/Label/)).toHaveValue("Still editing");
+		expect(writes()).toEqual([{ url: inspectUrl, method: "POST", body: {} }]);
+	});
+
+	it("Cancel discards a completed identity candidate even when the same instance is edited again", async () => {
+		await opened();
+		fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+		fireEvent.click(card("Synthetic A").getByRole("button", { name: "Edit" }));
+		expect(screen.queryByText(/Candidate:/)).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Confirm verification" })).not.toBeInTheDocument();
+		expect(writes()).toEqual([{ url: inspectUrl, method: "POST", body: {} }]);
+	});
+
+	it("Cancel invalidates an inspection response that arrives after the form was reset", async () => {
+		const response = hold();
+		const normal = respond;
+		respond = async (request) => {
+			if (request.url === inspectUrl) await response.promise;
+			return normal(request);
+		};
+		show(<Services />);
+		await screen.findByText("Synthetic A");
+		inspect();
+		await waitFor(() => expect(writes()).toHaveLength(1));
+		fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+		await release(response);
+		fireEvent.click(card("Synthetic A").getByRole("button", { name: "Edit" }));
+		expect(screen.queryByText(/Candidate:/)).not.toBeInTheDocument();
+		expect(writes()).toEqual([{ url: inspectUrl, method: "POST", body: {} }]);
+	});
+
+	it("an older inspection cannot replace the newest explicitly inspected candidate", async () => {
+		const response = hold();
+		const normal = respond;
+		let inspections = 0;
+		respond = async (request) => {
+			if (request.url !== inspectUrl) return normal(request);
+			if (++inspections === 1) {
+				await response.promise;
+				return json(inspected());
+			}
+			return json(inspected("222222222222", "b".repeat(64)));
+		};
+		show(<Services />);
+		await screen.findByText("Synthetic A");
+		inspect();
+		await waitFor(() => expect(inspections).toBe(1));
+		inspect();
+		await screen.findByText(/Candidate:.*222222222222/);
+		await release(response);
+		expect(screen.getByText(/Candidate:.*222222222222/)).toBeInTheDocument();
+		expect(writes()).toEqual([1, 2].map(() => ({ url: inspectUrl, method: "POST", body: {} })));
+	});
+
+	it("a cancelled inspection failure cannot publish an obsolete error", async () => {
+		const response = hold();
+		const normal = respond;
+		respond = async (request) => {
+			if (request.url !== inspectUrl) return normal(request);
+			await response.promise;
+			return json({ error: "Synthetic old inspection refused" }, 503);
+		};
+		show(<Services />);
+		await screen.findByText("Synthetic A");
+		inspect();
+		await waitFor(() => expect(writes()).toHaveLength(1));
+		fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+		await release(response);
+		expect(screen.queryByText("Synthetic old inspection refused")).not.toBeInTheDocument();
+		expect(
+			toast
+				.getHistory()
+				.some((entry) => "title" in entry && entry.title === "Synthetic old inspection refused"),
+		).toBe(false);
+		expect(writes()).toHaveLength(1);
+	});
+
+	it("an obsolete confirmation conflict cannot change a newly inspected candidate", async () => {
+		const response = hold();
+		const normal = respond;
+		let inspections = 0;
+		respond = async (request) => {
+			if (request.url === inspectUrl) {
+				inspections++;
+				return json(inspections === 1 ? inspected() : inspected("222222222222", "b".repeat(64)));
+			}
+			if (request.url === verifyUrl) {
+				await response.promise;
+				return json(
+					{
+						error: "Synthetic old confirmation conflict",
+						details: { code: "IDENTITY_GENERATION_STALE", ...inspected() },
+					},
+					409,
+				);
+			}
+			return normal(request);
+		};
+		await opened();
+		fireEvent.click(confirm());
+		await waitFor(() => expect(writes()).toHaveLength(2));
+		fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+		inspect();
+		await screen.findByText(/Candidate:.*222222222222/);
+		await release(response);
+		expect(screen.getByText(/Candidate:.*222222222222/)).toBeInTheDocument();
+		expect(confirm()).toBeEnabled();
+		expect(screen.queryByRole("button", { name: "Inspect again" })).not.toBeInTheDocument();
+		expect(writes()).toEqual([
+			{ url: inspectUrl, method: "POST", body: {} },
+			{
+				url: verifyUrl,
+				method: "POST",
+				body: {
+					confirmationDigest: "a".repeat(64),
+					expectedConnectionGeneration: 4,
+					expectedIdentityGeneration: 2,
+				},
+			},
+			{ url: inspectUrl, method: "POST", body: {} },
+		]);
+	});
+
+	it("a current confirmation refusal keeps the candidate for explicit exact retry and acknowledged readback", async () => {
+		const normal = respond;
+		let attempts = 0;
+		respond = async (request) => {
+			if (request.url !== verifyUrl) return normal(request);
+			if (++attempts === 1) return json({ error: "Synthetic current confirmation refused" }, 503);
+			services = [
+				{
+					...services[0]!,
+					identity: {
+						status: "verified",
+						kind: "jellyfin-server-id",
+						fingerprint: "111111111111",
+						verifiedAt: "2026-10-25T12:00:00Z",
+						lastCheckedAt: "2026-10-25T12:00:00Z",
+					},
+				},
+			];
+			return json({ service: services[0] });
+		};
+		await opened();
+		fireEvent.click(confirm());
+		await screen.findByText("Synthetic current confirmation refused");
+		expect(confirm()).toBeEnabled();
+		expect(screen.getByText(/Candidate:.*111111111111/)).toBeInTheDocument();
+		fireEvent.click(confirm());
+		await waitFor(() => expect(screen.queryByText(/Candidate:/)).not.toBeInTheDocument());
+		expect(card("Synthetic A").getByText(/Verified jellyfin-server-id/)).toBeInTheDocument();
+		expect(writes()).toEqual([
+			{ url: inspectUrl, method: "POST", body: {} },
+			...[1, 2].map(() => ({
+				url: verifyUrl,
+				method: "POST",
+				body: {
+					confirmationDigest: "a".repeat(64),
+					expectedConnectionGeneration: 4,
+					expectedIdentityGeneration: 2,
+				},
+			})),
+		]);
+	});
+
+	it("a superseded Save conflict cannot resurrect a replacement candidate on re-edit", async () => {
+		services.push(service("source-b", "Synthetic B", "jellyfin"));
+		const response = hold();
+		const normal = respond;
+		respond = async (request) => {
+			if (request.url !== "/api/services/source-a" || request.method !== "PUT")
+				return normal(request);
+			await response.promise;
+			return json(
+				{
+					error: "Synthetic old Save conflict",
+					details: {
+						code: "IDENTITY_REPLACEMENT_REQUIRED",
+						...inspected(),
+					},
+				},
+				409,
+			);
+		};
+		show(<Services />);
+		await screen.findByText("Synthetic B");
+		fireEvent.click(card("Synthetic A").getByRole("button", { name: "Edit" }));
+		fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+		await waitFor(() => expect(writes()).toHaveLength(1));
+		fireEvent.click(card("Synthetic B").getByRole("button", { name: "Edit" }));
+		await release(response);
+		fireEvent.click(card("Synthetic A").getByRole("button", { name: "Edit" }));
+		expect(screen.queryByText(/Candidate:/)).not.toBeInTheDocument();
+		expect(writes()).toHaveLength(1);
+		expect(writes()[0]).toMatchObject({ url: "/api/services/source-a", method: "PUT" });
+	});
+
+	it("a new inspection blocks old confirmation through refusal until an explicit successful reinspection", async () => {
+		const response = hold();
+		const normal = respond;
+		let inspections = 0;
+		respond = async (request) => {
+			if (request.url !== inspectUrl) return normal(request);
+			if (++inspections === 2) {
+				await response.promise;
+				return json({ error: "Synthetic current inspection refused" }, 503);
+			}
+			return json(inspections === 1 ? inspected() : inspected("222222222222", "b".repeat(64)));
+		};
+		await opened();
+		inspect();
+		await waitFor(() => expect(inspections).toBe(2));
+		expect(confirm()).toBeDisabled();
+		await release(response);
+		await screen.findByText("Synthetic current inspection refused");
+		expect(confirm()).toBeDisabled();
+		fireEvent.click(screen.getByRole("button", { name: "Inspect again" }));
+		await screen.findByText(/Candidate:.*222222222222/);
+		expect(confirm()).toBeEnabled();
+		expect(writes()).toEqual([1, 2, 3].map(() => ({ url: inspectUrl, method: "POST", body: {} })));
+	});
+});
 
 describe("remaining Services form controls", () => {
 	async function draft() {
