@@ -229,7 +229,10 @@ beforeEach(() => {
 function Services() {
 	const q = useServicesQuery();
 	const f = useServiceFormState();
-	const m = useServicesManagement();
+	const m = useServicesManagement({
+		formState: f.formState,
+		selectedServiceId: f.selectedServiceForEdit?.id,
+	});
 	const list = q.data ?? [];
 	return (
 		<>
@@ -251,6 +254,7 @@ function Services() {
 				onFormStateChange={f.setFormState}
 				onSubmit={(e) => {
 					e.preventDefault();
+					m.resetFormTestResult();
 					void m.handleSubmit(f.formState, f.selectedServiceForEdit, f.resetForm);
 				}}
 				onCancel={() => f.resetForm(f.formState.service)}
@@ -277,6 +281,170 @@ function Services() {
 function card(name: string) {
 	return within(screen.getByText(name).closest("div.group")!);
 }
+
+describe("connection Test feedback belongs to the tested target", () => {
+	const testButton = () => screen.getByRole("button", { name: /^Test(ing)? connection/ });
+	async function manualDraft() {
+		show(<Services />);
+		await screen.findByText("Synthetic A");
+		fireEvent.click(screen.getByRole("button", { name: "radarr" }));
+		fireEvent.change(screen.getByLabelText(/Label/), { target: { value: "Synthetic draft" } });
+		fireEvent.change(screen.getByLabelText(/^Base URL/), {
+			target: { value: "http://first.synthetic.invalid" },
+		});
+		fireEvent.change(screen.getByLabelText(/^API Key/), { target: { value: "first-key" } });
+	}
+	function transport(test: (request: Request) => Promise<Response>) {
+		respond = async (request) => {
+			if (request.method === "GET" && request.url === "/api/services") return json({ services });
+			if (request.url.endsWith("/test") || request.url === "/api/services/test-connection")
+				return test(request);
+			if (request.method === "POST" && request.url === "/api/services")
+				return json({ error: "Synthetic save refused" }, 503);
+			throw new Error(`Unexpected scoped Test request ${request.method} ${request.url}`);
+		};
+	}
+	const tests = () =>
+		writes().filter((r) => r.url.endsWith("/test") || r.url.endsWith("/test-connection"));
+
+	it.each(["success", "failure"])(
+		"ignores an obsolete Test %s after URL change",
+		async (outcome) => {
+			const response = hold();
+			transport(async () => {
+				await response.promise;
+				return outcome === "success"
+					? json({ success: true, message: "Obsolete connection success", version: "1" })
+					: json({ error: "Obsolete connection failure" }, 503);
+			});
+			await manualDraft();
+			fireEvent.click(testButton());
+			await waitFor(() => expect(tests()).toHaveLength(1));
+			fireEvent.change(screen.getByLabelText(/^Base URL/), {
+				target: { value: "http://second.synthetic.invalid" },
+			});
+			await act(async () => {
+				response.release();
+				await Promise.allSettled([...active]);
+			});
+			expect(screen.queryByText(/Obsolete connection/)).not.toBeInTheDocument();
+			expect(testButton()).toBeEnabled();
+			expect(tests()).toHaveLength(1);
+		},
+	);
+
+	it("hides an already completed result when the API key changes", async () => {
+		transport(async () =>
+			json({ success: true, message: "Previously verified draft", version: "1" }),
+		);
+		await manualDraft();
+		fireEvent.click(testButton());
+		await screen.findByText("Previously verified draft");
+		fireEvent.change(screen.getByLabelText(/^API Key/), { target: { value: "second-key" } });
+		expect(screen.queryByText("Previously verified draft")).not.toBeInTheDocument();
+		expect(tests()).toHaveLength(1);
+	});
+
+	it("retains valid connection evidence through a friendly-label edit without retesting", async () => {
+		transport(async () =>
+			json({ success: true, message: "Current verified connection", version: "1" }),
+		);
+		await manualDraft();
+		fireEvent.click(testButton());
+		await screen.findByText("Current verified connection");
+		fireEvent.change(screen.getByLabelText(/Label/), { target: { value: "My friendly label" } });
+		expect(screen.getByText("Current verified connection")).toBeInTheDocument();
+		expect(tests()).toHaveLength(1);
+	});
+
+	it("allows testing a new draft while the old request remains pending and fences its finally", async () => {
+		const old = hold();
+		const current = hold();
+		let calls = 0;
+		transport(async () => {
+			const first = ++calls === 1;
+			await (first ? old : current).promise;
+			return json({
+				success: true,
+				message: first ? "Obsolete connection success" : "Current connection success",
+				version: "1",
+			});
+		});
+		await manualDraft();
+		fireEvent.click(testButton());
+		await waitFor(() => expect(calls).toBe(1));
+		expect(testButton()).toBeDisabled();
+		fireEvent.change(screen.getByLabelText(/^API Key/), { target: { value: "second-key" } });
+		expect(testButton()).toBeEnabled();
+		fireEvent.click(testButton());
+		await waitFor(() => expect(calls).toBe(2));
+		await act(async () => {
+			old.release();
+			await old.promise;
+		});
+		expect(testButton()).toBeDisabled();
+		expect(screen.queryByText("Obsolete connection success")).not.toBeInTheDocument();
+		await act(async () => {
+			current.release();
+			await Promise.allSettled([...active]);
+		});
+		await screen.findByText("Current connection success");
+		expect(testButton()).toBeEnabled();
+		expect(tests()[1]?.body).toMatchObject({ apiKey: "second-key" });
+	});
+
+	it("does not confuse two saved instances with identical URLs and blank key drafts", async () => {
+		services.push(service("source-b", "Synthetic B", "radarr"));
+		const old = hold();
+		transport(async (request) => {
+			if (request.url === "/api/services/source-a/test") {
+				await old.promise;
+				return json({ success: true, message: "Obsolete instance success", version: "1" });
+			}
+			return json({ success: true, message: "Current instance success", version: "1" });
+		});
+		show(<Services />);
+		await screen.findByText("Synthetic A");
+		fireEvent.click(card("Synthetic A").getByRole("button", { name: "Edit" }));
+		fireEvent.click(testButton());
+		await waitFor(() => expect(tests()).toHaveLength(1));
+		fireEvent.click(card("Synthetic B").getByRole("button", { name: "Edit" }));
+		expect(testButton()).toBeEnabled();
+		fireEvent.click(testButton());
+		await screen.findByText("Current instance success");
+		await act(async () => {
+			old.release();
+			await Promise.allSettled([...active]);
+		});
+		expect(screen.queryByText("Obsolete instance success")).not.toBeInTheDocument();
+		expect(screen.getByText("Current instance success")).toBeInTheDocument();
+		expect(tests().map((r) => r.url)).toEqual([
+			"/api/services/source-a/test",
+			"/api/services/source-b/test",
+		]);
+	});
+
+	it("does not resurrect a cleared in-flight result after an explicitly refused Save", async () => {
+		const response = hold();
+		transport(async () => {
+			await response.promise;
+			return json({ success: true, message: "Cleared connection success", version: "1" });
+		});
+		await manualDraft();
+		fireEvent.click(testButton());
+		await waitFor(() => expect(tests()).toHaveLength(1));
+		fireEvent.click(screen.getByRole("button", { name: "Add service" }));
+		await screen.findByText("Synthetic save refused");
+		await act(async () => {
+			response.release();
+			await Promise.allSettled([...active]);
+		});
+		expect(screen.queryByText("Cleared connection success")).not.toBeInTheDocument();
+		expect(screen.getByLabelText(/^API Key/)).toHaveValue("first-key");
+		expect(tests()).toHaveLength(1);
+		expect(writes().filter((r) => r.url === "/api/services")).toHaveLength(1);
+	});
+});
 
 describe("composed OAuth autofill and explicit persistence", () => {
 	function oauthTransport() {

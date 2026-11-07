@@ -68,7 +68,10 @@ export const SettingsClient = () => {
 
 	// Custom hooks
 	const serviceFormState = useServiceFormState();
-	const servicesManagement = useServicesManagement();
+	const servicesManagement = useServicesManagement({
+		formState: serviceFormState.formState,
+		selectedServiceId: serviceFormState.selectedServiceForEdit?.id,
+	});
 	const tagsManagement = useTagsManagement();
 	const tagsUnavailable = tagsQuery.isError || (!tagsQuery.data && tagsQuery.errorUpdatedAt > 0);
 	const accountManagement = useAccountManagement(currentUser);
