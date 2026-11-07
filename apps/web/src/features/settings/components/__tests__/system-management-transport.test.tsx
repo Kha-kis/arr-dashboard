@@ -280,6 +280,67 @@ beforeEach(() => {
 	};
 });
 describe("S6 maintained System transport", () => {
+	it.each([
+		["API Port", "65536", "API Port must be between 1 and 65535"],
+		["Web UI Port", "0", "Web Port must be between 1 and 65535"],
+		["Web UI Port", "65536", "Web Port must be between 1 and 65535"],
+		["API Port", "3000", "API Port and Web Port cannot be the same"],
+	])("rejects invalid %s value %s before any settings write", async (name, value, message) => {
+		show(<SystemTab />);
+		const port = await screen.findByRole("spinbutton", { name });
+		fireEvent.change(port, { target: { value } });
+		fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+		await screen.findByText(message);
+		expect(writes()).toEqual([]);
+		expect(port).toHaveValue(Number(value));
+	});
+
+	it.each([
+		["not-a-url", "External URL must be a valid URL (e.g., https://arr.example.com)"],
+		["ftp://synthetic.invalid", "External URL must use http or https protocol"],
+		[
+			"https://synthetic.invalid/?mode=1",
+			"External URL must not include a query string or fragment",
+		],
+		[
+			"https://synthetic.invalid/#section",
+			"External URL must not include a query string or fragment",
+		],
+	])("retains refused external URL %s until a corrected explicit save", async (value, message) => {
+		show(<SystemTab />);
+		const url = await screen.findByRole("textbox", { name: "External URL" });
+		fireEvent.change(url, { target: { value } });
+		fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+		await screen.findByText(message);
+		expect(writes()).toEqual([]);
+		expect(url).toHaveValue(value);
+		fireEvent.change(url, { target: { value: "https://synthetic.invalid/dashboard" } });
+		fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+		await screen.findByText("Synthetic settings saved");
+		await settled();
+		expect(writes()).toEqual([
+			{
+				url: "/api/system/settings",
+				method: "PUT",
+				body: {
+					apiPort: 3001,
+					webPort: 3000,
+					listenAddress: "0.0.0.0",
+					externalUrl: "https://synthetic.invalid/dashboard",
+					trustProxy: false,
+					secureCookies: null,
+				},
+			},
+		]);
+		await screen.findByText("Synthetic posture refreshed");
+		expect(
+			requests.filter(
+				(request) => request.url === "/api/system/settings" && request.method === "GET",
+			).length,
+		).toBeGreaterThan(1);
+		expect(url).toHaveValue("https://synthetic.invalid/dashboard");
+	});
+
 	it("validates before PUT, preserves refused draft, reads settings/posture and emits restart POST only after confirmation", async () => {
 		const view = show(<SystemTab />);
 		const api = await screen.findByRole("spinbutton", { name: "API Port" });
