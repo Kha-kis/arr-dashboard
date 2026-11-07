@@ -33,6 +33,8 @@ function start(mode = "normal"): Actor {
 		env: {
 			PATH: process.env.PATH,
 			NODE_ENV: "production",
+			// Exercise the real forced-stop path within this fixture's observation bound.
+			SHUTDOWN_GRACE: "7",
 			NODE_OPTIONS: `--disable-warning=ExperimentalWarning --import=${loader}`,
 			TEST_COMBINED_MODE: mode,
 			TEST_CONTROL_DIR: root,

@@ -157,13 +157,14 @@ describe("history preimage and ARR ownership fences on native runtime and real H
 				expect(await f.run(() => backfillInfoHashForRow(args(f)))).toBe("a".repeat(40));
 		}
 	});
-	it("rejects held old history after each actual source binding changes, with normal retry recovery", async () => {
-		for (const data of [
-			{ connectionGeneration: 8 },
-			{ identityGeneration: 4 },
-			{ enabled: false },
-			{ baseUrl: "http://127.0.0.1:1" },
-		]) {
+	it.each([
+		{ binding: "connection generation", data: { connectionGeneration: 8 } },
+		{ binding: "identity generation", data: { identityGeneration: 4 } },
+		{ binding: "enabled state", data: { enabled: false } },
+		{ binding: "provider origin", data: { baseUrl: "http://127.0.0.1:1" } },
+	])(
+		"rejects held old history after the $binding changes, with normal retry recovery",
+		async ({ data }) => {
 			const f = await fixture(),
 				pending = f.run(() => backfillInfoHashForRow(args(f)));
 			await f.entered.promise;
@@ -188,6 +189,6 @@ describe("history preimage and ARR ownership fences on native runtime and real H
 				"GET /api/v3/history/movie?movieId=1",
 				"GET /api/v3/history/movie?movieId=1",
 			]);
-		}
-	});
+		},
+	);
 });
