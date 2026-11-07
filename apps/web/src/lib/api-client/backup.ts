@@ -4,14 +4,15 @@ import type {
 	BackupSettings,
 	CreateBackupRequest,
 	ListBackupsResponse,
-	RestoreBackupRequest,
 	RestoreBackupFromFileRequest,
+	RestoreBackupRequest,
 	RestoreBackupResponse,
 	RestoreStatusResponse,
 	SetBackupPasswordRequest,
 	UpdateBackupSettingsRequest,
 } from "@arr/shared";
 import { restoreBackupResponseSchema, restoreStatusResponseSchema } from "@arr/shared";
+import { reportProtectedUnauthorized } from "../auth-session-signal";
 import { ApiError, apiRequest, UnauthorizedError } from "./base";
 
 type RejectionCategory =
@@ -177,30 +178,35 @@ export const backupApi = {
 	 * Download a backup file by ID
 	 */
 	async downloadBackupById(id: string, filename: string): Promise<void> {
+		let url: string | undefined;
+		let link: HTMLAnchorElement | undefined;
 		try {
 			// Fetch the file as a blob
-			const response = await fetch(`/api/backup/${id}/download`);
+			const response = await fetch(`/api/backup/${id}/download`, { credentials: "include" });
+			if (response.status === 401) {
+				reportProtectedUnauthorized();
+				throw new UnauthorizedError();
+			}
 
 			if (!response.ok) {
-				throw new Error(`Failed to download backup: ${response.statusText}`);
+				throw new Error("Backup download unavailable");
 			}
 
 			const blob = await response.blob();
 
 			// Create download link and trigger download
-			const url = window.URL.createObjectURL(blob);
-			const link = document.createElement("a");
+			url = window.URL.createObjectURL(blob);
+			link = document.createElement("a");
 			link.href = url;
 			link.download = filename;
 			document.body.appendChild(link);
 			link.click();
-			document.body.removeChild(link);
-
-			// Clean up the URL object
-			window.URL.revokeObjectURL(url);
 		} catch (error) {
-			console.error("Failed to download backup:", error);
-			throw error;
+			if (error instanceof UnauthorizedError) throw error;
+			throw new Error("Backup download could not be completed. Retry the download.");
+		} finally {
+			link?.remove();
+			if (url) window.URL.revokeObjectURL(url);
 		}
 	},
 
