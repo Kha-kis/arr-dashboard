@@ -6,12 +6,16 @@ import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
 import { hashPassword, verifyPassword } from "../lib/auth/password.js";
 import { getSessionMetadata } from "../lib/auth/session-metadata.js";
 import { parseUserAgent } from "../lib/auth/user-agent-parser.js";
-import { withIsolatedRuntimePrismaReadClient } from "../lib/backup/restore-runtime-client.js";
+import {
+	withIsolatedRuntimePrismaReadClient,
+	withIsolatedRuntimePrismaTransaction,
+} from "../lib/backup/restore-runtime-client.js";
 import {
 	createJellyfinMutationRepository,
 	MutationRepositoryError,
 } from "../lib/label-sync/jellyfin-mutation-repository.js";
 import { withExclusiveCleanupTopologyMutationLease } from "../lib/library-cleanup/cleanup-executor.js";
+import { withSqliteTransactionWriteIntent } from "../lib/sqlite-transaction-intent.js";
 import { assertNoActiveTrashRecoveryForInstance } from "../lib/trash-guides/recovery-evidence.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
@@ -148,9 +152,9 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(400).send({ error: "Invalid payload" });
 		}
 
-		const user = await app.prisma.user.findFirst({
-			where: { username },
-		});
+		const user = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			prisma.user.findFirst({ where: { username } }),
+		);
 
 		if (!user) {
 			await new Promise((resolve) => setTimeout(resolve, 200));
@@ -180,16 +184,20 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			const MAX_FAILED_ATTEMPTS = 5;
 			const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
-			await app.prisma.user.update({
-				where: { id: user.id },
-				data: {
-					failedLoginAttempts: failedAttempts,
-					lockedUntil:
-						failedAttempts >= MAX_FAILED_ATTEMPTS
-							? new Date(Date.now() + LOCKOUT_DURATION_MS)
-							: null,
-				},
-			});
+			await withSqliteTransactionWriteIntent(() =>
+				withIsolatedRuntimePrismaTransaction(app.prisma, (tx) =>
+					tx.user.update({
+						where: { id: user.id },
+						data: {
+							failedLoginAttempts: failedAttempts,
+							lockedUntil:
+								failedAttempts >= MAX_FAILED_ATTEMPTS
+									? new Date(Date.now() + LOCKOUT_DURATION_MS)
+									: null,
+						},
+					}),
+				),
+			);
 
 			await new Promise((resolve) => setTimeout(resolve, 200));
 
@@ -247,13 +255,14 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		// Reset failed attempts on successful login
 		if (user.failedLoginAttempts > 0 || user.lockedUntil) {
-			await app.prisma.user.update({
-				where: { id: user.id },
-				data: {
-					failedLoginAttempts: 0,
-					lockedUntil: null,
-				},
-			});
+			await withSqliteTransactionWriteIntent(() =>
+				withIsolatedRuntimePrismaTransaction(app.prisma, (tx) =>
+					tx.user.update({
+						where: { id: user.id },
+						data: { failedLoginAttempts: 0, lockedUntil: null },
+					}),
+				),
+			);
 		}
 
 		const session = await app.sessionService.createSession(

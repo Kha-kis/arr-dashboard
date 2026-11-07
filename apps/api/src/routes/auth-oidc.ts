@@ -12,6 +12,7 @@ import {
 } from "../lib/auth/oidc-redirect-uri.js";
 import { resolveCanonicalIssuer } from "../lib/auth/oidc-utils.js";
 import { getSessionMetadata } from "../lib/auth/session-metadata.js";
+import { withIsolatedRuntimePrismaReadClient } from "../lib/backup/restore-runtime-client.js";
 import { withIndependentCleanupOperationGuard } from "../lib/library-cleanup/cleanup-maintenance-gate.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { validateRequest } from "../lib/utils/validate.js";
@@ -84,12 +85,12 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.get("/oidc/providers", async (_request, reply) => {
 		// Load the OIDC provider from database
-		const dbProvider = await app.prisma.oIDCProvider.findFirst({
-			where: { enabled: true },
-			select: {
-				displayName: true,
-			},
-		});
+		const dbProvider = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			prisma.oIDCProvider.findFirst({
+				where: { enabled: true },
+				select: { displayName: true },
+			}),
+		);
 
 		return reply.send({
 			provider: dbProvider ? { displayName: dbProvider.displayName, enabled: true } : null,

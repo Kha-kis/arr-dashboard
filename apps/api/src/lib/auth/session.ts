@@ -6,7 +6,11 @@ import {
 	retainRestoreRuntimeOperation,
 	withRestoreRuntimeOperation,
 } from "../backup/restore-runtime-admission.js";
-import { withIsolatedRuntimePrismaReadClient } from "../backup/restore-runtime-client.js";
+import {
+	withIsolatedRuntimePrismaReadClient,
+	withIsolatedRuntimePrismaTransaction,
+} from "../backup/restore-runtime-client.js";
+import { withSqliteTransactionWriteIntent } from "../sqlite-transaction-intent.js";
 
 /**
  * Base cookie options for session management.
@@ -101,15 +105,21 @@ export class SessionService {
 
 		const expiresAt = new Date(Date.now() + ttlMs);
 
-		await this.prisma.session.create({
-			data: {
-				id: hashedToken,
-				userId,
-				expiresAt,
-				userAgent: metadata?.userAgent,
-				ipAddress: metadata?.ipAddress,
-			},
-		});
+		// Do not borrow a connection held by an unrelated interactive transaction.
+		// The token is returned only after this short guarded publication commits.
+		await withSqliteTransactionWriteIntent(() =>
+			withIsolatedRuntimePrismaTransaction(this.prisma, (tx) =>
+				tx.session.create({
+					data: {
+						id: hashedToken,
+						userId,
+						expiresAt,
+						userAgent: metadata?.userAgent,
+						ipAddress: metadata?.ipAddress,
+					},
+				}),
+			),
+		);
 
 		return { token, expiresAt };
 	}
