@@ -282,6 +282,156 @@ function card(name: string) {
 	return within(screen.getByText(name).closest("div.group")!);
 }
 
+describe("remaining Services form controls", () => {
+	async function draft() {
+		show(<Services />);
+		await screen.findByText("Synthetic A");
+		fireEvent.click(screen.getByRole("button", { name: "radarr" }));
+		fireEvent.change(screen.getByLabelText(/Label/), { target: { value: "Synthetic B" } });
+		fireEvent.change(screen.getByLabelText(/^Base URL/), {
+			target: { value: "http://synthetic.invalid" },
+		});
+		fireEvent.change(screen.getByLabelText(/^API Key/), { target: { value: "synthetic-key" } });
+	}
+	function acceptCreate() {
+		const normal = respond;
+		respond = async (request) => {
+			if (request.url !== "/api/services" || request.method !== "POST") return normal(request);
+			const p = request.body as { label: string; tags: string[]; httpAuth?: unknown };
+			const created = {
+				...service("source-b", p.label, "radarr"),
+				hasHttpAuth: Boolean(p.httpAuth),
+				tags: p.tags.map((name, index) => ({ id: `synthetic-tag-${index}`, name })),
+			};
+			services = [services[0]!, created];
+			return json({ service: created }, 201);
+		};
+	}
+
+	it("exposes the named Service group and its actual selected choice", async () => {
+		show(<Services />);
+		await screen.findByText("Synthetic A");
+		const choices = within(screen.getByRole("group", { name: "Service" }));
+		expect(choices.getByRole("button", { name: "sonarr", pressed: true })).toBeInTheDocument();
+		fireEvent.click(choices.getByRole("button", { name: "radarr", pressed: false }));
+		expect(choices.getByRole("button", { name: "radarr", pressed: true })).toBeInTheDocument();
+		expect(choices.getByRole("button", { name: "sonarr", pressed: false })).toBeInTheDocument();
+		expect(writes()).toHaveLength(0);
+	});
+
+	it("labels Tags and normalizes nonempty comma-separated tags in the explicit create payload/readback", async () => {
+		acceptCreate();
+		await draft();
+		fireEvent.change(screen.getByLabelText("Tags"), { target: { value: " alpha, , beta " } });
+		fireEvent.click(screen.getByRole("button", { name: "Add service" }));
+		await screen.findByText("Synthetic B");
+		expect(writes()).toHaveLength(1);
+		expect(writes()[0]).toMatchObject({
+			url: "/api/services",
+			method: "POST",
+			body: { label: "Synthetic B", tags: ["alpha", "beta"] },
+		});
+		expect(card("Synthetic B").getByText("alpha")).toBeInTheDocument();
+		expect(card("Synthetic B").getByText("beta")).toBeInTheDocument();
+	});
+
+	it.each(["username", "password"])(
+		"rejects a lone Basic-auth %s before Test and Save, then sends the completed pair explicitly",
+		async (only) => {
+			acceptCreate();
+			await draft();
+			fireEvent.click(screen.getByRole("checkbox", { name: /Reverse proxy HTTP Basic Auth/ }));
+			fireEvent.change(
+				screen.getByLabelText(only === "username" ? "HTTP username" : "HTTP password"),
+				{
+					target: { value: only === "username" ? " proxy-user " : "synthetic-http-secret" },
+				},
+			);
+			fireEvent.click(screen.getByRole("button", { name: /^Test connection/ }));
+			await screen.findByText("Enter both HTTP Basic Auth fields to test unsaved credentials");
+			expect(writes()).toHaveLength(0);
+			fireEvent.click(screen.getByRole("button", { name: "Add service" }));
+			await screen.findByText("Enter both an HTTP Basic Auth username and password");
+			expect(writes()).toHaveLength(0);
+			fireEvent.change(
+				screen.getByLabelText(only === "username" ? "HTTP password" : "HTTP username"),
+				{
+					target: { value: only === "username" ? "synthetic-http-secret" : " proxy-user " },
+				},
+			);
+			fireEvent.click(screen.getByRole("button", { name: /^Test connection/ }));
+			await screen.findByText("Synthetic unreachable");
+			expect(writes()).toHaveLength(1);
+			expect(writes()[0]).toEqual({
+				url: "/api/services/test-connection",
+				method: "POST",
+				body: {
+					service: "radarr",
+					baseUrl: "http://synthetic.invalid",
+					apiKey: "synthetic-key",
+					httpAuth: { username: "proxy-user", password: "synthetic-http-secret" },
+				},
+			});
+			fireEvent.click(screen.getByRole("button", { name: "Add service" }));
+			await screen.findByText("Synthetic B");
+			expect(writes()).toHaveLength(2);
+			expect(writes()[1]).toMatchObject({
+				url: "/api/services",
+				method: "POST",
+				body: { httpAuth: { username: "proxy-user", password: "synthetic-http-secret" } },
+			});
+		},
+	);
+
+	it("changes only the selected default after refusal and an explicit pending retry", async () => {
+		services[0] = { ...services[0]!, isDefault: true };
+		services.push(service("source-b", "Synthetic B", "radarr"));
+		services.push({ ...service("source-c", "Synthetic C", "sonarr"), isDefault: true });
+		const response = hold();
+		let attempts = 0;
+		respond = async (request) => {
+			if (request.method === "GET" && request.url === "/api/services") return json({ services });
+			if (request.method === "PUT" && request.url === "/api/services/source-b") {
+				if (++attempts === 1) return json({ error: "Synthetic default refused" }, 503);
+				await response.promise;
+				services = [
+					{ ...services[0]!, isDefault: false },
+					{ ...services[1]!, isDefault: true },
+					services[2]!,
+				];
+				return json({ service: services[1] });
+			}
+			throw new Error(`Unexpected default request ${request.method} ${request.url}`);
+		};
+		show(<Services />);
+		await screen.findByText("Synthetic B");
+		fireEvent.click(card("Synthetic B").getByRole("button", { name: "Set default" }));
+		await screen.findByText("Synthetic default refused");
+		expect(card("Synthetic A").getByText("Default")).toBeInTheDocument();
+		expect(card("Synthetic C").getByText("Default")).toBeInTheDocument();
+		const retry = card("Synthetic B").getByRole("button", { name: "Set default" });
+		fireEvent.click(retry);
+		await waitFor(() => expect(attempts).toBe(2));
+		expect(retry).toBeDisabled();
+		fireEvent.click(retry);
+		expect(attempts).toBe(2);
+		await act(async () => {
+			response.release();
+			await Promise.allSettled([...active]);
+		});
+		await waitFor(() => expect(card("Synthetic B").getByText("Default")).toBeInTheDocument());
+		expect(card("Synthetic A").queryByText("Default")).not.toBeInTheDocument();
+		expect(card("Synthetic C").getByText("Default")).toBeInTheDocument();
+		expect(writes()).toEqual(
+			[0, 1].map(() => ({
+				url: "/api/services/source-b",
+				method: "PUT",
+				body: { service: "radarr", isDefault: true },
+			})),
+		);
+	});
+});
+
 describe("connection Test feedback belongs to the tested target", () => {
 	const testButton = () => screen.getByRole("button", { name: /^Test(ing)? connection/ });
 	async function manualDraft() {

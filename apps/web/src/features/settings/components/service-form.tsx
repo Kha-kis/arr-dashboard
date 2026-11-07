@@ -189,13 +189,14 @@ export const ServiceForm = ({
 							</AlertDescription>
 						</Alert>
 					)}
-					<div className="space-y-2">
-						<label className="text-xs uppercase text-muted-foreground">Service</label>
+					<fieldset className="min-w-0 space-y-2 border-0 p-0">
+						<legend className="text-xs uppercase text-muted-foreground">Service</legend>
 						<div className="grid grid-cols-4 gap-1.5 sm:gap-2 lg:grid-cols-8 xl:grid-cols-4">
 							{SERVICE_TYPES.map((service) => (
 								<button
 									key={service}
 									type="button"
+									aria-pressed={formState.service === service}
 									onClick={() =>
 										onFormStateChange((prev) => ({
 											...prev,
@@ -229,7 +230,7 @@ export const ServiceForm = ({
 								</button>
 							))}
 						</div>
-					</div>
+					</fieldset>
 					{formState.service === "plex" && (
 						<PlexOAuthSection
 							key={selectedService?.id ?? "new"}
@@ -463,8 +464,11 @@ export const ServiceForm = ({
 						)}
 					</div>
 					<div className="space-y-2">
-						<label className="text-xs uppercase text-muted-foreground">Tags</label>
+						<label className="text-xs uppercase text-muted-foreground" htmlFor="service-tags">
+							Tags
+						</label>
 						<Input
+							id="service-tags"
 							value={formState.tags}
 							onChange={(event) =>
 								onFormStateChange((prev) => ({
