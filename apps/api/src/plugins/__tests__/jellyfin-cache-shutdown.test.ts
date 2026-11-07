@@ -763,7 +763,8 @@ describe("Jellyfin/Emby cache scheduler lifetime", () => {
 		await positive.advance(STARTUP_MS + 20 * 60_000);
 		expect(positive.counts.refresh).toBe(1);
 		expect(positive.counts.currentLookup).toBe(0);
-	});
+		// This case boots three real native fixtures before checking each outcome.
+	}, 15_000);
 	for (const deniedRung of [0, 1, 2]) {
 		it(`preserves recovery rung ${deniedRung + 1} throughout prolonged maintenance`, async () => {
 			const delays = [30_000, 120_000, 600_000];

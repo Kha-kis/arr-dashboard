@@ -11,6 +11,7 @@ import { envSchema } from "../../config/env.js";
 import { createTestPrismaClient } from "../../lib/__tests__/test-prisma.js";
 import { createArrServiceFingerprint } from "../../lib/arr/service-fingerprint.js";
 import { Encryptor } from "../../lib/auth/encryption.js";
+import * as runtimePrisma from "../../lib/backup/restore-runtime-client.js";
 import { synchronizeSqliteRuntimeSchema } from "../../lib/backup/runtime-schema-sqlite.js";
 import type { PrismaClient } from "../../lib/prisma.js";
 import { issueSearchGrabSelector } from "../../lib/search/grab-selector.js";
@@ -81,6 +82,22 @@ let admissions: Admission[];
 let dispatches: Dispatch[];
 let violations: string[];
 let providerReply: () => Response | Promise<Response>;
+
+/** Observe the actual guarded read lane, retaining its acquisition and SQL. */
+function observeIsolatedReaders(observe: (reader: FastifyInstance["prisma"]) => void) {
+	const read = runtimePrisma.withIsolatedRuntimePrismaReadClient;
+	const seen = new WeakSet<object>();
+	vi.spyOn(runtimePrisma, "withIsolatedRuntimePrismaReadClient").mockImplementation(
+		(client, operation) =>
+			read(client, (reader) => {
+				if (!seen.has(reader)) {
+					seen.add(reader);
+					observe(reader);
+				}
+				return operation(reader);
+			}),
+	);
+}
 
 const json = (body: unknown, status = 200) =>
 	new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -513,7 +530,18 @@ describe("actual server Grab session, SQL ownership and SDK acknowledgement boun
 					publishDate: "2026-01-30T12:00:00Z",
 				},
 			]);
-		const read = vi.spyOn(app!.prisma.serviceInstance, "findMany");
+		const read = vi.fn();
+		observeIsolatedReaders((reader) => {
+			const lookup = reader.serviceInstance.findMany;
+			vi.spyOn(reader.serviceInstance, "findMany").mockImplementation(
+				new Proxy(lookup, {
+					apply(target, receiver, args) {
+						read(...args);
+						return Reflect.apply(target, receiver, args);
+					},
+				}),
+			);
+		});
 		const response = await app!.inject({
 			method: "POST",
 			url: "/api/search/query",
@@ -764,9 +792,14 @@ describe("actual server Grab session, SQL ownership and SDK acknowledgement boun
 		"serializes one-shot %s SQL dependency failure generically and recovers",
 		async (dependency) => {
 			const instanceRead = vi.spyOn(app!.prisma.serviceInstance, "findFirst");
-			if (dependency === "session")
-				vi.spyOn(app!.prisma.session, "findUnique").mockRejectedValueOnce(new Error(privateMarker));
-			else instanceRead.mockRejectedValueOnce(new Error(privateMarker));
+			if (dependency === "session") {
+				let injected = false;
+				observeIsolatedReaders((reader) => {
+					if (injected) return;
+					injected = true;
+					vi.spyOn(reader.session, "findUnique").mockRejectedValueOnce(new Error(privateMarker));
+				});
+			} else instanceRead.mockRejectedValueOnce(new Error(privateMarker));
 			assertGenericFailure(await grab(), dependency === "session" ? 500 : 502);
 			if (dependency === "session") expect(instanceRead).not.toHaveBeenCalled();
 			expect(dispatches).toEqual([]);

@@ -995,6 +995,7 @@ describe("actor-owned restore runtime operation admission", () => {
 				env: {
 					NODE_ENV: "test",
 					DOTENV_CONFIG_PATH: "/dev/null",
+					LOG_DIR: join(directory, "child-logs"),
 					FIXTURE_DATABASE_URL: url,
 					FIXTURE_ENGINE: postgres ? "postgres" : "sqlite",
 				},
@@ -1017,6 +1018,7 @@ describe("actor-owned restore runtime operation admission", () => {
 				failedPhase: "clients",
 				admissionClosed: true,
 				activeOperations: 0,
+				activeOperationGroups: [],
 				retainedOperations: 0,
 				registeredClients: 1,
 				pendingClientCloses: 0,

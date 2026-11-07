@@ -9,6 +9,7 @@ import {
 	registerRestoreBootstrapPlugin,
 	registerRestoreRuntimeActivation,
 } from "../../lib/backup/restore-runtime-bootstrap.js";
+import * as runtimePrisma from "../../lib/backup/restore-runtime-client.js";
 import { createRuntimePrismaClient } from "../../lib/backup/restore-runtime-client.js";
 import { withCleanupMaintenanceGuard } from "../../lib/library-cleanup/cleanup-maintenance-gate.js";
 import { createNotificationOutboxNativeFixture } from "../../lib/notifications/__tests__/notification-outbox-native-fixture.js";
@@ -286,74 +287,92 @@ async function boot(
 			state.pending--;
 		}
 	}
-	const lookup = prisma.serviceInstance.findMany.bind(prisma.serviceInstance);
-	const reads: { findMany: AwaitOnly<typeof prisma.serviceInstance.findMany> } =
-		prisma.serviceInstance;
-	vi.spyOn(reads, "findMany").mockImplementation((query) => {
-		if (query?.distinct) {
-			expect(query).toEqual({
-				where: { service: "QUI", enabled: true },
-				select: { userId: true },
-				distinct: ["userId"],
-			});
-			return phase("lookup", async () => {
-				const rows = await lookup({ ...query, select: { userId: true } });
-				expect(new Set(rows.map((row) => row.userId))).toEqual(
-					new Set(options.empty ? [] : owners.map(ownerId)),
-				);
-				ownerSequence.splice(0, ownerSequence.length, ...rows.map((row) => aliasFor(row.userId)));
-				return rows;
-			});
-		}
-		if (!query?.where) throw new Error("Missing native instance lookup");
-		const id = (query.where as { userId: string }).userId;
-		expect(owners).toContain(aliasFor(id));
-		if (query.select) {
-			// The real publication guard captures connection identity before the
-			// separately held instance/provider reads. Keep that native read real.
+	const instrumentedInstances = new WeakSet<object>();
+	function instrumentInstances(target: Pick<Prisma.TransactionClient, "serviceInstance">) {
+		const reads: { findMany: AwaitOnly<typeof prisma.serviceInstance.findMany> } =
+			target.serviceInstance;
+		if (instrumentedInstances.has(reads)) return;
+		instrumentedInstances.add(reads);
+		const lookup = target.serviceInstance.findMany.bind(target.serviceInstance);
+		vi.spyOn(reads, "findMany").mockImplementation((query) => {
+			if (query?.distinct) {
+				expect(query).toEqual({
+					where: { service: "QUI", enabled: true },
+					select: { userId: true },
+					distinct: ["userId"],
+				});
+				return phase("lookup", async () => {
+					const rows = await lookup({ ...query, select: { userId: true } });
+					expect(new Set(rows.map((row) => row.userId))).toEqual(
+						new Set(options.empty ? [] : owners.map(ownerId)),
+					);
+					ownerSequence.splice(0, ownerSequence.length, ...rows.map((row) => aliasFor(row.userId)));
+					return rows;
+				});
+			}
+			if (!query?.where) throw new Error("Missing native instance lookup");
+			const id = (query.where as { userId: string }).userId;
+			expect(owners).toContain(aliasFor(id));
+			if (query.select) {
+				// The real publication guard captures connection identity before the
+				// separately held instance/provider reads. Keep that native read real.
+				expect(query).toEqual({
+					where: { userId: id, service: "QUI", enabled: true },
+					orderBy: { id: "asc" },
+					select: {
+						id: true,
+						userId: true,
+						service: true,
+						enabled: true,
+						connectionGeneration: true,
+						identityGeneration: true,
+						baseUrl: true,
+						encryptedApiKey: true,
+						encryptionIv: true,
+						encryptedHttpAuthCredentials: true,
+						httpAuthEncryptionIv: true,
+					},
+				});
+				return lookup(query);
+			}
 			expect(query).toEqual({
 				where: { userId: id, service: "QUI", enabled: true },
-				orderBy: { id: "asc" },
-				select: {
-					id: true,
-					userId: true,
-					service: true,
-					enabled: true,
-					connectionGeneration: true,
-					identityGeneration: true,
-					baseUrl: true,
-					encryptedApiKey: true,
-					encryptionIv: true,
-					encryptedHttpAuthCredentials: true,
-					httpAuthEncryptionIv: true,
-				},
+				orderBy: { createdAt: "asc" },
 			});
-			return lookup(query);
-		}
-		expect(query).toEqual({
-			where: { userId: id, service: "QUI", enabled: true },
-			orderBy: { createdAt: "asc" },
+			return phase("instances", async () => {
+				const rows = await lookup(query);
+				expect(new Set(rows.map((row) => row.id))).toEqual(
+					new Set(instances.filter((row) => row.userId === id).map((row) => row.id)),
+				);
+				for (const row of rows)
+					expect(row).toEqual(instances.find((instance) => instance.id === row.id));
+				return rows;
+			});
 		});
-		return phase("instances", async () => {
-			const rows = await lookup(query);
-			expect(new Set(rows.map((row) => row.id))).toEqual(
-				new Set(instances.filter((row) => row.userId === id).map((row) => row.id)),
-			);
-			for (const row of rows)
-				expect(row).toEqual(instances.find((instance) => instance.id === row.id));
-			return rows;
-		});
-	});
+	}
+	instrumentInstances(prisma);
+	// Observe the actual guarded reader without substituting its acquisition or SQL.
+	const isolatedRead = runtimePrisma.withIsolatedRuntimePrismaReadClient;
+	vi.spyOn(runtimePrisma, "withIsolatedRuntimePrismaReadClient").mockImplementation(
+		(client, operation) =>
+			isolatedRead(client, (reader) => {
+				instrumentInstances(reader);
+				return operation(reader);
+			}),
+	);
 	type CacheArgs = {
 		where: { instance: { userId: string }; infoHash?: unknown; id?: { in: string[] } };
 		select?: { title?: boolean };
 		data?: { torrentSyncedAt?: Date | null; torrentState?: null; torrentRatio?: null };
 	};
+	const instrumentedCaches = new WeakSet<object>();
 	function instrumentCache(
 		target: Pick<Prisma.TransactionClient, "libraryCache" | "episodeFileCache">,
 	) {
 		for (const table of ["library", "episode"] as const) {
 			const delegate = table === "library" ? target.libraryCache : target.episodeFileCache;
+			if (instrumentedCaches.has(delegate)) continue;
+			instrumentedCaches.add(delegate);
 			const methods = delegate as unknown as Record<
 				string,
 				(...args: unknown[]) => PromiseLike<unknown>
@@ -456,39 +475,55 @@ async function boot(
 			return rows;
 		});
 	});
+	const instrumentedTransactions = new WeakMap<
+		Prisma.TransactionClient,
+		Prisma.TransactionClient
+	>();
+	function instrumentTransaction(tx: Prisma.TransactionClient) {
+		const existing = instrumentedTransactions.get(tx);
+		if (existing) return existing;
+		instrumentCache(tx);
+		const create = tx.notificationLog.create.bind(tx.notificationLog);
+		const history: { create: AwaitOnly<typeof tx.notificationLog.create> } = tx.notificationLog;
+		vi.spyOn(history, "create").mockImplementation((query) => {
+			expect(ownerRows.map((row) => row.channelId)).toContain(query.data.channelId);
+			return phase("log", async () => {
+				const row = await create(query);
+				logs.push(row.status);
+				return row;
+			});
+		});
+		const update = tx.notificationChannel.updateMany.bind(tx.notificationChannel);
+		const channels: { updateMany: AwaitOnly<typeof tx.notificationChannel.updateMany> } =
+			tx.notificationChannel;
+		vi.spyOn(channels, "updateMany").mockImplementation((query) => {
+			const owner = ownerRows.find((row) => row.channelId === query.where?.id)!;
+			expect(owner).toBeDefined();
+			expect(query.where?.userId).toBe(owner.userId);
+			if (query.data.lastSendResult === undefined) return update(query);
+			expect(query.where).toMatchObject({
+				id: owner.channelId,
+				userId: owner.userId,
+				type: "DISCORD",
+				encryptedConfig: expect.any(String),
+				configIv: expect.any(String),
+			});
+			return phase("channel", () => update(query));
+		});
+		const observed = instrumentStaging(tx);
+		instrumentedTransactions.set(tx, observed);
+		instrumentedTransactions.set(observed, observed);
+		return observed;
+	}
 	const transaction = prisma.$transaction.bind(prisma);
 	vi.spyOn(prisma, "$transaction").mockImplementation(async (operation, transactionOptions) =>
-		transaction(async (tx) => {
-			instrumentCache(tx);
-			const create = tx.notificationLog.create.bind(tx.notificationLog);
-			const history: { create: AwaitOnly<typeof tx.notificationLog.create> } = tx.notificationLog;
-			vi.spyOn(history, "create").mockImplementation((query) => {
-				expect(ownerRows.map((row) => row.channelId)).toContain(query.data.channelId);
-				return phase("log", async () => {
-					const row = await create(query);
-					logs.push(row.status);
-					return row;
-				});
-			});
-			const update = tx.notificationChannel.updateMany.bind(tx.notificationChannel);
-			const channels: { updateMany: AwaitOnly<typeof tx.notificationChannel.updateMany> } =
-				tx.notificationChannel;
-			vi.spyOn(channels, "updateMany").mockImplementation((query) => {
-				const owner = ownerRows.find((row) => row.channelId === query.where?.id)!;
-				expect(owner).toBeDefined();
-				expect(query.where?.userId).toBe(owner.userId);
-				if (query.data.lastSendResult === undefined) return update(query);
-				expect(query.where).toMatchObject({
-					id: owner.channelId,
-					userId: owner.userId,
-					type: "DISCORD",
-					encryptedConfig: expect.any(String),
-					configIv: expect.any(String),
-				});
-				return phase("channel", () => update(query));
-			});
-			return operation(instrumentStaging(tx));
-		}, transactionOptions),
+		transaction(async (tx) => operation(instrumentTransaction(tx)), transactionOptions),
+	);
+	// SQLite publication has its own real client; keep that lane and its fences.
+	const isolatedTransaction = runtimePrisma.withIsolatedRuntimePrismaTransaction;
+	vi.spyOn(runtimePrisma, "withIsolatedRuntimePrismaTransaction").mockImplementation(
+		(client, operation, transactionOptions) =>
+			isolatedTransaction(client, (tx) => operation(instrumentTransaction(tx)), transactionOptions),
 	);
 	const activityWrite = prisma.quiActivityLog.create.bind(prisma.quiActivityLog);
 	const activityWrites: { create: AwaitOnly<typeof prisma.quiActivityLog.create> } =
@@ -1139,7 +1174,8 @@ afterEach(async () => {
 	vi.unstubAllGlobals();
 	vi.useRealTimers();
 });
-describe("qUI accepted sync lifetime and notification handoff", () => {
+// Interval cases include two complete native rounds with real keyed fingerprints.
+describe("qUI accepted sync lifetime and notification handoff", { timeout: 15_000 }, () => {
 	for (const origin of ["startup", "interval"] as const) {
 		for (const phase of [
 			"lookup",

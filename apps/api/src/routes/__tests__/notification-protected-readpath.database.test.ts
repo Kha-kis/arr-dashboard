@@ -7,6 +7,7 @@ import type { FastifyInstance } from "fastify";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { envSchema } from "../../config/env.js";
 import { createTestPrismaClient } from "../../lib/__tests__/test-prisma.js";
+import * as runtimePrisma from "../../lib/backup/restore-runtime-client.js";
 import { synchronizeSqliteRuntimeSchema } from "../../lib/backup/runtime-schema-sqlite.js";
 import type { PrismaClient } from "../../lib/prisma.js";
 import { buildServer } from "../../server.js";
@@ -455,7 +456,20 @@ describe("actual server notification session-to-owner read and error boundary", 
 
 	for (const route of routes) {
 		it(`contains a one-shot session lookup failure and recovers ${route} with real SQL`, async () => {
-			vi.spyOn(app!.prisma.session, "findUnique").mockRejectedValueOnce(new Error(privateMarker));
+			const read = runtimePrisma.withIsolatedRuntimePrismaReadClient;
+			let injected = false;
+			vi.spyOn(runtimePrisma, "withIsolatedRuntimePrismaReadClient").mockImplementation(
+				(client, operation) =>
+					read(client, (reader) => {
+						if (!injected) {
+							injected = true;
+							vi.spyOn(reader.session, "findUnique").mockRejectedValueOnce(
+								new Error(privateMarker),
+							);
+						}
+						return operation(reader);
+					}),
+			);
 			assertGenericFailure(await get(route));
 			const recovery = await get(route);
 			expect(recovery.statusCode).toBe(200);

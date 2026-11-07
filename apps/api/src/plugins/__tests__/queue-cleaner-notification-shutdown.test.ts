@@ -1039,7 +1039,8 @@ describe("Queue Cleaner accepted notification handoff", () => {
 		await assertPersisted(next, ["QUEUE_ITEMS_REMOVED"], ["ready"]);
 		expect(previous.state.afterTeardown).toBe(0);
 		expect(next.state.afterTeardown).toBe(0);
-	});
+		// Two complete native app lifecycles retain real keyed fingerprint work.
+	}, 15_000);
 	it("does not invent completion alerts for an empty result", async () => {
 		const f = await boot({ outcome: "empty" });
 		await f.start();

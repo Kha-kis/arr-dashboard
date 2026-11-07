@@ -1058,7 +1058,8 @@ describe("notification backup on actual owned native storage", () => {
 			}
 			expect(() => validateBackup({ ...backup(data), data: prepared.records })).not.toThrow();
 		});
-	});
+		// Keep the complete native graph and real KDF-backed rekeying in this case.
+	}, 15_000);
 
 	it.each([
 		"ciphertext",
