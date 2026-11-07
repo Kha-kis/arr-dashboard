@@ -173,7 +173,9 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 			queryClient.clear();
 			navigateToSignedOutPage();
 		} catch {
-			toast.error("Sign out could not be confirmed. Please try again.");
+			toast.error("Sign out could not be confirmed. Please try again.", {
+				position: "bottom-right",
+			});
 		}
 	}, [queryClient]);
 
