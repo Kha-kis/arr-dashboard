@@ -123,6 +123,17 @@ afterEach(async () => {
 });
 
 describe("Backup encryption caller transport", () => {
+	it.each(["New Password", "Confirm Password"])(
+		"associates the %s control with its visible label without writing",
+		async (label) => {
+			show();
+			await screen.findByText("No Password Configured");
+			fireEvent.click(screen.getByRole("button", { name: "Set Password" }));
+			expect(screen.getByLabelText(label)).toHaveAttribute("type", "password");
+			expect(writes()).toEqual([]);
+		},
+	);
+
 	it("keeps a failed initial status unknown and recovers through explicit status-only retries", async () => {
 		statusRefused = true;
 		show();
