@@ -13,24 +13,14 @@ vi.mock("../../../../hooks/useThemeGradient", () => ({
 	useThemeGradient: () => ({ gradient: { from: "#2563eb" } }),
 }));
 
-vi.mock("../../../../hooks/api/usePlex", () => {
-	const query = () => ({ data: undefined, isLoading: false, isError: false });
-	return {
-		useLastWatched: query,
-		useMostConcurrent: query,
-		usePlaysByDate: query,
-		useBandwidthAnalytics: query,
-		useBandwidthForecast: query,
-		useCodecAnalytics: query,
-		useDeviceAnalytics: query,
-		usePopularMedia: query,
-		useQualityScore: query,
-		useTopMedia: query,
-		useTranscodeAnalytics: query,
-		useUserAnalytics: query,
-		useWatchHistory: query,
-	};
-});
+vi.mock("../../../../hooks/api/useMediaAnalyticsReport", () => ({
+	useMediaAnalyticsReport: () => ({
+		data: undefined,
+		isLoading: false,
+		isError: false,
+		isFetching: false,
+	}),
+}));
 
 vi.mock("../bandwidth-chart", () => ({ BandwidthChart: () => null }));
 vi.mock("../codec-chart", () => ({ CodecChart: () => null }));

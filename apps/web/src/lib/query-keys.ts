@@ -305,6 +305,7 @@ export const notificationKeys = {
 
 export const plexKeys = {
 	all: ["plex"] as const,
+	analyticsReport: (days: number) => ["plex", "analytics", "report", days] as const,
 	watchEnrichment: (key: string) => ["plex", "watch-enrichment", key] as const,
 	sections: () => ["plex", "sections"] as const,
 	nowPlaying: () => ["plex", "now-playing"] as const,
@@ -344,6 +345,7 @@ export const plexKeys = {
 
 export const jellyfinKeys = {
 	all: ["jellyfin"] as const,
+	analyticsReport: (days: number) => ["jellyfin", "analytics", "report", days] as const,
 	identity: () => ["jellyfin", "identity"] as const,
 	sections: () => ["jellyfin", "sections"] as const,
 	watchEnrichment: (key: string) => ["jellyfin", "watch-enrichment", key] as const,

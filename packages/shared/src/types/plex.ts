@@ -699,6 +699,25 @@ export interface WatchHistoryResponse {
 	measurement?: SampledActivityCollection;
 }
 
+/** One owned, consistent read for the mounted provider Statistics view. */
+export interface MediaAnalyticsReport {
+	version: 1;
+	provider: "plex" | "jellyfin";
+	days: number;
+	/** Report assembly time, not proof of provider collection freshness. */
+	generatedAt: string;
+	transcode: TranscodeAnalytics;
+	bandwidth: BandwidthAnalytics;
+	userAnalytics: UserAnalytics;
+	watchHistory: WatchHistoryResponse;
+	codec: CodecAnalytics;
+	devices: DeviceAnalytics;
+	qualityScore: QualityScoreAnalytics;
+	forecast: BandwidthForecast;
+	topMedia: Record<TopMediaType, TopMediaResponse>;
+	popularMedia: Record<TopMediaType, TopMediaResponse>;
+}
+
 /** Recorded sampling outcomes, not continuous provider-history coverage. */
 export interface SampledActivityCollection {
 	version: 1;

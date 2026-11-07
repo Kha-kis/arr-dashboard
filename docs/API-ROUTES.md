@@ -186,6 +186,28 @@ slice, not all records held by Tautulli.
 Availability is informational display evidence only and never grants cleanup
 or mutation authority.
 
+## Consistent provider Statistics reports
+
+Authenticated read-only `GET /api/plex/analytics/report` and
+`GET /api/jellyfin/analytics/report` accept the existing analytics `days` query
+(default 30, maximum 90). Each returns one versioned report containing the eight
+base analytics sections and top/popular movie, series, and music leaderboards.
+History is limited to 20 events and each leaderboard to 10 items; forecast
+uses a seven-day horizon. Existing individual analytics routes remain compatible.
+
+The report resolves only the current user's enabled Plex sources, or Jellyfin
+and Emby sources, and reads them through one consistent database snapshot.
+Bounded chronological and reverse-chronological passes preserve the existing
+metric calculations and collection coverage without counting coverage twice.
+`generatedAt` records report assembly time, not provider freshness.
+
+A database scan failure rejects the whole report rather than returning partial
+success. Missing metric evidence still has its existing explicit unknown or
+unavailable status. The Statistics UI retains same-provider, same-period
+last-known data on refresh failure, labels that state, and offers a read-only
+retry; it does not borrow data from another provider or period. Report reads
+do not contact providers or confer cleanup or mutation authority.
+
 ## Live session availability (`/api/plex/now-playing`, `/api/jellyfin/now-playing`, `/api/tautulli/activity`)
 
 Each live-session response includes `availability` with `status`,

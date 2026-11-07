@@ -66,17 +66,79 @@ export interface SessionSnapshotCollectionCounts {
 type SnapshotCursor = { capturedAt: Date; id: string };
 type RankedSnapshotCursor = SnapshotCursor & { concurrentStreams: number };
 
+type SnapshotPageInput<T> = Omit<ReadSessionSnapshotPagesInput, "onPage"> & {
+	onPage: (page: readonly T[]) => void;
+};
+type SnapshotPageQuery<T> = (
+	tx: Prisma.TransactionClient,
+	instanceIds: string[],
+	cutoff: Date,
+	cursor: SnapshotCursor | RankedSnapshotCursor | undefined,
+) => Promise<T[]>;
+
+/** Own one isolated snapshot before resolving source selection or traversing rows. */
+async function withOwnedSnapshotRead(
+	prisma: PrismaClient,
+	input: Omit<ReadSessionSnapshotPagesInput, "onPage">,
+	read: (
+		tx: Prisma.TransactionClient,
+		instanceIds: string[],
+	) => Promise<ReadSessionSnapshotPagesResult>,
+): Promise<ReadSessionSnapshotPagesResult> {
+	const empty = {
+		instanceCount: 0,
+		snapshotCount: 0,
+		collection: {
+			activeSnapshots: 0,
+			idleSnapshots: 0,
+			failedSnapshots: 0,
+			legacySnapshots: 0,
+			invalidSnapshots: 0,
+		},
+	};
+	if (input.services.length === 0) return empty;
+	return withIsolatedRuntimePrismaReadTransaction(
+		prisma,
+		async (tx) => {
+			const instances = await tx.serviceInstance.findMany({
+				where: { userId: input.userId, service: { in: [...input.services] }, enabled: true },
+				select: { id: true },
+			});
+			return instances.length === 0
+				? empty
+				: read(
+						tx,
+						instances.map((instance) => instance.id),
+					);
+		},
+		{
+			isolationLevel: "Serializable",
+			maxWait: READ_TRANSACTION_MAX_WAIT_MS,
+			timeout: READ_TRANSACTION_TIMEOUT_MS,
+		},
+	);
+}
+
 async function readScopedSessionSnapshotPages<
 	T extends { capturedAt: Date; measurementJson: string | null; concurrentStreams: number },
 >(
 	prisma: PrismaClient,
-	input: Omit<ReadSessionSnapshotPagesInput, "onPage"> & { onPage: (page: readonly T[]) => void },
-	queryPage: (
-		tx: Prisma.TransactionClient,
-		instanceIds: string[],
-		cutoff: Date,
-		cursor: SnapshotCursor | RankedSnapshotCursor | undefined,
-	) => Promise<T[]>,
+	input: SnapshotPageInput<T>,
+	queryPage: SnapshotPageQuery<T>,
+	getCursor: (page: readonly T[]) => SnapshotCursor | RankedSnapshotCursor,
+): Promise<ReadSessionSnapshotPagesResult> {
+	return withOwnedSnapshotRead(prisma, input, (tx, ids) =>
+		scanSessionSnapshotPages(tx, ids, input, queryPage, getCursor),
+	);
+}
+
+async function scanSessionSnapshotPages<
+	T extends { capturedAt: Date; measurementJson: string | null; concurrentStreams: number },
+>(
+	tx: Prisma.TransactionClient,
+	instanceIds: string[],
+	input: SnapshotPageInput<T>,
+	queryPage: SnapshotPageQuery<T>,
 	getCursor: (page: readonly T[]) => SnapshotCursor | RankedSnapshotCursor,
 ): Promise<ReadSessionSnapshotPagesResult> {
 	const collection: SessionSnapshotCollectionCounts = {
@@ -101,76 +163,135 @@ async function readScopedSessionSnapshotPages<
 		daily[category] += 1;
 		collectionByDate[date] = daily;
 	};
-	if (input.services.length === 0) return { instanceCount: 0, snapshotCount: 0, collection };
+	let snapshotCount = 0;
+	let cursor: SnapshotCursor | RankedSnapshotCursor | undefined;
+	while (true) {
+		const page = await queryPage(tx, instanceIds, input.cutoff, cursor);
+		if (page.length === 0) break;
 
-	return withIsolatedRuntimePrismaReadTransaction(
-		prisma,
-		async (tx) => {
-			const instances = await tx.serviceInstance.findMany({
-				where: { userId: input.userId, service: { in: [...input.services] }, enabled: true },
-				select: { id: true },
-			});
-			if (instances.length === 0) return { instanceCount: 0, snapshotCount: 0, collection };
-
-			const instanceIds = instances.map((instance) => instance.id);
-			let snapshotCount = 0;
-			let cursor: SnapshotCursor | RankedSnapshotCursor | undefined;
-			while (true) {
-				const page = await queryPage(tx, instanceIds, input.cutoff, cursor);
-				if (page.length === 0) break;
-
-				const samples = page.filter((row) => {
-					const parsed = parseSessionSnapshotMeasurement(row.measurementJson);
-					if (parsed.status === "legacy") {
-						if (!Number.isInteger(row.concurrentStreams) || row.concurrentStreams < 0) {
-							recordCollection(row, "invalidSnapshots");
-							return false;
-						}
-						recordCollection(row, "legacySnapshots");
-						return true;
-					}
-					if (
-						parsed.status === "invalid" ||
-						(parsed.measurement.observedSessions !== null &&
-							parsed.measurement.observedSessions !== row.concurrentStreams)
-					) {
-						recordCollection(row, "invalidSnapshots");
-						return false;
-					}
-					switch (parsed.measurement.status) {
-						case "active":
-							recordCollection(row, "activeSnapshots");
-							return true;
-						case "idle":
-							recordCollection(row, "idleSnapshots");
-							return false;
-						case "failed":
-							recordCollection(row, "failedSnapshots");
-							return false;
-						default:
-							return false;
-					}
-				});
-				input.onPage(samples);
-				snapshotCount += samples.length;
-				// The cursor and termination use the raw page, never the eligible subset.
-				cursor = getCursor(page);
-				if (page.length < SESSION_SNAPSHOT_PAGE_SIZE) break;
+		const samples = page.filter((row) => {
+			const parsed = parseSessionSnapshotMeasurement(row.measurementJson);
+			if (parsed.status === "legacy") {
+				if (!Number.isInteger(row.concurrentStreams) || row.concurrentStreams < 0) {
+					recordCollection(row, "invalidSnapshots");
+					return false;
+				}
+				recordCollection(row, "legacySnapshots");
+				return true;
 			}
+			if (
+				parsed.status === "invalid" ||
+				(parsed.measurement.observedSessions !== null &&
+					parsed.measurement.observedSessions !== row.concurrentStreams)
+			) {
+				recordCollection(row, "invalidSnapshots");
+				return false;
+			}
+			switch (parsed.measurement.status) {
+				case "active":
+					recordCollection(row, "activeSnapshots");
+					return true;
+				case "idle":
+					recordCollection(row, "idleSnapshots");
+					return false;
+				case "failed":
+					recordCollection(row, "failedSnapshots");
+					return false;
+				default:
+					return false;
+			}
+		});
+		input.onPage(samples);
+		snapshotCount += samples.length;
+		// The cursor and termination use the raw page, never the eligible subset.
+		cursor = getCursor(page);
+		if (page.length < SESSION_SNAPSHOT_PAGE_SIZE) break;
+	}
 
-			return {
-				instanceCount: instances.length,
-				snapshotCount,
-				collection,
-				...(input.includeCollectionByDate ? { collectionByDate } : {}),
-			};
-		},
-		{
-			isolationLevel: "Serializable",
-			maxWait: READ_TRANSACTION_MAX_WAIT_MS,
-			timeout: READ_TRANSACTION_TIMEOUT_MS,
-		},
-	);
+	return {
+		instanceCount: instanceIds.length,
+		snapshotCount,
+		collection,
+		...(input.includeCollectionByDate ? { collectionByDate } : {}),
+	};
+}
+
+const SESSION_SNAPSHOT_REPORT_SELECT = {
+	...SESSION_SNAPSHOT_METRICS_SELECT,
+	instanceId: true,
+	sessionsJson: true,
+} satisfies Prisma.SessionSnapshotSelect;
+
+export type SessionSnapshotReportPageRow = Prisma.SessionSnapshotGetPayload<{
+	select: typeof SESSION_SNAPSHOT_REPORT_SELECT;
+}>;
+
+export interface ReadSessionSnapshotReportPagesInput {
+	userId: string;
+	services: readonly SessionSnapshotService[];
+	cutoff: Date;
+	onChronologicalPage: (page: readonly SessionSnapshotReportPageRow[]) => void;
+	onReverseChronologicalPage: (page: readonly SessionSnapshotReportPageRow[]) => void;
+}
+
+/** Both logical orders share one source selection, database snapshot and read lane. */
+export async function readSessionSnapshotReportPages(
+	prisma: PrismaClient,
+	input: ReadSessionSnapshotReportPagesInput,
+): Promise<ReadSessionSnapshotPagesResult> {
+	const query =
+		(order: "asc" | "desc"): SnapshotPageQuery<SessionSnapshotReportPageRow> =>
+		(tx, instanceIds, cutoff, cursor) =>
+			tx.sessionSnapshot.findMany({
+				where: {
+					instanceId: { in: instanceIds },
+					capturedAt: { gte: cutoff },
+					...(cursor
+						? {
+								OR: [
+									{ capturedAt: { [order === "asc" ? "gt" : "lt"]: cursor.capturedAt } },
+									{
+										capturedAt: cursor.capturedAt,
+										id: { [order === "asc" ? "gt" : "lt"]: cursor.id },
+									},
+								],
+							}
+						: {}),
+				},
+				select: SESSION_SNAPSHOT_REPORT_SELECT,
+				orderBy: [{ capturedAt: order }, { id: order }],
+				take: SESSION_SNAPSHOT_PAGE_SIZE,
+			});
+	const cursor = (page: readonly SessionSnapshotReportPageRow[]) => {
+		const last = page[page.length - 1]!;
+		return { capturedAt: last.capturedAt, id: last.id };
+	};
+	return withOwnedSnapshotRead(prisma, input, async (tx, instanceIds) => {
+		const result = await scanSessionSnapshotPages(
+			tx,
+			instanceIds,
+			{
+				...input,
+				includeCollectionByDate: true,
+				onPage: input.onChronologicalPage,
+			},
+			query("asc"),
+			cursor,
+		);
+		await scanSessionSnapshotPages(
+			tx,
+			instanceIds,
+			{
+				...input,
+				includeCollectionByDate: false,
+				onPage: input.onReverseChronologicalPage,
+			},
+			query("desc"),
+			cursor,
+		);
+		// Raw collection evidence is returned once, not summed over both traversals.
+		return result;
+	});
 }
 
 /** Read every JSON snapshot in stable chronological pages for JSON analytics callers. */

@@ -5,6 +5,7 @@
  */
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
+import { registerJellyfinAnalyticsReportRoutes } from "../media-analytics-report-routes.js";
 import { registerIdentityRoutes } from "./identity-routes.js";
 import { registerSectionRoutes } from "./section-routes.js";
 import { registerWatchEnrichmentRoutes } from "./watch-enrichment-routes.js";
@@ -32,5 +33,6 @@ export async function registerJellyfinRoutes(app: FastifyInstance, _opts: Fastif
 	app.register(registerNowPlayingRoutes, { prefix: "/now-playing" });
 	app.register(registerImageProxyRoutes, { prefix: "/thumb" });
 	app.register(registerAnalyticsRoutes, { prefix: "/analytics" });
+	app.register(registerJellyfinAnalyticsReportRoutes, { prefix: "/analytics/report" });
 	app.register(registerSeriesProgressRoutes, { prefix: "/series-progress" });
 }
