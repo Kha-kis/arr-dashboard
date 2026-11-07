@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
 	push: vi.fn(),
 	logout: vi.fn(),
 	fetchCurrentUser: vi.fn(),
+	documentNavigate: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({
 	usePathname: () => state.pathname,
@@ -33,6 +34,9 @@ vi.mock("next/link", () => ({
 vi.mock("../../../lib/api-client/auth", () => ({
 	logout: state.logout,
 	fetchCurrentUser: state.fetchCurrentUser,
+}));
+vi.mock("../../../lib/auth-navigation", () => ({
+	navigateToSignedOutPage: state.documentNavigate,
 }));
 let client: QueryClient;
 let resize: Set<() => void>;
@@ -199,7 +203,10 @@ describe("Navigation shell", () => {
 		expect(screen.queryByText("Synthetic Viewer")).not.toBeInTheDocument();
 		expect(screen.getByTitle("Show real data")).toBeInTheDocument();
 		fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
-		await waitFor(() => expect(state.replace).toHaveBeenCalledWith("/login"));
+		await waitFor(() => expect(state.documentNavigate).toHaveBeenCalledOnce());
+		expect(client.getQueryData(authKeys.currentUser)).toBeNull();
+		expect(state.replace).not.toHaveBeenCalled();
+		expect(state.push).not.toHaveBeenCalled();
 		expect(state.logout).toHaveBeenCalledOnce();
 		expect(state.fetchCurrentUser).not.toHaveBeenCalled();
 	});
