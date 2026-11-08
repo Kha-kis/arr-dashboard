@@ -4,10 +4,7 @@ import { join } from "node:path";
 import { setImmediate as turn } from "node:timers/promises";
 import Database from "better-sqlite3";
 import { describe, expect, it, vi } from "vitest";
-import {
-	getRestoreRuntimeClientContext,
-	openRestoreRuntime,
-} from "../restore-runtime-admission.js";
+import * as admission from "../restore-runtime-admission.js";
 import { createRuntimePrismaClient } from "../restore-runtime-client.js";
 
 const WRITE = "UPDATE CooperativeProbe SET value=value+1 WHERE id=1";
@@ -48,7 +45,7 @@ async function fixture() {
 		return statement;
 	});
 	const losses: string[] = [];
-	const runtime = await openRestoreRuntime({
+	const runtime = await admission.openRestoreRuntime({
 		databaseUrl: `file:${path}`,
 		onUnavailable: (event) => losses.push(event.reason),
 	});
@@ -81,6 +78,94 @@ async function fixture() {
 }
 
 describe("ordinary SQLite cooperative ownership guards", () => {
+	it.each(["unique", "mixed", "same-batch"] as const)(
+		"characterizes %s read guards in one transaction and preserves its values and reuse",
+		async (mode) => {
+			const f = await fixture();
+			await f.client.close();
+			let armed = false;
+			let proofs = 0;
+			let enter!: () => void;
+			let release!: () => void;
+			const entered = new Promise<void>((resolve) => {
+				enter = resolve;
+			});
+			const held = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			const originalContext = admission.getRestoreRuntimeClientContext;
+			const observed = vi
+				.spyOn(admission, "getRestoreRuntimeClientContext")
+				.mockImplementation((runtime) => {
+					const context = originalContext(runtime);
+					return {
+						...context,
+						async assertOwned() {
+							const proof = armed ? ++proofs : 0;
+							await context.assertOwned();
+							if (proof === 1) {
+								enter();
+								await held;
+							}
+						},
+					};
+				});
+			const client = createRuntimePrismaClient(f.runtime);
+			try {
+				await f.runtime.runOperation(() =>
+					client.prisma.$transaction(async (tx) => {
+						await tx.$queryRawUnsafe("SELECT 1");
+						armed = true;
+						const reading = Promise.all([
+							mode === "unique"
+								? tx.restoreRuntimeControl.findUnique({ where: { id: 1 }, select: { id: true } })
+								: tx.restoreRuntimeControl.findMany({ select: { id: true } }),
+							mode === "same-batch"
+								? tx.sqliteRestoreStorageBinding.findMany({ select: { id: true } })
+								: tx.sqliteRestoreStorageBinding.findUnique({
+										where: { id: 1 },
+										select: { id: true },
+									}),
+						]);
+						let proofsWhileFirstHeld: number;
+						try {
+							await entered;
+							await turn();
+							proofsWhileFirstHeld = proofs;
+						} finally {
+							release();
+						}
+						const values = await reading;
+						armed = false;
+						expect(values).toEqual(
+							mode === "unique"
+								? [{ id: 1 }, { id: 1 }]
+								: mode === "mixed"
+									? [[{ id: 1 }], { id: 1 }]
+									: [[{ id: 1 }], [{ id: 1 }]],
+						);
+						expect(proofsWhileFirstHeld).toBe(mode === "same-batch" ? 1 : 2);
+					}),
+				);
+				expect(
+					await f.runtime.runOperation(() =>
+						client.prisma.$transaction((tx) =>
+							tx.$queryRawUnsafe("SELECT value FROM CooperativeProbe WHERE id=1"),
+						),
+					),
+				).toEqual([{ value: 0 }]);
+				expect(f.value()).toBe(0);
+				expect(f.attempts()).toBe(0);
+				expect(f.losses).toEqual([]);
+			} finally {
+				release();
+				await client.close();
+				observed.mockRestore();
+				await f.close();
+			}
+		},
+	);
+
 	it("services a queued event-loop turn before a warm guarded query sequence finishes", async () => {
 		const f = await fixture();
 		try {
@@ -109,7 +194,7 @@ describe("ordinary SQLite cooperative ownership guards", () => {
 	it("rejects native work when a queued turn revokes the runtime ticket", async () => {
 		const f = await fixture();
 		try {
-			const context = getRestoreRuntimeClientContext(f.runtime);
+			const context = admission.getRestoreRuntimeClientContext(f.runtime);
 			await f.runtime.runOperation(async () => {
 				const revoked = turn().then(() => context.unavailable("native-owner-unavailable"));
 				const accepted = await f.client.prisma.$executeRawUnsafe(WRITE).then(

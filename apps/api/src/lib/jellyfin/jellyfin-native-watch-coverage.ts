@@ -32,16 +32,21 @@ export async function readOwnedNativeWatchCoverage(
 			if (!instance) return unavailable("not-owned");
 			if (instance.identityStatus !== "VERIFIED" || !instance.expectedIdentity?.trim())
 				return unavailable("identity-changed");
-			const pointer = await tx.jellyfinNativeWatchPublication.findUnique({
-				where: { instanceId: input.instanceId, instance: { userId: input.userId, enabled: true } },
-			});
+			const [pointer, status] = await Promise.all([
+				tx.jellyfinNativeWatchPublication.findUnique({
+					where: {
+						instanceId: input.instanceId,
+						instance: { userId: input.userId, enabled: true },
+					},
+				}),
+				tx.cacheRefreshStatus.findUnique({
+					where: {
+						instanceId_cacheType: { instanceId: input.instanceId, cacheType: "jellyfin_episode" },
+						instance: { userId: input.userId, enabled: true },
+					},
+				}),
+			]);
 			if (!pointer) return unavailable("no-publication");
-			const status = await tx.cacheRefreshStatus.findUnique({
-				where: {
-					instanceId_cacheType: { instanceId: input.instanceId, cacheType: "jellyfin_episode" },
-					instance: { userId: input.userId, enabled: true },
-				},
-			});
 			if (
 				pointer.connectionGeneration !== instance.connectionGeneration ||
 				pointer.identityGeneration !== instance.identityGeneration ||
@@ -60,14 +65,33 @@ export async function readOwnedNativeWatchCoverage(
 				!Number.isFinite(pointer.activeObservedAt.getTime())
 			)
 				return unavailable("malformed-publication");
-			const receipts = await tx.jellyfinNativeWatchScopeReceipt.findMany({
-				where: {
-					instanceId: input.instanceId,
-					runId: pointer.activeRunId,
-					instance: { userId: input.userId, enabled: true },
-				},
-				take: expected + 1,
-			});
+			const [receipts, runs] = await Promise.all([
+				tx.jellyfinNativeWatchScopeReceipt.findMany({
+					where: {
+						instanceId: input.instanceId,
+						runId: pointer.activeRunId,
+						instance: { userId: input.userId, enabled: true },
+					},
+					take: expected + 1,
+				}),
+				tx.providerObservationRun.findMany({
+					where: {
+						instanceId: input.instanceId,
+						cacheType: "jellyfin_episode",
+						instance: { userId: input.userId, enabled: true },
+						connectionGeneration: instance.connectionGeneration,
+						identityGeneration: instance.identityGeneration,
+						activeSlotKey: { not: null },
+					},
+					select: {
+						state: true,
+						totalUnits: true,
+						completedUnits: true,
+						units: { select: { phase: true, state: true }, take: 513 },
+					},
+					take: 2,
+				}),
+			]);
 			if (
 				receipts.length !== expected ||
 				new Set(receipts.map((r) => JSON.stringify([r.userKeyDigest, r.libraryId]))).size !==
@@ -114,23 +138,6 @@ export async function readOwnedNativeWatchCoverage(
 			const verifiedScopes = receipts.filter((r) => r.exact).length;
 			if (verifiedScopes < expected) reasons.add("coverage-incomplete");
 			// A canonical active slot is authoritative for suppressing duplicate recovery.
-			const runs = await tx.providerObservationRun.findMany({
-				where: {
-					instanceId: input.instanceId,
-					cacheType: "jellyfin_episode",
-					instance: { userId: input.userId, enabled: true },
-					connectionGeneration: instance.connectionGeneration,
-					identityGeneration: instance.identityGeneration,
-					activeSlotKey: { not: null },
-				},
-				select: {
-					state: true,
-					totalUnits: true,
-					completedUnits: true,
-					units: { select: { phase: true, state: true }, take: 513 },
-				},
-				take: 2,
-			});
 			let refreshPhase: AvailableCoverage["refreshPhase"] = "idle";
 			if (runs.length > 1) refreshPhase = "unknown";
 			else if (runs[0]) {

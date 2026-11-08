@@ -1,3 +1,4 @@
+import { setImmediate as turn } from "node:timers/promises";
 import { describe, expect, it, vi } from "vitest";
 import { readOwnedNativeWatchCoverage } from "../jellyfin-native-watch-coverage.js";
 import { emptyNativeWatchProjectionDiagnostics } from "../jellyfin-native-watch-projection.js";
@@ -14,7 +15,27 @@ const diagnostic = JSON.stringify({
 	expectedCountsMatch: true,
 	excludedRows: 0,
 });
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((done) => {
+		resolve = done;
+	});
+	return { promise, resolve };
+}
 function fixture() {
+	const instance = {
+		identityStatus: "VERIFIED",
+		expectedIdentity: "private-server",
+		connectionGeneration: 1,
+		identityGeneration: 2,
+	};
+	const status = {
+		lastResult: "success",
+		generationId: "generation-new",
+		connectionGeneration: 1,
+		identityGeneration: 2,
+		lastAttemptResult: "success",
+	};
 	const pointer = {
 		activeRunId: "new",
 		activeCacheGenerationId: "generation-new",
@@ -44,30 +65,130 @@ function fixture() {
 	}));
 	const tx = {
 		serviceInstance: {
-			findFirst: vi.fn().mockResolvedValue({
-				identityStatus: "VERIFIED",
-				expectedIdentity: "private-server",
-				connectionGeneration: 1,
-				identityGeneration: 2,
-			}),
+			findFirst: vi.fn().mockResolvedValue(instance),
 		},
 		jellyfinNativeWatchPublication: { findUnique: vi.fn().mockResolvedValue(pointer) },
 		cacheRefreshStatus: {
-			findUnique: vi.fn().mockResolvedValue({
-				lastResult: "success",
-				generationId: "generation-new",
-				connectionGeneration: 1,
-				identityGeneration: 2,
-				lastAttemptResult: "success",
-			}),
+			findUnique: vi.fn().mockResolvedValue(status),
 		},
 		jellyfinNativeWatchScopeReceipt: { findMany: vi.fn().mockResolvedValue(receipts) },
 		providerObservationRun: { findMany: vi.fn().mockResolvedValue([]) },
 	};
 	const prisma = { $transaction: (fn: (value: typeof tx) => unknown) => fn(tx) };
-	return { tx, prisma: prisma as never, receipts, pointer };
+	return { tx, prisma: prisma as never, receipts, pointer, instance, status };
 }
 describe("owned recorded native watch coverage", () => {
+	it("starts pointer and status reads together only after verified ownership resolves", async () => {
+		const { prisma, tx, pointer, instance, status } = fixture();
+		const ownership = deferred<typeof instance>();
+		const pointerRead = deferred<typeof pointer>();
+		const statusRead = deferred<typeof status>();
+		const started: string[] = [];
+		tx.serviceInstance.findFirst.mockReturnValueOnce(ownership.promise);
+		tx.jellyfinNativeWatchPublication.findUnique.mockImplementationOnce(() => {
+			started.push("pointer");
+			return pointerRead.promise;
+		});
+		tx.cacheRefreshStatus.findUnique.mockImplementationOnce(() => {
+			started.push("status");
+			return statusRead.promise;
+		});
+		const reading = readOwnedNativeWatchCoverage(prisma, {
+			userId: "owner",
+			instanceId: "instance",
+		});
+		expect(started).toEqual([]);
+		ownership.resolve(instance);
+		await turn();
+		const startedWhilePointerPending = [...started];
+		pointerRead.resolve(pointer);
+		statusRead.resolve(status);
+		expect(await reading).toMatchObject({
+			status: "available",
+			expectedScopes: 8,
+			verifiedScopes: 7,
+			incompleteScopes: 1,
+			reasonCodes: ["changed-observations", "coverage-incomplete"],
+			refreshPhase: "idle",
+		});
+		expect(startedWhilePointerPending).toEqual(["pointer", "status"]);
+	});
+	it("starts receipt and active-run reads together after publication validation", async () => {
+		const { prisma, tx, receipts, status } = fixture();
+		const statusRead = deferred<typeof status>();
+		const receiptRead = deferred<typeof receipts>();
+		const runs = [
+			{
+				state: "running",
+				completedUnits: 0,
+				totalUnits: 2,
+				units: [{ phase: "collect", state: "pending" }],
+			},
+		];
+		const runRead = deferred<typeof runs>();
+		const started: string[] = [];
+		tx.cacheRefreshStatus.findUnique.mockReturnValueOnce(statusRead.promise);
+		tx.jellyfinNativeWatchScopeReceipt.findMany.mockImplementationOnce(() => {
+			started.push("receipts");
+			return receiptRead.promise;
+		});
+		tx.providerObservationRun.findMany.mockImplementationOnce(() => {
+			started.push("runs");
+			return runRead.promise;
+		});
+		const reading = readOwnedNativeWatchCoverage(prisma, {
+			userId: "owner",
+			instanceId: "instance",
+		});
+		await turn();
+		expect(started).toEqual([]);
+		statusRead.resolve(status);
+		await turn();
+		const startedWhileReceiptsPending = [...started];
+		receiptRead.resolve(receipts);
+		runRead.resolve(runs);
+		expect(await reading).toMatchObject({
+			status: "available",
+			expectedScopes: 8,
+			verifiedScopes: 7,
+			incompleteScopes: 1,
+			reasonCodes: ["changed-observations", "coverage-incomplete"],
+			refreshPhase: "collecting",
+		});
+		expect(startedWhileReceiptsPending).toEqual(["receipts", "runs"]);
+	});
+	it.each(["receipts", "runs"] as const)(
+		"rechecks a replaced publication after both reads when %s finishes last",
+		async (last) => {
+			const { prisma, tx, pointer, receipts } = fixture();
+			const receiptRead = deferred<typeof receipts>();
+			const runRead = deferred<never[]>();
+			let latest = pointer;
+			const rechecks: string[] = [];
+			tx.jellyfinNativeWatchPublication.findUnique
+				.mockResolvedValueOnce(pointer)
+				.mockImplementationOnce(() => {
+					rechecks.push("recheck");
+					return Promise.resolve(latest);
+				});
+			tx.jellyfinNativeWatchScopeReceipt.findMany.mockReturnValueOnce(receiptRead.promise);
+			tx.providerObservationRun.findMany.mockReturnValueOnce(runRead.promise);
+			const reading = readOwnedNativeWatchCoverage(prisma, {
+				userId: "owner",
+				instanceId: "instance",
+			});
+			await turn();
+			if (last === "receipts") runRead.resolve([]);
+			else receiptRead.resolve(receipts);
+			await turn();
+			const rechecksBeforeBothComplete = [...rechecks];
+			latest = { ...pointer, activeRunId: "replacement" };
+			if (last === "receipts") receiptRead.resolve(receipts);
+			else runRead.resolve([]);
+			expect(await reading).toEqual({ status: "unavailable", reason: "snapshot-changed" });
+			expect(rechecksBeforeBothComplete).toEqual([]);
+		},
+	);
 	it("reports seven of eight exact scopes with changed observations, exposing no private keys or new freshness authority", async () => {
 		const { tx, prisma } = fixture();
 		const result = await readOwnedNativeWatchCoverage(prisma, {

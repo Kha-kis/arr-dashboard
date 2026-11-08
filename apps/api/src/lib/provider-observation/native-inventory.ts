@@ -630,12 +630,12 @@ async function readNativeInventoryPageInternal(
 					reason: instance.enabled ? "identity-changed" : "provider-unavailable",
 				} as const;
 			}
-			const attempt = input.includeAttempt
-				? await readNativeAttemptProgress(tx, instance, input.domain)
-				: null;
-			const snapshot = await tx.providerNativeInventorySnapshot.findUnique({
-				where: { instanceId_domain: { instanceId: instance.id, domain: input.domain } },
-			});
+			const [attempt, snapshot] = await Promise.all([
+				input.includeAttempt ? readNativeAttemptProgress(tx, instance, input.domain) : null,
+				tx.providerNativeInventorySnapshot.findUnique({
+					where: { instanceId_domain: { instanceId: instance.id, domain: input.domain } },
+				}),
+			]);
 			if (!snapshot?.generationId) {
 				return attachNativeAttempt(
 					{ status: "unavailable", reason: "no-publication" } as const,
@@ -683,37 +683,62 @@ async function readNativeInventoryPageInternal(
 					attempt,
 				);
 			}
-			const itemCount = snapshot.publishedPassId
-				? await tx.providerNativeInventoryStageItem.count({
-						where: { passId: snapshot.publishedPassId, domain: input.domain },
-					})
-				: await tx.providerNativeInventoryItem.count({ where: { snapshotId: snapshot.id } });
+			// Ownership and pass authority are established before overlapping these reads.
+			// Keep every count, prior-pass and row check inside the same snapshot transaction.
+			const [itemCount, items, prior, newerUnpublishedRun] = await Promise.all([
+				snapshot.publishedPassId
+					? tx.providerNativeInventoryStageItem.count({
+							where: { passId: snapshot.publishedPassId, domain: input.domain },
+						})
+					: tx.providerNativeInventoryItem.count({ where: { snapshotId: snapshot.id } }),
+				snapshot.publishedPassId
+					? tx.providerNativeInventoryStageItem.findMany({
+							where: {
+								passId: snapshot.publishedPassId,
+								domain: input.domain,
+								...(displayNativeIds ? { nativeId: { in: [...displayNativeIds] } } : {}),
+								...(input.afterNativeId ? { nativeId: { gt: input.afterNativeId } } : {}),
+							},
+							orderBy: { nativeId: "asc" },
+							take: limit + 1,
+						})
+					: tx.providerNativeInventoryItem.findMany({
+							where: {
+								snapshotId: snapshot.id,
+								...(displayNativeIds ? { nativeId: { in: [...displayNativeIds] } } : {}),
+								...(input.afterNativeId ? { nativeId: { gt: input.afterNativeId } } : {}),
+							},
+							orderBy: { nativeId: "asc" },
+							take: limit + 1,
+						}),
+				publishedPass
+					? tx.providerNativeInventoryPass.findUnique({
+							where: {
+								runId_ordinal: {
+									runId: publishedPass.runId,
+									ordinal: publishedPass.ordinal - 1,
+								},
+							},
+						})
+					: null,
+				tx.providerNativeInventoryRun.findFirst({
+					where: {
+						instanceId: instance.id,
+						workKey: { in: [input.domain, "paired"] },
+						connectionGeneration: instance.connectionGeneration,
+						identityGeneration: instance.identityGeneration,
+						createdAt: { gte: observedAt },
+						state: { not: "published" },
+					},
+					select: { id: true },
+				}),
+			]);
 			if (itemCount !== snapshot.itemCount) {
 				return attachNativeAttempt(
 					{ status: "unavailable", reason: "malformed-publication" } as const,
 					attempt,
 				);
 			}
-			const items = snapshot.publishedPassId
-				? await tx.providerNativeInventoryStageItem.findMany({
-						where: {
-							passId: snapshot.publishedPassId,
-							domain: input.domain,
-							...(displayNativeIds ? { nativeId: { in: [...displayNativeIds] } } : {}),
-							...(input.afterNativeId ? { nativeId: { gt: input.afterNativeId } } : {}),
-						},
-						orderBy: { nativeId: "asc" },
-						take: limit + 1,
-					})
-				: await tx.providerNativeInventoryItem.findMany({
-						where: {
-							snapshotId: snapshot.id,
-							...(displayNativeIds ? { nativeId: { in: [...displayNativeIds] } } : {}),
-							...(input.afterNativeId ? { nativeId: { gt: input.afterNativeId } } : {}),
-						},
-						orderBy: { nativeId: "asc" },
-						take: limit + 1,
-					});
 			const parsedRows = items.map((item) => parseStoredItem(item, input.domain));
 			if (parsedRows.some((row) => row === null)) {
 				return attachNativeAttempt(
@@ -723,14 +748,6 @@ async function readNativeInventoryPageInternal(
 			}
 			let rows = parsedRows as NativeInventoryRow[];
 			if (publishedPass) {
-				const prior = await tx.providerNativeInventoryPass.findUnique({
-					where: {
-						runId_ordinal: {
-							runId: publishedPass.runId,
-							ordinal: publishedPass.ordinal - 1,
-						},
-					},
-				});
 				if (
 					!prior ||
 					prior.state !== "complete" ||
@@ -760,17 +777,6 @@ async function readNativeInventoryPageInternal(
 			}
 			const hasNext = rows.length > limit;
 			const selected = rows.slice(0, limit);
-			const newerUnpublishedRun = await tx.providerNativeInventoryRun.findFirst({
-				where: {
-					instanceId: instance.id,
-					workKey: { in: [input.domain, "paired"] },
-					connectionGeneration: instance.connectionGeneration,
-					identityGeneration: instance.identityGeneration,
-					createdAt: { gte: observedAt },
-					state: { not: "published" },
-				},
-				select: { id: true },
-			});
 			const freshness =
 				snapshot.lastAttemptResult === "success" &&
 				!newerUnpublishedRun &&

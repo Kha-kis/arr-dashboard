@@ -129,6 +129,122 @@ async function publish(
 }
 
 describe("native inventory storage on disposable SQLite", { timeout: 30_000 }, () => {
+	it("reads the published snapshot while independent attempt progress is pending", async () => {
+		const { prisma, plex } = await database();
+		await publish(prisma, plex);
+		expect(
+			await admitNativeInventoryRun(
+				prisma,
+				createProviderPublicationAuthority(plex),
+				"paired",
+				NOW,
+			),
+		).toEqual({ status: "acquired" });
+		let release = () => {};
+		let started = () => {};
+		const hold = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const attemptStarted = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		let snapshotStarted = false;
+		const observed = prisma.$extends({
+			query: {
+				providerNativeInventoryRun: {
+					async findFirst({ args, query }) {
+						if (args.orderBy) {
+							started();
+							await hold;
+						}
+						return query(args);
+					},
+				},
+				providerNativeInventorySnapshot: {
+					async findUnique({ args, query }) {
+						snapshotStarted = true;
+						return query(args);
+					},
+				},
+			},
+		});
+		const pending = readNativeInventoryPage(observed as unknown as PrismaClient, {
+			userId: plex.userId,
+			instanceId: plex.id,
+			domain: "library",
+			includeAttempt: true,
+			now: NOW,
+		});
+		try {
+			await attemptStarted;
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			expect.soft(snapshotStarted).toBe(true);
+		} finally {
+			release();
+		}
+		expect(await pending).toMatchObject({
+			status: "available",
+			itemCount: 2,
+			freshness: "last-known",
+			rows: [{ nativeId: "movie-1" }, { nativeId: "show-1" }],
+			attempt: { state: "pending", passOrdinal: 1, pagesCompleted: 0, itemsStaged: 0 },
+		});
+	});
+
+	it("reads owned legacy rows and freshness evidence while their count is pending", async () => {
+		const { prisma, plex } = await database();
+		await publish(prisma, plex);
+		let release = () => {};
+		let started = () => {};
+		const hold = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const countStarted = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const entered = new Set<string>();
+		const observed = prisma.$extends({
+			query: {
+				providerNativeInventoryItem: {
+					async count({ args, query }) {
+						started();
+						await hold;
+						return query(args);
+					},
+					async findMany({ args, query }) {
+						entered.add("rows");
+						return query(args);
+					},
+				},
+				providerNativeInventoryRun: {
+					async findFirst({ args, query }) {
+						entered.add("freshness");
+						return query(args);
+					},
+				},
+			},
+		});
+		const pending = readNativeInventoryPage(observed as unknown as PrismaClient, {
+			userId: plex.userId,
+			instanceId: plex.id,
+			domain: "library",
+			now: NOW,
+		});
+		try {
+			await countStarted;
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			expect.soft([...entered].sort()).toEqual(["freshness", "rows"]);
+		} finally {
+			release();
+		}
+		expect(await pending).toMatchObject({
+			status: "available",
+			itemCount: 2,
+			freshness: "current",
+			rows: [{ nativeId: "movie-1" }, { nativeId: "show-1" }],
+		});
+	});
+
 	it("keeps selected display evidence bounded and distinct from complete default pagination", async () => {
 		const { prisma, plex } = await database();
 		await publish(
@@ -317,13 +433,40 @@ describe("native inventory storage on disposable SQLite", { timeout: 30_000 }, (
 		if (!claim) throw new Error("expected final claim");
 		expect((await publishNativeInventoryRun(prisma, claim, NOW)).status).toBe("published");
 		const materialized: string[][] = [];
+		let release = () => {};
+		let started = () => {};
+		const hold = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const countStarted = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const entered = new Set<string>();
 		const observed = prisma.$extends({
 			query: {
 				providerNativeInventoryStageItem: {
+					async count({ args, query }) {
+						started();
+						await hold;
+						return query(args);
+					},
 					async findMany({ args, query }) {
+						entered.add("rows");
 						const rows = await query(args);
 						materialized.push(rows.map((row) => row.nativeId ?? "<missing-native-id>"));
 						return rows;
+					},
+				},
+				providerNativeInventoryPass: {
+					async findUnique({ args, query }) {
+						if (args.where.runId_ordinal) entered.add("prior");
+						return query(args);
+					},
+				},
+				providerNativeInventoryRun: {
+					async findFirst({ args, query }) {
+						entered.add("freshness");
+						return query(args);
 					},
 				},
 			},
@@ -334,9 +477,15 @@ describe("native inventory storage on disposable SQLite", { timeout: 30_000 }, (
 			now: NOW,
 			nativeIds: ["parent-400", "missing"],
 		};
-		expect(
-			await readNativeInventoryDisplayTargets(observed as unknown as PrismaClient, input),
-		).toMatchObject({
+		const pending = readNativeInventoryDisplayTargets(observed as unknown as PrismaClient, input);
+		try {
+			await countStarted;
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			expect.soft([...entered].sort()).toEqual(["freshness", "prior", "rows"]);
+		} finally {
+			release();
+		}
+		expect(await pending).toMatchObject({
 			status: "available",
 			publicationItemCount: 401,
 			rows: [{ nativeId: "parent-400", externalIds: { tmdb: [41, 42] } }],
