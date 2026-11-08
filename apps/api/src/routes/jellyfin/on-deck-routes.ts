@@ -6,7 +6,7 @@
  */
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
-import { withIsolatedRuntimePrismaReadClient } from "../../lib/backup/restore-runtime-client.js";
+import { withIsolatedRuntimePrismaBulkReadClient } from "../../lib/backup/restore-runtime-client.js";
 import {
 	type JellyfinDisplayInstance,
 	readOwnedJellyfinLibraryDisplaySources,
@@ -25,7 +25,7 @@ export async function registerOnDeckRoutes(app: FastifyInstance, _opts: FastifyP
 	app.get("/", async (request, reply) => {
 		const userId = request.currentUser!.id;
 
-		const displayEvidence = await withIsolatedRuntimePrismaReadClient(
+		const displayEvidence = await withIsolatedRuntimePrismaBulkReadClient(
 			app.prisma,
 			async (prisma) => {
 				const jellyfinInstances = await prisma.serviceInstance.findMany({

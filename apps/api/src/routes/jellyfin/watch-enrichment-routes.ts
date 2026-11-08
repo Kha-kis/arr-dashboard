@@ -9,7 +9,7 @@
 import type { WatchEnrichmentItem } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { withIsolatedRuntimePrismaReadClient } from "../../lib/backup/restore-runtime-client.js";
+import { withIsolatedRuntimePrismaBulkReadClient } from "../../lib/backup/restore-runtime-client.js";
 import {
 	type JellyfinDisplayInstance,
 	readOwnedJellyfinLibraryDisplaySources,
@@ -73,7 +73,7 @@ export async function registerWatchEnrichmentRoutes(
 
 		const tmdbIdList = [...new Set(tmdbIds)];
 
-		const displayEvidence = await withIsolatedRuntimePrismaReadClient(
+		const displayEvidence = await withIsolatedRuntimePrismaBulkReadClient(
 			app.prisma,
 			async (prisma) => {
 				const jellyfinInstances = await prisma.serviceInstance.findMany({

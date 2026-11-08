@@ -64,6 +64,7 @@ type RuntimeTransactionOptions = {
 	timeout?: number;
 	isolationLevel?: Prisma.TransactionIsolationLevel;
 };
+type RuntimeReadOptions = Readonly<{ workload?: "bulk-cache"; maxWait?: number }>;
 type SqliteClientRegistration = {
 	closed: boolean;
 	publicationTransaction<T>(
@@ -73,6 +74,7 @@ type SqliteClientRegistration = {
 	readClient<T>(
 		operation: (client: PrismaClientInstance) => Promise<T>,
 		maxWait?: number,
+		workload?: "bulk-cache",
 	): Promise<T>;
 };
 const ordinarySqliteClients = new WeakMap<object, SqliteClientRegistration>();
@@ -126,11 +128,20 @@ export async function withIsolatedRuntimePrismaReadTransaction<T>(
 export async function withIsolatedRuntimePrismaReadClient<T>(
 	prisma: PrismaClientInstance,
 	operation: (client: PrismaClientInstance) => Promise<T>,
+	options?: RuntimeReadOptions,
 ): Promise<T> {
 	const registration = ordinarySqliteClients.get(prisma);
 	if (!registration) return operation(prisma);
 	if (registration.closed) throw new RestoreRuntimeAdmissionError();
-	return registration.readClient(operation);
+	return registration.readClient(operation, options?.maxWait, options?.workload);
+}
+
+/** Admit catalog-wide ancillary reads without consuming every ordinary lane. */
+export function withIsolatedRuntimePrismaBulkReadClient<T>(
+	prisma: PrismaClientInstance,
+	operation: (client: PrismaClientInstance) => Promise<T>,
+): Promise<T> {
+	return withIsolatedRuntimePrismaReadClient(prisma, operation, { workload: "bulk-cache" });
 }
 
 function projection(result: Awaited<ReturnType<Driver["queryRaw"]>>, columns: string[]) {
@@ -217,19 +228,27 @@ export function createRuntimePrismaClient(
 	};
 	// Cached-read fan-out is bounded independently from ordinary HTTP queries.
 	// Reserve closure now; accepted work may first acquire a lane during drain.
-	type ReadLane = { busy: boolean; client?: RuntimePrismaClient };
+	type ReadLane = { busy: boolean; workload?: "bulk-cache"; client?: RuntimePrismaClient };
 	type ReadWaiter = {
+		workload?: "bulk-cache";
 		resolve(lane: ReadLane): void;
 		reject(error: RestoreRuntimeAdmissionError): void;
 	};
 	const readLanes: ReadLane[] = Array.from({ length: 4 }, () => ({ busy: false }));
 	const readWaiters = new Set<ReadWaiter>();
 	let readsClosePromise: Promise<void> | undefined;
-	const acquireReadLane = (maxWait: number): Promise<ReadLane> => {
+	// Bulk catalog validation retains its whole callback lease, but cannot fill
+	// every slot needed by session validation and primary page reads. Ineligible
+	// waiters own no lane and retain the same single acquisition deadline.
+	const eligibleRead = (workload?: "bulk-cache") =>
+		workload !== "bulk-cache" ||
+		readLanes.filter((lane) => lane.busy && lane.workload === "bulk-cache").length < 2;
+	const acquireReadLane = (maxWait: number, workload?: "bulk-cache"): Promise<ReadLane> => {
 		if (registration.closed) return Promise.reject(new RestoreRuntimeAdmissionError());
-		const lane = readLanes.find((candidate) => !candidate.busy);
+		const lane = eligibleRead(workload) && readLanes.find((candidate) => !candidate.busy);
 		if (lane) {
 			lane.busy = true;
+			lane.workload = workload;
 			return Promise.resolve(lane);
 		}
 		return new Promise((resolve, reject) => {
@@ -238,6 +257,7 @@ export function createRuntimePrismaClient(
 				reject(new RestoreRuntimeAdmissionError());
 			}, maxWait);
 			const waiter: ReadWaiter = {
+				workload,
 				resolve: (next) => {
 					clearTimeout(timer);
 					resolve(next);
@@ -251,11 +271,19 @@ export function createRuntimePrismaClient(
 		});
 	};
 	const releaseReadLane = (lane: ReadLane) => {
-		const next = readWaiters.values().next().value;
-		if (next && !registration.closed) {
+		lane.busy = false;
+		lane.workload = undefined;
+		if (registration.closed) return;
+		// FIFO among eligible waiters: a capped bulk request must not block a
+		// later ordinary request while spare physical lanes remain available.
+		for (const next of readWaiters) {
+			if (!eligibleRead(next.workload)) continue;
 			readWaiters.delete(next);
+			lane.busy = true;
+			lane.workload = next.workload;
 			next.resolve(lane);
-		} else lane.busy = false;
+			break;
+		}
 	};
 	const registration: SqliteClientRegistration = {
 		closed: false,
@@ -310,12 +338,12 @@ export function createRuntimePrismaClient(
 					unenteredPublicationStartRefusals.add(startRefusal);
 			}
 		},
-		readClient: async (operation, maxWait) => {
+		readClient: async (operation, maxWait, workload) => {
 			// Session validation enters this same pool before route code. Let a
 			// normal display burst queue behind bounded reads without adding lanes
 			// or relaxing any SQL, ticket, ownership or transaction deadline.
 			const lane = await measureRuntimeReadTiming("lane-wait", () =>
-				acquireReadLane(maxWait ?? 10_000),
+				acquireReadLane(maxWait ?? 10_000, workload),
 			);
 			try {
 				if (registration.closed) throw new RestoreRuntimeAdmissionError();

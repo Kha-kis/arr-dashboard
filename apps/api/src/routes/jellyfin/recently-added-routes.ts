@@ -7,7 +7,7 @@
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { withIsolatedRuntimePrismaReadClient } from "../../lib/backup/restore-runtime-client.js";
+import { withIsolatedRuntimePrismaBulkReadClient } from "../../lib/backup/restore-runtime-client.js";
 import {
 	type JellyfinDisplayInstance,
 	readOwnedJellyfinLibraryDisplaySources,
@@ -41,7 +41,7 @@ export async function registerRecentlyAddedRoutes(
 		const { limit } = validateRequest(recentlyAddedQuery, request.query);
 		const userId = request.currentUser!.id;
 
-		return withIsolatedRuntimePrismaReadClient(app.prisma, async (prisma) => {
+		return withIsolatedRuntimePrismaBulkReadClient(app.prisma, async (prisma) => {
 			const jellyfinInstances = await prisma.serviceInstance.findMany({
 				where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 				select: { id: true, label: true, service: true },

@@ -19,7 +19,10 @@ import type {
 } from "@arr/shared";
 import type { FastifyBaseLogger, FastifyInstance, FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { withIsolatedRuntimePrismaReadClient } from "../../lib/backup/restore-runtime-client.js";
+import {
+	withIsolatedRuntimePrismaBulkReadClient,
+	withIsolatedRuntimePrismaReadClient,
+} from "../../lib/backup/restore-runtime-client.js";
 import {
 	type JellyfinDisplayInstance,
 	readOwnedJellyfinLibraryDisplaySources,
@@ -184,7 +187,7 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 		const minSizeBytes = BigInt(Math.round(params.minSizeGb * 1024 * 1024 * 1024));
 		const cutoffDate = new Date(Date.now() - params.minAgeDays * 24 * 60 * 60 * 1000);
 
-		return withIsolatedRuntimePrismaReadClient(app.prisma, async (prisma) => {
+		return withIsolatedRuntimePrismaBulkReadClient(app.prisma, async (prisma) => {
 			// Get user's instances (library services only)
 			const userInstances = await prisma.serviceInstance.findMany({
 				where: {
@@ -287,7 +290,7 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 			request.query ?? {},
 		);
 
-		return withIsolatedRuntimePrismaReadClient(app.prisma, async (prisma) => {
+		return withIsolatedRuntimePrismaBulkReadClient(app.prisma, async (prisma) => {
 			// Get user's library instances
 			const userInstances = await prisma.serviceInstance.findMany({
 				where: {
@@ -493,7 +496,7 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 		}
 		// Release the configuration read before Seerr I/O; lease again only for
 		// the committed cache display phase below, never for provider work.
-		return withIsolatedRuntimePrismaReadClient(app.prisma, async (prisma) => {
+		return withIsolatedRuntimePrismaBulkReadClient(app.prisma, async (prisma) => {
 			const userInstances = await prisma.serviceInstance.findMany({
 				where: { userId, enabled: true, service: { in: ["SONARR", "RADARR"] } },
 				select: { id: true, label: true, service: true },

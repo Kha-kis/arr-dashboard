@@ -8,7 +8,7 @@
 import type { SeriesProgressResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { withIsolatedRuntimePrismaReadClient } from "../../lib/backup/restore-runtime-client.js";
+import { withIsolatedRuntimePrismaBulkReadClient } from "../../lib/backup/restore-runtime-client.js";
 import {
 	hasCompleteAuthoritativePlexEvidence,
 	isCurrentAuthoritativePlexEvidence,
@@ -49,7 +49,7 @@ export async function registerSeriesProgressRoutes(
 			return reply.status(400).send({ error: `Max ${MAX_BATCH_SIZE} items per request` });
 		}
 
-		return withIsolatedRuntimePrismaReadClient(app.prisma, async (prisma) => {
+		return withIsolatedRuntimePrismaBulkReadClient(app.prisma, async (prisma) => {
 			// Get user's Plex instances
 			const plexInstances = await prisma.serviceInstance.findMany({
 				where: { userId, service: "PLEX", enabled: true },
