@@ -470,15 +470,20 @@ const ActivityFeedView = () => {
 				<Alert variant="danger">
 					<AlertDescription>
 						Failed to load activity: {getErrorMessage(feed.error)}
+						{events.length > 0 ? " Showing last-known activity." : ""}
 					</AlertDescription>
 				</Alert>
-			) : events.length === 0 ? (
+			) : null}
+
+			{events.length === 0 && !feed.isError ? (
 				<PremiumEmptyState
 					icon={History}
 					title="No qui activity yet"
 					description="qui-related events will appear here once the scheduled sync jobs run. The torrent-state sync runs every 10 minutes; the infoHash backfill runs every 6 hours and on startup."
 				/>
-			) : (
+			) : null}
+
+			{events.length > 0 ? (
 				<>
 					<ul className="space-y-2">
 						{events.map((event, idx) => (
@@ -486,7 +491,7 @@ const ActivityFeedView = () => {
 						))}
 					</ul>
 
-					{feed.hasNextPage ? (
+					{feed.hasNextPage && !feed.isError ? (
 						<LoadMoreButton
 							isLoading={feed.isFetchingNextPage}
 							onClick={() => void feed.fetchNextPage()}
@@ -494,7 +499,7 @@ const ActivityFeedView = () => {
 						/>
 					) : null}
 				</>
-			)}
+			) : null}
 		</>
 	);
 };
@@ -571,7 +576,10 @@ const MyActionsView = () => {
 		status: statusFilter === "all" ? undefined : statusFilter,
 	});
 	const reconciliation = useQuiActionReconciliation();
+	const canReconcile = !feed.isError && !feed.isFetching;
 	const resolveAction = (actionLogId: string, decision: "applied" | "not_applied") => {
+		// Last-known rows remain readable, but cannot authorize reconciliation.
+		if (!canReconcile) return;
 		const outcome = decision === "applied" ? "applied" : "not applied";
 		if (
 			!window.confirm(
@@ -634,15 +642,22 @@ const MyActionsView = () => {
 				<Alert variant="danger">
 					<AlertDescription>
 						Failed to load action log: {getErrorMessage(feed.error)}
+						{entries.length > 0
+							? " Showing last-known actions. Refresh successfully before verifying an outcome."
+							: ""}
 					</AlertDescription>
 				</Alert>
-			) : entries.length === 0 ? (
+			) : null}
+
+			{entries.length === 0 && !feed.isError ? (
 				<PremiumEmptyState
 					icon={Wrench}
 					title="No torrent actions yet"
 					description="When you act on a torrent from arr-dashboard, its audit entry appears here. Interrupted actions remain held until their outcome is verified."
 				/>
-			) : (
+			) : null}
+
+			{entries.length > 0 ? (
 				<>
 					{reconciliation.isError ? (
 						<Alert variant="danger">
@@ -659,14 +674,15 @@ const MyActionsView = () => {
 								entry={entry}
 								animationDelay={Math.min(idx, 12) * 30}
 								onResolve={resolveAction}
-								isResolving={
-									reconciliation.isPending && reconciliation.variables?.actionLogId === entry.id
+								resolutionDisabled={
+									!canReconcile ||
+									(reconciliation.isPending && reconciliation.variables?.actionLogId === entry.id)
 								}
 							/>
 						))}
 					</ul>
 
-					{feed.hasNextPage ? (
+					{feed.hasNextPage && !feed.isError ? (
 						<LoadMoreButton
 							isLoading={feed.isFetchingNextPage}
 							onClick={() => void feed.fetchNextPage()}
@@ -674,7 +690,7 @@ const MyActionsView = () => {
 						/>
 					) : null}
 				</>
-			)}
+			) : null}
 		</>
 	);
 };
@@ -707,10 +723,10 @@ interface ActionRowProps {
 	entry: QuiActionLogEntry;
 	animationDelay: number;
 	onResolve: (actionLogId: string, decision: "applied" | "not_applied") => void;
-	isResolving: boolean;
+	resolutionDisabled: boolean;
 }
 
-const ActionRow = ({ entry, animationDelay, onResolve, isResolving }: ActionRowProps) => {
+const ActionRow = ({ entry, animationDelay, onResolve, resolutionDisabled }: ActionRowProps) => {
 	const [isIncognito] = useIncognitoMode();
 	const [showFullHash, setShowFullHash] = useState(false);
 	const StatusIcon = ACTION_STATUS_ICON[entry.status];
@@ -795,14 +811,14 @@ const ActionRow = ({ entry, animationDelay, onResolve, isResolving }: ActionRowP
 									<div className="flex flex-wrap gap-2">
 										<Button
 											variant="secondary"
-											disabled={isResolving}
+											disabled={resolutionDisabled}
 											onClick={() => onResolve(entry.id, "applied")}
 										>
 											Verified applied
 										</Button>
 										<Button
 											variant="secondary"
-											disabled={isResolving}
+											disabled={resolutionDisabled}
 											onClick={() => onResolve(entry.id, "not_applied")}
 										>
 											Verified not applied
