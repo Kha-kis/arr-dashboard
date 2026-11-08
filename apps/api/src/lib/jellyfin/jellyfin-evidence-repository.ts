@@ -11,10 +11,13 @@ import {
 	jellyfinEpisodeCatalogScopesFromReceipt,
 } from "./jellyfin-episode-catalog-provenance.js";
 import { fingerprintJellyfinEpisodeParentDependency } from "./jellyfin-episode-parent-dependency.js";
+import { createJellyfinDisplayCheckpoint } from "./jellyfin-display-work.js";
 import {
 	decodeJellyfinEpisodeGenerationMetadata,
 	decodeJellyfinLibraryGenerationMetadata,
+	fingerprintJellyfinEpisodeDisplayRows,
 	fingerprintJellyfinEpisodeRows,
+	fingerprintJellyfinLibraryDisplayRows,
 	fingerprintJellyfinLibraryGenerationMetadata,
 	fingerprintJellyfinLibraryRows,
 	hasAuthoritativeJellyfinLibraryReceipt,
@@ -614,6 +617,34 @@ function strictRows(
 	return (rows as JellyfinEpisodeRow[]).every((row) => safeEpisodeRow(row, instance, true));
 }
 
+async function strictDisplayRows(
+	rows: JellyfinLibraryRow[] | JellyfinEpisodeRow[],
+	instance: JellyfinInstance,
+	cacheType: JellyfinCacheType,
+): Promise<boolean> {
+	const checkpoint = createJellyfinDisplayCheckpoint();
+	for (const row of rows) {
+		if (
+			!(cacheType === "jellyfin"
+				? safeLibraryRow(row as JellyfinLibraryRow, instance, true)
+				: safeEpisodeRow(row as JellyfinEpisodeRow, instance, true))
+		)
+			return false;
+		const pause = checkpoint();
+		if (pause) await pause;
+	}
+	return true;
+}
+
+async function displayRowsFingerprint(
+	rows: JellyfinLibraryRow[] | JellyfinEpisodeRow[],
+	cacheType: JellyfinCacheType,
+): Promise<string> {
+	return cacheType === "jellyfin"
+		? fingerprintJellyfinLibraryDisplayRows(rows as JellyfinLibraryRowFingerprintInput[])
+		: fingerprintJellyfinEpisodeDisplayRows(rows as JellyfinEpisodeRowFingerprintInput[]);
+}
+
 async function strictPublication(
 	tx: TransactionReader,
 	instance: JellyfinInstance,
@@ -621,6 +652,7 @@ async function strictPublication(
 	cacheType: JellyfinCacheType,
 	now: Date,
 	allowEpisodeParentReceipt = false,
+	cooperativeDisplay = false,
 ): Promise<StrictPublication<JellyfinLibraryRow | JellyfinEpisodeRow, JellyfinMetadata> | null> {
 	const status = await readStatus(tx, instance.id, userId, cacheType);
 	if (!status) return null;
@@ -632,9 +664,16 @@ async function strictPublication(
 	)
 		return null;
 	const rows = await readRows(tx, instance.id, userId, cacheType);
-	if (rows.length !== status.itemCount || !strictRows(rows, instance, cacheType)) return null;
-	const fingerprint =
-		cacheType === "jellyfin"
+	if (
+		rows.length !== status.itemCount ||
+		!(cooperativeDisplay
+			? await strictDisplayRows(rows, instance, cacheType)
+			: strictRows(rows, instance, cacheType))
+	)
+		return null;
+	const fingerprint = cooperativeDisplay
+		? await displayRowsFingerprint(rows, cacheType)
+		: cacheType === "jellyfin"
 			? fingerprintJellyfinLibraryRows(
 					rows as JellyfinLibraryRow[] as JellyfinLibraryRowFingerprintInput[],
 				)
@@ -1005,7 +1044,9 @@ async function readOwnedJellyfinObservationCore(
 		: null;
 	if (
 		!strict ||
-		!strictRows(rows, instance, input.cacheType) ||
+		!(input.mode === "display"
+			? await strictDisplayRows(rows, instance, input.cacheType)
+			: strictRows(rows, instance, input.cacheType)) ||
 		rows.length !== status?.itemCount
 	) {
 		if (
@@ -1072,13 +1113,15 @@ async function readOwnedJellyfinObservationCore(
 		);
 	}
 	const fingerprint =
-		input.cacheType === "jellyfin"
-			? fingerprintJellyfinLibraryRows(
-					rows as JellyfinLibraryRow[] as JellyfinLibraryRowFingerprintInput[],
-				)
-			: fingerprintJellyfinEpisodeRows(
-					rows as JellyfinEpisodeRow[] as JellyfinEpisodeRowFingerprintInput[],
-				);
+		input.mode === "display"
+			? await displayRowsFingerprint(rows, input.cacheType)
+			: input.cacheType === "jellyfin"
+				? fingerprintJellyfinLibraryRows(
+						rows as JellyfinLibraryRow[] as JellyfinLibraryRowFingerprintInput[],
+					)
+				: fingerprintJellyfinEpisodeRows(
+						rows as JellyfinEpisodeRow[] as JellyfinEpisodeRowFingerprintInput[],
+					);
 	if (fingerprint !== strict.metadata.contentFingerprint) {
 		return resultFor(
 			instance,
@@ -1135,6 +1178,7 @@ async function readOwnedJellyfinObservationCore(
 			input.userId,
 			"jellyfin",
 			now,
+			input.mode === "display",
 			input.mode === "display",
 		);
 		const episodeMetadata = strict.metadata as JellyfinEpisodeGenerationMetadata;

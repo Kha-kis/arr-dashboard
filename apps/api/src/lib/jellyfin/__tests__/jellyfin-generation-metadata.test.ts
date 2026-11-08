@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { setImmediate as turn } from "node:timers/promises";
+import { describe, expect, it, vi } from "vitest";
+import * as fingerprints from "../../evidence-fingerprint.js";
 import { evaluateProviderDomainCoverageMap } from "../../provider-observation/coverage-receipt.js";
+import {
+	createJellyfinDisplayCheckpoint,
+	sortJellyfinDisplayRows,
+} from "../jellyfin-display-work.js";
 import type {
 	JellyfinEpisodeGenerationMetadataV1,
 	JellyfinEpisodeGenerationMetadataV3,
@@ -10,7 +16,9 @@ import {
 	decodeJellyfinLibraryGenerationMetadata,
 	encodeJellyfinEpisodeGenerationMetadata,
 	encodeJellyfinLibraryGenerationMetadata,
+	fingerprintJellyfinEpisodeDisplayRows,
 	fingerprintJellyfinEpisodeRows,
+	fingerprintJellyfinLibraryDisplayRows,
 	fingerprintJellyfinLibraryGenerationMetadata,
 	fingerprintJellyfinLibraryRows,
 } from "../jellyfin-generation-metadata.js";
@@ -392,6 +400,106 @@ describe("Jellyfin and Emby generation metadata", () => {
 			...overrides,
 		};
 	}
+
+	it("preserves fixed canonical fingerprint vectors for display reads", async () => {
+		// Hand-ordered canonical JSON vectors, independent of the production builders.
+		await expect(fingerprintJellyfinLibraryDisplayRows([])).resolves.toBe(
+			"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+		);
+		await expect(fingerprintJellyfinEpisodeDisplayRows([])).resolves.toBe(
+			"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+		);
+		await expect(fingerprintJellyfinLibraryDisplayRows([row()])).resolves.toBe(
+			"454f7d2039c6fcd90b9b95b09a858a16975654783e8bb08185f1993e2d31d839",
+		);
+		await expect(fingerprintJellyfinEpisodeDisplayRows([episodeRow()])).resolves.toBe(
+			"2fa5f29cbdcedd3351d5f6a7607416b6308555a7fbaaade0fe6c6a267cf7864e",
+		);
+	});
+
+	it("keeps full library fingerprint parity across chunk boundaries, ties and Unicode", async () => {
+		const rows = Array.from({ length: 1201 }, (_, index) =>
+			row({
+				tmdbId: index % 19,
+				mediaType: index % 2 ? "movie" : "series",
+				libraryId: ["é", "a", "Å"][index % 3],
+				title: `Synthetic ${index % 13}`,
+				lastWatchedAt: index % 2 ? null : "2026-01-01T00:00:00.000Z",
+				addedAt: index % 3 ? null : new Date("2025-01-01T00:00:00.000Z"),
+			}),
+		).reverse();
+		await expect(fingerprintJellyfinLibraryDisplayRows(rows)).resolves.toBe(
+			fingerprintJellyfinLibraryRows(rows),
+		);
+	});
+
+	it("keeps full episode fingerprint parity across coordinates, dates and user normalization", async () => {
+		const rows = Array.from({ length: 1201 }, (_, index) =>
+			episodeRow({
+				showTmdbId: index % 13,
+				seasonNumber: index % 3,
+				episodeNumber: index % 7,
+				title: `Épisode ${index % 17}`,
+				watchedByUsers: index % 2 ? '["Bob","Alice","Bob"]' : "malformed",
+				lastWatchedAt: index % 2 ? null : "2026-01-01T01:00:00+01:00",
+			}),
+		).reverse();
+		await expect(fingerprintJellyfinEpisodeDisplayRows(rows)).resolves.toBe(
+			fingerprintJellyfinEpisodeRows(rows),
+		);
+	});
+
+	it("services queued work while stably sorting owned display rows", async () => {
+		const rows = Array.from({ length: 1201 }, (_, index) => ({ key: index % 7, index })).reverse();
+		const original = [...rows];
+		let completed = false;
+		let completedAtTurn: boolean | undefined;
+		const serviced = turn().then(() => {
+			completedAtTurn = completed;
+		});
+		const sorted = await sortJellyfinDisplayRows(
+			rows,
+			(a, b) => a.key - b.key,
+			createJellyfinDisplayCheckpoint(),
+		);
+		completed = true;
+		await serviced;
+		expect(completedAtTurn).toBe(false);
+		expect(sorted).toEqual(original.sort((a, b) => a.key - b.key));
+	});
+
+	it("services queued work during the complete canonical array hash", async () => {
+		const create = fingerprints.createEvidenceFingerprintArrayAccumulator;
+		let appended = 0;
+		let appendedAtTurn: number | undefined;
+		let serviced: Promise<void> | undefined;
+		const spy = vi
+			.spyOn(fingerprints, "createEvidenceFingerprintArrayAccumulator")
+			.mockImplementation(() => {
+				const actual = create();
+				return {
+					append(value) {
+						if (++appended === 1)
+							serviced = turn().then(() => {
+								appendedAtTurn = appended;
+							});
+						actual.append(value);
+					},
+					digest: () => actual.digest(),
+				};
+			});
+		try {
+			const rows = Array.from({ length: 1201 }, (_, index) => row({ tmdbId: index + 1 }));
+			const result = await fingerprintJellyfinLibraryDisplayRows(rows);
+			await serviced;
+			expect(result).toBe(fingerprintJellyfinLibraryRows(rows));
+			expect(appended).toBe(1201);
+			expect(appendedAtTurn).toBeGreaterThan(0);
+			expect(appendedAtTurn).toBeLessThan(1201);
+		} finally {
+			spy.mockRestore();
+		}
+	});
 
 	it("fingerprints canonical rows independently of row order and instance ownership", () => {
 		const first = row();

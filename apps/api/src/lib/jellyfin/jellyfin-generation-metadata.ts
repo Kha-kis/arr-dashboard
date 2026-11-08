@@ -1,5 +1,8 @@
 import type { ProviderCoverageReceipt, ProviderCoverageReceiptV1 } from "@arr/shared";
-import { evidenceFingerprint } from "../evidence-fingerprint.js";
+import {
+	createEvidenceFingerprintArrayAccumulator,
+	evidenceFingerprint,
+} from "../evidence-fingerprint.js";
 import {
 	evaluateProviderCoverageReceipt,
 	evaluateProviderDomainCoverageMap,
@@ -8,6 +11,10 @@ import {
 	decodeJellyfinEpisodeCatalogProvenance,
 	type JellyfinEpisodeCatalogProvenance,
 } from "./jellyfin-episode-catalog-provenance.js";
+import {
+	createJellyfinDisplayCheckpoint,
+	sortJellyfinDisplayRows,
+} from "./jellyfin-display-work.js";
 
 interface JellyfinLibraryGenerationMetadataBaseV1 {
 	version: 1;
@@ -677,14 +684,52 @@ export function fingerprintJellyfinLibraryRows(
 ): string {
 	const projected = rows.map(projectJellyfinLibraryRow);
 	const decorated = projected.map((row) => ({ row, tieBreaker: evidenceFingerprint(row) }));
-	decorated.sort(
-		(left, right) =>
-			left.row.mediaType.localeCompare(right.row.mediaType) ||
-			left.row.tmdbId - right.row.tmdbId ||
-			left.row.libraryId.localeCompare(right.row.libraryId) ||
-			left.tieBreaker.localeCompare(right.tieBreaker),
-	);
+	decorated.sort(compareLibraryRows);
 	return evidenceFingerprint(decorated.map(({ row }) => row));
+}
+
+type DecoratedRow<T> = { row: T; tieBreaker: string };
+
+function compareLibraryRows(
+	left: DecoratedRow<CanonicalJellyfinLibraryRow>,
+	right: DecoratedRow<CanonicalJellyfinLibraryRow>,
+): number {
+	return (
+		left.row.mediaType.localeCompare(right.row.mediaType) ||
+		left.row.tmdbId - right.row.tmdbId ||
+		left.row.libraryId.localeCompare(right.row.libraryId) ||
+		left.tieBreaker.localeCompare(right.tieBreaker)
+	);
+}
+
+async function fingerprintDisplayRows<Input, Canonical>(
+	rows: readonly Input[],
+	project: (row: Input) => Canonical,
+	compare: (left: DecoratedRow<Canonical>, right: DecoratedRow<Canonical>) => number,
+): Promise<string> {
+	const checkpoint = createJellyfinDisplayCheckpoint();
+	const decorated: DecoratedRow<Canonical>[] = [];
+	for (const input of rows) {
+		const row = project(input);
+		decorated.push({ row, tieBreaker: evidenceFingerprint(row) });
+		const pause = checkpoint();
+		if (pause) await pause;
+	}
+	const sorted = await sortJellyfinDisplayRows(decorated, compare, checkpoint);
+	const fingerprint = createEvidenceFingerprintArrayAccumulator();
+	for (const { row } of sorted) {
+		fingerprint.append(row);
+		const pause = checkpoint();
+		if (pause) await pause;
+	}
+	return fingerprint.digest();
+}
+
+/** Full-generation proof with unchanged canonical bytes; no display-authority shortcut. */
+export function fingerprintJellyfinLibraryDisplayRows(
+	rows: readonly JellyfinLibraryRowFingerprintInput[],
+): Promise<string> {
+	return fingerprintDisplayRows(rows, projectJellyfinLibraryRow, compareLibraryRows);
 }
 
 export interface JellyfinEpisodeRowFingerprintInput {
@@ -753,12 +798,25 @@ export function fingerprintJellyfinEpisodeRows(
 ): string {
 	const projected = rows.map(projectJellyfinEpisodeRow);
 	const decorated = projected.map((row) => ({ row, tieBreaker: evidenceFingerprint(row) }));
-	decorated.sort(
-		(left, right) =>
-			left.row.showTmdbId - right.row.showTmdbId ||
-			left.row.seasonNumber - right.row.seasonNumber ||
-			left.row.episodeNumber - right.row.episodeNumber ||
-			left.tieBreaker.localeCompare(right.tieBreaker),
-	);
+	decorated.sort(compareEpisodeRows);
 	return evidenceFingerprint(decorated.map(({ row }) => row));
+}
+
+function compareEpisodeRows(
+	left: DecoratedRow<CanonicalJellyfinEpisodeRow>,
+	right: DecoratedRow<CanonicalJellyfinEpisodeRow>,
+): number {
+	return (
+		left.row.showTmdbId - right.row.showTmdbId ||
+		left.row.seasonNumber - right.row.seasonNumber ||
+		left.row.episodeNumber - right.row.episodeNumber ||
+		left.tieBreaker.localeCompare(right.tieBreaker)
+	);
+}
+
+/** Display scheduling only; mutation/publication callers keep the synchronous API. */
+export function fingerprintJellyfinEpisodeDisplayRows(
+	rows: readonly JellyfinEpisodeRowFingerprintInput[],
+): Promise<string> {
+	return fingerprintDisplayRows(rows, projectJellyfinEpisodeRow, compareEpisodeRows);
 }

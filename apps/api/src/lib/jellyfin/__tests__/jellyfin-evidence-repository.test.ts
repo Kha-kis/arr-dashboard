@@ -1,3 +1,4 @@
+import { setImmediate as turn } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ServiceInstance } from "../../prisma.js";
 import { fingerprintJellyfinEpisodeParentDependency } from "../jellyfin-episode-parent-dependency.js";
@@ -459,6 +460,56 @@ function makePrisma(options: {
 afterEach(() => vi.restoreAllMocks());
 
 describe("readOwnedJellyfinObservation", () => {
+	it.each(["validation", "fingerprint"] as const)(
+		"services a queued event-loop turn during a populated library %s pass",
+		async (phase) => {
+			const rows = Array.from({ length: 1200 }, (_, index) =>
+				libraryRow({
+					id: `row-${String(index).padStart(4, "0")}`,
+					tmdbId: index + 1,
+					jellyfinId: `synthetic-item-${index}`,
+				}),
+			);
+			const metadata = libraryMetadata(makeInstance(), rows);
+			let visits = 0;
+			let visitsAtTurn: number | undefined;
+			let serviced: Promise<void> | undefined;
+			const triggerAt = phase === "validation" ? 1 : rows.length + 1;
+			for (const row of rows) {
+				const value = row.watchedByUsers;
+				Object.defineProperty(row, "watchedByUsers", {
+					enumerable: true,
+					get() {
+						visits++;
+						if (visits === triggerAt)
+							serviced = turn().then(() => {
+								visitsAtTurn = visits;
+							});
+						return value;
+					},
+				});
+			}
+			const fixture = makePrisma({
+				rows,
+				statuses: { jellyfin: status("jellyfin", metadata, rows.length) },
+				libraryPages: [rows.slice(0, 500), rows.slice(500, 1000), rows.slice(1000)],
+			});
+			const result = await readOwnedJellyfinObservation({
+				prisma: fixture.prisma,
+				userId: "user-1",
+				instanceId: "jellyfin-1",
+				cacheType: "jellyfin",
+				mode: "display",
+				now,
+			});
+			await serviced;
+			expect(result).toMatchObject({ available: true, mutationAvailable: false, authority: null });
+			expect(result?.rows).toHaveLength(1200);
+			expect(visitsAtTurn).toBeDefined();
+			expect(visitsAtTurn).toBeLessThan(phase === "validation" ? 1200 : 2400);
+		},
+	);
+
 	it("admits current V2 lower-bound episode rows for display but never for cleanup mutation", async () => {
 		const instance = makeInstance();
 		const libraryRows = [libraryRow({ mediaType: "series" })];
