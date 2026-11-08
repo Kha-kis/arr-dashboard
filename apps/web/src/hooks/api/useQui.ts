@@ -714,6 +714,7 @@ export const useQuiEventStream = ({ enabled = true }: { enabled?: boolean } = {}
 			setStreamStatus("offline");
 			return;
 		}
+		setStreamStatus("connecting");
 		// `credentials: include` is the EventSource default for same-origin;
 		// the Next.js rewrite forwards the session cookie automatically.
 		const source = new EventSource("/api/qui/events/stream", { withCredentials: true });
