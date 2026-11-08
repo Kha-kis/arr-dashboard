@@ -1,5 +1,6 @@
 import type {
 	DashboardStatisticsEnvelope,
+	MediaAnalyticsReport,
 	TautulliStatsResponse,
 	TranscodeAnalytics,
 } from "@arr/shared";
@@ -91,6 +92,30 @@ function transcode(): TranscodeAnalytics {
 	};
 }
 
+function nativeReport(provider: "plex" | "jellyfin", days: number): MediaAnalyticsReport {
+	return {
+		version: 1,
+		provider,
+		days,
+		generatedAt: "2026-11-07T12:00:00Z",
+		transcode: transcode(),
+		bandwidth: { peakConcurrent: null, peakBandwidth: null, avgBandwidth: null, timeSeries: [] },
+		userAnalytics: { users: [], dailyBreakdown: [] },
+		watchHistory: { events: [] },
+		codec: { videoCodecs: [], audioCodecs: [], resolutions: [], totalSessions: 0 },
+		devices: { platforms: [], players: [], totalSessions: 0 },
+		qualityScore: {
+			overallScore: null,
+			breakdown: { directPlayScore: null, resolutionScore: null, transcodeScore: null },
+			trend: [],
+			perUser: [],
+		},
+		forecast: { historicalDaily: [], forecast: [], peakHours: [], trend: "unknown" },
+		topMedia: { movie: { items: [] }, series: { items: [] }, music: { items: [] } },
+		popularMedia: { movie: { items: [] }, series: { items: [] }, music: { items: [] } },
+	};
+}
+
 function stats(): TautulliStatsResponse {
 	return {
 		homeStats: [],
@@ -164,6 +189,13 @@ beforeEach(() => {
 		if (/^\/api\/(plex|jellyfin)\/analytics\//.test(path)) {
 			const kind = path.split("/").at(-1);
 			switch (kind) {
+				case "report":
+					return response(
+						nativeReport(
+							path.startsWith("/api/plex/") ? "plex" : "jellyfin",
+							Number(url.split("days=")[1]),
+						),
+					);
 				case "transcode":
 					return response(transcode());
 				case "bandwidth":
@@ -381,10 +413,7 @@ describe("Statistics header Refresh recovery", () => {
 			await refresh();
 			await screen.findByRole("img", { name: /5 direct play/i });
 			const analytics = requests.filter((url) => url.includes("/analytics/"));
-			expect(analytics).toHaveLength(14);
-			expect(
-				analytics.every((url) => url.startsWith(`/api/${family}/`) && url.includes("days=7")),
-			).toBe(true);
+			expect(analytics).toEqual([`/api/${family}/analytics/report?days=7`]);
 			expect(requests.some((url) => url.includes("tautulli"))).toBe(false);
 			expect(screen.getByRole("button", { name: "7d" })).toHaveClass("bg-card");
 		},
@@ -401,9 +430,9 @@ describe("Statistics header Refresh recovery", () => {
 				}),
 			);
 			await screen.findByRole("img", { name: /2 direct play/i });
-			failed.add(`/api/${service}/analytics/transcode`);
+			failed.add(`/api/${service}/analytics/report`);
 			await refresh();
-			await screen.findByText(/last-known historical data retained; refresh failed/i);
+			await screen.findByText(/last-known Statistics report; refresh failed/i);
 			expect(screen.getByRole("img", { name: /2 direct play/i })).toBeInTheDocument();
 			expect(screen.queryByText(privateError)).not.toBeInTheDocument();
 			failed.clear();
@@ -411,7 +440,7 @@ describe("Statistics header Refresh recovery", () => {
 			await refresh();
 			await screen.findByRole("img", { name: /5 direct play/i });
 			expect(
-				screen.queryByText(/last-known historical data retained; refresh failed/i),
+				screen.queryByText(/last-known Statistics report; refresh failed/i),
 			).not.toBeInTheDocument();
 		},
 	);
