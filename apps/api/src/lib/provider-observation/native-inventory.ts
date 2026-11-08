@@ -496,7 +496,8 @@ export async function readNativeInventoryPage(
 		limit?: number;
 		now?: Date;
 		maxAgeMs?: number;
-		includeAttempt?: boolean;
+		/** "unavailable" defers progress work that a successful initial display read will discard. */
+		includeAttempt?: boolean | "unavailable";
 		/** Internal admission guard: prove the exact authority in the same read transaction. */
 		expectedAuthority?: ProviderPublicationAuthority;
 	},
@@ -631,38 +632,35 @@ async function readNativeInventoryPageInternal(
 				} as const;
 			}
 			const [attempt, snapshot] = await Promise.all([
-				input.includeAttempt ? readNativeAttemptProgress(tx, instance, input.domain) : null,
+				input.includeAttempt === true
+					? readNativeAttemptProgress(tx, instance, input.domain)
+					: null,
 				tx.providerNativeInventorySnapshot.findUnique({
 					where: { instanceId_domain: { instanceId: instance.id, domain: input.domain } },
 				}),
 			]);
-			if (!snapshot?.generationId) {
-				return attachNativeAttempt(
-					{ status: "unavailable", reason: "no-publication" } as const,
-					attempt,
+			const attachAttempt = async <T extends { status: "available" | "unavailable" }>(result: T) =>
+				attachNativeAttempt(
+					result,
+					input.includeAttempt === "unavailable" && result.status === "unavailable"
+						? await readNativeAttemptProgress(tx, instance, input.domain)
+						: attempt,
 				);
+			if (!snapshot?.generationId) {
+				return attachAttempt({ status: "unavailable", reason: "no-publication" } as const);
 			}
 			if (
 				input.expectedGenerationId !== undefined &&
 				snapshot.generationId !== input.expectedGenerationId
 			) {
-				return attachNativeAttempt(
-					{ status: "unavailable", reason: "snapshot-changed" } as const,
-					attempt,
-				);
+				return attachAttempt({ status: "unavailable", reason: "snapshot-changed" } as const);
 			}
 			if (!isValidSnapshotMetadata(snapshot, instance, now)) {
-				return attachNativeAttempt(
-					{ status: "unavailable", reason: "malformed-publication" } as const,
-					attempt,
-				);
+				return attachAttempt({ status: "unavailable", reason: "malformed-publication" } as const);
 			}
 			const observedAt = snapshot.observedAt;
 			if (!observedAt)
-				return attachNativeAttempt(
-					{ status: "unavailable", reason: "malformed-publication" } as const,
-					attempt,
-				);
+				return attachAttempt({ status: "unavailable", reason: "malformed-publication" } as const);
 			const publishedPass = snapshot.publishedPassId
 				? await tx.providerNativeInventoryPass.findUnique({
 						where: { id: snapshot.publishedPassId },
@@ -678,10 +676,7 @@ async function readNativeInventoryPageInternal(
 					publishedPass.run.identityGeneration !== instance.identityGeneration ||
 					!(publishedPass.run.workKey === input.domain || publishedPass.run.workKey === "paired"))
 			) {
-				return attachNativeAttempt(
-					{ status: "unavailable", reason: "malformed-publication" } as const,
-					attempt,
-				);
+				return attachAttempt({ status: "unavailable", reason: "malformed-publication" } as const);
 			}
 			// Ownership and pass authority are established before overlapping these reads.
 			// Keep every count, prior-pass and row check inside the same snapshot transaction.
@@ -734,17 +729,11 @@ async function readNativeInventoryPageInternal(
 				}),
 			]);
 			if (itemCount !== snapshot.itemCount) {
-				return attachNativeAttempt(
-					{ status: "unavailable", reason: "malformed-publication" } as const,
-					attempt,
-				);
+				return attachAttempt({ status: "unavailable", reason: "malformed-publication" } as const);
 			}
 			const parsedRows = items.map((item) => parseStoredItem(item, input.domain));
 			if (parsedRows.some((row) => row === null)) {
-				return attachNativeAttempt(
-					{ status: "unavailable", reason: "malformed-publication" } as const,
-					attempt,
-				);
+				return attachAttempt({ status: "unavailable", reason: "malformed-publication" } as const);
 			}
 			let rows = parsedRows as NativeInventoryRow[];
 			if (publishedPass) {
@@ -754,10 +743,7 @@ async function readNativeInventoryPageInternal(
 					prior.scopeDigest !== publishedPass.scopeDigest ||
 					prior.comparisonDigest !== publishedPass.comparisonDigest
 				) {
-					return attachNativeAttempt(
-						{ status: "unavailable", reason: "malformed-publication" } as const,
-						attempt,
-					);
+					return attachAttempt({ status: "unavailable", reason: "malformed-publication" } as const);
 				}
 				const priorItems = await tx.providerNativeInventoryStageItem.findMany({
 					where: {
@@ -768,10 +754,7 @@ async function readNativeInventoryPageInternal(
 				});
 				const priorRows = priorItems.map((item) => parseStoredItem(item, input.domain));
 				if (priorRows.some((row) => row === null) || priorRows.length !== rows.length) {
-					return attachNativeAttempt(
-						{ status: "unavailable", reason: "malformed-publication" } as const,
-						attempt,
-					);
+					return attachAttempt({ status: "unavailable", reason: "malformed-publication" } as const);
 				}
 				rows = reconcileNativeInventoryIdentifiers(priorRows as NativeInventoryRow[], rows);
 			}
@@ -783,23 +766,20 @@ async function readNativeInventoryPageInternal(
 				now.getTime() - observedAt.getTime() <= maxAgeMs
 					? "current"
 					: "last-known";
-			return attachNativeAttempt(
-				{
-					status: "available",
-					generationId: snapshot.generationId,
-					observedAt,
-					itemCount: snapshot.itemCount,
-					scopeCount: snapshot.scopeCount,
-					lastAttemptAt: snapshot.lastAttemptAt,
-					lastAttemptResult: snapshot.lastAttemptResult,
-					lastAttemptReason: snapshot.lastAttemptReason,
-					freshness,
-					complete: freshness === "current",
-					rows: selected,
-					nextNativeId: hasNext ? (selected[selected.length - 1]?.nativeId ?? null) : null,
-				} as const,
-				attempt,
-			);
+			return attachAttempt({
+				status: "available",
+				generationId: snapshot.generationId,
+				observedAt,
+				itemCount: snapshot.itemCount,
+				scopeCount: snapshot.scopeCount,
+				lastAttemptAt: snapshot.lastAttemptAt,
+				lastAttemptResult: snapshot.lastAttemptResult,
+				lastAttemptReason: snapshot.lastAttemptReason,
+				freshness,
+				complete: freshness === "current",
+				rows: selected,
+				nextNativeId: hasNext ? (selected[selected.length - 1]?.nativeId ?? null) : null,
+			} as const);
 		},
 		{ isolationLevel: "Serializable", maxWait: READ_TRANSACTION_MAX_WAIT_MS, timeout: 10_000 },
 	);

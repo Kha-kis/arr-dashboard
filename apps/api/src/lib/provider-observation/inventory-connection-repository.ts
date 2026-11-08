@@ -287,8 +287,16 @@ export async function readProviderInventoryConnections(
 	const now = input.now ?? new Date();
 	const page = await observeRead("native-page", async () =>
 		input.metadataFilter
-			? await readMissingTmdbLibraryPage(prisma, { ...input, now })
-			: await readNativeInventoryDisplayPage(prisma, { ...input, now }),
+			? await readMissingTmdbLibraryPage(prisma, {
+					...input,
+					now,
+					includeAttempt: input.includeAttempt ? "unavailable" : false,
+				})
+			: await readNativeInventoryDisplayPage(prisma, {
+					...input,
+					now,
+					includeAttempt: input.includeAttempt ? "unavailable" : false,
+				}),
 	);
 	if (page.status !== "available") return page;
 	const parentNativeIds = [
