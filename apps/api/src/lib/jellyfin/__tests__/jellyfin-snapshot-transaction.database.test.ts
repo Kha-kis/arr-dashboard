@@ -11,6 +11,7 @@ import {
 	type RestoreRuntime,
 } from "../../backup/restore-runtime-admission.js";
 import { createRuntimePrismaClient } from "../../backup/restore-runtime-client.js";
+import type { Prisma } from "../../prisma.js";
 import {
 	acquireJellyfinEpisodePreparation,
 	prepareJellyfinEpisodeGeneration,
@@ -329,6 +330,173 @@ describe("guarded Jellyfin SQLite snapshot recovery", () => {
 		});
 		expect(losses).toBe(0);
 	}
+
+	it.each([
+		"released",
+		"exhausted",
+		"replaced-lease",
+		"identity-changed",
+		"unknown-cause",
+		"callback-entered",
+	] as const)(
+		"bounds real episode-stage admission and conserves committed data: %s",
+		async (scenario) => {
+			await native.close();
+			native = createRuntimePrismaClient(runtime, { sqliteTransactionIntent: "write" });
+			await runtime.runIndependentOperation(async () => {
+				const lease = await acquireJellyfinEpisodePreparation(native.prisma, {
+					userId: "owner",
+					instanceId: "jf",
+					runId: "new-run",
+					generationId: "new-run",
+					now,
+				});
+				expect(lease).not.toBeNull();
+				const rows = Array.from({ length: 501 }, (_, index) => ({
+					showTmdbId: 42,
+					seasonNumber: 1,
+					episodeNumber: index + 1,
+					jellyfinId: `episode-${index}`,
+					title: `Synthetic episode ${index}`,
+					watched: false,
+					watchedByUsers: "[]",
+					lastWatchedAt: null,
+				}));
+				await native.prisma.jellyfinEpisodeGenerationRow.createMany({
+					data: ["jf", "jf-other"].map((instanceId) => ({
+						...rows[0]!,
+						instanceId,
+						generationId: "old-run",
+						connectionGeneration: 1,
+						identityGeneration: 1,
+					})),
+				});
+				const protectedRows = await native.prisma.jellyfinEpisodeGenerationRow.findMany({
+					where: { generationId: "old-run" },
+					orderBy: { instanceId: "asc" },
+				});
+				let attempts = 0;
+				let refusedCallbacks = 0;
+				let nativeRefusals = 0;
+				let enteredFailures = 0;
+				let nativeBusyError: unknown;
+				const prisma = new Proxy(native.prisma, {
+					get(target, property, receiver) {
+						if (property !== "$transaction") return Reflect.get(target, property, receiver);
+						return async (operation: (tx: Prisma.TransactionClient) => Promise<unknown>) => {
+							// Reset and the first500-row commit succeed. Refuse only the next
+							// real guarded transaction, then release the competing writer.
+							attempts += 1;
+							const contend = attempts === 3 || (scenario === "exhausted" && attempts > 3);
+							if (contend) writer.exec("BEGIN IMMEDIATE");
+							try {
+								return await target.$transaction(async (tx) => {
+									if (contend) refusedCallbacks += 1;
+									const result = await operation(tx);
+									if (scenario === "callback-entered" && attempts === 4) {
+										// Reuse the real native error at an entered callback boundary:
+										// its code alone must never authorize replaying this transaction.
+										enteredFailures += 1;
+										throw nativeBusyError;
+									}
+									return result;
+								});
+							} catch (error) {
+								if (contend) {
+									expect(error).toMatchObject({
+										code: "P1008",
+										meta: { driverAdapterError: { cause: { originalCode: "SQLITE_BUSY" } } },
+									});
+									nativeRefusals += 1;
+									nativeBusyError = error;
+									expect(refusedCallbacks).toBe(0);
+									expect(
+										writer
+											.prepare(
+												"SELECT COUNT(*) AS count FROM jellyfin_episode_generation_rows WHERE generationId='new-run'",
+											)
+											.get(),
+									).toEqual({ count: 500 });
+									if (scenario === "unknown-cause")
+										throw Object.assign(new Error("Synthetic timeout without native provenance"), {
+											code: "P1008",
+										});
+								}
+								throw error;
+							} finally {
+								if (contend && writer.inTransaction) writer.exec("ROLLBACK");
+								if (contend && scenario === "replaced-lease")
+									await target.jellyfinEpisodePreparation.update({
+										where: { runId: "new-run" },
+										data: { token: "replacement-token" },
+									});
+								if (contend && scenario === "identity-changed")
+									await target.serviceInstance.update({
+										where: { id: "jf" },
+										data: { identityGeneration: { increment: 1 } },
+									});
+							}
+						};
+					},
+				});
+				const pending = prepareJellyfinEpisodeGeneration(prisma, {
+					userId: "owner",
+					instanceId: "jf",
+					runId: "new-run",
+					generationId: "new-run",
+					token: lease!.token,
+					rows,
+					expectedFingerprint: fingerprintJellyfinEpisodeRows(rows),
+					observedAt: now,
+					now,
+				});
+				if (scenario === "released") {
+					await expect(pending).resolves.toMatchObject({ rowCount: 501, receiptCount: 1 });
+				} else if (scenario === "replaced-lease" || scenario === "identity-changed") {
+					await expect(pending).rejects.toThrow("preparation lease is unavailable");
+					expect(attempts).toBe(4);
+				} else {
+					await expect(pending).rejects.toMatchObject({ code: "P1008" });
+					expect(attempts).toBe(
+						scenario === "exhausted" ? 6 : scenario === "callback-entered" ? 4 : 3,
+					);
+				}
+				expect(nativeRefusals).toBe(scenario === "exhausted" ? 4 : 1);
+				expect(enteredFailures).toBe(scenario === "callback-entered" ? 1 : 0);
+				expect(
+					await native.prisma.jellyfinEpisodePreparation.findUnique({
+						where: { runId: "new-run" },
+					}),
+				).toMatchObject({
+					state: scenario === "released" ? "verified" : "preparing",
+					token: scenario === "replaced-lease" ? "replacement-token" : lease!.token,
+					expectedRowCount: scenario === "released" ? 501 : null,
+				});
+				expect(
+					await native.prisma.jellyfinEpisodeGenerationRow.count({
+						where: { instanceId: "jf", generationId: "new-run" },
+					}),
+				).toBe(scenario === "released" ? 501 : 500);
+				expect(
+					await native.prisma.jellyfinEpisodeGenerationShowReceipt.findMany({
+						where: { instanceId: "jf", generationId: "new-run" },
+						select: { showTmdbId: true, rowCount: true },
+					}),
+				).toEqual(scenario === "released" ? [{ showTmdbId: 42, rowCount: 501 }] : []);
+				expect(
+					await native.prisma.jellyfinEpisodeGenerationRow.findMany({
+						where: { generationId: "old-run" },
+						orderBy: { instanceId: "asc" },
+					}),
+				).toEqual(protectedRows);
+				expect(
+					await native.prisma.providerObservationRun.findUnique({ where: { id: "new-run" } }),
+				).toMatchObject({ state: "running", totalUnits: 2, completedUnits: 2 });
+				await assertPriorPublicationAndReuse();
+			});
+		},
+		30_000,
+	);
 
 	it("acquires a preparation in a fresh transaction after a real guarded WAL snapshot conflict", async () => {
 		await runtime.runIndependentOperation(async () => {

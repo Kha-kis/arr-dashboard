@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { createEvidenceFingerprintArrayAccumulator } from "../evidence-fingerprint.js";
 import { Prisma, type PrismaClient } from "../prisma.js";
 import {
@@ -18,6 +19,46 @@ type PreparationInput = {
 
 export const JELLYFIN_EPISODE_PREPARATION_LEASE_MS = 5 * 60 * 1_000;
 const EPISODE_STAGE_BATCH_SIZE = 500;
+const PREPARATION_ADMISSION_RETRY_DELAYS_MS = [10, 20, 40] as const;
+
+function isBusyAdmission(error: unknown): boolean {
+	const ownValue = (value: unknown, key: string): unknown => {
+		if (typeof value !== "object" || value === null) return undefined;
+		return Object.getOwnPropertyDescriptor(value, key)?.value;
+	};
+	try {
+		return (
+			ownValue(error, "code") === "P1008" &&
+			ownValue(
+				ownValue(ownValue(ownValue(error, "meta"), "driverAdapterError"), "cause"),
+				"originalCode",
+			) === "SQLITE_BUSY"
+		);
+	} catch {
+		return false;
+	}
+}
+
+async function preparationTransaction<T>(
+	prisma: PrismaClient,
+	operation: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+	for (let retries = 0; ; retries += 1) {
+		let callbackEntered = false;
+		try {
+			return await prisma.$transaction((tx) => {
+				callbackEntered = true;
+				return operation(tx);
+			});
+		} catch (error) {
+			const wait = PREPARATION_ADMISSION_RETRY_DELAYS_MS[retries];
+			// Retry only a refused native start, never an entered callback or an
+			// uncertain commit. The same batch rechecks its lease on every attempt.
+			if (callbackEntered || wait === undefined || !isBusyAdmission(error)) throw error;
+			await delay(wait);
+		}
+	}
+}
 
 type EpisodeRow = Pick<
 	JellyfinEpisodeRowFingerprintInput,
@@ -121,7 +162,7 @@ async function clearInvisibleGeneration(
 			take: EPISODE_STAGE_BATCH_SIZE,
 		});
 		if (rows.length === 0) break;
-		await prisma.$transaction(async (tx) => {
+		await preparationTransaction(prisma, async (tx) => {
 			await requireLiveLease(tx, { ...input, now: currentLeaseTime(input, clock) });
 			await tx.jellyfinEpisodeGenerationRow.deleteMany({
 				where: {
@@ -140,7 +181,7 @@ async function clearInvisibleGeneration(
 			take: EPISODE_STAGE_BATCH_SIZE,
 		});
 		if (receipts.length === 0) break;
-		await prisma.$transaction(async (tx) => {
+		await preparationTransaction(prisma, async (tx) => {
 			await requireLiveLease(tx, { ...input, now: currentLeaseTime(input, clock) });
 			await tx.jellyfinEpisodeGenerationShowReceipt.deleteMany({
 				where: {
@@ -170,7 +211,7 @@ export async function prepareJellyfinEpisodeGeneration(
 		throw new Error("Jellyfin episode candidate fingerprint mismatch");
 	const receipts = expectedShowReceipts(rows, input.coveredShowTmdbIds);
 	const clock = input.clock ?? (() => new Date());
-	await prisma.$transaction(async (tx) => {
+	await preparationTransaction(prisma, async (tx) => {
 		await requireLiveLease(tx, { ...input, now: currentLeaseTime(input, clock) });
 		await tx.jellyfinEpisodePreparation.update({
 			where: { runId: input.runId },
@@ -186,7 +227,7 @@ export async function prepareJellyfinEpisodeGeneration(
 	await clearInvisibleGeneration(prisma, input, clock);
 	for (let index = 0; index < rows.length; index += EPISODE_STAGE_BATCH_SIZE) {
 		const chunk = rows.slice(index, index + EPISODE_STAGE_BATCH_SIZE);
-		await prisma.$transaction(async (tx) => {
+		await preparationTransaction(prisma, async (tx) => {
 			await requireLiveLease(tx, { ...input, now: currentLeaseTime(input, clock) });
 			const instance = await tx.serviceInstance.findUniqueOrThrow({
 				where: { id: input.instanceId },
@@ -212,7 +253,7 @@ export async function prepareJellyfinEpisodeGeneration(
 	}
 	for (let index = 0; index < receipts.length; index += EPISODE_STAGE_BATCH_SIZE) {
 		const chunk = receipts.slice(index, index + EPISODE_STAGE_BATCH_SIZE);
-		await prisma.$transaction(async (tx) => {
+		await preparationTransaction(prisma, async (tx) => {
 			await requireLiveLease(tx, { ...input, now: currentLeaseTime(input, clock) });
 			await tx.jellyfinEpisodeGenerationShowReceipt.createMany({
 				data: chunk.map((receipt) => ({
@@ -223,7 +264,7 @@ export async function prepareJellyfinEpisodeGeneration(
 			});
 		});
 	}
-	await prisma.$transaction(async (tx) => {
+	await preparationTransaction(prisma, async (tx) => {
 		await requireLiveLease(tx, { ...input, now: currentLeaseTime(input, clock) });
 		await tx.jellyfinEpisodePreparation.update({
 			where: { runId: input.runId },
@@ -242,7 +283,7 @@ export async function prepareJellyfinEpisodeGeneration(
 		}))
 	)
 		throw new Error("Jellyfin episode generation readback failed");
-	await prisma.$transaction(async (tx) => {
+	await preparationTransaction(prisma, async (tx) => {
 		await requireLiveLease(tx, { ...input, now: currentLeaseTime(input, clock) });
 		await tx.jellyfinEpisodePreparation.update({
 			where: { runId: input.runId },
@@ -310,7 +351,7 @@ export async function verifyPreparedJellyfinEpisodeGeneration(
 		);
 	};
 	for (;;) {
-		const live = await prisma.$transaction((tx) =>
+		const live = await preparationTransaction(prisma, (tx) =>
 			renewJellyfinEpisodePreparation(tx, {
 				...input,
 				now: new Date(Math.max(input.now.getTime(), Date.now())),
