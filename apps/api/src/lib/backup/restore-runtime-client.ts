@@ -16,6 +16,10 @@ import {
 } from "./restore-runtime-postgres-client.js";
 import { measureRuntimeReadTiming, startRuntimeReadTiming } from "./restore-runtime-read-timing.js";
 import { withRuntimeReadPhases } from "./restore-runtime-read-phases.js";
+import {
+	getRuntimeReadSource,
+	type RuntimeReadSource,
+} from "./restore-runtime-read-diagnostics.js";
 import { acquireSqliteRestoreOperationLock } from "./restore-runtime-sqlite.js";
 import { parseSqliteRestoreRuntimeRecord } from "./restore-runtime-sqlite-enrollment.js";
 
@@ -238,14 +242,69 @@ export function createRuntimePrismaClient(
 	};
 	// Cached-read fan-out is bounded independently from ordinary HTTP queries.
 	// Reserve closure now; accepted work may first acquire a lane during drain.
-	type ReadLane = { busy: boolean; workload?: "bulk-cache"; client?: RuntimePrismaClient };
+	type ReadLane = {
+		busy: boolean;
+		workload?: "bulk-cache";
+		client?: RuntimePrismaClient;
+		source?: RuntimeReadSource;
+		acquiredAt?: number;
+	};
 	type ReadWaiter = {
 		workload?: "bulk-cache";
+		source: RuntimeReadSource;
+		enqueuedAt?: number;
 		resolve(lane: ReadLane): void;
 		reject(error: RestoreRuntimeAdmissionError): void;
 	};
 	const readLanes: ReadLane[] = Array.from({ length: 4 }, () => ({ busy: false }));
 	const readWaiters = new Set<ReadWaiter>();
+	const readClock = () => {
+		try {
+			const now = performance.now();
+			return Number.isFinite(now) && now >= 0 ? now : undefined;
+		} catch {
+			return undefined;
+		}
+	};
+	const attachReadQueue = (
+		error: RestoreRuntimeAdmissionError,
+		waiter: ReadWaiter,
+		maxWait: number,
+	) => {
+		try {
+			const now = readClock();
+			if (now === undefined || !Number.isFinite(maxWait) || maxWait < 0) return;
+			const elapsed = (startedAt: number | undefined) => {
+				if (startedAt === undefined || !Number.isFinite(now - startedAt))
+					throw new Error("Unavailable diagnostic clock");
+				return Math.max(0, now - startedAt);
+			};
+			const busyLanes = readLanes
+				.filter((lane) => lane.busy)
+				.slice(0, 4)
+				.map((lane) =>
+					Object.freeze({
+						source: lane.source ?? "unscoped",
+						workload: lane.workload === "bulk-cache" ? "bulk-cache" : "ordinary",
+						heldMs: elapsed(lane.acquiredAt),
+					}),
+				);
+			Object.defineProperty(error, "readQueue", {
+				enumerable: true,
+				value: Object.freeze({
+					reason: "read-lane-acquisition-timeout",
+					source: waiter.source,
+					workload: waiter.workload === "bulk-cache" ? "bulk-cache" : "ordinary",
+					maxWaitMs: maxWait,
+					waitedMs: elapsed(waiter.enqueuedAt),
+					busyLanes: Object.freeze(busyLanes),
+					queuedWaiters: readWaiters.size,
+				}),
+			});
+		} catch {
+			// Observation failure must never replace the original admission refusal.
+		}
+	};
 	let readsClosePromise: Promise<void> | undefined;
 	// Bulk catalog validation retains its whole callback lease, but cannot fill
 	// every slot needed by session validation and primary page reads. Ineligible
@@ -255,19 +314,27 @@ export function createRuntimePrismaClient(
 		readLanes.filter((lane) => lane.busy && lane.workload === "bulk-cache").length < 2;
 	const acquireReadLane = (maxWait: number, workload?: "bulk-cache"): Promise<ReadLane> => {
 		if (registration.closed) return Promise.reject(new RestoreRuntimeAdmissionError());
+		const source = getRuntimeReadSource();
+		const acquiredAt = readClock();
 		const lane = eligibleRead(workload) && readLanes.find((candidate) => !candidate.busy);
 		if (lane) {
 			lane.busy = true;
 			lane.workload = workload;
+			lane.source = source;
+			lane.acquiredAt = acquiredAt;
 			return Promise.resolve(lane);
 		}
 		return new Promise((resolve, reject) => {
 			const timer = setTimeout(() => {
 				readWaiters.delete(waiter);
-				reject(new RestoreRuntimeAdmissionError());
+				const error = new RestoreRuntimeAdmissionError();
+				attachReadQueue(error, waiter, maxWait);
+				reject(error);
 			}, maxWait);
 			const waiter: ReadWaiter = {
 				workload,
+				source,
+				enqueuedAt: acquiredAt,
 				resolve: (next) => {
 					clearTimeout(timer);
 					resolve(next);
@@ -283,6 +350,8 @@ export function createRuntimePrismaClient(
 	const releaseReadLane = (lane: ReadLane) => {
 		lane.busy = false;
 		lane.workload = undefined;
+		lane.source = undefined;
+		lane.acquiredAt = undefined;
 		if (registration.closed) return;
 		// FIFO among eligible waiters: a capped bulk request must not block a
 		// later ordinary request while spare physical lanes remain available.
@@ -291,6 +360,8 @@ export function createRuntimePrismaClient(
 			readWaiters.delete(next);
 			lane.busy = true;
 			lane.workload = next.workload;
+			lane.source = next.source;
+			lane.acquiredAt = readClock();
 			next.resolve(lane);
 			break;
 		}

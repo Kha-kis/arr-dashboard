@@ -1,12 +1,19 @@
 import { setTimeout as delay } from "node:timers/promises";
 import Database from "better-sqlite3";
+import Fastify from "fastify";
+import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	closeScopedWriteFixtures,
 	createScopedWriteFixture,
+	recordScopedWriteEvidence,
 } from "../../__tests__/scoped-write-intent-fixture.js";
 import type { PrismaClientInstance } from "../../prisma.js";
-import { withIsolatedRuntimePrismaBulkReadClient } from "../restore-runtime-client.js";
+import lifecyclePlugin from "../../../plugins/lifecycle.js";
+import {
+	withIsolatedRuntimePrismaBulkReadClient,
+	withIsolatedRuntimePrismaReadClient,
+} from "../restore-runtime-client.js";
 
 afterEach(closeScopedWriteFixtures);
 
@@ -26,6 +33,207 @@ const phased = withIsolatedRuntimePrismaBulkReadClient as <T>(
 ) => Promise<T>;
 
 describe("cached read phase admission", { timeout: 20_000 }, () => {
+	it("records only bounded generic ownership on a real mixed-lane timeout", async () => {
+		const f = await createScopedWriteFixture();
+		const app = Fastify({ logger: false });
+		app.decorate("restoreRuntime", f.runtime);
+		await app.register(lifecyclePlugin);
+		const holders = [
+			["/api/library/provider-inventory", "primary-inventory", undefined],
+			["/api/library/poster/:instanceId/:itemType/:itemId", "library-poster", undefined],
+			["/api/plex/watch-enrichment", "plex-watch", "bulk-cache"],
+			["/api/jellyfin/series-progress", "jellyfin-series", "bulk-cache"],
+		] as const;
+		const ready = holders.map(signal),
+			release = holders.map(signal);
+		const queued = [signal(), signal()],
+			nextReady = [signal(), signal()],
+			nextRelease = [signal(), signal()];
+		const nextEntered = [false, false];
+		const native = new Set<Database.Database>();
+		const prepare = Database.prototype.prepare;
+		vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+			this: Database.Database,
+			sql,
+		) {
+			if (this.name === f.path && this !== f.writer) native.add(this);
+			return prepare.call(this, sql);
+		});
+		for (const [i, [url, , workload]] of holders.entries())
+			app.get(url, async () =>
+				withIsolatedRuntimePrismaReadClient(
+					f.client.prisma,
+					async (reader) => {
+						expect(
+							await reader.serviceInstance.count({ where: { userId: "synthetic-user" } }),
+						).toBe(2);
+						ready[i]!.resolve();
+						await release[i]!.promise;
+						return { ok: true };
+					},
+					{ workload },
+				),
+			);
+		for (const [i, url] of ["/api/plex/on-deck", "/api/jellyfin/on-deck"].entries())
+			app.get(url, () => {
+				queued[i]!.resolve();
+				return withIsolatedRuntimePrismaReadClient(
+					f.client.prisma,
+					async (reader) => {
+						expect(
+							await reader.serviceInstance.count({ where: { userId: "synthetic-user" } }),
+						).toBe(2);
+						nextEntered[i] = true;
+						nextReady[i]!.resolve();
+						await nextRelease[i]!.promise;
+						return { ok: true };
+					},
+					{ workload: "bulk-cache" },
+				);
+			});
+		let captured: Error | undefined,
+			entered = false;
+		app.setErrorHandler((error, _request, reply) => {
+			captured = error;
+			return reply.code(503).send({ error: error.name, message: error.message });
+		});
+		app.get("/api/plex/series-progress", () =>
+			withIsolatedRuntimePrismaReadClient(
+				f.client.prisma,
+				async () => {
+					entered = true;
+					return { ok: true };
+				},
+				{ maxWait: 40 },
+			),
+		);
+		const pending = holders.map(([url]) =>
+			app.inject(
+				url.replace(":instanceId/:itemType/:itemId", "private-instance/movie/private-item") +
+					"?private=decoy",
+			),
+		);
+		const following: Array<PromiseLike<unknown>> = [];
+		try {
+			await Promise.all(ready.map((s) => s.promise));
+			following.push(app.inject("/api/plex/on-deck"));
+			await queued[0]!.promise;
+			following.push(app.inject("/api/jellyfin/on-deck"));
+			await queued[1]!.promise;
+			const response = await app.inject("/api/plex/series-progress?private=not-a-category");
+			expect(response.statusCode).toBe(503);
+			expect(response.json()).toEqual({
+				error: "RestoreRuntimeAdmissionError",
+				message: "Restore runtime admission is unavailable.",
+			});
+			expect(entered).toBe(false);
+			const queue = Reflect.get(captured!, "readQueue");
+			expect(queue).toEqual({
+				reason: "read-lane-acquisition-timeout",
+				source: "plex-series",
+				workload: "ordinary",
+				maxWaitMs: 40,
+				waitedMs: expect.any(Number),
+				queuedWaiters: 2,
+				busyLanes: holders.map(([, source, workload]) => ({
+					source,
+					workload: workload ?? "ordinary",
+					heldMs: expect.any(Number),
+				})),
+			});
+			expect(Object.isFrozen(queue)).toBe(true);
+			expect(Object.isFrozen(queue.busyLanes)).toBe(true);
+			expect(queue.busyLanes.every(Object.isFrozen)).toBe(true);
+			for (const ms of [
+				queue.waitedMs,
+				...queue.busyLanes.map((lane: { heldMs: number }) => lane.heldMs),
+			])
+				expect(Number.isFinite(ms) && ms >= 0).toBe(true);
+			const serialized = pino.stdSerializers.err(captured!);
+			expect(serialized.readQueue).toEqual(queue);
+			expect(JSON.stringify(queue)).not.toMatch(
+				/private|synthetic|SELECT|userId|instanceId|callback|client/,
+			);
+			const frozen = JSON.stringify(queue);
+			release[2]!.resolve();
+			await nextReady[0]!.promise;
+			expect(nextEntered).toEqual([true, false]);
+			expect((await app.inject("/api/plex/series-progress")).statusCode).toBe(503);
+			const handed = Reflect.get(captured!, "readQueue");
+			expect(handed.queuedWaiters).toBe(1);
+			expect(handed.busyLanes[2]).toEqual({
+				source: "plex-on-deck",
+				workload: "bulk-cache",
+				heldMs: expect.any(Number),
+			});
+			nextRelease[0]!.resolve();
+			await nextReady[1]!.promise;
+			expect((await app.inject("/api/plex/series-progress")).statusCode).toBe(503);
+			const afterHandoff = Reflect.get(captured!, "readQueue");
+			expect(afterHandoff.queuedWaiters).toBe(0);
+			expect(afterHandoff.busyLanes[2]).toEqual({
+				source: "jellyfin-on-deck",
+				workload: "bulk-cache",
+				heldMs: expect.any(Number),
+			});
+			await f.runtime.runOperation(async () => {
+				const clock = vi.spyOn(performance, "now").mockImplementation(() => {
+					throw new Error("synthetic diagnostic clock failure");
+				});
+				try {
+					const error = await withIsolatedRuntimePrismaReadClient(
+						f.client.prisma,
+						async () => {
+							throw new Error("timeout callback entered");
+						},
+						{ maxWait: 1 },
+					).catch((error) => error);
+					expect(error).toMatchObject({
+						name: "RestoreRuntimeAdmissionError",
+						statusCode: 503,
+						message: "Restore runtime admission is unavailable.",
+					});
+					expect(Reflect.has(error, "readQueue")).toBe(false);
+				} finally {
+					clock.mockRestore();
+				}
+			});
+			for (const s of release) s.resolve();
+			for (const s of nextRelease) s.resolve();
+			await Promise.all(following);
+			expect(
+				(await Promise.all(pending)).every(
+					(r) => r.statusCode === 200 && !r.body.includes("readQueue"),
+				),
+			).toBe(true);
+			expect((await app.inject("/api/plex/series-progress")).statusCode).toBe(200);
+			expect(JSON.stringify(queue)).toBe(frozen);
+			recordScopedWriteEvidence("read-queue-native", {
+				reason: queue.reason,
+				source: queue.source,
+				workload: queue.workload,
+				busyLanes: queue.busyLanes,
+				queuedWaiters: queue.queuedWaiters,
+				callbackEnteredOnTimeout: false,
+				progressAfterRelease: true,
+				providerIo: 0,
+			});
+		} finally {
+			for (const s of release) s.resolve();
+			for (const s of nextRelease) s.resolve();
+			await Promise.allSettled([...pending, ...following]);
+			await app.close();
+			await f.client.close();
+			expect(native.size).toBeGreaterThanOrEqual(4);
+			expect([...native].every((db) => !db.open)).toBe(true);
+			recordScopedWriteEvidence("read-queue-native-closure", {
+				nativeHandles: native.size,
+				nativeHandlesClosedBeforeRemoval: [...native].every((db) => !db.open),
+				losses: f.losses,
+			});
+		}
+		expect(f.losses).toEqual([]);
+	});
 	it("admits another bulk read while two callbacks wait between independent phases", async () => {
 		const f = await createScopedWriteFixture();
 		const between = signal(),

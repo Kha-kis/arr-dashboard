@@ -1,5 +1,9 @@
 import type { FastifyPluginAsync, RouteHandlerMethod } from "fastify";
 import fp from "fastify-plugin";
+import {
+	classifyRuntimeReadRoute,
+	withRuntimeReadSource,
+} from "../lib/backup/restore-runtime-read-diagnostics.js";
 import { LifecycleService } from "../lib/lifecycle/lifecycle-service.js";
 
 /**
@@ -14,20 +18,23 @@ const lifecyclePlugin: FastifyPluginAsync = async (app) => {
 	app.decorate("lifecycle", lifecycleService);
 	app.addHook("onRoute", (routeOptions) => {
 		const handler = routeOptions.handler;
+		const source = classifyRuntimeReadRoute(routeOptions.url);
 		routeOptions.handler = function trackedHttpHandler(request, reply) {
-			// Server-declared purposes remain HTTP-tracked without an implicit
-			// database ticket. Restore admits preparation/auth explicitly, then
-			// drains ordinary tickets before exclusive publication. Client input
-			// cannot select this branch or grant ordinary native SQL authority.
-			if (
-				routeOptions.config?.runtimeLiveness === true ||
-				routeOptions.config?.runtimeRestoreController === true
-			) {
-				return lifecycleService.runHttpHandler(async () => handler.call(this, request, reply));
-			}
-			return lifecycleService.runHttpHandler(() =>
-				app.restoreRuntime.runOperation(async () => handler.call(this, request, reply)),
-			);
+			return withRuntimeReadSource(source, () => {
+				// Server-declared purposes remain HTTP-tracked without an implicit
+				// database ticket. Restore admits preparation/auth explicitly, then
+				// drains ordinary tickets before exclusive publication. Client input
+				// cannot select this branch or grant ordinary native SQL authority.
+				if (
+					routeOptions.config?.runtimeLiveness === true ||
+					routeOptions.config?.runtimeRestoreController === true
+				) {
+					return lifecycleService.runHttpHandler(async () => handler.call(this, request, reply));
+				}
+				return lifecycleService.runHttpHandler(() =>
+					app.restoreRuntime.runOperation(async () => handler.call(this, request, reply)),
+				);
+			});
 		} as RouteHandlerMethod;
 	});
 	app.addHook("preClose", async () => {
