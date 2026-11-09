@@ -1,8 +1,8 @@
-import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { SqliteSchemaFixture } from "../../__tests__/sqlite-schema-fixture.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import type { PrismaClient, ServiceType } from "../../prisma.js";
 import {
@@ -12,15 +12,15 @@ import {
 
 const databases: Array<{ directory: string; prisma: PrismaClient }> = [];
 const CAPTURED_AT = new Date("2026-09-01T00:00:00.000Z");
+const schema = new SqliteSchemaFixture();
+
+beforeAll(() => schema.initialize(), 60_000);
+afterAll(() => schema.dispose());
 
 async function database() {
 	const directory = mkdtempSync(join(tmpdir(), "session-snapshot-pages-"));
 	const dbPath = join(directory, "test.db");
-	execFileSync("pnpm", ["exec", "prisma", "db", "push", "--schema", "prisma/schema.prisma"], {
-		cwd: process.cwd(),
-		env: { ...process.env, DATABASE_URL: `file:${dbPath}` },
-		stdio: "ignore",
-	});
+	schema.copyTo(dbPath);
 	const prisma = createTestPrismaClient(dbPath);
 	databases.push({ directory, prisma });
 	await prisma.user.create({ data: { id: "owner", username: "synthetic-owner" } });
