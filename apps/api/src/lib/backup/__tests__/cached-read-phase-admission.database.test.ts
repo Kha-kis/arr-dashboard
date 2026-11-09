@@ -93,7 +93,7 @@ describe("cached read phase admission", { timeout: 20_000 }, () => {
 			});
 		let captured: Error | undefined,
 			entered = false;
-		app.setErrorHandler((error, _request, reply) => {
+		app.setErrorHandler<Error>((error, _request, reply) => {
 			captured = error;
 			return reply.code(503).send({ error: error.name, message: error.message });
 		});
