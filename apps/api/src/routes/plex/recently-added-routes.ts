@@ -41,16 +41,19 @@ export async function registerRecentlyAddedRoutes(
 		const { limit } = validateRequest(recentlyAddedQuery, request.query);
 		const userId = request.currentUser!.id;
 
-		const evidence = await withIsolatedRuntimePrismaBulkReadClient(app.prisma, (prisma) =>
-			new PlexAuthorityService({
-				prisma,
-				encryptor: app.encryptor,
-				log: request.log,
-			}).readUserSelectedDisplay({
-				userId,
-				selection: { kind: "recently-added", limit },
-				domains: ["membership", "display"],
-			}),
+		const evidence = await withIsolatedRuntimePrismaBulkReadClient(
+			app.prisma,
+			(prisma) =>
+				new PlexAuthorityService({
+					prisma,
+					encryptor: app.encryptor,
+					log: request.log,
+				}).readUserSelectedDisplay({
+					userId,
+					selection: { kind: "recently-added", limit },
+					domains: ["membership", "display"],
+				}),
+			{ lease: "phase" },
 		);
 		const summary = summarizePlexEvidence(evidence);
 		const displayableEvidence = listDisplayableSelectedPlexEvidence(evidence);

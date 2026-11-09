@@ -1044,6 +1044,7 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 				now: observationNow,
 				maxAgeMs: DEFAULT_JELLYFIN_CACHE_HEALTH_MAX_AGE_MS,
 			}),
+		{ lease: "phase" },
 	);
 
 	const plexEvidenceByStatus = new Map<
@@ -1051,8 +1052,10 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 		Awaited<ReturnType<typeof loadUserGenerationObservations>>[number]["evidence"]
 	>();
 	if (cacheStatuses.some((status) => status.cacheType === "plex")) {
-		for (const evidence of await withIsolatedRuntimePrismaBulkReadClient(app.prisma, (prisma) =>
-			loadUserGenerationObservations(prisma, { userId }),
+		for (const evidence of await withIsolatedRuntimePrismaBulkReadClient(
+			app.prisma,
+			(prisma) => loadUserGenerationObservations(prisma, { userId }),
+			{ lease: "phase" },
 		)) {
 			if (evidence.instanceId) {
 				plexEvidenceByStatus.set(`${evidence.instanceId}:plex`, evidence.evidence);
@@ -1061,11 +1064,14 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 	}
 	for (const status of cacheStatuses) {
 		if (status.cacheType !== "plex_episode") continue;
-		const evidence = await withIsolatedRuntimePrismaBulkReadClient(app.prisma, (prisma) =>
-			getPublishedEpisodeGenerationObservation(prisma, {
-				userId,
-				instanceId: status.instanceId,
-			}),
+		const evidence = await withIsolatedRuntimePrismaBulkReadClient(
+			app.prisma,
+			(prisma) =>
+				getPublishedEpisodeGenerationObservation(prisma, {
+					userId,
+					instanceId: status.instanceId,
+				}),
+			{ lease: "phase" },
 		);
 		plexEvidenceByStatus.set(`${status.instanceId}:plex_episode`, evidence.evidence);
 	}
@@ -1292,11 +1298,14 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 	}
 
 	for (const instance of tautulliInstances) {
-		const observation = await withIsolatedRuntimePrismaBulkReadClient(app.prisma, (prisma) =>
-			readOwnedTautulliObservation(prisma, {
-				userId,
-				instanceId: instance.id,
-			}),
+		const observation = await withIsolatedRuntimePrismaBulkReadClient(
+			app.prisma,
+			(prisma) =>
+				readOwnedTautulliObservation(prisma, {
+					userId,
+					instanceId: instance.id,
+				}),
+			{ lease: "phase" },
 		);
 		if (!observation) continue;
 		items.push(projectTautulliPulseItem(instance, observation));

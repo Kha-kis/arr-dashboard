@@ -18,8 +18,10 @@ export async function registerSectionRoutes(app: FastifyInstance, _opts: Fastify
 	app.get("/", async (request, reply) => {
 		const userId = request.currentUser!.id;
 
-		const catalog = await withIsolatedRuntimePrismaBulkReadClient(app.prisma, (prisma) =>
-			loadPlexSectionCatalog(prisma, { userId }),
+		const catalog = await withIsolatedRuntimePrismaBulkReadClient(
+			app.prisma,
+			(prisma) => loadPlexSectionCatalog(prisma, { userId }),
+			{ lease: "phase" },
 		);
 		if (!catalog.available) {
 			return reply.status(503).send({

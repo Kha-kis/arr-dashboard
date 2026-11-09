@@ -79,22 +79,25 @@ export async function registerWatchEnrichmentRoutes(
 
 		const tmdbIdList = [...new Set(tmdbIds)];
 
-		const plexEvidence = await withIsolatedRuntimePrismaBulkReadClient(app.prisma, (prisma) =>
-			new PlexAuthorityService({
-				prisma,
-				encryptor: app.encryptor,
-				log: request.log,
-			}).readUserSelectedDisplay({
-				userId,
-				selection: {
-					kind: "targets",
-					targets: tmdbIdList.flatMap((tmdbId) => [
-						{ tmdbId, mediaType: "movie" as const },
-						{ tmdbId, mediaType: "series" as const },
-					]),
-				},
-				domains: ["membership", "display", "labels", "collections", "watch", "on-deck"],
-			}),
+		const plexEvidence = await withIsolatedRuntimePrismaBulkReadClient(
+			app.prisma,
+			(prisma) =>
+				new PlexAuthorityService({
+					prisma,
+					encryptor: app.encryptor,
+					log: request.log,
+				}).readUserSelectedDisplay({
+					userId,
+					selection: {
+						kind: "targets",
+						targets: tmdbIdList.flatMap((tmdbId) => [
+							{ tmdbId, mediaType: "movie" as const },
+							{ tmdbId, mediaType: "series" as const },
+						]),
+					},
+					domains: ["membership", "display", "labels", "collections", "watch", "on-deck"],
+				}),
+			{ lease: "phase" },
 		);
 		const evidenceSummary = summarizePlexEvidence(plexEvidence);
 		const displayablePlexEvidence = listDisplayableSelectedPlexEvidence(plexEvidence);

@@ -24,16 +24,19 @@ export async function registerOnDeckRoutes(app: FastifyInstance, _opts: FastifyP
 	app.get("/", async (request, reply) => {
 		const userId = request.currentUser!.id;
 
-		const evidence = await withIsolatedRuntimePrismaBulkReadClient(app.prisma, (prisma) =>
-			new PlexAuthorityService({
-				prisma,
-				encryptor: app.encryptor,
-				log: request.log,
-			}).readUserSelectedDisplay({
-				userId,
-				selection: { kind: "on-deck", limit: 50 },
-				domains: ["membership", "display", "on-deck"],
-			}),
+		const evidence = await withIsolatedRuntimePrismaBulkReadClient(
+			app.prisma,
+			(prisma) =>
+				new PlexAuthorityService({
+					prisma,
+					encryptor: app.encryptor,
+					log: request.log,
+				}).readUserSelectedDisplay({
+					userId,
+					selection: { kind: "on-deck", limit: 50 },
+					domains: ["membership", "display", "on-deck"],
+				}),
+			{ lease: "phase" },
 		);
 		const summary = summarizePlexEvidence(evidence);
 		const displayableEvidence = listDisplayableSelectedPlexEvidence(evidence);

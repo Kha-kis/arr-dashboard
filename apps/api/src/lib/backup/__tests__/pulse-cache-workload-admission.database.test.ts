@@ -1,5 +1,6 @@
 import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
 import { existsSync } from "node:fs";
+import { setTimeout as delay } from "node:timers/promises";
 import Database from "better-sqlite3";
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -17,8 +18,27 @@ import {
 type Boundary = "jellyfin-health" | "plex-library" | "plex-episode" | "tautulli";
 const observer = vi.hoisted(() => ({
 	settled: undefined as ((boundary: Boundary, result: unknown) => Promise<void>) | undefined,
+	phaseSettled: undefined as ((boundary: Boundary | undefined) => Promise<void>) | undefined,
 }));
 const evidenceScope = new AsyncLocalStorage<Boundary>();
+
+// Observe only the admission seam: every real query/transaction still runs on
+// its actual admitted native client and returns its unchanged result.
+vi.mock("../restore-runtime-read-phases.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../restore-runtime-read-phases.js")>();
+	const withRuntimeReadPhases: typeof actual.withRuntimeReadPhases = (admit, operation) =>
+		actual.withRuntimeReadPhases(
+			(read) =>
+				admit(async (client) => {
+					const boundary = evidenceScope.getStore();
+					const result = await read(client);
+					await observer.phaseSettled?.(boundary);
+					return result;
+				}),
+			operation,
+		);
+	return { ...actual, withRuntimeReadPhases };
+});
 
 // Forward every real reader, argument and result. The selected reader's test
 // barrier runs only AFTER its genuine SQL and repository transactions settle.
@@ -94,6 +114,7 @@ function emit(value: unknown) {
 
 afterEach(async () => {
 	observer.settled = undefined;
+	observer.phaseSettled = undefined;
 	vi.unstubAllGlobals();
 	await closeScopedWriteFixtures();
 	if (fixture) {
@@ -121,6 +142,20 @@ function signal() {
 		resolve = done;
 	});
 	return { promise, resolve };
+}
+
+async function bounded<T>(condition: Promise<T>, name: string): Promise<T> {
+	const guard = new AbortController();
+	try {
+		return await Promise.race([
+			condition,
+			delay(1500, undefined, { signal: guard.signal }).then(() => {
+				throw new Error(`Timed out waiting for ${name}`);
+			}),
+		]);
+	} finally {
+		guard.abort();
+	}
 }
 
 async function seedUnavailablePublications(f: ScopedWriteFixture) {
@@ -208,10 +243,10 @@ function expectUnavailable(boundary: Boundary, result: unknown) {
 }
 
 describe("Pulse cache catalogue workload admission", { timeout: 15_000 }, () => {
-	// Each case catches a regression of just its named callback to ordinary
-	// admission, even when all three other readers retain bulk admission.
+	// Each case catches loss of phase/bulk classification for its named reader,
+	// while settled repository callbacks must no longer retain either bulk slot.
 	it.each<Boundary>(["jellyfin-health", "plex-library", "plex-episode", "tautulli"])(
-		"reserves ordinary capacity while two real %s callbacks hold settled evidence",
+		"caps admitted %s read phases and frees their slots while callbacks hold settled evidence",
 		async (boundary) => {
 			const f = await createScopedWriteFixture();
 			fixture = f;
@@ -222,14 +257,19 @@ describe("Pulse cache catalogue workload admission", { timeout: 15_000 }, () => 
 				(candidate) => candidate.name === "collectCacheStaleness",
 			)!;
 			const peerScope = new AsyncResource("synthetic-independent-pulse-probe");
-			const targetReady = signal(),
+			const phasesReady = signal(),
+				releasePhases = signal(),
+				targetReady = signal(),
 				releaseTargets = signal(),
 				releaseProbes = signal();
 			const bulkProbeEntered = signal();
 			const collectors: ReturnType<typeof collector>[] = [];
 			const probes: Promise<unknown>[] = [];
 			let ordinary: Promise<unknown> | undefined;
-			let targetCompletions = 0,
+			let cappedBulk: Promise<unknown> | undefined;
+			let admittedPhases = 0,
+				cappedBulkEntered = false,
+				targetCompletions = 0,
 				bulkProbeReads = 0,
 				providerIo = 0;
 			const queries: Partial<Record<Boundary, number>> = {};
@@ -269,32 +309,26 @@ describe("Pulse cache catalogue workload admission", { timeout: 15_000 }, () => 
 				if (++targetCompletions === 2) targetReady.resolve();
 				await releaseTargets.promise;
 			};
+			observer.phaseSettled = async (reader) => {
+				if (reader !== boundary || admittedPhases >= 2) return;
+				if (++admittedPhases === 2) phasesReady.resolve();
+				await releasePhases.promise;
+			};
 			try {
 				for (let index = 0; index < 2; index++) {
 					collectors.push(f.runtime.runOperation(() => collector(app, OWNER, app.log)));
 				}
-				await Promise.race([
-					targetReady.promise,
-					Promise.all(collectors).then(() => {
-						throw new Error("Collectors completed without both target barriers");
-					}),
-				]);
+				const collectorsDone = Promise.all(collectors);
+				await bounded(
+					Promise.race([
+						phasesReady.promise,
+						collectorsDone.then(() => {
+							throw new Error("Collectors completed without both selected phase barriers");
+						}),
+					]),
+					`${boundary} admitted phase barriers`,
+				);
 				expect(noOpenTransactions()).toBe(true);
-				for (let index = 0; index < 2; index++) {
-					probes.push(
-						peerScope.runInAsyncScope(() =>
-							f.runtime.runOperation(() =>
-								withIsolatedRuntimePrismaBulkReadClient(f.client.prisma, async (reader) => {
-									expect(await reader.serviceInstance.count({ where: { userId: OWNER } })).toBe(3);
-									expect(noOpenTransactions()).toBe(true);
-									bulkProbeReads++;
-									bulkProbeEntered.resolve();
-									await releaseProbes.promise;
-								}),
-							),
-						),
-					);
-				}
 				ordinary = peerScope.runInAsyncScope(() =>
 					f.runtime.runOperation(() =>
 						withIsolatedRuntimePrismaReadClient(f.client.prisma, async (reader) => {
@@ -307,14 +341,57 @@ describe("Pulse cache catalogue workload admission", { timeout: 15_000 }, () => 
 						}),
 					),
 				);
-				const winner = await Promise.race([
-					ordinary.then(() => "ordinary-read"),
-					bulkProbeEntered.promise.then(() => "extra-bulk-probe"),
-					Promise.all(probes).then(() => {
-						throw new Error("Bulk probes completed without their barriers");
-					}),
-				]);
+				await bounded(ordinary, "owned ordinary read during held phases");
+				cappedBulk = peerScope.runInAsyncScope(() =>
+					f.runtime.runOperation(() =>
+						withIsolatedRuntimePrismaReadClient(
+							f.client.prisma,
+							async () => {
+								cappedBulkEntered = true;
+							},
+							{ workload: "bulk-cache", maxWait: 50 },
+						),
+					),
+				);
+				await expect(cappedBulk).rejects.toMatchObject({ statusCode: 503 });
+				expect(cappedBulkEntered).toBe(false);
+				expect(admittedPhases).toBe(2);
+				releasePhases.resolve();
+				await bounded(
+					Promise.race([
+						targetReady.promise,
+						collectorsDone.then(() => {
+							throw new Error("Collectors completed without both settled evidence barriers");
+						}),
+					]),
+					`${boundary} settled evidence barriers`,
+				);
+				expect(noOpenTransactions()).toBe(true);
+				for (let index = 0; index < 2; index++) {
+					probes.push(
+						peerScope.runInAsyncScope(() =>
+							f.runtime.runOperation(() =>
+								withIsolatedRuntimePrismaBulkReadClient(f.client.prisma, async (reader) => {
+									expect(await reader.serviceInstance.count({ where: { userId: OWNER } })).toBe(3);
+									expect(noOpenTransactions()).toBe(true);
+									if (++bulkProbeReads === 2) bulkProbeEntered.resolve();
+									await releaseProbes.promise;
+								}),
+							),
+						),
+					);
+				}
+				await bounded(
+					Promise.race([
+						bulkProbeEntered.promise,
+						Promise.all(probes).then(() => {
+							throw new Error("Bulk probes completed without their barriers");
+						}),
+					]),
+					"both bulk probes before settled callbacks release",
+				);
 				const bulkReadsBeforeRelease = bulkProbeReads;
+				expect(bulkReadsBeforeRelease).toBe(2);
 				expect(noOpenTransactions()).toBe(true);
 				releaseTargets.resolve();
 				releaseProbes.resolve();
@@ -344,7 +421,9 @@ describe("Pulse cache catalogue workload admission", { timeout: 15_000 }, () => 
 				emit({
 					category: "synthetic-pulse-cache-workload-admission",
 					boundary,
-					winner,
+					admittedPhases,
+					ordinaryReadDuringHeldPhases: true,
+					cappedBulkEntered,
 					targetCompletions,
 					bulkReadsBeforeRelease,
 					bulkProbeReads,
@@ -356,12 +435,16 @@ describe("Pulse cache catalogue workload admission", { timeout: 15_000 }, () => 
 					noSqlTransactionHeld: noOpenTransactions(),
 					measuredQaWorkload: false,
 				});
-				expect(winner).toBe("ordinary-read");
-				expect(bulkReadsBeforeRelease).toBe(0);
 			} finally {
+				releasePhases.resolve();
 				releaseTargets.resolve();
 				releaseProbes.resolve();
-				await Promise.allSettled([...collectors, ...probes, ...(ordinary ? [ordinary] : [])]);
+				await Promise.allSettled([
+					...collectors,
+					...probes,
+					...(ordinary ? [ordinary] : []),
+					...(cappedBulk ? [cappedBulk] : []),
+				]);
 				await app.close();
 				peerScope.emitDestroy();
 				emit({

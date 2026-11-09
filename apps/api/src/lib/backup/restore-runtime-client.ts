@@ -15,6 +15,7 @@ import {
 	createRuntimeReplacementPostgresAdapter,
 } from "./restore-runtime-postgres-client.js";
 import { measureRuntimeReadTiming, startRuntimeReadTiming } from "./restore-runtime-read-timing.js";
+import { withRuntimeReadPhases } from "./restore-runtime-read-phases.js";
 import { acquireSqliteRestoreOperationLock } from "./restore-runtime-sqlite.js";
 import { parseSqliteRestoreRuntimeRecord } from "./restore-runtime-sqlite-enrollment.js";
 
@@ -140,7 +141,16 @@ export async function withIsolatedRuntimePrismaReadClient<T>(
 export function withIsolatedRuntimePrismaBulkReadClient<T>(
 	prisma: PrismaClientInstance,
 	operation: (client: PrismaClientInstance) => Promise<T>,
+	options?: Readonly<{ lease: "phase" }>,
 ): Promise<T> {
+	const registration = ordinarySqliteClients.get(prisma);
+	if (options?.lease === "phase" && registration) {
+		if (registration.closed) return Promise.reject(new RestoreRuntimeAdmissionError());
+		return withRuntimeReadPhases(
+			(read) => registration.readClient(read, undefined, "bulk-cache"),
+			operation,
+		);
+	}
 	return withIsolatedRuntimePrismaReadClient(prisma, operation, { workload: "bulk-cache" });
 }
 

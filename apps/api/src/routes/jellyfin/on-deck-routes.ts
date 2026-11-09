@@ -39,6 +39,7 @@ export async function registerOnDeckRoutes(app: FastifyInstance, _opts: FastifyP
 					instances: jellyfinInstances as JellyfinDisplayInstance[],
 				});
 			},
+			{ lease: "phase" },
 		);
 		if (displayEvidence === null) return reply.send({ items: [] });
 

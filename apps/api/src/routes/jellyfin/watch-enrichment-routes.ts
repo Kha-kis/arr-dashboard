@@ -88,6 +88,7 @@ export async function registerWatchEnrichmentRoutes(
 						})
 					: { sources: [], providerStatus: undefined };
 			},
+			{ lease: "phase" },
 		);
 		const sourceStatuses = new Map(
 			displayEvidence.providerStatus?.sources.map((source) => [source.instanceId, source.status]) ??
