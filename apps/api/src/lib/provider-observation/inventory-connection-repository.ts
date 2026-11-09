@@ -28,6 +28,7 @@ export const MAX_CONNECTION_ITEMS = 100_000;
 const ARR_CATALOG_BATCH_SIZE = 1000;
 type NativeReadInput = Parameters<typeof readNativeInventoryPage>[1];
 type InventoryConnectionReadInput = NativeReadInput & { metadataFilter?: "missing-tmdb" };
+type InventoryReadPhase = <T>(operation: (prisma: PrismaClient) => Promise<T>) => Promise<T>;
 
 export type ProviderInventoryReadTiming = {
 	stage: "native-page" | "arr-catalog" | "native-postcheck";
@@ -260,6 +261,7 @@ export async function readProviderInventoryConnections(
 	input: InventoryConnectionReadInput,
 	log: FastifyBaseLogger,
 	observe?: (timing: ProviderInventoryReadTiming) => void,
+	readPhase: InventoryReadPhase = (operation) => operation(prisma),
 ) {
 	async function observeRead<T>(
 		stage: ProviderInventoryReadTiming["stage"],
@@ -285,18 +287,22 @@ export async function readProviderInventoryConnections(
 		}
 	}
 	const now = input.now ?? new Date();
-	const page = await observeRead("native-page", async () =>
-		input.metadataFilter
-			? await readMissingTmdbLibraryPage(prisma, {
-					...input,
-					now,
-					includeAttempt: input.includeAttempt ? "unavailable" : false,
-				})
-			: await readNativeInventoryDisplayPage(prisma, {
-					...input,
-					now,
-					includeAttempt: input.includeAttempt ? "unavailable" : false,
-				}),
+	// Each phase retains its client through all nested transactions/postchecks.
+	// The route may release completed phases without lending an open transaction.
+	const page = await observeRead("native-page", () =>
+		readPhase(async (client) =>
+			input.metadataFilter
+				? await readMissingTmdbLibraryPage(client, {
+						...input,
+						now,
+						includeAttempt: input.includeAttempt ? "unavailable" : false,
+					})
+				: await readNativeInventoryDisplayPage(client, {
+						...input,
+						now,
+						includeAttempt: input.includeAttempt ? "unavailable" : false,
+					}),
+		),
 	);
 	if (page.status !== "available") return page;
 	const parentNativeIds = [
@@ -304,12 +310,14 @@ export async function readProviderInventoryConnections(
 	];
 	const selection =
 		input.domain === "episode" && parentNativeIds.length
-			? await readNativeInventoryDisplayTargets(prisma, {
-					userId: input.userId,
-					instanceId: input.instanceId,
-					now,
-					nativeIds: parentNativeIds,
-				}).catch(() => undefined)
+			? await readPhase((client) =>
+					readNativeInventoryDisplayTargets(client, {
+						userId: input.userId,
+						instanceId: input.instanceId,
+						now,
+						nativeIds: parentNativeIds,
+					}),
+				).catch(() => undefined)
 			: undefined;
 	let parents =
 		selection?.status === "available" && selection.publicationItemCount <= MAX_CONNECTION_ITEMS
@@ -326,64 +334,68 @@ export async function readProviderInventoryConnections(
 	let includeWatchCoverage = false;
 	if (input.domain === "episode") {
 		try {
-			const instance = await prisma.serviceInstance.findFirst({
-				where: { id: input.instanceId, userId: input.userId, enabled: true },
-				select: { service: true },
-			});
-			if (instance?.service === "PLEX" && parents) {
-				const evidence = await new PlexAuthorityService({
-					prisma,
-					log,
-				}).readPositiveEpisodeDisplayEvidence({
-					userId: input.userId,
-					instanceId: input.instanceId,
-					now,
+			await readPhase(async (client) => {
+				const instance = await client.serviceInstance.findFirst({
+					where: { id: input.instanceId, userId: input.userId, enabled: true },
+					select: { service: true },
 				});
-				watch = new Map(
-					projectPlexNativeEpisodeWatchPage({
-						rows: page.rows,
-						parents: parents.rows,
-						evidence,
-						inventoryFreshness: page.freshness,
-						parentFreshness: parents.freshness,
-						inventoryObservedAt: page.observedAt,
-						parentObservedAt: parents.observedAt,
-					}),
-				);
-			} else if (instance?.service === "JELLYFIN" || instance?.service === "EMBY") {
-				includeWatchCoverage = true;
-				watch = new Map(
-					await readNativeEpisodeWatchPage(prisma, {
+				if (instance?.service === "PLEX" && parents) {
+					const evidence = await new PlexAuthorityService({
+						prisma: client,
+						log,
+					}).readPositiveEpisodeDisplayEvidence({
 						userId: input.userId,
 						instanceId: input.instanceId,
-						rows: page.rows,
 						now,
-					}),
-				);
-			}
+					});
+					watch = new Map(
+						projectPlexNativeEpisodeWatchPage({
+							rows: page.rows,
+							parents: parents.rows,
+							evidence,
+							inventoryFreshness: page.freshness,
+							parentFreshness: parents.freshness,
+							inventoryObservedAt: page.observedAt,
+							parentObservedAt: parents.observedAt,
+						}),
+					);
+				} else if (instance?.service === "JELLYFIN" || instance?.service === "EMBY") {
+					includeWatchCoverage = true;
+					watch = new Map(
+						await readNativeEpisodeWatchPage(client, {
+							userId: input.userId,
+							instanceId: input.instanceId,
+							rows: page.rows,
+							now,
+						}),
+					);
+				}
+			});
 		} catch {
 			watch = unknownWatch;
 		}
 	}
 	let arrIndex: Awaited<ReturnType<typeof readOwnedArrCatalog>>;
 	try {
-		arrIndex = await observeRead(
-			"arr-catalog",
-			async () => await readOwnedArrCatalog(prisma, input.userId),
+		arrIndex = await observeRead("arr-catalog", () =>
+			readPhase((client) => readOwnedArrCatalog(client, input.userId)),
 		);
 	} catch {
 		arrIndex = undefined;
 	}
 	if (parents) {
-		const currentParent = await readNativeInventoryDisplayTargets(prisma, {
-			userId: input.userId,
-			instanceId: input.instanceId,
-			now,
-			nativeIds: parentNativeIds,
-			expectedGenerationId: parents.generationId,
-			expectedAuthority: input.expectedAuthority,
-			maxAgeMs: input.maxAgeMs,
-		});
+		const parentGenerationId = parents.generationId;
+		const currentParent = await readPhase((client) =>
+			readNativeInventoryDisplayTargets(client, {
+				userId: input.userId,
+				instanceId: input.instanceId,
+				now,
+				nativeIds: parentNativeIds,
+				expectedGenerationId: parentGenerationId,
+				expectedAuthority: input.expectedAuthority,
+				maxAgeMs: input.maxAgeMs,
+			}),
+		);
 		if (currentParent.status !== "available") {
 			parents = undefined;
 			watch = unknownWatch;
@@ -406,23 +418,25 @@ export async function readProviderInventoryConnections(
 		};
 	});
 	// Do not attach relationships to a native page superseded during the ARR read.
-	const latest = await observeRead(
-		"native-postcheck",
-		async () =>
-			await readNativeInventoryDisplayPage(prisma, {
+	const latest = await observeRead("native-postcheck", () =>
+		readPhase((client) =>
+			readNativeInventoryDisplayPage(client, {
 				...input,
 				now,
 				limit: 1,
 				afterNativeId: undefined,
 				expectedGenerationId: page.generationId,
 			}),
+		),
 	);
 	if (latest.status !== "available") return latest;
 	const watchCoverage: ProviderNativeWatchCoverage | undefined = includeWatchCoverage
-		? await readOwnedNativeWatchCoverage(prisma, {
-				userId: input.userId,
-				instanceId: input.instanceId,
-			}).catch(() => ({ status: "unavailable", reason: "malformed-publication" }) as const)
+		? await readPhase((client) =>
+				readOwnedNativeWatchCoverage(client, {
+					userId: input.userId,
+					instanceId: input.instanceId,
+				}),
+			).catch(() => ({ status: "unavailable", reason: "malformed-publication" }) as const)
 		: undefined;
 	return {
 		...latest,

@@ -107,6 +107,7 @@ describe("owned native inventory route", () => {
 			},
 			expect.objectContaining({ child: expect.any(Function) }),
 			expect.any(Function),
+			expect.any(Function),
 		);
 		expect(res.json()).toMatchObject({
 			itemCount: 24343,
@@ -155,6 +156,7 @@ describe("owned native inventory route", () => {
 				metadataFilter: "missing-tmdb",
 			}),
 			expect.objectContaining({ child: expect.any(Function) }),
+			expect.any(Function),
 			expect.any(Function),
 		);
 		expect(res.json()).toMatchObject({ itemCount: 2, filteredItemCount: 1 });
@@ -268,6 +270,7 @@ describe("owned native inventory route", () => {
 			},
 			expect.objectContaining({ child: expect.any(Function) }),
 			expect.any(Function),
+			expect.any(Function),
 		);
 	});
 });
@@ -328,7 +331,7 @@ describe("inventory read timing", () => {
 		},
 	);
 
-	it("separates admission, guarded repository and release without changing the response", async () => {
+	it("separates initial admission from repository work including completed-phase release", async () => {
 		let clock = 0;
 		vi.spyOn(performance, "now").mockImplementation(() => clock);
 		mocks.withRead.mockImplementation(async (prisma, read) => {
@@ -337,10 +340,12 @@ describe("inventory read timing", () => {
 			clock = 75;
 			return result;
 		});
-		mocks.read.mockImplementation(async () => {
-			clock = 70;
-			return { status: "unavailable", reason: "no-publication" };
-		});
+		mocks.read.mockImplementation(async (_prisma, _input, _log, _observe, readPhase) =>
+			readPhase(async () => {
+				clock = 70;
+				return { status: "unavailable", reason: "no-publication" };
+			}),
+		);
 		const res = await createInjectAuthenticated(app)("GET", path);
 		expect(res.statusCode).toBe(200);
 		expect(res.json()).toEqual({ status: "unavailable", reason: "no-publication" });
@@ -349,8 +354,8 @@ describe("inventory read timing", () => {
 			domain: "episode",
 			outcome: "unavailable",
 			readAdmissionMs: 20,
-			repositoryMs: 50,
-			releaseMs: 5,
+			repositoryMs: 55,
+			releaseMs: 0,
 			postReadMs: 0,
 			totalMs: 75,
 		});
@@ -370,28 +375,66 @@ describe("inventory read timing", () => {
 		);
 	});
 
+	it("includes later phase admission in repository time, not initial admission", async () => {
+		let clock = 0;
+		let phase = 0;
+		vi.spyOn(performance, "now").mockImplementation(() => clock);
+		mocks.withRead.mockImplementation(async (prisma, read) => {
+			clock = ++phase === 1 ? 20 : 70;
+			const result = await read(prisma);
+			clock = phase === 1 ? 40 : 95;
+			return result;
+		});
+		mocks.read.mockImplementation(async (_prisma, _input, _log, _observe, readPhase) => {
+			await readPhase(async () => {
+				clock = 35;
+			});
+			return readPhase(async () => {
+				clock = 90;
+				return { status: "unavailable", reason: "snapshot-changed" };
+			});
+		});
+		const res = await createInjectAuthenticated(app)("GET", path);
+		expect(res.statusCode).toBe(200);
+		expect(res.json()).toEqual({ status: "unavailable", reason: "snapshot-changed" });
+		expect(timingEvent()).toMatchObject({
+			outcome: "unavailable",
+			readAdmissionMs: 20,
+			repositoryMs: 75,
+			releaseMs: 0,
+			postReadMs: 0,
+			totalMs: 95,
+		});
+	});
+
 	it.each([
 		{ phase: "admission", readAdmissionMs: 40, repositoryMs: 0, releaseMs: 0 },
 		{ phase: "repository", readAdmissionMs: 0, repositoryMs: 40, releaseMs: 0 },
-		{ phase: "release", readAdmissionMs: 0, repositoryMs: 0, releaseMs: 40 },
+		{ phase: "release", readAdmissionMs: 0, repositoryMs: 40, releaseMs: 0 },
+		{ phase: "final-release", readAdmissionMs: 0, repositoryMs: 40, releaseMs: 0 },
 	])("preserves a $phase failure without logging private details", async (expected) => {
 		let clock = 0;
 		vi.spyOn(performance, "now").mockImplementation(() => clock);
 		const failure = new Error("synthetic-private-payload-and-credential");
-		mocks.read.mockImplementation(async () => {
-			if (expected.phase === "repository") {
-				clock = 40;
-				throw failure;
-			}
-			return { status: "unavailable", reason: "no-publication" };
+		mocks.read.mockImplementation(async (_prisma, _input, _log, _observe, readPhase) => {
+			if (expected.phase === "final-release") await readPhase(async () => undefined);
+			return readPhase(async () => {
+				if (expected.phase === "repository") {
+					clock = 40;
+					throw failure;
+				}
+				return { status: "unavailable", reason: "no-publication" };
+			});
 		});
+		let phase = 0;
 		mocks.withRead.mockImplementation(async (prisma, read) => {
+			phase++;
 			if (expected.phase === "admission") {
 				clock = 40;
 				throw failure;
 			}
 			const result = await read(prisma);
-			if (expected.phase === "release") {
+			if (expected.phase === "release" || (expected.phase === "final-release" && phase === 2)) {
 				clock = 40;
 				throw failure;
 			}

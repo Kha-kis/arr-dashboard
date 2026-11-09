@@ -1,4 +1,4 @@
-import { AsyncLocalStorage } from "node:async_hooks";
+import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import fastifyCookie from "@fastify/cookie";
 import Database from "better-sqlite3";
@@ -26,10 +26,13 @@ import {
 	beginNativeInventoryAttempt,
 	publishNativeInventoriesInTransaction,
 } from "../../provider-observation/native-inventory.js";
+import { withIsolatedRuntimePrismaReadClient } from "../restore-runtime-client.js";
 import { type RuntimeReadTiming, withRuntimeReadTiming } from "../restore-runtime-read-timing.js";
 
 const OWNER = "synthetic-user";
 const INSTANCE = "synthetic-jellyfin";
+const RADARR = "synthetic-radarr";
+const SONARR = "synthetic-sonarr";
 // A bounded representative fixture, not a high-cardinality timing benchmark.
 const ROWS = 2_000;
 type Trace = {
@@ -37,7 +40,17 @@ type Trace = {
 	cacheRowsRead: number;
 	catalogQueries: number;
 	statementCalls: number;
+	arrRowsRead: number;
+	arrQueries: {
+		rows: number;
+		startedAtMs: number;
+		endedAtMs: number;
+		activeBulkTransactions: number;
+	}[];
+	startedAtMs: number;
+	endedAtMs?: number;
 	runtime?: RuntimeReadTiming;
+	nativeSubphases: { stage: string; outcome: string; elapsedMs: number }[];
 	nativeTiming?: Record<string, unknown>;
 	nativeRuntime?: RuntimeReadTiming;
 	wallMs?: number;
@@ -48,6 +61,33 @@ afterEach(closeScopedWriteFixtures);
 
 async function seed(f: ScopedWriteFixture) {
 	const observedAt = new Date();
+	await f.plain.serviceInstance.createMany({
+		data: [
+			{ id: RADARR, service: "RADARR" as const },
+			{ id: SONARR, service: "SONARR" as const },
+		].map((instance) => ({
+			...instance,
+			userId: OWNER,
+			enabled: true,
+			label: "Synthetic ARR",
+			baseUrl: "http://synthetic.invalid",
+			encryptedApiKey: "synthetic-cipher",
+			encryptionIv: "synthetic-iv",
+		})),
+	});
+	const arrRows = Array.from({ length: ROWS }, (_, index) => ({
+		id: `synthetic-arr-${String(index).padStart(6, "0")}`,
+		instanceId: index < ROWS / 2 ? RADARR : SONARR,
+		arrItemId: (index % (ROWS / 2)) + 1,
+		itemType: index < ROWS / 2 ? ("movie" as const) : ("series" as const),
+		title: "Synthetic ARR item",
+		data: JSON.stringify({
+			remoteIds: index < ROWS / 2 ? { tmdbId: index + 1 } : { tvdbId: index - ROWS / 2 + 1 },
+		}),
+	}));
+	for (let start = 0; start < arrRows.length; start += 500) {
+		await f.plain.libraryCache.createMany({ data: arrRows.slice(start, start + 500) });
+	}
 	const rows: (JellyfinLibraryRow & { mediaType: "movie" })[] = Array.from(
 		{ length: ROWS },
 		(_, index) => ({
@@ -125,11 +165,11 @@ async function seed(f: ScopedWriteFixture) {
 	const attempt = await beginNativeInventoryAttempt(f.plain, {
 		userId: OWNER,
 		instance,
-		domains: ["library"],
+		domains: ["library", "episode"],
 		now: observedAt,
 	});
 	if (attempt.status !== "acquired") throw new Error("Synthetic native attempt not acquired");
-	await f.plain.$transaction((tx) =>
+	const publication = await f.plain.$transaction((tx) =>
 		publishNativeInventoriesInTransaction(tx, {
 			userId: OWNER,
 			authority: attempt.authority,
@@ -138,7 +178,7 @@ async function seed(f: ScopedWriteFixture) {
 			snapshots: [
 				{
 					domain: "library",
-					scopeKeys: ["movies"],
+					scopeKeys: ["movies", "shows"],
 					rows: [
 						{
 							nativeId: "movie-1",
@@ -148,16 +188,52 @@ async function seed(f: ScopedWriteFixture) {
 							seasonNumber: null,
 							episodeNumber: null,
 							title: "Synthetic movie",
+							externalIds: { tmdb: [1] },
+						},
+						{
+							nativeId: "series-1",
+							mediaType: "series",
+							libraryIds: ["shows"],
+							parentNativeId: null,
+							seasonNumber: null,
+							episodeNumber: null,
+							title: "Synthetic series",
+							externalIds: { tvdb: [1] },
+						},
+					],
+				},
+				{
+					domain: "episode",
+					scopeKeys: ["shows"],
+					rows: [
+						{
+							nativeId: "episode-1",
+							mediaType: "episode",
+							libraryIds: ["shows"],
+							parentNativeId: "series-1",
+							seasonNumber: 1,
+							episodeNumber: 1,
+							title: "Synthetic episode",
 						},
 					],
 				},
 			],
 		}),
 	);
+	expect(publication).toMatchObject({
+		status: "published",
+		itemCounts: { library: 2, episode: 1 },
+	});
 }
 
 function observeRealCatalogTransactions(f: ScopedWriteFixture) {
 	const catalogTransactions = new Set<Database.Database>();
+	const bulkIntervals: {
+		routeClass: string;
+		startedAtMs: number;
+		endedAtMs?: number;
+	}[] = [];
+	const openBulkIntervals = new Map<Database.Database, (typeof bulkIntervals)[number]>();
 	let maxCatalogTransactions = 0;
 	let signalOverlap!: () => void;
 	const twoCatalogTransactions = new Promise<void>((resolve) => {
@@ -176,10 +252,25 @@ function observeRealCatalogTransactions(f: ScopedWriteFixture) {
 		for (const method of ["all", "run"] as const) {
 			const invoke = statement[method];
 			Reflect.set(statement, method, function (this: typeof statement, ...args: unknown[]) {
+				const startedAtMs = performance.now();
 				const result = Reflect.apply(invoke, this, args);
+				const endedAtMs = performance.now();
 				const trace = requestScope.getStore();
 				if (trace) {
 					trace.statementCalls++;
+					if (
+						/\blibrary_cache\b/i.test(sql) &&
+						/^\s*SELECT\b/i.test(sql) &&
+						Array.isArray(result)
+					) {
+						trace.arrRowsRead += result.length;
+						trace.arrQueries.push({
+							rows: result.length,
+							startedAtMs,
+							endedAtMs,
+							activeBulkTransactions: catalogTransactions.size,
+						});
+					}
 					if (
 						/\bjellyfin_cache\b/i.test(sql) &&
 						/^\s*SELECT\b/i.test(sql) &&
@@ -188,13 +279,23 @@ function observeRealCatalogTransactions(f: ScopedWriteFixture) {
 						trace.catalogQueries++;
 						trace.cacheRowsRead += result.length;
 						if (result.length > 0 && db.inTransaction) {
+							if (!catalogTransactions.has(db)) {
+								const interval = { routeClass: trace.routeClass, startedAtMs };
+								bulkIntervals.push(interval);
+								openBulkIntervals.set(db, interval);
+							}
 							catalogTransactions.add(db);
 							maxCatalogTransactions = Math.max(maxCatalogTransactions, catalogTransactions.size);
 							if (catalogTransactions.size === 2) signalOverlap();
 						}
 					}
 				}
-				if (/^\s*(?:COMMIT|ROLLBACK)\s*;?\s*$/i.test(sql)) catalogTransactions.delete(db);
+				if (/^\s*(?:COMMIT|ROLLBACK)\s*;?\s*$/i.test(sql)) {
+					catalogTransactions.delete(db);
+					const interval = openBulkIntervals.get(db);
+					if (interval) interval.endedAtMs = endedAtMs;
+					openBulkIntervals.delete(db);
+				}
 				return result;
 			});
 		}
@@ -202,6 +303,7 @@ function observeRealCatalogTransactions(f: ScopedWriteFixture) {
 	});
 	return {
 		twoCatalogTransactions,
+		bulkIntervals,
 		get maxCatalogTransactions() {
 			return maxCatalogTransactions;
 		},
@@ -212,7 +314,7 @@ function observeRealCatalogTransactions(f: ScopedWriteFixture) {
 }
 
 describe("real cached-route fanout composition", { timeout: 30_000 }, () => {
-	it("characterizes four populated cached GETs competing with authenticated native inventory", async () => {
+	it("characterizes four populated cached GETs with two Library and one episode inventory GETs", async () => {
 		const f = await createScopedWriteFixture();
 		await seed(f);
 		const token = "synthetic-fanout-session";
@@ -223,6 +325,9 @@ describe("real cached-route fanout composition", { timeout: 30_000 }, () => {
 				expiresAt: new Date(Date.now() + 3_600_000),
 			},
 		});
+		let onNativeSubphase: ((stage: string) => void) | undefined;
+		// A queued independent request must not inherit the route's expiring ticket.
+		const peerScope = new AsyncResource("synthetic-independent-cached-read");
 		const logger: FastifyBaseLogger = pino(
 			{ level: "info" },
 			{
@@ -230,6 +335,11 @@ describe("real cached-route fanout composition", { timeout: 30_000 }, () => {
 					const record = JSON.parse(line);
 					const trace = requestScope.getStore();
 					if (!trace) return;
+					if (record.category === "provider-inventory-read-subphase") {
+						const { stage, outcome, elapsedMs } = record;
+						trace.nativeSubphases.push({ stage, outcome, elapsedMs });
+						onNativeSubphase?.(stage);
+					}
 					if (record.category === "provider-inventory-read-timing") {
 						const { readAdmissionMs, repositoryMs, releaseMs, postReadMs, totalMs, outcome } =
 							record;
@@ -255,6 +365,7 @@ describe("real cached-route fanout composition", { timeout: 30_000 }, () => {
 		);
 		let providerIo = 0;
 		const inflight: Promise<unknown>[] = [];
+		const releaseHeldReads: (() => void)[] = [];
 		try {
 			app.decorate("prisma", f.client.prisma);
 			app.decorate("restoreRuntime", f.runtime);
@@ -293,9 +404,19 @@ describe("real cached-route fanout composition", { timeout: 30_000 }, () => {
 			const observer = observeRealCatalogTransactions(f);
 			const cookie = `fixture_session=${encodeURIComponent(app.signCookie(token))}`;
 			const nativeUrl = `/library/provider-inventory?instanceId=${INSTANCE}&domain=library`;
+			const episodeUrl = `/library/provider-inventory?instanceId=${INSTANCE}&domain=episode`;
 			const measured = (routeClass: string, url: string) => {
-				const trace: Trace = { routeClass, cacheRowsRead: 0, catalogQueries: 0, statementCalls: 0 };
 				const started = performance.now();
+				const trace: Trace = {
+					routeClass,
+					cacheRowsRead: 0,
+					catalogQueries: 0,
+					statementCalls: 0,
+					arrRowsRead: 0,
+					arrQueries: [],
+					nativeSubphases: [],
+					startedAtMs: started,
+				};
 				const request = requestScope
 					.run(trace, () =>
 						withRuntimeReadTiming(
@@ -309,7 +430,8 @@ describe("real cached-route fanout composition", { timeout: 30_000 }, () => {
 						),
 					)
 					.then((response) => {
-						trace.wallMs = Math.round(performance.now() - started);
+						trace.endedAtMs = performance.now();
+						trace.wallMs = Math.round(trace.endedAtMs - started);
 						return { trace, response };
 					});
 				inflight.push(request);
@@ -319,9 +441,6 @@ describe("real cached-route fanout composition", { timeout: 30_000 }, () => {
 				(await f.runtime.runOperation(() => app.inject({ method: "GET", url: nativeUrl })))
 					.statusCode,
 			).toBe(401);
-			const baselineCpu = process.cpuUsage();
-			const baseline = await measured("bare-native", nativeUrl);
-			const baselineCpuUsed = process.cpuUsage(baselineCpu);
 			const fanoutCpu = process.cpuUsage();
 			const fanout = [
 				measured("on-deck", "/jellyfin/on-deck"),
@@ -338,36 +457,91 @@ describe("real cached-route fanout composition", { timeout: 30_000 }, () => {
 				observer.twoCatalogTransactions.then(() => true),
 				allFanout.then(() => false),
 			]);
-			const composed = await measured("composed-native", nativeUrl);
-			const cached = await allFanout;
+			const primary = [
+				measured("library-primary-one", nativeUrl),
+				measured("library-primary-two", nativeUrl),
+				measured("episode-primary", episodeUrl),
+			];
+			const [primaries, cached] = await Promise.all([Promise.all(primary), allFanout]);
 			const fanoutCpuUsed = process.cpuUsage(fanoutCpu);
+			const overlaps = (left: Trace, right: Trace) =>
+				Math.max(left.startedAtMs, right.startedAtMs) < Math.min(left.endedAtMs!, right.endedAtMs!);
 			const summary = {
 				category: "synthetic-real-route-fanout-characterization",
 				rowsPerPublication: ROWS,
+				ownedArrCatalogRows: ROWS,
 				twoRealCatalogTransactionsObserved: overlapped,
 				maxCatalogTransactions: observer.maxCatalogTransactions,
-				baseline: baseline.trace,
-				composed: composed.trace,
+				bulkIntervals: observer.bulkIntervals,
+				primaries: primaries.map(({ trace, response }) => ({
+					...trace,
+					httpStatus: response.statusCode,
+					availability: response.json().status,
+					arrQueryCount: trace.arrQueries.length,
+					otherPrimaryRequestsOverlapped: primaries
+						.filter((other) => other.trace !== trace && overlaps(trace, other.trace))
+						.map((other) => other.trace.routeClass),
+					cachedRequestsOverlapped: cached
+						.filter((other) => overlaps(trace, other.trace))
+						.map((other) => other.trace.routeClass),
+				})),
 				cached: cached.map(({ trace, response }) => ({
 					...trace,
 					httpStatus: response.statusCode,
 					availability: response.json().providerStatus?.availability ?? null,
 				})),
-				cpuMicroseconds: { baseline: baselineCpuUsed, fanoutIncludingNative: fanoutCpuUsed },
+				cpuMicroseconds: { fanoutIncludingNative: fanoutCpuUsed },
 				inclusiveRuntimeSpansOverlap: true,
 				providerIo,
 				qaHolderAttribution: "UNKNOWN",
 			};
 			process.stdout.write(JSON.stringify(summary) + "\n");
-			for (const result of [baseline, composed]) {
+			for (const result of primaries) {
 				expect(result.response.statusCode).toBe(200);
 				expect(result.response.json()).toMatchObject({
 					status: "available",
-					itemCount: 1,
+					freshness: "current",
 					complete: true,
-					rows: [{ nativeId: "movie-1" }],
+				});
+				expect(result.trace.arrRowsRead).toBe(ROWS);
+				expect(result.trace.arrQueries.length).toBeGreaterThan(0);
+				expect(result.trace.nativeTiming).toMatchObject({ outcome: "available" });
+				expect(
+					result.trace.nativeSubphases.map(({ stage, outcome }) => ({ stage, outcome })),
+				).toEqual([
+					{ stage: "native-page", outcome: "returned" },
+					{ stage: "arr-catalog", outcome: "returned" },
+					{ stage: "native-postcheck", outcome: "returned" },
+				]);
+			}
+			for (const result of primaries.slice(0, 2)) {
+				expect(result.response.json()).toMatchObject({
+					itemCount: 2,
+					rows: [
+						{
+							nativeId: "movie-1",
+							connection: { status: "matched", arrItems: [{ instanceId: RADARR, arrItemId: 1 }] },
+						},
+						{
+							nativeId: "series-1",
+							connection: { status: "matched", arrItems: [{ instanceId: SONARR, arrItemId: 1 }] },
+						},
+					],
 				});
 			}
+			expect(primaries[2]!.response.json()).toMatchObject({
+				itemCount: 1,
+				rows: [
+					{
+						nativeId: "episode-1",
+						parentNativeId: "series-1",
+						seasonNumber: 1,
+						episodeNumber: 1,
+						connection: { status: "matched", arrItems: [{ instanceId: SONARR, arrItemId: 1 }] },
+						watch: { state: "unknown", valueSemantics: "unknown" },
+					},
+				],
+			});
 			for (const { trace, response } of cached) {
 				expect(response.statusCode).toBe(200);
 				expect(response.json().providerStatus).toMatchObject({
@@ -396,9 +570,57 @@ describe("real cached-route fanout composition", { timeout: 30_000 }, () => {
 			expect(observer.activeCatalogTransactions).toBe(0);
 			expect(providerIo).toBe(0);
 			expect(f.losses).toEqual([]);
+
+			// Separate deterministic regression, NOT a measured QA workload: reserve
+			// three idle callbacks so the real route must lend its finished phase's
+			// fourth lane to a peer. No transaction or SQL statement is held open.
+			const entered: Promise<void>[] = [];
+			for (const workload of ["bulk-cache", "bulk-cache", undefined] as const) {
+				let markEntered!: () => void;
+				entered.push(new Promise<void>((resolve) => (markEntered = resolve)));
+				const released = new Promise<void>((resolve) => releaseHeldReads.push(resolve));
+				const held = f.runtime.runOperation(() =>
+					withIsolatedRuntimePrismaReadClient(
+						f.client.prisma,
+						async () => {
+							markEntered();
+							await released;
+						},
+						{ workload },
+					),
+				);
+				inflight.push(held);
+			}
+			await Promise.all(entered);
+			const ordering: string[] = [];
+			let peerRead: Promise<unknown> | undefined;
+			onNativeSubphase = (stage) => {
+				ordering.push(stage);
+				if (stage !== "native-page" || peerRead) return;
+				peerRead = peerScope.runInAsyncScope(() =>
+					f.runtime.runOperation(() =>
+						withIsolatedRuntimePrismaReadClient(f.client.prisma, async (prisma) => {
+							const owner = await prisma.user.findUnique({ where: { id: OWNER } });
+							expect(owner?.id).toBe(OWNER);
+							ordering.push("ordinary-peer");
+						}),
+					),
+				);
+				inflight.push(peerRead);
+			};
+			const fairness = await measured("phase-fairness-regression", nativeUrl);
+			onNativeSubphase = undefined;
+			expect(fairness.response.statusCode).toBe(200);
+			expect(fairness.response.json()).toMatchObject({ status: "available", complete: true });
+			expect(peerRead).toBeDefined();
+			await peerRead;
+			expect(ordering.indexOf("ordinary-peer")).toBeGreaterThan(-1);
+			expect(ordering.indexOf("ordinary-peer")).toBeLessThan(ordering.indexOf("native-postcheck"));
 		} finally {
+			for (const release of releaseHeldReads) release();
 			await Promise.allSettled(inflight);
 			await app.close();
+			peerScope.emitDestroy();
 			vi.restoreAllMocks();
 		}
 	});

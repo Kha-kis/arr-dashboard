@@ -9,7 +9,7 @@
 import type { WatchEnrichmentResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { withIsolatedRuntimePrismaReadClient } from "../../lib/backup/restore-runtime-client.js";
+import { withIsolatedRuntimePrismaBulkReadClient } from "../../lib/backup/restore-runtime-client.js";
 import {
 	listDisplayableSelectedPlexEvidence,
 	PlexAuthorityService,
@@ -79,7 +79,7 @@ export async function registerWatchEnrichmentRoutes(
 
 		const tmdbIdList = [...new Set(tmdbIds)];
 
-		const plexEvidence = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		const plexEvidence = await withIsolatedRuntimePrismaBulkReadClient(app.prisma, (prisma) =>
 			new PlexAuthorityService({
 				prisma,
 				encryptor: app.encryptor,

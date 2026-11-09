@@ -21,41 +21,44 @@ export const registerProviderInventoryRoutes: FastifyPluginCallback = (app, _opt
 			let result: Awaited<ReturnType<typeof readProviderInventoryConnections>>;
 			try {
 				result = await withRuntimeReadTiming(
-					() =>
-						withIsolatedRuntimePrismaReadClient(app.prisma, async (prisma) => {
-							admittedAt = performance.now();
-							try {
-								return await readProviderInventoryConnections(
-									prisma,
-									{
-										...query,
-										userId: request.currentUser!.id,
-										includeAttempt: true,
-									},
-									request.log,
-									(timing) => {
-										try {
-											// Explicit projection and unbound logger: no inherited user ID,
-											// request arguments, rows or errors enter diagnostic records.
-											app.log.info(
-												{
-													category: "provider-inventory-read-subphase",
-													domain: query.domain,
-													stage: timing.stage,
-													outcome: timing.outcome,
-													elapsedMs: timing.elapsedMs,
-												},
-												"Provider inventory read subphase",
-											);
-										} catch {
-											// Diagnostic failure cannot fail an otherwise valid read.
-										}
-									},
-								);
-							} finally {
-								repositoryEndedAt = performance.now();
-							}
-						}),
+					async () => {
+						try {
+							return await readProviderInventoryConnections(
+								app.prisma,
+								{
+									...query,
+									userId: request.currentUser!.id,
+									includeAttempt: true,
+								},
+								request.log,
+								(timing) => {
+									try {
+										// Explicit projection and unbound logger: no inherited user ID,
+										// request arguments, rows or errors enter diagnostic records.
+										app.log.info(
+											{
+												category: "provider-inventory-read-subphase",
+												domain: query.domain,
+												stage: timing.stage,
+												outcome: timing.outcome,
+												elapsedMs: timing.elapsedMs,
+											},
+											"Provider inventory read subphase",
+										);
+									} catch {
+										// Diagnostic failure cannot fail an otherwise valid read.
+									}
+								},
+								(operation) =>
+									withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) => {
+										admittedAt ??= performance.now();
+										return operation(prisma);
+									}),
+							);
+						} finally {
+							repositoryEndedAt = performance.now();
+						}
+					},
 					(stages) => {
 						app.log.info(
 							{
@@ -90,7 +93,8 @@ export const registerProviderInventoryRoutes: FastifyPluginCallback = (app, _opt
 		} finally {
 			const endedAt = performance.now();
 			try {
-				// Admission includes guarded-client setup/wait; post-read excludes
+				// Admission covers first-phase setup/wait; repository includes later
+				// phase waits. Each phase is released before the next. Post-read excludes
 				// socket delivery. Use the unbound app logger: request.log inherits
 				// the authenticated user ID. Never log query arguments, rows or errors.
 				app.log.info(

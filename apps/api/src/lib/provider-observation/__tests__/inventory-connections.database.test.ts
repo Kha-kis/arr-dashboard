@@ -934,6 +934,75 @@ describe("owned inventory connections on populated SQLite", () => {
 			],
 		});
 	});
+	it("uses only the supplied phase client while preserving owned inventory and ARR matches", async () => {
+		const unleased = new Proxy(prisma, {
+			get() {
+				throw new Error("Database access outside an inventory read phase");
+			},
+		});
+		const page = await readProviderInventoryConnections(
+			unleased,
+			{ userId: "owner", instanceId: "plex", domain: "library", now },
+			pino({ level: "silent" }),
+			undefined,
+			(operation) => operation(prisma),
+		);
+		expect(page).toMatchObject({
+			status: "available",
+			itemCount: 2,
+			rows: [
+				{
+					nativeId: "mapped",
+					connection: { status: "matched", arrItems: [{ instanceId: "radarr", arrItemId: 10 }] },
+				},
+				{ nativeId: "unmapped", connection: { status: "unknown" } },
+			],
+		});
+	});
+	it("preserves initial phase refusal without attempting later reads", async () => {
+		const refusal = new Error("Synthetic read phase unavailable");
+		let calls = 0;
+		await expect(
+			readProviderInventoryConnections(
+				prisma,
+				{ userId: "owner", instanceId: "plex", domain: "library", now },
+				pino({ level: "silent" }),
+				undefined,
+				async () => {
+					calls++;
+					throw refusal;
+				},
+			),
+		).rejects.toBe(refusal);
+		expect(calls).toBe(1);
+	});
+	it("keeps native rows but marks ARR relationships unknown when that phase is refused", async () => {
+		let calls = 0;
+		const page = await readProviderInventoryConnections(
+			prisma,
+			{ userId: "owner", instanceId: "plex", domain: "library", now },
+			pino({ level: "silent" }),
+			undefined,
+			async (operation) => {
+				if (++calls === 2) throw new Error("Synthetic ARR phase unavailable");
+				return operation(prisma);
+			},
+		);
+		expect(page).toMatchObject({
+			status: "available",
+			itemCount: 2,
+			rows: [
+				{
+					nativeId: "mapped",
+					connection: { status: "unknown", reason: "arr-catalog-unavailable", arrItems: [] },
+				},
+				{
+					nativeId: "unmapped",
+					connection: { status: "unknown", reason: "arr-catalog-unavailable", arrItems: [] },
+				},
+			],
+		});
+	});
 	it.each([false, true])(
 		"observes only generic native, catalogue and postcheck timing (observer throws=%s)",
 		async (throws) => {
