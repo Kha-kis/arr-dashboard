@@ -380,7 +380,13 @@ export function createRuntimePrismaClient(
 			try {
 				if (registration.closed) throw new RestoreRuntimeAdmissionError();
 				const remaining = Math.floor(maxWait - (performance.now() - began));
-				if (remaining <= 0) throw new RestoreRuntimeAdmissionError();
+				if (remaining <= 0) {
+					// The lane was acquired, but no native start or callback ran.
+					// Publish the exact-object proof only after finally settles it.
+					const error = new RestoreRuntimeAdmissionError();
+					startRefusal = error;
+					throw error;
+				}
 				// Close lifetime is already reserved; ticket, owner and native fences
 				// remain unchanged, including accepted work first publishing in drain.
 				publication ??= createGuardedPrismaClient(

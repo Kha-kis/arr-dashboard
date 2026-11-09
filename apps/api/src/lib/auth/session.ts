@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from "fastify";
 import type { ApiEnv } from "../../config/env.js";
 import type { Prisma, PrismaClient } from "../../lib/prisma.js";
@@ -7,6 +8,7 @@ import {
 	withRestoreRuntimeOperation,
 } from "../backup/restore-runtime-admission.js";
 import {
+	isRetryableSqlitePublicationStartRefusal,
 	withIsolatedRuntimePrismaReadClient,
 	withIsolatedRuntimePrismaTransaction,
 } from "../backup/restore-runtime-client.js";
@@ -107,19 +109,29 @@ export class SessionService {
 
 		// Do not borrow a connection held by an unrelated interactive transaction.
 		// The token is returned only after this short guarded publication commits.
-		await withSqliteTransactionWriteIntent(() =>
-			withIsolatedRuntimePrismaTransaction(this.prisma, (tx) =>
-				tx.session.create({
-					data: {
-						id: hashedToken,
-						userId,
-						expiresAt,
-						userAgent: metadata?.userAgent,
-						ipAddress: metadata?.ipAddress,
-					},
-				}),
-			),
-		);
+		const publish = () =>
+			withSqliteTransactionWriteIntent(() =>
+				withIsolatedRuntimePrismaTransaction(this.prisma, (tx) =>
+					tx.session.create({
+						data: {
+							id: hashedToken,
+							userId,
+							expiresAt,
+							userAgent: metadata?.userAgent,
+							ipAddress: metadata?.ipAddress,
+						},
+					}),
+				),
+			);
+		try {
+			await publish();
+		} catch (error) {
+			if (!isRetryableSqlitePublicationStartRefusal(error)) throw error;
+			// Only a physically settled start refusal proves replay is safe.
+			// Reacquire every fence once, with the same token and expiry.
+			await delay(25);
+			await publish();
+		}
 
 		return { token, expiresAt };
 	}
