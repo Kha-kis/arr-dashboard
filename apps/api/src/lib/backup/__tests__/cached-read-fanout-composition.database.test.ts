@@ -9,6 +9,7 @@ import type { ApiEnv } from "../../../config/env.js";
 import { registerOnDeckRoutes } from "../../../routes/jellyfin/on-deck-routes.js";
 import { registerRecentlyAddedRoutes } from "../../../routes/jellyfin/recently-added-routes.js";
 import { registerWatchEnrichmentRoutes } from "../../../routes/jellyfin/watch-enrichment-routes.js";
+import { registerImageProxyRoutes } from "../../../routes/library/image-proxy-routes.js";
 import { registerProviderInventoryRoutes } from "../../../routes/library/provider-inventory-routes.js";
 import { registerSessionValidationHook } from "../../../server.js";
 import {
@@ -35,12 +36,18 @@ const RADARR = "synthetic-radarr";
 const SONARR = "synthetic-sonarr";
 // A bounded representative fixture, not a high-cardinality timing benchmark.
 const ROWS = 2_000;
+const POSTERS = 55;
+// Valid 2x2 JPEG, generated from a synthetic blue raster. Each delivery gets a
+// fresh buffer and Response; no provider client, socket or file is involved.
+const POSTER_JPEG =
+	"/9j/4AAQSkZJRgABAgAAAQABAAD//gAQTGF2YzYwLjMxLjEwMgD/2wBDAAgEBAQEBAUFBQUFBQYGBgYGBgYGBgYGBgYHBwcICAgHBwcGBgcHCAgICAkJCQgICAgJCQoKCgwMCwsODg4RERT/xABMAAEBAAAAAAAAAAAAAAAAAAAABwEBAQAAAAAAAAAAAAAAAAAABQcQAQAAAAAAAAAAAAAAAAAAAAARAQAAAAAAAAAAAAAAAAAAAAD/wAARCAACAAIDASIAAhEAAxEA/9oADAMBAAIRAxEAPwCOAL+Lf//Z";
 type Trace = {
 	routeClass: string;
 	cacheRowsRead: number;
 	catalogQueries: number;
 	statementCalls: number;
 	arrRowsRead: number;
+	ownedEnabledPosterRows: number;
 	arrQueries: {
 		rows: number;
 		startedAtMs: number;
@@ -227,6 +234,7 @@ async function seed(f: ScopedWriteFixture) {
 }
 
 function observeRealCatalogTransactions(f: ScopedWriteFixture) {
+	let sessionMetadataWrites = 0;
 	const catalogTransactions = new Set<Database.Database>();
 	const bulkIntervals: {
 		routeClass: string;
@@ -249,6 +257,15 @@ function observeRealCatalogTransactions(f: ScopedWriteFixture) {
 		const statement = prepare.call(this, sql);
 		if (this.name !== f.path || this === f.writer) return statement;
 		const db = this;
+		let boundValues: unknown[] = [];
+		if (/\blibrary_cache\b/i.test(sql) && /^\s*SELECT\b/i.test(sql)) {
+			const bind = statement.bind;
+			Reflect.set(statement, "bind", function (this: typeof statement, ...args: unknown[]) {
+				const result = Reflect.apply(bind, this, args);
+				boundValues = args.flat();
+				return result;
+			});
+		}
 		for (const method of ["all", "run"] as const) {
 			const invoke = statement[method];
 			Reflect.set(statement, method, function (this: typeof statement, ...args: unknown[]) {
@@ -256,6 +273,8 @@ function observeRealCatalogTransactions(f: ScopedWriteFixture) {
 				const result = Reflect.apply(invoke, this, args);
 				const endedAtMs = performance.now();
 				const trace = requestScope.getStore();
+				const unquotedSql = sql.replace(/["`]/g, "");
+				if (/^\s*UPDATE\s+(?:main\.)?sessions\s/i.test(unquotedSql)) sessionMetadataWrites++;
 				if (trace) {
 					trace.statementCalls++;
 					if (
@@ -264,6 +283,18 @@ function observeRealCatalogTransactions(f: ScopedWriteFixture) {
 						Array.isArray(result)
 					) {
 						trace.arrRowsRead += result.length;
+						// Observe the real compiled lookup and bound values, without
+						// replacing Prisma or altering a statement's result or lifetime.
+						if (
+							trace.routeClass === "poster" &&
+							/\bServiceInstance\b/.test(sql) &&
+							["userId", "enabled", "service"].every((column) =>
+								new RegExp(`\\b${column}\\s*=\\s*\\?`).test(unquotedSql),
+							) &&
+							[OWNER, RADARR, "RADARR", 1].every((value) => boundValues.includes(value))
+						) {
+							trace.ownedEnabledPosterRows += result.length;
+						}
 						trace.arrQueries.push({
 							rows: result.length,
 							startedAtMs,
@@ -302,6 +333,9 @@ function observeRealCatalogTransactions(f: ScopedWriteFixture) {
 		return statement;
 	});
 	return {
+		get sessionMetadataWrites() {
+			return sessionMetadataWrites;
+		},
 		twoCatalogTransactions,
 		bulkIntervals,
 		get maxCatalogTransactions() {
@@ -364,6 +398,9 @@ describe("real cached-route fanout composition", { timeout: 30_000 }, () => {
 			app.log,
 		);
 		let providerIo = 0;
+		let syntheticPosterDeliveries = 0;
+		const deliveredPosterIds = new Set<number>();
+		let observer: ReturnType<typeof observeRealCatalogTransactions> | undefined;
 		const inflight: Promise<unknown>[] = [];
 		const releaseHeldReads: (() => void)[] = [];
 		try {
@@ -374,6 +411,39 @@ describe("real cached-route fanout composition", { timeout: 30_000 }, () => {
 				"arrClientFactory",
 				new Proxy({} as FastifyInstance["arrClientFactory"], {
 					get(target, property, receiver) {
+						if (property === "rawRequest") {
+							return async (
+								instance: {
+									id: string;
+									userId: string;
+									service: string;
+									enabled: boolean;
+									baseUrl: string;
+								},
+								path: string,
+								options: unknown,
+							) => {
+								expect(instance).toMatchObject({
+									id: RADARR,
+									userId: OWNER,
+									service: "RADARR",
+									enabled: true,
+									baseUrl: "http://synthetic.invalid",
+								});
+								expect(options).toEqual({ method: "GET", timeout: 5000, redirect: "error" });
+								const match = /^\/MediaCover\/([1-9]\d*)\/poster\.jpg$/.exec(path);
+								expect(match).not.toBeNull();
+								const itemId = Number(match?.[1]);
+								expect(itemId).toBeGreaterThanOrEqual(1);
+								expect(itemId).toBeLessThanOrEqual(POSTERS);
+								expect(deliveredPosterIds.has(itemId)).toBe(false);
+								deliveredPosterIds.add(itemId);
+								syntheticPosterDeliveries++;
+								return new Response(Buffer.from(POSTER_JPEG, "base64"), {
+									headers: { "content-type": "image/jpeg" },
+								});
+							};
+						}
 						if (typeof property === "string" && property.startsWith("create")) {
 							return () => {
 								providerIo++;
@@ -397,11 +467,12 @@ describe("real cached-route fanout composition", { timeout: 30_000 }, () => {
 			app.addHook("preClose", async () => sessions.closeValidationAdmission());
 			app.addHook("onClose", async () => sessions.drainValidations());
 			await app.register(registerProviderInventoryRoutes);
+			await app.register(registerImageProxyRoutes);
 			await app.register(registerOnDeckRoutes, { prefix: "/jellyfin/on-deck" });
 			await app.register(registerRecentlyAddedRoutes, { prefix: "/jellyfin/recently-added" });
 			await app.register(registerWatchEnrichmentRoutes, { prefix: "/jellyfin/watch-enrichment" });
 			await app.ready();
-			const observer = observeRealCatalogTransactions(f);
+			observer = observeRealCatalogTransactions(f);
 			const cookie = `fixture_session=${encodeURIComponent(app.signCookie(token))}`;
 			const nativeUrl = `/library/provider-inventory?instanceId=${INSTANCE}&domain=library`;
 			const episodeUrl = `/library/provider-inventory?instanceId=${INSTANCE}&domain=episode`;
@@ -413,6 +484,7 @@ describe("real cached-route fanout composition", { timeout: 30_000 }, () => {
 					catalogQueries: 0,
 					statementCalls: 0,
 					arrRowsRead: 0,
+					ownedEnabledPosterRows: 0,
 					arrQueries: [],
 					nativeSubphases: [],
 					startedAtMs: started,
@@ -571,6 +643,141 @@ describe("real cached-route fanout composition", { timeout: 30_000 }, () => {
 			expect(providerIo).toBe(0);
 			expect(f.losses).toEqual([]);
 
+			// Separate unheld measurement: keep the seven-request baseline above,
+			// then launch every request below before awaiting any route completion.
+			// Regression mutations: bypassing the real owned/enabled poster lookup
+			// or returning failed/blank primary inventories must fail these checks.
+			const burstStartedAtMs = performance.now();
+			const burstCpu = process.cpuUsage();
+			const burstCached = [
+				measured("on-deck", "/jellyfin/on-deck"),
+				measured("recently-added", "/jellyfin/recently-added?limit=20"),
+				measured("watch-enrichment", "/jellyfin/watch-enrichment?tmdbIds=1&types=movie"),
+				measured(
+					"watch-enrichment-second-batch",
+					"/jellyfin/watch-enrichment?tmdbIds=2&types=movie",
+				),
+			];
+			const burstPrimary = [
+				measured("library-primary-one", nativeUrl),
+				measured("library-primary-two", nativeUrl),
+				measured("episode-primary", episodeUrl),
+			];
+			const burstPosters = Array.from({ length: POSTERS }, (_, index) =>
+				measured("poster", `/library/poster/${RADARR}/movie/${index + 1}`),
+			);
+			const [posterCached, posterPrimaries, posters] = await Promise.all([
+				Promise.all(burstCached),
+				Promise.all(burstPrimary),
+				Promise.all(burstPosters),
+			]);
+			const burstCpuUsed = process.cpuUsage(burstCpu);
+			const burstWallMs = performance.now() - burstStartedAtMs;
+			const classSummary = (results: typeof posters) => ({
+				count: results.length,
+				statuses: results.reduce<Record<string, number>>((counts, { response }) => {
+					counts[response.statusCode] = (counts[response.statusCode] ?? 0) + 1;
+					return counts;
+				}, {}),
+				requests: results.map(({ trace, response }) => ({
+					...trace,
+					httpStatus: response.statusCode,
+				})),
+			});
+			process.stdout.write(
+				JSON.stringify({
+					category: "synthetic-authenticated-poster-fanout-characterization",
+					rowsPerPublication: ROWS,
+					ownedArrCatalogRows: ROWS,
+					wallMs: burstWallMs,
+					cpuMicroseconds: burstCpuUsed,
+					ancillary: classSummary(posterCached),
+					primary: classSummary(posterPrimaries),
+					posters: classSummary(posters),
+					syntheticPosterDeliveries,
+					providerIo,
+					inclusiveRuntimeSpansOverlap: true,
+					qaHolderAttribution: "UNKNOWN",
+				}) + "\n",
+			);
+			for (const { trace, response } of posterPrimaries) {
+				expect(response.statusCode).toBe(200);
+				expect(response.json()).toMatchObject({
+					status: "available",
+					freshness: "current",
+					complete: true,
+				});
+				expect(trace.arrRowsRead).toBe(ROWS);
+				expect(trace.arrQueries.length).toBeGreaterThan(0);
+				expect(trace.nativeTiming).toMatchObject({ outcome: "available" });
+				expect(trace.nativeSubphases.map(({ stage, outcome }) => ({ stage, outcome }))).toEqual([
+					{ stage: "native-page", outcome: "returned" },
+					{ stage: "arr-catalog", outcome: "returned" },
+					{ stage: "native-postcheck", outcome: "returned" },
+				]);
+			}
+			for (const { response } of posterPrimaries.slice(0, 2)) {
+				expect(response.json()).toMatchObject({
+					itemCount: 2,
+					rows: [
+						{
+							nativeId: "movie-1",
+							connection: { status: "matched", arrItems: [{ instanceId: RADARR, arrItemId: 1 }] },
+						},
+						{
+							nativeId: "series-1",
+							connection: { status: "matched", arrItems: [{ instanceId: SONARR, arrItemId: 1 }] },
+						},
+					],
+				});
+			}
+			expect(posterPrimaries[2]!.response.json()).toMatchObject({
+				itemCount: 1,
+				rows: [
+					{
+						nativeId: "episode-1",
+						parentNativeId: "series-1",
+						seasonNumber: 1,
+						episodeNumber: 1,
+						connection: { status: "matched", arrItems: [{ instanceId: SONARR, arrItemId: 1 }] },
+						watch: { state: "unknown", valueSemantics: "unknown" },
+					},
+				],
+			});
+			for (const { trace, response } of posterCached) {
+				expect(response.statusCode).toBe(200);
+				expect(response.json().providerStatus).toMatchObject({
+					availability: "current",
+					sources: [{ instanceId: INSTANCE, status: { evidence: "complete" } }],
+				});
+				expect(trace.cacheRowsRead).toBeGreaterThanOrEqual(ROWS);
+			}
+			expect(posterCached[0]!.response.json().items).toHaveLength(50);
+			expect(posterCached[1]!.response.json().items).toHaveLength(20);
+			for (const [index, key, nativeId] of [
+				[2, "movie:1", "movie-1"],
+				[3, "movie:2", "movie-2"],
+			] as const) {
+				expect(posterCached[index]!.response.json().items[key]).toMatchObject({
+					instanceId: INSTANCE,
+					watchCount: null,
+					watchCountSemantics: "unknown",
+					jellyfinId: nativeId,
+				});
+			}
+			for (const { trace, response } of posters) {
+				expect(response.statusCode).toBe(200);
+				expect(response.headers["content-type"]).toBe("image/jpeg");
+				expect(response.rawPayload).toEqual(Buffer.from(POSTER_JPEG, "base64"));
+				expect(trace.arrRowsRead).toBe(1);
+				expect(trace.ownedEnabledPosterRows).toBe(1);
+				expect(trace.runtime?.guard.count).toBeGreaterThan(0);
+			}
+			expect(syntheticPosterDeliveries).toBe(POSTERS);
+			expect(observer.activeCatalogTransactions).toBe(0);
+			expect(providerIo).toBe(0);
+			expect(f.losses).toEqual([]);
+
 			// Separate deterministic regression, NOT a measured QA workload: reserve
 			// three idle callbacks so the real route must lend its finished phase's
 			// fourth lane to a peer. No transaction or SQL statement is held open.
@@ -620,6 +827,14 @@ describe("real cached-route fanout composition", { timeout: 30_000 }, () => {
 			for (const release of releaseHeldReads) release();
 			await Promise.allSettled(inflight);
 			await app.close();
+			process.stdout.write(
+				JSON.stringify({
+					category: "synthetic-authenticated-fanout-session-drain",
+					sessionValidationDrained: true,
+					sessionMetadataWrites: observer?.sessionMetadataWrites,
+					syntheticPosterDeliveries,
+				}) + "\n",
+			);
 			peerScope.emitDestroy();
 			vi.restoreAllMocks();
 		}

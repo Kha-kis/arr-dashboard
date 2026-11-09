@@ -8,7 +8,7 @@
 import type { PlexRecentlyAddedResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { withIsolatedRuntimePrismaReadClient } from "../../lib/backup/restore-runtime-client.js";
+import { withIsolatedRuntimePrismaBulkReadClient } from "../../lib/backup/restore-runtime-client.js";
 import {
 	listDisplayableSelectedPlexEvidence,
 	PlexAuthorityService,
@@ -41,7 +41,7 @@ export async function registerRecentlyAddedRoutes(
 		const { limit } = validateRequest(recentlyAddedQuery, request.query);
 		const userId = request.currentUser!.id;
 
-		const evidence = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		const evidence = await withIsolatedRuntimePrismaBulkReadClient(app.prisma, (prisma) =>
 			new PlexAuthorityService({
 				prisma,
 				encryptor: app.encryptor,

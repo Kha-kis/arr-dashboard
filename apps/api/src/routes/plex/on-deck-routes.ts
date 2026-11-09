@@ -7,7 +7,7 @@
 
 import type { PlexOnDeckResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
-import { withIsolatedRuntimePrismaReadClient } from "../../lib/backup/restore-runtime-client.js";
+import { withIsolatedRuntimePrismaBulkReadClient } from "../../lib/backup/restore-runtime-client.js";
 import {
 	listDisplayableSelectedPlexEvidence,
 	PlexAuthorityService,
@@ -24,7 +24,7 @@ export async function registerOnDeckRoutes(app: FastifyInstance, _opts: FastifyP
 	app.get("/", async (request, reply) => {
 		const userId = request.currentUser!.id;
 
-		const evidence = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		const evidence = await withIsolatedRuntimePrismaBulkReadClient(app.prisma, (prisma) =>
 			new PlexAuthorityService({
 				prisma,
 				encryptor: app.encryptor,
