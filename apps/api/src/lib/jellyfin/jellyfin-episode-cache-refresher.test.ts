@@ -22,6 +22,7 @@ import {
 	logJellyfinEpisodePrePageFailure,
 	refreshOwnedJellyfinEpisodeCache,
 } from "./jellyfin-episode-cache-refresher.js";
+import * as generationMetadata from "./jellyfin-generation-metadata.js";
 import {
 	encodeJellyfinLibraryGenerationMetadata,
 	fingerprintJellyfinLibraryRows,
@@ -318,6 +319,62 @@ function ownedFixture(
 }
 
 describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
+	it.each([
+		["JELLYFIN", false],
+		["JELLYFIN", true],
+		["EMBY", false],
+		["EMBY", true],
+	] as const)(
+		"validates parent content once for a successful %s page (v3: %s)",
+		async (service, v3) => {
+			const state = ownedFixture(service, { v3 });
+			configureDurableRun(state);
+			const fingerprint = vi.spyOn(generationMetadata, "fingerprintJellyfinLibraryRows");
+			try {
+				const result = await refreshOwnedJellyfinEpisodeCache({
+					prisma: state.prisma,
+					encryptor: { decrypt: vi.fn() },
+					instance: state.instance,
+					log,
+				});
+				expect(result).toMatchObject({ errors: 0, progressed: true, complete: false });
+				expect(durable.run).toMatchObject({ state: "running", completedUnits: 1 });
+				expect(fingerprint).toHaveBeenCalledTimes(1);
+			} finally {
+				fingerprint.mockRestore();
+			}
+		},
+	);
+
+	it.each(["content", "users", "collections", "rating", "generation"] as const)(
+		"refuses invalid parent %s before collecting or staging a page",
+		async (invalid) => {
+			const state = ownedFixture("JELLYFIN", { v3: true });
+			const client = configureDurableRun(state);
+			if (invalid === "content") state.parentRow.title = "Corrupted parent";
+			if (invalid === "users") state.parentRow.watchedByUsers = "{}";
+			if (invalid === "collections") state.parentRow.collections = "{}";
+			if (invalid === "rating")
+				Object.assign(state.parentRow, { userRating: Number.POSITIVE_INFINITY });
+			if (invalid === "generation") state.parentRow.connectionGeneration += 1;
+			if (invalid === "users" || invalid === "collections") {
+				state.parentStatus.generationMetadata = encodeJellyfinLibraryGenerationMetadata({
+					...(JSON.parse(state.parentStatus.generationMetadata) as Record<string, unknown>),
+					contentFingerprint: fingerprintJellyfinLibraryRows([state.parentRow]),
+				} as Parameters<typeof encodeJellyfinLibraryGenerationMetadata>[0]);
+			}
+			const result = await refreshOwnedJellyfinEpisodeCache({
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log,
+			});
+			expect(result.progressed).toBe(false);
+			expect(client.getEpisodeItemsPageWithCoverage).not.toHaveBeenCalled();
+			expect(durable.stage).not.toHaveBeenCalled();
+		},
+	);
+
 	it("logs ordered bounded work stages without private values for a successful page", async () => {
 		const state = ownedFixture("JELLYFIN");
 		configureDurableRun(state);

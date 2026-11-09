@@ -91,7 +91,6 @@ import {
 import {
 	decodeJellyfinLibraryGenerationMetadata,
 	fingerprintJellyfinLibraryGenerationMetadata,
-	fingerprintJellyfinLibraryRows,
 	hasJellyfinEpisodeParentReceipt,
 	type JellyfinLibraryRowFingerprintInput,
 } from "./jellyfin-generation-metadata.js";
@@ -2144,9 +2143,6 @@ async function readAuthoritativeLibraryParent(
 		const semanticRows = rows.filter(
 			(row): row is JellyfinLibraryRowFingerprintInput => row !== null,
 		);
-		if (fingerprintJellyfinLibraryRows(semanticRows) !== decoded.metadata.contentFingerprint) {
-			return null;
-		}
 		const dependencyFingerprint = fingerprintJellyfinEpisodeParentDependency(
 			authority.id,
 			decoded.metadata,
