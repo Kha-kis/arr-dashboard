@@ -11,6 +11,7 @@ import type {
 } from "../jellyfin-evidence-repository.js";
 import {
 	encodeJellyfinEpisodeGenerationMetadata,
+	encodeJellyfinLibraryGenerationMetadata,
 	fingerprintJellyfinEpisodeRows,
 	fingerprintJellyfinLibraryGenerationMetadata,
 	fingerprintJellyfinLibraryRows,
@@ -22,10 +23,21 @@ import { readOwnedGenerationScopedEpisodeDisplay } from "../jellyfin-generation-
 const repository = vi.hoisted(() => ({ readParent: vi.fn() }));
 // Only the parent database boundary is replaced. V4 decoding, coverage,
 // provenance compatibility, row digests and status projection remain real.
-vi.mock("../jellyfin-evidence-repository.js", async (original) => ({
-	...(await original<typeof import("../jellyfin-evidence-repository.js")>()),
-	readOwnedJellyfinObservationInTransaction: repository.readParent,
-}));
+vi.mock("../jellyfin-evidence-repository.js", async (original) => {
+	const actual = await original<typeof import("../jellyfin-evidence-repository.js")>();
+	return {
+		...actual,
+		materializeOwnedJellyfinLibraryDisplayInTransaction: repository.readParent,
+		validateOwnedJellyfinLibraryDisplaySnapshot: (
+			snapshot:
+				| Parameters<typeof actual.validateOwnedJellyfinLibraryDisplaySnapshot>[0]
+				| JellyfinLibraryObservation,
+		) =>
+			"snapshot" in snapshot
+				? actual.validateOwnedJellyfinLibraryDisplaySnapshot(snapshot)
+				: snapshot,
+	};
+});
 
 const publishedAt = new Date("2026-09-02T12:01:00.000Z");
 const now = new Date("2026-09-02T12:02:00.000Z");
@@ -255,6 +267,7 @@ function fixture(service: "JELLYFIN" | "EMBY" = "JELLYFIN") {
 	} as unknown as PrismaClient;
 	repository.readParent.mockResolvedValue(parent);
 	return {
+		prisma,
 		instance,
 		parent,
 		status,
@@ -278,6 +291,118 @@ function fixture(service: "JELLYFIN" | "EMBY" = "JELLYFIN") {
 afterEach(() => vi.clearAllMocks());
 
 describe("generation-scoped episode display freshness", () => {
+	it.each(["malformed", "oversized"] as const)(
+		"discards %s and later oversized scopes while retaining a later valid show",
+		async (first) => {
+			const f = fixture();
+			const metadata = JSON.parse(f.status.generationMetadata);
+			metadata.sourceVersion = 2;
+			delete metadata.catalogProvenance;
+			f.status.generationMetadata = encodeJellyfinEpisodeGenerationMetadata(metadata);
+			const valid = f.rows.map((row) => ({ ...row, showTmdbId: 44 }));
+			const oversized = new Array<JellyfinEpisodeRow>(100_001).fill(f.rows[0]!);
+			const scopes = new Map([
+				[42, first === "malformed" ? [{ ...f.rows[0]!, jellyfinId: "" }] : oversized],
+				[43, oversized],
+				[44, valid],
+			]);
+			f.tx.jellyfinEpisodeGenerationShowReceipt.findUnique.mockImplementation(
+				async (...args: unknown[]) => {
+					const query = args[0] as {
+						where: { instanceId_generationId_showTmdbId: { showTmdbId: number } };
+					};
+					const id = query.where.instanceId_generationId_showTmdbId.showTmdbId;
+					return {
+						rowCount: scopes.get(id)!.length,
+						contentFingerprint:
+							id === 44 ? fingerprintJellyfinEpisodeRows(valid) : "invalid-digest",
+					};
+				},
+			);
+			f.tx.jellyfinEpisodeGenerationRow.findMany.mockImplementation(async (...args: unknown[]) => {
+				const query = args[0] as { where: { showTmdbId: number }; take: number };
+				expect(query.take).toBe(100_001);
+				return scopes.get(query.where.showTmdbId)!;
+			});
+			const result = await readOwnedGenerationScopedEpisodeDisplay({
+				prisma: f.prisma,
+				userId: "owner-1",
+				instanceId: f.instance.id,
+				showTmdbIds: [42, 43, 44],
+				now,
+				maxAgeMs,
+			});
+			expect(result).toMatchObject({
+				available: true,
+				mutationAvailable: false,
+				authority: null,
+				providerStatus: {
+					availability: "partial",
+					evidence: "positive-only",
+					reasonCodes: ["positive-only", "coverage-incomplete"],
+				},
+			});
+			expect(result?.rows.map((row) => [row.showTmdbId, row.episodeNumber, row.watched])).toEqual([
+				[44, 1, true],
+			]);
+		},
+	);
+
+	it.each([{ requested: [] }, { requested: [42] }])(
+		"validates the complete parent display snapshot after outer transaction settlement for $requested",
+		async ({ requested }) => {
+			const f = fixture();
+			const actual = await vi.importActual<typeof import("../jellyfin-evidence-repository.js")>(
+				"../jellyfin-evidence-repository.js",
+			);
+			repository.readParent.mockImplementation(
+				actual.materializeOwnedJellyfinLibraryDisplayInTransaction,
+			);
+			const parentStatus = {
+				...f.status,
+				instanceId: f.instance.id,
+				cacheType: "jellyfin",
+				generationId: f.parent.generationId!,
+				generationMetadata: encodeJellyfinLibraryGenerationMetadata(f.parent.metadata!),
+				itemCount: 1,
+				lastErrorMessage: null,
+				lastAttemptErrorMessage: null,
+			};
+			f.tx.cacheRefreshStatus.findUnique.mockImplementation(async (...args: unknown[]) => {
+				const query = args[0] as { where: { instanceId_cacheType: { cacheType: string } } };
+				return query.where.instanceId_cacheType.cacheType === "jellyfin" ? parentStatus : f.status;
+			});
+			Object.assign(f.tx, { jellyfinCache: { findMany: async () => f.parent.rows } });
+			let settled = false;
+			const visits: boolean[] = [];
+			const row = f.parent.rows[0]!;
+			const value = row.watchedByUsers;
+			Object.defineProperty(row, "watchedByUsers", {
+				get() {
+					visits.push(settled);
+					return value;
+				},
+			});
+			f.prisma.$transaction = (async (read: (tx: typeof f.tx) => Promise<unknown>) => {
+				const result = await read(f.tx);
+				settled = true;
+				return result;
+			}) as unknown as typeof f.prisma.$transaction;
+			const result = await readOwnedGenerationScopedEpisodeDisplay({
+				prisma: f.prisma,
+				userId: "owner-1",
+				instanceId: f.instance.id,
+				showTmdbIds: requested,
+				now,
+				maxAgeMs,
+			});
+			expect(result).toMatchObject({ available: true, mutationAvailable: false, authority: null });
+			expect(result?.rows).toHaveLength(requested.length);
+			expect(visits.length).toBeGreaterThanOrEqual(2);
+			expect(visits.every(Boolean)).toBe(true);
+		},
+	);
+
 	it.each(["JELLYFIN", "EMBY"] as const)(
 		"keeps fresh partial %s evidence partial, not superseded",
 		async (service) => {

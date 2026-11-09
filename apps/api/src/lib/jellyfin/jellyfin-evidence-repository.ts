@@ -6,12 +6,12 @@ import {
 	type ProviderCoverageEvaluation,
 } from "../provider-observation/coverage-receipt.js";
 import { projectProviderObservationStatus } from "../provider-observation/status-projection.js";
+import { createJellyfinDisplayCheckpoint } from "./jellyfin-display-work.js";
 import {
 	isJellyfinEpisodeCatalogCompatible,
 	jellyfinEpisodeCatalogScopesFromReceipt,
 } from "./jellyfin-episode-catalog-provenance.js";
 import { fingerprintJellyfinEpisodeParentDependency } from "./jellyfin-episode-parent-dependency.js";
-import { createJellyfinDisplayCheckpoint } from "./jellyfin-display-work.js";
 import {
 	decodeJellyfinEpisodeGenerationMetadata,
 	decodeJellyfinLibraryGenerationMetadata,
@@ -926,32 +926,49 @@ async function runSerializable<T>(
 	return fallback;
 }
 
-async function readOwnedJellyfinObservationCore(
+type OwnedObservationSnapshot =
+	| { observation: JellyfinObservation | null }
+	| {
+			instance: JellyfinInstance;
+			status: CacheStatus;
+			rows: JellyfinLibraryRow[] | JellyfinEpisodeRow[];
+			generationScopedMutation: boolean | null | undefined;
+	  };
+
+/** Complete owned library snapshot; validation never reads the database. */
+export type JellyfinLibraryDisplaySnapshot = {
+	snapshot: OwnedObservationSnapshot;
+	input: Omit<JellyfinObservationTransactionInput, "cacheType" | "mode">;
+	now: Date;
+	maxAgeMs: number;
+};
+
+async function materializeOwnedJellyfinObservation(
 	tx: TransactionReader,
 	input: JellyfinObservationTransactionInput,
-	now: Date,
-	maxAgeMs: number,
-): Promise<JellyfinObservation | null> {
+): Promise<OwnedObservationSnapshot> {
 	const instance = (await tx.serviceInstance.findFirst({
 		where: { id: input.instanceId, userId: input.userId },
 		select: INSTANCE_SELECT,
 	})) as JellyfinInstance | null;
-	if (!instance || !currentProviderService(instance.service)) return null;
+	if (!instance || !currentProviderService(instance.service)) return { observation: null };
 	const status = await readStatus(tx, instance.id, input.userId, input.cacheType);
 	if (!currentIdentity(instance)) {
-		return resultFor(
-			instance,
-			input.cacheType,
-			input.mode,
-			status,
-			null,
-			[],
-			unavailableStatus(
-				instance.identityStatus === "MISMATCH" ? "identity-changed" : "identity-unverified",
+		return {
+			observation: resultFor(
+				instance,
+				input.cacheType,
+				input.mode,
+				status,
+				null,
+				[],
+				unavailableStatus(
+					instance.identityStatus === "MISMATCH" ? "identity-changed" : "identity-unverified",
+				),
+				false,
+				false,
 			),
-			false,
-			false,
-		);
+		};
 	}
 	let rows: JellyfinLibraryRow[] | JellyfinEpisodeRow[];
 	const decodedEpisode =
@@ -973,44 +990,50 @@ async function readOwnedJellyfinObservationCore(
 			generationScopedMutation ? (status?.generationId ?? undefined) : undefined,
 		);
 	} catch {
-		return resultFor(
-			instance,
-			input.cacheType,
-			input.mode,
-			status,
-			null,
-			[],
-			unavailableStatus("rows-inconsistent"),
-			false,
-			false,
-		);
+		return {
+			observation: resultFor(
+				instance,
+				input.cacheType,
+				input.mode,
+				status,
+				null,
+				[],
+				unavailableStatus("rows-inconsistent"),
+				false,
+				false,
+			),
+		};
 	}
 	if (!status) {
-		return resultFor(
-			instance,
-			input.cacheType,
-			input.mode,
-			null,
-			null,
-			[],
-			unavailableStatus("no-publication"),
-			false,
-			false,
-		);
+		return {
+			observation: resultFor(
+				instance,
+				input.cacheType,
+				input.mode,
+				null,
+				null,
+				[],
+				unavailableStatus("no-publication"),
+				false,
+				false,
+			),
+		};
 	}
 	const statusAfter = await readStatus(tx, instance.id, input.userId, input.cacheType);
 	if (!statusAfter || statusFingerprint(statusAfter) !== statusFingerprint(status)) {
-		return resultFor(
-			instance,
-			input.cacheType,
-			input.mode,
-			status,
-			null,
-			[],
-			unavailableStatus("rows-inconsistent"),
-			false,
-			false,
-		);
+		return {
+			observation: resultFor(
+				instance,
+				input.cacheType,
+				input.mode,
+				status,
+				null,
+				[],
+				unavailableStatus("rows-inconsistent"),
+				false,
+				false,
+			),
+		};
 	}
 	const instanceAfter = await tx.serviceInstance.findFirst({
 		where: { id: input.instanceId, userId: input.userId },
@@ -1021,18 +1044,32 @@ async function readOwnedJellyfinObservationCore(
 		!currentProviderService(instanceAfter.service) ||
 		identityFingerprint(instanceAfter) !== identityFingerprint(instance)
 	) {
-		return resultFor(
-			instance,
-			input.cacheType,
-			input.mode,
-			status,
-			null,
-			[],
-			unavailableStatus("identity-changed"),
-			false,
-			false,
-		);
+		return {
+			observation: resultFor(
+				instance,
+				input.cacheType,
+				input.mode,
+				status,
+				null,
+				[],
+				unavailableStatus("identity-changed"),
+				false,
+				false,
+			),
+		};
 	}
+	return { instance, status, rows, generationScopedMutation };
+}
+
+async function validateOwnedJellyfinObservationSnapshot(
+	snapshot: OwnedObservationSnapshot,
+	tx: TransactionReader | null,
+	input: JellyfinObservationTransactionInput,
+	now: Date,
+	maxAgeMs: number,
+): Promise<JellyfinObservation | null> {
+	if ("observation" in snapshot) return snapshot.observation;
+	const { instance, status, rows, generationScopedMutation } = snapshot;
 	const strict = status
 		? strictMetadata(
 				status,
@@ -1137,7 +1174,7 @@ async function readOwnedJellyfinObservationCore(
 	}
 	if (generationScopedMutation) {
 		const preparation = status?.generationId
-			? await tx.jellyfinEpisodePreparation?.findUnique({
+			? await tx!.jellyfinEpisodePreparation?.findUnique({
 					where: { runId: status.generationId },
 					select: {
 						instanceId: true,
@@ -1173,7 +1210,7 @@ async function readOwnedJellyfinObservationCore(
 	let episodeParentCurrent = true;
 	if (input.cacheType === "jellyfin_episode") {
 		const parent = await strictPublication(
-			tx,
+			tx!,
 			instance,
 			input.userId,
 			"jellyfin",
@@ -1250,7 +1287,7 @@ async function readOwnedJellyfinObservationCore(
 						(input.mode === "display" || exactParentProvenance)
 					: exactParentProvenance);
 		const episodeStatusAfterParent = await readStatus(
-			tx,
+			tx!,
 			instance.id,
 			input.userId,
 			input.cacheType,
@@ -1335,6 +1372,63 @@ async function readOwnedJellyfinObservationCore(
 	);
 }
 
+async function readOwnedJellyfinObservationCore(
+	tx: TransactionReader,
+	input: JellyfinObservationTransactionInput,
+	now: Date,
+	maxAgeMs: number,
+): Promise<JellyfinObservation | null> {
+	return validateOwnedJellyfinObservationSnapshot(
+		await materializeOwnedJellyfinObservation(tx, input),
+		tx,
+		input,
+		now,
+		maxAgeMs,
+	);
+}
+
+export async function materializeOwnedJellyfinLibraryDisplayInTransaction(
+	reader: TransactionReader,
+	input: Omit<JellyfinObservationTransactionInput, "cacheType" | "mode">,
+): Promise<JellyfinLibraryDisplaySnapshot> {
+	const now = validDate(input.now) ? input.now : new Date();
+	const maxAgeMs =
+		typeof input.maxAgeMs === "number" &&
+		Number.isFinite(input.maxAgeMs) &&
+		input.maxAgeMs >= 0 &&
+		input.maxAgeMs <= MAX_JELLYFIN_EVIDENCE_MAX_AGE_MS
+			? input.maxAgeMs
+			: DEFAULT_JELLYFIN_EVIDENCE_MAX_AGE_MS;
+	const scope: JellyfinObservationTransactionInput = {
+		...input,
+		cacheType: "jellyfin",
+		mode: "display",
+	};
+	return {
+		snapshot: await materializeOwnedJellyfinObservation(reader, scope),
+		input: scope,
+		now,
+		maxAgeMs,
+	};
+}
+
+export async function validateOwnedJellyfinLibraryDisplaySnapshot(
+	snapshot: JellyfinLibraryDisplaySnapshot,
+): Promise<JellyfinObservation | null> {
+	const materialized =
+		"observation" in snapshot.snapshot
+			? snapshot.snapshot
+			: { ...snapshot.snapshot, generationScopedMutation: false };
+	const result = await validateOwnedJellyfinObservationSnapshot(
+		materialized,
+		null,
+		{ ...snapshot.input, cacheType: "jellyfin", mode: "display" },
+		snapshot.now,
+		snapshot.maxAgeMs,
+	);
+	return result ? { ...result, mutationAvailable: false, authority: null } : null;
+}
+
 export async function readOwnedJellyfinObservationInTransaction(
 	reader: TransactionReader,
 	input: JellyfinObservationTransactionInput,
@@ -1374,6 +1468,18 @@ export async function readOwnedJellyfinObservation(
 		mutationAvailable: false,
 		authority: null,
 	};
+	if (input.mode === "display" && input.cacheType === "jellyfin") {
+		try {
+			const snapshot = await runSerializable<OwnedObservationSnapshot>(
+				input.prisma,
+				(tx) => materializeOwnedJellyfinObservation(tx, input),
+				{ observation: fallback },
+			);
+			return await validateOwnedJellyfinObservationSnapshot(snapshot, null, input, now, maxAgeMs);
+		} catch {
+			return fallback;
+		}
+	}
 	return runSerializable(
 		input.prisma,
 		(tx) => readOwnedJellyfinObservationCore(tx, input, now, maxAgeMs),

@@ -10,8 +10,9 @@ import { fingerprintJellyfinEpisodeParentDependency } from "./jellyfin-episode-p
 import {
 	type JellyfinEpisodeObservation,
 	type JellyfinEpisodeRow,
-	readOwnedJellyfinObservationInTransaction,
+	materializeOwnedJellyfinLibraryDisplayInTransaction,
 	type TransactionReader,
+	validateOwnedJellyfinLibraryDisplaySnapshot,
 } from "./jellyfin-evidence-repository.js";
 import {
 	decodeJellyfinEpisodeGenerationMetadata,
@@ -78,7 +79,7 @@ export async function readOwnedGenerationScopedEpisodeDisplay(
 		requested.some((id) => !Number.isSafeInteger(id) || id <= 0)
 	)
 		throw new Error("Invalid Jellyfin episode display scope");
-	return await input.prisma.$transaction(async (tx) => {
+	const snapshot = await input.prisma.$transaction(async (tx) => {
 		const instance = await tx.serviceInstance.findFirst({
 			where: { id: input.instanceId, userId: input.userId, service: { in: ["JELLYFIN", "EMBY"] } },
 			select: {
@@ -160,61 +161,16 @@ export async function readOwnedGenerationScopedEpisodeDisplay(
 					pointer.activeCacheGenerationId !== status.generationId))
 		)
 			return fail("rows-inconsistent");
-		const parent = await readOwnedJellyfinObservationInTransaction(
+		const parentSnapshot = await materializeOwnedJellyfinLibraryDisplayInTransaction(
 			tx as unknown as TransactionReader,
-			{
-				userId: input.userId,
-				instanceId: instance.id,
-				cacheType: "jellyfin",
-				mode: "display",
-				now,
-				maxAgeMs,
-			},
-		);
-		if (
-			!parent ||
-			parent.cacheType !== "jellyfin" ||
-			!parent.available ||
-			!parent.metadata ||
-			!parent.generationId ||
-			!parent.publishedAt ||
-			!hasJellyfinEpisodeParentReceipt(parent.metadata.coverageReceipt)
-		)
-			return fail("rows-inconsistent");
-		const exactParent =
-			metadata.parentLibraryGenerationId === parent.generationId &&
-			metadata.parentLibraryMetadataFingerprint ===
-				fingerprintJellyfinLibraryGenerationMetadata(parent.metadata);
-		const dependency = fingerprintJellyfinEpisodeParentDependency(
-			instance.id,
-			parent.metadata,
-			parent.rows as JellyfinLibraryRowFingerprintInput[],
+			{ userId: input.userId, instanceId: instance.id, now, maxAgeMs },
 		);
 		const originalCatalogIds =
 			metadata.sourceVersion === 3 && metadata.publicationLevel === "positive-only"
 				? new Set(metadata.catalogProvenance?.bindings.map((binding) => binding.tmdbId) ?? [])
 				: null;
-		const currentScopes = jellyfinEpisodeCatalogScopesFromReceipt(parent.metadata.coverageReceipt);
-		const catalogCompatible =
-			originalCatalogIds !== null &&
-			metadata.catalogProvenance !== undefined &&
-			currentScopes !== null &&
-			isJellyfinEpisodeCatalogCompatible(
-				metadata.catalogProvenance,
-				parent.rows as JellyfinLibraryRowFingerprintInput[],
-				currentScopes,
-			);
-		if (
-			metadata.sourceVersion === 3 && metadata.publicationLevel === "positive-only"
-				? !catalogCompatible
-				: metadata.parentLibraryDependencyFingerprint !== dependency
-		)
-			return fail("rows-inconsistent");
-		const parentCurrent =
-			exactParent &&
-			(parent.providerStatus.availability === "current" ||
-				parent.providerStatus.availability === "partial") &&
-			now.getTime() - parent.publishedAt.getTime() <= maxAgeMs;
+		// Validate and discard each requested scope here to retain the existing
+		// accepted-row cap plus one fetched scope, rather than retaining all scopes.
 		const rows: JellyfinEpisodeRow[] = [];
 		let incompleteRequestedScope = false;
 		for (const showTmdbId of requested) {
@@ -269,44 +225,111 @@ export async function readOwnedGenerationScopedEpisodeDisplay(
 			}
 			rows.push(...showRows);
 		}
-		let providerStatus = projectProviderObservationStatus({
-			identity: "current",
-			publication: { observedAt: status.lastRefreshedAt, evaluation },
-			latestAttempt: attemptFromStatus(status),
-			now,
-			maxAgeMs,
-		});
-		if (!parentCurrent && providerStatus.availability !== "unavailable") {
-			providerStatus = {
-				...providerStatus,
-				availability: "last-known",
-				reasonCodes: [
-					...new Set([...providerStatus.reasonCodes, "publication-superseded" as const]),
-				],
-			};
-		}
-		if (incompleteRequestedScope && providerStatus.availability !== "unavailable") {
-			providerStatus = {
-				...providerStatus,
-				availability: "partial",
-				evidence: "positive-only",
-				reasonCodes: [...new Set([...providerStatus.reasonCodes, "coverage-incomplete" as const])],
-			};
-		}
-		const visibleRows =
-			providerStatus.evidence === "complete" ? rows : rows.filter((row) => row.watched);
 		return {
-			available: providerStatus.availability !== "unavailable",
-			instanceId: instance.id,
+			instance,
 			service,
-			cacheType: "jellyfin_episode",
-			generationId: status.generationId,
-			publishedAt: status.lastRefreshedAt,
+			status,
 			metadata,
-			rows: visibleRows,
-			providerStatus,
-			mutationAvailable: false,
-			authority: null,
+			evaluation,
+			fail,
+			parentSnapshot,
+			originalCatalogIds,
+			rows,
+			incompleteRequestedScope,
 		};
 	});
+	if (!snapshot || "available" in snapshot) return snapshot;
+	const {
+		instance,
+		service,
+		status,
+		metadata,
+		evaluation,
+		fail,
+		parentSnapshot,
+		originalCatalogIds,
+		rows,
+		incompleteRequestedScope,
+	} = snapshot;
+	// Parent row validation and canonical hashing must not occupy the outer lease,
+	// including health reads which request no episode rows.
+	const parent = await validateOwnedJellyfinLibraryDisplaySnapshot(parentSnapshot);
+	if (
+		parent?.cacheType !== "jellyfin" ||
+		!parent.available ||
+		!parent.metadata ||
+		!parent.generationId ||
+		!parent.publishedAt ||
+		!hasJellyfinEpisodeParentReceipt(parent.metadata.coverageReceipt)
+	)
+		return fail("rows-inconsistent");
+	const exactParent =
+		metadata.parentLibraryGenerationId === parent.generationId &&
+		metadata.parentLibraryMetadataFingerprint ===
+			fingerprintJellyfinLibraryGenerationMetadata(parent.metadata);
+	const dependency = fingerprintJellyfinEpisodeParentDependency(
+		instance.id,
+		parent.metadata,
+		parent.rows as JellyfinLibraryRowFingerprintInput[],
+	);
+
+	const currentScopes = jellyfinEpisodeCatalogScopesFromReceipt(parent.metadata.coverageReceipt);
+	const catalogCompatible =
+		originalCatalogIds !== null &&
+		metadata.catalogProvenance !== undefined &&
+		currentScopes !== null &&
+		isJellyfinEpisodeCatalogCompatible(
+			metadata.catalogProvenance,
+			parent.rows as JellyfinLibraryRowFingerprintInput[],
+			currentScopes,
+		);
+	if (
+		metadata.sourceVersion === 3 && metadata.publicationLevel === "positive-only"
+			? !catalogCompatible
+			: metadata.parentLibraryDependencyFingerprint !== dependency
+	)
+		return fail("rows-inconsistent");
+	const parentCurrent =
+		exactParent &&
+		(parent.providerStatus.availability === "current" ||
+			parent.providerStatus.availability === "partial") &&
+		now.getTime() - parent.publishedAt.getTime() <= maxAgeMs;
+
+	let providerStatus = projectProviderObservationStatus({
+		identity: "current",
+		publication: { observedAt: status.lastRefreshedAt, evaluation },
+		latestAttempt: attemptFromStatus(status),
+		now,
+		maxAgeMs,
+	});
+	if (!parentCurrent && providerStatus.availability !== "unavailable") {
+		providerStatus = {
+			...providerStatus,
+			availability: "last-known",
+			reasonCodes: [...new Set([...providerStatus.reasonCodes, "publication-superseded" as const])],
+		};
+	}
+	if (incompleteRequestedScope && providerStatus.availability !== "unavailable") {
+		providerStatus = {
+			...providerStatus,
+			availability: "partial",
+			evidence: "positive-only",
+			reasonCodes: [...new Set([...providerStatus.reasonCodes, "coverage-incomplete" as const])],
+		};
+	}
+	const visibleRows =
+		providerStatus.evidence === "complete" ? rows : rows.filter((row) => row.watched);
+	return {
+		available: providerStatus.availability !== "unavailable",
+		instanceId: instance.id,
+		service,
+		cacheType: "jellyfin_episode",
+		generationId: status.generationId,
+		publishedAt: status.lastRefreshedAt,
+		metadata,
+		rows: visibleRows,
+		providerStatus,
+		mutationAvailable: false,
+		authority: null,
+	};
 }

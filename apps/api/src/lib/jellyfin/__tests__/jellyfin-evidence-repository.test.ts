@@ -10,8 +10,10 @@ import type {
 	TransactionReader,
 } from "../jellyfin-evidence-repository.js";
 import {
+	materializeOwnedJellyfinLibraryDisplayInTransaction,
 	readOwnedJellyfinObservation,
 	readOwnedJellyfinObservationInTransaction,
+	validateOwnedJellyfinLibraryDisplaySnapshot,
 } from "../jellyfin-evidence-repository.js";
 import {
 	encodeJellyfinEpisodeGenerationMetadata,
@@ -460,6 +462,95 @@ function makePrisma(options: {
 afterEach(() => vi.restoreAllMocks());
 
 describe("readOwnedJellyfinObservation", () => {
+	it("keeps library snapshots display-only even with a malformed internal mode override", async () => {
+		const rows = [libraryRow()];
+		const fixture = makePrisma({
+			rows,
+			statuses: { jellyfin: status("jellyfin", libraryMetadata(), 1) },
+		});
+		const snapshot = await materializeOwnedJellyfinLibraryDisplayInTransaction(fixture.tx, {
+			userId: "user-1",
+			instanceId: "jellyfin-1",
+			now,
+		});
+		Object.assign(snapshot.input, { cacheType: "jellyfin_episode", mode: "mutation" });
+		expect(await validateOwnedJellyfinLibraryDisplaySnapshot(snapshot)).toMatchObject({
+			available: true,
+			cacheType: "jellyfin",
+			mutationAvailable: false,
+			authority: null,
+			rows,
+		});
+	});
+
+	it("keeps mutation row validation and fingerprints inside the transaction", async () => {
+		const row = libraryRow();
+		const fixture = makePrisma({
+			rows: [row],
+			statuses: { jellyfin: status("jellyfin", libraryMetadata(), 1) },
+		});
+		let settled = false;
+		const visits: boolean[] = [];
+		const value = row.watchedByUsers;
+		Object.defineProperty(row, "watchedByUsers", {
+			get() {
+				visits.push(settled);
+				return value;
+			},
+		});
+		fixture.prisma.$transaction = async (read) => {
+			const result = await read(fixture.tx);
+			settled = true;
+			return result;
+		};
+		expect(
+			await readOwnedJellyfinObservation({
+				prisma: fixture.prisma,
+				userId: "user-1",
+				instanceId: "jellyfin-1",
+				cacheType: "jellyfin",
+				mode: "mutation",
+				now,
+			}),
+		).toMatchObject({ available: true, mutationAvailable: true, authority: expect.any(Object) });
+		expect(visits.length).toBeGreaterThanOrEqual(2);
+		expect(visits.every((after) => !after)).toBe(true);
+	});
+
+	it("validates and fingerprints the complete display snapshot after transaction settlement", async () => {
+		const rows = [libraryRow(), libraryRow({ id: "row-2", tmdbId: 43, jellyfinId: "item-2" })];
+		const metadata = libraryMetadata(makeInstance(), rows);
+		const fixture = makePrisma({ rows, statuses: { jellyfin: status("jellyfin", metadata, 2) } });
+		let settled = false;
+		const visits: boolean[] = [];
+		for (const row of rows) {
+			const value = row.watchedByUsers;
+			Object.defineProperty(row, "watchedByUsers", {
+				get() {
+					visits.push(settled);
+					return value;
+				},
+			});
+		}
+		fixture.prisma.$transaction = async (read) => {
+			const result = await read(fixture.tx);
+			settled = true;
+			return result;
+		};
+		const result = await readOwnedJellyfinObservation({
+			prisma: fixture.prisma,
+			userId: "user-1",
+			instanceId: "jellyfin-1",
+			cacheType: "jellyfin",
+			mode: "display",
+			now,
+		});
+		expect(result).toMatchObject({ available: true, mutationAvailable: false, authority: null });
+		expect(result?.rows).toHaveLength(2);
+		expect(visits.length).toBeGreaterThanOrEqual(4);
+		expect(visits.every(Boolean)).toBe(true);
+	});
+
 	it.each(["validation", "fingerprint"] as const)(
 		"services a queued event-loop turn during a populated library %s pass",
 		async (phase) => {
