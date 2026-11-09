@@ -267,12 +267,6 @@ export async function readOwnedGenerationScopedEpisodeDisplay(
 		metadata.parentLibraryGenerationId === parent.generationId &&
 		metadata.parentLibraryMetadataFingerprint ===
 			fingerprintJellyfinLibraryGenerationMetadata(parent.metadata);
-	const dependency = fingerprintJellyfinEpisodeParentDependency(
-		instance.id,
-		parent.metadata,
-		parent.rows as JellyfinLibraryRowFingerprintInput[],
-	);
-
 	const currentScopes = jellyfinEpisodeCatalogScopesFromReceipt(parent.metadata.coverageReceipt);
 	const catalogCompatible =
 		originalCatalogIds !== null &&
@@ -286,7 +280,12 @@ export async function readOwnedGenerationScopedEpisodeDisplay(
 	if (
 		metadata.sourceVersion === 3 && metadata.publicationLevel === "positive-only"
 			? !catalogCompatible
-			: metadata.parentLibraryDependencyFingerprint !== dependency
+			: metadata.parentLibraryDependencyFingerprint !==
+				fingerprintJellyfinEpisodeParentDependency(
+					instance.id,
+					parent.metadata,
+					parent.rows as JellyfinLibraryRowFingerprintInput[],
+				)
 	)
 		return fail("rows-inconsistent");
 	const parentCurrent =

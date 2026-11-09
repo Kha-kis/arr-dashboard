@@ -3,6 +3,7 @@ import type { PrismaClient } from "../../prisma.js";
 import { evaluateProviderCoverageReceipt } from "../../provider-observation/coverage-receipt.js";
 import { projectProviderObservationStatus } from "../../provider-observation/status-projection.js";
 import { buildJellyfinEpisodeCatalogProvenance } from "../jellyfin-episode-catalog-provenance.js";
+import * as parentDependencies from "../jellyfin-episode-parent-dependency.js";
 import { fingerprintJellyfinEpisodeParentDependency } from "../jellyfin-episode-parent-dependency.js";
 import type {
 	JellyfinEpisodeRow,
@@ -269,6 +270,7 @@ function fixture(service: "JELLYFIN" | "EMBY" = "JELLYFIN") {
 	return {
 		prisma,
 		instance,
+		libraryRow,
 		parent,
 		status,
 		preparation,
@@ -288,9 +290,118 @@ function fixture(service: "JELLYFIN" | "EMBY" = "JELLYFIN") {
 	};
 }
 
-afterEach(() => vi.clearAllMocks());
+async function useRealParentSnapshot(f: ReturnType<typeof fixture>) {
+	const actual = await vi.importActual<typeof import("../jellyfin-evidence-repository.js")>(
+		"../jellyfin-evidence-repository.js",
+	);
+	repository.readParent.mockImplementation(
+		actual.materializeOwnedJellyfinLibraryDisplayInTransaction,
+	);
+	const parentStatus = {
+		...f.status,
+		instanceId: f.instance.id,
+		cacheType: "jellyfin",
+		generationId: f.parent.generationId!,
+		generationMetadata: encodeJellyfinLibraryGenerationMetadata(f.parent.metadata!),
+		itemCount: 1,
+		lastErrorMessage: null,
+		lastAttemptErrorMessage: null,
+	};
+	f.tx.cacheRefreshStatus.findUnique.mockImplementation(async (...args: unknown[]) => {
+		const query = args[0] as { where: { instanceId_cacheType: { cacheType: string } } };
+		return query.where.instanceId_cacheType.cacheType === "jellyfin" ? parentStatus : f.status;
+	});
+	Object.assign(f.tx, { jellyfinCache: { findMany: async () => f.parent.rows } });
+}
+
+afterEach(() => {
+	vi.clearAllMocks();
+	vi.restoreAllMocks();
+});
 
 describe("generation-scoped episode display freshness", () => {
+	it.each(["JELLYFIN", "EMBY"] as const)(
+		"skips unused parent dependency hashing for a validated positive-only %s display",
+		async (service) => {
+			const f = fixture(service);
+			await useRealParentSnapshot(f);
+			const dependency = vi.spyOn(parentDependencies, "fingerprintJellyfinEpisodeParentDependency");
+			const result = await f.read();
+			expect(result).toMatchObject({
+				available: true,
+				mutationAvailable: false,
+				authority: null,
+				providerStatus: {
+					availability: "partial",
+					evidence: "positive-only",
+					latestAttempt: "successful",
+					reasonCodes: ["positive-only", "coverage-incomplete"],
+				},
+			});
+			expect(result?.rows).toEqual([f.rows[0]]);
+			expect(dependency).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each([false, true])(
+		"retains legacy parent dependency matching (mismatch: %s)",
+		async (mismatch) => {
+			const f = fixture();
+			const metadata = JSON.parse(f.status.generationMetadata);
+			metadata.sourceVersion = 2;
+			delete metadata.catalogProvenance;
+			if (mismatch) metadata.parentLibraryDependencyFingerprint = "f".repeat(64);
+			f.status.generationMetadata = encodeJellyfinEpisodeGenerationMetadata(metadata);
+			await useRealParentSnapshot(f);
+			const expectedDependency = fingerprintJellyfinEpisodeParentDependency(
+				f.instance.id,
+				f.parent.metadata,
+				[f.libraryRow],
+			);
+			const dependency = vi.spyOn(parentDependencies, "fingerprintJellyfinEpisodeParentDependency");
+			const result = await f.read();
+			expect(result).toMatchObject({
+				available: !mismatch,
+				rows: mismatch ? [] : [f.rows[0]],
+				mutationAvailable: false,
+				authority: null,
+				providerStatus: mismatch
+					? { availability: "unavailable", reasonCodes: ["rows-inconsistent"] }
+					: { availability: "partial", evidence: "positive-only" },
+			});
+			expect(dependency).toHaveBeenCalledTimes(1);
+			expect(expectedDependency).not.toBeNull();
+			expect(dependency.mock.results[0]?.value).toBe(expectedDependency);
+		},
+	);
+
+	it.each(["catalog-incompatible", "parent-corrupted"] as const)(
+		"refuses %s positive-only evidence without dependency hashing",
+		async (failure) => {
+			const f = fixture();
+			if (failure === "catalog-incompatible") {
+				const metadata = JSON.parse(f.status.generationMetadata);
+				metadata.catalogProvenance = buildJellyfinEpisodeCatalogProvenance(
+					[{ ...f.libraryRow, jellyfinId: "replacement-series" }],
+					[{ userId: "user-1", libraryId: "library-1" }],
+				);
+				f.status.generationMetadata = encodeJellyfinEpisodeGenerationMetadata(metadata);
+			} else {
+				f.parent.rows[0]!.title = "Corrupted parent title";
+			}
+			await useRealParentSnapshot(f);
+			const dependency = vi.spyOn(parentDependencies, "fingerprintJellyfinEpisodeParentDependency");
+			expect(await f.read()).toMatchObject({
+				available: false,
+				rows: [],
+				mutationAvailable: false,
+				authority: null,
+				providerStatus: { availability: "unavailable", reasonCodes: ["rows-inconsistent"] },
+			});
+			expect(dependency).not.toHaveBeenCalled();
+		},
+	);
+
 	it.each(["malformed", "oversized"] as const)(
 		"discards %s and later oversized scopes while retaining a later valid show",
 		async (first) => {
@@ -352,27 +463,7 @@ describe("generation-scoped episode display freshness", () => {
 		"validates the complete parent display snapshot after outer transaction settlement for $requested",
 		async ({ requested }) => {
 			const f = fixture();
-			const actual = await vi.importActual<typeof import("../jellyfin-evidence-repository.js")>(
-				"../jellyfin-evidence-repository.js",
-			);
-			repository.readParent.mockImplementation(
-				actual.materializeOwnedJellyfinLibraryDisplayInTransaction,
-			);
-			const parentStatus = {
-				...f.status,
-				instanceId: f.instance.id,
-				cacheType: "jellyfin",
-				generationId: f.parent.generationId!,
-				generationMetadata: encodeJellyfinLibraryGenerationMetadata(f.parent.metadata!),
-				itemCount: 1,
-				lastErrorMessage: null,
-				lastAttemptErrorMessage: null,
-			};
-			f.tx.cacheRefreshStatus.findUnique.mockImplementation(async (...args: unknown[]) => {
-				const query = args[0] as { where: { instanceId_cacheType: { cacheType: string } } };
-				return query.where.instanceId_cacheType.cacheType === "jellyfin" ? parentStatus : f.status;
-			});
-			Object.assign(f.tx, { jellyfinCache: { findMany: async () => f.parent.rows } });
+			await useRealParentSnapshot(f);
 			let settled = false;
 			const visits: boolean[] = [];
 			const row = f.parent.rows[0]!;
