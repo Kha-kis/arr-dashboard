@@ -1239,14 +1239,17 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 		const actionUrl = `/library?inventoryInstanceId=${encodeURIComponent(instance.id)}&inventoryDomain=library&inventoryMetadataFilter=missing-tmdb#media-server-inventory`;
 		let inventory: Awaited<ReturnType<typeof readNativeInventoryPage>> | { status: "unavailable" };
 		try {
-			inventory = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
-				readNativeInventoryPage(prisma, {
-					userId,
-					instanceId: instance.id,
-					domain: "library",
-					limit: 1,
-					now: observationNow,
-				}),
+			inventory = await withIsolatedRuntimePrismaBulkReadClient(
+				app.prisma,
+				(prisma) =>
+					readNativeInventoryPage(prisma, {
+						userId,
+						instanceId: instance.id,
+						domain: "library",
+						limit: 1,
+						now: observationNow,
+					}),
+				{ lease: "phase" },
 			);
 		} catch {
 			inventory = { status: "unavailable" };

@@ -1,5 +1,6 @@
 import { AsyncLocalStorage, AsyncResource } from "node:async_hooks";
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import Database from "better-sqlite3";
 import Fastify from "fastify";
@@ -11,11 +12,16 @@ import {
 } from "../../__tests__/scoped-write-intent-fixture.js";
 import { pulseCollectors } from "../../pulse/collectors.js";
 import {
+	beginNativeInventoryAttempt,
+	publishNativeInventoriesInTransaction,
+} from "../../provider-observation/native-inventory.js";
+import { withCurrentProviderPublicationAuthority } from "../../services/provider-identity-guard.js";
+import {
 	withIsolatedRuntimePrismaBulkReadClient,
 	withIsolatedRuntimePrismaReadClient,
 } from "../restore-runtime-client.js";
 
-type Boundary = "jellyfin-health" | "plex-library" | "plex-episode" | "tautulli";
+type Boundary = "jellyfin-health" | "plex-library" | "plex-episode" | "tautulli" | "plex-native";
 const observer = vi.hoisted(() => ({
 	settled: undefined as ((boundary: Boundary, result: unknown) => Promise<void>) | undefined,
 	phaseSettled: undefined as ((boundary: Boundary | undefined) => Promise<void>) | undefined,
@@ -101,11 +107,33 @@ vi.mock("../../tautulli/tautulli-observation-repository.js", async (importOrigin
 	};
 });
 
+vi.mock("../../provider-observation/native-inventory.js", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("../../provider-observation/native-inventory.js")>();
+	return {
+		...actual,
+		readNativeInventoryPage: async (...args: Parameters<typeof actual.readNativeInventoryPage>) => {
+			expect(args[1]).toMatchObject({
+				userId: "synthetic-user",
+				instanceId: "synthetic-plex",
+				domain: "library",
+				limit: 1,
+			});
+			const result = await evidenceScope.run("plex-native", () =>
+				actual.readNativeInventoryPage(...args),
+			);
+			await observer.settled?.("plex-native", result);
+			return result;
+		},
+	};
+});
+
 const OWNER = "synthetic-user";
 const PLEX = "synthetic-plex";
 const JELLYFIN = "synthetic-jellyfin";
 const TAUTULLI = "synthetic-tautulli";
 let fixture: ScopedWriteFixture | undefined;
+let fixtureIdentity: ReturnType<typeof lstatSync> | undefined;
 const nativeHandles = new Set<Database.Database>();
 
 function emit(value: unknown) {
@@ -116,6 +144,19 @@ afterEach(async () => {
 	observer.settled = undefined;
 	observer.phaseSettled = undefined;
 	vi.unstubAllGlobals();
+	let nativeReadHandlesClosedBeforeRemoval = false;
+	if (fixture) {
+		await fixture.client.close();
+		await fixture.runtime.drain();
+		await fixture.runtime.close();
+		await fixture.plain.$disconnect();
+		nativeReadHandlesClosedBeforeRemoval = [...nativeHandles]
+			.filter((db) => db !== fixture!.writer)
+			.every((db) => !db.open);
+		expect(nativeReadHandlesClosedBeforeRemoval).toBe(true);
+		const current = lstatSync(fixture.directory);
+		expect([current.dev, current.ino]).toEqual([fixtureIdentity!.dev, fixtureIdentity!.ino]);
+	}
 	await closeScopedWriteFixtures();
 	if (fixture) {
 		const closure = {
@@ -124,6 +165,7 @@ afterEach(async () => {
 			nativeHandlesClosed: [...nativeHandles].every((db) => !db.open),
 			writerClosed: !fixture.writer.open,
 			fixtureRemoved: !existsSync(fixture.directory),
+			nativeReadHandlesClosedBeforeRemoval,
 		};
 		emit(closure);
 		expect(closure).toMatchObject({
@@ -133,6 +175,7 @@ afterEach(async () => {
 		});
 	}
 	fixture = undefined;
+	fixtureIdentity = undefined;
 	nativeHandles.clear();
 });
 
@@ -142,6 +185,55 @@ function signal() {
 		resolve = done;
 	});
 	return { promise, resolve };
+}
+
+async function seedNativePublication(f: ScopedWriteFixture) {
+	const instance = await f.plain.serviceInstance.findUniqueOrThrow({
+		where: { id: PLEX, userId: OWNER },
+	});
+	const now = new Date(Date.now() - 1_000);
+	const begun = await beginNativeInventoryAttempt(f.plain, {
+		userId: OWNER,
+		instance,
+		domains: ["library"],
+		now,
+	});
+	if (begun.status !== "acquired") throw new Error("Native Pulse publication admission failed");
+	const published = await withCurrentProviderPublicationAuthority(f.plain, begun.authority, (tx) =>
+		publishNativeInventoriesInTransaction(tx, {
+			userId: OWNER,
+			authority: begun.authority,
+			attempt: begun.attempt,
+			now,
+			snapshots: [
+				{
+					domain: "library",
+					scopeKeys: ["catalog"],
+					rows: [1, 2, 3].map((id) => ({
+						nativeId: `movie-${id}`,
+						mediaType: "movie",
+						libraryIds: ["catalog"],
+						parentNativeId: null,
+						seasonNumber: null,
+						episodeNumber: null,
+						title: "Synthetic published movie",
+						externalIds: { tmdb: [id] },
+					})),
+				},
+			],
+		}),
+	);
+	expect(published).toMatchObject({
+		matched: true,
+		value: { status: "published", itemCounts: { library: 3 } },
+	});
+}
+
+function fixtureBytes(directory: string): number {
+	return readdirSync(directory, { withFileTypes: true }).reduce((total, entry) => {
+		const path = join(directory, entry.name);
+		return total + (entry.isDirectory() ? fixtureBytes(path) : statSync(path).size);
+	}, 0);
 }
 
 async function bounded<T>(condition: Promise<T>, name: string): Promise<T> {
@@ -207,7 +299,7 @@ async function seedUnavailablePublications(f: ScopedWriteFixture) {
 	}
 }
 
-function expectUnavailable(boundary: Boundary, result: unknown) {
+function expectEvidence(boundary: Boundary, result: unknown) {
 	if (boundary === "jellyfin-health") {
 		expect(result).toMatchObject([
 			{ item: { instanceId: JELLYFIN, cacheType: "jellyfin", itemCount: null } },
@@ -229,6 +321,28 @@ function expectUnavailable(boundary: Boundary, result: unknown) {
 			);
 		}
 		if (boundary === "plex-library") expect(entries[0]).toMatchObject({ instanceId: PLEX });
+	} else if (boundary === "plex-native") {
+		expect(result).toMatchObject({
+			status: "available",
+			itemCount: 3,
+			scopeCount: 1,
+			freshness: "current",
+			complete: true,
+			nextNativeId: "movie-1",
+		});
+		const page = result as { rows: unknown[] };
+		expect(page.rows).toEqual([
+			{
+				nativeId: "movie-1",
+				mediaType: "movie",
+				libraryIds: ["catalog"],
+				parentNativeId: null,
+				seasonNumber: null,
+				episodeNumber: null,
+				title: "Synthetic published movie",
+				externalIds: { tmdb: [1] },
+			},
+		]);
 	} else {
 		expect(result).toMatchObject({
 			instanceId: TAUTULLI,
@@ -245,12 +359,16 @@ function expectUnavailable(boundary: Boundary, result: unknown) {
 describe("Pulse cache catalogue workload admission", { timeout: 15_000 }, () => {
 	// Each case catches loss of phase/bulk classification for its named reader,
 	// while settled repository callbacks must no longer retain either bulk slot.
-	it.each<Boundary>(["jellyfin-health", "plex-library", "plex-episode", "tautulli"])(
+	it.each<Boundary>(["jellyfin-health", "plex-library", "plex-episode", "tautulli", "plex-native"])(
 		"caps admitted %s read phases and frees their slots while callbacks hold settled evidence",
 		async (boundary) => {
 			const f = await createScopedWriteFixture();
 			fixture = f;
+			fixtureIdentity = lstatSync(f.directory);
 			await seedUnavailablePublications(f);
+			if (boundary === "plex-native") await seedNativePublication(f);
+			const seededBytes = fixtureBytes(f.directory);
+			expect(seededBytes).toBeLessThanOrEqual(256 * 1024 ** 2);
 			const app = Fastify({ logger: false });
 			app.decorate("prisma", f.client.prisma);
 			const collector = pulseCollectors.find(
@@ -305,7 +423,7 @@ describe("Pulse cache catalogue workload admission", { timeout: 15_000 }, () => 
 			});
 			observer.settled = async (reader, result) => {
 				if (reader !== boundary) return;
-				expectUnavailable(reader, result);
+				expectEvidence(reader, result);
 				if (++targetCompletions === 2) targetReady.resolve();
 				await releaseTargets.promise;
 			};
@@ -405,7 +523,9 @@ describe("Pulse cache catalogue workload admission", { timeout: 15_000 }, () => 
 							`cache-jellyfin-error-${JELLYFIN}-jellyfin_episode`,
 							`cache-unavailable-${PLEX}-plex-status`,
 							`cache-unavailable-${PLEX}-plex_episode-status`,
-							`plex-native-metadata-unavailable-${PLEX}`,
+							boundary === "plex-native"
+								? `plex-native-metadata-${PLEX}`
+								: `plex-native-metadata-unavailable-${PLEX}`,
 							`cache-tautulli-unavailable-${TAUTULLI}`,
 						]),
 					);
@@ -434,6 +554,7 @@ describe("Pulse cache catalogue workload admission", { timeout: 15_000 }, () => 
 					runtimeLosses: f.losses,
 					noSqlTransactionHeld: noOpenTransactions(),
 					measuredQaWorkload: false,
+					seededBytes,
 				});
 			} finally {
 				releasePhases.resolve();
