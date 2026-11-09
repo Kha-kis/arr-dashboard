@@ -36,7 +36,10 @@ import {
 	isSonarrClient,
 } from "../arr/client-helpers.js";
 import { QuiApiError, QuiInstanceUnreachableError } from "../errors.js";
-import { withIsolatedRuntimePrismaReadClient } from "../backup/restore-runtime-client.js";
+import {
+	withIsolatedRuntimePrismaBulkReadClient,
+	withIsolatedRuntimePrismaReadClient,
+} from "../backup/restore-runtime-client.js";
 import type { JellyfinCacheHealthInstance } from "../jellyfin/jellyfin-cache-health.js";
 import {
 	DEFAULT_JELLYFIN_CACHE_HEALTH_MAX_AGE_MS,
@@ -1031,14 +1034,16 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 			}),
 		),
 	]);
-	const jellyfinHealthSources = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
-		readOwnedJellyfinCacheHealthSources({
-			prisma,
-			userId,
-			instances: jellyfinInstances as JellyfinCacheHealthInstance[],
-			now: observationNow,
-			maxAgeMs: DEFAULT_JELLYFIN_CACHE_HEALTH_MAX_AGE_MS,
-		}),
+	const jellyfinHealthSources = await withIsolatedRuntimePrismaBulkReadClient(
+		app.prisma,
+		(prisma) =>
+			readOwnedJellyfinCacheHealthSources({
+				prisma,
+				userId,
+				instances: jellyfinInstances as JellyfinCacheHealthInstance[],
+				now: observationNow,
+				maxAgeMs: DEFAULT_JELLYFIN_CACHE_HEALTH_MAX_AGE_MS,
+			}),
 	);
 
 	const plexEvidenceByStatus = new Map<
@@ -1046,7 +1051,7 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 		Awaited<ReturnType<typeof loadUserGenerationObservations>>[number]["evidence"]
 	>();
 	if (cacheStatuses.some((status) => status.cacheType === "plex")) {
-		for (const evidence of await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		for (const evidence of await withIsolatedRuntimePrismaBulkReadClient(app.prisma, (prisma) =>
 			loadUserGenerationObservations(prisma, { userId }),
 		)) {
 			if (evidence.instanceId) {
@@ -1056,7 +1061,7 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 	}
 	for (const status of cacheStatuses) {
 		if (status.cacheType !== "plex_episode") continue;
-		const evidence = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		const evidence = await withIsolatedRuntimePrismaBulkReadClient(app.prisma, (prisma) =>
 			getPublishedEpisodeGenerationObservation(prisma, {
 				userId,
 				instanceId: status.instanceId,
@@ -1287,7 +1292,7 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 	}
 
 	for (const instance of tautulliInstances) {
-		const observation = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		const observation = await withIsolatedRuntimePrismaBulkReadClient(app.prisma, (prisma) =>
 			readOwnedTautulliObservation(prisma, {
 				userId,
 				instanceId: instance.id,

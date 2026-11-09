@@ -13,6 +13,7 @@ import { registerOnDeckRoutes as registerJellyfinOnDeck } from "../../../routes/
 import { registerRecentlyAddedRoutes as registerJellyfinRecent } from "../../../routes/jellyfin/recently-added-routes.js";
 import { registerSeriesProgressRoutes as registerJellyfinProgress } from "../../../routes/jellyfin/series-progress-routes.js";
 import { registerWatchEnrichmentRoutes as registerJellyfinWatch } from "../../../routes/jellyfin/watch-enrichment-routes.js";
+import { registerFetchRoutes } from "../../../routes/library/fetch-routes.js";
 import { registerImageProxyRoutes } from "../../../routes/library/image-proxy-routes.js";
 import { registerProviderInventoryRoutes } from "../../../routes/library/provider-inventory-routes.js";
 import { registerOnDeckRoutes as registerPlexOnDeck } from "../../../routes/plex/on-deck-routes.js";
@@ -220,6 +221,13 @@ async function seedCanonical(f: ScopedWriteFixture) {
 						itemType,
 						title: "Synthetic ARR item",
 						data: JSON.stringify({
+							id,
+							instanceId,
+							instanceName: "Synthetic ARR",
+							service: itemType === "movie" ? "radarr" : "sonarr",
+							type: itemType,
+							title: "Synthetic ARR item",
+							poster: "http://synthetic.invalid/poster.jpg",
 							remoteIds: itemType === "movie" ? { tmdbId: id } : { tmdbId: id, tvdbId: id },
 						}),
 					};
@@ -804,7 +812,7 @@ function observeSql(f: ScopedWriteFixture) {
 describe("real mixed-provider cached-read scale composition", { timeout: 300_000 }, () => {
 	// Catches blank/invalid positive progress, wrong native backing/counts/ARR
 	// links, failed cached responses, or bypassed owned/enabled poster lookup.
-	it("admits real canonical positives and pass-backed native inventories during one unheld 117-GET cohort", async () => {
+	it("admits real canonical positives and native inventories after a Library-dependent poster-first 118-GET cohort", async () => {
 		const startedAt = performance.now();
 		const f = await createScopedWriteFixture();
 		fixture = f;
@@ -913,6 +921,7 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 		);
 		let providerIo = 0;
 		const posterIds = new Set<number>();
+		const selectedPosterIds = new Set<number>();
 		vi.stubGlobal("fetch", () => {
 			providerIo++;
 			throw new Error("Unexpected upstream socket in cache-only composition");
@@ -920,6 +929,7 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 		const inflight: Promise<unknown>[] = [];
 		try {
 			app.decorate("prisma", f.client.prisma);
+			app.decorate("dbProvider", "sqlite");
 			app.decorate("restoreRuntime", f.runtime);
 			app.decorate("sessionService", sessions);
 			app.decorate(
@@ -942,8 +952,7 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 								const match = /^\/MediaCover\/([1-9]\d*)\/poster\.jpg$/.exec(path);
 								if (!match) throw new Error("Unexpected synthetic poster path");
 								const id = Number(match[1]);
-								expect(id).toBeGreaterThanOrEqual(1);
-								expect(id).toBeLessThanOrEqual(100);
+								expect(selectedPosterIds.has(id)).toBe(true);
 								expect(posterIds.has(id)).toBe(false);
 								posterIds.add(id);
 								return new Response(Buffer.from(POSTER_JPEG, "base64"), {
@@ -972,6 +981,7 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 			app.addHook("preClose", async () => sessions.closeValidationAdmission());
 			app.addHook("onClose", async () => sessions.drainValidations());
 			await app.register(registerProviderInventoryRoutes);
+			await app.register(registerFetchRoutes);
 			await app.register(registerImageProxyRoutes);
 			for (const [register, prefix] of [
 				[registerJellyfinOnDeck, "/jellyfin/on-deck"],
@@ -1020,13 +1030,43 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 			};
 			const burstStartedAt = performance.now();
 			const cpu = process.cpuUsage();
-			// Every actual request is launched before awaiting any completion. No
-			// held callback, warm comparison, retry, sleep, fake auth or fake SQL.
-			const requests = [
+			// Browser cards can launch only after the real Library page arrives.
+			// Then posters precede ancillary work, unlike the old ancillary-first
+			// cohort. No held callback, warm-up, retry, sleep, fake auth or fake SQL.
+			const dashboardRequests = [
 				measured("jellyfin-on-deck", "/jellyfin/on-deck"),
 				measured("jellyfin-recent", "/jellyfin/recently-added?limit=20"),
 				measured("plex-on-deck", "/plex/on-deck"),
 				measured("plex-recent", "/plex/recently-added?limit=20"),
+			];
+			const libraryRequest = measured("ordinary-library", "/library?limit=100");
+			const library = await libraryRequest;
+			const page = library.response.json();
+			emit({
+				category: "synthetic-ordinary-library-dependency",
+				status: library.response.statusCode,
+				items: page.items?.length,
+				pagination: page.pagination,
+				quiObservationStatus: page.quiObservationStatus,
+			});
+			expect(library.response.statusCode).toBe(200);
+			expect(page.items).toHaveLength(100);
+			expect(page.pagination).toMatchObject({ totalItems: 2_000, limit: 100 });
+			expect(page.quiObservationStatus).toMatchObject({ status: "not_configured" });
+			for (const item of page.items) {
+				expect(item).toMatchObject({ instanceId: RADARR, service: "radarr", type: "movie" });
+				expect(item.poster).toMatch(/^\/api\/library\/poster\//);
+				selectedPosterIds.add(item.id);
+			}
+			expect(selectedPosterIds.size).toBe(100);
+			const requests = [
+				...dashboardRequests,
+				libraryRequest,
+				// Mirror Next's /api/* rewrite without changing the returned URL's
+				// route parameters or cache-version query.
+				...page.items.map((item: { poster: string }) =>
+					measured("poster", item.poster.slice("/api".length)),
+				),
 				...[42, 43].flatMap((id) => [
 					measured(`jellyfin-watch-${id}`, `/jellyfin/watch-enrichment?tmdbIds=${id}&types=movie`),
 					measured(`plex-watch-${id}`, `/plex/watch-enrichment?tmdbIds=${id}&types=movie`),
@@ -1046,9 +1086,6 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 					"jellyfin-episode",
 					`/library/provider-inventory?instanceId=${JELLYFIN}&domain=episode&limit=100`,
 				),
-				...Array.from({ length: 100 }, (_, index) =>
-					measured("poster", `/library/poster/${RADARR}/movie/${index + 1}`),
-				),
 			];
 			const results = await Promise.all(requests);
 			const cpuMicroseconds = process.cpuUsage(cpu);
@@ -1057,6 +1094,7 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 				canonical,
 				native,
 				requestCount: results.length,
+				arrivalPattern: "ordinary-page-dependent; posters before ancillary/native reads",
 				wallMs: performance.now() - burstStartedAt,
 				cpuMicroseconds,
 				resources: resourceCheck(false),
@@ -1107,7 +1145,8 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 					"statistics",
 					"streams",
 					"background writers/jobs",
-					"QA arrival order",
+					"exact QA arrival timings and other peer requests",
+					"configured qUI publication/counts",
 					"QA host capacity",
 					"browser delivery",
 				],
@@ -1123,7 +1162,7 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 				jellyfinEpisodes: 57,
 				plexEpisodes: 3_251,
 			});
-			expect(results).toHaveLength(117);
+			expect(results).toHaveLength(118);
 			for (const { trace, response } of results) {
 				expect(response.statusCode, trace.category).toBe(200);
 				expect(trace.runtime?.["lane-wait"].count, trace.category).toBeGreaterThan(0);
@@ -1135,7 +1174,10 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 					continue;
 				}
 				const body = response.json();
-				if (trace.category.endsWith("on-deck") || trace.category.endsWith("recent")) {
+				if (trace.category === "ordinary-library") {
+					expect(body.items).toHaveLength(100);
+					expect(body.pagination.totalItems).toBe(2_000);
+				} else if (trace.category.endsWith("on-deck") || trace.category.endsWith("recent")) {
 					expect(body.items.length).toBeGreaterThan(0);
 					if (trace.category.endsWith("recent")) expect(body.items).toHaveLength(20);
 				} else if (trace.category.includes("-watch-")) {
