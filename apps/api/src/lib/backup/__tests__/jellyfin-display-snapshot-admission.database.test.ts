@@ -175,6 +175,49 @@ async function seed(f: ScopedWriteFixture) {
 }
 
 describe("Jellyfin display snapshot admission", { timeout: 20_000 }, () => {
+	it("batches 200 missing show receipts through the guarded SQLite reader", async () => {
+		const f = await createScopedWriteFixture();
+		const now = await seed(f);
+		let receiptSelects = 0;
+		const prepare = Database.prototype.prepare;
+		vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+			this: Database.Database,
+			sql,
+		) {
+			if (
+				this.name === f.path &&
+				/^\s*SELECT\b/i.test(sql) &&
+				sql.includes("jellyfin_episode_generation_show_receipts")
+			)
+				receiptSelects++;
+			return prepare.call(this, sql);
+		});
+		const result = await f.runtime.runOperation(() =>
+			withIsolatedRuntimePrismaBulkReadClient(
+				f.client.prisma,
+				(prisma) =>
+					readOwnedGenerationScopedEpisodeDisplay({
+						prisma,
+						userId: "synthetic-user",
+						instanceId: "synthetic-jellyfin",
+						showTmdbIds: Array.from({ length: 200 }, (_, index) => index + 1),
+						now,
+					}),
+				{ lease: "phase" },
+			),
+		);
+		expect(result).toMatchObject({
+			available: true,
+			rows: [],
+			mutationAvailable: false,
+			authority: null,
+			providerStatus: { availability: "partial", evidence: "positive-only" },
+		});
+		expect(result?.providerStatus.reasonCodes).toContain("coverage-incomplete");
+		expect(receiptSelects).toBe(1);
+		expect(f.losses).toEqual([]);
+	});
+
 	it.each(["library", "v4-health"] as const)(
 		"releases both bulk lanes while %s display validation is pending",
 		async (mode) => {

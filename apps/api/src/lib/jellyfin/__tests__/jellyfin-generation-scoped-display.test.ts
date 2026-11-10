@@ -44,7 +44,7 @@ const publishedAt = new Date("2026-09-02T12:01:00.000Z");
 const now = new Date("2026-09-02T12:02:00.000Z");
 const maxAgeMs = 10 * 60 * 1_000;
 
-function fixture(service: "JELLYFIN" | "EMBY" = "JELLYFIN") {
+function fixture(service: "JELLYFIN" | "EMBY" = "JELLYFIN", catalogIds = [42]) {
 	const provider = service === "EMBY" ? "emby" : "jellyfin";
 	const instance = {
 		id: "instance-1",
@@ -75,14 +75,20 @@ function fixture(service: "JELLYFIN" | "EMBY" = "JELLYFIN") {
 		connectionGeneration: 7,
 		identityGeneration: 3,
 	};
+	const libraryRows = catalogIds.map((tmdbId) => ({
+		...libraryRow,
+		id: tmdbId === 42 ? libraryRow.id : `library-row-${tmdbId}`,
+		tmdbId,
+		jellyfinId: tmdbId === 42 ? libraryRow.jellyfinId : `series-${tmdbId}`,
+	}));
 	const unit = {
 		scopeKey: "user:user-1/library:library-1/inventory",
-		expectedRawCount: 1,
+		expectedRawCount: libraryRows.length,
 		pagesAttempted: 1,
 		pagesCompleted: 1,
-		rawObserved: 1,
-		sourceBindings: 1,
-		canonicalEntities: 1,
+		rawObserved: libraryRows.length,
+		sourceBindings: libraryRows.length,
+		canonicalEntities: libraryRows.length,
 		acceptedSkips: [],
 		fatalCount: 0,
 	};
@@ -93,10 +99,10 @@ function fixture(service: "JELLYFIN" | "EMBY" = "JELLYFIN") {
 		publicationLevel: "positive-only",
 		completeness: "partial",
 		canonicalizationVersion: 1,
-		itemCount: 1,
+		itemCount: libraryRows.length,
 		connectionGeneration: 7,
 		identityGeneration: 3,
-		contentFingerprint: fingerprintJellyfinLibraryRows([libraryRow]),
+		contentFingerprint: fingerprintJellyfinLibraryRows(libraryRows),
 		coverageReceipt: {
 			version: 2,
 			provider,
@@ -104,7 +110,7 @@ function fixture(service: "JELLYFIN" | "EMBY" = "JELLYFIN") {
 			observedAt: publishedAt.toISOString(),
 			evidence: "positive-only",
 			units: [unit],
-			publishedCanonicalEntities: 1,
+			publishedCanonicalEntities: libraryRows.length,
 			domains: [
 				{
 					domain: "library-inventory",
@@ -117,14 +123,14 @@ function fixture(service: "JELLYFIN" | "EMBY" = "JELLYFIN") {
 					evidence: "complete",
 					valueSemantics: "exact",
 					units: [{ ...unit, scopeKey: "user:user-1/library:library-1/mapping" }],
-					publishedCanonicalEntities: 1,
+					publishedCanonicalEntities: libraryRows.length,
 				},
 				{
 					domain: "watch-count",
 					evidence: "positive-only",
 					valueSemantics: "lower-bound",
 					units: [unit],
-					publishedCanonicalEntities: 1,
+					publishedCanonicalEntities: libraryRows.length,
 				},
 				{ domain: "watch-attribution", evidence: "unknown", valueSemantics: "unknown", units: [] },
 				{ domain: "on-deck", evidence: "unknown", valueSemantics: "unknown", units: [] },
@@ -139,7 +145,7 @@ function fixture(service: "JELLYFIN" | "EMBY" = "JELLYFIN") {
 		generationId: "parent-generation",
 		publishedAt,
 		metadata: parentMetadata,
-		rows: [libraryRow],
+		rows: libraryRows,
 		providerStatus: projectProviderObservationStatus({
 			identity: "current",
 			publication: {
@@ -177,15 +183,14 @@ function fixture(service: "JELLYFIN" | "EMBY" = "JELLYFIN") {
 		lastWatchedAt: null,
 	};
 	const rows = [watched, unwatched];
-	const catalogProvenance = buildJellyfinEpisodeCatalogProvenance(
-		[libraryRow],
-		[{ userId: "user-1", libraryId: "library-1" }],
-	);
+	const catalogProvenance = buildJellyfinEpisodeCatalogProvenance(libraryRows, [
+		{ userId: "user-1", libraryId: "library-1" },
+	]);
 	if (!catalogProvenance) throw new Error("Invalid synthetic catalog");
 	const parentLibraryDependencyFingerprint = fingerprintJellyfinEpisodeParentDependency(
 		instance.id,
 		parentMetadata,
-		[libraryRow],
+		libraryRows,
 	);
 	if (!parentLibraryDependencyFingerprint) throw new Error("Invalid synthetic parent receipt");
 	const episodeUnit = {
@@ -254,13 +259,29 @@ function fixture(service: "JELLYFIN" | "EMBY" = "JELLYFIN") {
 		activeRunId: status.generationId,
 		activeCacheGenerationId: status.generationId,
 	};
-	const showReceipt = { rowCount: 2, contentFingerprint: fingerprintJellyfinEpisodeRows(rows) };
+	const showReceipt = {
+		instanceId: instance.id,
+		generationId: status.generationId,
+		showTmdbId: 42,
+		rowCount: 2,
+		contentFingerprint: fingerprintJellyfinEpisodeRows(rows),
+	};
 	const tx = {
 		serviceInstance: { findFirst: vi.fn(async () => instance) },
 		cacheRefreshStatus: { findUnique: vi.fn(async () => status) },
 		jellyfinEpisodePreparation: { findUnique: vi.fn(async () => preparation) },
 		jellyfinNativeWatchPublication: { findUnique: vi.fn(async () => pointer) },
-		jellyfinEpisodeGenerationShowReceipt: { findUnique: vi.fn(async () => showReceipt) },
+		jellyfinEpisodeGenerationShowReceipt: {
+			findUnique: vi.fn(async (...args: unknown[]) => {
+				const query = args[0] as {
+					where: { instanceId_generationId_showTmdbId: { showTmdbId: number } };
+				};
+				return query.where.instanceId_generationId_showTmdbId.showTmdbId === 42
+					? showReceipt
+					: null;
+			}),
+			findMany: vi.fn(async () => [showReceipt]),
+		},
 		jellyfinEpisodeGenerationRow: { findMany: vi.fn(async () => rows) },
 	};
 	const prisma = {
@@ -320,6 +341,156 @@ afterEach(() => {
 });
 
 describe("generation-scoped episode display freshness", () => {
+	it("batches 200 eligible receipts while preserving a present scope among missing scopes", async () => {
+		const ids = Array.from({ length: 200 }, (_, index) => index + 42);
+		const f = fixture("JELLYFIN", ids);
+		const result = await readOwnedGenerationScopedEpisodeDisplay({
+			prisma: f.prisma,
+			userId: "owner-1",
+			instanceId: f.instance.id,
+			showTmdbIds: [...ids, 42],
+			now,
+			maxAgeMs,
+		});
+		expect(result).toMatchObject({
+			available: true,
+			mutationAvailable: false,
+			authority: null,
+			providerStatus: { availability: "partial", evidence: "positive-only" },
+		});
+		expect(result?.rows).toEqual([f.rows[0]]);
+		expect(f.tx.jellyfinEpisodeGenerationShowReceipt.findUnique).not.toHaveBeenCalled();
+		expect(f.tx.jellyfinEpisodeGenerationShowReceipt.findMany).toHaveBeenCalledExactlyOnceWith({
+			where: {
+				instanceId: "instance-1",
+				generationId: "episode-generation",
+				showTmdbId: { in: ids },
+				instance: { userId: "owner-1", enabled: true },
+			},
+			take: 200,
+		});
+		expect(f.tx.jellyfinEpisodeGenerationRow.findMany).toHaveBeenCalledTimes(1);
+	});
+
+	it.each([{ ids: [] }, { ids: [999] }])(
+		"skips receipt retrieval with no eligible shows: $ids",
+		async ({ ids }) => {
+			const f = fixture();
+			const result = await readOwnedGenerationScopedEpisodeDisplay({
+				prisma: f.prisma,
+				userId: "owner-1",
+				instanceId: f.instance.id,
+				showTmdbIds: ids,
+				now,
+				maxAgeMs,
+			});
+			expect(result).toMatchObject({
+				available: true,
+				rows: [],
+				mutationAvailable: false,
+				authority: null,
+				providerStatus: { availability: "partial", evidence: "positive-only" },
+			});
+			expect(f.tx.jellyfinEpisodeGenerationShowReceipt.findMany).not.toHaveBeenCalled();
+			expect(f.tx.jellyfinEpisodeGenerationShowReceipt.findUnique).not.toHaveBeenCalled();
+			expect(f.tx.jellyfinEpisodeGenerationRow.findMany).not.toHaveBeenCalled();
+		},
+	);
+
+	it("retains requested order and partial valid rows despite missing scopes and reversed receipts", async () => {
+		const f = fixture("JELLYFIN", [42, 43]);
+		const otherRows = f.rows.map((row) => ({ ...row, showTmdbId: 43 }));
+		f.tx.jellyfinEpisodeGenerationShowReceipt.findMany.mockResolvedValue([
+			f.showReceipt,
+			{
+				...f.showReceipt,
+				showTmdbId: 43,
+				contentFingerprint: fingerprintJellyfinEpisodeRows(otherRows),
+			},
+		]);
+		f.tx.jellyfinEpisodeGenerationRow.findMany.mockImplementation(async (...args: unknown[]) => {
+			const query = args[0] as { where: { showTmdbId: number } };
+			return query.where.showTmdbId === 43 ? otherRows : f.rows;
+		});
+		const result = await readOwnedGenerationScopedEpisodeDisplay({
+			prisma: f.prisma,
+			userId: "owner-1",
+			instanceId: f.instance.id,
+			showTmdbIds: [43, 999, 42, 43],
+			now,
+			maxAgeMs,
+		});
+		expect(result?.rows.map((row) => [row.showTmdbId, row.episodeNumber, row.watched])).toEqual([
+			[43, 1, true],
+			[42, 1, true],
+		]);
+		expect(result).toMatchObject({
+			available: true,
+			mutationAvailable: false,
+			authority: null,
+			providerStatus: { availability: "partial", evidence: "positive-only" },
+		});
+		expect(f.tx.jellyfinEpisodeGenerationShowReceipt.findMany).toHaveBeenCalledWith({
+			where: {
+				instanceId: "instance-1",
+				generationId: "episode-generation",
+				showTmdbId: { in: [43, 42] },
+				instance: { userId: "owner-1", enabled: true },
+			},
+			take: 2,
+		});
+	});
+
+	it.each(["instance", "generation", "unrequested", "duplicate"] as const)(
+		"fails closed on %s receipt identity",
+		async (failure) => {
+			const f = fixture();
+			const invalid = { ...f.showReceipt };
+			if (failure === "instance") invalid.instanceId = "other-instance";
+			if (failure === "generation") invalid.generationId = "other-generation";
+			if (failure === "unrequested") invalid.showTmdbId = 999;
+			f.tx.jellyfinEpisodeGenerationShowReceipt.findMany.mockResolvedValue(
+				failure === "duplicate" ? [f.showReceipt, invalid] : [invalid],
+			);
+			expect(await f.read()).toMatchObject({
+				available: false,
+				rows: [],
+				mutationAvailable: false,
+				authority: null,
+				providerStatus: { availability: "unavailable", reasonCodes: ["rows-inconsistent"] },
+			});
+			expect(f.tx.jellyfinEpisodeGenerationRow.findMany).not.toHaveBeenCalled();
+		},
+	);
+
+	it("propagates receipt query failure without materializing rows", async () => {
+		const f = fixture();
+		f.tx.jellyfinEpisodeGenerationShowReceipt.findMany.mockRejectedValue(
+			new Error("receipt read failed"),
+		);
+		await expect(f.read()).rejects.toThrow("receipt read failed");
+		expect(f.tx.jellyfinEpisodeGenerationRow.findMany).not.toHaveBeenCalled();
+	});
+
+	it.each(["missing-owner", "disabled"] as const)(
+		"rejects %s before receipt retrieval",
+		async (failure) => {
+			const f = fixture();
+			if (failure === "missing-owner") f.tx.serviceInstance.findFirst.mockResolvedValue(null!);
+			else f.instance.enabled = false;
+			const result = await f.read();
+			if (failure === "missing-owner") expect(result).toBeNull();
+			else
+				expect(result).toMatchObject({
+					available: false,
+					rows: [],
+					mutationAvailable: false,
+					authority: null,
+				});
+			expect(f.tx.jellyfinEpisodeGenerationShowReceipt.findMany).not.toHaveBeenCalled();
+		},
+	);
+
 	it.each(["JELLYFIN", "EMBY"] as const)(
 		"skips unused parent dependency hashing for a validated positive-only %s display",
 		async (service) => {
@@ -417,18 +588,13 @@ describe("generation-scoped episode display freshness", () => {
 				[43, oversized],
 				[44, valid],
 			]);
-			f.tx.jellyfinEpisodeGenerationShowReceipt.findUnique.mockImplementation(
-				async (...args: unknown[]) => {
-					const query = args[0] as {
-						where: { instanceId_generationId_showTmdbId: { showTmdbId: number } };
-					};
-					const id = query.where.instanceId_generationId_showTmdbId.showTmdbId;
-					return {
-						rowCount: scopes.get(id)!.length,
-						contentFingerprint:
-							id === 44 ? fingerprintJellyfinEpisodeRows(valid) : "invalid-digest",
-					};
-				},
+			f.tx.jellyfinEpisodeGenerationShowReceipt.findMany.mockResolvedValue(
+				[42, 43, 44].map((id) => ({
+					...f.showReceipt,
+					showTmdbId: id,
+					rowCount: scopes.get(id)!.length,
+					contentFingerprint: id === 44 ? fingerprintJellyfinEpisodeRows(valid) : "invalid-digest",
+				})),
 			);
 			f.tx.jellyfinEpisodeGenerationRow.findMany.mockImplementation(async (...args: unknown[]) => {
 				const query = args[0] as { where: { showTmdbId: number }; take: number };

@@ -169,6 +169,29 @@ export async function readOwnedGenerationScopedEpisodeDisplay(
 			metadata.sourceVersion === 3 && metadata.publicationLevel === "positive-only"
 				? new Set(metadata.catalogProvenance?.bindings.map((binding) => binding.tmdbId) ?? [])
 				: null;
+		const eligible = requested.filter((id) => !originalCatalogIds || originalCatalogIds.has(id));
+		const receipts = eligible.length
+			? await tx.jellyfinEpisodeGenerationShowReceipt.findMany({
+					where: {
+						instanceId: instance.id,
+						generationId: status.generationId,
+						showTmdbId: { in: eligible },
+						instance: { userId: input.userId, enabled: true },
+					},
+					take: eligible.length,
+				})
+			: [];
+		const receiptsByShow = new Map<number, (typeof receipts)[number]>();
+		for (const receipt of receipts) {
+			if (
+				receipt.instanceId !== instance.id ||
+				receipt.generationId !== status.generationId ||
+				!eligible.includes(receipt.showTmdbId) ||
+				receiptsByShow.has(receipt.showTmdbId)
+			)
+				return fail("rows-inconsistent");
+			receiptsByShow.set(receipt.showTmdbId, receipt);
+		}
 		// Validate and discard each requested scope here to retain the existing
 		// accepted-row cap plus one fetched scope, rather than retaining all scopes.
 		const rows: JellyfinEpisodeRow[] = [];
@@ -178,15 +201,7 @@ export async function readOwnedGenerationScopedEpisodeDisplay(
 				incompleteRequestedScope = true;
 				continue;
 			}
-			const receipt = await tx.jellyfinEpisodeGenerationShowReceipt.findUnique({
-				where: {
-					instanceId_generationId_showTmdbId: {
-						instanceId: instance.id,
-						generationId: status.generationId,
-						showTmdbId,
-					},
-				},
-			});
+			const receipt = receiptsByShow.get(showTmdbId);
 			if (!receipt) {
 				incompleteRequestedScope = true;
 				continue;
