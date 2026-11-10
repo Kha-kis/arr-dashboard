@@ -17,7 +17,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import Database from "better-sqlite3";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRecoverableSqliteAdapter } from "../../sqlite-adapter.js";
 import {
 	isEligibleSqliteRestoreMount,
@@ -29,6 +29,73 @@ const ROOT_MOUNT = "18 0 0:27 / / rw,relatime - overlay overlay rw\n";
 const LOCAL_TYPE = 0x794c7630n;
 
 describe("SQLite Restore trusted mount eligibility", () => {
+	it("does not rescan unchanged mount evidence at repeated storage fences", () => {
+		const mount = `${ROOT_MOUNT}902 18 0:43 /fixture /unchanged-evidence rw - ext4 fixture rw\n`;
+		// Observe real parser work without replacing it or imposing a wall-clock SLA.
+		const split = vi.spyOn(String.prototype, "split");
+		let first: boolean;
+		let repeated: boolean;
+		let firstScans: number;
+		let repeatedScans: number;
+		try {
+			first = isEligibleSqliteRestoreMount(
+				"/unchanged-evidence/main.db",
+				mount,
+				LOCAL_TYPE,
+				"linux",
+			);
+			firstScans = split.mock.calls.filter(
+				([separator]: readonly unknown[]) => separator === " - ",
+			).length;
+			repeated = isEligibleSqliteRestoreMount(
+				"/unchanged-evidence/main.db",
+				Buffer.from(mount).toString(),
+				LOCAL_TYPE,
+				"linux",
+			);
+			repeatedScans = split.mock.calls.filter(
+				([separator]: readonly unknown[]) => separator === " - ",
+			).length;
+		} finally {
+			split.mockRestore();
+		}
+		expect(first).toBe(true);
+		expect(repeated).toBe(true);
+		expect(firstScans).toBeGreaterThan(0);
+		expect(repeatedScans).toBe(firstScans);
+	});
+
+	it("reclassifies changed mount bytes instead of reusing previously eligible storage", () => {
+		const path = "/mount-replacement/main.db";
+		const mount = `${ROOT_MOUNT}903 18 0:43 /fixture /mount-replacement rw - ext4 fixture rw\n`;
+		expect(isEligibleSqliteRestoreMount(path, mount, LOCAL_TYPE, "linux")).toBe(true);
+		for (const changed of [
+			`${mount}904 903 0:43 /fixture/main.db ${path} rw - ext4 fixture rw\n`,
+			`${mount}903 18 0:43 /fixture /duplicate rw - ext4 fixture rw\n`,
+			`${mount}malformed evidence\n`,
+		]) {
+			expect(isEligibleSqliteRestoreMount(path, changed, LOCAL_TYPE, "linux")).toBe(false);
+			expect(isEligibleSqliteRestoreMount(path, mount, LOCAL_TYPE, "linux")).toBe(true);
+		}
+	});
+
+	it("binds eligibility reuse to the path, filesystem and platform", () => {
+		const mount = `${ROOT_MOUNT}905 18 0:43 /fixture/main.db /different-target.db rw - ext4 fixture rw\n`;
+		expect(isEligibleSqliteRestoreMount("/original/main.db", mount, LOCAL_TYPE, "linux")).toBe(
+			true,
+		);
+		expect(isEligibleSqliteRestoreMount("/different-target.db", mount, LOCAL_TYPE, "linux")).toBe(
+			false,
+		);
+		expect(isEligibleSqliteRestoreMount("/original/main.db", mount, 0x6969n, "linux")).toBe(false);
+		expect(isEligibleSqliteRestoreMount("/original/main.db", mount, LOCAL_TYPE, "win32")).toBe(
+			false,
+		);
+		expect(isEligibleSqliteRestoreMount("/original/main.db", mount, LOCAL_TYPE, "linux")).toBe(
+			true,
+		);
+	});
+
 	it.each([0xef53n, 0x58465342n, 0x9123683en, 0x01021994n, LOCAL_TYPE])(
 		"accepts eligible local filesystem type %s without granting ownership",
 		(type) => {

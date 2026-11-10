@@ -25,7 +25,36 @@ export type SqliteRestoreStorage = Readonly<{
 	assertUnchanged(): void;
 }>;
 
+type EligibleMountInput = Readonly<{
+	databasePath: string;
+	mountInfo: string;
+	filesystemType: bigint;
+	platform: string;
+}>;
+
+// One successful, bounded pure computation only. Callers still acquire fresh
+// mount/statfs evidence and independently recheck inode and ownership every time.
+let lastEligibleMountInput: EligibleMountInput | undefined;
+
 export function isEligibleSqliteRestoreMount(
+	databasePath: string,
+	mountInfo: string,
+	filesystemType: bigint,
+	platform: string,
+): boolean {
+	if (
+		lastEligibleMountInput?.databasePath === databasePath &&
+		lastEligibleMountInput.mountInfo === mountInfo &&
+		lastEligibleMountInput.filesystemType === filesystemType &&
+		lastEligibleMountInput.platform === platform
+	)
+		return true;
+	if (!classifySqliteRestoreMount(databasePath, mountInfo, filesystemType, platform)) return false;
+	lastEligibleMountInput = { databasePath, mountInfo, filesystemType, platform };
+	return true;
+}
+
+function classifySqliteRestoreMount(
 	databasePath: string,
 	mountInfo: string,
 	filesystemType: bigint,

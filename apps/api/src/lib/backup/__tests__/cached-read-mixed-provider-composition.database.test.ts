@@ -2,7 +2,12 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import type { PlexCanonicalDomain, ProviderCoverageReceiptV2 } from "@arr/shared";
+import {
+	type PlexCanonicalDomain,
+	type ProviderCoverageReceiptV2,
+	seerrPageResultSchema,
+	seerrRequestSchema,
+} from "@arr/shared";
 import fastifyCookie from "@fastify/cookie";
 import Database from "better-sqlite3";
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
@@ -15,6 +20,7 @@ import { registerSeriesProgressRoutes as registerJellyfinProgress } from "../../
 import { registerWatchEnrichmentRoutes as registerJellyfinWatch } from "../../../routes/jellyfin/watch-enrichment-routes.js";
 import { registerFetchRoutes } from "../../../routes/library/fetch-routes.js";
 import { registerImageProxyRoutes } from "../../../routes/library/image-proxy-routes.js";
+import { registerInsightsRoutes } from "../../../routes/library/insights-routes.js";
 import { registerProviderInventoryRoutes } from "../../../routes/library/provider-inventory-routes.js";
 import { registerOnDeckRoutes as registerPlexOnDeck } from "../../../routes/plex/on-deck-routes.js";
 import { registerRecentlyAddedRoutes as registerPlexRecent } from "../../../routes/plex/recently-added-routes.js";
@@ -36,6 +42,8 @@ import {
 	fingerprintJellyfinLibraryGenerationMetadata,
 	fingerprintJellyfinLibraryRows,
 } from "../../jellyfin/jellyfin-generation-metadata.js";
+import { publishPreparedNativeWatchGeneration } from "../../jellyfin/jellyfin-native-watch-repository.js";
+import { publishJellyfinPositiveWatchGeneration } from "../../jellyfin/jellyfin-positive-watch-repository.js";
 import { createPlexSelectionProjection } from "../../plex/plex-canonical-projection.js";
 import { createPositivePlexEpisodeDigest } from "../../plex/plex-episode-live-collector.js";
 import {
@@ -60,6 +68,7 @@ import {
 	publishNativeInventoryRun,
 	renewNativeInventoryRunLease,
 } from "../../provider-observation/native-inventory-job-repository.js";
+import { beginProviderCacheRefreshAttempt } from "../../services/provider-cache-status.js";
 import { createProviderPublicationAuthority } from "../../services/provider-identity-guard.js";
 import { type RuntimeReadTiming, withRuntimeReadTiming } from "../restore-runtime-read-timing.js";
 
@@ -68,6 +77,7 @@ const JELLYFIN = "synthetic-jellyfin";
 const PLEX = "synthetic-plex";
 const RADARR = "synthetic-mixed-radarr";
 const SONARR = "synthetic-mixed-sonarr";
+const SEERR = "synthetic-mixed-seerr";
 const LIBRARY_DOMAINS = [
 	"library-inventory",
 	"mapping",
@@ -196,6 +206,7 @@ async function seedCanonical(f: ScopedWriteFixture) {
 		data: [
 			{ id: RADARR, service: "RADARR" as const },
 			{ id: SONARR, service: "SONARR" as const },
+			{ id: SEERR, service: "SEERR" as const },
 		].map((instance) => ({
 			...instance,
 			userId: OWNER,
@@ -220,6 +231,9 @@ async function seedCanonical(f: ScopedWriteFixture) {
 						arrItemId: id,
 						itemType,
 						title: "Synthetic ARR item",
+						hasFile: itemType === "movie" && id <= 20,
+						sizeOnDisk: itemType === "movie" && id <= 20 ? BigInt(21 - id) * 1024n ** 3n : 0n,
+						arrAddedAt: new Date(observedAt.getTime() - 90 * 86400000),
 						data: JSON.stringify({
 							id,
 							instanceId,
@@ -247,9 +261,9 @@ async function seedCanonical(f: ScopedWriteFixture) {
 			libraryName: "Synthetic library",
 			title: "Synthetic item",
 			jellyfinId: `${series ? "series" : "movie"}-${String(id).padStart(6, "0")}`,
-			lastWatchedAt: observedAt,
-			watchCount: 2,
-			watchedByUsers: '["synthetic-viewer"]',
+			lastWatchedAt: !series && id <= 20 && id % 2 === 1 ? null : observedAt,
+			watchCount: !series && id <= 20 && id % 2 === 1 ? 0 : 2,
+			watchedByUsers: !series && id <= 20 && id % 2 === 1 ? "[]" : '["synthetic-viewer"]',
 			onDeck: id <= 50,
 			userRating: null,
 			collections: "[]",
@@ -348,9 +362,9 @@ async function seedCanonical(f: ScopedWriteFixture) {
 			sectionTitle: "Synthetic library",
 			title: "Synthetic item",
 			ratingKey: `${series ? "series" : "movie"}-${String(id).padStart(6, "0")}`,
-			lastWatchedAt: observedAt,
-			watchCount: 2,
-			watchedByUsers: '["synthetic-viewer"]',
+			lastWatchedAt: !series && id <= 20 && id % 2 === 1 ? null : observedAt,
+			watchCount: !series && id <= 20 && id % 2 === 1 ? 0 : 2,
+			watchedByUsers: !series && id <= 20 && id % 2 === 1 ? "[]" : '["synthetic-viewer"]',
 			onDeck: id <= 50,
 			userRating: null,
 			collections: "[]",
@@ -719,6 +733,190 @@ async function seedNative(f: ScopedWriteFixture, resourceCheck: () => unknown) {
 	return counts;
 }
 
+async function seedNativeWatch(f: ScopedWriteFixture, resourceCheck: () => unknown) {
+	const startedAt = performance.now();
+	const head = await f.plain.providerNativeInventorySnapshot.findUniqueOrThrow({
+		where: { instanceId_domain: { instanceId: JELLYFIN, domain: "episode" } },
+	});
+	if (!head.publishedPassId) throw new Error("fixture-watch-seed: missing native episode pass");
+	const status = await f.plain.cacheRefreshStatus.findUniqueOrThrow({
+		where: { instanceId_cacheType: { instanceId: JELLYFIN, cacheType: "jellyfin_episode" } },
+	});
+	if (!status.generationId) throw new Error("fixture-watch-seed: missing canonical generation");
+	const users = ["synthetic-viewer-a", "synthetic-viewer-b"].map((user) =>
+		createHash("sha256")
+			.update(JSON.stringify(["jellyfin-user", user]))
+			.digest("hex"),
+	);
+	const hashes = users.map(() => createHash("sha256"));
+	const libraries = new Set<string>();
+	const run = await f.plain.providerObservationRun.create({
+		// Accepted repository-fixture boundary: a completed synthetic collection.
+		// The production publisher, not direct pointer insertion, grants visibility.
+		data: {
+			instanceId: JELLYFIN,
+			provider: "jellyfin_episode",
+			cacheType: "jellyfin_episode",
+			authorityKey: "synthetic-native-watch-authority",
+			targetDigest: head.contentDigest!,
+			targetCount: head.itemCount,
+			connectionGeneration: 1,
+			identityGeneration: 1,
+			state: "complete",
+			totalUnits: users.length * head.scopeCount * 2,
+			completedUnits: users.length * head.scopeCount * 2,
+			totalWork: head.itemCount * users.length * 2,
+			completedWork: head.itemCount * users.length * 2,
+			completedAt: status.lastRefreshedAt,
+		},
+	});
+	let catalogueRows = 0;
+	let cursor: string | undefined;
+	for (;;) {
+		resourceCheck();
+		const page = await f.plain.providerNativeInventoryStageItem.findMany({
+			where: {
+				passId: head.publishedPassId,
+				domain: "episode",
+				...(cursor ? { nativeId: { gt: cursor } } : {}),
+			},
+			orderBy: { nativeId: "asc" },
+			take: 500,
+		});
+		if (page.length === 0) break;
+		for (const row of page) {
+			const ids: string[] = JSON.parse(row.libraryIds);
+			expect(ids).toEqual(["catalog"]);
+			libraries.add(ids[0]!);
+		}
+		for (const [userIndex, userKeyDigest] of users.entries()) {
+			const data = page.map((row, offset) => {
+				const played = (catalogueRows + offset) % 4 === userIndex;
+				const candidate = {
+					instanceId: JELLYFIN,
+					runId: run.id,
+					userKeyDigest,
+					libraryId: "catalog",
+					jellyfinId: row.nativeId,
+					seriesId: row.parentNativeId!,
+					seasonNumber: row.seasonNumber!,
+					episodeNumber: row.episodeNumber!,
+					played,
+					playCount: played ? 1 : 0,
+					lastPlayedAt: played ? status.lastRefreshedAt : null,
+					observedAt: status.lastRefreshedAt,
+					connectionGeneration: 1,
+					identityGeneration: 1,
+				};
+				hashes[userIndex]!.update(`${JSON.stringify(candidate)}\n`);
+				return candidate;
+			});
+			await f.plain.jellyfinNativeWatchRow.createMany({ data });
+		}
+		catalogueRows += page.length;
+		cursor = page.at(-1)!.nativeId;
+	}
+	expect(catalogueRows).toBe(125_000);
+	expect(catalogueRows).toBe(head.itemCount);
+	expect(libraries.size).toBe(head.scopeCount);
+	const expectedScopeCount = users.length * libraries.size;
+	await f.plain.jellyfinNativeWatchScopeReceipt.createMany({
+		data: users.map((userKeyDigest, index) => ({
+			instanceId: JELLYFIN,
+			runId: run.id,
+			userKeyDigest,
+			libraryId: "catalog",
+			expectedRawCount: catalogueRows,
+			observedRawCount: catalogueRows,
+			exact: true,
+			contentFingerprint: hashes[index]!.digest("hex"),
+			observedAt: status.lastRefreshedAt,
+			connectionGeneration: 1,
+			identityGeneration: 1,
+		})),
+	});
+	const groups = await f.plain.jellyfinNativeWatchRow.groupBy({
+		by: ["userKeyDigest", "played"],
+		where: { instanceId: JELLYFIN, runId: run.id },
+		_count: { _all: true },
+	});
+	for (const user of users) {
+		expect(groups.find((group) => group.userKeyDigest === user && group.played)?._count._all).toBe(
+			31_250,
+		);
+		expect(groups.find((group) => group.userKeyDigest === user && !group.played)?._count._all).toBe(
+			93_750,
+		);
+	}
+	await f.plain.$transaction((tx) =>
+		publishPreparedNativeWatchGeneration(tx, {
+			userId: OWNER,
+			instanceId: JELLYFIN,
+			runId: run.id,
+			cacheGenerationId: status.generationId!,
+			connectionGeneration: 1,
+			identityGeneration: 1,
+			observedAt: status.lastRefreshedAt,
+			expectedScopeCount,
+			candidateCount: catalogueRows * users.length,
+			receiptCount: expectedScopeCount,
+		}),
+	);
+	const instance = await f.plain.serviceInstance.findUniqueOrThrow({ where: { id: JELLYFIN } });
+	const attempt = await beginProviderCacheRefreshAttempt(
+		f.plain,
+		"jellyfin_episode_positive",
+		createProviderPublicationAuthority(instance),
+	);
+	if (!attempt) throw new Error("fixture-watch-seed: positive attempt refused");
+	const positiveObservedAt = new Date();
+	await f.plain.$transaction((tx) =>
+		publishJellyfinPositiveWatchGeneration(tx, {
+			instance,
+			attempt,
+			generationId: "synthetic-native-positive-overlay",
+			observedAt: positiveObservedAt,
+			candidates: [
+				{
+					userKeyDigest: users[0]!,
+					libraryId: "catalog",
+					jellyfinId: "episode-000002",
+					seriesId: "series-000001",
+					seasonNumber: 1,
+					episodeNumber: 3,
+					played: true,
+					playCount: 1,
+					lastPlayedAt: positiveObservedAt,
+				},
+			],
+		}),
+	);
+	const counts = {
+		catalogueRows,
+		users: users.length,
+		libraries: libraries.size,
+		expectedScopeCount,
+		watchRows: await f.plain.jellyfinNativeWatchRow.count(),
+		scopeRows: await f.plain.jellyfinNativeWatchScopeReceipt.count(),
+		overlayRows: await f.plain.jellyfinPositiveWatchRow.count(),
+		observedAt: status.lastRefreshedAt.toISOString(),
+		positiveObservedAt: positiveObservedAt.toISOString(),
+	};
+	emit({
+		category: "synthetic-mixed-native-watch-publication",
+		...counts,
+		elapsedMs: performance.now() - startedAt,
+		resources: resourceCheck(),
+	});
+	expect(counts).toMatchObject({
+		watchRows: 250_000,
+		scopeRows: 2,
+		overlayRows: 1,
+		expectedScopeCount: 2,
+	});
+	return counts;
+}
+
 function observeSql(f: ScopedWriteFixture) {
 	let sessionMetadataWrites = 0;
 	let maxBulkTransactions = 0;
@@ -811,8 +1009,9 @@ function observeSql(f: ScopedWriteFixture) {
 
 describe("real mixed-provider cached-read scale composition", { timeout: 300_000 }, () => {
 	// Catches blank/invalid positive progress, wrong native backing/counts/ARR
-	// links, failed cached responses, or bypassed owned/enabled poster lookup.
-	it("admits real canonical positives and native inventories after a Library-dependent poster-first 118-GET cohort", async () => {
+	// links, lost native watch/supersession, empty Insights, failed cached
+	// responses, or bypassed owned/enabled poster lookup.
+	it("admits native watch, canonical positives and populated Insights in a Library-dependent poster-first 121-GET cohort", async () => {
 		const startedAt = performance.now();
 		const f = await createScopedWriteFixture();
 		fixture = f;
@@ -852,6 +1051,7 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 		const observer = observeSql(f);
 		let canonical: Awaited<ReturnType<typeof seedCanonical>> | undefined;
 		let native: Awaited<ReturnType<typeof seedNative>> | undefined;
+		let nativeWatch: Awaited<ReturnType<typeof seedNativeWatch>> | undefined;
 		try {
 			canonical = await seedCanonical(f);
 			emit({
@@ -861,12 +1061,14 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 				resources: resourceCheck(),
 			});
 			native = await seedNative(f, resourceCheck);
+			nativeWatch = await seedNativeWatch(f, resourceCheck);
 		} catch (error) {
 			emit({
 				category: "synthetic-mixed-seed-failure",
 				error: error instanceof Error ? error.message : "unknown",
 				canonical,
 				native,
+				nativeWatch,
 				elapsedMs: performance.now() - startedAt,
 				maxDatabaseBytes,
 				maxProcessMemoryBytes,
@@ -920,6 +1122,7 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 			app.log,
 		);
 		let providerIo = 0;
+		let syntheticSeerrReads = 0;
 		const posterIds = new Set<number>();
 		const selectedPosterIds = new Set<number>();
 		vi.stubGlobal("fetch", () => {
@@ -942,6 +1145,55 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 								path: string,
 								options: unknown,
 							) => {
+								if (instance.id === SEERR) {
+									expect(instance).toMatchObject({
+										id: SEERR,
+										service: "SEERR",
+									});
+									// ROOT-approved external boundary. Real SeerrClient parses
+									// this response; no provider sockets or cached route output.
+									expect(path).toBe("/api/v1/request?take=50&skip=0&filter=available");
+									expect(options).toEqual({
+										method: "GET",
+										body: undefined,
+										timeout: 10000,
+										headers: undefined,
+									});
+									syntheticSeerrReads++;
+									const timestamp = new Date(Date.now() - 90 * 86400000).toISOString();
+									const result = seerrPageResultSchema(seerrRequestSchema).parse({
+										pageInfo: { pages: 1, pageSize: 50, results: 20, page: 1 },
+										results: Array.from({ length: 20 }, (_, index) => ({
+											id: index + 1,
+											status: 2,
+											createdAt: timestamp,
+											updatedAt: timestamp,
+											type: "movie",
+											is4k: false,
+											serverId: 1,
+											profileId: 1,
+											rootFolder: "/synthetic-movies",
+											media: {
+												id: index + 1,
+												tmdbId: index + 1,
+												status: 5,
+												createdAt: timestamp,
+												updatedAt: timestamp,
+											},
+											requestedBy: {
+												id: 1,
+												displayName: "Synthetic requester",
+												createdAt: timestamp,
+												updatedAt: timestamp,
+												permissions: 0,
+												requestCount: 20,
+												userType: 1,
+											},
+											seasons: [],
+										})),
+									});
+									return Response.json(result);
+								}
 								expect(instance).toMatchObject({
 									id: RADARR,
 									userId: OWNER,
@@ -983,6 +1235,7 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 			await app.register(registerProviderInventoryRoutes);
 			await app.register(registerFetchRoutes);
 			await app.register(registerImageProxyRoutes);
+			await app.register(registerInsightsRoutes);
 			for (const [register, prefix] of [
 				[registerJellyfinOnDeck, "/jellyfin/on-deck"],
 				[registerJellyfinRecent, "/jellyfin/recently-added"],
@@ -1086,6 +1339,9 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 					"jellyfin-episode",
 					`/library/provider-inventory?instanceId=${JELLYFIN}&domain=episode&limit=100`,
 				),
+				measured("insights-disk-waste", "/library/insights/disk-waste"),
+				measured("insights-watched-monitored", "/library/insights/watched-monitored"),
+				measured("insights-requested-unwatched", "/library/insights/requested-unwatched"),
 			];
 			const results = await Promise.all(requests);
 			const cpuMicroseconds = process.cpuUsage(cpu);
@@ -1093,6 +1349,7 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 				category: "synthetic-mixed-provider-composition",
 				canonical,
 				native,
+				nativeWatch,
 				requestCount: results.length,
 				arrivalPattern: "ordinary-page-dependent; posters before ancillary/native reads",
 				wallMs: performance.now() - burstStartedAt,
@@ -1129,6 +1386,14 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 							catalog: body.catalog,
 							evidence: body.evidence,
 							providerStatus: body.providerStatus,
+							insights: body.data,
+							nativeWatchStates:
+								trace.category === "jellyfin-episode"
+									? body.rows?.map((row: { nativeId: string; watch?: unknown }) => ({
+											nativeId: row.nativeId,
+											watch: row.watch,
+										}))
+									: undefined,
 						},
 					};
 				}),
@@ -1136,9 +1401,28 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 				maxBulkTransactions: observer.maxBulkTransactions,
 				posterDeliveries: posterIds.size,
 				providerIo,
+				syntheticSeerrReads,
+				realSeerrNetworkLatency: "UNKNOWN: synthetic external response boundary",
 				inclusiveRuntimeSpansOverlap: true,
 				nativeWatchEvidence:
-					"UNKNOWN: no native watch publication seeded; canonical positive observations do not authorize native watch",
+					"2 users / 1 native catalogue library; 250000 rows / 2 scopes / 1 newer positive",
+				expected: {
+					nativePage: { watched: 51, unwatched: 49, currentLowerBound: 1, lastKnownExact: 99 },
+					insights: {
+						diskWasteItems: 10,
+						diskWasteGiB: 110,
+						watchedMonitoredItems: 10,
+						requestedUnwatchedItems: 10,
+					},
+					canonicalProgress: {
+						jellyfin42: 29,
+						jellyfin43: 28,
+						plex42: 4,
+						plex43: 4,
+						total: null,
+						watchedSemantics: "lower-bound",
+					},
+				},
 				qaOutcome: "UNKNOWN: synthetic selected cohort; prior ordinary QA failure remains valid",
 				omitted: [
 					"other Dashboard requests",
@@ -1162,7 +1446,7 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 				jellyfinEpisodes: 57,
 				plexEpisodes: 3_251,
 			});
-			expect(results).toHaveLength(118);
+			expect(results).toHaveLength(121);
 			for (const { trace, response } of results) {
 				expect(response.statusCode, trace.category).toBe(200);
 				expect(trace.runtime?.["lane-wait"].count, trace.category).toBeGreaterThan(0);
@@ -1177,6 +1461,41 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 				if (trace.category === "ordinary-library") {
 					expect(body.items).toHaveLength(100);
 					expect(body.pagination.totalItems).toBe(2_000);
+				} else if (trace.category.startsWith("insights-")) {
+					expect(body.success).toBe(true);
+					expect(body.data).toMatchObject({ hasPlexData: true, hasWatchData: true });
+					expect(body.data.items).toHaveLength(10);
+					const watched = trace.category === "insights-watched-monitored";
+					expect(
+						body.data.items
+							.map((item: { arrItemId: number }) => item.arrItemId)
+							.sort((a: number, b: number) => a - b),
+					).toEqual(
+						watched ? [2, 4, 6, 8, 10, 12, 14, 16, 18, 20] : [1, 3, 5, 7, 9, 11, 13, 15, 17, 19],
+					);
+					for (const item of body.data.items) {
+						expect(item).toMatchObject({ instanceId: RADARR, service: "radarr" });
+						if (watched)
+							expect(item).toMatchObject({
+								watchCount: 2,
+								watchCountSemantics: "lower-bound",
+								lastWatchedAt: null,
+							});
+						else expect(item.watchState).toBe("unwatched");
+						if (trace.category === "insights-requested-unwatched")
+							expect(item.requestedBy).toBe("Synthetic requester");
+					}
+					if (!watched) {
+						expect(body.data.unknownItems).toEqual([]);
+						expect(body.data.watchStatus).toBe("complete");
+						expect(body.data.limited).toBe(false);
+					}
+					if (trace.category === "insights-disk-waste")
+						expect(body.data.totalWastedBytes).toBe(110 * 1024 ** 3);
+					if (trace.category === "insights-requested-unwatched")
+						expect(body.data).toMatchObject({ hasSeerrData: true, requestStatus: "complete" });
+					expect(trace.sql.plex_cache?.rows).toBeGreaterThan(0);
+					expect(trace.sql.jellyfin_cache?.rows).toBeGreaterThan(0);
 				} else if (trace.category.endsWith("on-deck") || trace.category.endsWith("recent")) {
 					expect(body.items.length).toBeGreaterThan(0);
 					if (trace.category.endsWith("recent")) expect(body.items).toHaveLength(20);
@@ -1216,6 +1535,11 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 					expect(body.rows).toHaveLength(100);
 					expect(trace.nativeTiming).toMatchObject({ outcome: "available" });
 					expect(trace.sql.provider_native_inventory_stage_items?.rows).toBeGreaterThanOrEqual(100);
+					if (episode) {
+						expect(trace.sql.jellyfin_native_watch_rows?.rows).toBe(200);
+						expect(trace.sql.jellyfin_native_watch_scope_receipts?.rows).toBeGreaterThanOrEqual(2);
+						expect(trace.sql.jellyfin_positive_watch_rows?.rows).toBe(1);
+					}
 					for (const row of body.rows) {
 						expect(row.connection.status).toBe("matched");
 						expect(row.connection.arrItems.length).toBeGreaterThan(0);
@@ -1227,7 +1551,22 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 							expect(row.episodeNumber).toBeGreaterThanOrEqual(1);
 							expect(row.episodeNumber).toBeLessThanOrEqual(100);
 							expect(arr.arrItemId).toBe(1);
-							expect(row.watch).toMatchObject({ state: "unknown", valueSemantics: "unknown" });
+							const index = row.episodeNumber - 1;
+							expect(row.watch).toEqual(
+								index === 2
+									? {
+											state: "watched",
+											freshness: "current",
+											valueSemantics: "lower-bound",
+											observedAt: nativeWatch!.positiveObservedAt,
+										}
+									: {
+											state: index % 4 < 2 ? "watched" : "unwatched",
+											freshness: "last-known",
+											valueSemantics: "exact",
+											observedAt: nativeWatch!.observedAt,
+										},
+							);
 						} else
 							expect(row.nativeId).toBe(
 								`${row.mediaType}-${String(arr.arrItemId).padStart(6, "0")}`,
@@ -1237,6 +1576,7 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 			}
 			expect(posterIds.size).toBe(100);
 			expect(providerIo).toBe(0);
+			expect(syntheticSeerrReads).toBe(1);
 			expect(observer.maxBulkTransactions).toBeGreaterThan(0);
 			expect(observer.maxBulkTransactions).toBeLessThanOrEqual(2);
 			expect(observer.activeBulkTransactions).toBe(0);
