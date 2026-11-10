@@ -532,6 +532,7 @@ export const LibraryCard = memo(function LibraryCard({
 							tmdbPosterPath={posterPath}
 							arrPosterUrl={item.poster}
 							size="w185"
+							loading="lazy"
 							alt={item.title}
 							placeholder={item.type === "movie" ? "Poster" : "Artwork"}
 						/>

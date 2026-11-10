@@ -22,6 +22,7 @@ interface PosterImageProps {
 	size?: PosterSize;
 	/** Alt text */
 	alt: string;
+	loading?: "eager" | "lazy";
 	/** CSS classes applied to the img element (overrides default object-cover) */
 	imgClassName?: string;
 	/** Placeholder text when no image available */
@@ -43,6 +44,7 @@ function PosterImageWithFallback({
 	arrPosterUrl,
 	size = "w185",
 	alt,
+	loading,
 	imgClassName = "h-full w-full object-cover",
 	placeholder = "Poster unavailable",
 }: PosterImageProps) {
@@ -58,6 +60,7 @@ function PosterImageWithFallback({
 				key={resolvedUrl}
 				src={resolvedUrl}
 				alt={alt}
+				loading={loading}
 				className={imgClassName}
 				onError={() => {
 					setFailedUrls((previous) =>

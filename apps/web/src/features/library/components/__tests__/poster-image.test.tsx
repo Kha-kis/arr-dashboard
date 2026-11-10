@@ -10,6 +10,37 @@ const image = () => screen.getByRole<HTMLImageElement>("img", { name: "Synthetic
 afterEach(cleanup);
 
 describe("PosterImage runtime fallback", () => {
+	it.each(["eager", "lazy"] as const)(
+		"preserves explicit %s loading through the ARR fallback",
+		(loading) => {
+			render(
+				<PosterImage
+					tmdbPosterPath="/synthetic.jpg"
+					arrPosterUrl={arr}
+					alt="Synthetic poster"
+					loading={loading}
+				/>,
+				{ wrapper: IncognitoProvider },
+			);
+			expect(image()).toHaveAttribute("src", tmdb);
+			expect(image()).toHaveAttribute("loading", loading);
+			fireEvent.error(image());
+			expect(image()).toHaveAttribute("src", arr);
+			expect(image()).toHaveAttribute("loading", loading);
+		},
+	);
+
+	it("leaves native loading unchanged when no hint is supplied", () => {
+		render(
+			<PosterImage tmdbPosterPath="/synthetic.jpg" arrPosterUrl={arr} alt="Synthetic poster" />,
+			{ wrapper: IncognitoProvider },
+		);
+		expect(image()).not.toHaveAttribute("loading");
+		fireEvent.error(image());
+		expect(image()).toHaveAttribute("src", arr);
+		expect(image()).not.toHaveAttribute("loading");
+	});
+
 	it("tries TMDB then ARR before showing an honest static unavailable placeholder", () => {
 		render(
 			<PosterImage tmdbPosterPath="/synthetic.jpg" arrPosterUrl={arr} alt="Synthetic poster" />,

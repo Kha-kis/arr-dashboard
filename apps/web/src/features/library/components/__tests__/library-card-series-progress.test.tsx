@@ -4,8 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
 import { ColorThemeProvider } from "../../../../providers/color-theme-provider";
 import { LibraryCard } from "../library-card";
+import { PosterImage } from "../poster-image";
 
-vi.mock("../poster-image", () => ({ PosterImage: () => null }));
+vi.mock("../poster-image", () => ({ PosterImage: vi.fn(() => null) }));
 vi.mock("../torrent-state-badge", () => ({ TorrentStateBadge: () => null }));
 
 const item = {
@@ -41,6 +42,14 @@ function renderCard(
 }
 
 describe("library card series progress evidence", () => {
+	it("opts card artwork into native lazy loading", () => {
+		renderCard({});
+		expect(PosterImage).toHaveBeenLastCalledWith(
+			expect.objectContaining({ loading: "lazy" }),
+			undefined,
+		);
+	});
+
 	it("retains separate exact and lower-bound provider entries", () => {
 		renderCard({
 			plex: { status: "exact", watched: 4, total: 8, percent: 50, watchedSemantics: "exact" },
