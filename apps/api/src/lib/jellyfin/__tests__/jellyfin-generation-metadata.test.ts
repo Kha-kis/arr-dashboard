@@ -620,6 +620,8 @@ describe("Jellyfin and Emby generation metadata", () => {
 	});
 
 	it("services queued work while stably sorting owned display rows", async () => {
+		let now = 0;
+		const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
 		const rows = Array.from({ length: 1201 }, (_, index) => ({ key: index % 7, index })).reverse();
 		const original = [...rows];
 		let completed = false;
@@ -627,18 +629,27 @@ describe("Jellyfin and Emby generation metadata", () => {
 		const serviced = turn().then(() => {
 			completedAtTurn = completed;
 		});
-		const sorted = await sortJellyfinDisplayRows(
-			rows,
-			(a, b) => a.key - b.key,
-			createJellyfinDisplayCheckpoint(),
-		);
-		completed = true;
-		await serviced;
-		expect(completedAtTurn).toBe(false);
-		expect(sorted).toEqual(original.sort((a, b) => a.key - b.key));
+		try {
+			const sorted = await sortJellyfinDisplayRows(
+				rows,
+				(a, b) => {
+					now = 4;
+					return a.key - b.key;
+				},
+				createJellyfinDisplayCheckpoint(),
+			);
+			completed = true;
+			await serviced;
+			expect(completedAtTurn).toBe(false);
+			expect(sorted).toEqual(original.sort((a, b) => a.key - b.key));
+		} finally {
+			clock.mockRestore();
+		}
 	});
 
 	it("services queued work during the complete canonical array hash", async () => {
+		let now = 0;
+		const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
 		const create = fingerprints.createEvidenceFingerprintArrayAccumulator;
 		let appended = 0;
 		let appendedAtTurn: number | undefined;
@@ -649,10 +660,12 @@ describe("Jellyfin and Emby generation metadata", () => {
 				const actual = create();
 				return {
 					append(value) {
-						if (++appended === 1)
+						if (++appended === 1) {
+							now = 4;
 							serviced = turn().then(() => {
 								appendedAtTurn = appended;
 							});
+						}
 						actual.append(value);
 					},
 					digest: () => actual.digest(),
@@ -668,6 +681,7 @@ describe("Jellyfin and Emby generation metadata", () => {
 			expect(appendedAtTurn).toBeLessThan(1201);
 		} finally {
 			spy.mockRestore();
+			clock.mockRestore();
 		}
 	});
 

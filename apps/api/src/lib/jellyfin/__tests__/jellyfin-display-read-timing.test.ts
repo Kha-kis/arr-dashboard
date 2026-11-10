@@ -13,6 +13,44 @@ import {
 } from "../jellyfin-display-read-timing.js";
 
 afterEach(() => vi.restoreAllMocks());
+it("keeps cheap display work in the same time slice rather than yielding by row count", async () => {
+	vi.spyOn(performance, "now").mockReturnValue(0);
+	const checkpoint = createJellyfinDisplayCheckpoint();
+	const pauses: Promise<void>[] = [];
+	for (let index = 0; index < 4096; index++) {
+		const pause = checkpoint();
+		if (pause) pauses.push(pause);
+	}
+	await Promise.all(pauses);
+	expect(pauses).toHaveLength(0);
+});
+it("yields when the display work budget expires even before a row-count threshold", async () => {
+	let now = 0;
+	vi.spyOn(performance, "now").mockImplementation(() => now);
+	const checkpoint = createJellyfinDisplayCheckpoint();
+	now = 3.999;
+	expect(checkpoint()).toBeUndefined();
+	now = 4;
+	const pause = checkpoint();
+	expect(pause).toBeInstanceOf(Promise);
+	await pause;
+});
+it("starts the next display work slice after the awaited turn, not before its queue wait", async () => {
+	let now = 0;
+	vi.spyOn(performance, "now").mockImplementation(() => now);
+	const checkpoint = createJellyfinDisplayCheckpoint();
+	now = 4;
+	const first = checkpoint();
+	expect(first).toBeInstanceOf(Promise);
+	now = 100;
+	await first;
+	now = 103.999;
+	expect(checkpoint()).toBeUndefined();
+	now = 104;
+	const second = checkpoint();
+	expect(second).toBeInstanceOf(Promise);
+	await second;
+});
 it("does not add clock reads or promise wrappers outside an opted-in read", () => {
 	const clock = vi.spyOn(performance, "now").mockImplementation(() => {
 		throw new Error("unexpected diagnostic");
@@ -171,6 +209,8 @@ it("restores parent scopes without attributing nested work twice", async () => {
 	expect(outer.stages.validate.totalMs).toBe(4);
 });
 it("observes real cooperative waits and full fingerprints without changing canonical bytes", async () => {
+	let now = 0;
+	vi.spyOn(performance, "now").mockImplementation(() => now);
 	const rows = [
 		{
 			tmdbId: 42,
@@ -194,6 +234,7 @@ it("observes real cooperative waits and full fingerprints without changing canon
 	const actual = await withJellyfinDisplayReadTiming(
 		async () => {
 			const checkpoint = createJellyfinDisplayCheckpoint();
+			now = 4;
 			for (let i = 0; i < 256; i++) {
 				const pause = checkpoint();
 				if (pause) await pause;

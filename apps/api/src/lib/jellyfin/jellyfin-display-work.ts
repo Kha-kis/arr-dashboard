@@ -3,11 +3,9 @@ import { startJellyfinDisplayReadPhase } from "./jellyfin-display-read-timing.js
 
 /** Scheduling only: never grants authority or replaces a runtime guard. */
 export function createJellyfinDisplayCheckpoint(): () => Promise<void> | undefined {
-	let units = 0;
 	let deadline = performance.now() + 4;
 	return () => {
-		if (++units < 256 && performance.now() < deadline) return;
-		units = 0;
+		if (performance.now() < deadline) return;
 		const finish = startJellyfinDisplayReadPhase("checkpoint-wait");
 		return turn().then(() => {
 			finish();
