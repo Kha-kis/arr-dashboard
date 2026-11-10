@@ -2866,6 +2866,359 @@ describe("saved V2 scope plan validation", () => {
 	});
 });
 
+describe("full-watch counted checkpoints", () => {
+	async function fixture(pageSize: 1_000 | 2_000 = 1_000) {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await bindV3Fixture(prisma, seed.run.id, { pageSize });
+		const instance = await prisma.serviceInstance.update({
+			where: { id: "jellyfin-1" },
+			data: {
+				expectedIdentity: "verified-provider",
+				identityStatus: "VERIFIED",
+			},
+		});
+		await prisma.cacheRefreshStatus.update({
+			where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "jellyfin_episode" } },
+			data: {
+				lastAttemptResult: "in_progress:11111111-1111-4111-8111-111111111111",
+			},
+		});
+		await prisma.jellyfinEpisodeObservationStage.deleteMany({ where: { runId: seed.run.id } });
+		seed.attempt.resultMarker = "in_progress:11111111-1111-4111-8111-111111111111";
+		await prisma.providerObservationUnit.updateMany({
+			where: { runId: seed.run.id },
+			data: {
+				state: "pending",
+				claimToken: null,
+				nextAttemptAt: null,
+				completedAt: null,
+				cursor: 0,
+				expectedRawCount: null,
+				observedRawCount: 0,
+				completedPages: 0,
+			},
+		});
+		await prisma.providerObservationRun.update({
+			where: { id: seed.run.id },
+			data: {
+				state: "running",
+				completedUnits: 0,
+				completedWork: 0,
+			},
+		});
+		identityModuleMocks.readProviderIdentity.mockResolvedValue({
+			service: "JELLYFIN",
+			identityKind: "jellyfin-server-id",
+			rawIdentity: "verified-provider",
+			confirmationDigest: "a".repeat(64),
+			fingerprint: "a".repeat(12),
+		});
+		return { prisma, seed, instance };
+	}
+	function episodes(total: number) {
+		return Array.from({ length: total }, (_, index) => ({
+			id: `episode-${index + 1}`,
+			type: "Episode" as const,
+			name: "Episode",
+			seriesId: "series-1",
+			seasonNumber: 1,
+			episodeNumber: index + 1,
+			played: true,
+			playCount: 1,
+			lastPlayedDate: null,
+		}));
+	}
+
+	it.each(["stable", "growth", "shrink", "retry", "empty-unknown", "coordinate-conflict"] as const)(
+		"counts first/last/retry reads and retains both runner passes: %s",
+		async (mode) => {
+			const { prisma, seed, instance } = await fixture();
+			const requests: Array<{ cursor: number; uncounted: boolean }> = [];
+			let interrupted = false;
+			const retryMode =
+				mode === "retry" || mode === "empty-unknown" || mode === "coordinate-conflict";
+			const finalTotal = mode === "growth" ? 4_000 : mode === "shrink" ? 2_500 : 3_000;
+			const items = episodes(Math.max(3_000, finalTotal));
+			const runner = createProductionJellyfinEpisodeWorkItemRunner({
+				createClient: () =>
+					({
+						getUsers: async () => [{ id: "user-1", name: "Current User" }],
+						getLibraries: async () => [{ id: "library-1" }],
+					}) as never,
+				readPage: async (input) => {
+					expect(input.limit).toBe(1_000);
+					requests.push({ cursor: input.startIndex, uncounted: input.uncounted === true });
+					// A wrong first/last/retry policy cannot satisfy this provider contract.
+					expect(input.uncounted === true).toBe(!interrupted && input.startIndex === 1_000);
+					if (retryMode && input.startIndex === 1_000 && !interrupted) {
+						interrupted = true;
+						if (mode === "retry") throw new Error("synthetic provider unavailable");
+						return {
+							startIndex: 1_000,
+							totalRecordCount: null,
+							countMode: "uncounted",
+							items: mode === "empty-unknown" ? [] : [{ ...items[0]!, episodeNumber: 99 }],
+						};
+					}
+					const total = input.startIndex < 2_000 ? 3_000 : finalTotal;
+					return {
+						startIndex: input.startIndex,
+						items: items.slice(input.startIndex, Math.min(input.startIndex + input.limit, total)),
+						...(input.uncounted
+							? { totalRecordCount: null, countMode: "uncounted" as const }
+							: { totalRecordCount: total }),
+					};
+				},
+			});
+			const context = {
+				prisma,
+				instance,
+				encryptor: { decrypt: () => "plaintext" },
+				log: { warn() {}, error() {} } as never,
+			};
+			const pageReads = mode === "growth" ? 8 : 6;
+			for (let index = 0; index < (retryMode ? 3 : pageReads); index++) {
+				const result = await runner({
+					...context,
+					// Retry admission must honor the persisted 30-second backoff
+					// after the failure at second11, rather than reset its epoch.
+					now: new Date(
+						seed.attempt.attemptedAt.getTime() +
+							(retryMode && index === 2 ? 42_000 : index * 11_000),
+					),
+				});
+				expect(result, JSON.stringify(requests)).toMatchObject({
+					state: retryMode && index === 1 ? "failed" : "running",
+					progressed: !retryMode || index !== 1,
+				});
+				if (retryMode && index === 1) {
+					const reset = mode === "coordinate-conflict";
+					expect(
+						await prisma.providerObservationUnit.findFirstOrThrow({
+							where: { runId: seed.run.id, phase: "collect" },
+						}),
+					).toMatchObject({
+						state: "failed",
+						cursor: reset ? 0 : 1_000,
+						observedRawCount: reset ? 0 : 1_000,
+						expectedRawCount: reset ? null : 3_000,
+						attemptCount: 1,
+					});
+					expect(
+						await prisma.jellyfinEpisodeObservationStage.count({
+							where: { runId: seed.run.id, pass: "collect" },
+						}),
+					).toBe(reset ? 0 : 1_000);
+				}
+			}
+			if (retryMode) {
+				expect(requests[2]).toEqual({
+					cursor: mode === "coordinate-conflict" ? 0 : 1_000,
+					uncounted: false,
+				});
+				expect(
+					await prisma.providerObservationUnit.findFirstOrThrow({
+						where: { runId: seed.run.id, phase: "collect" },
+					}),
+				).toMatchObject({
+					state: "pending",
+					cursor: mode === "coordinate-conflict" ? 1_000 : 2_000,
+					attemptCount: 1,
+				});
+				return;
+			}
+			expect(requests).toEqual(
+				Array.from({ length: 2 }, () => [
+					{ cursor: 0, uncounted: false },
+					{ cursor: 1_000, uncounted: true },
+					{ cursor: 2_000, uncounted: false },
+					...(mode === "growth" ? [{ cursor: 3_000, uncounted: false }] : []),
+				]).flat(),
+			);
+			expect(requests.filter((request) => !request.uncounted)).toHaveLength(
+				mode === "growth" ? 6 : 4,
+			);
+			for (const pass of ["collect", "verify"]) {
+				const rows = await prisma.jellyfinEpisodeObservationStage.findMany({
+					where: { runId: seed.run.id, pass },
+					orderBy: { episodeNumber: "asc" },
+				});
+				expect(rows).toHaveLength(finalTotal);
+				expect(new Set(rows.map((row) => row.jellyfinId)).size).toBe(finalTotal);
+				expect(rows.map((row) => row.episodeNumber)).toEqual(
+					Array.from({ length: finalTotal }, (_, index) => index + 1),
+				);
+			}
+			expect(
+				await runner({
+					...context,
+					now: new Date(seed.attempt.attemptedAt.getTime() + pageReads * 11_000),
+				}),
+			).toMatchObject({ state: "complete", publishedItemCount: finalTotal });
+		},
+	);
+
+	it("admits only interior unknown pages and requires counted last pages before publication", async () => {
+		const { prisma, seed } = await fixture(2_000);
+		const total = 6_000;
+		const items = episodes(total);
+		let tick = 0;
+		const claim = () =>
+			claimObservationUnit(prisma, {
+				runId: seed.run.id,
+				now: new Date(seed.attempt.attemptedAt.getTime() + tick++ * 11_000),
+				claimToken: `checkpoint-${tick}`,
+			});
+		const finalize = () =>
+			finalizeJellyfinEpisodeRun({
+				prisma,
+				userId: "user-1",
+				instance: { id: "jellyfin-1" },
+				runId: seed.run.id,
+				scopes: seed.scopes,
+				attempt: seed.attempt,
+				now: seed.attempt.attemptedAt,
+			});
+		for (const phase of ["collect", "verify"]) {
+			const first = (await claim())!;
+			expect(first.phase).toBe(phase);
+			const firstUnknown = {
+				startIndex: 0,
+				totalRecordCount: null,
+				countMode: "uncounted" as const,
+				items: items.slice(0, 2_000),
+			};
+			expect(await stageJellyfinEpisodePage(prisma, first, seed.scopes[0]!, firstUnknown)).toBe(
+				false,
+			);
+			expect(
+				await stageJellyfinEpisodePage(
+					prisma,
+					first,
+					seed.scopes[0]!,
+					{ startIndex: 0, totalRecordCount: total, items: items.slice(0, 2_000) },
+					seed.attempt.attemptedAt,
+				),
+			).toBe(true);
+			const middle = (await claim())!;
+			expect(middle).toMatchObject({ cursor: 2_000, expectedRawCount: total });
+			for (const invalid of [
+				{ startIndex: 2_000, totalRecordCount: null, countMode: "uncounted" as const, items: [] },
+				{
+					startIndex: 2_000,
+					totalRecordCount: null,
+					countMode: "uncounted" as const,
+					items: items.slice(2_000, 4_001),
+				},
+			])
+				expect(await stageJellyfinEpisodePage(prisma, middle, seed.scopes[0]!, invalid)).toBe(
+					false,
+				);
+			expect(
+				await stageJellyfinEpisodePage(
+					prisma,
+					middle,
+					seed.scopes[0]!,
+					{
+						startIndex: 2_000,
+						totalRecordCount: null,
+						countMode: "uncounted",
+						items: items.slice(2_000, 4_000),
+					},
+					seed.attempt.attemptedAt,
+				),
+			).toBe(true);
+			expect(
+				await prisma.providerObservationUnit.findUniqueOrThrow({ where: { id: middle.unitId } }),
+			).toMatchObject({
+				state: "pending",
+				cursor: 4_000,
+				observedRawCount: 4_000,
+				expectedRawCount: total,
+			});
+			const boundary = (await claim())!;
+			expect(boundary).toMatchObject({ unitId: middle.unitId, cursor: 4_000 });
+			expect(
+				await stageJellyfinEpisodePage(prisma, boundary, seed.scopes[0]!, {
+					startIndex: 4_000,
+					totalRecordCount: null,
+					countMode: "uncounted",
+					items: items.slice(4_000),
+				}),
+			).toBe(false);
+			expect(
+				await stageJellyfinEpisodePage(
+					prisma,
+					boundary,
+					seed.scopes[0]!,
+					{ startIndex: 4_000, totalRecordCount: total, items: items.slice(4_000) },
+					seed.attempt.attemptedAt,
+				),
+			).toBe(true);
+		}
+		expect(
+			await prisma.jellyfinEpisodeObservationStage.count({ where: { runId: seed.run.id } }),
+		).toBe(total * 2);
+		expect(await finalize()).toEqual({ published: true, itemCount: total });
+		const rows = await prisma.jellyfinEpisodeCache.findMany({
+			where: { instanceId: "jellyfin-1" },
+			orderBy: { jellyfinId: "asc" },
+		});
+		expect(rows).toHaveLength(total);
+	});
+
+	it("refuses finalization of pending interior pages without replacing published rows", async () => {
+		const { prisma, seed } = await fixture();
+		const items = episodes(3_000);
+		const first = (await claimObservationUnit(prisma, {
+			runId: seed.run.id,
+			now: seed.attempt.attemptedAt,
+		}))!;
+		expect(
+			await stageJellyfinEpisodePage(
+				prisma,
+				first,
+				seed.scopes[0]!,
+				{ startIndex: 0, totalRecordCount: 3_000, items: items.slice(0, 1_000) },
+				seed.attempt.attemptedAt,
+			),
+		).toBe(true);
+		const middle = (await claimObservationUnit(prisma, {
+			runId: seed.run.id,
+			now: new Date(seed.attempt.attemptedAt.getTime() + 11_000),
+		}))!;
+		expect(
+			await stageJellyfinEpisodePage(
+				prisma,
+				middle,
+				seed.scopes[0]!,
+				{
+					startIndex: 1_000,
+					totalRecordCount: null,
+					countMode: "uncounted",
+					items: items.slice(1_000, 2_000),
+				},
+				seed.attempt.attemptedAt,
+			),
+		).toBe(true);
+		expect(
+			await finalizeJellyfinEpisodeRun({
+				prisma,
+				userId: "user-1",
+				instance: { id: "jellyfin-1" },
+				runId: seed.run.id,
+				scopes: seed.scopes,
+				attempt: seed.attempt,
+				now: seed.attempt.attemptedAt,
+			}),
+		).toMatchObject({ published: false });
+		expect(
+			await prisma.jellyfinEpisodeCache.findMany({ where: { instanceId: "jellyfin-1" } }),
+		).toEqual([expect.objectContaining({ jellyfinId: "old" })]);
+	});
+});
+
 describe("saved V3 scope plan validation", () => {
 	function fixture(pageSize: 1_000 | 2_000 = 1_000) {
 		const catalogProvenance = buildJellyfinEpisodeCatalogProvenance(
@@ -3329,6 +3682,7 @@ async function bindV3Fixture(
 	options: {
 		extraVerify?: boolean;
 		watchDrift?: boolean;
+		pageSize?: 1_000 | 2_000;
 		episodeScopes?: Array<{ userId: string; userName: string; libraryId: string }>;
 	} = {},
 ) {
@@ -3355,14 +3709,18 @@ async function bindV3Fixture(
 	const scopes = options.episodeScopes ?? [
 		{ userId: "user-1", userName: "Current User", libraryId: "library-1" },
 	];
-	const plan = buildJellyfinEpisodeScopePlan(scopes, {
-		parentLibraryGenerationId: parent.generationId!,
-		parentLibraryMetadataFingerprint: fingerprintJellyfinLibraryGenerationMetadata(
-			decoded.metadata,
-		),
-		parentLibraryDependencyFingerprint: dependency,
-		catalogProvenance: catalog,
-	});
+	const plan = buildJellyfinEpisodeScopePlan(
+		scopes,
+		{
+			parentLibraryGenerationId: parent.generationId!,
+			parentLibraryMetadataFingerprint: fingerprintJellyfinLibraryGenerationMetadata(
+				decoded.metadata,
+			),
+			parentLibraryDependencyFingerprint: dependency,
+			catalogProvenance: catalog,
+		},
+		options.pageSize,
+	);
 	const parentGenerationId = jellyfinEpisodeCatalogGenerationKey(catalog)!;
 	const authority = {
 		provider: "jellyfin_episode" as const,

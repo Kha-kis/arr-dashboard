@@ -1,5 +1,5 @@
 import { Worker } from "node:worker_threads";
-import type { JellyfinEpisodeItemsPage } from "./jellyfin-client.js";
+import type { JellyfinEpisodeCollectedPage } from "./jellyfin-client.js";
 import {
 	type JellyfinEpisodePageWorkerInput,
 	type JellyfinEpisodePageWorkerRequest,
@@ -63,7 +63,7 @@ export async function runJellyfinEpisodePageWorker(
 		timeoutMs?: number;
 		requestTimeoutMs?: number;
 	} = {},
-): Promise<JellyfinEpisodeItemsPage> {
+): Promise<JellyfinEpisodeCollectedPage> {
 	if (options.signal?.aborted) throw new JellyfinEpisodePageWorkerError("cancelled");
 	const startedAt = performance.now();
 	const timeoutMs = options.timeoutMs ?? 20_000;
@@ -85,12 +85,12 @@ export async function runJellyfinEpisodePageWorker(
 	} catch {
 		throw new JellyfinEpisodePageWorkerError("worker-failed");
 	}
-	return await new Promise<JellyfinEpisodeItemsPage>((resolve, reject) => {
+	return await new Promise<JellyfinEpisodeCollectedPage>((resolve, reject) => {
 		let exited = false;
 		let received = false;
 		let stopRequested = false;
 		let failure: FailureCategory | undefined;
-		let page: JellyfinEpisodeItemsPage | undefined;
+		let page: JellyfinEpisodeCollectedPage | undefined;
 		const requestStop = () => {
 			if (stopRequested || exited) return;
 			stopRequested = true;

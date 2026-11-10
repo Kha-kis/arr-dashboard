@@ -403,6 +403,18 @@ export interface JellyfinEpisodeItemsPage {
 	totalRecordCount: number;
 }
 
+/** Internal full-watch continuation; a count-disabled response has no inventory total. */
+export interface JellyfinUncountedEpisodeItemsPage {
+	items: JellyfinEpisodeItemsPage["items"];
+	startIndex: number;
+	totalRecordCount: null;
+	countMode: "uncounted";
+}
+
+export type JellyfinEpisodeCollectedPage =
+	| (JellyfinEpisodeItemsPage & { countMode?: never })
+	| JellyfinUncountedEpisodeItemsPage;
+
 export interface JellyfinMutationTargetSnapshot {
 	readonly serverId: string;
 	readonly itemId: string;
@@ -1002,6 +1014,23 @@ export class JellyfinClient {
 		return await this.getEpisodeItemsPageWithFilter(userId, libraryId, startIndex, limit, false);
 	}
 
+	/** Only a fenced V3 full-watch continuation may use an unknown inventory total. */
+	async getUncountedEpisodeItemsPageWithCoverage(
+		userId: string,
+		libraryId: string,
+		startIndex: number,
+		limit = COMPLETE_ITEMS_PAGE_SIZE,
+	): Promise<JellyfinUncountedEpisodeItemsPage> {
+		return await this.getEpisodeItemsPageWithFilter(
+			userId,
+			libraryId,
+			startIndex,
+			limit,
+			false,
+			true,
+		);
+	}
+
 	/** Positive watch evidence only; omitted rows never imply an unplayed state. */
 	async getPlayedEpisodeItemsPageWithCoverage(
 		userId: string,
@@ -1018,8 +1047,25 @@ export class JellyfinClient {
 		startIndex: number,
 		limit: number,
 		playedOnly: boolean,
-	): Promise<JellyfinEpisodeItemsPage> {
-		if (!Number.isSafeInteger(startIndex) || startIndex < 0) {
+		uncounted?: false,
+	): Promise<JellyfinEpisodeItemsPage>;
+	private async getEpisodeItemsPageWithFilter(
+		userId: string,
+		libraryId: string,
+		startIndex: number,
+		limit: number,
+		playedOnly: boolean,
+		uncounted: true,
+	): Promise<JellyfinUncountedEpisodeItemsPage>;
+	private async getEpisodeItemsPageWithFilter(
+		userId: string,
+		libraryId: string,
+		startIndex: number,
+		limit: number,
+		playedOnly: boolean,
+		uncounted = false,
+	): Promise<JellyfinEpisodeCollectedPage> {
+		if (!Number.isSafeInteger(startIndex) || startIndex < 0 || startIndex > COMPLETE_ITEMS_MAX) {
 			throw new Error("Jellyfin episode page start index is invalid");
 		}
 		if (!Number.isSafeInteger(limit) || limit < 1 || limit > DURABLE_EPISODE_MAX_PAGE_SIZE) {
@@ -1035,6 +1081,7 @@ export class JellyfinClient {
 			Limit: String(limit),
 		});
 		if (playedOnly) params.set("IsPlayed", "true");
+		if (uncounted) params.set("EnableTotalRecordCount", "false");
 		const response = await this.request(
 			`/Users/${encodeURIComponent(userId)}/Items?${params.toString()}`,
 			{ schema: jellyfinEpisodeItemsPageSchema },
@@ -1079,7 +1126,8 @@ export class JellyfinClient {
 		}
 		if (
 			response.Items.length > limit ||
-			startIndex + response.Items.length > response.TotalRecordCount
+			startIndex + response.Items.length > COMPLETE_ITEMS_MAX ||
+			(!uncounted && startIndex + response.Items.length > response.TotalRecordCount)
 		) {
 			throw new Error("Jellyfin episode page coverage is inconsistent");
 		}
@@ -1105,7 +1153,9 @@ export class JellyfinClient {
 				};
 			}),
 			startIndex: response.StartIndex,
-			totalRecordCount: response.TotalRecordCount,
+			...(uncounted
+				? { totalRecordCount: null, countMode: "uncounted" as const }
+				: { totalRecordCount: response.TotalRecordCount }),
 		};
 	}
 

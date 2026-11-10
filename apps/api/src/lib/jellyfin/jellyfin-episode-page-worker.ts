@@ -33,12 +33,10 @@ export async function executeJellyfinEpisodePage(
 			input.requestTimeoutMs,
 			input.httpAuthHeaders,
 		);
-		const page = await client.getEpisodeItemsPageWithCoverage(
-			input.userId,
-			input.libraryId,
-			input.startIndex,
-			input.limit,
-		);
+		const readPage = input.uncounted
+			? client.getUncountedEpisodeItemsPageWithCoverage.bind(client)
+			: client.getEpisodeItemsPageWithCoverage.bind(client);
+		const page = await readPage(input.userId, input.libraryId, input.startIndex, input.limit);
 		return (
 			parseJellyfinEpisodePageWorkerResult({ status: "page", page }, input) ?? {
 				status: "failed",

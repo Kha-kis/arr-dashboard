@@ -37,6 +37,50 @@ const request = {
 };
 
 describe("one-page worker protocol", () => {
+	it("accepts explicit unknown counts only for the requested internal mode", () => {
+		const uncounted = {
+			status: "page",
+			page: { ...result.page, totalRecordCount: null, countMode: "uncounted" },
+		};
+		const mode = { ...coordinates, uncounted: true as const };
+		expect(parseJellyfinEpisodePageWorkerRequest({ ...request, uncounted: true })).toEqual({
+			...request,
+			uncounted: true,
+		});
+		expect(parseJellyfinEpisodePageWorkerResult(uncounted, mode)).toEqual(uncounted);
+		expect(parseJellyfinEpisodePageWorkerResult(uncounted, coordinates)).toBeNull();
+		expect(parseJellyfinEpisodePageWorkerResult(result, mode)).toBeNull();
+		for (const change of [
+			{ countMode: "counted" },
+			{ totalRecordCount: 2 },
+			{ totalRecordCount: undefined },
+			{ private: "private" },
+			{ items: [row, row] },
+		]) {
+			expect(
+				parseJellyfinEpisodePageWorkerResult(
+					{
+						...uncounted,
+						page: { ...uncounted.page, ...change },
+					},
+					mode,
+				),
+			).toBeNull();
+		}
+		const getter = vi.fn(() => true);
+		expect(
+			parseJellyfinEpisodePageWorkerRequest({
+				...request,
+				get uncounted() {
+					return getter();
+				},
+			}),
+		).toBeNull();
+		expect(getter).not.toHaveBeenCalled();
+		for (const uncounted of [false, null, "true", 1])
+			expect(parseJellyfinEpisodePageWorkerRequest({ ...request, uncounted })).toBeNull();
+	});
+
 	// Catches invented defaults that turn unknown count/date into zero or drop exclusions.
 	it("preserves false, nulls, metadata exclusions, and raw page coordinates", () => {
 		expect(parseJellyfinEpisodePageWorkerResult(result, coordinates)).toEqual({

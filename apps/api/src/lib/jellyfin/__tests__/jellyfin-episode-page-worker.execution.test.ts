@@ -398,6 +398,42 @@ describe("real one-page GET worker", () => {
 			),
 		).toEqual({ startIndex: 0, totalRecordCount: 0, items: [] });
 		await closedConnections();
+		const uncountedInput = await fixture((req, res) => {
+			expect(
+				new URL(req.url!, "http://synthetic.invalid").searchParams.get("EnableTotalRecordCount"),
+			).toBe("false");
+			res.setHeader("Content-Type", "application/json");
+			res.end(
+				JSON.stringify({
+					StartIndex: 2,
+					TotalRecordCount: 1,
+					Items: [
+						{
+							Id: "excluded",
+							Type: "Episode",
+							Name: null,
+							UserData: { Played: false },
+						},
+					],
+				}),
+			);
+		});
+		expect(
+			await joined(
+				runJellyfinEpisodePageWorker(
+					{ ...uncountedInput, startIndex: 2, uncounted: true },
+					{
+						createWorker: (_url, payload) => trackedWorker(builtWorker, payload),
+					},
+				),
+			),
+		).toEqual({
+			startIndex: 2,
+			totalRecordCount: null,
+			countMode: "uncounted",
+			items: [{ id: "excluded", type: "Episode", excludedReason: "missing-episode-metadata" }],
+		});
+		await closedConnections();
 	});
 
 	it("returns only a generic failure and no output for private malformed provider data", async () => {
@@ -433,100 +469,108 @@ describe("real one-page GET worker", () => {
 	});
 
 	// Catches reimplementing/weakening the existing client normalization.
-	it("preserves populated and excluded normalized data through the source loader", async () => {
-		const { fixture, joined, trackedWorker, closedConnections } = createPageFixture();
-		const requests: string[] = [];
-		const input = await fixture((req, res) => {
-			requests.push(req.url!);
-			expect(req.method).toBe("GET");
-			expect(req.headers["x-emby-token"]).toBe("SECRET_SENTINEL");
-			expect(req.headers.authorization).toBe("AUTH_SENTINEL");
-			res.setHeader("Content-Type", "application/json");
-			res.end(
-				JSON.stringify({
-					StartIndex: 0,
-					TotalRecordCount: 3,
-					Items: [
-						{
-							Id: "episode-1",
-							Name: "TITLE_SENTINEL",
-							Type: "Episode",
-							SeriesId: "series-1",
-							IndexNumber: 1,
-							ParentIndexNumber: 0,
-							UserData: { Played: false },
-							UnusedMetadata: null,
+	it.each([false, true])(
+		"preserves populated and excluded data through the source loader with uncounted=%s",
+		async (uncounted) => {
+			const { fixture, joined, trackedWorker, closedConnections } = createPageFixture();
+			const requests: string[] = [];
+			const input = await fixture((req, res) => {
+				requests.push(req.url!);
+				expect(req.method).toBe("GET");
+				expect(req.headers["x-emby-token"]).toBe("SECRET_SENTINEL");
+				expect(req.headers.authorization).toBe("AUTH_SENTINEL");
+				res.setHeader("Content-Type", "application/json");
+				res.end(
+					JSON.stringify({
+						StartIndex: uncounted ? 2 : 0,
+						TotalRecordCount: 3,
+						Items: [
+							{
+								Id: "episode-1",
+								Name: "TITLE_SENTINEL",
+								Type: "Episode",
+								SeriesId: "series-1",
+								IndexNumber: 1,
+								ParentIndexNumber: 0,
+								UserData: { Played: false },
+								UnusedMetadata: null,
+							},
+							{
+								Id: "excluded-2",
+								Name: null,
+								Type: "Episode",
+								SeriesId: null,
+								IndexNumber: null,
+								UserData: { Played: true, PlayCount: 2 },
+							},
+							{
+								Id: "episode-3",
+								Name: null,
+								Type: "Episode",
+								SeriesId: "series-1",
+								IndexNumber: 3,
+								ParentIndexNumber: 1,
+								UserData: { Played: true, PlayCount: 7, LastPlayedDate: "2026-09-01T00:00:00Z" },
+							},
+						],
+					}),
+				);
+			});
+			const output: string[] = [];
+			const result = await joined(
+				runJellyfinEpisodePageWorker(
+					{ ...input, ...(uncounted ? { startIndex: 2, uncounted: true } : {}) },
+					{
+						createWorker: (url, payload) => {
+							const worker = trackedWorker(url, payload);
+							worker.stdout!.on("data", (chunk) => output.push(String(chunk)));
+							worker.stderr!.on("data", (chunk) => output.push(String(chunk)));
+							return worker;
 						},
-						{
-							Id: "excluded-2",
-							Name: null,
-							Type: "Episode",
-							SeriesId: null,
-							IndexNumber: null,
-							UserData: { Played: true, PlayCount: 2 },
-						},
-						{
-							Id: "episode-3",
-							Name: null,
-							Type: "Episode",
-							SeriesId: "series-1",
-							IndexNumber: 3,
-							ParentIndexNumber: 1,
-							UserData: { Played: true, PlayCount: 7, LastPlayedDate: "2026-09-01T00:00:00Z" },
-						},
-					],
-				}),
+					},
+				),
 			);
-		});
-		const output: string[] = [];
-		const result = await joined(
-			runJellyfinEpisodePageWorker(input, {
-				createWorker: (url, payload) => {
-					const worker = trackedWorker(url, payload);
-					worker.stdout!.on("data", (chunk) => output.push(String(chunk)));
-					worker.stderr!.on("data", (chunk) => output.push(String(chunk)));
-					return worker;
-				},
-			}),
-		);
-		expect(result).toEqual({
-			startIndex: 0,
-			totalRecordCount: 3,
-			items: [
-				{
-					id: "episode-1",
-					name: "TITLE_SENTINEL",
-					type: "Episode",
-					seriesId: "series-1",
-					episodeNumber: 1,
-					seasonNumber: 0,
-					played: false,
-					playCount: null,
-					lastPlayedDate: null,
-				},
-				{ id: "excluded-2", type: "Episode", excludedReason: "missing-episode-metadata" },
-				{
-					id: "episode-3",
-					name: "",
-					type: "Episode",
-					seriesId: "series-1",
-					episodeNumber: 3,
-					seasonNumber: 1,
-					played: true,
-					playCount: 7,
-					lastPlayedDate: "2026-09-01T00:00:00Z",
-				},
-			],
-		});
-		expect(requests).toHaveLength(1);
-		const request = new URL(requests[0]!, input.baseUrl);
-		expect(request.pathname).toBe("/SYNTHETIC_URL/Users/USER_SENTINEL/Items");
-		expect(request.searchParams.get("ParentId")).toBe("LIBRARY_SENTINEL");
-		expect(request.searchParams.get("StartIndex")).toBe("0");
-		expect(request.searchParams.get("Limit")).toBe("2000");
-		expect(output).toEqual([]);
-		await closedConnections();
-	});
+			expect(result).toEqual({
+				startIndex: uncounted ? 2 : 0,
+				totalRecordCount: uncounted ? null : 3,
+				...(uncounted ? { countMode: "uncounted" } : {}),
+				items: [
+					{
+						id: "episode-1",
+						name: "TITLE_SENTINEL",
+						type: "Episode",
+						seriesId: "series-1",
+						episodeNumber: 1,
+						seasonNumber: 0,
+						played: false,
+						playCount: null,
+						lastPlayedDate: null,
+					},
+					{ id: "excluded-2", type: "Episode", excludedReason: "missing-episode-metadata" },
+					{
+						id: "episode-3",
+						name: "",
+						type: "Episode",
+						seriesId: "series-1",
+						episodeNumber: 3,
+						seasonNumber: 1,
+						played: true,
+						playCount: 7,
+						lastPlayedDate: "2026-09-01T00:00:00Z",
+					},
+				],
+			});
+			expect(requests).toHaveLength(1);
+			const request = new URL(requests[0]!, input.baseUrl);
+			expect(request.pathname).toBe("/SYNTHETIC_URL/Users/USER_SENTINEL/Items");
+			expect(request.searchParams.get("ParentId")).toBe("LIBRARY_SENTINEL");
+			expect(request.searchParams.get("StartIndex")).toBe(uncounted ? "2" : "0");
+			expect(request.searchParams.get("EnableTotalRecordCount")).toBe(uncounted ? "false" : null);
+			expect(request.searchParams.get("Limit")).toBe("2000");
+			expect(output).toEqual([]);
+			await closedConnections();
+		},
+	);
 
 	it.each(["headers", "body"] as const)(
 		"joins the real client after stalled %s and closes its server socket before retry",

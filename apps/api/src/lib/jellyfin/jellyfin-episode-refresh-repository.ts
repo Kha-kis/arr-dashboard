@@ -18,7 +18,7 @@ import {
 import type { ProviderCacheRefreshAttempt } from "../services/provider-cache-status.js";
 import { withSqliteTransactionWriteIntent } from "../sqlite-transaction-intent.js";
 import { JELLYFIN_CACHE_PUBLICATION_CHUNK_SIZE } from "./jellyfin-cache-refresher.js";
-import type { JellyfinEpisodeItemsPage } from "./jellyfin-client.js";
+import type { JellyfinEpisodeCollectedPage } from "./jellyfin-client.js";
 import {
 	buildJellyfinEpisodeCatalogProvenance,
 	decodeJellyfinEpisodeCatalogProvenance,
@@ -112,6 +112,7 @@ export type JellyfinEpisodePageRejectionReason =
 	| "invalid-scope-or-phase"
 	| "total-count-decreased"
 	| "invalid-page-envelope-or-row"
+	| "uncounted-empty-before-bound"
 	| "run-unavailable"
 	| "catalog-authority-mismatch"
 	| "instance-authority-mismatch"
@@ -635,24 +636,37 @@ function parseScope(value: string | null) {
 }
 
 function pageRejectionReason(
-	page: JellyfinEpisodeItemsPage,
+	page: JellyfinEpisodeCollectedPage,
 	cursor: number,
 	expected: number | null,
 	pageSize: JellyfinEpisodePageSize,
 	allowTotalDrift = false,
 ): JellyfinEpisodePageRejectionReason | null {
+	const uncounted = page.totalRecordCount === null;
 	if (
 		!Number.isSafeInteger(page.startIndex) ||
 		page.startIndex !== cursor ||
-		!Number.isSafeInteger(page.totalRecordCount) ||
-		page.totalRecordCount < 0 ||
-		(expected !== null && !allowTotalDrift && page.totalRecordCount !== expected)
+		(uncounted
+			? page.countMode !== "uncounted" ||
+				!allowTotalDrift ||
+				!Number.isSafeInteger(expected) ||
+				expected === null ||
+				expected > 100_000 ||
+				cursor <= 0 ||
+				cursor + pageSize >= expected
+			: page.countMode !== undefined ||
+				!Number.isSafeInteger(page.totalRecordCount) ||
+				page.totalRecordCount < 0 ||
+				page.totalRecordCount > 100_000 ||
+				(expected !== null && !allowTotalDrift && page.totalRecordCount !== expected))
 	)
 		return "invalid-page-envelope-or-row";
+	// A saved counted bound is a continuation limit, never a new observation.
+	const bound = uncounted ? expected! : page.totalRecordCount!;
 	if (page.items.length > pageSize) return "invalid-page-envelope-or-row";
-	if (page.items.length === 0 && cursor < page.totalRecordCount)
-		return "invalid-page-envelope-or-row";
-	if (cursor + page.items.length > page.totalRecordCount) return "invalid-page-envelope-or-row";
+	if (page.items.length === 0 && cursor < bound)
+		return uncounted ? "uncounted-empty-before-bound" : "invalid-page-envelope-or-row";
+	if (cursor + page.items.length > bound) return "invalid-page-envelope-or-row";
 	const ids = new Set<string>();
 	for (const item of page.items) {
 		if (
@@ -712,7 +726,7 @@ export async function stageJellyfinEpisodePage(
 	prisma: PrismaClient,
 	claim: ObservationUnitClaim,
 	scope: JellyfinEpisodeScope,
-	page: JellyfinEpisodeItemsPage,
+	page: JellyfinEpisodeCollectedPage,
 	now = new Date(),
 	onRejected?: JellyfinEpisodePageRejectionReporter,
 ): Promise<boolean> {
@@ -787,14 +801,19 @@ export async function stageJellyfinEpisodePage(
 				unit.cursor !== claim.cursor ||
 				unit.expectedRawCount !== claim.expectedRawCount ||
 				unit.observedRawCount !== claim.observedRawCount ||
+				(page.totalRecordCount === null && unit.attemptCount !== 0) ||
 				unit.scopePayload !== claim.scopePayload ||
 				unit.scopeDigest !== scopeDigest(claim.phase, persistedScope)
 			)
 				return reportPageRejection(onRejected, "claim-mismatch");
 			const nextCursor = page.startIndex + page.items.length;
 			const observedRawCount = unit.observedRawCount + page.items.length;
-			const expectedRawCount = page.totalRecordCount;
-			if (nextCursor !== observedRawCount || nextCursor > expectedRawCount)
+			const expectedRawCount = page.totalRecordCount ?? unit.expectedRawCount;
+			if (
+				expectedRawCount === null ||
+				nextCursor !== observedRawCount ||
+				nextCursor > expectedRawCount
+			)
 				return reportPageRejection(onRejected, "cursor-accounting-mismatch");
 			if (page.items.length) {
 				const admittedItems = page.items.filter((item) => item.excludedReason === undefined);
@@ -881,7 +900,7 @@ export async function stageJellyfinEpisodePage(
 					});
 				}
 			}
-			const complete = nextCursor === expectedRawCount;
+			const complete = page.totalRecordCount !== null && nextCursor === expectedRawCount;
 			const updated = await tx.providerObservationUnit.updateMany({
 				where: { id: unit.id, runId: run.id, state: "running", claimToken: claim.claimToken },
 				data: complete

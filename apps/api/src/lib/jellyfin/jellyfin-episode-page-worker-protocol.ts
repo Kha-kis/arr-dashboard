@@ -1,4 +1,4 @@
-import type { JellyfinEpisodeItemsPage } from "./jellyfin-client.js";
+import type { JellyfinEpisodeCollectedPage, JellyfinEpisodeItemsPage } from "./jellyfin-client.js";
 
 /** Internal one-GET input. No caller-selected method, path, or operation. */
 export type JellyfinEpisodePageWorkerInput = {
@@ -9,6 +9,8 @@ export type JellyfinEpisodePageWorkerInput = {
 	libraryId: string;
 	startIndex: number;
 	limit: number;
+	/** Internal full-watch-only mode; absence retains the counted contract. */
+	uncounted?: true;
 };
 
 export type JellyfinEpisodePageWorkerRequest = JellyfinEpisodePageWorkerInput & {
@@ -18,7 +20,7 @@ export type JellyfinEpisodePageWorkerRequest = JellyfinEpisodePageWorkerInput & 
 };
 
 export type JellyfinEpisodePageWorkerResult =
-	| { status: "page"; page: JellyfinEpisodeItemsPage }
+	| { status: "page"; page: JellyfinEpisodeCollectedPage }
 	| { status: "failed"; category: "provider-unavailable" | "invalid-request" };
 
 // Read data descriptors only: even synthetic/unexpected messages cannot make
@@ -64,6 +66,7 @@ export function parseJellyfinEpisodePageWorkerRequest(
 	value: unknown,
 ): JellyfinEpisodePageWorkerRequest | null {
 	try {
+		const fields = record(value);
 		const request = record(value, [
 			"version",
 			"baseUrl",
@@ -74,9 +77,11 @@ export function parseJellyfinEpisodePageWorkerRequest(
 			"startIndex",
 			"limit",
 			"requestTimeoutMs",
+			...(fields && "uncounted" in fields ? ["uncounted"] : []),
 		]);
 		if (
 			!request ||
+			("uncounted" in request && request.uncounted !== true) ||
 			request.version !== 1 ||
 			typeof request.baseUrl !== "string" ||
 			!nativeId(request.apiKey) ||
@@ -103,6 +108,7 @@ export function parseJellyfinEpisodePageWorkerRequest(
 			startIndex: request.startIndex,
 			limit: request.limit,
 			requestTimeoutMs: request.requestTimeoutMs,
+			...(request.uncounted === true ? { uncounted: true as const } : {}),
 		};
 	} catch {
 		return null;
@@ -111,7 +117,7 @@ export function parseJellyfinEpisodePageWorkerRequest(
 
 export function parseJellyfinEpisodePageWorkerResult(
 	value: unknown,
-	coordinates: Pick<JellyfinEpisodePageWorkerInput, "startIndex" | "limit">,
+	coordinates: Pick<JellyfinEpisodePageWorkerInput, "startIndex" | "limit" | "uncounted">,
 ): JellyfinEpisodePageWorkerResult | null {
 	try {
 		const envelope = record(value);
@@ -125,18 +131,31 @@ export function parseJellyfinEpisodePageWorkerResult(
 			return { status: "failed", category: envelope.category };
 		}
 		if (envelope.status !== "page" || !record(value, ["status", "page"])) return null;
-		const page = record(envelope.page, ["startIndex", "totalRecordCount", "items"]);
+		const uncounted = coordinates.uncounted === true;
+		const page = record(envelope.page, [
+			"startIndex",
+			"totalRecordCount",
+			"items",
+			...(uncounted ? ["countMode"] : []),
+		]);
 		if (
 			!page ||
 			!integer(page.startIndex, 100_000) ||
 			page.startIndex !== coordinates.startIndex ||
-			!integer(page.totalRecordCount, 100_000) ||
+			(uncounted
+				? page.totalRecordCount !== null || page.countMode !== "uncounted"
+				: !integer(page.totalRecordCount, 100_000)) ||
 			!integer(coordinates.limit, 2_000) ||
 			coordinates.limit < 1
 		)
 			return null;
 		const rawRows = rows(page.items, coordinates.limit);
-		if (!rawRows || page.startIndex + rawRows.length > page.totalRecordCount) return null;
+		if (
+			!rawRows ||
+			page.startIndex + rawRows.length > 100_000 ||
+			(!uncounted && page.startIndex + rawRows.length > (page.totalRecordCount as number))
+		)
+			return null;
 		const items: JellyfinEpisodeItemsPage["items"] = [];
 		const ids = new Set<string>();
 		for (const rawRow of rawRows) {
@@ -185,7 +204,13 @@ export function parseJellyfinEpisodePageWorkerResult(
 		}
 		return {
 			status: "page",
-			page: { startIndex: page.startIndex, totalRecordCount: page.totalRecordCount, items },
+			page: {
+				startIndex: page.startIndex,
+				items,
+				...(uncounted
+					? { totalRecordCount: null, countMode: "uncounted" as const }
+					: { totalRecordCount: page.totalRecordCount as number }),
+			},
 		};
 	} catch {
 		return null;

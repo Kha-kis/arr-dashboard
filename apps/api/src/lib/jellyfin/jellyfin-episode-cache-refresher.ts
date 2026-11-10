@@ -47,7 +47,7 @@ import {
 	JELLYFIN_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS,
 	type JellyfinPublicationContext,
 } from "./jellyfin-cache-refresher.js";
-import { JellyfinClient, type JellyfinEpisodeItemsPage } from "./jellyfin-client.js";
+import { JellyfinClient, type JellyfinEpisodeCollectedPage } from "./jellyfin-client.js";
 import { invalidateJellyfinEpisodeAttempt } from "./jellyfin-episode-attempt-recovery.js";
 import {
 	buildJellyfinEpisodeCatalogProvenance,
@@ -151,7 +151,7 @@ export type JellyfinEpisodeWorkItemRunnerDependencies = {
 		input: JellyfinEpisodePageWorkerInput,
 		client: JellyfinClient,
 		signal?: AbortSignal,
-	) => Promise<JellyfinEpisodeItemsPage>;
+	) => Promise<JellyfinEpisodeCollectedPage>;
 };
 
 const defaultJellyfinEpisodeWorkItemRunnerDependencies: JellyfinEpisodeWorkItemRunnerDependencies =
@@ -1408,6 +1408,8 @@ export function createJellyfinEpisodeWorkItemRunner(
 			return await failAttempt("coverage-incomplete", run.id, runOwnsAttempt);
 		}
 		let stagingPage = false;
+		let requestedUncounted = false;
+		let pageRejection: JellyfinEpisodePageRejectionReason | undefined;
 		let settlingRejectedPage = false;
 		let providerReadMs = 0;
 		let guardMs = 0;
@@ -1427,6 +1429,30 @@ export function createJellyfinEpisodeWorkItemRunner(
 							async () => {
 								const readStartedAt = performance.now();
 								try {
+									// Read retry metadata only for the exact admitted claim. The
+									// generic claim API deliberately carries no retry policy.
+									if (
+										activeCatalog &&
+										runOwnsAttempt &&
+										claim.cursor > 0 &&
+										claim.expectedRawCount !== null &&
+										claim.cursor + pageSize < claim.expectedRawCount
+									) {
+										const unit = await context.prisma.providerObservationUnit.findFirst({
+											where: {
+												id: claim.unitId,
+												runId: claim.runId,
+												state: "running",
+												claimToken: claim.claimToken,
+												cursor: claim.cursor,
+												expectedRawCount: claim.expectedRawCount,
+												observedRawCount: claim.observedRawCount,
+												scopePayload: claim.scopePayload,
+											},
+											select: { attemptCount: true },
+										});
+										requestedUncounted = unit?.attemptCount === 0;
+									}
 									return await observeWorkStage(
 										"provider-read",
 										async () =>
@@ -1439,6 +1465,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 													libraryId: scope.libraryId,
 													startIndex: claim.cursor,
 													limit: pageSize,
+													...(requestedUncounted ? { uncounted: true as const } : {}),
 												},
 												client,
 												context.signal,
@@ -1475,6 +1502,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 									page,
 									now,
 									(reason: JellyfinEpisodePageRejectionReason) => {
+										pageRejection = reason;
 										if (typeof context.log.warn !== "function") return;
 										context.log.warn(
 											{ category: "episode-page-rejected", reason },
@@ -1497,7 +1525,10 @@ export function createJellyfinEpisodeWorkItemRunner(
 					claim,
 					reasonCode: "coverage-incomplete",
 					now,
-					resetProgress: true,
+					// Only this new empty unknown-page condition requests a
+					// counted retry at the conserved cursor. Other rejection
+					// classes retain their existing reset/settlement behavior.
+					resetProgress: !(requestedUncounted && pageRejection === "uncounted-empty-before-bound"),
 				};
 				const failed = await settleJellyfinEpisodeUnitFailure(context, cancellation.failure);
 				cancellation.failure = undefined;

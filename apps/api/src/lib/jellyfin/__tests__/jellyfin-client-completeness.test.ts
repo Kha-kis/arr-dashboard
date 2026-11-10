@@ -348,6 +348,31 @@ describe("JellyfinClient authoritative inventory completeness", () => {
 		expect(new URL(String(fetchMock.mock.calls[0]?.[0])).searchParams.get("Limit")).toBe("2000");
 	});
 
+	it("discards count-disabled page size while preserving normalized rows and exclusions", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			response({
+				Items: [strictEpisode(), strictEpisode({ Id: "excluded", SeriesId: null })],
+				StartIndex: 2,
+				TotalRecordCount: 2,
+			}),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new JellyfinClient("http://jellyfin.test", "api-key", log);
+		expect(client.getUncountedEpisodeItemsPageWithCoverage).toEqual(expect.any(Function));
+		const page = await client.getUncountedEpisodeItemsPageWithCoverage("user-1", "library-1", 2, 2);
+		expect(page).toMatchObject({ startIndex: 2, totalRecordCount: null, countMode: "uncounted" });
+		expect(page.items).toEqual([
+			expect.objectContaining({ id: "episode-1", played: true }),
+			{ id: "excluded", type: "Episode", excludedReason: "missing-episode-metadata" },
+		]);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		const query = new URL(String(fetchMock.mock.calls[0]?.[0])).searchParams;
+		expect(query.get("EnableTotalRecordCount")).toBe("false");
+		expect(query.get("StartIndex")).toBe("2");
+		expect(query.get("Limit")).toBe("2");
+		expect(query.get("IsPlayed")).toBeNull();
+	});
+
 	it("requests a watched-only Episode page without weakening the strict projection", async () => {
 		const fetchMock = vi.fn().mockResolvedValue(
 			response({
