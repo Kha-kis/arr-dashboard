@@ -1,4 +1,5 @@
 import type { ProviderCoverageReceipt, ProviderCoverageReceiptV1 } from "@arr/shared";
+import { measureJellyfinDisplayReadPhase } from "./jellyfin-display-read-timing.js";
 import {
 	createEvidenceFingerprintArrayAccumulator,
 	evidenceFingerprint,
@@ -734,7 +735,9 @@ async function fingerprintDisplayRows<Input, Canonical>(
 export function fingerprintJellyfinLibraryDisplayRows(
 	rows: readonly JellyfinLibraryRowFingerprintInput[],
 ): Promise<string> {
-	return fingerprintDisplayRows(rows, projectJellyfinLibraryRow, compareLibraryRows);
+	return measureJellyfinDisplayReadPhase("fingerprint", () =>
+		fingerprintDisplayRows(rows, projectJellyfinLibraryRow, compareLibraryRows),
+	);
 }
 
 export interface JellyfinEpisodeRowFingerprintInput {

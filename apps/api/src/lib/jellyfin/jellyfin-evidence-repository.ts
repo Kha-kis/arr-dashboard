@@ -7,6 +7,7 @@ import {
 } from "../provider-observation/coverage-receipt.js";
 import { projectProviderObservationStatus } from "../provider-observation/status-projection.js";
 import { createJellyfinDisplayCheckpoint } from "./jellyfin-display-work.js";
+import { measureJellyfinDisplayReadPhase } from "./jellyfin-display-read-timing.js";
 import {
 	isJellyfinEpisodeCatalogCompatible,
 	jellyfinEpisodeCatalogScopesFromReceipt,
@@ -1405,7 +1406,9 @@ export async function materializeOwnedJellyfinLibraryDisplayInTransaction(
 		mode: "display",
 	};
 	return {
-		snapshot: await materializeOwnedJellyfinObservation(reader, scope),
+		snapshot: await measureJellyfinDisplayReadPhase("materialize", () =>
+			materializeOwnedJellyfinObservation(reader, scope),
+		),
 		input: scope,
 		now,
 		maxAgeMs,
@@ -1419,12 +1422,14 @@ export async function validateOwnedJellyfinLibraryDisplaySnapshot(
 		"observation" in snapshot.snapshot
 			? snapshot.snapshot
 			: { ...snapshot.snapshot, generationScopedMutation: false };
-	const result = await validateOwnedJellyfinObservationSnapshot(
-		materialized,
-		null,
-		{ ...snapshot.input, cacheType: "jellyfin", mode: "display" },
-		snapshot.now,
-		snapshot.maxAgeMs,
+	const result = await measureJellyfinDisplayReadPhase("validate", () =>
+		validateOwnedJellyfinObservationSnapshot(
+			materialized,
+			null,
+			{ ...snapshot.input, cacheType: "jellyfin", mode: "display" },
+			snapshot.now,
+			snapshot.maxAgeMs,
+		),
 	);
 	return result ? { ...result, mutationAvailable: false, authority: null } : null;
 }
@@ -1470,12 +1475,16 @@ export async function readOwnedJellyfinObservation(
 	};
 	if (input.mode === "display" && input.cacheType === "jellyfin") {
 		try {
-			const snapshot = await runSerializable<OwnedObservationSnapshot>(
-				input.prisma,
-				(tx) => materializeOwnedJellyfinObservation(tx, input),
-				{ observation: fallback },
+			const snapshot = await measureJellyfinDisplayReadPhase("materialize", () =>
+				runSerializable<OwnedObservationSnapshot>(
+					input.prisma,
+					(tx) => materializeOwnedJellyfinObservation(tx, input),
+					{ observation: fallback },
+				),
 			);
-			return await validateOwnedJellyfinObservationSnapshot(snapshot, null, input, now, maxAgeMs);
+			return await measureJellyfinDisplayReadPhase("validate", () =>
+				validateOwnedJellyfinObservationSnapshot(snapshot, null, input, now, maxAgeMs),
+			);
 		} catch {
 			return fallback;
 		}

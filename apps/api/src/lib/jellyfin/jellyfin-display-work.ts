@@ -1,4 +1,5 @@
 import { setImmediate as turn } from "node:timers/promises";
+import { startJellyfinDisplayReadPhase } from "./jellyfin-display-read-timing.js";
 
 /** Scheduling only: never grants authority or replaces a runtime guard. */
 export function createJellyfinDisplayCheckpoint(): () => Promise<void> | undefined {
@@ -7,7 +8,9 @@ export function createJellyfinDisplayCheckpoint(): () => Promise<void> | undefin
 	return () => {
 		if (++units < 256 && performance.now() < deadline) return;
 		units = 0;
+		const finish = startJellyfinDisplayReadPhase("checkpoint-wait");
 		return turn().then(() => {
+			finish();
 			deadline = performance.now() + 4;
 		});
 	};

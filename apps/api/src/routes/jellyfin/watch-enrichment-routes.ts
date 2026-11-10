@@ -10,6 +10,7 @@ import type { WatchEnrichmentItem } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { withIsolatedRuntimePrismaBulkReadClient } from "../../lib/backup/restore-runtime-client.js";
+import { withJellyfinDisplayReadTiming } from "../../lib/jellyfin/jellyfin-display-read-timing.js";
 import {
 	type JellyfinDisplayInstance,
 	readOwnedJellyfinLibraryDisplaySources,
@@ -73,22 +74,35 @@ export async function registerWatchEnrichmentRoutes(
 
 		const tmdbIdList = [...new Set(tmdbIds)];
 
-		const displayEvidence = await withIsolatedRuntimePrismaBulkReadClient(
-			app.prisma,
-			async (prisma) => {
-				const jellyfinInstances = await prisma.serviceInstance.findMany({
-					where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-					select: { id: true, label: true, service: true },
-				});
-				return jellyfinInstances.length > 0
-					? await readOwnedJellyfinLibraryDisplaySources({
-							prisma,
-							userId,
-							instances: jellyfinInstances as JellyfinDisplayInstance[],
-						})
-					: { sources: [], providerStatus: undefined };
-			},
-			{ lease: "phase" },
+		const displayEvidence = await withJellyfinDisplayReadTiming(
+			() =>
+				withIsolatedRuntimePrismaBulkReadClient(
+					app.prisma,
+					async (prisma) => {
+						const jellyfinInstances = await prisma.serviceInstance.findMany({
+							where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
+							select: { id: true, label: true, service: true },
+						});
+						return jellyfinInstances.length > 0
+							? await readOwnedJellyfinLibraryDisplaySources({
+									prisma,
+									userId,
+									instances: jellyfinInstances as JellyfinDisplayInstance[],
+								})
+							: { sources: [], providerStatus: undefined };
+					},
+					{ lease: "phase" },
+				),
+			(timing) =>
+				app.log.info(
+					{
+						category: "jellyfin-display-read-timing",
+						kind: "watch",
+						spansOverlap: true,
+						...timing,
+					},
+					"Jellyfin display read timing",
+				),
 		);
 		const sourceStatuses = new Map(
 			displayEvidence.providerStatus?.sources.map((source) => [source.instanceId, source.status]) ??
