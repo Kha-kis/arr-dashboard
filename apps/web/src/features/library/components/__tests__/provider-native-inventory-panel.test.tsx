@@ -228,6 +228,83 @@ beforeEach(() => {
 });
 
 describe("ProviderNativeInventoryPanel", () => {
+	describe("watch observation time", () => {
+		it.each([
+			{ state: "unwatched", freshness: "current", valueSemantics: "exact", badge: "Current" },
+			{ state: "unwatched", freshness: "last-known", valueSemantics: "exact", badge: "Last known" },
+			{
+				state: "watched",
+				freshness: "last-known",
+				valueSemantics: "lower-bound",
+				badge: "Last known",
+			},
+		] as const)(
+			"distinguishes $freshness $valueSemantics watch time from inventory time",
+			(watch) => {
+				state.services = [service("jellyfin-1", "Private server")];
+				state.incognito = true;
+				state.data = available({
+					observedAt: "2026-09-14T12:00:00.000Z",
+					rows: [
+						{
+							...available().rows[0]!,
+							mediaType: "episode",
+							watch: {
+								state: watch.state,
+								freshness: watch.freshness,
+								valueSemantics: watch.valueSemantics,
+								observedAt: "2026-09-13T08:00:00.000Z",
+							},
+						},
+					],
+				});
+				render(<ProviderNativeInventoryPanel />, { wrapper: IncognitoProvider });
+				fireEvent.change(screen.getByLabelText("Inventory domain"), {
+					target: { value: "episode" },
+				});
+				const watchTime = screen.getByText(/^Watch observed:/).querySelector("time");
+				expect(watchTime).toBeVisible();
+				expect(watchTime).toHaveAttribute("datetime", "2026-09-13T08:00:00.000Z");
+				expect(screen.getByText(watch.badge)).toBeInTheDocument();
+				expect(
+					screen.getByText(watch.state === "watched" ? "Watched" : "Unwatched"),
+				).toBeInTheDocument();
+				if (watch.valueSemantics === "lower-bound")
+					expect(screen.getByText("Lower bound")).toBeInTheDocument();
+				expect(screen.queryByText("Private movie title")).not.toBeInTheDocument();
+				expect(screen.getByText("masked-item.iso")).toBeInTheDocument();
+			},
+		);
+		it.each([null, "not-a-recorded-time"])(
+			"does not substitute inventory time for unavailable watch time %s",
+			(observedAt) => {
+				state.services = [service("jellyfin-1", "Private server")];
+				state.data = available({
+					rows: [
+						{
+							...available().rows[0]!,
+							mediaType: "episode",
+							watch: {
+								state: "unknown",
+								freshness: "unavailable",
+								valueSemantics: "unknown",
+								observedAt,
+							},
+						},
+					],
+				});
+				render(<ProviderNativeInventoryPanel />, { wrapper: IncognitoProvider });
+				fireEvent.change(screen.getByLabelText("Inventory domain"), {
+					target: { value: "episode" },
+				});
+				expect(screen.getByText("Watch observation time unavailable")).toBeInTheDocument();
+				expect(screen.queryByText(/^Watch observed:/)).not.toBeInTheDocument();
+				expect(screen.getByText("Watch state unknown")).toBeInTheDocument();
+				expect(screen.queryByText("Current")).not.toBeInTheDocument();
+				expect(screen.queryByText("Last known")).not.toBeInTheDocument();
+			},
+		);
+	});
 	describe("Plex metadata review", () => {
 		it.each([undefined, {}, { tmdb: [] }, { tvdb: [42] }, { tmdb: [42, 99] }])(
 			"highlights recorded Plex library mapping gaps without relying on the ARR relationship: %j",

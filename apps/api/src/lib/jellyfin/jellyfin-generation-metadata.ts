@@ -688,7 +688,12 @@ export function fingerprintJellyfinLibraryRows(
 	return evidenceFingerprint(decorated.map(({ row }) => row));
 }
 
-type DecoratedRow<T> = { row: T; tieBreaker: string };
+type DecoratedRow<T> = { row: T; tieBreaker?: string };
+
+function sortingTieBreaker<T>(decorated: DecoratedRow<T>): string {
+	decorated.tieBreaker ??= evidenceFingerprint(decorated.row);
+	return decorated.tieBreaker;
+}
 
 function compareLibraryRows(
 	left: DecoratedRow<CanonicalJellyfinLibraryRow>,
@@ -698,7 +703,7 @@ function compareLibraryRows(
 		left.row.mediaType.localeCompare(right.row.mediaType) ||
 		left.row.tmdbId - right.row.tmdbId ||
 		left.row.libraryId.localeCompare(right.row.libraryId) ||
-		left.tieBreaker.localeCompare(right.tieBreaker)
+		sortingTieBreaker(left).localeCompare(sortingTieBreaker(right))
 	);
 }
 
@@ -711,7 +716,7 @@ async function fingerprintDisplayRows<Input, Canonical>(
 	const decorated: DecoratedRow<Canonical>[] = [];
 	for (const input of rows) {
 		const row = project(input);
-		decorated.push({ row, tieBreaker: evidenceFingerprint(row) });
+		decorated.push({ row });
 		const pause = checkpoint();
 		if (pause) await pause;
 	}
@@ -810,7 +815,7 @@ function compareEpisodeRows(
 		left.row.showTmdbId - right.row.showTmdbId ||
 		left.row.seasonNumber - right.row.seasonNumber ||
 		left.row.episodeNumber - right.row.episodeNumber ||
-		left.tieBreaker.localeCompare(right.tieBreaker)
+		sortingTieBreaker(left).localeCompare(sortingTieBreaker(right))
 	);
 }
 

@@ -122,6 +122,17 @@ function watchLabel(state: ProviderNativeWatchDisplay["state"]): string {
 	}
 }
 
+function WatchObservationTime({ observedAt }: Pick<ProviderNativeWatchDisplay, "observedAt">) {
+	if (!observedAt || !Number.isFinite(Date.parse(observedAt))) {
+		return <span className="text-muted-foreground">Watch observation time unavailable</span>;
+	}
+	return (
+		<span className="text-muted-foreground">
+			Watch observed: <time dateTime={observedAt}>{formatObservedAt(observedAt)}</time>
+		</span>
+	);
+}
+
 function attemptHeading(state: ProviderNativeInventoryAttempt["state"]): string | null {
 	switch (state) {
 		case "pending":
@@ -514,6 +525,7 @@ export function ProviderNativeInventoryPanel({
 													{row.watch.valueSemantics === "lower-bound" && (
 														<span className="text-muted-foreground">Lower bound</span>
 													)}
+													<WatchObservationTime observedAt={row.watch.observedAt} />
 												</div>
 											)}
 											{row.connection && (
