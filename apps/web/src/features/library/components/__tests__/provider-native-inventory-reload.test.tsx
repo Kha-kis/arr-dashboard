@@ -138,6 +138,7 @@ describe("native inventory Reload with the real query hook", () => {
 		await waitFor(() => expect(apiRequest).toHaveBeenCalledTimes(2));
 		expect(apiRequest).toHaveBeenLastCalledWith(
 			"/api/library/provider-inventory?instanceId=plex-two&domain=library&limit=100",
+			{ signal: expect.any(AbortSignal) },
 		);
 		expect(screen.queryByText("Synthetic first item")).not.toBeInTheDocument();
 		expect(screen.queryByText("Metadata review needed")).not.toBeInTheDocument();
@@ -173,6 +174,7 @@ describe("native inventory Reload with the real query hook", () => {
 		await waitFor(() => expect(apiRequest).toHaveBeenCalledTimes(2));
 		expect(apiRequest).toHaveBeenLastCalledWith(
 			"/api/library/provider-inventory?instanceId=plex-one&domain=library&limit=100&afterNativeId=item-one&expectedGenerationId=generation-one",
+			{ signal: expect.any(AbortSignal) },
 		);
 		expect(await screen.findByText("Synthetic second item")).toBeInTheDocument();
 		expect(screen.queryByRole("button", { name: "Next page" })).not.toBeInTheDocument();
@@ -180,6 +182,7 @@ describe("native inventory Reload with the real query hook", () => {
 		await waitFor(() => expect(apiRequest).toHaveBeenCalledTimes(3));
 		expect(apiRequest).toHaveBeenLastCalledWith(
 			"/api/library/provider-inventory?instanceId=plex-one&domain=library&limit=100",
+			{ signal: expect.any(AbortSignal) },
 		);
 	});
 
@@ -195,6 +198,7 @@ describe("native inventory Reload with the real query hook", () => {
 		expect(apiRequest).toHaveBeenCalledTimes(2);
 		expect(apiRequest).toHaveBeenLastCalledWith(
 			"/api/library/provider-inventory?instanceId=plex-one&domain=library&limit=100",
+			{ signal: expect.any(AbortSignal) },
 		);
 	});
 });

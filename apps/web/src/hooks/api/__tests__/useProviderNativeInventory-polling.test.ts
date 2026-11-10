@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import { POLLING_BACKGROUND } from "../../../lib/polling-intervals";
 
 const useQuery = vi.hoisted(() =>
-	vi.fn((_options: { queryKey: unknown; queryFn: () => Promise<unknown> }) => ({})),
+	vi.fn(
+		(_options: {
+			queryKey: unknown;
+			queryFn: (context: { signal: AbortSignal }) => Promise<unknown>;
+		}) => ({}),
+	),
 );
 const apiRequest = vi.hoisted(() =>
 	vi.fn().mockResolvedValue({ status: "unavailable", reason: "no-publication" }),
@@ -49,9 +54,11 @@ describe("native episode inventory cursor polling", () => {
 		const filtered = useQuery.mock.lastCall?.[0];
 		if (!ordinary || !filtered) throw new Error("Inventory query options were not captured");
 		expect(filtered.queryKey).not.toEqual(ordinary.queryKey);
-		await filtered.queryFn();
+		const signal = new AbortController().signal;
+		await filtered.queryFn({ signal });
 		expect(apiRequest).toHaveBeenCalledWith(
 			"/api/library/provider-inventory?instanceId=synthetic-instance&domain=library&limit=100&metadataFilter=missing-tmdb",
+			{ signal },
 		);
 	});
 });

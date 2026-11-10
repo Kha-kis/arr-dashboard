@@ -1,7 +1,14 @@
+import { request as httpRequest, type ServerResponse } from "node:http";
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 import pino from "pino";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	closeScopedWriteFixtures,
+	createScopedWriteFixture,
+} from "../../lib/__tests__/scoped-write-intent-fixture.js";
+import lifecyclePlugin from "../../plugins/lifecycle.js";
+import {
+	AUTH_HEADER,
 	createInjectAuthenticated,
 	registerTestErrorHandler,
 	setupAuthInjection,
@@ -11,7 +18,8 @@ const mocks = vi.hoisted(() => ({ read: vi.fn(), withRead: vi.fn() }));
 vi.mock("../../lib/provider-observation/inventory-connection-repository.js", () => ({
 	readProviderInventoryConnections: mocks.read,
 }));
-vi.mock("../../lib/backup/restore-runtime-client.js", () => ({
+vi.mock("../../lib/backup/restore-runtime-client.js", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../lib/backup/restore-runtime-client.js")>()),
 	withIsolatedRuntimePrismaReadClient: mocks.withRead,
 }));
 
@@ -57,10 +65,127 @@ beforeEach(async () => {
 });
 afterEach(async () => {
 	await app.close();
+	await closeScopedWriteFixtures();
 	vi.restoreAllMocks();
 });
 
 const path = "/library/provider-inventory?instanceId=plex-1&domain=episode";
+
+function deferred() {
+	let resolve!: () => void;
+	const promise = new Promise<void>((done) => {
+		resolve = done;
+	});
+	return { promise, resolve };
+}
+
+describe("disconnected inventory reads", () => {
+	it.each(["next-phase", "final-phase", "entered-error"] as const)(
+		"joins entered work, cleans its listener and preserves %s semantics",
+		async (settlement) => {
+			const f = await createScopedWriteFixture();
+			const actual = await vi.importActual<
+				typeof import("../../lib/backup/restore-runtime-client.js")
+			>("../../lib/backup/restore-runtime-client.js");
+			mocks.withRead.mockImplementation(actual.withIsolatedRuntimePrismaReadClient);
+			const server = Fastify({ loggerInstance: app.log });
+			server.decorate("prisma", f.client.prisma);
+			server.decorate("restoreRuntime", f.runtime);
+			setupAuthInjection(server, { id: "synthetic-user" });
+			await server.register(lifecyclePlugin);
+			const entered = deferred(),
+				release = deferred(),
+				disconnected = deferred(),
+				closing = deferred();
+			let response!: ServerResponse;
+			let baselineListeners: ReturnType<ServerResponse["listeners"]> = [];
+			let phaseSettled = false,
+				laterEntered = false,
+				sends = 0;
+			const failures: unknown[] = [];
+			const failure = new Error("Synthetic independent repository failure");
+			server.addHook("onRequest", async (_request, reply) => {
+				response = reply.raw;
+				baselineListeners = response.listeners("close");
+				response.once("close", disconnected.resolve);
+			});
+			server.addHook("onSend", async () => {
+				sends++;
+			});
+			server.addHook("preClose", async () => {
+				closing.resolve();
+			});
+			server.setErrorHandler((error, _request, reply) => {
+				failures.push(error);
+				return reply.status(500).send({ error: "Synthetic failure" });
+			});
+			mocks.read.mockImplementation(async (_prisma, _input, _log, _observe, readPhase) => {
+				await readPhase(async (reader: typeof f.client.prisma) => {
+					try {
+						expect(
+							await reader.serviceInstance.count({ where: { userId: "synthetic-user" } }),
+						).toBe(2);
+						entered.resolve();
+						await release.promise;
+						if (settlement === "entered-error") throw failure;
+					} finally {
+						phaseSettled = true;
+					}
+				});
+				if (settlement === "final-phase")
+					return { status: "unavailable", reason: "no-publication" };
+				return readPhase(async () => {
+					laterEntered = true;
+					return { status: "unavailable", reason: "no-publication" };
+				});
+			});
+			await server.register(registerProviderInventoryRoutes);
+			const address = await server.listen({ host: "127.0.0.1", port: 0 });
+			const request = httpRequest(`${address}${path}`, {
+				agent: false,
+				headers: { [AUTH_HEADER]: "1" },
+			});
+			request.on("error", () => undefined);
+			request.end();
+			let close: Promise<void> | undefined;
+			try {
+				await entered.promise;
+				const addedListeners = response
+					.listeners("close")
+					.filter(
+						(listener) =>
+							!baselineListeners.includes(listener) && listener !== disconnected.resolve,
+					);
+				request.destroy();
+				await disconnected.promise;
+				close = server.close();
+				await closing.promise;
+				expect(phaseSettled).toBe(false);
+				expect(server.lifecycle.getShutdownStatus().pendingHandlers).toBe(1);
+				expect(timingEvent()).toBeUndefined();
+				release.resolve();
+				await close;
+				expect(laterEntered).toBe(false);
+				expect(server.lifecycle.getShutdownStatus().pendingHandlers).toBe(0);
+				for (const listener of addedListeners)
+					expect(response.listeners("close")).not.toContain(listener);
+				if (settlement !== "entered-error") {
+					expect(timingEvent()).toMatchObject({ outcome: "cancelled" });
+					expect(sends).toBe(0);
+					expect(failures).toEqual([]);
+				} else {
+					expect(timingEvent()).toMatchObject({ outcome: "error" });
+					expect(failures).toEqual([failure]);
+				}
+				expect(f.losses).toEqual([]);
+			} finally {
+				request.destroy();
+				release.resolve();
+				await (close ?? server.close());
+			}
+		},
+	);
+});
 
 describe("owned native inventory route", () => {
 	it("reads a bounded published page using the authenticated owner", async () => {

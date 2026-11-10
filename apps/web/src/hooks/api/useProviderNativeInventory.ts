@@ -39,7 +39,7 @@ export function useProviderNativeInventory({
 			expectedGenerationId: expectedGenerationId ?? null,
 			refreshKey,
 		}),
-		queryFn: async () => {
+		queryFn: async ({ signal }) => {
 			if (!instanceId) throw new Error("A media server instance is required");
 			const search = new URLSearchParams({ instanceId, domain, limit: "100" });
 			if (metadataFilter) search.set("metadataFilter", metadataFilter);
@@ -47,6 +47,7 @@ export function useProviderNativeInventory({
 			if (expectedGenerationId) search.set("expectedGenerationId", expectedGenerationId);
 			const payload = await apiRequest<unknown>(
 				`/api/library/provider-inventory?${search.toString()}`,
+				{ signal },
 			);
 			return providerNativeInventoryResponseSchema.parse(payload);
 		},

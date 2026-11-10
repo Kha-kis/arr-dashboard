@@ -14,12 +14,12 @@ import {
 	createRuntimePostgresAdapter,
 	createRuntimeReplacementPostgresAdapter,
 } from "./restore-runtime-postgres-client.js";
-import { measureRuntimeReadTiming, startRuntimeReadTiming } from "./restore-runtime-read-timing.js";
-import { withRuntimeReadPhases } from "./restore-runtime-read-phases.js";
 import {
 	getRuntimeReadSource,
 	type RuntimeReadSource,
 } from "./restore-runtime-read-diagnostics.js";
+import { withRuntimeReadPhases } from "./restore-runtime-read-phases.js";
+import { measureRuntimeReadTiming, startRuntimeReadTiming } from "./restore-runtime-read-timing.js";
 import { acquireSqliteRestoreOperationLock } from "./restore-runtime-sqlite.js";
 import { parseSqliteRestoreRuntimeRecord } from "./restore-runtime-sqlite-enrollment.js";
 
@@ -69,7 +69,11 @@ type RuntimeTransactionOptions = {
 	timeout?: number;
 	isolationLevel?: Prisma.TransactionIsolationLevel;
 };
-type RuntimeReadOptions = Readonly<{ workload?: "bulk-cache"; maxWait?: number }>;
+type RuntimeReadOptions = Readonly<{
+	workload?: "bulk-cache";
+	maxWait?: number;
+	signal?: AbortSignal;
+}>;
 type SqliteClientRegistration = {
 	closed: boolean;
 	publicationTransaction<T>(
@@ -80,6 +84,7 @@ type SqliteClientRegistration = {
 		operation: (client: PrismaClientInstance) => Promise<T>,
 		maxWait?: number,
 		workload?: "bulk-cache",
+		signal?: AbortSignal,
 	): Promise<T>;
 };
 const ordinarySqliteClients = new WeakMap<object, SqliteClientRegistration>();
@@ -129,16 +134,18 @@ export async function withIsolatedRuntimePrismaReadTransaction<T>(
  * Explicit cache-display reads use an exclusive guarded lane without adding a
  * snapshot. Repository transactions and outside-snapshot postchecks retain
  * their original semantics. Never use this callback for writes or provider I/O.
+ * Cancellation only refuses callback entry; entered work stays joined to settlement.
  */
 export async function withIsolatedRuntimePrismaReadClient<T>(
 	prisma: PrismaClientInstance,
 	operation: (client: PrismaClientInstance) => Promise<T>,
 	options?: RuntimeReadOptions,
 ): Promise<T> {
+	options?.signal?.throwIfAborted();
 	const registration = ordinarySqliteClients.get(prisma);
 	if (!registration) return operation(prisma);
 	if (registration.closed) throw new RestoreRuntimeAdmissionError();
-	return registration.readClient(operation, options?.maxWait, options?.workload);
+	return registration.readClient(operation, options?.maxWait, options?.workload, options?.signal);
 }
 
 /** Admit catalog-wide ancillary reads without consuming every ordinary lane. */
@@ -254,7 +261,7 @@ export function createRuntimePrismaClient(
 		source: RuntimeReadSource;
 		enqueuedAt?: number;
 		resolve(lane: ReadLane): void;
-		reject(error: RestoreRuntimeAdmissionError): void;
+		reject(error: unknown): void;
 	};
 	const readLanes: ReadLane[] = Array.from({ length: 4 }, () => ({ busy: false }));
 	const readWaiters = new Set<ReadWaiter>();
@@ -312,7 +319,12 @@ export function createRuntimePrismaClient(
 	const eligibleRead = (workload?: "bulk-cache") =>
 		workload !== "bulk-cache" ||
 		readLanes.filter((lane) => lane.busy && lane.workload === "bulk-cache").length < 2;
-	const acquireReadLane = (maxWait: number, workload?: "bulk-cache"): Promise<ReadLane> => {
+	const acquireReadLane = (
+		maxWait: number,
+		workload?: "bulk-cache",
+		signal?: AbortSignal,
+	): Promise<ReadLane> => {
+		if (signal?.aborted) return Promise.reject(signal.reason);
 		if (registration.closed) return Promise.reject(new RestoreRuntimeAdmissionError());
 		const source = getRuntimeReadSource();
 		const acquiredAt = readClock();
@@ -325,26 +337,34 @@ export function createRuntimePrismaClient(
 			return Promise.resolve(lane);
 		}
 		return new Promise((resolve, reject) => {
+			const cleanup = () => {
+				clearTimeout(timer);
+				signal?.removeEventListener("abort", abort);
+			};
+			const abort = () => {
+				if (readWaiters.delete(waiter)) waiter.reject(signal!.reason);
+			};
 			const timer = setTimeout(() => {
 				readWaiters.delete(waiter);
 				const error = new RestoreRuntimeAdmissionError();
 				attachReadQueue(error, waiter, maxWait);
-				reject(error);
+				waiter.reject(error);
 			}, maxWait);
 			const waiter: ReadWaiter = {
 				workload,
 				source,
 				enqueuedAt: acquiredAt,
 				resolve: (next) => {
-					clearTimeout(timer);
+					cleanup();
 					resolve(next);
 				},
 				reject: (error) => {
-					clearTimeout(timer);
+					cleanup();
 					reject(error);
 				},
 			};
 			readWaiters.add(waiter);
+			signal?.addEventListener("abort", abort, { once: true });
 		});
 	};
 	const releaseReadLane = (lane: ReadLane) => {
@@ -425,14 +445,15 @@ export function createRuntimePrismaClient(
 					unenteredPublicationStartRefusals.add(startRefusal);
 			}
 		},
-		readClient: async (operation, maxWait, workload) => {
+		readClient: async (operation, maxWait, workload, signal) => {
 			// Session validation enters this same pool before route code. Let a
 			// normal display burst queue behind bounded reads without adding lanes
 			// or relaxing any SQL, ticket, ownership or transaction deadline.
 			const lane = await measureRuntimeReadTiming("lane-wait", () =>
-				acquireReadLane(maxWait ?? 10_000, workload),
+				acquireReadLane(maxWait ?? 10_000, workload, signal),
 			);
 			try {
+				signal?.throwIfAborted();
 				if (registration.closed) throw new RestoreRuntimeAdmissionError();
 				lane.client ??= createGuardedPrismaClient(
 					{ ...context, registerClose: () => () => undefined },

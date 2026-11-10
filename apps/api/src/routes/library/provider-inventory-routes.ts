@@ -16,7 +16,14 @@ export const registerProviderInventoryRoutes: FastifyPluginCallback = (app, _opt
 		let admittedAt: number | undefined;
 		let repositoryEndedAt: number | undefined;
 		let releasedAt: number | undefined;
-		let outcome: "available" | "unavailable" | "error" = "error";
+		let outcome: "available" | "unavailable" | "error" | "cancelled" = "error";
+		const cancellation = new AbortController();
+		const cancelDisconnectedRead = () => {
+			if (!reply.raw.writableFinished)
+				cancellation.abort(new Error("Provider inventory read cancelled"));
+		};
+		reply.raw.on("close", cancelDisconnectedRead);
+		if (reply.raw.destroyed) cancelDisconnectedRead();
 		try {
 			let result: Awaited<ReturnType<typeof readProviderInventoryConnections>>;
 			try {
@@ -50,10 +57,14 @@ export const registerProviderInventoryRoutes: FastifyPluginCallback = (app, _opt
 									}
 								},
 								(operation) =>
-									withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) => {
-										admittedAt ??= performance.now();
-										return operation(prisma);
-									}),
+									withIsolatedRuntimePrismaReadClient(
+										app.prisma,
+										(prisma) => {
+											admittedAt ??= performance.now();
+											return operation(prisma);
+										},
+										{ signal: cancellation.signal },
+									),
 							);
 						} finally {
 							repositoryEndedAt = performance.now();
@@ -74,6 +85,7 @@ export const registerProviderInventoryRoutes: FastifyPluginCallback = (app, _opt
 			} finally {
 				releasedAt = performance.now();
 			}
+			cancellation.signal.throwIfAborted();
 			if (result.status === "unavailable") {
 				if (result.reason === "not-owned") {
 					outcome = "unavailable";
@@ -90,7 +102,14 @@ export const registerProviderInventoryRoutes: FastifyPluginCallback = (app, _opt
 			});
 			outcome = "available";
 			return response;
+		} catch (error) {
+			if (cancellation.signal.aborted && error === cancellation.signal.reason) {
+				outcome = "cancelled";
+				return;
+			}
+			throw error;
 		} finally {
+			reply.raw.off("close", cancelDisconnectedRead);
 			const endedAt = performance.now();
 			try {
 				// Admission covers first-phase setup/wait; repository includes later
