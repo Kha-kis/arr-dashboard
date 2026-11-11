@@ -722,8 +722,6 @@ function createGuardedPrismaClient(
 					invoke: (copied: Query) => Promise<T>,
 					revalidate: () => Promise<void>,
 					assert: () => void,
-					inTransaction: boolean,
-					generation: number,
 					isClosedTransactionError?: (error: unknown) => boolean,
 					busyRetryMs?: number,
 				): Promise<T> => {
@@ -732,21 +730,17 @@ function createGuardedPrismaClient(
 						return measureRuntimeReadTiming("statement-call", () => invoke(query));
 					}
 					const copied = { ...query, args: [...query.args], argTypes: [...query.argTypes] };
-					const assertAttempt = () => {
-						assert();
-						assertNative(inTransaction, generation);
-					};
 					statementFences.set(copied, {
 						revalidate: async () => {
-							assertAttempt();
+							assert();
 							await revalidate();
 						},
-						assert: assertAttempt,
+						assert,
 						isClosedTransactionError,
 						busyRetryMs,
 					});
 					try {
-						assertAttempt();
+						assert();
 						return await measureRuntimeReadTiming("statement-call", () => invoke(copied));
 					} finally {
 						statementFences.delete(copied);
@@ -782,15 +776,7 @@ function createGuardedPrismaClient(
 										},
 										assertTransaction,
 										(query, invoke, revalidate, assert, isClosedTransactionError) =>
-											statement(
-												query,
-												invoke,
-												revalidate,
-												assert,
-												true,
-												generation,
-												isClosedTransactionError,
-											),
+											statement(query, invoke, revalidate, assert, isClosedTransactionError),
 									);
 									try {
 										if (writeIntent) {
@@ -809,8 +795,6 @@ function createGuardedPrismaClient(
 													context.validateSqliteBinding(bindingRecord);
 												},
 												assertTransaction,
-												true,
-												generation,
 												undefined,
 												// Settle before Prisma's default 2s start-admission deadline.
 												1000,
@@ -863,9 +847,8 @@ function createGuardedPrismaClient(
 									() => {
 										context.assertTicket();
 										loan();
+										assertNative(false, generation);
 									},
-									false,
-									generation,
 								);
 							};
 						if (property === "executeScript")

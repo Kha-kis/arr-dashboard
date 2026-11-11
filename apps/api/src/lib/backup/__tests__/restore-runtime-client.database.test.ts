@@ -232,6 +232,44 @@ describe.each([
 		expect(persistedCount()).toBe(1);
 		expect(losses).toBe(0);
 	});
+	it.skipIf(purpose !== "ordinary")(
+		"checks storage once at each transactional statement fence",
+		async () => {
+			await activate();
+			await native.close();
+			let bindingChecks = 0;
+			const getContext = admission.getRestoreRuntimeClientContext;
+			const observed = vi
+				.spyOn(admission, "getRestoreRuntimeClientContext")
+				.mockImplementation((actor) => {
+					const context = getContext(actor);
+					return Object.freeze({
+						...context,
+						validateSqliteBinding: (record: Record<string, unknown>) => {
+							context.validateSqliteBinding(record);
+							bindingChecks++;
+						},
+					});
+				});
+			try {
+				native = createClient(runtime);
+				await runtime.runOperation(async () => {
+					await native.prisma.$connect();
+					const beforeOrdinary = bindingChecks;
+					expect(await native.prisma.$queryRaw`SELECT 7 AS value`).toEqual([{ value: 7n }]);
+					expect(bindingChecks - beforeOrdinary).toBe(3);
+					await native.prisma.$transaction(async (tx) => {
+						const beforeTransaction = bindingChecks;
+						expect(await tx.$queryRaw`SELECT 7 AS value`).toEqual([{ value: 7n }]);
+						// Guard, transaction prelude, pre-invocation, and native attempt.
+						expect(bindingChecks - beforeTransaction).toBe(4);
+					});
+				});
+			} finally {
+				observed.mockRestore();
+			}
+		},
+	);
 	it.each(["statement", "commit"] as const)(
 		"terminal loss in the final guard-to-SQL microtask gap fences a native %s",
 		async (mode) => {
