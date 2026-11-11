@@ -174,9 +174,19 @@ export interface SeerrUser {
 	userType: number;
 }
 
+interface SeerrMediaQuota {
+	used: number;
+	/** Seerr can omit this field when the limit is zero (unlimited). */
+	remaining?: number;
+	/** Whether the user has exhausted this quota. */
+	restricted: boolean;
+	limit: number;
+	days: number;
+}
+
 export interface SeerrQuota {
-	movie: { used: number; remaining: number; restricted: boolean; limit: number; days: number };
-	tv: { used: number; remaining: number; restricted: boolean; limit: number; days: number };
+	movie: SeerrMediaQuota;
+	tv: SeerrMediaQuota;
 }
 
 export interface SeerrIssue {
@@ -690,22 +700,23 @@ export const seerrIssueSchema = z.looseObject({
 	}),
 });
 
+const seerrMediaQuotaSchema = z
+	.looseObject({
+		used: z.number(),
+		remaining: z.number().optional(),
+		restricted: z.boolean(),
+		limit: z.number(),
+		days: z.number(),
+	})
+	.refine(({ limit, remaining }) => limit === 0 || remaining !== undefined, {
+		path: ["remaining"],
+		message: "Remaining is required when the quota limit is nonzero",
+	});
+
 /** Mirrors SeerrQuota */
 export const seerrQuotaSchema = z.looseObject({
-	movie: z.looseObject({
-		used: z.number(),
-		remaining: z.number(),
-		restricted: z.boolean(),
-		limit: z.number(),
-		days: z.number(),
-	}),
-	tv: z.looseObject({
-		used: z.number(),
-		remaining: z.number(),
-		restricted: z.boolean(),
-		limit: z.number(),
-		days: z.number(),
-	}),
+	movie: seerrMediaQuotaSchema,
+	tv: seerrMediaQuotaSchema,
 });
 
 /** Mirrors SeerrGenre */
