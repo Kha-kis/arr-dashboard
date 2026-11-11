@@ -10,6 +10,8 @@
 # services. Edge cases (exit code 0, simultaneous exit, SIGTERM-resistant
 # sibling) replace the API child and web server with shims while retaining
 # the packaged launcher and start.sh.
+# The trash-scheduler-stop case uses real services with synthetic GitHub
+# responses in a networkless container.
 #
 # Usage:
 #   docker/test-combined-supervision.sh [image] [--case NAME] [--rootless]
@@ -560,6 +562,92 @@ case_graceful_stop() {
     fi
 }
 
+case_trash_scheduler_stop() {
+    CURRENT_CASE="trash-scheduler-stop"
+    log "Graceful stop with the packaged TRaSH scheduler waiting on a GitHub rate limit"
+
+    trash_fixture="$TOOLS_DIR/test-trash-shutdown-fixture.cjs"
+    if [ ! -f "$trash_fixture" ] || [ ! -r "$trash_fixture" ]; then
+        bad "missing or unreadable TRaSH shutdown fixture"
+        return 1
+    fi
+
+    tmpfs_config="/config:rw,noexec,nosuid,nodev,mode=0755,size=268435456"
+    set -- docker create --pull=never --name "${WORK##*/}-trash" --network none \
+        --mount "type=bind,src=$trash_fixture,dst=/test-trash-shutdown-fixture.cjs,readonly" \
+        -e 'NODE_OPTIONS=--max-old-space-size=768 --require=/test-trash-shutdown-fixture.cjs' \
+        -e TRASH_UPDATE_SCHEDULER_ENABLED=true -e GITHUB_TOKEN= \
+        -e DISABLE_QUI_CACHE_PREWARM=true -e HEAP_AUTO_SNAPSHOT=0
+    if [ "$ROOTLESS" = true ]; then
+        set -- "$@" --user 1000:1000 --tmpfs "$tmpfs_config,uid=1000,gid=1000"
+    else
+        set -- "$@" -e PUID=12345 -e PGID=12345 --tmpfs "$tmpfs_config"
+    fi
+
+    # Use the exact ID for every assertion and for the runner's cleanup.
+    if ! REAL_FIXTURE_ID=$("$@" "$IMAGE") ||
+        ! docker start "$REAL_FIXTURE_ID" >/dev/null; then
+        bad "could not start the networkless TRaSH shutdown fixture"
+        return 1
+    fi
+
+    elapsed=0
+    waiting=false
+    while [ "$elapsed" -lt 120 ]; do
+        if ! state=$(docker inspect -f '{{.State.Status}}' "$REAL_FIXTURE_ID") ||
+            [ "$state" != running ] ||
+            ! logs=$(docker logs "$REAL_FIXTURE_ID" 2>&1); then
+            break
+        fi
+        if printf '%s\n' "$logs" | grep -Fxq 'TRaSH shutdown fixture rejected a request'; then
+            break
+        fi
+        if printf '%s\n' "$logs" | grep -q '^Web started with PID '; then
+            if ! printf '%s\n' "$logs" | grep -Fxq 'TRaSH shutdown fixture loaded in packaged API'; then
+                bad "packaged API did not load the expected TRaSH shutdown fixture"
+                return 1
+            fi
+            if printf '%s\n' "$logs" | grep -Fxq 'TRaSH shutdown fixture served the commit' &&
+                printf '%s\n' "$logs" | grep -Fxq 'TRaSH shutdown fixture set the rate limit' &&
+                printf '%s\n' "$logs" | grep -Fq 'Proactive rate limit wait:'; then
+                waiting=true
+                break
+            fi
+        fi
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+
+    if [ "$waiting" != true ]; then
+        bad "fixture did not establish a real TRaSH scheduler rate-limit wait with web started"
+        docker logs --tail 40 "$REAL_FIXTURE_ID" >&2 || true
+        return 1
+    fi
+    ok "packaged TRaSH scheduler entered the synthetic GitHub rate-limit wait"
+
+    if docker stop --time 120 "$REAL_FIXTURE_ID" >/dev/null &&
+        stop_state=$(docker inspect -f 'state={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' "$REAL_FIXTURE_ID") &&
+        [ "$stop_state" = "state=exited exit=0 oom=false" ]; then
+        ok "container stopped cleanly ($stop_state)"
+    else
+        bad "TRaSH fixture did not stop cleanly (${stop_state:-state unknown})"
+    fi
+
+    if ! logs=$(docker logs "$REAL_FIXTURE_ID" 2>&1); then
+        bad "could not read TRaSH shutdown logs"
+        return 1
+    fi
+    if printf '%s\n' "$logs" | grep -Fxq 'TRaSH shutdown fixture observed scheduler cancellation' &&
+        printf '%s\n' "$logs" | grep -F '"category":"shutdown-progress"' | grep -Fq '"phase":"complete"' &&
+        printf '%s\n' "$logs" | grep -Fxq 'Services stopped gracefully' &&
+        ! printf '%s\n' "$logs" | grep -Fxq 'TRaSH shutdown fixture rejected a request'; then
+        ok "scheduler cancelled the rate-limit wait and API shutdown completed"
+    else
+        bad "missing scheduler cancellation or graceful shutdown evidence, or fixture rejected a request"
+        printf '%s\n' "$logs" | tail -40 >&2
+    fi
+}
+
 case_exit_zero() {
     CURRENT_CASE="exit-zero"
     log "Unexpected service exit code 0 (shim harness)"
@@ -778,6 +866,7 @@ run_case() {
 run_case api-death case_api_death
 run_case web-death case_web_death
 run_case graceful-stop case_graceful_stop
+run_case trash-scheduler-stop case_trash_scheduler_stop
 run_case exit-zero case_exit_zero
 run_case simultaneous case_simultaneous
 run_case stubborn case_stubborn

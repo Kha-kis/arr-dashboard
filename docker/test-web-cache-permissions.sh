@@ -213,15 +213,18 @@ run_case() {
     echo ""
     echo "========== $mode ($uid:$gid) =========="
 
+    # The supervision suite covers shutdown with an active TRaSH scheduler.
     if [ "$rootless" = true ]; then
         docker run -d --name "$CURRENT_CTR" \
             --user "$uid:$gid" \
+            -e TRASH_UPDATE_SCHEDULER_ENABLED=false \
             -p 127.0.0.1::3000 -p 127.0.0.1::3001 \
             -v "$config_dir:/config" \
             "$IMAGE" >/dev/null
     else
         docker run -d --name "$CURRENT_CTR" \
             -e PUID="$uid" -e PGID="$gid" \
+            -e TRASH_UPDATE_SCHEDULER_ENABLED=false \
             -p 127.0.0.1::3000 -p 127.0.0.1::3001 \
             -v "$config_dir:/config" \
             "$IMAGE" >/dev/null
@@ -293,6 +296,7 @@ assert_unwritable_cache_fails_fast() {
     echo "========== fail-fast read-only cache =========="
     docker run -d --name "$CURRENT_CTR" \
         --read-only --user 1000:1000 \
+        -e TRASH_UPDATE_SCHEDULER_ENABLED=false \
         -v "$config_dir:/config" \
         "$IMAGE" >/dev/null
 
