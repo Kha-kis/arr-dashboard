@@ -562,6 +562,8 @@ describe("readOwnedJellyfinObservation", () => {
 				}),
 			);
 			const metadata = libraryMetadata(makeInstance(), rows);
+			let elapsedMs = 0;
+			vi.spyOn(performance, "now").mockImplementation(() => elapsedMs);
 			let visits = 0;
 			let visitsAtTurn: number | undefined;
 			let serviced: Promise<void> | undefined;
@@ -572,10 +574,13 @@ describe("readOwnedJellyfinObservation", () => {
 					enumerable: true,
 					get() {
 						visits++;
-						if (visits === triggerAt)
+						if (visits === triggerAt) {
+							// Expire this phase's budget while keeping event-loop turns real.
+							elapsedMs = 4;
 							serviced = turn().then(() => {
 								visitsAtTurn = visits;
 							});
+						}
 						return value;
 					},
 				});
