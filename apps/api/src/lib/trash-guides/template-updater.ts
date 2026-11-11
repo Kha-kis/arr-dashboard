@@ -1472,13 +1472,19 @@ export class TemplateUpdater {
 	 * Refresh all caches for a service type.
 	 * This should be called by the scheduler to keep cache up-to-date.
 	 */
-	async refreshAllCaches(serviceType: "RADARR" | "SONARR"): Promise<{
+	async refreshAllCaches(
+		serviceType: "RADARR" | "SONARR",
+		options?: { signal?: AbortSignal },
+	): Promise<{
 		refreshed: number;
 		failed: number;
 		errors: string[];
 		verifiedConfigTypes: TrashConfigType[];
 		verifiedQualitySizeData: TrashQualitySize[] | null;
 	}> {
+		const signal = options?.signal;
+		signal?.throwIfAborted();
+
 		const configTypes: TrashConfigType[] = [
 			"CUSTOM_FORMATS",
 			"CF_GROUPS",
@@ -1497,9 +1503,11 @@ export class TemplateUpdater {
 		let latestCommit: VersionInfo;
 		let expectedProvenance: TrashCacheProvenance;
 		try {
-			latestCommit = await this.versionTracker.getLatestCommit();
+			latestCommit = await this.versionTracker.getLatestCommit(options);
+			signal?.throwIfAborted();
 			expectedProvenance = this.githubFetcher.getCommitProvenance(latestCommit.commitHash);
 		} catch (error) {
+			signal?.throwIfAborted();
 			const errorMsg = `[TemplateUpdater] Failed to establish commit provenance: ${getErrorMessage(error)}`;
 			errors.push(errorMsg);
 			return {
@@ -1512,6 +1520,8 @@ export class TemplateUpdater {
 		}
 
 		for (const configType of configTypes) {
+			signal?.throwIfAborted();
+			let writeOperation: "touchCache" | "setVerified" | undefined;
 			try {
 				if (configType === "QUALITY_SIZE") {
 					const snapshot = await this.cacheManager.getSnapshot<TrashQualitySize[]>(
@@ -1519,7 +1529,9 @@ export class TemplateUpdater {
 						configType,
 						z.array(trashQualitySizeSchema),
 					);
+					signal?.throwIfAborted();
 					if (sameCacheProvenance(snapshot?.provenance ?? null, expectedProvenance)) {
+						writeOperation = "touchCache";
 						await this.cacheManager.touchCache(serviceType, configType);
 						verifiedQualitySizeData = snapshot!.data;
 						verifiedConfigTypes.push(configType);
@@ -1533,8 +1545,11 @@ export class TemplateUpdater {
 								serviceType,
 								configType,
 								latestCommit.commitHash,
+								options,
 							),
 						);
+					signal?.throwIfAborted();
+					writeOperation = "setVerified";
 					await this.cacheManager.setVerified(serviceType, configType, data, expectedProvenance);
 					verifiedQualitySizeData = data;
 					refreshed++;
@@ -1543,8 +1558,10 @@ export class TemplateUpdater {
 				}
 
 				const currentProvenance = await this.cacheManager.getProvenance(serviceType, configType);
+				signal?.throwIfAborted();
 
 				if (sameCacheProvenance(currentProvenance, expectedProvenance)) {
+					writeOperation = "touchCache";
 					await this.cacheManager.touchCache(serviceType, configType);
 					verifiedConfigTypes.push(configType);
 					continue;
@@ -1554,17 +1571,28 @@ export class TemplateUpdater {
 					serviceType,
 					configType,
 					latestCommit.commitHash,
+					options,
 				);
+				signal?.throwIfAborted();
+				writeOperation = "setVerified";
 				await this.cacheManager.setVerified(serviceType, configType, data, expectedProvenance);
 
 				refreshed++;
 				verifiedConfigTypes.push(configType);
 			} catch (error) {
+				if (signal?.aborted && writeOperation && error !== signal.reason) {
+					log.warn(
+						{ serviceType, configType, operation: writeOperation },
+						"TRaSH cache write failed during shutdown",
+					);
+				}
+				signal?.throwIfAborted();
 				failed++;
 				errors.push(`${configType}: ${getErrorMessage(error)}`);
 			}
 		}
 
+		signal?.throwIfAborted();
 		return { refreshed, failed, errors, verifiedConfigTypes, verifiedQualitySizeData };
 	}
 }

@@ -98,7 +98,7 @@ export class UpdateScheduler {
 	private admissionClosed = false;
 	private pendingChecks = new Set<Promise<void>>();
 	private shutdownPromise: Promise<void> | null = null;
-	private readonly versionReadAbort = new AbortController();
+	private readonly githubReadAbort = new AbortController();
 	private stats: SchedulerStats = { isRunning: false };
 	private isCheckInProgress = false;
 
@@ -232,9 +232,8 @@ export class UpdateScheduler {
 		this.admissionClosed = true;
 		this.stop();
 		this.stats.nextCheckAt = undefined;
-		// Only the initial read-only version preflight observes this signal.
-		// Accepted cache/deployment/notification work still drains to completion.
-		this.versionReadAbort.abort(new Error("TRaSH version read cancelled during shutdown"));
+		// Cancel GitHub acquisition while entered writes and handoffs drain.
+		this.githubReadAbort.abort(new Error("TRaSH GitHub read cancelled during shutdown"));
 	}
 
 	/** Retain accepted automatic and manual checks through their complete handoffs. */
@@ -264,8 +263,8 @@ export class UpdateScheduler {
 		} catch (error) {
 			// Manual callers keep the existing rejection semantics; timers log failures.
 			if (!errorMessage) throw error;
-			if (this.versionReadAbort.signal.aborted && error === this.versionReadAbort.signal.reason) {
-				this.logger.debug("TRaSH version read cancelled during shutdown");
+			if (this.githubReadAbort.signal.aborted && error === this.githubReadAbort.signal.reason) {
+				this.logger.debug("TRaSH GitHub read cancelled during shutdown");
 			} else if (error instanceof CleanupMaintenanceConflictError) {
 				this.logger.debug("TRaSH update check paused during database maintenance");
 			} else {
@@ -385,11 +384,11 @@ export class UpdateScheduler {
 
 			// Get latest version info
 			const latestCommit = await this.versionTracker.getLatestCommit({
-				signal: this.versionReadAbort.signal,
+				signal: this.githubReadAbort.signal,
 			});
 			// An injected dependency may ignore cancellation. Join it, but never
 			// let its late result begin cache or upstream mutation work afterward.
-			this.versionReadAbort.signal.throwIfAborted();
+			this.githubReadAbort.signal.throwIfAborted();
 			this.logger.debug(
 				`Latest TRaSH commit: ${latestCommit.commitHash} (${latestCommit.commitDate})`,
 			);
@@ -397,8 +396,8 @@ export class UpdateScheduler {
 			// Refresh caches for both services
 			this.logger.info("Refreshing TRaSH Guides caches...");
 			const [radarrCacheResult, sonarrCacheResult] = await this.settleTogether([
-				this.templateUpdater.refreshAllCaches("RADARR"),
-				this.templateUpdater.refreshAllCaches("SONARR"),
+				this.templateUpdater.refreshAllCaches("RADARR", { signal: this.githubReadAbort.signal }),
+				this.templateUpdater.refreshAllCaches("SONARR", { signal: this.githubReadAbort.signal }),
 			]);
 
 			const totalCachesRefreshed = radarrCacheResult.refreshed + sonarrCacheResult.refreshed;
@@ -610,9 +609,8 @@ export class UpdateScheduler {
 				});
 			}
 		} catch (error) {
-			// Planned cancellation of the read-only preflight is neither a completed
-			// check nor a failed deployment. Preserve the last real result.
-			if (this.versionReadAbort.signal.aborted && error === this.versionReadAbort.signal.reason) {
+			// Preserve the last completed check when shutdown cancels GitHub acquisition.
+			if (this.githubReadAbort.signal.aborted && error === this.githubReadAbort.signal.reason) {
 				throw error;
 			}
 			this.logger.error(

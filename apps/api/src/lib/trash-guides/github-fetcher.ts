@@ -973,7 +973,12 @@ export class TrashGitHubFetcher {
 
 			for (let i = 0; i < mdFiles.length; i += BATCH_SIZE) {
 				const batch = mdFiles.slice(i, i + BATCH_SIZE);
-				const results = await Promise.all(batch.map((cfName) => this.fetchCFDescription(cfName)));
+				const requests = batch.map((cfName) => this.fetchCFDescription(cfName));
+				const results = await Promise.all(requests).catch(async (error) => {
+					// A scoped read owns the entire batch, including siblings still settling.
+					if (this.fetchOptions.signal) await Promise.allSettled(requests);
+					throw error;
+				});
 
 				// Filter out nulls and add to descriptions
 				descriptions.push(...results.filter((desc): desc is TrashCFDescription => desc !== null));
@@ -1146,7 +1151,12 @@ export class TrashGitHubFetcher {
 		serviceType: "RADARR" | "SONARR",
 		configType: TrashConfigType,
 		commitHash: string,
+		{ signal }: { signal?: AbortSignal } = {},
 	): Promise<unknown[]> {
+		const parentSignal = this.fetchOptions.signal;
+		const readSignal =
+			signal && parentSignal ? AbortSignal.any([signal, parentSignal]) : (signal ?? parentSignal);
+		readSignal?.throwIfAborted();
 		this.getCommitProvenance(commitHash);
 		const supportedTypes: TrashConfigType[] = [
 			"CUSTOM_FORMATS",
@@ -1165,8 +1175,13 @@ export class TrashGitHubFetcher {
 			repoConfig: this.repoConfig,
 			contentRef: commitHash,
 			strictContent: true,
+			signal: readSignal,
 		});
-		return commitFetcher.fetchConfigsFromRepo(serviceType, configType);
+		try {
+			return await commitFetcher.fetchConfigsFromRepo(serviceType, configType);
+		} finally {
+			readSignal?.throwIfAborted();
+		}
 	}
 
 	getCommitProvenance(commitHash: string): TrashCacheProvenance {
