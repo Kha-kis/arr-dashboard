@@ -753,9 +753,8 @@ describe("TRaSH Update accepted work and notification drain", () => {
 						isRunning: false,
 						nextCheckAt: undefined,
 					});
-					if (!reject && (phase === "repo" || phase === "strategy")) {
-						// These read-only preflight dependencies still join, but a
-						// shutdown cancellation cannot start later cache/deployment work.
+					if (!reject && ["repo", "strategy", "cache"].includes(phase)) {
+						// A late preflight or refresh result cannot start deployment work.
 						expect(fixture.state.auto).toBe(0);
 						expect(fixture.app.trashUpdateScheduler.getStats().lastCheckResult).toEqual(
 							previousResult,
@@ -765,7 +764,15 @@ describe("TRaSH Update accepted work and notification drain", () => {
 						if (outcome) expect(await outcome).toBe("rejected");
 						return;
 					}
-					if (!reject) {
+					const startedSend = ["send", "log", "channel"].includes(phase);
+					// Delivery can run inside the awaited handoff, before attention acquisition.
+					const interrupted =
+						(!reject && phase === "auto") || phase === "subscription" || startedSend;
+					if (interrupted) {
+						expect(fixture.app.trashUpdateScheduler.getStats().lastCheckResult).toEqual(
+							previousResult,
+						);
+					} else if (!reject) {
 						expect(fixture.app.trashUpdateScheduler.getStats().lastCheckResult).toMatchObject({
 							templatesAutoSynced: 0,
 							templatesWithUncertainDeployments: 1,
@@ -776,7 +783,6 @@ describe("TRaSH Update accepted work and notification drain", () => {
 							"Synthetic update dependency failure",
 						]);
 					}
-					const startedSend = ["send", "log", "channel"].includes(phase);
 					const eventType =
 						reject && phase === "subscription"
 							? null
@@ -797,7 +803,7 @@ describe("TRaSH Update accepted work and notification drain", () => {
 					await assertPersisted(fixture, eventType, deliveryState);
 					if (outcome)
 						expect(await outcome).toBe(
-							reject && ["repo", "strategy", "cache", "auto"].includes(phase)
+							interrupted || (reject && ["repo", "strategy", "cache", "auto"].includes(phase))
 								? "rejected"
 								: "fulfilled",
 						);
@@ -895,7 +901,7 @@ describe("TRaSH Update accepted work and notification drain", () => {
 		expect(fixture.state.teardown).toBe(0);
 		gate.resolve();
 		await close;
-		expect(await work).toBe("fulfilled");
+		expect(await work).toBe("rejected");
 		expect(fixture.events).toEqual([]);
 		await assertPersisted(fixture, "TRASH_DEPLOY_UNCERTAIN", "ready");
 	});

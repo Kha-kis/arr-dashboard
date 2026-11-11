@@ -95,6 +95,26 @@ interface TrashSyncDataResult {
 	error?: string;
 }
 
+interface SyncTemplateOptions {
+	includeQualityProfileCFs?: boolean;
+	applyScoreUpdates?: boolean;
+	expectedAutomationStateToken?: string;
+	signal?: AbortSignal;
+}
+
+/** Keep a scheduler-owned batch in the shutdown drain after a sibling rejects. */
+async function settleTogether<T extends unknown[]>(
+	operations: { [K in keyof T]: Promise<T[K]> },
+	signal?: AbortSignal,
+): Promise<T> {
+	try {
+		return await Promise.all(operations);
+	} catch (error) {
+		if (signal) await Promise.allSettled(operations);
+		throw error;
+	}
+}
+
 function sameCacheProvenance(
 	actual: TrashCacheProvenance | null,
 	expected: TrashCacheProvenance,
@@ -135,12 +155,18 @@ export class TemplateUpdater {
 	 * Check for available updates across templates owned by the specified user.
 	 * For templates with auto-sync strategy, also detects CF Group additions that need approval.
 	 */
-	async checkForUpdates(userId: string): Promise<UpdateCheckResult> {
+	async checkForUpdates(
+		userId: string,
+		options?: { signal?: AbortSignal },
+	): Promise<UpdateCheckResult> {
+		const signal = options?.signal;
+		signal?.throwIfAborted();
 		// Get latest commit from GitHub with error handling
 		let latestCommit: VersionInfo;
 		try {
-			latestCommit = await this.versionTracker.getLatestCommit();
+			latestCommit = await this.versionTracker.getLatestCommit(options);
 		} catch (error) {
+			if (signal?.aborted && error === signal.reason) throw error;
 			log.error({ err: error }, "Failed to get latest commit from GitHub");
 			return {
 				templatesWithUpdates: [],
@@ -149,6 +175,8 @@ export class TemplateUpdater {
 				outdatedTemplates: 0,
 			};
 		}
+
+		signal?.throwIfAborted();
 
 		// Get all active templates owned by this user with their deployment mappings
 		const templates = await this.prisma.trashTemplate.findMany({
@@ -178,6 +206,8 @@ export class TemplateUpdater {
 				},
 			},
 		});
+
+		signal?.throwIfAborted();
 
 		// Pre-fetch cache data for both service types to check CF Group additions
 		const cacheByServiceType = new Map<
@@ -215,18 +245,21 @@ export class TemplateUpdater {
 				if (autoSyncInstanceCount > 0) {
 					if (!cacheByServiceType.has(serviceType)) {
 						try {
-							const [cfGroups, customFormats] = await Promise.all([
-								this.cacheManager.get<TrashCustomFormatGroup[]>(
-									serviceType,
-									"CF_GROUPS",
-									z.array(trashCustomFormatGroupSchema),
-								),
-								this.cacheManager.get<TrashCustomFormat[]>(
-									serviceType,
-									"CUSTOM_FORMATS",
-									z.array(trashCustomFormatSchema),
-								),
-							]);
+							const [cfGroups, customFormats] = await settleTogether(
+								[
+									this.cacheManager.get<TrashCustomFormatGroup[]>(
+										serviceType,
+										"CF_GROUPS",
+										z.array(trashCustomFormatGroupSchema),
+									),
+									this.cacheManager.get<TrashCustomFormat[]>(
+										serviceType,
+										"CUSTOM_FORMATS",
+										z.array(trashCustomFormatSchema),
+									),
+								],
+								signal,
+							);
 							cacheByServiceType.set(serviceType, {
 								cfGroups: cfGroups ?? [],
 								customFormats: customFormats ?? [],
@@ -240,6 +273,7 @@ export class TemplateUpdater {
 						}
 					}
 
+					signal?.throwIfAborted();
 					const cache = cacheByServiceType.get(serviceType);
 					if (!cache) continue;
 					pendingCFGroupAdditions = this.detectCFGroupAdditions(
@@ -430,12 +464,9 @@ export class TemplateUpdater {
 		templateId: string,
 		targetCommitHash?: string,
 		userId?: string,
-		options?: {
-			includeQualityProfileCFs?: boolean;
-			applyScoreUpdates?: boolean;
-			expectedAutomationStateToken?: string;
-		},
+		options?: SyncTemplateOptions,
 	): Promise<SyncResult> {
+		options?.signal?.throwIfAborted();
 		const owner = await this.prisma.trashTemplate.findUnique({
 			where: { id: templateId, deletedAt: null },
 			select: { userId: true },
@@ -460,6 +491,7 @@ export class TemplateUpdater {
 				errorType: "not_authorized",
 			};
 		}
+		options?.signal?.throwIfAborted();
 		return withTrashTemplateMutationGuard(owner.userId, () =>
 			this.syncTemplateUnlocked(templateId, targetCommitHash, userId, options),
 		);
@@ -469,12 +501,10 @@ export class TemplateUpdater {
 		templateId: string,
 		targetCommitHash?: string,
 		userId?: string,
-		options?: {
-			includeQualityProfileCFs?: boolean;
-			applyScoreUpdates?: boolean;
-			expectedAutomationStateToken?: string;
-		},
+		options?: SyncTemplateOptions,
 	): Promise<SyncResult> {
+		const signal = options?.signal;
+		signal?.throwIfAborted();
 		const metrics = getSyncMetrics();
 		const completeMetrics = metrics.startOperation("template_update");
 
@@ -551,12 +581,15 @@ export class TemplateUpdater {
 			}
 		}
 
+		signal?.throwIfAborted();
 		let targetCommit: VersionInfo;
 		try {
+			const readOptions = signal ? { signal } : undefined;
 			targetCommit = targetCommitHash
-				? await this.versionTracker.getCommitInfo(targetCommitHash)
-				: await this.versionTracker.getLatestCommit();
+				? await this.versionTracker.getCommitInfo(targetCommitHash, readOptions)
+				: await this.versionTracker.getLatestCommit(readOptions);
 		} catch (error) {
+			if (signal?.aborted && error === signal.reason) throw error;
 			const errorMsg = `Failed to get commit info from GitHub: ${getErrorMessage(error)}`;
 			completeMetrics().recordFailure(errorMsg);
 			return {
@@ -569,6 +602,7 @@ export class TemplateUpdater {
 			};
 		}
 
+		signal?.throwIfAborted();
 		const previousCommit = template.trashGuidesCommitHash;
 		const serviceType = template.serviceType as "RADARR" | "SONARR";
 
@@ -597,14 +631,15 @@ export class TemplateUpdater {
 				log.warn({ err: parseError, templateId }, "Failed to parse configData for template");
 			}
 
-			let fetchResult = await this.fetchLatestTrashData(serviceType);
+			let fetchResult = await this.fetchLatestTrashData(serviceType, signal);
+			signal?.throwIfAborted();
 			const unverifiedCacheTypes = REQUIRED_SYNC_CACHE_TYPES.filter(
 				(configType) =>
 					!fetchResult.success ||
 					!sameCacheProvenance(fetchResult.cacheProvenances[configType], expectedProvenance),
 			);
 			if (!fetchResult.success || unverifiedCacheTypes.length > 0) {
-				fetchResult = await this.fetchTrashDataAtCommit(serviceType, expectedProvenance);
+				fetchResult = await this.fetchTrashDataAtCommit(serviceType, expectedProvenance, signal);
 			}
 			if (!fetchResult.success) {
 				return {
@@ -617,6 +652,7 @@ export class TemplateUpdater {
 				};
 			}
 
+			signal?.throwIfAborted();
 			const currentCFTrashIds = new Set(
 				(currentConfig.customFormats || []).map((cf) => cf.trashId),
 			);
@@ -837,6 +873,7 @@ export class TemplateUpdater {
 					mergeResult.scoreConflicts.length > 0 ? mergeResult.scoreConflicts : undefined,
 			};
 		} catch (error) {
+			if (signal?.aborted && error === signal.reason) throw error;
 			const errorMessage = getErrorMessage(error);
 			const metricsResult = completeMetrics();
 			metricsResult.recordFailure(errorMessage);
@@ -857,25 +894,29 @@ export class TemplateUpdater {
 	 */
 	private async fetchLatestTrashData(
 		serviceType: "RADARR" | "SONARR",
+		signal?: AbortSignal,
 	): Promise<TrashSyncDataResult> {
 		try {
-			const [cfSnapshot, groupSnapshot, qualityProfileSnapshot] = await Promise.all([
-				this.cacheManager.getSnapshot<TrashCustomFormat[]>(
-					serviceType,
-					"CUSTOM_FORMATS",
-					z.array(trashCustomFormatSchema),
-				),
-				this.cacheManager.getSnapshot<TrashCustomFormatGroup[]>(
-					serviceType,
-					"CF_GROUPS",
-					z.array(trashCustomFormatGroupSchema),
-				),
-				this.cacheManager.getSnapshot<TrashQualityProfile[]>(
-					serviceType,
-					"QUALITY_PROFILES",
-					z.array(trashQualityProfileSchema),
-				),
-			]);
+			const [cfSnapshot, groupSnapshot, qualityProfileSnapshot] = await settleTogether(
+				[
+					this.cacheManager.getSnapshot<TrashCustomFormat[]>(
+						serviceType,
+						"CUSTOM_FORMATS",
+						z.array(trashCustomFormatSchema),
+					),
+					this.cacheManager.getSnapshot<TrashCustomFormatGroup[]>(
+						serviceType,
+						"CF_GROUPS",
+						z.array(trashCustomFormatGroupSchema),
+					),
+					this.cacheManager.getSnapshot<TrashQualityProfile[]>(
+						serviceType,
+						"QUALITY_PROFILES",
+						z.array(trashQualityProfileSchema),
+					),
+				],
+				signal,
+			);
 
 			if (cfSnapshot == null || groupSnapshot == null || qualityProfileSnapshot == null) {
 				return {
@@ -922,30 +963,56 @@ export class TemplateUpdater {
 	private async fetchTrashDataAtCommit(
 		serviceType: "RADARR" | "SONARR",
 		provenance: TrashCacheProvenance,
+		signal?: AbortSignal,
 	): Promise<TrashSyncDataResult> {
+		const failedWrites: RequiredSyncCacheType[] = [];
+		const publish = (configType: RequiredSyncCacheType, data: unknown[]) => {
+			const write = this.cacheManager.setVerified(serviceType, configType, data, provenance);
+			if (!signal) return write;
+			return write.catch((error) => {
+				failedWrites.push(configType);
+				throw error;
+			});
+		};
+
 		try {
-			const [rawCustomFormats, rawGroups, rawQualityProfiles] = await Promise.all([
-				this.githubFetcher.fetchConfigsAtCommit(
-					serviceType,
-					"CUSTOM_FORMATS",
-					provenance.commitHash,
-				),
-				this.githubFetcher.fetchConfigsAtCommit(serviceType, "CF_GROUPS", provenance.commitHash),
-				this.githubFetcher.fetchConfigsAtCommit(
-					serviceType,
-					"QUALITY_PROFILES",
-					provenance.commitHash,
-				),
-			]);
+			const options = signal ? { signal } : undefined;
+			const [rawCustomFormats, rawGroups, rawQualityProfiles] = await settleTogether(
+				[
+					this.githubFetcher.fetchConfigsAtCommit(
+						serviceType,
+						"CUSTOM_FORMATS",
+						provenance.commitHash,
+						options,
+					),
+					this.githubFetcher.fetchConfigsAtCommit(
+						serviceType,
+						"CF_GROUPS",
+						provenance.commitHash,
+						options,
+					),
+					this.githubFetcher.fetchConfigsAtCommit(
+						serviceType,
+						"QUALITY_PROFILES",
+						provenance.commitHash,
+						options,
+					),
+				],
+				signal,
+			);
+			signal?.throwIfAborted();
 			const customFormats = z.array(trashCustomFormatSchema).parse(rawCustomFormats);
 			const customFormatGroups = z.array(trashCustomFormatGroupSchema).parse(rawGroups);
 			const qualityProfiles = z.array(trashQualityProfileSchema).parse(rawQualityProfiles);
 
-			await Promise.all([
-				this.cacheManager.setVerified(serviceType, "CUSTOM_FORMATS", customFormats, provenance),
-				this.cacheManager.setVerified(serviceType, "CF_GROUPS", customFormatGroups, provenance),
-				this.cacheManager.setVerified(serviceType, "QUALITY_PROFILES", qualityProfiles, provenance),
-			]);
+			await settleTogether(
+				[
+					publish("CUSTOM_FORMATS", customFormats),
+					publish("CF_GROUPS", customFormatGroups),
+					publish("QUALITY_PROFILES", qualityProfiles),
+				],
+				signal,
+			);
 
 			return {
 				success: true,
@@ -959,6 +1026,15 @@ export class TemplateUpdater {
 				},
 			};
 		} catch (error) {
+			if (signal?.aborted) {
+				for (const configType of failedWrites) {
+					log.warn(
+						{ serviceType, configType, operation: "setVerified" },
+						"TRaSH cache write failed during shutdown",
+					);
+				}
+				if (error === signal.reason) throw error;
+			}
 			return {
 				success: false,
 				customFormats: [],
@@ -979,7 +1055,10 @@ export class TemplateUpdater {
 	 *
 	 * Also triggers automatic deployment to mapped instances after successful sync.
 	 */
-	async processAutoUpdates(userId: string): Promise<{
+	async processAutoUpdates(
+		userId: string,
+		options?: { signal?: AbortSignal },
+	): Promise<{
 		processed: number;
 		successful: number;
 		failed: number;
@@ -989,7 +1068,9 @@ export class TemplateUpdater {
 		skippedForApproval: number;
 		templatesWithScoreConflicts: number;
 	}> {
-		const updateCheck = await this.checkForUpdates(userId);
+		const signal = options?.signal;
+		const updateCheck = await this.checkForUpdates(userId, options);
+		signal?.throwIfAborted();
 
 		const autoSyncTemplates = updateCheck.templatesWithUpdates.filter((t) => t.canAutoSync);
 
@@ -1005,6 +1086,7 @@ export class TemplateUpdater {
 		let templatesWithScoreConflicts = 0;
 
 		for (const template of autoSyncTemplates) {
+			if (signal?.aborted) break;
 			if (!template.deploymentCatchUp && !template.automationStateToken) {
 				results.push({
 					success: false,
@@ -1017,18 +1099,26 @@ export class TemplateUpdater {
 				failed++;
 				continue;
 			}
-			const result: SyncResult = template.deploymentCatchUp
-				? {
-						success: true,
-						templateId: template.templateId,
-						previousCommit: template.currentCommit,
-						newCommit: template.latestCommit,
-					}
-				: await this.syncTemplate(template.templateId, template.latestCommit, userId, {
-						includeQualityProfileCFs: true,
-						applyScoreUpdates: true,
-						expectedAutomationStateToken: template.automationStateToken,
-					});
+			let result: SyncResult;
+			try {
+				result = template.deploymentCatchUp
+					? {
+							success: true,
+							templateId: template.templateId,
+							previousCommit: template.currentCommit,
+							newCommit: template.latestCommit,
+						}
+					: await this.syncTemplate(template.templateId, template.latestCommit, userId, {
+							includeQualityProfileCFs: true,
+							applyScoreUpdates: true,
+							expectedAutomationStateToken: template.automationStateToken,
+							signal,
+						});
+			} catch (error) {
+				if (!signal?.aborted || error !== signal.reason) throw error;
+				// Completed deployments still need their notification handoff.
+				break;
+			}
 
 			results.push(result);
 
@@ -1104,7 +1194,7 @@ export class TemplateUpdater {
 		}
 
 		return {
-			processed: autoSyncTemplates.length,
+			processed: results.length,
 			successful,
 			failed,
 			uncertain,
@@ -1379,8 +1469,11 @@ export class TemplateUpdater {
 	/**
 	 * Get templates requiring user attention (not auto-synced or have user modifications)
 	 */
-	async getTemplatesNeedingAttention(userId: string): Promise<TemplateUpdateInfo[]> {
-		const updateCheck = await this.checkForUpdates(userId);
+	async getTemplatesNeedingAttention(
+		userId: string,
+		options?: { signal?: AbortSignal },
+	): Promise<TemplateUpdateInfo[]> {
+		const updateCheck = await this.checkForUpdates(userId, options);
 		return updateCheck.templatesWithUpdates.filter((t) => !t.canAutoSync || t.hasUserModifications);
 	}
 

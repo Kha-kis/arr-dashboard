@@ -165,7 +165,7 @@ async function fetchWithRetry(
 
 export interface VersionTracker {
 	getLatestCommit(options?: { signal?: AbortSignal }): Promise<VersionInfo>;
-	getCommitInfo(commitHash: string): Promise<VersionInfo>;
+	getCommitInfo(commitHash: string, options?: { signal?: AbortSignal }): Promise<VersionInfo>;
 	compareCommits(
 		oldHash: string,
 		newHash: string,
@@ -187,8 +187,18 @@ export function createVersionTracker(repoConfig?: TrashRepoConfig): VersionTrack
 	/**
 	 * Get the latest commit on the configured branch
 	 */
-	async function getLatestCommit({ signal }: { signal?: AbortSignal } = {}): Promise<VersionInfo> {
-		const url = `${GITHUB_API_BASE}/repos/${repoSlug}/commits/${config.branch}`;
+	async function getLatestCommit(options?: { signal?: AbortSignal }): Promise<VersionInfo> {
+		return getCommitInfo(config.branch, options);
+	}
+
+	/**
+	 * Get information about a specific commit
+	 */
+	async function getCommitInfo(
+		commitHash: string,
+		{ signal }: { signal?: AbortSignal } = {},
+	): Promise<VersionInfo> {
+		const url = `${GITHUB_API_BASE}/repos/${repoSlug}/commits/${commitHash}`;
 
 		const response = await fetchWithRetry(url, { signal }, headers);
 		let commit: GitHubCommit;
@@ -199,23 +209,6 @@ export function createVersionTracker(repoConfig?: TrashRepoConfig): VersionTrack
 			throw error;
 		}
 		signal?.throwIfAborted();
-
-		return {
-			commitHash: commit.sha,
-			commitDate: commit.commit.author.date,
-			commitMessage: commit.commit.message,
-			commitUrl: commit.html_url,
-		};
-	}
-
-	/**
-	 * Get information about a specific commit
-	 */
-	async function getCommitInfo(commitHash: string): Promise<VersionInfo> {
-		const url = `${GITHUB_API_BASE}/repos/${repoSlug}/commits/${commitHash}`;
-
-		const response = await fetchWithRetry(url, {}, headers);
-		const commit: GitHubCommit = await response.json();
 
 		return {
 			commitHash: commit.sha,

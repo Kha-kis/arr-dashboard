@@ -333,6 +333,8 @@ export class UpdateScheduler {
 	}
 
 	private async checkForUpdatesAttempt(): Promise<void> {
+		const signal = this.githubReadAbort.signal;
+		const readOptions = { signal };
 		const startTime = Date.now();
 		const errors: string[] = [];
 		let templatesAutoSynced = 0;
@@ -346,6 +348,25 @@ export class UpdateScheduler {
 		let namingUpdatesPending = 0;
 		let templatesWithAutoStrategy = 0;
 		let templatesWithNotifyStrategy = 0;
+
+		const notifyAutoSyncSummary = async (interrupted: boolean): Promise<void> => {
+			if (templatesAutoSynced === 0) return;
+			await this.notifyFn?.({
+				eventType: "TRASH_PROFILE_UPDATED",
+				title: `TRaSH Guides: ${templatesAutoSynced} template(s) auto-synced`,
+				body: interrupted
+					? `${templatesAutoSynced} synced before the update check was interrupted by shutdown`
+					: `${templatesAutoSynced} synced, ${templatesNeedingAttention} need attention, ${qualitySizeAutoSynced} quality sizes updated`,
+				url: "/trash-guides",
+				metadata: {
+					templatesAutoSynced,
+					qualitySizeAutoSynced,
+					...(interrupted ? { interrupted: true } : { templatesNeedingAttention }),
+				},
+			}).catch((err) => {
+				this.logger.debug({ err }, "TRaSH sync notification dispatch failed");
+			});
+		};
 
 		try {
 			// Re-read repo config and rebuild services if the user changed settings
@@ -383,12 +404,10 @@ export class UpdateScheduler {
 			]);
 
 			// Get latest version info
-			const latestCommit = await this.versionTracker.getLatestCommit({
-				signal: this.githubReadAbort.signal,
-			});
+			const latestCommit = await this.versionTracker.getLatestCommit(readOptions);
 			// An injected dependency may ignore cancellation. Join it, but never
 			// let its late result begin cache or upstream mutation work afterward.
-			this.githubReadAbort.signal.throwIfAborted();
+			signal.throwIfAborted();
 			this.logger.debug(
 				`Latest TRaSH commit: ${latestCommit.commitHash} (${latestCommit.commitDate})`,
 			);
@@ -396,9 +415,10 @@ export class UpdateScheduler {
 			// Refresh caches for both services
 			this.logger.info("Refreshing TRaSH Guides caches...");
 			const [radarrCacheResult, sonarrCacheResult] = await this.settleTogether([
-				this.templateUpdater.refreshAllCaches("RADARR", { signal: this.githubReadAbort.signal }),
-				this.templateUpdater.refreshAllCaches("SONARR", { signal: this.githubReadAbort.signal }),
+				this.templateUpdater.refreshAllCaches("RADARR", readOptions),
+				this.templateUpdater.refreshAllCaches("SONARR", readOptions),
 			]);
+			signal.throwIfAborted();
 
 			const totalCachesRefreshed = radarrCacheResult.refreshed + sonarrCacheResult.refreshed;
 			const totalCacheFailed = radarrCacheResult.failed + sonarrCacheResult.failed;
@@ -464,14 +484,19 @@ export class UpdateScheduler {
 
 			// Process each user's templates
 			for (const user of usersWithTemplates) {
+				signal.throwIfAborted();
 				// Check for template updates for this user
-				const updateCheck = await this.templateUpdater.checkForUpdates(user.id);
+				const updateCheck = await this.templateUpdater.checkForUpdates(user.id, readOptions);
+				signal.throwIfAborted();
 				totalTemplatesChecked += updateCheck.totalTemplates;
 				totalOutdated += updateCheck.outdatedTemplates;
 
 				if (updateCheck.outdatedTemplates > 0) {
 					// Process auto-sync templates for this user
-					const autoSyncResult = await this.templateUpdater.processAutoUpdates(user.id);
+					const autoSyncResult = await this.templateUpdater.processAutoUpdates(
+						user.id,
+						readOptions,
+					);
 					templatesAutoSynced += autoSyncResult.successful;
 					templatesNeedingApproval += autoSyncResult.skippedForApproval;
 					templatesWithScoreConflicts += autoSyncResult.templatesWithScoreConflicts;
@@ -512,10 +537,14 @@ export class UpdateScheduler {
 						}
 					}
 
+					signal.throwIfAborted();
+
 					// Get templates needing user attention for this user
 					const attentionTemplates = await this.templateUpdater.getTemplatesNeedingAttention(
 						user.id,
+						readOptions,
 					);
+					signal.throwIfAborted();
 					templatesNeedingAttention += attentionTemplates.length;
 
 					if (attentionTemplates.length > 0) {
@@ -592,25 +621,17 @@ export class UpdateScheduler {
 				`Update check completed in ${duration}ms. Next check at ${this.stats.nextCheckAt.toISOString()}`,
 			);
 
-			// Notify about auto-sync results
-			if (templatesAutoSynced > 0) {
-				await this.notifyFn?.({
-					eventType: "TRASH_PROFILE_UPDATED",
-					title: `TRaSH Guides: ${templatesAutoSynced} template(s) auto-synced`,
-					body: `${templatesAutoSynced} synced, ${templatesNeedingAttention} need attention, ${qualitySizeAutoSynced} quality sizes updated`,
-					url: "/trash-guides",
-					metadata: {
-						templatesAutoSynced,
-						templatesNeedingAttention,
-						qualitySizeAutoSynced,
-					},
-				}).catch((err) => {
-					this.logger.debug({ err }, "TRaSH sync notification dispatch failed");
-				});
-			}
+			await notifyAutoSyncSummary(false);
 		} catch (error) {
 			// Preserve the last completed check when shutdown cancels GitHub acquisition.
-			if (this.githubReadAbort.signal.aborted && error === this.githubReadAbort.signal.reason) {
+			if (signal.aborted && error === signal.reason) {
+				if (errors.length > 0) {
+					this.logger.warn(
+						{ errorCount: errors.length },
+						"TRaSH update check had errors before shutdown interrupted acquisition",
+					);
+				}
+				await notifyAutoSyncSummary(true);
 				throw error;
 			}
 			this.logger.error(
