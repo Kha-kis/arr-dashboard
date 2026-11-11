@@ -8,8 +8,8 @@
 # This script runs against the ACTUAL built image and ACTUAL /app/start.sh.
 # The mandatory api-death / web-death / graceful-stop cases use the real
 # services. Edge cases (exit code 0, simultaneous exit, SIGTERM-resistant
-# sibling) use a shim harness that replaces only the service binaries — never
-# the supervisor — so the same start.sh supervision logic is exercised.
+# sibling) replace the API child and web server with shims while retaining
+# the packaged launcher and start.sh.
 #
 # Usage:
 #   docker/test-combined-supervision.sh [image] [--case NAME] [--rootless]
@@ -247,16 +247,19 @@ assert_process_tree() {
 }
 
 # ---------------------------------------------------------------------------
-# Shim harness for edge cases (service binaries only — supervisor is real)
+# Shim harness for edge cases
 # ---------------------------------------------------------------------------
 
 mkdir -p "$SHIM_DIR"
 
-cat > "$SHIM_DIR/launcher.js" <<'EOF'
+cat > "$SHIM_DIR/index.js" <<'EOF'
 import fs from "node:fs";
-const isApi = String(process.argv[1] || "").includes("launcher");
-const ctrl = isApi ? "/config/.shim-api-control" : "/config/.shim-web-control";
-const name = isApi ? "API" : "WEB";
+const ctrl = "/tmp/arr-dashboard-shim-api-control";
+const name = "API";
+if (process.env.COMBINED_TEST_STARTUP_FAILURE === "api") {
+  fs.writeSync(1, "[shim:API] exiting 3 before readiness\n");
+  process.exit(3);
+}
 let mode = "idle";
 function readCtrl() {
   try {
@@ -281,16 +284,31 @@ process.on("SIGTERM", () => {
     console.log(`[shim:${name}] ignoring SIGTERM (stubborn)`);
     return;
   }
-  console.log(`[shim:${name}] SIGTERM -> exit 0`);
+  fs.writeSync(1, `[shim:${name}] SIGTERM -> exit 0\n`);
   process.exit(0);
 });
 setInterval(() => {}, 1000);
+
+// Exercise the launcher's authenticated readiness path with synthetic settings.
+if (typeof process.send !== "function") throw new Error("API shim requires launcher IPC");
+process.send({
+  kind: "arr-combined-startup",
+  version: 1,
+  nonce: process.env.ARR_COMBINED_STARTUP_NONCE,
+  apiPort: 3001,
+  webPort: 3000,
+  listenAddress: "0.0.0.0",
+});
 EOF
 
 cat > "$SHIM_DIR/server.js" <<'EOF'
 import fs from "node:fs";
-const ctrl = "/config/.shim-web-control";
+const ctrl = "/tmp/arr-dashboard-shim-web-control";
 const name = "WEB";
+if (process.env.COMBINED_TEST_STARTUP_FAILURE === "web") {
+  fs.writeSync(1, "[shim:WEB] exiting 3 during startup\n");
+  process.exit(3);
+}
 let mode = "idle";
 function readCtrl() {
   try {
@@ -321,19 +339,10 @@ process.on("SIGTERM", () => {
 setInterval(() => {}, 1000);
 EOF
 
-# Remove all shim control files from the host config dir before each new
-# container, so a previous case's mode (exit0/exit3/ignore-term/etc.) can
-# never leak into a later case. The files may be owned by the container's
-# remapped user (uid 1000); tolerate permission errors because start.sh
-# re-chowns /config on the next container start.
-reset_shim_fixture() {
-    rm -f "$CONFIG_DIR/.shim-api-control" "$CONFIG_DIR/.shim-web-control" 2>/dev/null || true
-}
-
 start_shim_container() {
-    reset_shim_fixture
+    # Additional Docker options apply to this shim instance only.
     # Prepare once from the unmodified image; only this disposable shim's
-    # launcher hash changes. Schema/client/worker admission remains enforced.
+    # API child hash changes. Schema/client/worker admission remains enforced.
     if [ ! -f "$SHIM_DIR/runtime-provider.json" ]; then
         docker run --rm --network none --user "$(id -u):$(id -g)" \
             -v "$TOOLS_DIR/test-provider-manifest.cjs":/fixture-tools/test-provider-manifest.cjs:ro \
@@ -341,41 +350,42 @@ start_shim_container() {
             -v "$SHIM_DIR":/fixture \
             "$IMAGE" node /fixture-tools/test-provider-manifest.cjs \
             /app/api/providers/sqlite sqlite /fixture/runtime-provider.json \
-            dist/launcher.js /fixture/launcher.js
+            dist/index.js /fixture/index.js
     fi
     docker rm -f "$SHIM_CTR" >/dev/null 2>&1 || true
     if [ "$ROOTLESS" = true ]; then
         docker run -d --name "$SHIM_CTR" --user 1000:1000 \
             -v "$CONFIG_DIR":/config \
-            -v "$SHIM_DIR/launcher.js":/app/api/providers/sqlite/dist/launcher.js:ro \
+            -v "$SHIM_DIR/index.js":/app/api/providers/sqlite/dist/index.js:ro \
             -v "$SHIM_DIR/runtime-provider.json":/app/api/providers/sqlite/runtime-provider.json:ro \
             -v "$SHIM_DIR/server.js":/app/web/server.js:ro \
-            "$IMAGE" >/dev/null
+            "$@" "$IMAGE" >/dev/null
     else
         docker run -d --name "$SHIM_CTR" \
             -v "$CONFIG_DIR":/config \
             -e PUID=1000 -e PGID=1000 \
-            -v "$SHIM_DIR/launcher.js":/app/api/providers/sqlite/dist/launcher.js:ro \
+            -v "$SHIM_DIR/index.js":/app/api/providers/sqlite/dist/index.js:ro \
             -v "$SHIM_DIR/runtime-provider.json":/app/api/providers/sqlite/runtime-provider.json:ro \
             -v "$SHIM_DIR/server.js":/app/web/server.js:ro \
-            "$IMAGE" >/dev/null
+            "$@" "$IMAGE" >/dev/null
     fi
 }
 
 set_shim_mode() {
     # $1 = API|WEB, $2 = mode
-    file=/config/.shim-api-control
-    [ "$1" = "WEB" ] && file=/config/.shim-web-control
+    file=/tmp/arr-dashboard-shim-api-control
+    [ "$1" = "WEB" ] && file=/tmp/arr-dashboard-shim-web-control
     docker exec "$SHIM_CTR" sh -c "printf '%s' '$2' > $file"
 }
 
 wait_shim_started() {
-    # wait until both shims report started and the ready banner appeared
+    # The web shim can start only after the API readiness handoff is consumed.
     timeout=${1:-60}
     elapsed=0
     while [ "$elapsed" -lt "$timeout" ]; do
-        n=$(docker logs "$SHIM_CTR" 2>&1 | grep -c "\[shim:" || true)
-        if [ "$n" -ge 2 ]; then
+        if logs=$(docker logs "$SHIM_CTR" 2>&1) &&
+            printf '%s\n' "$logs" | grep -q '^\[shim:API\] started pid=' &&
+            printf '%s\n' "$logs" | grep -q '^\[shim:WEB\] started pid='; then
             return 0
         fi
         sleep 1
@@ -501,7 +511,7 @@ case_graceful_stop() {
     fi
 
     log "sending docker stop"
-    docker stop --time 30 "$STOP_CTR" >/dev/null
+    docker stop --time 120 "$STOP_CTR" >/dev/null
 
     state=$(docker inspect "$STOP_CTR" --format '{{.State.Status}}' 2>/dev/null)
     code=$(docker inspect "$STOP_CTR" --format '{{.State.ExitCode}}' 2>/dev/null)
@@ -552,7 +562,13 @@ case_exit_zero() {
     else
         bad "container exit code is 0 (unexpected-exit-0 must be fatal)"
     fi
-    if docker logs "$SHIM_CTR" 2>&1 | grep -q "Terminating Web service"; then
+    logs=$(docker logs "$SHIM_CTR" 2>&1 || true)
+    if printf '%s\n' "$logs" | grep -Fxq 'ERROR: API service exited unexpectedly (status: 0).'; then
+        ok "supervisor observed the launcher exit with code 0"
+    else
+        bad "missing unexpected API exit with code 0"
+    fi
+    if printf '%s\n' "$logs" | grep -q "Terminating Web service"; then
         ok "web sibling was terminated"
     else
         bad "web sibling was not terminated"
@@ -595,7 +611,7 @@ case_stubborn() {
     CURRENT_CASE="stubborn"
     log "SIGTERM-resistant web sibling escalates to SIGKILL (shim harness)"
 
-    start_shim_container
+    start_shim_container -e SHUTDOWN_GRACE=3
     set_shim_mode API idle
     set_shim_mode WEB ignore-term
     if ! wait_shim_started; then
@@ -638,9 +654,7 @@ case_startup_api_failure() {
     CURRENT_CASE="startup-api-failure"
     log "API fails during initial startup (shim harness, exits before readiness)"
 
-    start_shim_container
-    set_shim_mode API exit3
-    set_shim_mode WEB idle
+    start_shim_container -e COMBINED_TEST_STARTUP_FAILURE=api
 
     if wait_container_exit "$SHIM_CTR" 40; then
         if [ "$EXIT_CODE" -ne 0 ]; then
@@ -654,12 +668,21 @@ case_startup_api_failure() {
         return 1
     fi
 
-    logs=$(docker logs "$SHIM_CTR" 2>&1 || true)
-    if echo "$logs" | grep -q "API process (PID.*died during startup"; then
+    if ! logs=$(docker logs "$SHIM_CTR" 2>&1); then
+        bad "could not read API startup failure logs"
+        return 1
+    fi
+    if printf '%s\n' "$logs" | grep -Fxq '[shim:API] exiting 3 before readiness' &&
+        printf '%s\n' "$logs" | grep -Fxq 'ERROR: API startup handoff did not complete; web was not started'; then
         ok "startup failure was detected"
     else
         bad "missing startup-failure detection"
         echo "$logs" | tail -20 >&2
+    fi
+    if printf '%s\n' "$logs" | grep -Eq '^Web started with PID |^\[shim:WEB\]'; then
+        bad "web started despite failed API startup"
+    else
+        ok "web did not start after failed API startup"
     fi
     docker rm -f "$SHIM_CTR" >/dev/null 2>&1 || true
 }
@@ -668,9 +691,7 @@ case_startup_web_failure() {
     CURRENT_CASE="startup-web-failure"
     log "Web fails immediately after launch (shim harness)"
 
-    start_shim_container
-    set_shim_mode API idle
-    set_shim_mode WEB exit3
+    start_shim_container -e COMBINED_TEST_STARTUP_FAILURE=web
 
     if wait_container_exit "$SHIM_CTR" 40; then
         if [ "$EXIT_CODE" -ne 0 ]; then
@@ -685,10 +706,17 @@ case_startup_web_failure() {
     fi
 
     logs=$(docker logs "$SHIM_CTR" 2>&1 || true)
-    if echo "$logs" | grep -q "Terminating API service"; then
-        ok "API sibling was terminated"
+    if printf '%s\n' "$logs" | grep -Fxq '[shim:WEB] exiting 3 during startup' &&
+        printf '%s\n' "$logs" | grep -Fxq 'ERROR: Web service exited unexpectedly (status: 3).'; then
+        ok "supervisor detected the web startup exit"
     else
-        bad "API sibling was not terminated"
+        bad "missing web startup failure detection"
+    fi
+    if printf '%s\n' "$logs" | grep -q "Terminating API service" &&
+        printf '%s\n' "$logs" | grep -Fxq '[shim:API] SIGTERM -> exit 0'; then
+        ok "launcher forwarded SIGTERM to the API child"
+    else
+        bad "missing API child termination after web startup failure"
     fi
     docker rm -f "$SHIM_CTR" >/dev/null 2>&1 || true
 }

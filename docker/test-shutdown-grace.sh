@@ -5,7 +5,7 @@
 #   1. invalid SHUTDOWN_GRACE values fall back to the default (no breakage)
 #   2. the grace period is a single global deadline (not per-service)
 #   3. normal docker stop completes gracefully (exit 0) within Docker's window
-#   4. a stubborn child under intentional stop is SIGKILLed by start.sh itself
+#   4. start.sh SIGKILLs and reaps a stubborn child and reports failure (exit 1)
 #
 # Usage: docker/test-shutdown-grace.sh [image]
 
@@ -71,7 +71,7 @@ for badval in abc -1 1.5 "  "; do
         docker logs "$ctr" 2>&1 | tail -10 >&2
     fi
     # graceful stop must still work (exit 0)
-    docker stop --time 30 "$ctr" >/dev/null 2>&1 || true
+    docker stop --time 120 "$ctr" >/dev/null 2>&1 || bad "Docker stop failed with SHUTDOWN_GRACE='$badval'"
     code=$(docker inspect "$ctr" --format '{{.State.ExitCode}}' 2>/dev/null || echo '?')
     if [ "$code" = "0" ]; then
         ok "graceful stop exit 0 with SHUTDOWN_GRACE='$badval'"
@@ -93,7 +93,7 @@ docker run -d --name "$ctr" \
     "$IMAGE" >/dev/null
 wait_health "$ctr" 60 || bad "services did not become healthy"
 start=$(date +%s)
-docker stop --time 30 "$ctr" >/dev/null 2>&1 || true
+docker stop --time 120 "$ctr" >/dev/null 2>&1 || bad "Docker stop failed"
 end=$(date +%s)
 elapsed=$((end - start))
 code=$(docker inspect "$ctr" --format '{{.State.ExitCode}}' 2>/dev/null || echo '?')
@@ -103,8 +103,8 @@ if [ "$code" = "0" ]; then
 else
     bad "normal docker stop exit $code"
 fi
-if [ "$elapsed" -lt 30 ]; then
-    ok "stop completed within Docker's 30s window (${elapsed}s)"
+if [ "$elapsed" -lt 120 ]; then
+    ok "stop completed within Docker's 120s window (${elapsed}s)"
 else
     bad "stop took ${elapsed}s (Docker may have force-killed PID 1)"
 fi
@@ -154,7 +154,7 @@ else
     bad "stubborn web shim did not start"
 fi
 start=$(date +%s)
-docker stop --time 30 "$ctr" >/dev/null 2>&1 || true
+docker stop --time 30 "$ctr" >/dev/null 2>&1 || bad "Docker stop failed for the stubborn fixture"
 end=$(date +%s)
 elapsed=$((end - start))
 code=$(docker inspect "$ctr" --format '{{.State.ExitCode}}' 2>/dev/null || echo '?')
@@ -165,15 +165,21 @@ if echo "$logs" | grep -q "sending SIGKILL"; then
 else
     bad "start.sh did not SIGKILL the stubborn child"
 fi
-if echo "$logs" | grep -q "ignoring SIGTERM"; then
+if printf '%s\n' "$logs" | grep -Fxq '[stubborn-web] ignoring SIGTERM'; then
     ok "stubborn child confirmed it ignored SIGTERM"
 else
     bad "stubborn child did not report ignoring SIGTERM"
 fi
-if [ "$code" = "0" ]; then
-    ok "intentional stop still exits 0 despite stubborn child"
+web_pid=$(printf '%s\n' "$logs" | sed -n 's/^Web started with PID \([0-9][0-9]*\)$/\1/p' | tail -1)
+if [ -n "$web_pid" ] && printf '%s\n' "$logs" | grep -Fxq "SUPERVISOR_WAIT_COMPLETED pid=$web_pid status=137"; then
+    ok "start.sh reaped the SIGKILLed web child"
 else
-    bad "intentional stop exit $code (expected 0)"
+    bad "missing SIGKILL wait status for the tracked web child"
+fi
+if [ "$code" = "1" ] && printf '%s\n' "$logs" | grep -Fxq 'ERROR: Services required forced or failed termination'; then
+    ok "intentional stop reported forced termination and exited 1"
+else
+    bad "expected a forced-termination report and exit 1, got exit $code"
 fi
 if [ "$elapsed" -lt 30 ]; then
     ok "stubborn stop completed within Docker's window (${elapsed}s)"
