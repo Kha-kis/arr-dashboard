@@ -174,6 +174,29 @@ function SeriesProgressDisplay({
 			</div>
 		);
 	}
+	if (progress.status === "mapped") {
+		const observedAt = Date.parse(progress.observedAt);
+		return (
+			<div className="flex items-baseline gap-2 text-[10px] text-muted-foreground">
+				<span className="font-medium w-14 shrink-0">{provider}</span>
+				<div className="min-w-0 wrap-break-word">
+					<div>
+						{progress.watched}/{progress.total} matched episodes watched ({progress.percent}%)
+					</div>
+					<div>
+						{Number.isFinite(observedAt) ? (
+							<>
+								Observed{" "}
+								<time dateTime={progress.observedAt}>{new Date(observedAt).toLocaleString()}</time>
+							</>
+						) : (
+							"Observation time unavailable"
+						)}
+					</div>
+				</div>
+			</div>
+		);
+	}
 	if (progress.status === "partial") {
 		return (
 			<div className="flex items-center gap-2 text-[10px] text-muted-foreground">

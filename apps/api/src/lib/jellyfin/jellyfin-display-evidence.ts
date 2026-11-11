@@ -14,6 +14,7 @@ import {
 } from "./jellyfin-evidence-repository.js";
 import {
 	type JellyfinSeriesProgressProof,
+	jellyfinMappedSeriesProgressProof,
 	jellyfinSeriesProgressProof,
 	readOwnedGenerationScopedEpisodeDisplay,
 	readOwnedGenerationScopedLibraryAndEpisodeDisplay,
@@ -212,6 +213,7 @@ function episodeDisplaySource(
 ) {
 	const admitted = isAdmittedEpisodeObservation(observation);
 	const proof = admitted ? observation[jellyfinSeriesProgressProof] : undefined;
+	const mappedProof = admitted ? observation[jellyfinMappedSeriesProgressProof] : undefined;
 	return {
 		instanceId: instance.id,
 		instanceName: instance.label,
@@ -224,6 +226,7 @@ function episodeDisplaySource(
 			: [],
 		status: publicEpisodeSourceStatus(instance, observation?.providerStatus ?? unavailableStatus),
 		...(proof && { [jellyfinSeriesProgressProof]: proof }),
+		...(mappedProof && { [jellyfinMappedSeriesProgressProof]: mappedProof }),
 	};
 }
 
@@ -237,11 +240,18 @@ function displayEvidence<Row>(
 ) {
 	return {
 		sources: observations.map(
-			({ instanceId, instanceName, rows, [jellyfinSeriesProgressProof]: proof }) => ({
+			({
+				instanceId,
+				instanceName,
+				rows,
+				[jellyfinSeriesProgressProof]: proof,
+				[jellyfinMappedSeriesProgressProof]: mappedProof,
+			}) => ({
 				instanceId,
 				instanceName,
 				rows,
 				...(proof && { [jellyfinSeriesProgressProof]: proof }),
+				...(mappedProof && { [jellyfinMappedSeriesProgressProof]: mappedProof }),
 			}),
 		),
 		providerStatus: observations.length

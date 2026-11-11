@@ -84,6 +84,33 @@ describe("library card series progress evidence", () => {
 		expect(screen.queryByText(/%/)).not.toBeInTheDocument();
 	});
 
+	it("shows Jellyfin progress for matched episodes and the recorded observation time", () => {
+		const observedAt = "2026-11-11T12:34:56.000Z";
+		const jellyfin = {
+			status: "mapped",
+			watched: 0,
+			total: 8,
+			percent: 0,
+			watchedSemantics: "matched",
+			observedAt,
+		} satisfies SeriesProgressItem;
+		const { unmount } = renderCard({ jellyfin });
+
+		expect(screen.getByText("Jellyfin")).toBeVisible();
+		expect(screen.getByText("0/8 matched episodes watched (0%)")).toBeVisible();
+		const time = screen.getByText(new Date(observedAt).toLocaleString());
+		expect(time).toBeVisible();
+		expect(time).toHaveAttribute("datetime", observedAt);
+		expect(time.tagName).toBe("TIME");
+		expect(time.parentElement).toHaveTextContent(/Observed/);
+		unmount();
+
+		const { container } = renderCard({ jellyfin: { ...jellyfin, observedAt: "invalid" } });
+		expect(screen.getByText("0/8 matched episodes watched (0%)")).toBeVisible();
+		expect(screen.getByText("Observation time unavailable")).toBeVisible();
+		expect(container.querySelector("time")).toBeNull();
+	});
+
 	it("labels a partial tracker count as a lower bound", () => {
 		renderCard({}, { trackerCount: 2, topHosts: ["tracker.invalid"], complete: false });
 		expect(screen.getByTitle("At least 2 trackers observed")).toBeInTheDocument();

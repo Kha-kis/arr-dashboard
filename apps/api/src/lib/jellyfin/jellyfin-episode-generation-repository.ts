@@ -7,6 +7,12 @@ import {
 	type JellyfinEpisodeRowFingerprintInput,
 	projectJellyfinEpisodeRow,
 } from "./jellyfin-generation-metadata.js";
+import {
+	encodeJellyfinMappedProgressReceipt,
+	type JellyfinMappedProgressContext,
+	jellyfinMappedProgressMatchesPositiveRows,
+} from "./jellyfin-mapped-progress-receipt.js";
+import type { JellyfinSeriesProgressCoordinate } from "./jellyfin-mapped-series-progress.js";
 import { retryJellyfinSnapshotTransaction } from "./jellyfin-snapshot-transaction.js";
 
 type PreparationInput = {
@@ -79,6 +85,8 @@ type EpisodePreparationInput = PreparationInput & {
 	observedAt?: Date;
 	/** Exact catalog coverage may include shows with no episode rows. */
 	coveredShowTmdbIds?: readonly number[];
+	/** Display-only coordinates from independently verified matching scopes. */
+	mappedSeriesProgress?: ReadonlyMap<number, readonly JellyfinSeriesProgressCoordinate[]>;
 	/** A fake clock is used only by real-database expiry tests. */
 	clock?: () => Date;
 };
@@ -101,20 +109,45 @@ function orderedRows(rows: readonly EpisodeRow[]): EpisodeRow[] {
 	);
 }
 
-function expectedShowReceipts(rows: readonly EpisodeRow[], coveredShowTmdbIds?: readonly number[]) {
+function expectedShowReceipts(
+	rows: readonly EpisodeRow[],
+	coveredShowTmdbIds?: readonly number[],
+	mapped?: {
+		coordinatesByShow: NonNullable<EpisodePreparationInput["mappedSeriesProgress"]>;
+		context: Omit<JellyfinMappedProgressContext, "showTmdbId" | "contentFingerprint">;
+	},
+) {
 	const receipts: Array<{
 		showTmdbId: number;
 		rowCount: number;
 		contentFingerprint: string;
+		mappedProgressJson?: string;
 	}> = [];
+	const mappedProof = (
+		showTmdbId: number,
+		contentFingerprint: string,
+		showRows: readonly EpisodeRow[],
+	) => {
+		const coordinates = mapped?.coordinatesByShow.get(showTmdbId);
+		return mapped && coordinates && jellyfinMappedProgressMatchesPositiveRows(coordinates, showRows)
+			? encodeJellyfinMappedProgressReceipt(
+					{ ...mapped.context, showTmdbId, contentFingerprint },
+					coordinates,
+				)
+			: null;
+	};
 	for (let start = 0; start < rows.length; ) {
 		const showTmdbId = rows[start]!.showTmdbId;
 		let end = start + 1;
 		while (end < rows.length && rows[end]!.showTmdbId === showTmdbId) end += 1;
+		const showRows = rows.slice(start, end);
+		const contentFingerprint = fingerprintJellyfinEpisodeRows(showRows);
+		const mappedProgressJson = mappedProof(showTmdbId, contentFingerprint, showRows);
 		receipts.push({
 			showTmdbId,
 			rowCount: end - start,
-			contentFingerprint: fingerprintJellyfinEpisodeRows(rows.slice(start, end)),
+			contentFingerprint,
+			...(mappedProgressJson && { mappedProgressJson }),
 		});
 		start = end;
 	}
@@ -134,6 +167,18 @@ function expectedShowReceipts(rows: readonly EpisodeRow[], coveredShowTmdbIds?: 
 					rowCount: 0,
 					contentFingerprint: fingerprintJellyfinEpisodeRows([]),
 				});
+		}
+		receipts.sort((left, right) => left.showTmdbId - right.showTmdbId);
+	}
+	if (mapped) {
+		const withRows = new Set(receipts.map((receipt) => receipt.showTmdbId));
+		const contentFingerprint = fingerprintJellyfinEpisodeRows([]);
+		for (const showTmdbId of mapped.coordinatesByShow.keys()) {
+			if (withRows.has(showTmdbId) || !Number.isSafeInteger(showTmdbId) || showTmdbId <= 0)
+				continue;
+			const mappedProgressJson = mappedProof(showTmdbId, contentFingerprint, []);
+			if (mappedProgressJson)
+				receipts.push({ showTmdbId, rowCount: 0, contentFingerprint, mappedProgressJson });
 		}
 		receipts.sort((left, right) => left.showTmdbId - right.showTmdbId);
 	}
@@ -209,7 +254,37 @@ export async function prepareJellyfinEpisodeGeneration(
 	}
 	if (fingerprintJellyfinEpisodeRows(rows) !== input.expectedFingerprint)
 		throw new Error("Jellyfin episode candidate fingerprint mismatch");
-	const receipts = expectedShowReceipts(rows, input.coveredShowTmdbIds);
+	const mappedGenerations =
+		input.mappedSeriesProgress?.size && input.observedAt && !input.coveredShowTmdbIds
+			? await prisma.providerObservationRun.findFirst({
+					where: {
+						id: input.runId,
+						instanceId: input.instanceId,
+						instance: { userId: input.userId },
+					},
+					select: { connectionGeneration: true, identityGeneration: true },
+				})
+			: null;
+	const receipts = expectedShowReceipts(
+		rows,
+		input.coveredShowTmdbIds,
+		mappedGenerations && input.mappedSeriesProgress && input.observedAt
+			? {
+					coordinatesByShow: input.mappedSeriesProgress,
+					context: {
+						instanceId: input.instanceId,
+						generationId: input.generationId,
+						observedAt: input.observedAt,
+						...mappedGenerations,
+					},
+				}
+			: undefined,
+	);
+	const expectedMappedProgress = new Map<number, string>();
+	for (const receipt of receipts) {
+		if (receipt.mappedProgressJson)
+			expectedMappedProgress.set(receipt.showTmdbId, receipt.mappedProgressJson);
+	}
 	const clock = input.clock ?? (() => new Date());
 	await preparationTransaction(prisma, async (tx) => {
 		await requireLiveLease(tx, { ...input, now: currentLeaseTime(input, clock) });
@@ -279,6 +354,7 @@ export async function prepareJellyfinEpisodeGeneration(
 	if (
 		!(await verifyPreparedJellyfinEpisodeGeneration(prisma, {
 			...input,
+			expectedMappedProgress,
 			now: currentLeaseTime(input, clock),
 		}))
 	)
@@ -299,7 +375,7 @@ export async function prepareJellyfinEpisodeGeneration(
 
 export async function verifyPreparedJellyfinEpisodeGeneration(
 	prisma: PrismaClient,
-	input: PreparationInput & { token: string },
+	input: PreparationInput & { token: string; expectedMappedProgress?: ReadonlyMap<number, string> },
 ): Promise<boolean> {
 	if (!validInput(input) || !input.token.trim()) return false;
 	const manifest = await prisma.jellyfinEpisodePreparation.findUnique({
@@ -324,6 +400,13 @@ export async function verifyPreparedJellyfinEpisodeGeneration(
 	const accumulator = createEvidenceFingerprintArrayAccumulator();
 	let rowCount = 0;
 	let receiptCount = 0;
+	let matchedMappedProgress = 0;
+	const matchesMappedProgress = (showTmdbId: number, payload: string | null) => {
+		const expected = input.expectedMappedProgress?.get(showTmdbId) ?? null;
+		if (payload !== expected) return false;
+		if (expected !== null) matchedMappedProgress += 1;
+		return true;
+	};
 	let currentShow: number | null = null;
 	let showCount = 0;
 	const seenShows = new Set<number>();
@@ -347,7 +430,9 @@ export async function verifyPreparedJellyfinEpisodeGeneration(
 		receiptCount += 1;
 		seenShows.add(currentShow);
 		return (
-			receipt?.rowCount === showCount && receipt.contentFingerprint === showAccumulator.digest()
+			receipt?.rowCount === showCount &&
+			receipt.contentFingerprint === showAccumulator.digest() &&
+			matchesMappedProgress(currentShow, receipt.mappedProgressJson)
 		);
 	};
 	for (;;) {
@@ -408,7 +493,7 @@ export async function verifyPreparedJellyfinEpisodeGeneration(
 				generationId: input.generationId,
 				rowCount: 0,
 			},
-			select: { id: true, showTmdbId: true, contentFingerprint: true },
+			select: { id: true, showTmdbId: true, contentFingerprint: true, mappedProgressJson: true },
 			orderBy: { id: "asc" },
 			take: EPISODE_STAGE_BATCH_SIZE,
 			...(zeroCursor ? { cursor: { id: zeroCursor }, skip: 1 } : {}),
@@ -417,7 +502,8 @@ export async function verifyPreparedJellyfinEpisodeGeneration(
 		for (const receipt of zeroReceipts) {
 			if (
 				seenShows.has(receipt.showTmdbId) ||
-				receipt.contentFingerprint !== fingerprintJellyfinEpisodeRows([])
+				receipt.contentFingerprint !== fingerprintJellyfinEpisodeRows([]) ||
+				!matchesMappedProgress(receipt.showTmdbId, receipt.mappedProgressJson)
 			)
 				return false;
 			receiptCount += 1;
@@ -427,6 +513,7 @@ export async function verifyPreparedJellyfinEpisodeGeneration(
 	return (
 		rowCount === manifest.expectedRowCount &&
 		receiptCount === manifest.expectedReceiptCount &&
+		matchedMappedProgress === (input.expectedMappedProgress?.size ?? 0) &&
 		accumulator.digest() === manifest.contentFingerprint &&
 		(await prisma.jellyfinEpisodeGenerationShowReceipt.count({
 			where: { instanceId: input.instanceId, generationId: input.generationId },

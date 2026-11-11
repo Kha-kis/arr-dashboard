@@ -537,6 +537,14 @@ export interface CacheHealthResponse {
 export type SeriesProgressItem =
 	| { status: "exact"; total: number; watched: number; percent: number; watchedSemantics: "exact" }
 	| {
+			status: "mapped";
+			total: number;
+			watched: number;
+			percent: number;
+			watchedSemantics: "matched";
+			observedAt: string;
+	  }
+	| {
 			status: "partial";
 			total: null;
 			watched: number;

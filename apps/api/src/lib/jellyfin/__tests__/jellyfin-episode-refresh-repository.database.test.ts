@@ -6,6 +6,7 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { Prisma } from "../../../generated/prisma/client.js";
+import { projectJellyfinSeriesProgress } from "../../../routes/jellyfin/series-progress-routes.js";
 
 const identityModuleMocks = vi.hoisted(() => ({
 	readProviderIdentity: vi.fn(),
@@ -46,7 +47,10 @@ import {
 import { createProviderPublicationAuthority } from "../../services/provider-identity-guard.js";
 import { readOwnedJellyfinCacheHealthSources } from "../jellyfin-cache-health.js";
 import type { JellyfinEpisodeItemsPage } from "../jellyfin-client.js";
-import { readOwnedJellyfinEpisodeDisplaySources } from "../jellyfin-display-evidence.js";
+import {
+	readOwnedJellyfinEpisodeDisplaySources,
+	readOwnedJellyfinLibraryAndEpisodeDisplaySources,
+} from "../jellyfin-display-evidence.js";
 import {
 	createJellyfinEpisodeWorkItemRunner as createProductionJellyfinEpisodeWorkItemRunner,
 	type JellyfinEpisodeWorkItemRunnerDependencies,
@@ -95,6 +99,7 @@ import {
 	fingerprintJellyfinLibraryRows,
 	hasAuthoritativeJellyfinLibraryReceipt,
 } from "../jellyfin-generation-metadata.js";
+import { jellyfinMappedSeriesProgressProof } from "../jellyfin-generation-scoped-display.js";
 import {
 	cleanupPublishedJellyfinEpisodeArtifacts,
 	prepareNativeWatchGeneration,
@@ -1668,6 +1673,7 @@ async function stagePreparedCommit(
 		token: lease.token,
 		rows: prepared.publishedRows,
 		...(prepared.coveredShowTmdbIds ? { coveredShowTmdbIds: prepared.coveredShowTmdbIds } : {}),
+		...(prepared.mappedSeriesProgress && { mappedSeriesProgress: prepared.mappedSeriesProgress }),
 		expectedFingerprint: prepared.contentFingerprint,
 		observedAt: prepared.observedAt,
 		now: new Date(),
@@ -2014,6 +2020,146 @@ describe("native inventory independence from Jellyfin watch finalization", {
 			evidence: "positive-only",
 		});
 		expect(damaged.sources[0]?.rows).toEqual([]);
+	});
+
+	it("prepares matched Jellyfin progress alongside positive-only V4 rows", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await bindV3Fixture(prisma, seed.run.id);
+		await prisma.serviceInstance.update({
+			where: { id: "jellyfin-1" },
+			data: { identityStatus: "VERIFIED", expectedIdentity: "native-server" },
+		});
+		await addStagePair(prisma, seed.run.id, {
+			jellyfinId: "unwatched",
+			seriesId: "series-1",
+			episodeNumber: 2,
+			played: false,
+		});
+		await addStagePair(prisma, seed.run.id, {
+			jellyfinId: "unmapped",
+			seriesId: "unmapped-series",
+			played: false,
+		});
+		await prisma.providerObservationUnit.updateMany({
+			where: { runId: seed.run.id },
+			data: { cursor: 3, expectedRawCount: 3, observedRawCount: 3 },
+		});
+		await prisma.jellyfinEpisodeObservationStage.updateMany({
+			where: { runId: seed.run.id, pass: "verify", jellyfinId: "episode-1" },
+			data: { playCount: 2 },
+		});
+		const input = {
+			prisma,
+			userId: "user-1",
+			instance: { id: "jellyfin-1" },
+			runId: seed.run.id,
+			scopes: seed.scopes,
+			attempt: seed.attempt,
+			now: seed.attempt.attemptedAt,
+		};
+		const prepared = await prepareJellyfinEpisodeRun(input);
+		if (prepared.kind !== "ready") throw new Error("Fixture did not project a generation");
+		expect(decodeJellyfinEpisodeGenerationMetadata(prepared.generationMetadata)).toMatchObject({
+			ok: true,
+			metadata: { version: 4, publicationLevel: "positive-only", itemCount: 1 },
+		});
+		expect(prepared.publishedRows).toMatchObject([{ episodeNumber: 1, watched: true }]);
+		expect(prepared.coveredShowTmdbIds).toBeNull();
+		expect(prepared.mappedSeriesProgress, "verified coordinates for the bound show").toEqual(
+			new Map([
+				[
+					42,
+					[
+						{ seasonNumber: 1, episodeNumber: 1, watched: true },
+						{ seasonNumber: 1, episodeNumber: 2, watched: false },
+					],
+				],
+			]),
+		);
+
+		await prisma.providerObservationUnit.updateMany({
+			where: { runId: seed.run.id },
+			data: { cursor: 4, expectedRawCount: 4, observedRawCount: 4 },
+		});
+		const withStageGap = await prepareJellyfinEpisodeRun(input);
+		if (withStageGap.kind !== "ready") throw new Error("Expected existing positive publication");
+		expect(withStageGap.publishedRows).toEqual(prepared.publishedRows);
+		expect(withStageGap.mappedSeriesProgress).toBeUndefined();
+		await prisma.providerObservationUnit.updateMany({
+			where: { runId: seed.run.id },
+			data: { cursor: 3, expectedRawCount: 3, observedRawCount: 3 },
+		});
+		const staged = await stagePreparedCommit(prisma, input, prepared);
+		if (!staged.nativePublication) throw new Error("Missing native observation fixture");
+		await prepareNativeWatchGeneration(prisma, {
+			...staged.nativePublication,
+			userId: input.userId,
+			preparationToken: staged.episodePreparationToken,
+		});
+		expect(
+			await prisma.$transaction((tx) =>
+				commitPreparedJellyfinEpisodeRun(
+					tx,
+					{ ...input, testHooks: { commitClock: () => input.now } },
+					staged,
+				),
+			),
+		).toEqual({ published: true, itemCount: 1 });
+		await cleanupPublishedJellyfinEpisodeArtifacts(prisma, input.instance.id, input.runId);
+		const readInput = {
+			prisma,
+			userId: input.userId,
+			instances: [{ id: input.instance.id, label: "Synthetic", service: "JELLYFIN" as const }],
+			showTmdbIds: [42],
+			now: input.now,
+		};
+		const read = await readOwnedJellyfinEpisodeDisplaySources({
+			...readInput,
+			includeSeriesProgressProof: true,
+		});
+		expect(read.sources[0]?.rows).toMatchObject([{ episodeNumber: 1, watched: true }]);
+		expect(
+			read.sources[0]?.[jellyfinMappedSeriesProgressProof],
+			"published mapped progress proof",
+		).toEqual({
+			observedAt: prepared.observedAt.toISOString(),
+			coordinatesByShow: prepared.mappedSeriesProgress,
+		});
+		const bundled = await readOwnedJellyfinLibraryAndEpisodeDisplaySources(readInput);
+		for (const display of [read, bundled.episodes]) {
+			expect(
+				projectJellyfinSeriesProgress(readInput.instances, display, readInput.showTmdbIds).progress,
+			).toEqual({
+				42: {
+					status: "mapped",
+					total: 2,
+					watched: 1,
+					percent: 50,
+					watchedSemantics: "matched",
+					observedAt: prepared.observedAt.toISOString(),
+				},
+			});
+		}
+		const ordinary = await readOwnedJellyfinEpisodeDisplaySources(readInput);
+		expect(ordinary.sources[0]?.[jellyfinMappedSeriesProgressProof]).toBeUndefined();
+		const stale = await readOwnedJellyfinEpisodeDisplaySources({
+			...readInput,
+			includeSeriesProgressProof: true,
+			now: new Date(input.now.getTime() + 1),
+			maxAgeMs: 0,
+		});
+		expect(stale.sources[0]?.[jellyfinMappedSeriesProgressProof]).toBeUndefined();
+		await prisma.jellyfinEpisodeGenerationShowReceipt.updateMany({
+			where: { instanceId: input.instance.id, generationId: prepared.cacheGenerationId },
+			data: { mappedProgressJson: '[1,"altered",[[1,1,1],[1,2,0]]]' },
+		});
+		const damaged = await readOwnedJellyfinEpisodeDisplaySources({
+			...readInput,
+			includeSeriesProgressProof: true,
+		});
+		expect(damaged.sources[0]?.[jellyfinMappedSeriesProgressProof]).toBeUndefined();
+		expect(damaged.sources[0]?.rows).toEqual(read.sources[0]?.rows);
 	});
 
 	it("keeps an older in-flight run readable without inventing native-watch authority", async () => {

@@ -213,6 +213,9 @@ async function finalizeAdmitted(
 					...(prepared.coveredShowTmdbIds
 						? { coveredShowTmdbIds: prepared.coveredShowTmdbIds }
 						: {}),
+					...(prepared.mappedSeriesProgress && {
+						mappedSeriesProgress: prepared.mappedSeriesProgress,
+					}),
 					expectedFingerprint: prepared.contentFingerprint,
 					observedAt: prepared.observedAt,
 					now: new Date(),

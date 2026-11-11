@@ -375,6 +375,14 @@ describe("generation-scoped episode display freshness", () => {
 				showTmdbId: { in: ids },
 				instance: { userId: "owner-1", enabled: true },
 			},
+			select: {
+				instanceId: true,
+				generationId: true,
+				showTmdbId: true,
+				rowCount: true,
+				contentFingerprint: true,
+				mappedProgressJson: false,
+			},
 			take: 200,
 		});
 		expect(f.tx.jellyfinEpisodeGenerationRow.findMany).toHaveBeenCalledTimes(1);
@@ -444,6 +452,14 @@ describe("generation-scoped episode display freshness", () => {
 				generationId: "episode-generation",
 				showTmdbId: { in: [43, 42] },
 				instance: { userId: "owner-1", enabled: true },
+			},
+			select: {
+				instanceId: true,
+				generationId: true,
+				showTmdbId: true,
+				rowCount: true,
+				contentFingerprint: true,
+				mappedProgressJson: false,
 			},
 			take: 2,
 		});

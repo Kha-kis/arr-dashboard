@@ -2056,12 +2056,13 @@ model JellyfinEpisodeGenerationRow {
 
 /// Readback-verified, generation-bound proof for a single requested show.
 model JellyfinEpisodeGenerationShowReceipt {
-  id                 String @id @default(cuid())
+  id                 String  @id @default(cuid())
   instanceId         String
   generationId       String
   showTmdbId         Int
   rowCount           Int
   contentFingerprint String
+  mappedProgressJson String?
 
   instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
 

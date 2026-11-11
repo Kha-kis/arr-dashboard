@@ -420,6 +420,12 @@ percent. `status: unknown` has null counts and percent. `watchedSemantics` is
 `exact`, `lower-bound`, or `unknown` respectively. Episode coordinates are
 deduplicated across connections. The UI displays each provider separately.
 
+Jellyfin can also return `status: mapped` with numeric `total`, `watched`, and
+`percent` for verified matched episodes. It has `watchedSemantics: matched`
+and an ISO `observedAt` for the oldest contributing snapshot. Each configured
+source must contribute verified evidence for the denominator. The counts
+describe matched episodes and carry no cleanup authority.
+
 `GET /api/jellyfin/watch-enrichment` accepts an optional comma-separated
 `progressTmdbIds` query parameter. The response then includes
 `seriesProgress` with the Jellyfin series progress response shape and its

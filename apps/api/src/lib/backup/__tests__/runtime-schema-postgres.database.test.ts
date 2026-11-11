@@ -173,7 +173,7 @@ describe.skipIf(!connectionString)("native PostgreSQL runtime schema catalog", (
 		expect(result.missingEnums).toEqual([]);
 		expect(result.catalog.tables).toHaveLength(102);
 		expect(result.catalog.tables.reduce((count, table) => count + table.columns.length, 0)).toBe(
-			1350,
+			1351,
 		);
 		expect(
 			result.catalog.tables.reduce((count, table) => count + table.foreignKeys.length, 0),

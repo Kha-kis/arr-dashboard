@@ -587,6 +587,53 @@ describe("generation-scoped Jellyfin episode staging", { timeout: 30_000 }, () =
 		expect(await verifyPreparedJellyfinEpisodeGeneration(prisma, input)).toBe(true);
 	});
 
+	it("seals mapped progress with positive rows and rejects altered receipt readback", async () => {
+		const { prisma } = await database();
+		const input = await leasedInput(prisma);
+		const rows = candidateRows(1);
+		const coordinates = new Map([
+			[
+				42,
+				[
+					{ seasonNumber: 1, episodeNumber: 0, watched: true },
+					{ seasonNumber: 1, episodeNumber: 1, watched: false },
+				],
+			],
+			[99, [{ seasonNumber: 1, episodeNumber: 1, watched: false }]],
+			[100, [{ seasonNumber: 1, episodeNumber: 1, watched: true }]],
+		]);
+		const preparation = {
+			...input,
+			rows,
+			expectedFingerprint: fingerprintJellyfinEpisodeRows(rows),
+			observedAt: input.now,
+			mappedSeriesProgress: coordinates,
+		};
+		const staged = await prepareJellyfinEpisodeGeneration(prisma, preparation);
+		expect(staged.receiptCount, "mapped show receipts").toBe(2);
+		expect(staged.rowCount).toBe(1);
+		const receipts = await prisma.jellyfinEpisodeGenerationShowReceipt.findMany({
+			orderBy: { showTmdbId: "asc" },
+		});
+		expect(receipts.map(({ showTmdbId, rowCount }) => [showTmdbId, rowCount])).toEqual([
+			[42, 1],
+			[99, 0],
+		]);
+		expect(receipts.every(({ mappedProgressJson }) => typeof mappedProgressJson === "string")).toBe(
+			true,
+		);
+		await prisma.$executeRawUnsafe(`CREATE TRIGGER corrupt_mapped_receipt AFTER INSERT ON jellyfin_episode_generation_show_receipts
+			WHEN NEW."showTmdbId" = 99 BEGIN
+			UPDATE jellyfin_episode_generation_show_receipts SET "mappedProgressJson" = 'changed' WHERE "id" = NEW."id";
+			END`);
+		await expect(prepareJellyfinEpisodeGeneration(prisma, preparation)).rejects.toThrow(
+			"Jellyfin episode generation readback failed",
+		);
+		expect(
+			await prisma.jellyfinEpisodePreparation.findUnique({ where: { runId: input.runId } }),
+		).toMatchObject({ state: "preparing" });
+	});
+
 	it("rejects a same-count changed row and a same-count changed show receipt", async () => {
 		const { prisma } = await database();
 		const input = await leasedInput(prisma);

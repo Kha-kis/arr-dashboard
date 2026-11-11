@@ -1,11 +1,11 @@
 {
 	"formatVersion": 1,
-	"schemaSourceSha256": "3efc809ad46c8b767e105900f1ee2b00eb4c02a2171af4a39dd5bf87f8c93ed2",
+	"schemaSourceSha256": "37f65bf997572e24f82098f7956a2115d33d1e60a9a67dbd13f72892632f33bb",
 	"applicationModelCount": 101,
 	"registry": {
 		"provider": "sqlite",
 		"version": 1,
-		"targetDigest": "70c0345b0bb8ebdaf5842c3f664142e2f3107e2fa8b47507bd9ee67f51e9f5db",
+		"targetDigest": "f810c084dbc629574cd66c5d9139e6afcd7c322ee1e498ab4c9c02d819b8c8c3",
 		"tables": [
 			{
 				"target": {
@@ -2616,7 +2616,8 @@
 							"type": "TEXT",
 							"nullable": false,
 							"defaultValue": null
-						}
+						},
+						{ "name": "mappedProgressJson", "type": "TEXT", "nullable": true, "defaultValue": null }
 					],
 					"primaryKey": ["id"],
 					"indexes": [
@@ -2652,7 +2653,8 @@
 					"generationId": "column:38f227c6637c45e7e05034ede3b5912b15d3ba3dec1eba89a515d557c1633a59",
 					"showTmdbId": "column:1815b442c980104702185b43e79c9bff094a973a346716f494c5a4a5a0169c09",
 					"rowCount": "column:67f9f972f22fe80de3224700b1076928f095ca150a32ff6432fff253a688b260",
-					"contentFingerprint": "column:c40b1590f7274f779bf186b738f60db70482eed8f0a69edba50defacc70590d0"
+					"contentFingerprint": "column:c40b1590f7274f779bf186b738f60db70482eed8f0a69edba50defacc70590d0",
+					"mappedProgressJson": "column:dd628f8d93bfec0fc9b7acef0be12d9e305a95536cc61642ea114973e0d7a1e3"
 				},
 				"addIndexAtoms": {
 					"jellyfin_episode_generation_show_receipts_instanceId_generationId_idx": "index:3c8763393e944717653817e81f6a85c8af7c909e4e9db88fae8d285fc0361f43",
@@ -9292,6 +9294,7 @@
 			"column:1815b442c980104702185b43e79c9bff094a973a346716f494c5a4a5a0169c09",
 			"column:67f9f972f22fe80de3224700b1076928f095ca150a32ff6432fff253a688b260",
 			"column:c40b1590f7274f779bf186b738f60db70482eed8f0a69edba50defacc70590d0",
+			"column:dd628f8d93bfec0fc9b7acef0be12d9e305a95536cc61642ea114973e0d7a1e3",
 			"column:073476704e79468047e080573bbc36d0e2f4b60c7b92e87eef14a9f4d9d621db",
 			"column:bd224cf8f5c5aae17752814f4208e1d24c22d93ead2921def010d1fe08389e4f",
 			"column:361b074acce019f77fc5412a951a9e9e03998a9005bd00d49122be916f759ccb",
@@ -10629,8 +10632,8 @@
 			"kind": "table",
 			"tableName": "jellyfin_episode_generation_show_receipts",
 			"objectName": "jellyfin_episode_generation_show_receipts",
-			"sql": "CREATE TABLE \"jellyfin_episode_generation_show_receipts\" (\n    \"id\" TEXT NOT NULL PRIMARY KEY,\n    \"instanceId\" TEXT NOT NULL,\n    \"generationId\" TEXT NOT NULL,\n    \"showTmdbId\" INTEGER NOT NULL,\n    \"rowCount\" INTEGER NOT NULL,\n    \"contentFingerprint\" TEXT NOT NULL,\n    CONSTRAINT \"jellyfin_episode_generation_show_receipts_instanceId_fkey\" FOREIGN KEY (\"instanceId\") REFERENCES \"ServiceInstance\" (\"id\") ON DELETE CASCADE ON UPDATE CASCADE\n);",
-			"sha256": "d6a37deb980d7a475e0218a4da73f3dc0ddab8736667028eacb17ff51701f734"
+			"sql": "CREATE TABLE \"jellyfin_episode_generation_show_receipts\" (\n    \"id\" TEXT NOT NULL PRIMARY KEY,\n    \"instanceId\" TEXT NOT NULL,\n    \"generationId\" TEXT NOT NULL,\n    \"showTmdbId\" INTEGER NOT NULL,\n    \"rowCount\" INTEGER NOT NULL,\n    \"contentFingerprint\" TEXT NOT NULL,\n    \"mappedProgressJson\" TEXT,\n    CONSTRAINT \"jellyfin_episode_generation_show_receipts_instanceId_fkey\" FOREIGN KEY (\"instanceId\") REFERENCES \"ServiceInstance\" (\"id\") ON DELETE CASCADE ON UPDATE CASCADE\n);",
+			"sha256": "ff81249471a21438182f074e79ec2e48b3d1e33d99181005da723b64ced51db8"
 		},
 		{
 			"id": "table:ed97d9ff851a4247be948243904f5364f89c137e4f93b7bbc2043053c62c9414",
@@ -13847,6 +13850,14 @@
 			"objectName": "contentFingerprint",
 			"sql": "ALTER TABLE \"jellyfin_episode_generation_show_receipts\" ADD COLUMN \"contentFingerprint\" TEXT NOT NULL;",
 			"sha256": "89587a40b5dc3112fe4b252e69a1e2a231c8035103f1ce0ad8a7489cda4cfe5d"
+		},
+		{
+			"id": "column:dd628f8d93bfec0fc9b7acef0be12d9e305a95536cc61642ea114973e0d7a1e3",
+			"kind": "column",
+			"tableName": "jellyfin_episode_generation_show_receipts",
+			"objectName": "mappedProgressJson",
+			"sql": "ALTER TABLE \"jellyfin_episode_generation_show_receipts\" ADD COLUMN \"mappedProgressJson\" TEXT;",
+			"sha256": "020d9db4d8f464fbd5f82b0a135173101e30cc7b13fd918722e501628a2ff318"
 		},
 		{
 			"id": "column:073476704e79468047e080573bbc36d0e2f4b60c7b92e87eef14a9f4d9d621db",
@@ -22281,5 +22292,5 @@
 			"sha256": "fcb23de07ba77082669e52425fd198c6f7ac46314db598894c3a4fff7ee960ab"
 		}
 	],
-	"sqlSha256": "98b995f6fddd0cb1a35cb758d082573fba8fffccb81cdeec3a7036987837116b"
+	"sqlSha256": "62aaf87ddab3e1d497a9da3283702d501e4781f9a3caa4d8af4cb07573b17b9e"
 }

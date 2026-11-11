@@ -582,6 +582,7 @@ CREATE TABLE "jellyfin_episode_generation_show_receipts" (
     "showTmdbId" INTEGER NOT NULL,
     "rowCount" INTEGER NOT NULL,
     "contentFingerprint" TEXT NOT NULL,
+    "mappedProgressJson" TEXT,
 
     CONSTRAINT "jellyfin_episode_generation_show_receipts_pkey" PRIMARY KEY ("id")
 );
@@ -3033,6 +3034,9 @@ ALTER TABLE "jellyfin_episode_generation_show_receipts" ADD COLUMN "rowCount" IN
 
 -- arr-schema-atom column:c40b1590f7274f779bf186b738f60db70482eed8f0a69edba50defacc70590d0
 ALTER TABLE "jellyfin_episode_generation_show_receipts" ADD COLUMN "contentFingerprint" TEXT NOT NULL;
+
+-- arr-schema-atom column:dd628f8d93bfec0fc9b7acef0be12d9e305a95536cc61642ea114973e0d7a1e3
+ALTER TABLE "jellyfin_episode_generation_show_receipts" ADD COLUMN "mappedProgressJson" TEXT;
 
 -- arr-schema-atom column:0763b89c75d7314810d72a7c41aee328a60fb64fd5a73e93ae9e2655291c4078
 ALTER TABLE "jellyfin_episode_observation_exclusions" ADD COLUMN "runId" TEXT NOT NULL;

@@ -23,6 +23,12 @@ import {
 	type JellyfinEpisodeGenerationMetadataV4,
 	type JellyfinLibraryRowFingerprintInput,
 } from "./jellyfin-generation-metadata.js";
+import {
+	decodeJellyfinMappedProgressReceipt,
+	jellyfinMappedProgressMatchesPositiveRows,
+	MAX_JELLYFIN_MAPPED_PROGRESS_COORDINATES,
+	MAX_JELLYFIN_MAPPED_PROGRESS_JSON_LENGTH,
+} from "./jellyfin-mapped-progress-receipt.js";
 
 const MAX_SCOPED_SHOWS = 200;
 const MAX_SCOPED_EPISODE_ROWS = 100_000;
@@ -31,9 +37,14 @@ const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
 // The map keys prove receipt coverage. Values carry only coordinates omitted
 // from the existing positive-only rows, never episode metadata.
 export const jellyfinSeriesProgressProof = Symbol("jellyfin-series-progress-proof");
+export const jellyfinMappedSeriesProgressProof = Symbol("jellyfin-mapped-series-progress-proof");
 type EpisodeCoordinate = Pick<JellyfinEpisodeRow, "seasonNumber" | "episodeNumber" | "watched">;
 export type JellyfinSeriesProgressProof = {
 	[jellyfinSeriesProgressProof]?: ReadonlyMap<number, readonly EpisodeCoordinate[]>;
+	[jellyfinMappedSeriesProgressProof]?: {
+		observedAt: string;
+		coordinatesByShow: ReadonlyMap<number, readonly EpisodeCoordinate[]>;
+	};
 };
 type ScopedEpisodeDisplay = JellyfinEpisodeObservation & JellyfinSeriesProgressProof;
 
@@ -195,6 +206,11 @@ async function readGenerationScopedDisplay(
 				? new Set(metadata.catalogProvenance?.bindings.map((binding) => binding.tmdbId) ?? [])
 				: null;
 		const eligible = requested.filter((id) => !originalCatalogIds || originalCatalogIds.has(id));
+		const readMappedProgress =
+			input.includeSeriesProgressProof &&
+			service === "JELLYFIN" &&
+			originalCatalogIds !== null &&
+			now.getTime() - status.lastRefreshedAt.getTime() <= maxAgeMs;
 		const receipts = eligible.length
 			? await tx.jellyfinEpisodeGenerationShowReceipt.findMany({
 					where: {
@@ -202,6 +218,14 @@ async function readGenerationScopedDisplay(
 						generationId: status.generationId,
 						showTmdbId: { in: eligible },
 						instance: { userId: input.userId, enabled: true },
+					},
+					select: {
+						instanceId: true,
+						generationId: true,
+						showTmdbId: true,
+						rowCount: true,
+						contentFingerprint: true,
+						mappedProgressJson: Boolean(readMappedProgress),
 					},
 					take: eligible.length,
 				})
@@ -221,6 +245,13 @@ async function readGenerationScopedDisplay(
 		// accepted-row cap plus one fetched scope, rather than retaining all scopes.
 		const rows: JellyfinEpisodeRow[] = [];
 		const receiptedShows: number[] = [];
+		const mappedReceipts: Array<{
+			showTmdbId: number;
+			contentFingerprint: string;
+			payload: string;
+			rows: readonly JellyfinEpisodeRow[];
+		}> = [];
+		let remainingProofLength = MAX_JELLYFIN_MAPPED_PROGRESS_JSON_LENGTH;
 		let incompleteRequestedScope = false;
 		for (const showTmdbId of requested) {
 			if (originalCatalogIds && !originalCatalogIds.has(showTmdbId)) {
@@ -268,6 +299,20 @@ async function readGenerationScopedDisplay(
 			}
 			rows.push(...showRows);
 			if (input.includeSeriesProgressProof) receiptedShows.push(showTmdbId);
+			const payload = receipt.mappedProgressJson;
+			if (
+				readMappedProgress &&
+				typeof payload === "string" &&
+				payload.length <= remainingProofLength
+			) {
+				remainingProofLength -= payload.length;
+				mappedReceipts.push({
+					showTmdbId,
+					contentFingerprint: receipt.contentFingerprint,
+					payload,
+					rows: showRows,
+				});
+			}
 		}
 		const parentSnapshot = await materializeOwnedJellyfinLibraryDisplayInTransaction(
 			tx as unknown as TransactionReader,
@@ -276,7 +321,7 @@ async function readGenerationScopedDisplay(
 		return {
 			instance,
 			service,
-			status,
+			status: { ...status, generationId: status.generationId },
 			metadata,
 			evaluation,
 			fail,
@@ -284,6 +329,7 @@ async function readGenerationScopedDisplay(
 			originalCatalogIds,
 			rows,
 			receiptedShows,
+			mappedReceipts,
 			incompleteRequestedScope,
 		};
 	}
@@ -300,6 +346,7 @@ async function readGenerationScopedDisplay(
 		originalCatalogIds,
 		rows,
 		receiptedShows,
+		mappedReceipts,
 		incompleteRequestedScope,
 	} = snapshot;
 	// Parent row validation and canonical hashing must not occupy the outer lease,
@@ -344,11 +391,11 @@ async function readGenerationScopedDisplay(
 				)
 	)
 		return { library: parent, episodes: fail("rows-inconsistent") };
-	const parentCurrent =
-		exactParent &&
+	const parentFresh =
 		(parent.providerStatus.availability === "current" ||
 			parent.providerStatus.availability === "partial") &&
 		now.getTime() - parent.publishedAt.getTime() <= maxAgeMs;
+	const parentCurrent = exactParent && parentFresh;
 
 	let providerStatus = projectProviderObservationStatus({
 		identity: "current",
@@ -386,6 +433,32 @@ async function readGenerationScopedDisplay(
 					seriesProgressProof?.get(showTmdbId)?.push({ seasonNumber, episodeNumber, watched });
 					return false;
 				});
+	const coordinatesByShow = new Map<number, readonly EpisodeCoordinate[]>();
+	if (parentFresh && catalogCompatible && providerStatus.availability !== "unavailable") {
+		let remainingCoordinates = MAX_JELLYFIN_MAPPED_PROGRESS_COORDINATES;
+		for (const receipt of mappedReceipts) {
+			const coordinates = decodeJellyfinMappedProgressReceipt(
+				{
+					instanceId: instance.id,
+					generationId: status.generationId,
+					showTmdbId: receipt.showTmdbId,
+					connectionGeneration: instance.connectionGeneration,
+					identityGeneration: instance.identityGeneration,
+					observedAt: status.lastRefreshedAt,
+					contentFingerprint: receipt.contentFingerprint,
+				},
+				receipt.payload,
+			);
+			if (
+				!coordinates ||
+				coordinates.length > remainingCoordinates ||
+				!jellyfinMappedProgressMatchesPositiveRows(coordinates, receipt.rows)
+			)
+				continue;
+			remainingCoordinates -= coordinates.length;
+			coordinatesByShow.set(receipt.showTmdbId, coordinates);
+		}
+	}
 	return {
 		library: parent,
 		episodes: {
@@ -399,6 +472,12 @@ async function readGenerationScopedDisplay(
 			rows: visibleRows,
 			providerStatus,
 			...(seriesProgressProof && { [jellyfinSeriesProgressProof]: seriesProgressProof }),
+			...(coordinatesByShow.size && {
+				[jellyfinMappedSeriesProgressProof]: {
+					observedAt: status.lastRefreshedAt.toISOString(),
+					coordinatesByShow,
+				},
+			}),
 			mutationAvailable: false,
 			authority: null,
 		},

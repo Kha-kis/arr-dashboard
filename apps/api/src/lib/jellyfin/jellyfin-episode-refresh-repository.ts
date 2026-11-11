@@ -56,6 +56,11 @@ import {
 	hasJellyfinEpisodeParentReceipt,
 	type JellyfinLibraryRowFingerprintInput,
 } from "./jellyfin-generation-metadata.js";
+import {
+	deriveJellyfinMappedSeriesProgress,
+	type JellyfinMappedSeriesScope,
+	type JellyfinSeriesProgressCoordinate,
+} from "./jellyfin-mapped-series-progress.js";
 import { serializeNativeWatchScopeDiagnostics } from "./jellyfin-native-watch-diagnostics.js";
 import {
 	deriveNativeWatchCandidates,
@@ -264,6 +269,7 @@ export type PreparedJellyfinEpisodeRun =
 			cacheGenerationId: string;
 			publishedRows: readonly PreparedEpisodeRow[];
 			coveredShowTmdbIds: readonly number[] | null;
+			mappedSeriesProgress?: ReadonlyMap<number, readonly JellyfinSeriesProgressCoordinate[]>;
 			contentFingerprint: string;
 			/** Set only after the invisible generation has passed exact readback. */
 			episodePreparationToken?: string;
@@ -1894,6 +1900,8 @@ async function evaluateJellyfinEpisodeRun(
 		let nativePublication: NativeWatchPublicationInput | null = null;
 		let nativeWatchDiagnostics: NativeWatchProjectionDiagnostics | undefined;
 		let scopedNativeWatchDiagnostics: readonly NativeWatchScopedProjectionDiagnostics[] = [];
+		const mappedScopes: JellyfinMappedSeriesScope[] | null =
+			mode === "prepare" && positiveOnly && instance.service === "JELLYFIN" ? [] : null;
 		if (isV3Run && instance.identityStatus === "VERIFIED" && instance.expectedIdentity?.trim()) {
 			const scopedRows = (rows: typeof stages) =>
 				rows.map((row) => ({
@@ -1927,6 +1935,25 @@ async function evaluateJellyfinEpisodeRun(
 				const verifyUnit = matchingUnits.find((unit) => unit.phase === "verify");
 				const collectRows = collectUnit ? (stagesByUnit.get(collectUnit.id) ?? []) : [];
 				const verifyRows = verifyUnit ? (stagesByUnit.get(verifyUnit.id) ?? []) : [];
+				if (mappedScopes) {
+					// The planned units above already bind both passes to the same user and
+					// library. A staged gap or an exclusion prevents a denominator here.
+					mappedScopes.push({
+						userKeyDigest,
+						libraryId: scope.libraryId,
+						complete:
+							matchingUnits.length === 2 &&
+							collectUnit !== undefined &&
+							verifyUnit !== undefined &&
+							collectRows.length === collectUnit.observedRawCount &&
+							verifyRows.length === verifyUnit.observedRawCount &&
+							matchingUnits.every((unit) => !exclusionsByUnit.has(unit.id)) &&
+							collectRows.every((row) => !excludedIds.has(row.jellyfinId)) &&
+							verifyRows.every((row) => !excludedIds.has(row.jellyfinId)),
+						collect: collectRows,
+						verify: verifyRows,
+					});
+				}
 				const scopeCandidates = candidates.filter(
 					(row) => row.userKeyDigest === userKeyDigest && row.libraryId === scope.libraryId,
 				);
@@ -1988,6 +2015,13 @@ async function evaluateJellyfinEpisodeRun(
 				receipts,
 			};
 		}
+		const mappedSeriesProgress =
+			mappedScopes?.length && originalCatalog
+				? deriveJellyfinMappedSeriesProgress({
+						bindings: originalCatalog.bindings,
+						scopes: mappedScopes,
+					})
+				: undefined;
 		const nativeProjectionFinishedAt = performance.now();
 		if (mode === "prepare") {
 			const preparedAt = performance.now();
@@ -2035,6 +2069,7 @@ async function evaluateJellyfinEpisodeRun(
 					: [...new Set([...mapped.values()].filter((id): id is number => id !== null))].sort(
 							(left, right) => left - right,
 						),
+				...(mappedSeriesProgress?.size && { mappedSeriesProgress }),
 				contentFingerprint,
 				generationMetadata: metadata,
 				nativePublication,

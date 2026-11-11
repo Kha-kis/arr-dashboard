@@ -15,7 +15,10 @@ import {
 	readOwnedJellyfinEpisodeDisplaySources,
 } from "../../lib/jellyfin/jellyfin-display-evidence.js";
 import { withJellyfinDisplayReadTiming } from "../../lib/jellyfin/jellyfin-display-read-timing.js";
-import { jellyfinSeriesProgressProof } from "../../lib/jellyfin/jellyfin-generation-scoped-display.js";
+import {
+	jellyfinMappedSeriesProgressProof,
+	jellyfinSeriesProgressProof,
+} from "../../lib/jellyfin/jellyfin-generation-scoped-display.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { aggregateSeriesProgress, type EpisodeInput } from "../plex/lib/series-progress-helpers.js";
 
@@ -63,35 +66,77 @@ export function projectJellyfinSeriesProgress(
 			!["complete", "positive-only"].includes(status.evidence) ||
 			source.rows.some((row) => row.instanceId !== instance.id)
 		)
-			return { complete: false, rows: [], proof: undefined };
+			return { complete: false, rows: [], proof: undefined, mapped: undefined, observedAt: NaN };
 
 		const complete = status.availability === "current" && status.evidence === "complete";
 		const scopeDegraded =
 			status.availability === "partial" &&
 			status.evidence === "positive-only" &&
 			status.reasonCodes.includes("coverage-incomplete");
+		const observedAt = status.observedAt ? Date.parse(status.observedAt) : NaN;
+		const mapped = source[jellyfinMappedSeriesProgressProof];
 		return {
 			complete,
 			rows: source.rows,
 			proof: complete || scopeDegraded ? source[jellyfinSeriesProgressProof] : undefined,
+			mapped:
+				status.evidence === "positive-only" &&
+				!status.reasonCodes.includes("publication-stale") &&
+				mapped &&
+				mapped.observedAt === status.observedAt
+					? mapped.coordinatesByShow
+					: undefined,
+			observedAt,
 		};
 	});
 	const rows: EpisodeInput[] = sources.flatMap((source) => source.rows);
 	const uniqueInstances = new Set(instances.map(({ id }) => id)).size === instances.length;
 	const allComplete = uniqueInstances && sources.every((source) => source.complete);
 	const completeShows = new Set<number>();
-	if (!allComplete && uniqueInstances && sources.every((source) => source.proof)) {
+	const mappedObservedAt = new Map<number, string>();
+	if (
+		!allComplete &&
+		uniqueInstances &&
+		(sources.some((source) => source.mapped) || sources.every((source) => source.proof))
+	) {
 		for (const showTmdbId of tmdbIds) {
-			if (!sources.every((source) => source.proof?.has(showTmdbId))) continue;
+			const exact = sources.every((source) => source.proof?.has(showTmdbId));
+			if (!exact) {
+				// A matched denominator needs positive or negative evidence from
+				// every source and must carry the oldest observation it uses.
+				if (
+					!sources.some((source) => source.mapped?.has(showTmdbId)) ||
+					!sources.every(
+						(source) =>
+							Number.isFinite(source.observedAt) &&
+							(source.complete || source.proof?.has(showTmdbId) || source.mapped?.has(showTmdbId)),
+					)
+				)
+					continue;
+				const oldest = Math.min(...sources.map((source) => source.observedAt));
+				mappedObservedAt.set(showTmdbId, new Date(oldest).toISOString());
+			}
 			completeShows.add(showTmdbId);
 			for (const source of sources) {
-				for (const coordinate of source.proof?.get(showTmdbId) ?? []) {
+				const coordinates = source.proof?.get(showTmdbId) ?? source.mapped?.get(showTmdbId) ?? [];
+				for (const coordinate of coordinates) {
 					rows.push({ showTmdbId, ...coordinate });
 				}
 			}
 		}
 	}
 	const progressMap = aggregateSeriesProgress(rows, tmdbIds, allComplete || completeShows);
+	for (const [showTmdbId, observedAt] of mappedObservedAt) {
+		const progress = progressMap[showTmdbId];
+		if (progress?.status === "exact") {
+			progressMap[showTmdbId] = {
+				...progress,
+				status: "mapped",
+				watchedSemantics: "matched",
+				observedAt,
+			};
+		}
+	}
 
 	return {
 		configured: true,
