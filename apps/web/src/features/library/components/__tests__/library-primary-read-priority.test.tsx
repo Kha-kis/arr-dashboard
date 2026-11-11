@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { SearchParamsContext } from "next/dist/shared/lib/hooks-client-context.shared-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
+import { plexKeys } from "../../../../lib/query-keys";
 import { ColorThemeProvider } from "../../../../providers/color-theme-provider";
 import { LibraryClient } from "../library-client";
 
@@ -12,6 +13,11 @@ const insightPaths = [
 	"/api/library/insights/watched-monitored",
 	"/api/library/insights/requested-unwatched",
 ];
+const plexProgressPath = "/api/plex/series-progress";
+const jellyfinWatchPath = "/api/jellyfin/watch-enrichment";
+const jellyfinProgressPath = "/api/jellyfin/series-progress";
+const emptyProgress = { configured: true, progress: {} };
+const bundledWatch = { items: {}, seriesProgress: emptyProgress };
 const service: ServiceInstanceSummary = {
 	id: "synthetic-plex",
 	service: "plex",
@@ -75,14 +81,19 @@ afterEach(async () => {
 function fixture({
 	services = "provider",
 	pairedWatchError = false,
+	bundleJellyfinProgress = false,
+	holdRead,
 }: {
 	services?: "provider" | "none" | "error";
 	pairedWatchError?: boolean;
+	bundleJellyfinProgress?: boolean;
+	holdRead?: string;
 } = {}) {
 	const arr = Promise.withResolvers<Response>();
 	const filteredArr = Promise.withResolvers<Response>();
 	const native = Promise.withResolvers<Response>();
 	const reload = Promise.withResolvers<Response>();
+	const heldRead = Promise.withResolvers<Response>();
 	const requests: string[] = [];
 	let nativeRequests = 0;
 	let arrRequests = 0;
@@ -118,8 +129,12 @@ function fixture({
 		if (path === "/api/plex/sections") return Response.json({ sections: [], configured: true });
 		if (path === "/api/qui/tracker-icons") return Response.json({ trackers: {} });
 		if (insightPaths.includes(path)) return Response.json({ data: { items: [] } });
-		if (pairedWatchError && path === "/api/jellyfin/watch-enrichment")
-			return Response.json({ error: "Synthetic watch failure" }, { status: 503 });
+		if (path === holdRead) return heldRead.promise;
+		if (path === jellyfinWatchPath) {
+			if (pairedWatchError)
+				return Response.json({ error: "Synthetic watch failure" }, { status: 503 });
+			if (bundleJellyfinProgress) return Response.json(bundledWatch);
+		}
 		if (path.endsWith("/watch-enrichment")) return Response.json({ configured: false, items: {} });
 		if (path.endsWith("/series-progress"))
 			return Response.json({ configured: false, progress: {} });
@@ -154,6 +169,7 @@ function fixture({
 		filteredArr,
 		native,
 		reload,
+		heldRead,
 		arrResponse,
 		requests,
 		insights: () => requests.filter((path) => insightPaths.includes(path)),
@@ -173,6 +189,53 @@ function fixture({
 }
 
 describe("Library primary-read priority with real query hooks", () => {
+	it.each([
+		["/api/plex/watch-enrichment", () => Response.json({ items: {} })],
+		[
+			plexProgressPath,
+			() => Response.json({ error: "Synthetic progress failure" }, { status: 503 }),
+		],
+		[jellyfinWatchPath, () => Response.json(bundledWatch)],
+		[jellyfinProgressPath, () => Response.json(emptyProgress)],
+	] as const)("waits for cold %s before Insights", async (path, result) => {
+		const needsJellyfinFallback = path === jellyfinProgressPath;
+		const f = fixture({
+			holdRead: path,
+			bundleJellyfinProgress: !needsJellyfinFallback,
+			pairedWatchError: needsJellyfinFallback,
+		});
+		f.render();
+		await act(async () => {
+			f.arr.resolve(f.arrResponse(false, true));
+			f.native.resolve(Response.json(nativeInventory));
+		});
+		await waitFor(() => {
+			expect(f.requests).toContain(plexProgressPath);
+			expect(f.requests).toContain(jellyfinWatchPath);
+			expect(f.requests).toContain(path);
+		});
+		expect(f.insights()).toEqual([]);
+
+		await act(async () => f.heldRead.resolve(result()));
+		await waitFor(() => expect(f.insights().sort()).toEqual([...insightPaths].sort()));
+		if (!needsJellyfinFallback) expect(f.requests).not.toContain(jellyfinProgressPath);
+	});
+
+	it("starts Insights while retained Plex progress refreshes", async () => {
+		const f = fixture({ holdRead: plexProgressPath, bundleJellyfinProgress: true });
+		const progressKey = plexKeys.seriesProgress("42");
+		client.setQueryData(progressKey, emptyProgress, { updatedAt: Date.now() - 10 * 60_000 });
+		f.render();
+		await act(async () => {
+			f.arr.resolve(f.arrResponse(false, true));
+			f.native.resolve(Response.json(nativeInventory));
+		});
+		await waitFor(() => expect(f.insights().sort()).toEqual([...insightPaths].sort()));
+		expect(f.requests).toContain(plexProgressPath);
+		expect(client.getQueryState(progressKey)?.fetchStatus).toBe("fetching");
+		await act(async () => f.heldRead.resolve(Response.json(emptyProgress)));
+	});
+
 	it.each(["success", "error"] as const)(
 		"admits paired Jellyfin watch and Plex progress after native %s",
 		async (result) => {

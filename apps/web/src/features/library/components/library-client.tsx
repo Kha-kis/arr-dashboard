@@ -199,11 +199,6 @@ export const LibraryClient: React.FC = () => {
 		page: filters.page,
 		pageSize: filters.pageSize,
 	});
-	// Admit advisory reads only after the primary first attempts finish. Latch
-	// admission so later filters/reloads do not interrupt already useful insights.
-	useEffect(() => {
-		if (nativeInitialReadSettled && !data.isLoading) setInsightsEnabled(true);
-	}, [nativeInitialReadSettled, data.isLoading]);
 	const actions = useLibraryActions();
 	const quiStatus = data.quiObservationStatus?.status;
 	const appliedTorrentState = data.appliedFilters?.torrentState;
@@ -322,6 +317,20 @@ export const LibraryClient: React.FC = () => {
 	const seriesProgressMap = useMemo(() => {
 		return groupSeriesProgress(plexProgressQuery.data, jellyfinProgress);
 	}, [plexProgressQuery.data, jellyfinProgress]);
+
+	const requiredWatchOrProgressPending = [
+		plexWatchQuery,
+		jellyfinWatchQuery,
+		plexProgressQuery,
+		jellyfinProgressQuery,
+	].some((query) => query.isEnabled && query.isPending);
+	// Wait for cold required reads once. Cached evidence and terminal errors let
+	// Insights start, and later filters or reloads leave it enabled.
+	useEffect(() => {
+		if (nativeInitialReadSettled && !data.isLoading && !requiredWatchOrProgressPending) {
+			setInsightsEnabled(true);
+		}
+	}, [nativeInitialReadSettled, data.isLoading, requiredWatchOrProgressPending]);
 
 	// hasQui gates UI surfaces that only make sense with a qui instance configured
 	// (Torrent state filter dropdown, per-card badge). Each card now reads its
