@@ -72,7 +72,13 @@ afterEach(async () => {
 	window.history.replaceState({}, "", "/");
 });
 
-function fixture({ services = "provider" }: { services?: "provider" | "none" | "error" } = {}) {
+function fixture({
+	services = "provider",
+	pairedWatchError = false,
+}: {
+	services?: "provider" | "none" | "error";
+	pairedWatchError?: boolean;
+} = {}) {
 	const arr = Promise.withResolvers<Response>();
 	const filteredArr = Promise.withResolvers<Response>();
 	const native = Promise.withResolvers<Response>();
@@ -112,12 +118,14 @@ function fixture({ services = "provider" }: { services?: "provider" | "none" | "
 		if (path === "/api/plex/sections") return Response.json({ sections: [], configured: true });
 		if (path === "/api/qui/tracker-icons") return Response.json({ trackers: {} });
 		if (insightPaths.includes(path)) return Response.json({ data: { items: [] } });
+		if (pairedWatchError && path === "/api/jellyfin/watch-enrichment")
+			return Response.json({ error: "Synthetic watch failure" }, { status: 503 });
 		if (path.endsWith("/watch-enrichment")) return Response.json({ configured: false, items: {} });
 		if (path.endsWith("/series-progress"))
 			return Response.json({ configured: false, progress: {} });
 		throw new Error(`Unexpected synthetic path: ${path}`);
 	});
-	const arrResponse = (empty = false) =>
+	const arrResponse = (empty = false, series = false) =>
 		Response.json({
 			items: empty
 				? []
@@ -126,8 +134,9 @@ function fixture({ services = "provider" }: { services?: "provider" | "none" | "
 							id: 1,
 							instanceId: "synthetic-arr",
 							instanceName: "Synthetic",
-							service: "radarr",
-							type: "movie",
+							service: series ? "sonarr" : "radarr",
+							type: series ? "series" : "movie",
+							remoteIds: series ? { tmdbId: 42 } : undefined,
 							title: "Synthetic ARR row",
 							monitored: false,
 						},
@@ -164,6 +173,39 @@ function fixture({ services = "provider" }: { services?: "provider" | "none" | "
 }
 
 describe("Library primary-read priority with real query hooks", () => {
+	it.each(["success", "error"] as const)(
+		"admits paired Jellyfin watch and Plex progress after native %s",
+		async (result) => {
+			const f = fixture({ pairedWatchError: result === "error" });
+			f.render();
+			await waitFor(() => expect(f.requests).toContain("/api/library/provider-inventory"));
+			await act(async () => f.arr.resolve(f.arrResponse(false, true)));
+			expect(await screen.findByText("Synthetic ARR row")).toBeVisible();
+			await waitFor(() => expect(f.requests).toContain("/api/plex/watch-enrichment"));
+			expect(f.requests).not.toContain("/api/jellyfin/watch-enrichment");
+			expect(f.requests).not.toContain("/api/jellyfin/series-progress");
+			expect(f.requests).not.toContain("/api/plex/series-progress");
+
+			await act(async () =>
+				f.native.resolve(
+					result === "success"
+						? Response.json(nativeInventory)
+						: Response.json({ error: "Synthetic unavailable" }, { status: 503 }),
+				),
+			);
+			await waitFor(() => {
+				expect(f.requests).toContain("/api/jellyfin/watch-enrichment");
+				expect(f.requests).toContain("/api/plex/series-progress");
+			});
+			if (result === "error") {
+				await waitFor(() => expect(f.requests).toContain("/api/jellyfin/series-progress"));
+				expect(f.requests.indexOf("/api/jellyfin/series-progress")).toBeGreaterThan(
+					f.requests.indexOf("/api/jellyfin/watch-enrichment"),
+				);
+			}
+		},
+	);
+
 	it.each(["arr", "native"] as const)(
 		"admits insights only after both primary reads settle (%s first)",
 		async (first) => {

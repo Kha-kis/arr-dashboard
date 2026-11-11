@@ -266,7 +266,12 @@ export const LibraryClient: React.FC = () => {
 
 	// Watch enrichment — fetch watch counts, on-deck status, last watched from Plex + Jellyfin/Emby
 	const plexWatchQuery = useWatchEnrichment(data.items);
-	const jellyfinWatchQuery = useJellyfinWatchEnrichment(data.items, seriesTmdbIds);
+	// Let the initial native inventory read finish before starting its heavier peers.
+	const jellyfinWatchQuery = useJellyfinWatchEnrichment(
+		data.items,
+		seriesTmdbIds,
+		nativeInitialReadSettled,
+	);
 	const watchEnrichmentMap = useMemo(() => {
 		const plexItems = plexWatchQuery.data?.items;
 		const jfItems = jellyfinWatchQuery.data?.items;
@@ -305,11 +310,12 @@ export const LibraryClient: React.FC = () => {
 	}, [jellyfinIdentityQuery.data]);
 
 	// Series progress — fetch watched/total episode counts from Plex + Jellyfin/Emby
-	const plexProgressQuery = useSeriesProgress(seriesTmdbIds);
+	const plexProgressQuery = useSeriesProgress(seriesTmdbIds, nativeInitialReadSettled);
 	const bundledJellyfinProgress = jellyfinWatchQuery.data?.seriesProgress;
 	const jellyfinProgressQuery = useJellyfinSeriesProgress(
 		seriesTmdbIds,
-		!bundledJellyfinProgress &&
+		nativeInitialReadSettled &&
+			!bundledJellyfinProgress &&
 			(!jellyfinWatchQuery.isEnabled || jellyfinWatchQuery.isError || jellyfinWatchQuery.isSuccess),
 	);
 	const jellyfinProgress = bundledJellyfinProgress ?? jellyfinProgressQuery.data;

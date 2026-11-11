@@ -7,6 +7,7 @@ import type {
 	WatchEnrichmentResponse,
 } from "@arr/shared";
 import { act, render, screen, waitFor } from "@testing-library/react";
+import { useEffect } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { UnauthorizedError } from "../../../../lib/api-client/base";
 import { fetchLibraryItemByTmdbId } from "../../../../lib/api-client/library";
@@ -163,7 +164,16 @@ vi.mock("../library-content", () => ({
 }));
 vi.mock("../library-header", () => ({ LibraryHeader: () => null }));
 vi.mock("../library-insights-section", () => ({ LibraryInsightsSection: () => null }));
-vi.mock("../provider-native-inventory-panel", () => ({ ProviderNativeInventoryPanel: () => null }));
+vi.mock("../provider-native-inventory-panel", () => ({
+	ProviderNativeInventoryPanel: ({
+		onInitialReadSettled,
+	}: {
+		onInitialReadSettled: () => void;
+	}) => {
+		useEffect(() => onInitialReadSettled(), [onInitialReadSettled]);
+		return null;
+	},
+}));
 
 import { LibraryClient } from "../library-client";
 
@@ -569,7 +579,7 @@ describe("Library provider observation", () => {
 		expect(queryState.contentProps?.seriesProgressMap).toMatchObject({
 			202: { jellyfin: { status: "exact", watched: 1, total: 2, percent: 50 } },
 		});
-		expect(queryState.watchHook).toHaveBeenCalledWith([seriesLibraryItem], [202]);
+		expect(queryState.watchHook).toHaveBeenCalledWith([seriesLibraryItem], [202], true);
 		expect(queryState.progressHook).toHaveBeenCalledWith([202], false);
 	});
 
@@ -682,7 +692,7 @@ describe("Library provider observation", () => {
 			},
 		});
 		expect(queryState.progressHook).toHaveBeenCalledWith([202], true);
-		expect(queryState.plexProgressHook).toHaveBeenCalledWith([202]);
+		expect(queryState.plexProgressHook).toHaveBeenCalledWith([202], true);
 	});
 
 	it("does not turn overlapping exact zero counts into a zero lower bound", () => {
@@ -798,7 +808,7 @@ describe("Library provider observation", () => {
 
 		expect(screen.getByRole("alert")).toHaveTextContent("Plex evidence notice");
 		expect(screen.getByText(/Media-server data is unavailable/i)).toBeInTheDocument();
-		expect(queryState.watchHook).toHaveBeenCalledTimes(1);
-		expect(queryState.progressHook).toHaveBeenCalledTimes(1);
+		expect(queryState.watchHook).toHaveBeenLastCalledWith(expect.any(Array), [], true);
+		expect(queryState.progressHook).toHaveBeenLastCalledWith([], true);
 	});
 });

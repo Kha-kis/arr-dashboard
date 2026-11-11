@@ -112,6 +112,7 @@ export const useJellyfinSections = () => {
 export const useJellyfinWatchEnrichment = (
 	items: LibraryItem[],
 	progressTmdbIds: readonly number[] = [],
+	enabled = true,
 ) => {
 	const enrichable = useEnrichableItems(items, { movie: "movie", series: "series" });
 
@@ -120,7 +121,7 @@ export const useJellyfinWatchEnrichment = (
 		queryFn: () =>
 			fetchJellyfinWatchEnrichment(enrichable.tmdbIds, enrichable.types, progressTmdbIds),
 		staleTime: 5 * 60_000,
-		enabled: enrichable.hasItems,
+		enabled: enabled && enrichable.hasItems,
 	});
 };
 
