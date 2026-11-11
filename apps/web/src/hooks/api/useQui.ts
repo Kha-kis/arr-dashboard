@@ -9,7 +9,7 @@ import type {
 	QuiSummaryResponse,
 } from "@arr/shared";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
 	type BulkTorrentActionArgs,
 	fetchCrossSeedAvailability,
@@ -680,6 +680,7 @@ export const useQuiEventLog = (params: Omit<QuiEventLogParams, "cursor"> = {}) =
 };
 
 export type QuiEventStreamStatus = "connecting" | "open" | "offline";
+type QuiEventStreamObservation = Exclude<QuiEventStreamStatus, "connecting">;
 
 /**
  * Phase 5.2 — server-sent-events consumer for inbound qui webhook events.
@@ -707,18 +708,26 @@ export type QuiEventStreamStatus = "connecting" | "open" | "offline";
  */
 export const useQuiEventStream = ({ enabled = true }: { enabled?: boolean } = {}) => {
 	const queryClient = useQueryClient();
-	const [streamStatus, setStreamStatus] = useState<QuiEventStreamStatus>("connecting");
+	const connection = useMemo(() => (enabled ? { queryClient } : null), [enabled, queryClient]);
+	const [observation, setObservation] = useState<{
+		connection: NonNullable<typeof connection>;
+		status: QuiEventStreamObservation;
+	}>();
 
 	useEffect(() => {
-		if (!enabled) {
-			setStreamStatus("offline");
-			return;
-		}
-		setStreamStatus("connecting");
+		if (!connection) return;
+		const { queryClient } = connection;
+		const observe = (status: QuiEventStreamObservation) => {
+			setObservation((previous) =>
+				previous?.connection === connection && previous.status === status
+					? previous
+					: { connection, status },
+			);
+		};
 		// `credentials: include` is the EventSource default for same-origin;
 		// the Next.js rewrite forwards the session cookie automatically.
 		const source = new EventSource("/api/qui/events/stream", { withCredentials: true });
-		const handleOpen = () => setStreamStatus("open");
+		const handleOpen = () => observe("open");
 		const handleEvent = () => {
 			// Every qui-side event (state transitions, completions, errors)
 			// is a server-pushed signal that the open drawer's snapshot may
@@ -733,7 +742,7 @@ export const useQuiEventStream = ({ enabled = true }: { enabled?: boolean } = {}
 			queryClient.invalidateQueries({ queryKey: quiKeys.crossSeed });
 		};
 		const handleError = () => {
-			setStreamStatus("offline");
+			observe("offline");
 			// EventSource auto-retries with exponential backoff between attempts.
 			// If the connection enters CLOSED (e.g., the server returned a 401
 			// on a session-expired request, or the route is gone), there is no
@@ -753,8 +762,13 @@ export const useQuiEventStream = ({ enabled = true }: { enabled?: boolean } = {}
 			source.removeEventListener("error", handleError);
 			source.close();
 		};
-	}, [enabled, queryClient]);
+	}, [connection]);
 
+	// A newly enabled or replaced connection has no transport status yet.
+	const observedStatus = observation?.connection === connection ? observation.status : undefined;
+	const streamStatus: QuiEventStreamStatus = connection
+		? (observedStatus ?? "connecting")
+		: "offline";
 	return { streamStatus };
 };
 

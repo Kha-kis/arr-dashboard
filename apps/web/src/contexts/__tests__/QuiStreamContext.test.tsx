@@ -1,6 +1,7 @@
 import type { CurrentUser, ServiceInstanceSummary } from "@arr/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useLayoutEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QuiActivityClient } from "../../features/qui-activity/components/qui-activity-client";
 import { authKeys } from "../../lib/query-keys";
@@ -124,19 +125,27 @@ afterEach(() => {
 	expect(unexpected).toEqual([]);
 });
 
-function StatusReader({ name }: { name: string }) {
+function StatusReader({ name, onCommit }: { name: string; onCommit?: (status: string) => void }) {
 	const { isActive, streamStatus } = useQuiStreamStatus();
-	return (
-		<output data-testid={name}>{`${isActive ? "active" : "inactive"}:${streamStatus}`}</output>
-	);
+	const status = `${isActive ? "active" : "inactive"}:${streamStatus}`;
+	useLayoutEffect(() => {
+		onCommit?.(status);
+	}, [onCommit, status]);
+	return <output data-testid={name}>{status}</output>;
 }
-function Tree({ activity = true }: { activity?: boolean }) {
+function Tree({
+	activity = true,
+	onStatusCommit,
+}: {
+	activity?: boolean;
+	onStatusCommit?: (status: string) => void;
+}) {
 	return (
 		<ColorThemeProvider>
 			<QueryClientProvider client={client}>
 				<IncognitoProvider>
 					<QuiStreamProvider>
-						<StatusReader name="first" />
+						<StatusReader name="first" onCommit={onStatusCommit} />
 						<StatusReader name="second" />
 						{activity ? <QuiActivityClient /> : null}
 					</QuiStreamProvider>
@@ -158,10 +167,12 @@ function expectNoBadge() {
 
 describe("root qUI stream lifecycle and Activity status", () => {
 	it("starts a cold authenticated connection as connecting, never offline before an error", async () => {
-		// Catches a disabled/loading status leaking into a newly created source.
-		render(<Tree />);
+		const committed = vi.fn<(status: string) => void>();
+		render(<Tree onStatusCommit={committed} />);
 		await connectedSource();
-		expect(screen.getByTestId("first")).toHaveTextContent("active:connecting");
+		await waitFor(() => expect(screen.getByTestId("first")).toHaveTextContent("active:connecting"));
+		// A passive effect can correct the DOM after an incorrect status has already committed.
+		expect(committed.mock.calls).toEqual([["inactive:offline"], ["active:connecting"]]);
 		expect(screen.getByText("Connecting to live channel…")).toBeInTheDocument();
 		expect(screen.queryByText(/Live channel offline/)).not.toBeInTheDocument();
 	});
@@ -240,7 +251,8 @@ describe("root qUI stream lifecycle and Activity status", () => {
 
 	it("detaches a disabled source and starts its replacement as connecting before opening", async () => {
 		// Catches stale source callbacks and status inherited across disable/re-enable.
-		const view = render(<Tree />);
+		const committed = vi.fn<(status: string) => void>();
+		const view = render(<Tree onStatusCommit={committed} />);
 		const previous = await connectedSource();
 		act(() => previous.emit("open"));
 		services = [{ ...service, enabled: false }];
@@ -253,6 +265,7 @@ describe("root qUI stream lifecycle and Activity status", () => {
 		act(() => previous.emit("open"));
 		expect(screen.getByTestId("first")).toHaveTextContent("inactive:offline");
 		expectNoBadge();
+		committed.mockClear();
 		services = [service];
 		await act(async () => {
 			await client.refetchQueries({ queryKey: ["services"] });
@@ -260,7 +273,10 @@ describe("root qUI stream lifecycle and Activity status", () => {
 		await waitFor(() => expect(sources).toHaveLength(2));
 		const replacement = sources[1]!;
 		try {
-			expect(screen.getByTestId("first")).toHaveTextContent("active:connecting");
+			await waitFor(() =>
+				expect(screen.getByTestId("first")).toHaveTextContent("active:connecting"),
+			);
+			expect(committed.mock.calls).toEqual([["active:connecting"]]);
 			expect(screen.getByText("Connecting to live channel…")).toBeInTheDocument();
 		} finally {
 			view.unmount();
