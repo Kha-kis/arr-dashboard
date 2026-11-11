@@ -112,9 +112,9 @@ afterAll(() => {
 			JSON.stringify(receipts, null, 2),
 		);
 });
-function show(ui: ReactNode) {
+function show(ui: ReactNode, retry: number | false = false) {
 	const client = new QueryClient({
-		defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+		defaultOptions: { queries: { retry, retryDelay: 0 }, mutations: { retry: false } },
 	});
 	clients.push(client);
 	return {
@@ -190,7 +190,7 @@ describe("Hunting status recovery", () => {
 				await pending?.promise;
 				return failed ? json({ error: "Synthetic unavailable" }, 503) : json(success);
 			};
-			show(<HuntingClient />);
+			show(<HuntingClient />, 1);
 			if (failure === "background") {
 				const refresh = await screen.findByRole("button", { name: "Refresh" });
 				failed = true;

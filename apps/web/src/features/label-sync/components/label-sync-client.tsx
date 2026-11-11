@@ -22,7 +22,13 @@ import { RecoveryStatus } from "./recovery-status";
 export const LabelSyncClient = () => {
 	const [incognitoMode] = useIncognitoMode();
 	const { gradient } = useThemeGradient();
-	const { data: rules = [], isLoading, isError, refetch: refetchRules } = useLabelSyncRules();
+	const {
+		data: rules = [],
+		isLoading,
+		isError,
+		isFetching,
+		refetch: refetchRules,
+	} = useLabelSyncRules();
 	const deleteMutation = useDeleteLabelSyncRule();
 	const runMutation = useRunLabelSyncRule();
 	const [runningId, setRunningId] = useState<string | null>(null);
@@ -51,7 +57,7 @@ export const LabelSyncClient = () => {
 	};
 
 	const handleRun = async (rule: LabelSyncRule) => {
-		if (!rule.destinationMutationCapability.supported) return;
+		if (isError || runningId !== null || !rule.destinationMutationCapability.supported) return;
 		if (!rule.enabled) {
 			alert("Rule is disabled. Enable it before running.");
 			return;
@@ -86,10 +92,11 @@ export const LabelSyncClient = () => {
 				"code" in err.payload &&
 				err.payload.code === "label_sync_rule_changed"
 			) {
-				await refetchRules({ cancelRefetch: false });
+				const readback = refetchRules();
 				alert(
 					"Label Sync execution finished, but its result could not be saved because the rule changed or was deleted. Review the current rule and destination before running again.",
 				);
+				await readback;
 				return;
 			}
 			alert(
@@ -137,13 +144,28 @@ export const LabelSyncClient = () => {
 
 				{/* Rules list */}
 				<GlassmorphicCard>
+					{isError && (
+						<div
+							role="alert"
+							className="flex flex-wrap items-center justify-between gap-3 p-6 text-sm text-muted-foreground"
+						>
+							<p>
+								{rules.length > 0
+									? "Current rules could not be verified. Showing last-known rules. Retry before running a rule."
+									: "Rules are unavailable. Retry to check again."}
+							</p>
+							<Button
+								variant="secondary"
+								onClick={() => void refetchRules({ cancelRefetch: false })}
+								disabled={isFetching}
+							>
+								Retry rules
+							</Button>
+						</div>
+					)}
 					{isLoading ? (
 						<div className="p-6 text-sm text-muted-foreground">Loading rules…</div>
-					) : isError && rules.length === 0 ? (
-						<div role="alert" className="p-6 text-sm text-muted-foreground">
-							Rules are unavailable. Please try again when the connection recovers.
-						</div>
-					) : rules.length === 0 ? (
+					) : isError && rules.length === 0 ? null : rules.length === 0 ? (
 						<EmptyState onCreateClick={openCreate} />
 					) : (
 						<RuleTable
@@ -298,7 +320,8 @@ const RuleTable = ({
 									type="button"
 									onClick={() => onRun(rule)}
 									disabled={
-										runningId === rule.id ||
+										runningId !== null ||
+										recoveryUnavailable ||
 										!rule.enabled ||
 										!rule.destinationMutationCapability.supported
 									}

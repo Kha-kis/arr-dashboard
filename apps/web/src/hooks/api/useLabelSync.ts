@@ -26,6 +26,7 @@ export const useLabelSyncRules = () => {
 		queryFn: fetchLabelSyncRules,
 		staleTime: POLLING_ACTIVE,
 		refetchInterval: POLLING_ACTIVE,
+		retry: false,
 	});
 };
 

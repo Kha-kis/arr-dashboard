@@ -28,6 +28,7 @@ export function useHuntingStatus() {
 		queryKey: huntingKeys.status,
 		queryFn: fetchHuntingStatus,
 		refetchInterval: POLLING_ACTIVE,
+		retry: false,
 	});
 
 	return {

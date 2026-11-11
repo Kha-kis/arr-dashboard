@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Toaster, toast } from "../../../../components/ui/toast";
 import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
+import { labelSyncKeys } from "../../../../lib/query-keys";
 import { ColorThemeProvider } from "../../../../providers/color-theme-provider";
 import { LabelSyncClient } from "../label-sync-client";
 
@@ -112,9 +113,9 @@ afterAll(() => {
 			JSON.stringify(receipts, null, 2),
 		);
 });
-function show(ui: ReactNode) {
+function show(ui: ReactNode, retry: number | false = false) {
 	const client = new QueryClient({
-		defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+		defaultOptions: { queries: { retry, retryDelay: 0 }, mutations: { retry: false } },
 	});
 	clients.push(client);
 	return {
@@ -354,6 +355,56 @@ describe("L1 maintained Label Sync lifecycle transport", () => {
 			{ url: runUrl, method: "POST", body: {} },
 			{ url: "/api/label-sync/rules", method: "GET", body: null },
 		]);
+	});
+
+	it("supersedes stale polls, warns before readback settles, and blocks Run until rules are current", async () => {
+		rules = [structuredClone(baseRule)];
+		const rulesUrl = "/api/label-sync/rules";
+		const runUrl = rulesUrl + "/label-b/run";
+		const oldPoll = hold();
+		const failedRead = hold();
+		let reads = 0;
+		respond = async ({ method, url }) => {
+			if (method === "POST" && url === runUrl) {
+				rules = [];
+				return json({ code: "label_sync_rule_changed" }, 409);
+			}
+			if (method !== "GET" || url !== rulesUrl) throw new Error("Unexpected request");
+			reads++;
+			if (reads === 2) {
+				const previousRules = rules;
+				await oldPoll.promise;
+				return json({ rules: previousRules });
+			}
+			if (reads === 3) {
+				await failedRead.promise;
+				return json({ error: "Synthetic read unavailable" }, 503);
+			}
+			return json({ rules });
+		};
+		const { client } = show(<LabelSyncClient />, 1);
+		const run = await screen.findByRole("button", { name: "Run rule now" });
+		void client.refetchQueries({ queryKey: labelSyncKeys.rules });
+		await waitFor(() => expect(reads).toBe(2));
+		fireEvent.click(run);
+
+		await waitFor(() => expect(alerts[0]).toMatch(/execution finished/i));
+		expect(reads).toBe(3);
+		expect(run).toBeDisabled();
+		await act(async () => failedRead.release());
+
+		const retry = await screen.findByRole("button", { name: "Retry rules" });
+		expect(reads).toBe(3);
+		expect(run).toBeDisabled();
+		fireEvent.click(run);
+		expect(writes()).toHaveLength(1);
+
+		fireEvent.click(retry);
+		await screen.findByText("No label-sync rules yet");
+		await act(async () => oldPoll.release());
+		expect(screen.queryByRole("button", { name: "Run rule now" })).toBeNull();
+		expect(reads).toBe(4);
+		expect(writes()).toHaveLength(1);
 	});
 
 	it("reports refused Run without hidden retry then explicit run returns honest partial and held recovery readback", async () => {
