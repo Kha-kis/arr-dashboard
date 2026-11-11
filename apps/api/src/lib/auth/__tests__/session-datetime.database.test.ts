@@ -88,19 +88,75 @@ async function createFixture(adopt = true) {
 		db.close();
 	}
 	if (adopt) await synchronizeSqliteRuntimeSchema(`file:${path}`);
+	const statements: string[] = [];
 	const prisma = new PrismaClient({
+		log: [{ emit: "event", level: "query" }],
 		adapter: createRecoverableSqliteAdapter({ url: path, timeout: 5_000 }),
 	});
+	prisma.$on("query", (event) => statements.push(event.query));
 	const service = new SessionService(prisma, env);
 	const fixture = { directory, prisma, services: [service] };
 	fixtures.push(fixture);
 	await prisma.$connect();
 	vi.useFakeTimers({ toFake: ["Date"] });
 	vi.setSystemTime(NOW);
-	return { ...fixture, service, path };
+	return { ...fixture, service, path, statements };
 }
 
 describe("real SessionService after native SQLite date admission", () => {
+	it("loads the complete session and principal with one committed SELECT", async () => {
+		const { service, prisma, statements } = await createFixture();
+		await prisma.user.update({ where: { id: OWNER }, data: { mustChangePassword: true } });
+		const expected = await prisma.session.findUnique({
+			where: { id: hash("future-offset") },
+			include: {
+				user: {
+					select: {
+						id: true,
+						username: true,
+						mustChangePassword: true,
+						createdAt: true,
+						updatedAt: true,
+					},
+				},
+			},
+		});
+		statements.length = 0;
+		const result = await service.validateRequest(request("future-offset"));
+		await service.drainValidations();
+		expect(result?.session).toEqual(expected);
+		expect(result?.session.user).toEqual({
+			id: OWNER,
+			username: OWNER,
+			mustChangePassword: true,
+			createdAt: new Date(0),
+			updatedAt: NOW,
+		});
+		expect(result?.session.expiresAt).toEqual(FUTURE);
+		expect(result?.session.createdAt).toEqual(new Date(0));
+		expect(result?.session.lastAccessedAt).toEqual(new Date("2020-01-01T00:00:00Z"));
+		const reads = statements.filter((sql) => /^\s*SELECT\b/i.test(sql));
+		expect(reads).toHaveLength(1);
+	});
+
+	it("rereads principal changes and rejects a subsequently revoked or expired session", async () => {
+		const { service, prisma } = await createFixture();
+		expect(
+			(await service.validateRequest(request("future-numeric")))?.session.user.mustChangePassword,
+		).toBe(false);
+		await prisma.user.update({ where: { id: OWNER }, data: { mustChangePassword: true } });
+		expect(
+			(await service.validateRequest(request("future-numeric")))?.session.user.mustChangePassword,
+		).toBe(true);
+		await prisma.session.update({
+			where: { id: hash("future-numeric") },
+			data: { expiresAt: NOW },
+		});
+		expect(await service.validateRequest(request("future-numeric"))).toBeNull();
+		await prisma.session.delete({ where: { id: hash("future-offset") } });
+		expect(await service.validateRequest(request("future-offset"))).toBeNull();
+	});
+
 	it("characterizes the unsafe mixed-format precursor without disabling actual cleanup", async () => {
 		const { service, prisma } = await createFixture(false);
 		// This is deliberately NOT an admitted application database. The actual

@@ -183,41 +183,14 @@ async function boot(options: FixtureOptions = {}) {
 	}
 	const instrumentedReads = new WeakSet<object>();
 	function instrumentLookup(client: typeof prisma) {
-		const reads: { findUnique: AwaitOnly<typeof prisma.session.findUnique> } = client.session;
+		const reads: { $queryRaw: AwaitOnly<typeof prisma.$queryRaw> } = client;
 		if (instrumentedReads.has(reads)) return;
 		instrumentedReads.add(reads);
-		const lookup = client.session.findUnique.bind(client.session);
-		vi.spyOn(reads, "findUnique").mockImplementation((args) => {
-			expect(args).toEqual({
-				where: { id: hash },
-				include: {
-					user: {
-						select: {
-							id: true,
-							username: true,
-							mustChangePassword: true,
-							createdAt: true,
-							updatedAt: true,
-						},
-					},
-				},
-			});
-			return query("lookup", options.lookup, () =>
-				lookup({
-					...args,
-					include: {
-						user: {
-							select: {
-								id: true,
-								username: true,
-								mustChangePassword: true,
-								createdAt: true,
-								updatedAt: true,
-							},
-						},
-					},
-				}),
-			);
+		const lookup = client.$queryRaw.bind(client);
+		vi.spyOn(reads, "$queryRaw").mockImplementation((...args) => {
+			expect(args).toHaveLength(2);
+			expect(args[1]).toBe(hash);
+			return query("lookup", options.lookup, () => lookup(...args));
 		});
 	}
 	instrumentLookup(prisma);

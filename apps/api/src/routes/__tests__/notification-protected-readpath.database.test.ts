@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -463,9 +463,7 @@ describe("actual server notification session-to-owner read and error boundary", 
 					read(client, (reader) => {
 						if (!injected) {
 							injected = true;
-							vi.spyOn(reader.session, "findUnique").mockRejectedValueOnce(
-								new Error(privateMarker),
-							);
+							vi.spyOn(reader, "$queryRaw").mockRejectedValueOnce(new Error(privateMarker));
 						}
 						return operation(reader);
 					}),

@@ -50,6 +50,21 @@ function createPrismaStub() {
 	>();
 
 	const prisma = {
+		$queryRaw: vi.fn(async (_query: TemplateStringsArray, id: string) => {
+			const row = sessions.get(id);
+			if (!row) return [];
+			const { user, ...session } = row;
+			return [
+				{
+					...session,
+					principalId: user.id,
+					principalUsername: user.username,
+					principalMustChangePassword: user.mustChangePassword,
+					principalCreatedAt: user.createdAt,
+					principalUpdatedAt: user.updatedAt,
+				},
+			];
+		}),
 		_sessions: sessions,
 		session: {
 			create: vi.fn(async ({ data }: any) => {
@@ -203,7 +218,7 @@ describe("Route-level auth enforcement (protected scope gate)", () => {
 		// The handler below the gate must NOT have been reached.
 		expect(prisma.serviceInstance.findMany).not.toHaveBeenCalled();
 		// Validation must not have been attempted — no cookie present.
-		expect(prisma.session.findUnique).not.toHaveBeenCalled();
+		expect(prisma.$queryRaw).not.toHaveBeenCalled();
 	});
 
 	it("allows a request carrying a valid session and reaches the downstream handler", async () => {
@@ -236,7 +251,7 @@ describe("Route-level auth enforcement (protected scope gate)", () => {
 		});
 
 		expect(res.statusCode).toBe(401);
-		expect(prisma.session.findUnique).not.toHaveBeenCalled();
+		expect(prisma.$queryRaw).not.toHaveBeenCalled();
 		expect(prisma.serviceInstance.findMany).not.toHaveBeenCalled();
 	});
 
@@ -246,7 +261,7 @@ describe("Route-level auth enforcement (protected scope gate)", () => {
 
 		expect(res.statusCode).toBe(401);
 		// Signature was valid, so we DID reach the DB lookup — and then bounced.
-		expect(prisma.session.findUnique).toHaveBeenCalledTimes(1);
+		expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
 		expect(prisma.serviceInstance.findMany).not.toHaveBeenCalled();
 	});
 

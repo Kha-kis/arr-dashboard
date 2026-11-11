@@ -56,6 +56,16 @@ interface SessionRotationOptions {
 	revokeOtherSessions?: boolean;
 }
 
+// The raw join keeps the session's complete shape and only the public principal
+// fields. SQLite raw booleans may be 0/1; PostgreSQL returns true/false.
+type SessionPrincipalRow = Prisma.SessionGetPayload<Record<string, never>> & {
+	principalId: string;
+	principalUsername: string;
+	principalMustChangePassword: boolean | number;
+	principalCreatedAt: Date;
+	principalUpdatedAt: Date;
+};
+
 export class SessionService {
 	private validationAdmissionClosed = false;
 	private readonly pendingValidationWork = new Set<Promise<void>>();
@@ -290,22 +300,38 @@ export class SessionService {
 		const hashedToken = hashToken(unsigned.value);
 		// Validate committed session/user state without waiting on or borrowing
 		// an unrelated transaction held by the ordinary SQLite connection.
-		const record = await withIsolatedRuntimePrismaReadClient(this.prisma, (prisma) =>
-			prisma.session.findUnique({
-				where: { id: hashedToken },
-				include: {
-					user: {
-						select: {
-							id: true,
-							username: true,
-							mustChangePassword: true,
-							createdAt: true,
-							updatedAt: true,
-						},
-					},
+		const record = await withIsolatedRuntimePrismaReadClient(this.prisma, async (prisma) => {
+			// Prisma's relation include uses two separately guarded statements here.
+			// One bound join reads the same committed session and user atomically.
+			const [row] = await prisma.$queryRaw<SessionPrincipalRow[]>`
+				SELECT s."id", s."userId", s."expiresAt", s."createdAt",
+					s."lastAccessedAt", s."userAgent", s."ipAddress",
+					u."id" AS "principalId", u."username" AS "principalUsername",
+					u."mustChangePassword" AS "principalMustChangePassword",
+					u."createdAt" AS "principalCreatedAt", u."updatedAt" AS "principalUpdatedAt"
+				FROM "sessions" AS s INNER JOIN "User" AS u ON u."id" = s."userId"
+				WHERE s."id" = ${hashedToken}
+			`;
+			if (!row) return null;
+			const {
+				principalId,
+				principalUsername,
+				principalMustChangePassword,
+				principalCreatedAt,
+				principalUpdatedAt,
+				...session
+			} = row;
+			return {
+				...session,
+				user: {
+					id: principalId,
+					username: principalUsername,
+					mustChangePassword: Boolean(principalMustChangePassword),
+					createdAt: principalCreatedAt,
+					updatedAt: principalUpdatedAt,
 				},
-			}),
-		);
+			};
+		});
 
 		if (!record) {
 			return null;

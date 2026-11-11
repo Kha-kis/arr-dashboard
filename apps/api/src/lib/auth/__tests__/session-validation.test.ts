@@ -26,7 +26,7 @@ function createEnv() {
 
 /**
  * In-memory Prisma stub matching the surface SessionService touches.
- * Stores sessions by hashed id and supports findUnique / create / delete /
+ * Stores sessions by hashed id and supports the bound principal join / create / delete /
  * deleteMany / update / count.
  */
 function createPrismaStub() {
@@ -52,6 +52,21 @@ function createPrismaStub() {
 
 	const prisma = {
 		_sessions: sessions,
+		$queryRaw: vi.fn(async (_query: TemplateStringsArray, id: string) => {
+			const row = sessions.get(id);
+			if (!row) return [];
+			const { user, ...session } = row;
+			return [
+				{
+					...session,
+					principalId: user.id,
+					principalUsername: user.username,
+					principalMustChangePassword: user.mustChangePassword,
+					principalCreatedAt: user.createdAt,
+					principalUpdatedAt: user.updatedAt,
+				},
+			];
+		}),
 		session: {
 			create: vi.fn(async ({ data }: any) => {
 				const row = {
@@ -143,19 +158,19 @@ describe("SessionService.validateRequest", () => {
 	it("returns null when no session cookie is present", async () => {
 		const req = makeRequest(undefined, { valid: false, value: null });
 		await expect(service.validateRequest(req)).resolves.toBeNull();
-		expect(prisma.session.findUnique).not.toHaveBeenCalled();
+		expect(prisma.$queryRaw).not.toHaveBeenCalled();
 	});
 
 	it("returns null when the cookie signature is invalid (tampered)", async () => {
 		const req = makeRequest("tampered.cookie", { valid: false, value: null });
 		await expect(service.validateRequest(req)).resolves.toBeNull();
-		expect(prisma.session.findUnique).not.toHaveBeenCalled();
+		expect(prisma.$queryRaw).not.toHaveBeenCalled();
 	});
 
 	it("returns null when the session token is unknown to the database", async () => {
 		const req = makeRequest("signed-cookie", { valid: true, value: "unknown-token" });
 		await expect(service.validateRequest(req)).resolves.toBeNull();
-		expect(prisma.session.findUnique).toHaveBeenCalledTimes(1);
+		expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
 	});
 
 	it("returns null AND best-effort deletes the row when the session is expired", async () => {

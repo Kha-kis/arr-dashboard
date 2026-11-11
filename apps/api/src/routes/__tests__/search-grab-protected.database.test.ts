@@ -797,7 +797,7 @@ describe("actual server Grab session, SQL ownership and SDK acknowledgement boun
 				observeIsolatedReaders((reader) => {
 					if (injected) return;
 					injected = true;
-					vi.spyOn(reader.session, "findUnique").mockRejectedValueOnce(new Error(privateMarker));
+					vi.spyOn(reader, "$queryRaw").mockRejectedValueOnce(new Error(privateMarker));
 				});
 			} else instanceRead.mockRejectedValueOnce(new Error(privateMarker));
 			assertGenericFailure(await grab(), dependency === "session" ? 500 : 502);
