@@ -9,9 +9,11 @@ import { evaluateProviderCoverageReceipt } from "../provider-observation/coverag
 import type { AutomaticObservationRenewalMode } from "../provider-observation/observation-run-repository.js";
 import {
 	canSettleAutomaticObservationRenewalDeferred,
+	claimJellyfinObservationBatch,
 	claimObservationUnit,
 	createOrLoadObservationRun,
 	failObservationUnit,
+	failOwnedJellyfinObservationBatch,
 	failOwnedObservationUnit,
 	getAutomaticObservationRenewalDeadline,
 	hasExhaustedObservationRunRetries,
@@ -82,6 +84,8 @@ import {
 	JELLYFIN_EPISODE_PARENT_MUTATION_AUTHORITY_MAX_AGE_MS,
 	type JellyfinEpisodeFinalizationTiming,
 	type JellyfinEpisodePageRejectionReason,
+	type JellyfinEpisodePageSize,
+	type JellyfinEpisodeScope,
 	jellyfinEpisodePageSizeFromPayload,
 	readCompletedJellyfinEpisodePublication,
 	stageJellyfinEpisodePage,
@@ -174,24 +178,30 @@ type JellyfinEpisodeWorkProgress = ObservationRunProgress & {
 	parentRefreshPending?: true;
 };
 
+type EpisodeFailure = Parameters<typeof failObservationUnit>[1];
+type EpisodeFailures = readonly [EpisodeFailure, EpisodeFailure?];
+
 type EpisodeClaimState = {
 	authority?: ProviderPublicationAuthority;
 	attempt?: ProviderCacheRefreshAttempt;
 	claim?: ObservationUnitClaim;
-	failure?: Parameters<typeof failObservationUnit>[1];
+	batch?: readonly ObservationUnitClaim[];
+	failure?: EpisodeFailure;
 };
 
 type PendingEpisodeFailure = {
 	authorityFingerprint: string;
 	authorityKey: string;
 	attempt: ProviderCacheRefreshAttempt;
-	failure: Parameters<typeof failObservationUnit>[1];
+	failures: EpisodeFailures;
+	progressed: boolean;
+	batch?: readonly ObservationUnitClaim[];
 };
 
 type PendingEpisodeRelease = {
 	authorityFingerprint: string;
 	attempt: ProviderCacheRefreshAttempt;
-	claim: ObservationUnitClaim;
+	claims: readonly ObservationUnitClaim[];
 };
 
 function episodeAuthorityFingerprint(authority: ProviderPublicationAuthority): string {
@@ -419,6 +429,26 @@ export function createJellyfinEpisodeWorkItemRunner(
 	// survives a call. A replacement client uses normal startup recovery instead.
 	const pendingFailures = new WeakMap<PrismaClient, Map<string, PendingEpisodeFailure>>();
 	const pendingReleases = new WeakMap<PrismaClient, Map<string, PendingEpisodeRelease>>();
+	function queuePendingRelease(
+		context: JellyfinEpisodePublicationContext,
+		authority: ProviderPublicationAuthority,
+		attempt: ProviderCacheRefreshAttempt,
+		claims: readonly ObservationUnitClaim[],
+	): PendingEpisodeRelease {
+		const pending = {
+			authorityFingerprint: episodeAuthorityFingerprint(authority),
+			attempt: { ...attempt, attemptedAt: new Date(attempt.attemptedAt) },
+			claims: claims.map((claim) => ({ ...claim, scopePayload: null })),
+		};
+		let releases = pendingReleases.get(context.prisma);
+		if (!releases) {
+			releases = new Map();
+			pendingReleases.set(context.prisma, releases);
+		}
+		releases.set(authority.id, pending);
+		return pending;
+	}
+
 	function forgetPendingRelease(
 		context: JellyfinEpisodePublicationContext,
 		pending: PendingEpisodeRelease,
@@ -452,29 +482,32 @@ export function createJellyfinEpisodeWorkItemRunner(
 			logOutcome("superseded");
 			return { ...emptyEpisodeProgress(), superseded: true };
 		}
-		let released: boolean | "deferred";
-		try {
-			released = await releaseJoinedObservationUnitClaim(context.prisma, {
-				claim: pending.claim,
-				authority,
-				attempt: pending.attempt,
-				// Reacquire current cleanup permission; never retain the old token.
-				cleanupRunClaimToken: context.cleanupRunClaimToken,
-			});
-		} catch (error) {
-			if (!isTransientEpisodeDatabaseFailure(error)) throw error;
-			logOutcome("transient-unavailable");
-			return { ...emptyEpisodeProgress(), state: "running", retryableDependencyFailure: true };
-		}
-		if (released === "deferred") {
-			logOutcome("deferred");
-			return { ...emptyEpisodeProgress(), state: "running", retryableDependencyFailure: true };
+		let released = false;
+		for (const claim of pending.claims) {
+			try {
+				const result = await releaseJoinedObservationUnitClaim(context.prisma, {
+					claim,
+					authority,
+					attempt: pending.attempt,
+					// Reacquire current cleanup permission rather than retaining an old token.
+					cleanupRunClaimToken: context.cleanupRunClaimToken,
+				});
+				if (result === "deferred") {
+					logOutcome("deferred");
+					return { ...emptyEpisodeProgress(), state: "running", retryableDependencyFailure: true };
+				}
+				released ||= result;
+			} catch (error) {
+				if (!isTransientEpisodeDatabaseFailure(error)) throw error;
+				logOutcome("transient-unavailable");
+				return { ...emptyEpisodeProgress(), state: "running", retryableDependencyFailure: true };
+			}
 		}
 		forgetPendingRelease(context, pending);
 		logOutcome(released ? "released" : "not-released");
 		return released
 			? {
-					...(await runProgress(context.prisma, pending.claim.runId)),
+					...(await runProgress(context.prisma, pending.claims[0]!.runId)),
 					retryableDependencyFailure: true,
 					progressed: false,
 				}
@@ -486,6 +519,36 @@ export function createJellyfinEpisodeWorkItemRunner(
 					retryableDependencyFailure: true,
 				};
 	}
+	function queuePendingFailure(
+		context: JellyfinEpisodePublicationContext,
+		authority: ProviderPublicationAuthority,
+		authorityKey: string,
+		attempt: ProviderCacheRefreshAttempt,
+		[first, second]: EpisodeFailures,
+		batch?: readonly ObservationUnitClaim[],
+		progressed = false,
+	): PendingEpisodeFailure {
+		const exact = (failure: EpisodeFailure): EpisodeFailure => {
+			const { runId, unitId, claimToken } = failure.claim;
+			return { ...failure, claim: { runId, unitId, claimToken }, now: new Date(failure.now) };
+		};
+		let failures = pendingFailures.get(context.prisma);
+		if (!failures) {
+			failures = new Map();
+			pendingFailures.set(context.prisma, failures);
+		}
+		const pending: PendingEpisodeFailure = {
+			authorityFingerprint: episodeAuthorityFingerprint(authority),
+			authorityKey,
+			attempt: { ...attempt, attemptedAt: new Date(attempt.attemptedAt) },
+			failures: second ? [exact(first), exact(second)] : [exact(first)],
+			progressed,
+			batch: batch?.map((claim) => ({ ...claim, scopePayload: null })),
+		};
+		failures.set(authority.id, pending);
+		return pending;
+	}
+
 	function forgetPending(
 		context: JellyfinEpisodePublicationContext,
 		pending: PendingEpisodeFailure,
@@ -495,36 +558,52 @@ export function createJellyfinEpisodeWorkItemRunner(
 		failures.delete(context.instance.id);
 		if (failures.size === 0) pendingFailures.delete(context.prisma);
 	}
-	async function recoverPendingFailure(
+	async function settlePendingFailure(
 		context: JellyfinEpisodePublicationContext,
-	): Promise<JellyfinEpisodeWorkProgress | null> {
-		const pending = pendingFailures.get(context.prisma)?.get(context.instance.id);
-		if (!pending) return null;
+		pending: PendingEpisodeFailure,
+	): Promise<JellyfinEpisodeWorkProgress> {
 		checkEpisodeCancellation(context.signal);
 		const authority = createProviderPublicationAuthority(context.instance);
 		if (episodeAuthorityFingerprint(authority) !== pending.authorityFingerprint) {
 			forgetPending(context, pending);
 			return { ...emptyEpisodeProgress(), superseded: true };
 		}
-		const result = await retryJellyfinEpisodeFailureSettlement(
-			context,
-			async () =>
-				await failOwnedObservationUnit(context.prisma, {
-					failure: pending.failure,
-					authority,
-					authorityKey: pending.authorityKey,
-					attempt: pending.attempt,
-					now: context.now,
-					cleanupRunClaimToken: context.cleanupRunClaimToken,
-				}),
+		const [first, second] = pending.failures;
+		const owned = {
+			authority,
+			authorityKey: pending.authorityKey,
+			attempt: pending.attempt,
+			now: context.now,
+			cleanupRunClaimToken: context.cleanupRunClaimToken,
+		};
+		const result = await retryJellyfinEpisodeFailureSettlement(context, () =>
+			second
+				? failOwnedJellyfinObservationBatch(context.prisma, { ...owned, failures: [first, second] })
+				: failOwnedObservationUnit(context.prisma, { ...owned, failure: first }),
 		);
-		if (result.status === "unavailable")
-			return { ...emptyEpisodeProgress(), state: "running", retryableDependencyFailure: true };
+		if (result.status === "unavailable") {
+			const progressed = pending.progressed;
+			// Report committed work once, even if the failure write is deferred.
+			// Repeated refusals still spend the scheduler's bounded retry budget.
+			pending.progressed = false;
+			return {
+				...emptyEpisodeProgress(),
+				state: "running",
+				retryableDependencyFailure: true,
+				progressed,
+			};
+		}
 		forgetPending(context, pending);
+		if (result.status === "superseded" && pending.batch) {
+			return await settlePendingRelease(
+				context,
+				queuePendingRelease(context, authority, pending.attempt, pending.batch),
+			);
+		}
 		return result.status === "recorded"
 			? {
 					...result.progress,
-					progressed: false,
+					progressed: pending.progressed,
 					...(result.renewalDeadline ? { renewalDeadline: result.renewalDeadline } : {}),
 				}
 			: { ...emptyEpisodeProgress(), superseded: true };
@@ -1046,16 +1125,22 @@ export function createJellyfinEpisodeWorkItemRunner(
 							connectionGeneration: authority.connectionGeneration,
 							identityGeneration: authority.identityGeneration,
 							state: "failed",
-							nextAttemptAt: { gt: now },
+							nextAttemptAt: { not: null },
+							units: { none: { state: "running" } },
 						},
 					})) === 1,
 			);
 		};
-		const claim = await observeWorkStage(
-			"unit-claim",
-			async () => await claimObservationUnit(context.prisma, { runId: run.id, now }),
-		);
-		if (claim) cancellation.claim = claim;
+		const claims = await observeWorkStage("unit-claim", async () => {
+			const input = { runId: run.id, now };
+			if (activeCatalog && runOwnsAttempt && authority.service === "JELLYFIN")
+				return await claimJellyfinObservationBatch(context.prisma, input);
+			const single = await claimObservationUnit(context.prisma, input);
+			return single ? [single] : [];
+		});
+		const [claim, peer] = claims;
+		if (peer) cancellation.batch = claims;
+		else if (claim) cancellation.claim = claim;
 		checkEpisodeCancellation(context.signal);
 		if (!claim) {
 			const progress = await runProgress(context.prisma, run.id);
@@ -1396,130 +1481,272 @@ export function createJellyfinEpisodeWorkItemRunner(
 				return await failAttempt("coverage-incomplete", run.id, runOwnsAttempt);
 			}
 		}
-		const persisted = claimScope(claim.scopePayload);
-		const pageSize = jellyfinEpisodePageSizeFromPayload(claim.scopePayload);
-		const scope = persisted
-			? scopes.find(
-					(candidate) =>
-						candidate.userId === persisted.userId && candidate.libraryId === persisted.libraryId,
-				)
-			: undefined;
-		if (!scope || pageSize === null) {
-			return await failAttempt("coverage-incomplete", run.id, runOwnsAttempt);
+		type PageWork = {
+			claim: ObservationUnitClaim;
+			scope: JellyfinEpisodeScope;
+			pageSize: JellyfinEpisodePageSize;
+			requestedUncounted: boolean;
+			pageRejection?: JellyfinEpisodePageRejectionReason;
+			providerReadMs: number;
+			guardMs: number;
+			stageMs: number;
+			itemCount: number;
+			outcome: "progressed" | "rejected" | "failed";
+			stageCompletedAt: number | null;
+			guardStartedAt: number;
+		};
+		function pageWork(claim: ObservationUnitClaim): PageWork | null {
+			const persisted = claimScope(claim.scopePayload);
+			const pageSize = jellyfinEpisodePageSizeFromPayload(claim.scopePayload);
+			const scope = persisted
+				? scopes.find(
+						(candidate) =>
+							candidate.userId === persisted.userId && candidate.libraryId === persisted.libraryId,
+					)
+				: undefined;
+			if (!scope || pageSize === null) return null;
+			return {
+				claim,
+				scope,
+				pageSize,
+				requestedUncounted: false,
+				providerReadMs: 0,
+				guardMs: 0,
+				stageMs: 0,
+				itemCount: 0,
+				outcome: "failed",
+				stageCompletedAt: null,
+				guardStartedAt: performance.now(),
+			};
 		}
-		let stagingPage = false;
-		let requestedUncounted = false;
-		let pageRejection: JellyfinEpisodePageRejectionReason | undefined;
-		let settlingRejectedPage = false;
-		let providerReadMs = 0;
-		let guardMs = 0;
-		let stageMs = 0;
-		let itemCount = 0;
-		let outcome: "progressed" | "rejected" | "failed" = "failed";
-		let stageCompletedAt: number | null = null;
-		const guardStartedAt = performance.now();
-		try {
-			const page = await (async () => {
-				try {
-					return await observeWorkStage("guarded-read", async () => {
-						const collectedPage = await withGuardedProviderCollection(
-							context.prisma,
-							snapshot,
-							context.log,
-							async () => {
-								const readStartedAt = performance.now();
-								try {
-									// Read retry metadata only for the exact admitted claim. The
-									// generic claim API deliberately carries no retry policy.
-									if (
-										activeCatalog &&
-										runOwnsAttempt &&
-										claim.cursor > 0 &&
-										claim.expectedRawCount !== null &&
-										claim.cursor + pageSize < claim.expectedRawCount
-									) {
-										const unit = await context.prisma.providerObservationUnit.findFirst({
-											where: {
-												id: claim.unitId,
-												runId: claim.runId,
-												state: "running",
-												claimToken: claim.claimToken,
-												cursor: claim.cursor,
-												expectedRawCount: claim.expectedRawCount,
-												observedRawCount: claim.observedRawCount,
-												scopePayload: claim.scopePayload,
-											},
-											select: { attemptCount: true },
-										});
-										requestedUncounted = unit?.attemptCount === 0;
-									}
-									return await observeWorkStage(
-										"provider-read",
-										async () =>
-											await deps.readPage(
-												{
-													baseUrl: snapshot.baseUrl,
-													apiKey: snapshot.apiKey,
-													httpAuthHeaders: snapshot.httpAuthHeaders,
-													userId: scope.userId,
-													libraryId: scope.libraryId,
-													startIndex: claim.cursor,
-													limit: pageSize,
-													...(requestedUncounted ? { uncounted: true as const } : {}),
-												},
-												client,
-												context.signal,
-											),
-									);
-								} finally {
-									providerReadMs = performance.now() - readStartedAt;
+
+		async function collectPage(work: PageWork) {
+			const { claim, scope, pageSize } = work;
+			try {
+				const page = await observeWorkStage("guarded-read", async () => {
+					const collectedPage = await withGuardedProviderCollection(
+						context.prisma,
+						snapshot,
+						context.log,
+						async () => {
+							const readStartedAt = performance.now();
+							try {
+								// Read retry metadata only for the exact admitted claim. The
+								// generic claim API deliberately carries no retry policy.
+								if (
+									activeCatalog &&
+									runOwnsAttempt &&
+									claim.cursor > 0 &&
+									claim.expectedRawCount !== null &&
+									claim.cursor + pageSize < claim.expectedRawCount
+								) {
+									const unit = await context.prisma.providerObservationUnit.findFirst({
+										where: {
+											id: claim.unitId,
+											runId: claim.runId,
+											state: "running",
+											claimToken: claim.claimToken,
+											cursor: claim.cursor,
+											expectedRawCount: claim.expectedRawCount,
+											observedRawCount: claim.observedRawCount,
+											scopePayload: claim.scopePayload,
+										},
+										select: { attemptCount: true },
+									});
+									work.requestedUncounted = unit?.attemptCount === 0;
 								}
-							},
-							guardOptions,
-						);
-						// Completed collection admission grants no durable publication;
-						// the separately fenced page-stage below owns persistent writes.
-						return await observeWorkStage("collection-fence", async () => collectedPage);
-					});
-				} finally {
-					guardMs = performance.now() - guardStartedAt;
+								return await observeWorkStage(
+									"provider-read",
+									async () =>
+										await deps.readPage(
+											{
+												baseUrl: snapshot.baseUrl,
+												apiKey: snapshot.apiKey,
+												httpAuthHeaders: snapshot.httpAuthHeaders,
+												userId: scope.userId,
+												libraryId: scope.libraryId,
+												startIndex: claim.cursor,
+												limit: pageSize,
+												...(work.requestedUncounted ? { uncounted: true as const } : {}),
+											},
+											client,
+											context.signal,
+										),
+								);
+							} finally {
+								work.providerReadMs = performance.now() - readStartedAt;
+							}
+						},
+						guardOptions,
+					);
+					// Completed collection admission grants no durable publication;
+					// the separately fenced page-stage below owns persistent writes.
+					return await observeWorkStage("collection-fence", async () => collectedPage);
+				});
+				work.itemCount = page.items.length;
+				return page;
+			} finally {
+				work.guardMs = performance.now() - work.guardStartedAt;
+			}
+		}
+		async function stagePage(work: PageWork, page: JellyfinEpisodeCollectedPage, owned = false) {
+			const { claim, scope } = work;
+			const stageStartedAt = performance.now();
+			try {
+				const progressed = await observeWorkStage(
+					"page-stage",
+					async () =>
+						await retryJellyfinEpisodePageStaging(context, () =>
+							stageJellyfinEpisodePage(
+								context.prisma,
+								claim,
+								scope,
+								page,
+								now,
+								(reason: JellyfinEpisodePageRejectionReason) => {
+									work.pageRejection = reason;
+									if (typeof context.log.warn !== "function") return;
+									context.log.warn(
+										{ category: "episode-page-rejected", reason },
+										"Jellyfin episode page unavailable",
+									);
+								},
+								owned
+									? { authority, attempt, cleanupRunClaimToken: context.cleanupRunClaimToken }
+									: undefined,
+							),
+						),
+				);
+				work.outcome = progressed ? "progressed" : "rejected";
+				return progressed;
+			} finally {
+				work.stageCompletedAt = performance.now();
+				work.stageMs = work.stageCompletedAt - stageStartedAt;
+			}
+		}
+		function logPageTiming(work: PageWork) {
+			try {
+				if (typeof context.log.info === "function") {
+					const finishedAt = performance.now();
+					const elapsed = (duration: number) => Math.max(0, Math.round(duration));
+					context.log.info(
+						{
+							category: "jellyfin-episode-page-timing",
+							phase: work.claim.phase === "verify" ? "verify" : "collect",
+							outcome: work.outcome,
+							itemCount: work.itemCount,
+							prePageMs: elapsed(work.guardStartedAt - workItemStartedAt),
+							guardMs: elapsed(work.guardMs),
+							providerReadMs: elapsed(work.providerReadMs),
+							stageMs: elapsed(work.stageMs),
+							postStageMs:
+								work.stageCompletedAt === null ? 0 : elapsed(finishedAt - work.stageCompletedAt),
+							totalMs: elapsed(finishedAt - workItemStartedAt),
+						},
+						"Jellyfin episode page timing",
+					);
 				}
-			})();
-			itemCount = page.items.length;
+			} catch {
+				// Diagnostics must never replace a durable page result or its original failure.
+			}
+		}
+
+		const work = pageWork(claim);
+		if (peer) {
+			const peerWork = pageWork(peer);
+			const releaseBatch = async () =>
+				await settlePendingRelease(
+					context,
+					queuePendingRelease(context, authority, attempt, claims),
+				);
+			if (!work || !peerWork) return await releaseBatch();
+			const pages = [work, peerWork] as const;
+			try {
+				// Both reads must exit before either token is staged, failed, or released.
+				const reads = await Promise.allSettled(pages.map(collectPage));
+				checkEpisodeCancellation(context.signal);
+				for (const result of reads) {
+					if (result.status !== "rejected") continue;
+					if (isEpisodeCancellation(result.reason)) throw result.reason;
+					if (isTerminalIdentityAuthorityFailure(result.reason)) return await releaseBatch();
+				}
+				const failures: EpisodeFailure[] = [];
+				const uncertain: ObservationUnitClaim[] = [];
+				let progressed = false;
+				for (const [index, result] of reads.entries()) {
+					const page = pages[index]!;
+					checkEpisodeCancellation(context.signal);
+					if (result.status === "rejected") {
+						if (isTransientEpisodeDatabaseFailure(result.reason)) uncertain.push(page.claim);
+						else failures.push({ claim: page.claim, reasonCode: "provider-unavailable", now });
+						continue;
+					}
+					try {
+						if (await stagePage(page, result.value, true)) {
+							progressed = true;
+							continue;
+						}
+					} catch (error) {
+						if (isEpisodeCancellation(error)) throw error;
+						if (isTransientEpisodeDatabaseFailure(error)) uncertain.push(page.claim);
+						else failures.push({ claim: page.claim, reasonCode: "provider-unavailable", now });
+						continue;
+					}
+					if (
+						page.pageRejection === "attempt-authority-unavailable" ||
+						page.pageRejection === "run-unavailable" ||
+						page.pageRejection === "claim-mismatch" ||
+						page.pageRejection === "instance-authority-mismatch" ||
+						page.pageRejection === "catalog-authority-mismatch"
+					)
+						return await releaseBatch();
+					failures.push({
+						claim: page.claim,
+						reasonCode: "coverage-incomplete",
+						now,
+						resetProgress: !(
+							page.requestedUncounted && page.pageRejection === "uncounted-empty-before-bound"
+						),
+					});
+				}
+				checkEpisodeCancellation(context.signal);
+				const [firstFailure, secondFailure] = failures;
+				const pendingFailure = firstFailure
+					? queuePendingFailure(
+							context,
+							authority,
+							claim.authorityKey,
+							attempt,
+							[firstFailure, secondFailure],
+							claims,
+							progressed,
+						)
+					: undefined;
+				if (uncertain.length) {
+					const pendingRelease = queuePendingRelease(context, authority, attempt, uncertain);
+					const release = await settlePendingRelease(context, pendingRelease);
+					// A deterministic failure can close the shared attempt only after
+					// each uncertain write is reconciled or its exact claim released.
+					if (!pendingFailure || pendingReleases.get(context.prisma)?.has(authority.id))
+						return { ...release, progressed };
+				}
+				if (pendingFailure) return await settlePendingFailure(context, pendingFailure);
+				return { ...(await runProgress(context.prisma, run.id)), progressed };
+			} finally {
+				for (const page of pages) logPageTiming(page);
+			}
+		}
+		if (!work) return await failAttempt("coverage-incomplete", run.id, runOwnsAttempt);
+		let stagingPage = false;
+		let settlingRejectedPage = false;
+		try {
+			const page = await collectPage(work);
 			checkEpisodeCancellation(context.signal);
 			stagingPage = true;
-			const stageStartedAt = performance.now();
-			const progressed = await (async () => {
-				try {
-					return await observeWorkStage(
-						"page-stage",
-						async () =>
-							await retryJellyfinEpisodePageStaging(context, () =>
-								stageJellyfinEpisodePage(
-									context.prisma,
-									claim,
-									scope,
-									page,
-									now,
-									(reason: JellyfinEpisodePageRejectionReason) => {
-										pageRejection = reason;
-										if (typeof context.log.warn !== "function") return;
-										context.log.warn(
-											{ category: "episode-page-rejected", reason },
-											"Jellyfin episode page unavailable",
-										);
-									},
-								),
-							),
-					);
-				} finally {
-					stageCompletedAt = performance.now();
-					stageMs = stageCompletedAt - stageStartedAt;
-				}
-			})();
+			const progressed = await stagePage(work, page);
 			checkEpisodeCancellation(context.signal);
 			if (!progressed) {
-				outcome = "rejected";
+				work.outcome = "rejected";
 				settlingRejectedPage = true;
 				cancellation.failure = {
 					claim,
@@ -1528,21 +1755,26 @@ export function createJellyfinEpisodeWorkItemRunner(
 					// Only this new empty unknown-page condition requests a
 					// counted retry at the conserved cursor. Other rejection
 					// classes retain their existing reset/settlement behavior.
-					resetProgress: !(requestedUncounted && pageRejection === "uncounted-empty-before-bound"),
+					resetProgress: !(
+						work.requestedUncounted && work.pageRejection === "uncounted-empty-before-bound"
+					),
 				};
 				const failed = await settleJellyfinEpisodeUnitFailure(context, cancellation.failure);
 				cancellation.failure = undefined;
 				if (failed && runOwnsAttempt) await finishAttemptIfExhausted();
 				return { ...(await runProgress(context.prisma, run.id)), progressed: false };
 			}
-			outcome = "progressed";
-			return {
-				...(await observeWorkStage(
-					"run-progress",
-					async () => await runProgress(context.prisma, run.id),
-				)),
-				progressed,
-			};
+			const progress = await observeWorkStage(
+				"run-progress",
+				async () => await runProgress(context.prisma, run.id),
+			);
+			if (progress.state === "failed" && runOwnsAttempt) {
+				const deferred = await finishAttemptIfRetryDeferred();
+				const settled = deferred !== "recorded" && (await finishAttemptIfExhausted());
+				const renewalDeadline = settled === "recorded" ? await automaticRenewalDeadline() : null;
+				return { ...progress, progressed, ...(renewalDeadline ? { renewalDeadline } : {}) };
+			}
+			return { ...progress, progressed };
 		} catch (error) {
 			// A failed rejection settlement must not lose resetProgress or be
 			// reclassified as a provider failure by this same page-level catch.
@@ -1563,7 +1795,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 						"Jellyfin episode page unavailable",
 					);
 				}
-				if (stagingPage && outcome === "failed" && typeof context.log.info === "function") {
+				if (stagingPage && work.outcome === "failed" && typeof context.log.info === "function") {
 					context.log.info(
 						{ category: "jellyfin-episode-stage-failure", ...stageFailureDiagnostics(error) },
 						"Jellyfin episode staging failure category",
@@ -1582,19 +1814,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 				// release only this still-owned claim, preserving its durable cursor.
 				// A committed stage already cleared the token and cannot be released.
 				// The next bounded scheduler attempt revalidates the actual cursor.
-				const pending: PendingEpisodeRelease = {
-					authorityFingerprint: episodeAuthorityFingerprint(authority),
-					attempt: { ...attempt, attemptedAt: new Date(attempt.attemptedAt) },
-					// The repository releases by claim/authority fences, not scope data.
-					// Do not keep a serialized scope catalogue between invocations.
-					claim: { ...claim, scopePayload: null },
-				};
-				let releases = pendingReleases.get(context.prisma);
-				if (!releases) {
-					releases = new Map();
-					pendingReleases.set(context.prisma, releases);
-				}
-				releases.set(authority.id, pending);
+				const pending = queuePendingRelease(context, authority, attempt, [claim]);
 				return await settlePendingRelease(context, pending);
 			}
 			cancellation.failure = {
@@ -1617,29 +1837,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 				...(renewalDeadline ? { renewalDeadline } : {}),
 			};
 		} finally {
-			try {
-				if (typeof context.log.info === "function") {
-					const finishedAt = performance.now();
-					const elapsed = (duration: number) => Math.max(0, Math.round(duration));
-					context.log.info(
-						{
-							category: "jellyfin-episode-page-timing",
-							phase: claim.phase === "verify" ? "verify" : "collect",
-							outcome,
-							itemCount,
-							prePageMs: elapsed(guardStartedAt - workItemStartedAt),
-							guardMs: elapsed(guardMs),
-							providerReadMs: elapsed(providerReadMs),
-							stageMs: elapsed(stageMs),
-							postStageMs: stageCompletedAt === null ? 0 : elapsed(finishedAt - stageCompletedAt),
-							totalMs: elapsed(finishedAt - workItemStartedAt),
-						},
-						"Jellyfin episode page timing",
-					);
-				}
-			} catch {
-				// Diagnostics must never replace a durable page result or its original failure.
-			}
+			logPageTiming(work);
 		}
 	}
 	return async (
@@ -1650,9 +1848,15 @@ export function createJellyfinEpisodeWorkItemRunner(
 		const cancellation: EpisodeClaimState = {};
 		try {
 			const pendingRelease = pendingReleases.get(context.prisma)?.get(context.instance.id);
-			if (pendingRelease) return await settlePendingRelease(context, pendingRelease);
-			const recovered = await recoverPendingFailure(context);
-			if (recovered) return recovered;
+			if (pendingRelease) {
+				const release = await settlePendingRelease(context, pendingRelease);
+				const failure = pendingFailures.get(context.prisma)?.get(context.instance.id);
+				if (failure && !pendingReleases.get(context.prisma)?.has(context.instance.id))
+					return await settlePendingFailure(context, failure);
+				return release;
+			}
+			const pendingFailure = pendingFailures.get(context.prisma)?.get(context.instance.id);
+			if (pendingFailure) return await settlePendingFailure(context, pendingFailure);
 			return await runNextJellyfinEpisodeWorkItemCore(
 				context,
 				() => {
@@ -1662,7 +1866,23 @@ export function createJellyfinEpisodeWorkItemRunner(
 				cancellation,
 			);
 		} catch (error) {
-			if (isEpisodeCancellation(error)) {
+			const cancelled = isEpisodeCancellation(error);
+			if (cancellation.batch && cancellation.authority && cancellation.attempt) {
+				const { batch, authority, attempt } = cancellation;
+				const releases = pendingReleases.get(context.prisma);
+				const failures = pendingFailures.get(context.prisma);
+				if (cancelled || (!releases?.has(authority.id) && !failures?.has(authority.id))) {
+					const pendingFailure = failures?.get(authority.id);
+					if (cancelled && pendingFailure?.attempt.resultMarker === attempt.resultMarker)
+						forgetPending(context, pendingFailure);
+					const pending = queuePendingRelease(context, authority, attempt, batch);
+					// Both provider reads have joined. Release without the cancelled
+					// signal, keeping the pending obligation if the database refuses it.
+					await settlePendingRelease({ ...context, signal: undefined }, pending).catch(() => {});
+				}
+				throw error;
+			}
+			if (cancelled) {
 				if (cancellation.claim && cancellation.authority && cancellation.attempt)
 					await releaseCancelledObservationUnitClaim(context.prisma, {
 						claim: cancellation.claim,
@@ -1678,29 +1898,13 @@ export function createJellyfinEpisodeWorkItemRunner(
 				cancellation.attempt &&
 				cancellation.claim
 			) {
-				let failures = pendingFailures.get(context.prisma);
-				if (!failures) {
-					failures = new Map();
-					pendingFailures.set(context.prisma, failures);
-				}
-				failures.set(cancellation.authority.id, {
-					authorityFingerprint: episodeAuthorityFingerprint(cancellation.authority),
-					authorityKey: cancellation.claim.authorityKey,
-					attempt: {
-						...cancellation.attempt,
-						attemptedAt: new Date(cancellation.attempt.attemptedAt),
-					},
-					failure: {
-						claim: {
-							runId: cancellation.claim.runId,
-							unitId: cancellation.claim.unitId,
-							claimToken: cancellation.claim.claimToken,
-						},
-						reasonCode: cancellation.failure.reasonCode,
-						now: new Date(cancellation.failure.now),
-						resetProgress: cancellation.failure.resetProgress,
-					},
-				});
+				queuePendingFailure(
+					context,
+					cancellation.authority,
+					cancellation.claim.authorityKey,
+					cancellation.attempt,
+					[cancellation.failure],
+				);
 			}
 			if (
 				context.automaticRenewal &&

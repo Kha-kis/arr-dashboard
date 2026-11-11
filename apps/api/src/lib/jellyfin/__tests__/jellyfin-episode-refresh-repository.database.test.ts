@@ -29,15 +29,21 @@ import {
 	readNativeInventoryPage,
 } from "../../provider-observation/native-inventory.js";
 import {
+	claimJellyfinObservationBatch,
 	claimObservationUnit,
 	createOrLoadObservationRun,
+	getAutomaticObservationRenewalDeadline,
 	recoverAbandonedObservationRuns,
 } from "../../provider-observation/observation-run-repository.js";
 import {
 	buildObservationActiveSlotKey,
 	buildObservationAuthorityKey,
 } from "../../provider-observation/observation-run-types.js";
-import { reconcileInterruptedProviderCacheRefreshAttempts } from "../../services/provider-cache-status.js";
+import {
+	claimProviderCacheRefreshAttempt,
+	reconcileInterruptedProviderCacheRefreshAttempts,
+} from "../../services/provider-cache-status.js";
+import { createProviderPublicationAuthority } from "../../services/provider-identity-guard.js";
 import { readOwnedJellyfinCacheHealthSources } from "../jellyfin-cache-health.js";
 import type { JellyfinEpisodeItemsPage } from "../jellyfin-client.js";
 import { readOwnedJellyfinEpisodeDisplaySources } from "../jellyfin-display-evidence.js";
@@ -2929,6 +2935,467 @@ describe("full-watch counted checkpoints", () => {
 			lastPlayedDate: null,
 		}));
 	}
+
+	async function batchFixture() {
+		const { prisma, seed, instance } = await fixture();
+		const scopes = [
+			{ userId: "user-1", userName: "First", libraryId: "library-1" },
+			{ userId: "user-2", userName: "Second", libraryId: "library-1" },
+		];
+		const now = seed.attempt.attemptedAt;
+		const { run } = await replaceRunWithV3Scopes(prisma, scopes, {}, now);
+		await prisma.providerObservationUnit.updateMany({
+			where: { runId: run.id },
+			data: {
+				state: "pending",
+				completedAt: null,
+				expectedRawCount: null,
+			},
+		});
+		await prisma.providerObservationRun.update({
+			where: { id: run.id },
+			data: { completedUnits: 0, completedWork: 0 },
+		});
+		return { prisma, instance, run, scopes, now };
+	}
+
+	it.each([
+		"success",
+		"one failure",
+		"both fail",
+		"settlement rollback",
+		"cancel",
+		"cleanup acquired",
+	] as const)("joins a two-scope V3 batch before staging or settling: %s", async (mode) => {
+		const { prisma, instance, run, scopes, now } = await batchFixture();
+		const controller = new AbortController();
+		let releaseFirst!: () => void;
+		let releaseSecond!: () => void;
+		const first = new Promise<void>((resolve) => {
+			releaseFirst = resolve;
+		});
+		const second = new Promise<void>((resolve) => {
+			releaseSecond = resolve;
+		});
+		let firstJoined = false;
+		let readCount = 0;
+		const entered = new Set<string>();
+		const runner = createProductionJellyfinEpisodeWorkItemRunner({
+			createClient: () =>
+				({
+					getUsers: async () =>
+						scopes.map(({ userId, userName }) => ({ id: userId, name: userName })),
+					getLibraries: async () => [{ id: "library-1" }],
+				}) as never,
+			readPage: async ({ userId, startIndex }) => {
+				readCount++;
+				entered.add(userId);
+				await (userId === "user-1" ? first : second);
+				if (
+					mode === "both fail" ||
+					mode === "settlement rollback" ||
+					(mode === "one failure" && userId === "user-1")
+				)
+					throw new Error("Synthetic provider failure");
+				return { startIndex, totalRecordCount: 1, items: episodes(1) };
+			},
+		});
+		const context = {
+			prisma,
+			instance,
+			encryptor: { decrypt: () => "plaintext" },
+			log: {
+				info(record: { stage?: string; state?: string }) {
+					if (record.stage === "guarded-read" && record.state !== "entered") firstJoined = true;
+				},
+				warn() {},
+				error() {},
+			} as never,
+			now,
+		};
+		if (mode === "settlement rollback") {
+			await prisma.$executeRaw`
+					CREATE TRIGGER reject_synthetic_batch_settlement BEFORE UPDATE OF "state"
+					ON "provider_observation_units"
+					WHEN NEW."scopeKey" = 'collect:user-2:library-1' AND NEW."state" = 'failed'
+					BEGIN SELECT RAISE(ABORT, 'synthetic second failure refusal'); END
+				`;
+		}
+		const operation = runner({ ...context, signal: controller.signal });
+		const joined = Promise.allSettled([operation]);
+		try {
+			await vi.waitFor(() => expect(entered).toEqual(new Set(["user-1", "user-2"])));
+			if (mode === "cancel") controller.abort();
+			if (mode === "cleanup acquired") {
+				await prisma.libraryCleanupConfig.update({
+					where: { userId: instance.userId },
+					data: { runClaimToken: "synthetic-cleanup" },
+				});
+			}
+			releaseFirst();
+			await vi.waitFor(() => expect(firstJoined).toBe(true));
+			expect(await prisma.jellyfinEpisodeObservationStage.count({ where: { runId: run.id } })).toBe(
+				0,
+			);
+			expect(
+				await prisma.providerObservationUnit.count({
+					where: { runId: run.id, state: "running" },
+				}),
+			).toBe(2);
+		} finally {
+			releaseFirst();
+			releaseSecond();
+			await joined;
+		}
+		const countUnits = (state: string, attemptCount: number) =>
+			prisma.providerObservationUnit.count({
+				where: { runId: run.id, phase: "collect", state, attemptCount, claimToken: null },
+			});
+		const stageCount = () =>
+			prisma.jellyfinEpisodeObservationStage.count({ where: { runId: run.id } });
+		if (mode === "cancel") {
+			await expect(operation).rejects.toMatchObject({ code: "PUBLICATION_CANCELLED" });
+			expect(await countUnits("pending", 0)).toBe(2);
+			expect(await stageCount()).toBe(0);
+			return;
+		}
+		if (mode === "cleanup acquired") {
+			await expect(operation).resolves.toMatchObject({ retryableDependencyFailure: true });
+			expect(await stageCount()).toBe(0);
+			await prisma.libraryCleanupConfig.update({
+				where: { userId: instance.userId },
+				data: { runClaimToken: null },
+			});
+			await expect(runner(context)).resolves.toMatchObject({ retryableDependencyFailure: true });
+			expect(await countUnits("pending", 0)).toBe(2);
+			expect(await stageCount()).toBe(0);
+			return;
+		}
+		let settlement = operation;
+		if (mode === "settlement rollback") {
+			await expect(operation).rejects.toThrow();
+			expect(
+				await prisma.providerObservationUnit.count({
+					where: { runId: run.id, state: "running", attemptCount: 0 },
+				}),
+			).toBe(2);
+			await prisma.$executeRaw`DROP TRIGGER reject_synthetic_batch_settlement`;
+			settlement = runner(context);
+		}
+		const failedCount =
+			mode === "both fail" || mode === "settlement rollback" ? 2 : mode === "one failure" ? 1 : 0;
+		await expect(settlement).resolves.toMatchObject({
+			state: failedCount ? "failed" : "running",
+			progressed: failedCount < 2,
+		});
+		expect(await countUnits("failed", 1)).toBe(failedCount);
+		expect(await countUnits("complete", 0)).toBe(2 - failedCount);
+		expect(await stageCount()).toBe(2 - failedCount);
+		expect(readCount).toBe(2);
+		if (mode === "success") {
+			await expect(
+				runner({ ...context, now: new Date(now.getTime() + 11_000) }),
+			).resolves.toMatchObject({ state: "running", progressed: true, completedUnits: 4 });
+			expect(readCount).toBe(4);
+			await expect(
+				runner({ ...context, now: new Date(now.getTime() + 22_000) }),
+			).resolves.toMatchObject({ state: "complete", publishedItemCount: 1 });
+			const status = await prisma.cacheRefreshStatus.findUniqueOrThrow({
+				where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "jellyfin_episode" } },
+			});
+			expect(decodeJellyfinEpisodeGenerationMetadata(status.generationMetadata)).toMatchObject({
+				ok: true,
+				metadata: { publicationLevel: "authoritative", itemCount: 1 },
+			});
+		}
+		if (failedCount) {
+			await expect(
+				prisma.cacheRefreshStatus.findFirst({
+					where: { instanceId: instance.id, cacheType: "jellyfin_episode" },
+				}),
+			).resolves.toMatchObject({
+				lastAttemptResult: "error",
+				lastAttemptErrorMessage: "collection-deferred",
+			});
+			const early = new Date(now.getTime() + 29_999);
+			await expect(runner({ ...context, now: early })).resolves.toMatchObject({
+				state: "failed",
+				progressed: false,
+			});
+			expect(await countUnits("failed", 1)).toBe(failedCount);
+		}
+	});
+
+	it.each(["startup", "expired"] as const)(
+		"keeps both failed V3 scopes retryable until their own outcome is known: %s",
+		async (recovery) => {
+			const { prisma, instance, run, now } = await batchFixture();
+			const requests: string[] = [];
+			const context = {
+				prisma,
+				instance,
+				encryptor: { decrypt: () => "plaintext" },
+				log: { warn() {}, error() {} } as never,
+			};
+			const makeRunner = (recoverSecond = false) =>
+				createProductionJellyfinEpisodeWorkItemRunner({
+					createClient: () => ({}) as never,
+					readPage: async ({ userId, startIndex }) => {
+						requests.push(userId);
+						if (recoverSecond && userId === "user-2")
+							return { startIndex, totalRecordCount: 2, items: episodes(1) };
+						throw new Error("Synthetic provider unavailable");
+					},
+				});
+			const runner = makeRunner();
+			const at = (seconds: number) => new Date(now.getTime() + seconds * 1_000);
+			const ledger = () =>
+				prisma.providerObservationRun.findUniqueOrThrow({ where: { id: run.id } });
+			const outer = () =>
+				prisma.cacheRefreshStatus.findUniqueOrThrow({
+					where: {
+						instanceId_cacheType: { instanceId: instance.id, cacheType: "jellyfin_episode" },
+					},
+				});
+			await runner({ ...context, now });
+			for (const seconds of [30, 150]) {
+				requests.length = 0;
+				await runner({ ...context, now: at(seconds) });
+				expect(await ledger()).toMatchObject({ state: "failed", nextAttemptAt: at(seconds) });
+				expect(await outer()).toMatchObject({
+					lastAttemptResult: "error",
+					lastAttemptErrorMessage: "collection-deferred",
+				});
+				await runner({ ...context, now: at(seconds) });
+				expect(requests).toEqual(["user-1", "user-2"]);
+			}
+			requests.length = 0;
+			await runner({ ...context, now: at(750) });
+			expect(await ledger()).toMatchObject({ state: "failed", nextAttemptAt: at(750) });
+			const authority = createProviderPublicationAuthority(instance);
+			const acquired = await claimProviderCacheRefreshAttempt(
+				prisma,
+				"jellyfin_episode",
+				authority,
+				{
+					now: () => at(750),
+				},
+			);
+			expect(acquired.status).toBe("acquired");
+			const inherited = await claimJellyfinObservationBatch(prisma, {
+				runId: run.id,
+				now: at(750),
+			});
+			expect(inherited.map((claim) => claim.scopeKey)).toEqual(["collect:user-2:library-1"]);
+			if (recovery === "startup") {
+				await expect(
+					reconcileInterruptedProviderCacheRefreshAttempts(prisma, {
+						now: () => at(751),
+					}),
+				).resolves.toBe(1);
+				await expect(ledger()).resolves.toMatchObject({ state: "failed", nextAttemptAt: at(751) });
+			} else {
+				await prisma.providerObservationUnit.update({
+					where: { id: inherited[0]!.unitId },
+					data: { nextAttemptAt: at(751) },
+				});
+			}
+			await expect(makeRunner(true)({ ...context, now: at(751) })).resolves.toMatchObject({
+				state: "failed",
+				progressed: true,
+			});
+			expect(requests).toEqual(["user-1", "user-2"]);
+			expect(await ledger()).toMatchObject({ state: "failed", nextAttemptAt: null });
+			expect(await outer()).toMatchObject({
+				lastAttemptResult: "error",
+				lastAttemptErrorMessage: "provider-unavailable",
+			});
+			await expect(
+				prisma.providerObservationUnit.findFirst({
+					where: { runId: run.id, scopeKey: "collect:user-2:library-1" },
+				}),
+			).resolves.toMatchObject({ state: "pending", attemptCount: 3, cursor: 1, claimToken: null });
+			const renewalDeadline = () =>
+				getAutomaticObservationRenewalDeadline(prisma, {
+					runId: run.id,
+					instanceId: instance.id,
+					userId: instance.userId,
+					parentGenerationId: run.parentGenerationId!,
+					targetDigest: run.targetDigest,
+					authorityKey: run.authorityKey,
+					connectionGeneration: authority.connectionGeneration,
+					identityGeneration: authority.identityGeneration,
+					now: new Date(),
+				});
+			await expect(renewalDeadline()).resolves.toBeInstanceOf(Date);
+			await prisma.providerObservationUnit.updateMany({
+				where: { runId: run.id, scopeKey: "collect:user-2:library-1" },
+				data: { cursor: 0, observedRawCount: 0, completedPages: 0 },
+			});
+			await expect(renewalDeadline()).resolves.toBeNull();
+		},
+	);
+
+	it.each(["user-1", "user-2"])(
+		"records a known V3 failure beside an ambiguous stage for %s",
+		async (ambiguousUser) => {
+			const { prisma, instance, run, now } = await batchFixture();
+			const timedOut = new Prisma.PrismaClientKnownRequestError("Synthetic stage timeout", {
+				code: "P2028",
+				clientVersion: "test",
+			});
+			const injected = prisma.$extends({
+				query: {
+					jellyfinEpisodeObservationStage: {
+						async createMany() {
+							throw timedOut;
+						},
+					},
+				},
+			});
+			const runner = createProductionJellyfinEpisodeWorkItemRunner({
+				createClient: () => ({}) as never,
+				readPage: async ({ userId, startIndex }) => {
+					if (userId !== ambiguousUser) throw new Error("Synthetic provider unavailable");
+					return { startIndex, totalRecordCount: 1, items: episodes(1) };
+				},
+			});
+			await expect(
+				runner({
+					prisma: injected as unknown as typeof prisma,
+					instance,
+					encryptor: { decrypt: () => "plaintext" },
+					log: { warn() {}, error() {} } as never,
+					now,
+				}),
+			).resolves.toMatchObject({ state: "failed", progressed: false });
+			const units = await prisma.providerObservationUnit.findMany({
+				where: { runId: run.id, phase: "collect" },
+				select: { scopeKey: true, state: true, attemptCount: true, claimToken: true, cursor: true },
+			});
+			expect(units).toHaveLength(2);
+			for (const unit of units) {
+				const ambiguous = unit.scopeKey === `collect:${ambiguousUser}:library-1`;
+				expect(unit).toMatchObject({
+					state: ambiguous ? "pending" : "failed",
+					attemptCount: ambiguous ? 0 : 1,
+					claimToken: null,
+					cursor: 0,
+				});
+			}
+			await expect(
+				prisma.providerObservationRun.findUnique({ where: { id: run.id } }),
+			).resolves.toMatchObject({
+				state: "failed",
+				nextAttemptAt: new Date(now.getTime() + 30_000),
+			});
+		},
+	);
+
+	it("reports committed V3 peer progress once during deferred failure settlement", async () => {
+		const { prisma, instance, run, now } = await batchFixture();
+		let blocked = false;
+		let reads = 0;
+		const injected = prisma.$extends({
+			query: {
+				libraryCleanupConfig: {
+					async findUnique({ args, query }) {
+						const row = await query(args);
+						return blocked && row ? { ...row, runClaimToken: "synthetic-cleanup" } : row;
+					},
+				},
+			},
+		});
+		const runner = createProductionJellyfinEpisodeWorkItemRunner({
+			createClient: () => ({}) as never,
+			readPage: async ({ userId, startIndex }) => {
+				reads++;
+				if (userId === "user-1") throw new Error("Synthetic provider unavailable");
+				return { startIndex, totalRecordCount: 1, items: episodes(1) };
+			},
+		});
+		const context = {
+			prisma: injected as unknown as typeof prisma,
+			instance,
+			now,
+			encryptor: { decrypt: () => "plaintext" },
+			log: {
+				info(record: { stage?: string; state?: string }) {
+					if (record.stage === "page-stage" && record.state === "succeeded") blocked = true;
+				},
+			} as never,
+		};
+		await expect(runner(context)).resolves.toMatchObject({
+			retryableDependencyFailure: true,
+			progressed: true,
+		});
+		await expect(runner(context)).resolves.toMatchObject({
+			retryableDependencyFailure: true,
+			progressed: false,
+		});
+		blocked = false;
+		await expect(runner(context)).resolves.toMatchObject({ state: "failed", progressed: false });
+		expect(reads).toBe(2);
+		await expect(
+			prisma.providerObservationUnit.findFirst({
+				where: { runId: run.id, scopeKey: "collect:user-1:library-1" },
+			}),
+		).resolves.toMatchObject({ state: "failed", attemptCount: 1, claimToken: null });
+		await expect(
+			prisma.providerObservationUnit.findFirst({
+				where: { runId: run.id, scopeKey: "collect:user-2:library-1" },
+			}),
+		).resolves.toMatchObject({ state: "complete", cursor: 1, attemptCount: 0, claimToken: null });
+	});
+
+	it.each(["current", "replaced attempt", "cleanup acquired"] as const)(
+		"stages an owned V3 page only while its write authority is current: %s",
+		async (mode) => {
+			const { prisma, seed, instance } = await fixture();
+			const claim = await claimObservationUnit(prisma, {
+				runId: seed.run.id,
+				now: seed.attempt.attemptedAt,
+			});
+			if (!claim) throw new Error("Expected a collecting claim");
+			if (mode === "replaced attempt") {
+				await prisma.cacheRefreshStatus.update({
+					where: {
+						instanceId_cacheType: { instanceId: instance.id, cacheType: "jellyfin_episode" },
+					},
+					data: { lastAttemptResult: "in_progress:22222222-2222-4222-8222-222222222222" },
+				});
+			}
+			if (mode === "cleanup acquired") {
+				await prisma.libraryCleanupConfig.create({
+					data: { userId: instance.userId, runClaimToken: "synthetic-cleanup" },
+				});
+			}
+			const onRejected = vi.fn();
+			const progressed = await stageJellyfinEpisodePage(
+				prisma,
+				claim,
+				seed.scopes[0]!,
+				{ startIndex: 0, totalRecordCount: 1, items: episodes(1) },
+				seed.attempt.attemptedAt,
+				onRejected,
+				{ authority: createProviderPublicationAuthority(instance), attempt: seed.attempt },
+			);
+			const accepted = mode === "current";
+			expect(progressed).toBe(accepted);
+			if (accepted) expect(onRejected).not.toHaveBeenCalled();
+			else expect(onRejected).toHaveBeenCalledWith("attempt-authority-unavailable");
+			expect(
+				await prisma.jellyfinEpisodeObservationStage.count({ where: { runId: claim.runId } }),
+			).toBe(accepted ? 1 : 0);
+			await expect(
+				prisma.providerObservationUnit.findUnique({ where: { id: claim.unitId } }),
+			).resolves.toMatchObject({
+				cursor: accepted ? 1 : 0,
+				attemptCount: 0,
+				claimToken: accepted ? null : claim.claimToken,
+			});
+		},
+	);
 
 	it.each(["stable", "growth", "shrink", "retry", "empty-unknown", "coordinate-conflict"] as const)(
 		"counts first/last/retry reads and retains both runner passes: %s",

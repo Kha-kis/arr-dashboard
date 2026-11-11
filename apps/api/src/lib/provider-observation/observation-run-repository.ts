@@ -1,6 +1,12 @@
 import { randomBytes } from "node:crypto";
 import type { ProviderObservationReasonCode } from "@arr/shared";
 import { withIsolatedRuntimePrismaTransaction } from "../backup/restore-runtime-client.js";
+import {
+	hasPlausibleJellyfinEpisodePageCount,
+	JELLYFIN_EPISODE_MAX_SCOPE_ROWS,
+	JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS,
+	jellyfinEpisodePageSizeFromPayload,
+} from "../jellyfin/jellyfin-episode-refresh-policy.js";
 import type {
 	Prisma,
 	PrismaClient,
@@ -293,6 +299,47 @@ export async function claimObservationUnit(
 	prisma: Db,
 	input: { runId: string; now: Date; claimToken?: string },
 ): Promise<ObservationUnitClaim | null> {
+	return (await claimObservationUnits(prisma, input, false))[0] ?? null;
+}
+
+/** Claim one fresh page per independent Jellyfin user, under a single run fence. */
+export async function claimJellyfinObservationBatch(
+	prisma: Db,
+	input: { runId: string; now: Date },
+): Promise<ObservationUnitClaim[]> {
+	return await claimObservationUnits(prisma, input, true);
+}
+
+function observationScopeUser(
+	unit: Pick<ProviderObservationUnit, "scopeKey" | "scopePayload" | "phase">,
+) {
+	try {
+		const scope = JSON.parse(unit.scopePayload ?? "{}") as {
+			userId?: unknown;
+			libraryId?: unknown;
+		} | null;
+		const user = scope?.userId;
+		const library = scope?.libraryId;
+		if (
+			(unit.phase === "collect" || unit.phase === "verify") &&
+			typeof user === "string" &&
+			user &&
+			typeof library === "string" &&
+			library &&
+			unit.scopeKey === `${unit.phase}:${user}:${library}`
+		)
+			return user;
+	} catch {
+		// An unrecognized scope can still follow the existing single-claim path.
+	}
+	return null;
+}
+
+async function claimObservationUnits(
+	prisma: Db,
+	input: { runId: string; now: Date; claimToken?: string },
+	jellyfinBatch: boolean,
+): Promise<ObservationUnitClaim[]> {
 	const token = input.claimToken ?? randomBytes(32).toString("hex");
 	return await writeObservationTransaction(prisma, async (tx) => {
 		const authorityRow = await tx.providerObservationRun.findFirst({
@@ -303,7 +350,7 @@ export async function claimObservationUnit(
 			},
 			select: { id: true, instanceId: true, connectionGeneration: true, identityGeneration: true },
 		});
-		if (!authorityRow) return null;
+		if (!authorityRow) return [];
 		if (
 			!(await lockObservationAuthority(
 				tx,
@@ -313,9 +360,9 @@ export async function claimObservationUnit(
 			))
 		) {
 			await invalidateRun(tx, authorityRow.id);
-			return null;
+			return [];
 		}
-		const activeRun = await tx.providerObservationRun.findUnique({
+		let activeRun = await tx.providerObservationRun.findUnique({
 			where: { id: authorityRow.id },
 			include: { instance: true },
 		});
@@ -324,29 +371,72 @@ export async function claimObservationUnit(
 			activeRun.activeSlotKey === null ||
 			!["running", "failed"].includes(activeRun.state)
 		)
-			return null;
+			return [];
 		if (
 			activeRun.instance.connectionGeneration !== activeRun.connectionGeneration ||
 			activeRun.instance.identityGeneration !== activeRun.identityGeneration
 		) {
 			await invalidateRun(tx, activeRun.id);
-			return null;
+			return [];
 		}
-		await tx.providerObservationUnit.updateMany({
-			where: { runId: input.runId, state: "running", nextAttemptAt: { lte: input.now } },
-			data: { state: "pending", claimToken: null, nextAttemptAt: null },
-		});
+		if (
+			jellyfinBatch &&
+			(activeRun.provider !== "jellyfin_episode" ||
+				activeRun.cacheType !== "jellyfin_episode" ||
+				activeRun.instance.service !== "JELLYFIN" ||
+				!JELLYFIN_EPISODE_V3_PARENT_PATTERN.test(activeRun.parentGenerationId ?? ""))
+		)
+			return [];
+		const expiredWhere = {
+			runId: input.runId,
+			state: "running",
+			nextAttemptAt: { lte: input.now },
+		};
+		if (jellyfinBatch) {
+			const expired = await tx.providerObservationUnit.findMany({
+				where: expiredWhere,
+				select: { id: true, claimToken: true },
+			});
+			for (const unit of expired) {
+				if (!unit.claimToken) throw new Error("Expired Jellyfin claim is missing its token");
+				if (
+					!(await releaseInheritedObservationUnitClaim(tx, {
+						runId: activeRun.id,
+						unitId: unit.id,
+						claimToken: unit.claimToken,
+						instanceId: activeRun.instanceId,
+						cacheType: "jellyfin_episode",
+						authorityKey: activeRun.authorityKey,
+						connectionGeneration: activeRun.connectionGeneration,
+						identityGeneration: activeRun.identityGeneration,
+						now: input.now,
+					}))
+				)
+					throw new Error("Expired Jellyfin claim could not be released");
+			}
+			if (expired.length) {
+				activeRun = await tx.providerObservationRun.findUniqueOrThrow({
+					where: { id: input.runId },
+					include: { instance: true },
+				});
+			}
+		} else {
+			await tx.providerObservationUnit.updateMany({
+				where: expiredWhere,
+				data: { state: "pending", claimToken: null, nextAttemptAt: null },
+			});
+		}
 		const liveClaims = await tx.providerObservationUnit.count({
 			where: { runId: input.runId, state: "running" },
 		});
-		if (liveClaims > 0) return null;
+		if (liveClaims > 0) return [];
 		if (
 			activeRun.state === "failed" &&
 			(activeRun.nextAttemptAt === null || activeRun.nextAttemptAt.getTime() > input.now.getTime())
 		) {
-			return null;
+			return [];
 		}
-		const candidates = await tx.providerObservationUnit.findFirst({
+		const first = await tx.providerObservationUnit.findFirst({
 			where: {
 				runId: input.runId,
 				...(activeRun.state === "failed"
@@ -359,50 +449,85 @@ export async function claimObservationUnit(
 						}),
 				AND: [{ OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: input.now } }] }],
 			},
-			orderBy: { ordinal: "asc" },
+			orderBy:
+				jellyfinBatch && activeRun.state === "failed"
+					? [{ nextAttemptAt: { sort: "asc", nulls: "last" } }, { ordinal: "asc" }]
+					: { ordinal: "asc" },
 		});
-		if (!candidates || !isRetryableUnit(candidates, input.now)) return null;
-		if (candidates.phase === "verify") {
+		if (!first || !isRetryableUnit(first, input.now)) return [];
+		if (first.phase === "verify") {
 			const incompleteCollect = await tx.providerObservationUnit.count({
 				where: { runId: input.runId, phase: "collect", state: { not: "complete" } },
 			});
-			if (incompleteCollect > 0) return null;
+			if (incompleteCollect > 0) return [];
 		}
-		const result = await tx.providerObservationUnit.updateMany({
-			where: {
-				id: candidates.id,
-				runId: input.runId,
-				state: candidates.state,
-				claimToken: candidates.claimToken,
-				OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: input.now } }],
-			},
-			data: {
-				state: "running",
-				claimToken: token,
-				nextAttemptAt: new Date(input.now.getTime() + OBSERVATION_CLAIM_LEASE_MS),
-			},
-		});
-		if (result.count !== 1) return null;
+		const candidates = [first];
+		if (
+			jellyfinBatch &&
+			activeRun.state === "running" &&
+			first.state === "pending" &&
+			first.attemptCount === 0
+		) {
+			const user = observationScopeUser(first);
+			if (user !== null) {
+				const peer = await tx.providerObservationUnit.findFirst({
+					where: {
+						runId: input.runId,
+						phase: first.phase,
+						state: "pending",
+						attemptCount: 0,
+						NOT: { scopeKey: { startsWith: `${first.phase}:${user}:` } },
+						OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: input.now } }],
+					},
+					orderBy: { ordinal: "asc" },
+				});
+				const peerUser = peer ? observationScopeUser(peer) : null;
+				if (peer && peerUser !== null && peerUser !== user) candidates.push(peer);
+			}
+		}
+		const claimedUnits: Array<{ unit: ProviderObservationUnit; token: string }> = [];
+		for (const candidate of candidates) {
+			const claimToken = claimedUnits.length ? randomBytes(32).toString("hex") : token;
+			const result = await tx.providerObservationUnit.updateMany({
+				where: {
+					id: candidate.id,
+					runId: input.runId,
+					state: candidate.state,
+					claimToken: candidate.claimToken,
+					OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: input.now } }],
+				},
+				data: {
+					state: "running",
+					claimToken,
+					nextAttemptAt: new Date(input.now.getTime() + OBSERVATION_CLAIM_LEASE_MS),
+				},
+			});
+			if (result.count !== 1) {
+				if (!claimedUnits.length) return [];
+				throw new Error("Jellyfin observation batch claim was superseded");
+			}
+			const unit = await tx.providerObservationUnit.findUnique({ where: { id: candidate.id } });
+			if (!unit) throw new Error("Claimed observation unit is unavailable");
+			claimedUnits.push({ unit, token: claimToken });
+		}
 		await tx.providerObservationRun.updateMany({
 			where: { id: input.runId, state: "failed" },
 			data: { state: "running", nextAttemptAt: null, lastReasonCode: null },
 		});
-		const claimed = await tx.providerObservationUnit.findUnique({ where: { id: candidates.id } });
-		if (!claimed) return null;
 		const run = await tx.providerObservationRun.findUnique({ where: { id: input.runId } });
-		if (!run) return null;
-		return {
+		if (!run) throw new Error("Claimed observation run is unavailable");
+		return claimedUnits.map(({ unit, token }) => ({
 			runId: run.id,
-			unitId: claimed.id,
+			unitId: unit.id,
 			claimToken: token,
 			authorityKey: run.authorityKey,
-			scopeKey: claimed.scopeKey,
-			scopePayload: claimed.scopePayload,
-			phase: claimed.phase as "collect" | "verify",
-			cursor: claimed.cursor,
-			expectedRawCount: claimed.expectedRawCount,
-			observedRawCount: claimed.observedRawCount,
-		};
+			scopeKey: unit.scopeKey,
+			scopePayload: unit.scopePayload,
+			phase: unit.phase as "collect" | "verify",
+			cursor: unit.cursor,
+			expectedRawCount: unit.expectedRawCount,
+			observedRawCount: unit.observedRawCount,
+		}));
 	});
 }
 
@@ -589,7 +714,7 @@ function automaticRenewalDeadlineForRun(
 	for (const unit of run.units) {
 		if (unit.state === "complete") continue;
 		if (unit.state === "pending") {
-			if (unit.claimToken !== null || unit.nextAttemptAt !== null) return null;
+			if (!isUnclaimedPendingContinuation(unit, input.now)) return null;
 			continue;
 		}
 		if (
@@ -779,7 +904,7 @@ function isAutomaticRenewalDeferredProof(
 	if (failedUnits.length === 0) return false;
 	return run.units.every((unit) => {
 		if (unit.state === "complete") return true;
-		if (unit.state === "pending") return unit.claimToken === null && unit.nextAttemptAt === null;
+		if (unit.state === "pending") return isUnclaimedPendingContinuation(unit, input.now);
 		return (
 			unit.state === "failed" &&
 			unit.attemptCount > AUTOMATIC_ATTEMPT_LIMIT &&
@@ -789,6 +914,28 @@ function isAutomaticRenewalDeferredProof(
 			isRenewalCutoffDate(unit.updatedAt, input.now, input.now)
 		);
 	});
+}
+
+function isUnclaimedPendingContinuation(unit: ProviderObservationUnit, now: Date): boolean {
+	if (unit.claimToken !== null) return false;
+	if (unit.nextAttemptAt === null) return true;
+	// A scheduled continuation must have evidence of a successful non-final
+	// page. It is neither a live claim nor a failed-unit retry deadline.
+	const pageSize = jellyfinEpisodePageSizeFromPayload(unit.scopePayload);
+	return (
+		pageSize !== null &&
+		unit.completedAt === null &&
+		unit.cursor > 0 &&
+		unit.cursor === unit.observedRawCount &&
+		unit.expectedRawCount !== null &&
+		Number.isSafeInteger(unit.expectedRawCount) &&
+		unit.expectedRawCount > unit.cursor &&
+		unit.expectedRawCount <= JELLYFIN_EPISODE_MAX_SCOPE_ROWS &&
+		hasPlausibleJellyfinEpisodePageCount(unit.cursor, unit.completedPages, pageSize) &&
+		isRenewalCutoffDate(unit.updatedAt, now, now) &&
+		unit.nextAttemptAt.getTime() <=
+			unit.updatedAt.getTime() + JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS
+	);
 }
 
 function isRenewalCutoffDate(value: Date, cutoff: Date, now: Date): boolean {
@@ -927,6 +1074,7 @@ export async function releaseInheritedObservationUnitClaim(
 		authorityKey: string;
 		connectionGeneration: number;
 		identityGeneration: number;
+		now?: Date;
 	},
 ): Promise<boolean> {
 	const run = await prisma.providerObservationRun.findUnique({
@@ -937,6 +1085,7 @@ export async function releaseInheritedObservationUnitClaim(
 			provider: true,
 			cacheType: true,
 			authorityKey: true,
+			parentGenerationId: true,
 			activeSlotKey: true,
 			state: true,
 			connectionGeneration: true,
@@ -962,16 +1111,33 @@ export async function releaseInheritedObservationUnitClaim(
 	) {
 		return false;
 	}
+	const owned = {
+		id: input.unitId,
+		runId: input.runId,
+		state: "running",
+		claimToken: input.claimToken,
+	};
+	const interruptedRetry =
+		run.provider === "jellyfin_episode" &&
+		JELLYFIN_EPISODE_V3_PARENT_PATTERN.test(run.parentGenerationId ?? "") &&
+		(await prisma.providerObservationUnit.findFirst({
+			where: { ...owned, attemptCount: { gt: 0 }, lastReasonCode: { not: null } },
+			select: { id: true },
+		})) &&
+		(await readOutstandingObservationFailure(prisma, run.id));
 	const result = await prisma.providerObservationUnit.updateMany({
-		where: {
-			id: input.unitId,
-			runId: input.runId,
-			state: "running",
-			claimToken: input.claimToken,
-		},
-		data: { state: "pending", claimToken: null, nextAttemptAt: null },
+		where: owned,
+		data: interruptedRetry
+			? { state: "failed", claimToken: null, nextAttemptAt: input.now ?? new Date() }
+			: { state: "pending", claimToken: null, nextAttemptAt: null },
 	});
-	return result.count === 1;
+	if (result.count !== 1) return false;
+	if (interruptedRetry) {
+		const failure = await readOutstandingObservationFailure(prisma, run.id);
+		if (!failure) throw new Error("Interrupted Jellyfin retry lost its failure ledger");
+		await prisma.providerObservationRun.update({ where: { id: run.id }, data: failure });
+	}
+	return true;
 }
 
 export async function hasRecoverableObservationRunForCacheAttempt(
@@ -1163,17 +1329,47 @@ export async function failObservationUnit(
 	);
 }
 
+type OwnedObservationFailureContext = {
+	authority: ProviderPublicationAuthority;
+	authorityKey: string;
+	attempt: { attemptedAt: Date; resultMarker: string };
+	now?: Date;
+	cleanupRunClaimToken?: string;
+};
+
 /** Retry a joined owner's failed settlement, never another owner's active claim. */
 export async function failOwnedObservationUnit(
 	prisma: Db,
-	input: {
-		failure: ObservationUnitFailureInput;
-		authority: ProviderPublicationAuthority;
-		authorityKey: string;
-		attempt: { attemptedAt: Date; resultMarker: string };
-		now?: Date;
-		cleanupRunClaimToken?: string;
+	input: OwnedObservationFailureContext & { failure: ObservationUnitFailureInput },
+) {
+	return await settleOwnedObservationFailures(prisma, input, [input.failure]);
+}
+
+/** Settle both joined first-attempt Jellyfin failures with the shared outer marker. */
+export async function failOwnedJellyfinObservationBatch(
+	prisma: Db,
+	input: OwnedObservationFailureContext & {
+		failures: readonly [ObservationUnitFailureInput, ObservationUnitFailureInput];
 	},
+) {
+	const [first, second] = input.failures;
+	const failedAt = first.now.getTime();
+	if (
+		input.authority.service !== "JELLYFIN" ||
+		first.claim.runId !== second.claim.runId ||
+		first.claim.unitId === second.claim.unitId ||
+		first.claim.claimToken === second.claim.claimToken ||
+		!Number.isFinite(failedAt) ||
+		failedAt !== second.now.getTime()
+	)
+		return { status: "superseded" as const };
+	return await settleOwnedObservationFailures(prisma, input, input.failures);
+}
+
+async function settleOwnedObservationFailures(
+	prisma: Db,
+	input: OwnedObservationFailureContext,
+	[first, second]: readonly [ObservationUnitFailureInput, ObservationUnitFailureInput?],
 ): Promise<
 	| { status: "recorded"; progress: ObservationRunProgress; renewalDeadline: Date | null }
 	| { status: "superseded" | "unavailable" }
@@ -1197,7 +1393,7 @@ export async function failOwnedObservationUnit(
 			if (!status) return { status: "superseded" as const };
 			const run = await tx.providerObservationRun.findFirst({
 				where: {
-					id: input.failure.claim.runId,
+					id: first.claim.runId,
 					instanceId: input.authority.id,
 					provider: "jellyfin_episode",
 					cacheType: "jellyfin_episode",
@@ -1207,10 +1403,46 @@ export async function failOwnedObservationUnit(
 					connectionGeneration: input.authority.connectionGeneration,
 					identityGeneration: input.authority.identityGeneration,
 				},
-				select: { id: true },
+				select: { id: true, parentGenerationId: true },
 			});
-			if (!run || !(await failObservationUnitInTransaction(tx, input.failure)))
+			if (!run) return { status: "superseded" as const };
+			if (second) {
+				if (!JELLYFIN_EPISODE_V3_PARENT_PATTERN.test(run.parentGenerationId ?? ""))
+					return { status: "superseded" as const };
+				const owned = await tx.providerObservationUnit.findMany({
+					where: { runId: run.id, state: "running" },
+					select: {
+						id: true,
+						claimToken: true,
+						attemptCount: true,
+						scopeKey: true,
+						scopePayload: true,
+						phase: true,
+					},
+					take: 3,
+				});
+				const firstUnit = owned.find((unit) => unit.id === first.claim.unitId);
+				const secondUnit = owned.find((unit) => unit.id === second.claim.unitId);
+				if (
+					owned.length !== 2 ||
+					!firstUnit ||
+					!secondUnit ||
+					firstUnit.attemptCount !== 0 ||
+					secondUnit.attemptCount !== 0 ||
+					firstUnit.claimToken !== first.claim.claimToken ||
+					secondUnit.claimToken !== second.claim.claimToken ||
+					firstUnit.phase !== secondUnit.phase
+				)
+					return { status: "superseded" as const };
+				const firstUser = observationScopeUser(firstUnit);
+				const secondUser = observationScopeUser(secondUnit);
+				if (!firstUser || !secondUser || firstUser === secondUser)
+					return { status: "superseded" as const };
+			}
+			if (!(await failObservationUnitInTransaction(tx, first)))
 				return { status: "superseded" as const };
+			if (second && !(await failObservationUnitInTransaction(tx, second)))
+				throw new Error("Owned observation settlement lost its second claim");
 			const failed = await tx.providerObservationRun.findUniqueOrThrow({
 				where: { id: run.id },
 				select: {
@@ -1221,6 +1453,7 @@ export async function failOwnedObservationUnit(
 					parentGenerationId: true,
 					targetDigest: true,
 					nextAttemptAt: true,
+					lastReasonCode: true,
 				},
 			});
 			const retryDeferred = failed.nextAttemptAt !== null;
@@ -1272,7 +1505,7 @@ export async function failOwnedObservationUnit(
 					totalUnits: failed.totalUnits,
 					completedWork: failed.completedWork,
 					totalWork: failed.totalWork,
-					reasonCode: input.failure.reasonCode,
+					reasonCode: decodeProviderObservationReasonCode(failed.lastReasonCode),
 				},
 				renewalDeadline: renewal?.deadline ?? null,
 			};
@@ -1281,6 +1514,19 @@ export async function failOwnedObservationUnit(
 	);
 	// Guard refusal may be temporary cleanup ownership, not lost claim authority.
 	return publication.matched ? publication.value : { status: "unavailable" };
+}
+
+/** The active run's failed state describes every remaining failed unit. */
+export async function readOutstandingObservationFailure(
+	prisma: Pick<Tx, "providerObservationUnit">,
+	runId: string,
+) {
+	const first = await prisma.providerObservationUnit.findFirst({
+		where: { runId, state: "failed" },
+		orderBy: [{ nextAttemptAt: { sort: "asc", nulls: "last" } }, { ordinal: "asc" }],
+		select: { nextAttemptAt: true, lastReasonCode: true },
+	});
+	return first ? { state: "failed" as const, ...first } : null;
 }
 
 async function failObservationUnitInTransaction(
@@ -1336,13 +1582,11 @@ async function failObservationUnitInTransaction(
 			where: { runId: input.claim.runId, unitId: input.claim.unitId },
 		});
 	}
+	const failure = await readOutstandingObservationFailure(tx, input.claim.runId);
+	if (!failure) throw new Error("Observation failure ledger is missing its updated unit");
 	await tx.providerObservationRun.updateMany({
 		where: { id: input.claim.runId, state: { in: ["running", "failed"] } },
-		data: {
-			state: "failed",
-			nextAttemptAt: delay === null ? null : new Date(input.now.getTime() + delay),
-			lastReasonCode: reason,
-		},
+		data: failure,
 	});
 	return true;
 }

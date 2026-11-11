@@ -7,6 +7,7 @@ import {
 	type PrismaClient,
 	type ProviderObservationUnit,
 } from "../prisma.js";
+import { readOutstandingObservationFailure } from "../provider-observation/observation-run-repository.js";
 import type {
 	ObservationRunUnitSeed,
 	ObservationUnitClaim,
@@ -16,6 +17,10 @@ import {
 	buildObservationAuthorityKey,
 } from "../provider-observation/observation-run-types.js";
 import type { ProviderCacheRefreshAttempt } from "../services/provider-cache-status.js";
+import {
+	type ProviderPublicationAuthority,
+	withCurrentProviderPublicationAuthority,
+} from "../services/provider-identity-guard.js";
 import { withSqliteTransactionWriteIntent } from "../sqlite-transaction-intent.js";
 import { JELLYFIN_CACHE_PUBLICATION_CHUNK_SIZE } from "./jellyfin-cache-refresher.js";
 import type { JellyfinEpisodeCollectedPage } from "./jellyfin-client.js";
@@ -33,7 +38,13 @@ import {
 	JELLYFIN_EPISODE_PARENT_KEY_PREFIX,
 	jellyfinEpisodeParentGenerationKey,
 } from "./jellyfin-episode-parent-dependency.js";
-import { JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS } from "./jellyfin-episode-refresh-policy.js";
+import {
+	hasPlausibleJellyfinEpisodePageCount,
+	JELLYFIN_EPISODE_MAX_SCOPE_ROWS,
+	JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS,
+	type JellyfinEpisodePageSize,
+	jellyfinEpisodePageSizeFromPayload,
+} from "./jellyfin-episode-refresh-policy.js";
 import {
 	decodeJellyfinEpisodeGenerationMetadata,
 	decodeJellyfinLibraryGenerationMetadata,
@@ -74,39 +85,14 @@ export interface JellyfinEpisodePlanProvenance extends JellyfinEpisodeParentProv
 	catalogProvenance?: JellyfinEpisodeCatalogProvenance;
 }
 
-export type JellyfinEpisodePageSize = 1_000 | 2_000;
-export const JELLYFIN_EPISODE_NEW_RUN_PAGE_SIZE: JellyfinEpisodePageSize = 2_000;
+export {
+	hasPlausibleJellyfinEpisodePageCount,
+	JELLYFIN_EPISODE_NEW_RUN_PAGE_SIZE,
+	type JellyfinEpisodePageSize,
+	jellyfinEpisodePageSizeFromPayload,
+} from "./jellyfin-episode-refresh-policy.js";
 export const MAX_JELLYFIN_FINALIZER_STAGE_ROWS = 600_000;
 const JELLYFIN_FINALIZER_STAGE_READ_PAGE_SIZE = 1_000;
-
-/** Absence is the immutable page size of runs admitted before the larger-page rollout. */
-export function jellyfinEpisodePageSizeFromPayload(
-	payload: string | null,
-): JellyfinEpisodePageSize | null {
-	if (!payload) return null;
-	try {
-		const value: unknown = JSON.parse(payload);
-		if (typeof value !== "object" || value === null) return null;
-		const size = (value as { pageSize?: unknown }).pageSize;
-		return size === undefined || size === 1_000 ? 1_000 : size === 2_000 ? 2_000 : null;
-	} catch {
-		return null;
-	}
-}
-
-export function hasPlausibleJellyfinEpisodePageCount(
-	observedRawCount: number,
-	completedPages: number,
-	pageSize: JellyfinEpisodePageSize,
-): boolean {
-	return (
-		Number.isSafeInteger(observedRawCount) &&
-		observedRawCount >= 0 &&
-		Number.isSafeInteger(completedPages) &&
-		completedPages >= Math.max(1, Math.ceil(observedRawCount / pageSize)) &&
-		completedPages <= Math.max(1, observedRawCount)
-	);
-}
 
 export type JellyfinEpisodePageRejectionReason =
 	| "invalid-scope-or-phase"
@@ -116,6 +102,7 @@ export type JellyfinEpisodePageRejectionReason =
 	| "run-unavailable"
 	| "catalog-authority-mismatch"
 	| "instance-authority-mismatch"
+	| "attempt-authority-unavailable"
 	| "claim-mismatch"
 	| "cursor-accounting-mismatch"
 	| "source-coordinate-conflict";
@@ -651,13 +638,13 @@ function pageRejectionReason(
 				!allowTotalDrift ||
 				!Number.isSafeInteger(expected) ||
 				expected === null ||
-				expected > 100_000 ||
+				expected > JELLYFIN_EPISODE_MAX_SCOPE_ROWS ||
 				cursor <= 0 ||
 				cursor + pageSize >= expected
 			: page.countMode !== undefined ||
 				!Number.isSafeInteger(page.totalRecordCount) ||
 				page.totalRecordCount < 0 ||
-				page.totalRecordCount > 100_000 ||
+				page.totalRecordCount > JELLYFIN_EPISODE_MAX_SCOPE_ROWS ||
 				(expected !== null && !allowTotalDrift && page.totalRecordCount !== expected))
 	)
 		return "invalid-page-envelope-or-row";
@@ -729,6 +716,11 @@ export async function stageJellyfinEpisodePage(
 	page: JellyfinEpisodeCollectedPage,
 	now = new Date(),
 	onRejected?: JellyfinEpisodePageRejectionReporter,
+	ownership?: {
+		authority: ProviderPublicationAuthority;
+		attempt: ProviderCacheRefreshAttempt;
+		cleanupRunClaimToken?: string;
+	},
 ): Promise<boolean> {
 	const persistedScope = parseScope(claim.scopePayload);
 	let catalogKey: string | null = null;
@@ -763,182 +755,228 @@ export async function stageJellyfinEpisodePage(
 	);
 	if (pageReason) return reportPageRejection(onRejected, pageReason);
 	const userKeyDigest = digest(["jellyfin-user", scope.userId]);
-	return await withSqliteTransactionWriteIntent(() =>
-		withIsolatedRuntimePrismaTransaction(prisma, async (tx) => {
-			const run = await tx.providerObservationRun.findFirst({
-				where: {
-					id: claim.runId,
-					provider: "jellyfin_episode",
-					cacheType: "jellyfin_episode",
-					state: "running",
-					activeSlotKey: { not: null },
-					authorityKey: claim.authorityKey,
-				},
-				include: { instance: true },
-			});
-			if (!run) return reportPageRejection(onRejected, "run-unavailable");
-			if (catalogKey !== null && catalogKey !== run.parentGenerationId)
-				return reportPageRejection(onRejected, "catalog-authority-mismatch");
-			if (
-				!run.instance.enabled ||
-				(run.instance.service !== "JELLYFIN" && run.instance.service !== "EMBY") ||
-				run.instance.connectionGeneration !== run.connectionGeneration ||
-				run.instance.identityGeneration !== run.identityGeneration
-			)
-				return reportPageRejection(onRejected, "instance-authority-mismatch");
-			const unit = await tx.providerObservationUnit.findFirst({
-				where: {
-					id: claim.unitId,
-					runId: run.id,
-					state: "running",
-					claimToken: claim.claimToken,
-					phase: claim.phase,
-					scopeKey: claim.scopeKey,
-				},
-			});
-			if (
-				!unit ||
-				unit.cursor !== claim.cursor ||
-				unit.expectedRawCount !== claim.expectedRawCount ||
-				unit.observedRawCount !== claim.observedRawCount ||
-				(page.totalRecordCount === null && unit.attemptCount !== 0) ||
-				unit.scopePayload !== claim.scopePayload ||
-				unit.scopeDigest !== scopeDigest(claim.phase, persistedScope)
-			)
-				return reportPageRejection(onRejected, "claim-mismatch");
-			const nextCursor = page.startIndex + page.items.length;
-			const observedRawCount = unit.observedRawCount + page.items.length;
-			const expectedRawCount = page.totalRecordCount ?? unit.expectedRawCount;
-			if (
-				expectedRawCount === null ||
-				nextCursor !== observedRawCount ||
-				nextCursor > expectedRawCount
-			)
-				return reportPageRejection(onRejected, "cursor-accounting-mismatch");
-			if (page.items.length) {
-				const admittedItems = page.items.filter((item) => item.excludedReason === undefined);
-				const excludedItems = page.items.filter((item) => item.excludedReason !== undefined);
-				let newItems = admittedItems;
-				if (allowV3TotalDrift) {
-					// Offset shifts may repeat an identity; retain its first observation only
-					// when the same scan unit still proves the exact source coordinate.
-					const existing = await tx.jellyfinEpisodeObservationStage.findMany({
-						where: {
-							runId: run.id,
-							pass: claim.phase,
-							userKeyDigest,
-							jellyfinId: { in: page.items.map((item) => item.id) },
-						},
-						select: {
-							unitId: true,
-							jellyfinId: true,
-							seriesId: true,
-							seasonNumber: true,
-							episodeNumber: true,
-						},
-					});
-					const existingByItemId = new Map(existing.map((row) => [row.jellyfinId, row]));
-					for (const item of admittedItems) {
-						const prior = existingByItemId.get(item.id);
-						if (!prior) continue;
-						if (
-							prior.unitId !== unit.id ||
-							prior.seriesId !== item.seriesId ||
-							prior.seasonNumber !== item.seasonNumber ||
-							prior.episodeNumber !== item.episodeNumber
-						)
-							return reportPageRejection(onRejected, "source-coordinate-conflict");
-					}
-					newItems = admittedItems.filter((item) => !existingByItemId.has(item.id));
-					const priorExclusions = await tx.jellyfinEpisodeObservationExclusion.findMany({
-						where: {
-							runId: run.id,
-							pass: claim.phase,
-							userKeyDigest,
-							jellyfinId: { in: page.items.map((item) => item.id) },
-						},
-					});
+	const stage = async (tx: Prisma.TransactionClient) => {
+		const run = await tx.providerObservationRun.findFirst({
+			where: {
+				id: claim.runId,
+				...(ownership && {
+					instanceId: ownership.authority.id,
+					connectionGeneration: ownership.authority.connectionGeneration,
+					identityGeneration: ownership.authority.identityGeneration,
+				}),
+				provider: "jellyfin_episode",
+				cacheType: "jellyfin_episode",
+				state: "running",
+				activeSlotKey: { not: null },
+				authorityKey: claim.authorityKey,
+			},
+			include: { instance: true },
+		});
+		if (!run) return reportPageRejection(onRejected, "run-unavailable");
+		if (catalogKey !== null && catalogKey !== run.parentGenerationId)
+			return reportPageRejection(onRejected, "catalog-authority-mismatch");
+		if (
+			!run.instance.enabled ||
+			(run.instance.service !== "JELLYFIN" && run.instance.service !== "EMBY") ||
+			run.instance.connectionGeneration !== run.connectionGeneration ||
+			run.instance.identityGeneration !== run.identityGeneration
+		)
+			return reportPageRejection(onRejected, "instance-authority-mismatch");
+		const unit = await tx.providerObservationUnit.findFirst({
+			where: {
+				id: claim.unitId,
+				runId: run.id,
+				state: "running",
+				claimToken: claim.claimToken,
+				phase: claim.phase,
+				scopeKey: claim.scopeKey,
+			},
+		});
+		if (
+			!unit ||
+			unit.cursor !== claim.cursor ||
+			unit.expectedRawCount !== claim.expectedRawCount ||
+			unit.observedRawCount !== claim.observedRawCount ||
+			(page.totalRecordCount === null && unit.attemptCount !== 0) ||
+			unit.scopePayload !== claim.scopePayload ||
+			unit.scopeDigest !== scopeDigest(claim.phase, persistedScope)
+		)
+			return reportPageRejection(onRejected, "claim-mismatch");
+		const nextCursor = page.startIndex + page.items.length;
+		const observedRawCount = unit.observedRawCount + page.items.length;
+		const expectedRawCount = page.totalRecordCount ?? unit.expectedRawCount;
+		if (
+			expectedRawCount === null ||
+			nextCursor !== observedRawCount ||
+			nextCursor > expectedRawCount
+		)
+			return reportPageRejection(onRejected, "cursor-accounting-mismatch");
+		if (page.items.length) {
+			const admittedItems = page.items.filter((item) => item.excludedReason === undefined);
+			const excludedItems = page.items.filter((item) => item.excludedReason !== undefined);
+			let newItems = admittedItems;
+			if (allowV3TotalDrift) {
+				// Offset shifts may repeat an identity; retain its first observation only
+				// when the same scan unit still proves the exact source coordinate.
+				const existing = await tx.jellyfinEpisodeObservationStage.findMany({
+					where: {
+						runId: run.id,
+						pass: claim.phase,
+						userKeyDigest,
+						jellyfinId: { in: page.items.map((item) => item.id) },
+					},
+					select: {
+						unitId: true,
+						jellyfinId: true,
+						seriesId: true,
+						seasonNumber: true,
+						episodeNumber: true,
+					},
+				});
+				const existingByItemId = new Map(existing.map((row) => [row.jellyfinId, row]));
+				for (const item of admittedItems) {
+					const prior = existingByItemId.get(item.id);
+					if (!prior) continue;
 					if (
-						priorExclusions.some(
-							(row) => row.unitId !== unit.id || row.reason !== "missing-episode-metadata",
-						)
+						prior.unitId !== unit.id ||
+						prior.seriesId !== item.seriesId ||
+						prior.seasonNumber !== item.seasonNumber ||
+						prior.episodeNumber !== item.episodeNumber
 					)
 						return reportPageRejection(onRejected, "source-coordinate-conflict");
-					const priorExcludedIds = new Set(priorExclusions.map((row) => row.jellyfinId));
-					const newExclusions = excludedItems.filter((item) => !priorExcludedIds.has(item.id));
-					if (newExclusions.length)
-						await tx.jellyfinEpisodeObservationExclusion.createMany({
-							data: newExclusions.map((item) => ({
-								runId: run.id,
-								unitId: unit.id,
-								pass: claim.phase,
-								userKeyDigest,
-								jellyfinId: item.id,
-								reason: item.excludedReason,
-							})),
-						});
 				}
-				if (newItems.length) {
-					await tx.jellyfinEpisodeObservationStage.createMany({
-						data: newItems.map((item) => ({
+				newItems = admittedItems.filter((item) => !existingByItemId.has(item.id));
+				const priorExclusions = await tx.jellyfinEpisodeObservationExclusion.findMany({
+					where: {
+						runId: run.id,
+						pass: claim.phase,
+						userKeyDigest,
+						jellyfinId: { in: page.items.map((item) => item.id) },
+					},
+				});
+				if (
+					priorExclusions.some(
+						(row) => row.unitId !== unit.id || row.reason !== "missing-episode-metadata",
+					)
+				)
+					return reportPageRejection(onRejected, "source-coordinate-conflict");
+				const priorExcludedIds = new Set(priorExclusions.map((row) => row.jellyfinId));
+				const newExclusions = excludedItems.filter((item) => !priorExcludedIds.has(item.id));
+				if (newExclusions.length)
+					await tx.jellyfinEpisodeObservationExclusion.createMany({
+						data: newExclusions.map((item) => ({
 							runId: run.id,
 							unitId: unit.id,
-							userKeyDigest,
 							pass: claim.phase,
+							userKeyDigest,
 							jellyfinId: item.id,
-							seriesId: item.seriesId!,
-							seasonNumber: item.seasonNumber!,
-							episodeNumber: item.episodeNumber!,
-							title: item.name,
-							played: item.played,
-							playCount: item.playCount ?? null,
-							lastPlayedAt: item.lastPlayedDate ? new Date(item.lastPlayedDate) : null,
-							// The legacy stage schema requires this column, but usernames are
-							// display data rather than durable observation authority.
-							userName: "",
+							reason: item.excludedReason,
 						})),
 					});
-				}
 			}
-			const complete = page.totalRecordCount !== null && nextCursor === expectedRawCount;
-			const updated = await tx.providerObservationUnit.updateMany({
-				where: { id: unit.id, runId: run.id, state: "running", claimToken: claim.claimToken },
-				data: complete
-					? {
-							state: "complete",
-							claimToken: null,
-							cursor: nextCursor,
-							expectedRawCount,
-							observedRawCount,
-							completedPages: { increment: 1 },
-							nextAttemptAt: null,
-							completedAt: now,
-						}
-					: {
-							state: "pending",
-							claimToken: null,
-							cursor: nextCursor,
-							expectedRawCount,
-							observedRawCount,
-							completedPages: { increment: 1 },
-							nextAttemptAt: new Date(
-								now.getTime() + JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS,
-							),
-						},
-			});
-			if (updated.count !== 1) throw new Error("Jellyfin episode page claim was superseded");
-			if (!complete) return true;
-			const advanced = await tx.providerObservationRun.updateMany({
-				where: { id: run.id, state: "running", activeSlotKey: { not: null } },
-				data: {
+			if (newItems.length) {
+				await tx.jellyfinEpisodeObservationStage.createMany({
+					data: newItems.map((item) => ({
+						runId: run.id,
+						unitId: unit.id,
+						userKeyDigest,
+						pass: claim.phase,
+						jellyfinId: item.id,
+						seriesId: item.seriesId!,
+						seasonNumber: item.seasonNumber!,
+						episodeNumber: item.episodeNumber!,
+						title: item.name,
+						played: item.played,
+						playCount: item.playCount ?? null,
+						lastPlayedAt: item.lastPlayedDate ? new Date(item.lastPlayedDate) : null,
+						// The legacy stage schema requires this column, but usernames are
+						// display data rather than durable observation authority.
+						userName: "",
+					})),
+				});
+			}
+		}
+		const complete = page.totalRecordCount !== null && nextCursor === expectedRawCount;
+		const updated = await tx.providerObservationUnit.updateMany({
+			where: { id: unit.id, runId: run.id, state: "running", claimToken: claim.claimToken },
+			data: complete
+				? {
+						state: "complete",
+						claimToken: null,
+						lastReasonCode: null,
+						cursor: nextCursor,
+						expectedRawCount,
+						observedRawCount,
+						completedPages: { increment: 1 },
+						nextAttemptAt: null,
+						completedAt: now,
+					}
+				: {
+						state: "pending",
+						claimToken: null,
+						lastReasonCode: null,
+						cursor: nextCursor,
+						expectedRawCount,
+						observedRawCount,
+						completedPages: { increment: 1 },
+						nextAttemptAt: new Date(
+							now.getTime() + JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS,
+						),
+					},
+		});
+		if (updated.count !== 1) throw new Error("Jellyfin episode page claim was superseded");
+		const remainingFailure =
+			catalogKey && unit.attemptCount > 0
+				? await readOutstandingObservationFailure(tx, run.id)
+				: null;
+		if (!complete && !remainingFailure) return true;
+		const advanced = await tx.providerObservationRun.updateMany({
+			where: { id: run.id, state: "running", activeSlotKey: { not: null } },
+			data: {
+				...remainingFailure,
+				...(complete && {
 					completedUnits: { increment: 1 },
 					completedWork: { increment: unit.expectedTargets },
+				}),
+			},
+		});
+		if (advanced.count !== 1) throw new Error("Jellyfin episode run was superseded");
+		return true;
+	};
+	if (!ownership)
+		return await withSqliteTransactionWriteIntent(() =>
+			withIsolatedRuntimePrismaTransaction(prisma, stage),
+		);
+	const { authority, attempt, cleanupRunClaimToken } = ownership;
+	if (
+		authority.service !== "JELLYFIN" ||
+		catalogKey === null ||
+		!attempt.resultMarker.startsWith("in_progress:")
+	)
+		return reportPageRejection(onRejected, "attempt-authority-unavailable");
+	const result = await withCurrentProviderPublicationAuthority(
+		prisma,
+		authority,
+		async (tx) => {
+			const currentAttempt = await tx.cacheRefreshStatus.findFirst({
+				where: {
+					instanceId: authority.id,
+					cacheType: "jellyfin_episode",
+					connectionGeneration: authority.connectionGeneration,
+					identityGeneration: authority.identityGeneration,
+					lastAttemptAt: attempt.attemptedAt,
+					lastAttemptResult: attempt.resultMarker,
 				},
+				select: { id: true },
 			});
-			if (advanced.count !== 1) throw new Error("Jellyfin episode run was superseded");
-			return true;
-		}),
+			if (!currentAttempt) return reportPageRejection(onRejected, "attempt-authority-unavailable");
+			return await stage(tx);
+		},
+		{ cleanupRunClaimToken },
 	);
+	return result.matched
+		? result.value
+		: reportPageRejection(onRejected, "attempt-authority-unavailable");
 }
 
 /**

@@ -13,9 +13,9 @@ import {
 } from "../provider-observation/observation-run-repository.js";
 import {
 	hasAuthoritativeProviderCacheGeneration,
-	sameProviderPublicationAuthority,
 	type ProviderIdentityGuardOptions,
 	type ProviderPublicationAuthority,
+	sameProviderPublicationAuthority,
 	withCurrentProviderPublicationAuthority,
 } from "./provider-identity-guard.js";
 
@@ -588,6 +588,7 @@ export async function reconcileInterruptedProviderCacheRefreshAttempts(
 							authorityKey: recoverableRun.authorityKey,
 							connectionGeneration: recoverableRun.connectionGeneration,
 							identityGeneration: recoverableRun.identityGeneration,
+							now: recoveryAt,
 						}))
 					) {
 						throw new Error("Provider observation claim CAS lost");
