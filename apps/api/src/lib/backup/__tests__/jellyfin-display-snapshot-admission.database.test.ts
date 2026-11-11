@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { projectJellyfinSeriesProgress } from "../../../routes/jellyfin/series-progress-routes.js";
 import {
 	closeScopedWriteFixtures,
 	createScopedWriteFixture,
@@ -39,7 +40,7 @@ function signal() {
 	return { promise, resolve };
 }
 
-async function seed(f: ScopedWriteFixture) {
+async function seed(f: ScopedWriteFixture, mixedScope = false) {
 	const observedAt = new Date("2026-09-02T12:00:00.000Z");
 	const rows: (JellyfinLibraryRow & { mediaType: "series" })[] = [
 		{
@@ -63,6 +64,14 @@ async function seed(f: ScopedWriteFixture) {
 			identityGeneration: 1,
 		},
 	];
+	if (mixedScope) {
+		rows.push({
+			...rows[0]!,
+			id: "synthetic-display-row-b",
+			tmdbId: 43,
+			jellyfinId: "synthetic-series-b",
+		});
+	}
 	const receipt = (provider: "jellyfin" | "jellyfin_episode", count: number) => ({
 		version: 1 as const,
 		provider,
@@ -91,11 +100,11 @@ async function seed(f: ScopedWriteFixture) {
 		publicationLevel: "authoritative",
 		completeness: "complete",
 		canonicalizationVersion: 1,
-		itemCount: 1,
+		itemCount: rows.length,
 		connectionGeneration: 1,
 		identityGeneration: 1,
 		contentFingerprint: fingerprintJellyfinLibraryRows(rows),
-		coverageReceipt: receipt("jellyfin", 1),
+		coverageReceipt: receipt("jellyfin", rows.length),
 	};
 	await f.plain.jellyfinCache.createMany({ data: rows });
 	const common = {
@@ -112,20 +121,44 @@ async function seed(f: ScopedWriteFixture) {
 			...common,
 			cacheType: "jellyfin",
 			generationId: "synthetic-parent",
-			itemCount: 1,
+			itemCount: rows.length,
 			generationMetadata: encodeJellyfinLibraryGenerationMetadata(metadata),
 		},
 	});
+
+	const episodeRows = (
+		mixedScope
+			? ([
+					[42, 1, true],
+					[42, 2, false],
+					[43, 1, true],
+				] as const)
+			: []
+	).map(([showTmdbId, episodeNumber, watched]) => ({
+		instanceId: common.instanceId,
+		generationId: "synthetic-episodes",
+		showTmdbId,
+		seasonNumber: 1,
+		episodeNumber,
+		jellyfinId: `synthetic-${showTmdbId}-${episodeNumber}`,
+		title: "Synthetic episode",
+		watched,
+		watchedByUsers: watched ? '["synthetic-viewer"]' : "[]",
+		lastWatchedAt: watched ? observedAt : null,
+		connectionGeneration: 1,
+		identityGeneration: 1,
+	}));
+	const episodeFingerprint = fingerprintJellyfinEpisodeRows(episodeRows);
 	const episodeMetadata = encodeJellyfinEpisodeGenerationMetadata({
 		version: 4,
 		storage: "generation-scoped",
-		sourceVersion: 2,
+		sourceVersion: mixedScope ? 3 : 2,
 		provider: "jellyfin",
 		cacheType: "jellyfin_episode",
 		publicationLevel: "authoritative",
 		completeness: "complete",
 		canonicalizationVersion: 1,
-		itemCount: 0,
+		itemCount: episodeRows.length,
 		connectionGeneration: 1,
 		identityGeneration: 1,
 		parentLibraryGenerationId: "synthetic-parent",
@@ -135,15 +168,15 @@ async function seed(f: ScopedWriteFixture) {
 			metadata,
 			rows,
 		)!,
-		contentFingerprint: fingerprintJellyfinEpisodeRows([]),
-		coverageReceipt: receipt("jellyfin_episode", 0),
+		contentFingerprint: episodeFingerprint,
+		coverageReceipt: receipt("jellyfin_episode", episodeRows.length),
 	});
 	await f.plain.cacheRefreshStatus.create({
 		data: {
 			...common,
 			cacheType: "jellyfin_episode",
 			generationId: "synthetic-episodes",
-			itemCount: 0,
+			itemCount: episodeRows.length,
 			generationMetadata: episodeMetadata,
 		},
 	});
@@ -171,11 +204,36 @@ async function seed(f: ScopedWriteFixture) {
 			token: "synthetic",
 			leaseExpiresAt: observedAt,
 			state: "published",
-			expectedRowCount: 0,
-			contentFingerprint: fingerprintJellyfinEpisodeRows([]),
+			expectedRowCount: episodeRows.length,
+			contentFingerprint: episodeFingerprint,
 			observedAt,
 		},
 	});
+	if (mixedScope) {
+		await f.plain.jellyfinNativeWatchPublication.create({
+			data: {
+				instanceId: common.instanceId,
+				activeRunId: "synthetic-episodes",
+				activeCacheGenerationId: "synthetic-episodes",
+				activeObservedAt: observedAt,
+				activeExpectedScopeCount: 1,
+				connectionGeneration: 1,
+				identityGeneration: 1,
+			},
+		});
+		await f.plain.jellyfinEpisodeGenerationRow.createMany({ data: episodeRows });
+		await f.plain.jellyfinEpisodeGenerationShowReceipt.create({
+			data: {
+				instanceId: common.instanceId,
+				generationId: "synthetic-episodes",
+				showTmdbId: 42,
+				rowCount: 2,
+				contentFingerprint: fingerprintJellyfinEpisodeRows(
+					episodeRows.filter((row) => row.showTmdbId === 42),
+				),
+			},
+		});
+	}
 	return observedAt;
 }
 
@@ -223,6 +281,102 @@ describe("Jellyfin display snapshot admission", { timeout: 20_000 }, () => {
 		expect(paired).toEqual(standalone);
 		expect(paired.library.sources[0]?.rows).toHaveLength(1);
 		expect(paired.episodes.providerStatus?.availability).toBe("partial");
+		expect(f.losses).toEqual([]);
+	});
+
+	it("preserves exact progress for a receipted show beside an unrelated missing receipt", async () => {
+		const f = await createScopedWriteFixture();
+		const observedAt = await seed(f, true);
+		const instances = [
+			{ id: "synthetic-jellyfin", label: "Synthetic", service: "JELLYFIN" as const },
+		];
+		const current = new Date(observedAt.getTime() + 60_000);
+		const stale = new Date(observedAt.getTime() + 25 * 60 * 60_000);
+		const exact = { status: "exact", total: 2, watched: 1, percent: 50, watchedSemantics: "exact" };
+		const lowerBound = {
+			status: "partial",
+			total: null,
+			watched: 1,
+			percent: null,
+			watchedSemantics: "lower-bound",
+		};
+		const unknown = {
+			status: "unknown",
+			total: null,
+			watched: null,
+			percent: null,
+			watchedSemantics: "unknown",
+		};
+
+		await f.runtime.runOperation(() =>
+			withIsolatedRuntimePrismaBulkReadClient(
+				f.client.prisma,
+				async (prisma) => {
+					const input = {
+						prisma,
+						userId: "synthetic-user",
+						instances,
+						now: current,
+						includeSeriesProgressProof: true,
+					};
+					const single = await readOwnedJellyfinEpisodeDisplaySources({
+						...input,
+						showTmdbIds: [42],
+					});
+					expect(projectJellyfinSeriesProgress(instances, single, [42]).progress).toEqual({
+						42: exact,
+					});
+					expect(single.providerStatus).toMatchObject({ availability: "current" });
+
+					const showTmdbIds = [42, 43];
+					const mixedInput = { ...input, showTmdbIds };
+					const standalone = await readOwnedJellyfinEpisodeDisplaySources(mixedInput);
+					const bundled = await readOwnedJellyfinLibraryAndEpisodeDisplaySources(mixedInput);
+					expect(bundled.library.providerStatus).toMatchObject({ availability: "current" });
+					for (const evidence of [standalone, bundled.episodes]) {
+						expect(
+							evidence.sources[0]?.rows.map(({ showTmdbId, episodeNumber, watched }) => ({
+								showTmdbId,
+								episodeNumber,
+								watched,
+							})),
+						).toEqual([{ showTmdbId: 42, episodeNumber: 1, watched: true }]);
+						expect(evidence.providerStatus).toMatchObject({
+							availability: "partial",
+							sources: [
+								{
+									status: {
+										availability: "partial",
+										evidence: "positive-only",
+										reasonCodes: ["coverage-incomplete"],
+									},
+								},
+							],
+						});
+						const progress = projectJellyfinSeriesProgress(instances, evidence, showTmdbIds);
+						expect(progress.providerStatus).toEqual(evidence.providerStatus);
+						expect(progress.progress).toEqual({ 42: exact, 43: unknown });
+					}
+
+					for (const now of [current, stale]) {
+						const scoped = await readOwnedGenerationScopedEpisodeDisplay({
+							...mixedInput,
+							now,
+							instanceId: instances[0]!.id,
+						});
+						expect(scoped).toMatchObject({ authority: null, mutationAvailable: false });
+					}
+					const staleEvidence = await readOwnedJellyfinEpisodeDisplaySources({
+						...mixedInput,
+						now: stale,
+					});
+					expect(
+						projectJellyfinSeriesProgress(instances, staleEvidence, showTmdbIds).progress,
+					).toEqual({ 42: lowerBound, 43: unknown });
+				},
+				{ lease: "phase" },
+			),
+		);
 		expect(f.losses).toEqual([]);
 	});
 

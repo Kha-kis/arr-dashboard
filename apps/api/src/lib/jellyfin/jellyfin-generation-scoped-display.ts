@@ -28,11 +28,21 @@ const MAX_SCOPED_SHOWS = 200;
 const MAX_SCOPED_EPISODE_ROWS = 100_000;
 const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
 
+// The map keys prove receipt coverage. Values carry only coordinates omitted
+// from the existing positive-only rows, never episode metadata.
+export const jellyfinSeriesProgressProof = Symbol("jellyfin-series-progress-proof");
+type EpisodeCoordinate = Pick<JellyfinEpisodeRow, "seasonNumber" | "episodeNumber" | "watched">;
+export type JellyfinSeriesProgressProof = {
+	[jellyfinSeriesProgressProof]?: ReadonlyMap<number, readonly EpisodeCoordinate[]>;
+};
+type ScopedEpisodeDisplay = JellyfinEpisodeObservation & JellyfinSeriesProgressProof;
+
 type Input = {
 	prisma: PrismaClient;
 	userId: string;
 	instanceId: string;
 	showTmdbIds?: readonly number[];
+	includeSeriesProgressProof?: boolean;
 	now?: Date;
 	maxAgeMs?: number;
 };
@@ -67,7 +77,7 @@ function attemptFromStatus(status: {
 /** Null means this instance does not have a V4 publication; unavailable is explicit otherwise. */
 export async function readOwnedGenerationScopedEpisodeDisplay(
 	input: Input,
-): Promise<JellyfinEpisodeObservation | null> {
+): Promise<ScopedEpisodeDisplay | null> {
 	return (await readGenerationScopedDisplay(input)).episodes;
 }
 
@@ -84,7 +94,7 @@ async function readGenerationScopedDisplay(
 ): Promise<{
 	// Undefined means the scoped episode path did not read a parent.
 	library: JellyfinLibraryObservation | null | undefined;
-	episodes: JellyfinEpisodeObservation | null;
+	episodes: ScopedEpisodeDisplay | null;
 }> {
 	const now = input.now ?? new Date();
 	const maxAgeMs = input.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
@@ -210,6 +220,7 @@ async function readGenerationScopedDisplay(
 		// Validate and discard each requested scope here to retain the existing
 		// accepted-row cap plus one fetched scope, rather than retaining all scopes.
 		const rows: JellyfinEpisodeRow[] = [];
+		const receiptedShows: number[] = [];
 		let incompleteRequestedScope = false;
 		for (const showTmdbId of requested) {
 			if (originalCatalogIds && !originalCatalogIds.has(showTmdbId)) {
@@ -244,6 +255,8 @@ async function readGenerationScopedDisplay(
 				showRows.length + rows.length > MAX_SCOPED_EPISODE_ROWS ||
 				showRows.some(
 					(row) =>
+						row.instanceId !== instance.id ||
+						row.showTmdbId !== showTmdbId ||
 						row.connectionGeneration !== instance.connectionGeneration ||
 						row.identityGeneration !== instance.identityGeneration ||
 						!row.jellyfinId.trim(),
@@ -254,6 +267,7 @@ async function readGenerationScopedDisplay(
 				continue;
 			}
 			rows.push(...showRows);
+			if (input.includeSeriesProgressProof) receiptedShows.push(showTmdbId);
 		}
 		const parentSnapshot = await materializeOwnedJellyfinLibraryDisplayInTransaction(
 			tx as unknown as TransactionReader,
@@ -269,6 +283,7 @@ async function readGenerationScopedDisplay(
 			parentSnapshot,
 			originalCatalogIds,
 			rows,
+			receiptedShows,
 			incompleteRequestedScope,
 		};
 	}
@@ -284,6 +299,7 @@ async function readGenerationScopedDisplay(
 		parentSnapshot,
 		originalCatalogIds,
 		rows,
+		receiptedShows,
 		incompleteRequestedScope,
 	} = snapshot;
 	// Parent row validation and canonical hashing must not occupy the outer lease,
@@ -348,6 +364,12 @@ async function readGenerationScopedDisplay(
 			reasonCodes: [...new Set([...providerStatus.reasonCodes, "publication-superseded" as const])],
 		};
 	}
+	const seriesProgressProof =
+		providerStatus.availability === "current" &&
+		providerStatus.evidence === "complete" &&
+		receiptedShows.length > 0
+			? new Map<number, EpisodeCoordinate[]>(receiptedShows.map((showTmdbId) => [showTmdbId, []]))
+			: undefined;
 	if (incompleteRequestedScope && providerStatus.availability !== "unavailable") {
 		providerStatus = {
 			...providerStatus,
@@ -357,7 +379,13 @@ async function readGenerationScopedDisplay(
 		};
 	}
 	const visibleRows =
-		providerStatus.evidence === "complete" ? rows : rows.filter((row) => row.watched);
+		providerStatus.evidence === "complete"
+			? rows
+			: rows.filter(({ showTmdbId, seasonNumber, episodeNumber, watched }) => {
+					if (watched) return true;
+					seriesProgressProof?.get(showTmdbId)?.push({ seasonNumber, episodeNumber, watched });
+					return false;
+				});
 	return {
 		library: parent,
 		episodes: {
@@ -370,6 +398,7 @@ async function readGenerationScopedDisplay(
 			metadata,
 			rows: visibleRows,
 			providerStatus,
+			...(seriesProgressProof && { [jellyfinSeriesProgressProof]: seriesProgressProof }),
 			mutationAvailable: false,
 			authority: null,
 		},

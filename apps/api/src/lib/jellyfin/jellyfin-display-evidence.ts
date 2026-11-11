@@ -13,6 +13,8 @@ import {
 	readOwnedJellyfinObservation,
 } from "./jellyfin-evidence-repository.js";
 import {
+	type JellyfinSeriesProgressProof,
+	jellyfinSeriesProgressProof,
 	readOwnedGenerationScopedEpisodeDisplay,
 	readOwnedGenerationScopedLibraryAndEpisodeDisplay,
 } from "./jellyfin-generation-scoped-display.js";
@@ -32,7 +34,7 @@ export type JellyfinLibraryDisplayEvidence = {
 	providerStatus: ProviderObservationStatusEnvelope | undefined;
 };
 
-export type JellyfinEpisodeDisplaySource = {
+export type JellyfinEpisodeDisplaySource = JellyfinSeriesProgressProof & {
 	instanceId: string;
 	instanceName: string;
 	rows: JellyfinEpisodeRow[];
@@ -174,7 +176,8 @@ async function readDisplayObservation(
 async function readEpisodeDisplayObservation(
 	input: InstanceReadInput,
 	showTmdbIds: readonly number[] | undefined,
-): Promise<JellyfinObservation | null> {
+	includeSeriesProgressProof?: boolean,
+): Promise<(JellyfinObservation & JellyfinSeriesProgressProof) | null> {
 	try {
 		const scoped =
 			typeof input.prisma.$transaction === "function"
@@ -182,6 +185,7 @@ async function readEpisodeDisplayObservation(
 						...input,
 						prisma: input.prisma as unknown as PrismaClient,
 						showTmdbIds,
+						includeSeriesProgressProof,
 					})
 				: null;
 		return scoped ?? (await readDisplayObservation(input, "jellyfin_episode"));
@@ -204,12 +208,14 @@ function libraryDisplaySource(
 
 function episodeDisplaySource(
 	instance: JellyfinDisplayInstance,
-	observation: JellyfinObservation | null,
+	observation: (JellyfinObservation & JellyfinSeriesProgressProof) | null,
 ) {
+	const admitted = isAdmittedEpisodeObservation(observation);
+	const proof = admitted ? observation[jellyfinSeriesProgressProof] : undefined;
 	return {
 		instanceId: instance.id,
 		instanceName: instance.label,
-		rows: isAdmittedEpisodeObservation(observation)
+		rows: admitted
 			? observation.rows
 					// Partial observations prove positive watch facts only. Omitted
 					// rows and false flags cannot establish unwatched state.
@@ -217,23 +223,27 @@ function episodeDisplaySource(
 					.map((row) => ({ ...row }))
 			: [],
 		status: publicEpisodeSourceStatus(instance, observation?.providerStatus ?? unavailableStatus),
+		...(proof && { [jellyfinSeriesProgressProof]: proof }),
 	};
 }
 
 function displayEvidence<Row>(
-	observations: readonly {
+	observations: readonly (JellyfinSeriesProgressProof & {
 		instanceId: string;
 		instanceName: string;
 		rows: Row[];
 		status: ProviderObservationStatusEnvelope["sources"][number];
-	}[],
+	})[],
 ) {
 	return {
-		sources: observations.map(({ instanceId, instanceName, rows }) => ({
-			instanceId,
-			instanceName,
-			rows,
-		})),
+		sources: observations.map(
+			({ instanceId, instanceName, rows, [jellyfinSeriesProgressProof]: proof }) => ({
+				instanceId,
+				instanceName,
+				rows,
+				...(proof && { [jellyfinSeriesProgressProof]: proof }),
+			}),
+		),
 		providerStatus: observations.length
 			? aggregateProviderObservationStatuses(observations.map(({ status }) => status))
 			: undefined,
@@ -262,13 +272,17 @@ export async function readOwnedJellyfinLibraryDisplaySources({
 }
 
 export type ReadOwnedJellyfinEpisodeDisplaySourcesInput =
-	ReadOwnedJellyfinLibraryDisplaySourcesInput & { showTmdbIds?: readonly number[] };
+	ReadOwnedJellyfinLibraryDisplaySourcesInput & {
+		showTmdbIds?: readonly number[];
+		includeSeriesProgressProof?: boolean;
+	};
 
 export async function readOwnedJellyfinEpisodeDisplaySources({
 	prisma,
 	userId,
 	instances,
 	showTmdbIds,
+	includeSeriesProgressProof,
 	now = new Date(),
 	maxAgeMs,
 }: ReadOwnedJellyfinEpisodeDisplaySourcesInput): Promise<JellyfinEpisodeDisplayEvidence> {
@@ -279,6 +293,7 @@ export async function readOwnedJellyfinEpisodeDisplaySources({
 				await readEpisodeDisplayObservation(
 					{ prisma, userId, instanceId: instance.id, now, maxAgeMs },
 					showTmdbIds,
+					includeSeriesProgressProof,
 				),
 			),
 		),
@@ -293,7 +308,7 @@ export async function readOwnedJellyfinLibraryAndEpisodeDisplaySources({
 	showTmdbIds,
 	now = new Date(),
 	maxAgeMs,
-}: ReadOwnedJellyfinEpisodeDisplaySourcesInput & { showTmdbIds: readonly number[] }): Promise<{
+}: ReadOwnedJellyfinLibraryDisplaySourcesInput & { showTmdbIds: readonly number[] }): Promise<{
 	library: JellyfinLibraryDisplayEvidence;
 	episodes: JellyfinEpisodeDisplayEvidence;
 }> {
@@ -306,6 +321,7 @@ export async function readOwnedJellyfinLibraryAndEpisodeDisplaySources({
 							...input,
 							prisma: prisma as unknown as PrismaClient,
 							showTmdbIds,
+							includeSeriesProgressProof: true,
 						}).catch(() => undefined)
 					: undefined;
 			const library =
@@ -314,7 +330,7 @@ export async function readOwnedJellyfinLibraryAndEpisodeDisplaySources({
 					: scoped.library;
 			const episodes = scoped
 				? (scoped.episodes ?? (await readDisplayObservation(input, "jellyfin_episode")))
-				: await readEpisodeDisplayObservation(input, showTmdbIds);
+				: await readEpisodeDisplayObservation(input, showTmdbIds, true);
 			return {
 				library: libraryDisplaySource(instance, library),
 				episodes: episodeDisplaySource(instance, episodes),

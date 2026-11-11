@@ -15,8 +15,9 @@ import {
 	readOwnedJellyfinEpisodeDisplaySources,
 } from "../../lib/jellyfin/jellyfin-display-evidence.js";
 import { withJellyfinDisplayReadTiming } from "../../lib/jellyfin/jellyfin-display-read-timing.js";
+import { jellyfinSeriesProgressProof } from "../../lib/jellyfin/jellyfin-generation-scoped-display.js";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { aggregateSeriesProgress } from "../plex/lib/series-progress-helpers.js";
+import { aggregateSeriesProgress, type EpisodeInput } from "../plex/lib/series-progress-helpers.js";
 
 const progressQuery = z.object({
 	tmdbIds: z.string().min(1),
@@ -49,24 +50,48 @@ export function projectJellyfinSeriesProgress(
 		const rowsEntries = displayEvidence.sources.filter(
 			(source) => source.instanceId === instance.id,
 		);
-		const status = statusEntries.length === 1 ? statusEntries[0]!.status : undefined;
-		const admitted =
-			status &&
-			["current", "last-known", "partial"].includes(status.availability) &&
-			["complete", "positive-only"].includes(status.evidence) &&
-			rowsEntries.length === 1;
+		const expectedService = instance.service === "EMBY" ? "emby" : "jellyfin";
+		const status =
+			statusEntries.length === 1 && statusEntries[0]!.service === expectedService
+				? statusEntries[0]!.status
+				: undefined;
+		const source = rowsEntries.length === 1 ? rowsEntries[0] : undefined;
+		if (
+			!status ||
+			!source ||
+			!["current", "last-known", "partial"].includes(status.availability) ||
+			!["complete", "positive-only"].includes(status.evidence) ||
+			source.rows.some((row) => row.instanceId !== instance.id)
+		)
+			return { complete: false, rows: [], proof: undefined };
+
+		const complete = status.availability === "current" && status.evidence === "complete";
+		const scopeDegraded =
+			status.availability === "partial" &&
+			status.evidence === "positive-only" &&
+			status.reasonCodes.includes("coverage-incomplete");
 		return {
-			complete: Boolean(
-				admitted && status.availability === "current" && status.evidence === "complete",
-			),
-			rows: admitted ? rowsEntries[0]!.rows : [],
+			complete,
+			rows: source.rows,
+			proof: complete || scopeDegraded ? source[jellyfinSeriesProgressProof] : undefined,
 		};
 	});
-	const progressMap = aggregateSeriesProgress(
-		sources.flatMap((source) => source.rows),
-		tmdbIds,
-		sources.every((source) => source.complete),
-	);
+	const rows: EpisodeInput[] = sources.flatMap((source) => source.rows);
+	const uniqueInstances = new Set(instances.map(({ id }) => id)).size === instances.length;
+	const allComplete = uniqueInstances && sources.every((source) => source.complete);
+	const completeShows = new Set<number>();
+	if (!allComplete && uniqueInstances && sources.every((source) => source.proof)) {
+		for (const showTmdbId of tmdbIds) {
+			if (!sources.every((source) => source.proof?.has(showTmdbId))) continue;
+			completeShows.add(showTmdbId);
+			for (const source of sources) {
+				for (const coordinate of source.proof?.get(showTmdbId) ?? []) {
+					rows.push({ showTmdbId, ...coordinate });
+				}
+			}
+		}
+	}
+	const progressMap = aggregateSeriesProgress(rows, tmdbIds, allComplete || completeShows);
 
 	return {
 		configured: true,
@@ -116,6 +141,7 @@ export async function registerSeriesProgressRoutes(
 							userId,
 							instances: displayInstances,
 							showTmdbIds: tmdbIds,
+							includeSeriesProgressProof: true,
 						});
 						return reply.send(
 							projectJellyfinSeriesProgress(displayInstances, displayEvidence, tmdbIds),
