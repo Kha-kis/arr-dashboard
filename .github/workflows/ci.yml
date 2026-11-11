@@ -149,11 +149,11 @@ jobs:
         env:
           POSTGRES_USER: arr_contract
           POSTGRES_PASSWORD: arr_contract_test
-          POSTGRES_DB: arr_contract
+          POSTGRES_DB: arr_contract_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd="pg_isready -U arr_contract -d arr_contract"
+          --health-cmd="pg_isready -U arr_contract -d arr_contract_test"
           --health-interval=5s
           --health-timeout=3s
           --health-retries=5
@@ -177,25 +177,24 @@ jobs:
       - name: Build shared package
         run: pnpm --filter @arr/shared run build
 
-      - name: Generate PostgreSQL Prisma client
-        run: |
-          sed -i '/datasource db/,/^}/ s/provider = "sqlite"/provider = "postgresql"/' prisma/schema.prisma
-          grep -A2 'datasource db' prisma/schema.prisma | grep -F 'provider = "postgresql"'
-          pnpm exec prisma generate --schema prisma/schema.prisma
-        working-directory: apps/api
-
       - name: Initialize PostgreSQL contract database
-        run: pnpm exec prisma db push --schema prisma/schema.prisma
+        run: |
+          schema=$(mktemp --suffix=.prisma)
+          trap 'rm -f -- "$schema"' EXIT
+          sed '/datasource db/,/^}/ s/provider = "sqlite"/provider = "postgresql"/' prisma/schema.prisma > "$schema"
+          grep -A2 'datasource db' "$schema" | grep -F 'provider = "postgresql"'
+          pnpm exec prisma db push --schema "$schema"
+          git diff --exit-code -- prisma/schema.prisma src/generated/prisma
         working-directory: apps/api
         env:
-          DATABASE_URL: postgresql://arr_contract:arr_contract_test@127.0.0.1:5432/arr_contract
+          DATABASE_URL: postgresql://arr_contract:arr_contract_test@127.0.0.1:5432/arr_contract_test
 
       - name: Run override-route persistence contract (PostgreSQL)
         run: pnpm exec vitest run src/routes/trash-guides/__tests__/instance-quality-profile-routes.database.test.ts
         working-directory: apps/api
         env:
           INTEGRATION_TESTS: "1"
-          OVERRIDE_ROUTE_DATABASE_URL: postgresql://arr_contract:arr_contract_test@127.0.0.1:5432/arr_contract
+          OVERRIDE_ROUTE_DATABASE_URL: postgresql://arr_contract:arr_contract_test@127.0.0.1:5432/arr_contract_test
 
   # End-to-End Tests with Playwright (sharded for parallelism)
   # Uses production builds for faster, more realistic testing
