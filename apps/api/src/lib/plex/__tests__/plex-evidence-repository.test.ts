@@ -1,3 +1,4 @@
+import { setImmediate } from "node:timers/promises";
 import { describe, expect, it, vi } from "vitest";
 import { verifiedIdentityData } from "../../services/service-identity-lifecycle.js";
 import { createPositivePlexEpisodeDigest } from "../plex-episode-live-collector.js";
@@ -8,6 +9,7 @@ import {
 	loadInstanceEpisodeEvidence,
 	loadInstanceEvidence,
 	loadInstanceMutationEvidence,
+	loadInstanceSelectedEpisodeEvidence,
 	loadInstanceSelectedEvidence,
 	loadInstanceSelectedMutationEvidence,
 	loadPositiveEpisodeDisplayEvidence,
@@ -3211,6 +3213,84 @@ describe("Plex episode evidence repository", () => {
 			available: false,
 			evidence: { reasonCodes: ["latest_attempt_failed"] },
 		});
+	});
+
+	it("keeps the parent read lease until both counts settle after a count failure", async () => {
+		const reader = episodeFixture();
+		const leased = episodeFixture();
+		let finishBoundCount!: (count: number) => void;
+		const boundCount = new Promise<number>((resolve) => {
+			finishBoundCount = resolve;
+		});
+		leased.plexCache.count
+			.mockRejectedValueOnce(new Error("private parent count failure"))
+			.mockReturnValueOnce(boundCount);
+		const admitted = vi.fn();
+		const released = vi.fn();
+		async function readParentObservation<T>(observe: (client: never) => Promise<T>) {
+			admitted();
+			try {
+				return await observe(leased as never);
+			} finally {
+				released();
+			}
+		}
+		const result = loadInstanceSelectedEpisodeEvidence(
+			reader as never,
+			{ userId: "user-1", instanceId: "plex-1", instance: instance(), showTmdbIds: [42], now },
+			readParentObservation,
+		);
+		try {
+			await setImmediate();
+			expect(admitted).toHaveBeenCalledOnce();
+			expect(leased.plexCache.count).toHaveBeenCalledTimes(2);
+			expect(released).not.toHaveBeenCalled();
+		} finally {
+			finishBoundCount(1);
+			await result;
+		}
+		expect(released).toHaveBeenCalledOnce();
+		expect(leased.cacheRefreshStatus.findMany).toHaveBeenCalledOnce();
+		expect(reader.cacheRefreshStatus.findMany).not.toHaveBeenCalled();
+		expect(reader.plexCache.count).not.toHaveBeenCalled();
+		expect(await result).toMatchObject({
+			available: false,
+			evidence: { reasonCodes: ["query_failed"] },
+			providerStatus: { availability: "unavailable", reasonCodes: ["unknown-failure"] },
+		});
+	});
+
+	it("reports a direct parent count failure while the sibling count is pending", async () => {
+		const reader = episodeFixture();
+		let finishBoundCount!: (count: number) => void;
+		const boundCount = new Promise<number>((resolve) => {
+			finishBoundCount = resolve;
+		});
+		reader.plexCache.count
+			.mockRejectedValueOnce(new Error("private parent count failure"))
+			.mockReturnValueOnce(boundCount);
+		const completed = vi.fn();
+		const result = loadInstanceSelectedEpisodeEvidence(reader as never, {
+			userId: "user-1",
+			instanceId: "plex-1",
+			instance: instance(),
+			showTmdbIds: [42],
+			now,
+		}).then(completed);
+		try {
+			await setImmediate();
+			expect(reader.plexCache.count).toHaveBeenCalledTimes(2);
+			expect(completed).toHaveBeenCalledExactlyOnceWith(
+				expect.objectContaining({
+					available: false,
+					evidence: expect.objectContaining({ reasonCodes: ["query_failed"] }),
+					providerStatus: expect.objectContaining({ reasonCodes: ["unknown-failure"] }),
+				}),
+			);
+		} finally {
+			finishBoundCount(1);
+			await result;
+		}
 	});
 
 	it("preserves admitted parent provider status for episode row and query failures", async () => {

@@ -47,6 +47,7 @@ import {
 	loadUserSelectedDisplayEvidence,
 	type PlexEpisodeParentPolicyBatchHandler,
 	type PlexInstanceEvidence,
+	type PlexParentObservationRead,
 	type PlexPolicyBatchHandler,
 	type PlexPolicyScanEvidence,
 	type PositivePlexEpisodeEvidence,
@@ -554,6 +555,7 @@ export class PlexAuthorityService {
 	constructor(
 		private readonly deps: {
 			prisma: PlexAuthorityPrisma;
+			readParentObservation?: PlexParentObservationRead;
 			encryptor?: Encryptor;
 			log: FastifyBaseLogger;
 			createClient?: (instance: ServiceInstance) => PlexClient;
@@ -773,7 +775,11 @@ export class PlexAuthorityService {
 		displayOnly = false,
 	): Promise<ValidatedPositiveEpisodeSnapshot | UnavailablePlexInstanceEvidence> {
 		const observed = displayOnly
-			? await loadPositiveEpisodeDisplayEvidence(this.deps.prisma, input)
+			? await loadPositiveEpisodeDisplayEvidence(
+					this.deps.prisma,
+					input,
+					this.deps.readParentObservation,
+				)
 			: await loadPositiveEpisodeEvidence(this.deps.prisma, input);
 		if (!observed.available) return observed;
 		const currentParent = observed.currentParent;
@@ -1822,10 +1828,11 @@ export class PlexAuthorityService {
 				"missing_status",
 			);
 		}
-		const before = await loadInstanceSelectedEpisodeEvidence(this.deps.prisma, {
-			...input,
-			instance,
-		});
+		const before = await loadInstanceSelectedEpisodeEvidence(
+			this.deps.prisma,
+			{ ...input, instance },
+			this.deps.readParentObservation,
+		);
 		if (!before.available) return before;
 		const after = await this.ownedInstance(input.userId, input.instanceId);
 		if (

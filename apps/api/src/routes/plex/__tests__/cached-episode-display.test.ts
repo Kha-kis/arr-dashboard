@@ -352,9 +352,10 @@ afterEach(async () => {
 	vi.unstubAllGlobals();
 });
 
-async function appFor(owner = userId) {
+async function appFor(owner = userId, dbProvider?: FastifyInstance["dbProvider"]) {
 	const app = Fastify({ logger: false });
 	apps.push(app);
+	if (dbProvider) app.decorate("dbProvider", dbProvider);
 	setupAuthInjection(app, { id: owner, username: "synthetic-user" });
 	app.decorate("prisma", {
 		serviceInstance: {
@@ -439,6 +440,30 @@ describe("cached episode display through actual routes and authority", () => {
 		});
 		expectNoProvider();
 	});
+	it.each([
+		["sqlite", true],
+		["postgresql", false],
+		[undefined, false],
+	] as const)(
+		"groups series-progress parent reads for %s only when explicitly SQLite",
+		async (dbProvider, grouped) => {
+			const app = await appFor(userId, dbProvider);
+			mocks.episodes.mockResolvedValueOnce(fixtures[0]!.unavailable);
+			const response = await app.inject({
+				method: "GET",
+				url: progressUrl,
+				headers: { "x-test-auth": "1" },
+			});
+			expect(response.statusCode).toBe(200);
+			const exactRead = mocks.episodes.mock.calls[0]?.[2];
+			const positiveRead = mocks.positive.mock.calls[0]?.[2];
+			expect(mocks.positive).toHaveBeenCalledOnce();
+			if (grouped) expect(exactRead).toBeTypeOf("function");
+			else expect(exactRead).toBeUndefined();
+			expect(positiveRead).toBe(exactRead);
+			expectNoProvider();
+		},
+	);
 	it.each(["wrong owner", "disabled"])("denies %s before selected cache access", async (mode) => {
 		if (mode === "disabled") fixtures[0]!.instance.enabled = false;
 		const response = await get(episodeUrl, mode === "wrong owner" ? "other-owner" : userId);

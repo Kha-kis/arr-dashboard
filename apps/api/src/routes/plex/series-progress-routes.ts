@@ -70,6 +70,10 @@ export async function registerSeriesProgressRoutes(
 					const episodes: EpisodeInput[] = [];
 					const authority = new PlexAuthorityService({
 						prisma,
+						readParentObservation:
+							app.dbProvider === "sqlite"
+								? (operation) => withIsolatedRuntimePrismaBulkReadClient(app.prisma, operation)
+								: undefined,
 						encryptor: app.encryptor,
 						log: request.log,
 					});
