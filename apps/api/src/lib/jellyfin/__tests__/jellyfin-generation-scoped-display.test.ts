@@ -762,6 +762,34 @@ describe("generation-scoped episode display freshness", () => {
 		expect(result?.providerStatus.reasonCodes).toContain("publication-superseded");
 	});
 
+	it.each([false, true])(
+		"skips canonical reads for proof-only receipts without an admitted payload (opt-in: %s)",
+		async (includeSeriesProgressProof) => {
+			const f = fixture();
+			f.parent.generationId = "replacement-generation";
+			f.showReceipt.rowCount = 0;
+			f.showReceipt.contentFingerprint = fingerprintJellyfinEpisodeRows([]);
+			f.tx.jellyfinEpisodeGenerationRow.findMany.mockResolvedValue([]);
+			const result = await readOwnedGenerationScopedEpisodeDisplay({
+				prisma: f.prisma,
+				userId: "owner-1",
+				instanceId: f.instance.id,
+				showTmdbIds: [42],
+				includeSeriesProgressProof,
+				now,
+				maxAgeMs,
+			});
+			expect(result?.providerStatus).toMatchObject({
+				availability: "partial",
+				evidence: "positive-only",
+			});
+			expect(
+				f.tx.jellyfinEpisodeGenerationRow.findMany,
+				"no query for an unadmitted proof",
+			).not.toHaveBeenCalled();
+		},
+	);
+
 	it("refuses unverified identity", async () => {
 		const f = fixture();
 		f.instance.identityStatus = "UNVERIFIED";

@@ -289,6 +289,13 @@ async function readGenerationScopedDisplay(
 				incompleteRequestedScope = true;
 				continue;
 			}
+			const payload = mappedPayloads.get(showTmdbId);
+			// A proof-only receipt does not establish canonical episode coverage.
+			// Only an admitted payload needs its empty canonical rows checked.
+			if (originalCatalogIds && receipt.rowCount === 0) {
+				incompleteRequestedScope = true;
+				if (!payload) continue;
+			}
 			const showRows = await tx.jellyfinEpisodeGenerationRow.findMany({
 				where: { instanceId: instance.id, generationId: status.generationId, showTmdbId },
 				select: {
@@ -324,11 +331,7 @@ async function readGenerationScopedDisplay(
 				continue;
 			}
 			rows.push(...showRows);
-			// In source 3 positive-only generations a proof-only receipt does
-			// not establish any canonical episode coverage.
-			if (originalCatalogIds && receipt.rowCount === 0) incompleteRequestedScope = true;
 			if (input.includeSeriesProgressProof) receiptedShows.push(showTmdbId);
-			const payload = mappedPayloads.get(showTmdbId);
 			if (payload) {
 				mappedReceipts.push({
 					showTmdbId,
