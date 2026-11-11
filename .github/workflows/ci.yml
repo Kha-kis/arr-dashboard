@@ -325,15 +325,15 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      # Only login for internal PRs/pushes (fork PRs and Dependabot don't have access to secrets)
+      # Authenticate only for trusted pushes that can update the registry cache.
       - name: Log in to Docker Hub (for cache)
-        if: (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && github.actor != 'dependabot[bot]'
+        if: github.event_name == 'push' && github.actor != 'dependabot[bot]'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Build with cache - fork PRs can read public cache but won't write to it
+      # Pull requests can read the public cache without registry credentials.
       - name: Build Docker image (amd64 only, warms cache for docker-dev)
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -343,7 +343,7 @@ jobs:
           load: true
           tags: arr-dashboard:ci-test
           cache-from: type=registry,ref=${{ env.DOCKERHUB_IMAGE }}:buildcache-linux-amd64
-          cache-to: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && github.actor != 'dependabot[bot]' && format('type=registry,ref={0}:buildcache-linux-amd64,mode=max', env.DOCKERHUB_IMAGE) || '' }}
+          cache-to: ${{ github.event_name == 'push' && github.actor != 'dependabot[bot]' && format('type=registry,ref={0}:buildcache-linux-amd64,mode=max', env.DOCKERHUB_IMAGE) || '' }}
 
       - name: Validate runtime file layout
         run: docker run --rm --entrypoint sh arr-dashboard:ci-test /app/api/validate-runtime.sh
