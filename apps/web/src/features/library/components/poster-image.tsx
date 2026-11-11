@@ -10,8 +10,9 @@
  * 3. Text placeholder when no image is available
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getSeerrImageUrl, type PosterSize } from "../../discover/lib/seerr-image-utils";
+import { observeLibraryPoster } from "./library-poster-queue";
 
 interface PosterImageProps {
 	/** TMDB poster path from Seerr enrichment (e.g. "/xyz123.jpg") */
@@ -55,10 +56,9 @@ function PosterImageWithFallback({
 
 	if (resolvedUrl) {
 		return (
-			/* eslint-disable-next-line @next/next/no-img-element -- External poster from TMDB or arr instance */
-			<img
-				key={resolvedUrl}
-				src={resolvedUrl}
+			<PosterAttempt
+				key={JSON.stringify([resolvedUrl, loading])}
+				url={resolvedUrl}
 				alt={alt}
 				loading={loading}
 				className={imgClassName}
@@ -75,5 +75,54 @@ function PosterImageWithFallback({
 		<div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
 			{placeholder}
 		</div>
+	);
+}
+
+interface PosterAttemptProps {
+	url: string;
+	alt: string;
+	loading?: "eager" | "lazy";
+	className: string;
+	onError: () => void;
+}
+
+function PosterAttempt({ url, alt, loading, className, onError }: PosterAttemptProps) {
+	const queued = loading === "lazy" && url.startsWith("/api/library/poster/");
+	const image = useRef<HTMLImageElement>(null);
+	const release = useRef<(() => void) | undefined>(undefined);
+	useEffect(() => {
+		const element = image.current;
+		if (!queued || !element) return;
+		if (typeof IntersectionObserver === "undefined") {
+			element.src = url;
+			return;
+		}
+		// The queue owns src for this mounted image so exits can release it
+		// before admitting another poster in the same observer callback.
+		const finish = observeLibraryPoster(element, url);
+		release.current = finish;
+		return () => {
+			element.removeAttribute("src");
+			finish();
+		};
+	}, [queued, url]);
+
+	return (
+		/* eslint-disable-next-line @next/next/no-img-element -- Browser loads the authorized poster URL directly */
+		<img
+			ref={image}
+			src={queued ? undefined : url}
+			alt={alt}
+			loading={loading}
+			className={queued ? `${className} [&:not([src])]:opacity-0` : className}
+			onLoad={(event) => {
+				if (event.currentTarget.hasAttribute("src")) release.current?.();
+			}}
+			onError={(event) => {
+				if (!event.currentTarget.hasAttribute("src")) return;
+				release.current?.();
+				onError();
+			}}
+		/>
 	);
 }

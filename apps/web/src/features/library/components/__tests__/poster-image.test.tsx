@@ -1,5 +1,5 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
 import { PosterImage } from "../poster-image";
 
@@ -175,5 +175,89 @@ describe("PosterImage runtime fallback", () => {
 		fireEvent.error(fallback);
 		expect(screen.getByText("Custom unavailable")).toBeInTheDocument();
 		expect(screen.queryByRole("img")).not.toBeInTheDocument();
+	});
+});
+
+describe("Library grid poster scheduling", () => {
+	it("waits for proximity, limits concurrent images, and advances after load, error and removal", () => {
+		let report: ((entries: IntersectionObserverEntry[]) => void) | undefined;
+		const observe = vi.fn();
+		const unobserve = vi.fn();
+		class Observer {
+			constructor(callback: IntersectionObserverCallback) {
+				report = (entries) => callback(entries, this as unknown as IntersectionObserver);
+			}
+			observe = observe;
+			unobserve = unobserve;
+			disconnect = vi.fn();
+		}
+		vi.stubGlobal("IntersectionObserver", Observer);
+		const grid = (first = 0) =>
+			Array.from({ length: 11 - first }, (_, offset) => {
+				const index = first + offset;
+				return (
+					<PosterImage
+						key={index}
+						loading="lazy"
+						arrPosterUrl={`/api/library/poster/synthetic/movie/${index + 1}`}
+						alt={`Poster ${index}`}
+					/>
+				);
+			});
+		const { rerender } = render(grid(), { wrapper: IncognitoProvider });
+		const posters = () => screen.getAllByRole("img");
+		const started = () => posters().filter((poster) => poster.hasAttribute("src"));
+		const visibility = (targets: HTMLElement[], isIntersecting: boolean) =>
+			act(() => {
+				report?.(
+					targets.map((target) => ({
+						target,
+						isIntersecting,
+						boundingClientRect: target.getBoundingClientRect(),
+						intersectionRatio: Number(isIntersecting),
+						intersectionRect: new DOMRect(),
+						rootBounds: null,
+						time: 0,
+					})),
+				);
+			});
+		try {
+			expect(started()).toHaveLength(0);
+			visibility(posters(), true);
+			expect(started()).toEqual(posters().slice(0, 8));
+			const waiting = posters()[8]!;
+			visibility([waiting], false);
+			fireEvent.load(posters()[0]!);
+			expect(waiting).not.toHaveAttribute("src");
+			expect(posters()[9]).toHaveAttribute("src");
+			fireEvent.error(posters()[1]!);
+			expect(screen.getByRole("img", { name: "Poster 10" })).toHaveAttribute("src");
+			visibility([waiting], true);
+			expect(waiting).not.toHaveAttribute("src");
+			rerender(grid(3));
+			expect(waiting).toHaveAttribute("src");
+			visibility([waiting], false);
+			expect(waiting).not.toHaveAttribute("src");
+			visibility([waiting], true);
+			expect(waiting).toHaveAttribute("src");
+		} finally {
+			cleanup();
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("uses native lazy loading when IntersectionObserver is unavailable", () => {
+		vi.stubGlobal("IntersectionObserver", undefined);
+		try {
+			const url = "/api/library/poster/synthetic/movie/1";
+			render(<PosterImage arrPosterUrl={url} loading="lazy" alt="Synthetic poster" />, {
+				wrapper: IncognitoProvider,
+			});
+			expect(image()).toHaveAttribute("src", url);
+			expect(image()).toHaveAttribute("loading", "lazy");
+		} finally {
+			cleanup();
+			vi.unstubAllGlobals();
+		}
 	});
 });
