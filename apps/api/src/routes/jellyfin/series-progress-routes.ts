@@ -9,11 +9,12 @@ import type { SeriesProgressResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { withIsolatedRuntimePrismaBulkReadClient } from "../../lib/backup/restore-runtime-client.js";
-import { withJellyfinDisplayReadTiming } from "../../lib/jellyfin/jellyfin-display-read-timing.js";
 import {
 	type JellyfinDisplayInstance,
+	type JellyfinEpisodeDisplayEvidence,
 	readOwnedJellyfinEpisodeDisplaySources,
 } from "../../lib/jellyfin/jellyfin-display-evidence.js";
+import { withJellyfinDisplayReadTiming } from "../../lib/jellyfin/jellyfin-display-read-timing.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { aggregateSeriesProgress } from "../plex/lib/series-progress-helpers.js";
 
@@ -21,7 +22,58 @@ const progressQuery = z.object({
 	tmdbIds: z.string().min(1),
 });
 
-const MAX_BATCH_SIZE = 200;
+export const MAX_SERIES_PROGRESS_BATCH_SIZE = 200;
+
+export function parseSeriesProgressIds(raw: string): number[] {
+	return [
+		...new Set(
+			raw
+				.split(",")
+				.map(Number)
+				.filter((id) => Number.isSafeInteger(id) && id > 0),
+		),
+	];
+}
+
+export function projectJellyfinSeriesProgress(
+	instances: readonly JellyfinDisplayInstance[],
+	displayEvidence: JellyfinEpisodeDisplayEvidence,
+	tmdbIds: readonly number[],
+): SeriesProgressResponse {
+	if (instances.length === 0) return { configured: false, progress: {} };
+	const statuses = displayEvidence.providerStatus?.sources ?? [];
+	const sources = instances.map((instance) => {
+		const statusEntries = statuses.filter(
+			(source) => source.instanceId === instance.id && source.cacheType === "jellyfin_episode",
+		);
+		const rowsEntries = displayEvidence.sources.filter(
+			(source) => source.instanceId === instance.id,
+		);
+		const status = statusEntries.length === 1 ? statusEntries[0]!.status : undefined;
+		const admitted =
+			status &&
+			["current", "last-known", "partial"].includes(status.availability) &&
+			["complete", "positive-only"].includes(status.evidence) &&
+			rowsEntries.length === 1;
+		return {
+			complete: Boolean(
+				admitted && status.availability === "current" && status.evidence === "complete",
+			),
+			rows: admitted ? rowsEntries[0]!.rows : [],
+		};
+	});
+	const progressMap = aggregateSeriesProgress(
+		sources.flatMap((source) => source.rows),
+		tmdbIds,
+		sources.every((source) => source.complete),
+	);
+
+	return {
+		configured: true,
+		progress: progressMap,
+		providerStatus: displayEvidence.providerStatus,
+	};
+}
 
 export async function registerSeriesProgressRoutes(
 	app: FastifyInstance,
@@ -29,18 +81,13 @@ export async function registerSeriesProgressRoutes(
 ) {
 	app.get("/", async (request, reply) => {
 		const { tmdbIds: tmdbIdsRaw } = validateRequest(progressQuery, request.query);
-		const tmdbIds = [
-			...new Set(
-				tmdbIdsRaw
-					.split(",")
-					.map(Number)
-					.filter((id) => Number.isSafeInteger(id) && id > 0),
-			),
-		];
+		const tmdbIds = parseSeriesProgressIds(tmdbIdsRaw);
 		const userId = request.currentUser!.id;
 
-		if (tmdbIds.length > MAX_BATCH_SIZE) {
-			return reply.status(400).send({ error: `Max ${MAX_BATCH_SIZE} items per request` });
+		if (tmdbIds.length > MAX_SERIES_PROGRESS_BATCH_SIZE) {
+			return reply
+				.status(400)
+				.send({ error: `Max ${MAX_SERIES_PROGRESS_BATCH_SIZE} items per request` });
 		}
 
 		return withJellyfinDisplayReadTiming(
@@ -70,40 +117,9 @@ export async function registerSeriesProgressRoutes(
 							instances: displayInstances,
 							showTmdbIds: tmdbIds,
 						});
-						const statuses = displayEvidence.providerStatus?.sources ?? [];
-						const sources = displayInstances.map((instance) => {
-							const statusEntries = statuses.filter(
-								(source) =>
-									source.instanceId === instance.id && source.cacheType === "jellyfin_episode",
-							);
-							const rowsEntries = displayEvidence.sources.filter(
-								(source) => source.instanceId === instance.id,
-							);
-							const status = statusEntries.length === 1 ? statusEntries[0]!.status : undefined;
-							const admitted =
-								status &&
-								["current", "last-known", "partial"].includes(status.availability) &&
-								["complete", "positive-only"].includes(status.evidence) &&
-								rowsEntries.length === 1;
-							return {
-								complete: Boolean(
-									admitted && status.availability === "current" && status.evidence === "complete",
-								),
-								rows: admitted ? rowsEntries[0]!.rows : [],
-							};
-						});
-						const progressMap = aggregateSeriesProgress(
-							sources.flatMap((source) => source.rows),
-							tmdbIds,
-							sources.every((source) => source.complete),
+						return reply.send(
+							projectJellyfinSeriesProgress(displayInstances, displayEvidence, tmdbIds),
 						);
-
-						const response: SeriesProgressResponse = {
-							configured: true,
-							progress: progressMap,
-							providerStatus: displayEvidence.providerStatus,
-						};
-						return reply.send(response);
 					},
 					{ lease: "phase" },
 				),

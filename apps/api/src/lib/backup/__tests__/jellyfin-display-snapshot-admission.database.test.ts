@@ -6,6 +6,11 @@ import {
 	recordScopedWriteEvidence,
 	type ScopedWriteFixture,
 } from "../../__tests__/scoped-write-intent-fixture.js";
+import {
+	readOwnedJellyfinEpisodeDisplaySources,
+	readOwnedJellyfinLibraryAndEpisodeDisplaySources,
+	readOwnedJellyfinLibraryDisplaySources,
+} from "../../jellyfin/jellyfin-display-evidence.js";
 import * as displayWork from "../../jellyfin/jellyfin-display-work.js";
 import { fingerprintJellyfinEpisodeParentDependency } from "../../jellyfin/jellyfin-episode-parent-dependency.js";
 import {
@@ -175,6 +180,52 @@ async function seed(f: ScopedWriteFixture) {
 }
 
 describe("Jellyfin display snapshot admission", { timeout: 20_000 }, () => {
+	it("returns both standalone results with one guarded parent-library read", async () => {
+		const f = await createScopedWriteFixture();
+		const now = await seed(f);
+		const input = {
+			userId: "synthetic-user",
+			instances: [{ id: "synthetic-jellyfin", label: "Synthetic", service: "JELLYFIN" as const }],
+			showTmdbIds: [42],
+			now,
+		};
+		let parentSelects = 0;
+		const prepare = Database.prototype.prepare;
+		vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+			this: Database.Database,
+			sql,
+		) {
+			if (this.name === f.path && /^\s*SELECT\b/i.test(sql) && /\bjellyfin_cache\b/i.test(sql)) {
+				parentSelects++;
+			}
+			return prepare.call(this, sql);
+		});
+		const standalone = await f.runtime.runOperation(() =>
+			withIsolatedRuntimePrismaBulkReadClient(
+				f.client.prisma,
+				async (prisma) => ({
+					library: await readOwnedJellyfinLibraryDisplaySources({ ...input, prisma }),
+					episodes: await readOwnedJellyfinEpisodeDisplaySources({ ...input, prisma }),
+				}),
+				{ lease: "phase" },
+			),
+		);
+		expect(parentSelects).toBe(2);
+		parentSelects = 0;
+		const paired = await f.runtime.runOperation(() =>
+			withIsolatedRuntimePrismaBulkReadClient(
+				f.client.prisma,
+				(prisma) => readOwnedJellyfinLibraryAndEpisodeDisplaySources({ ...input, prisma }),
+				{ lease: "phase" },
+			),
+		);
+		expect(parentSelects).toBe(1);
+		expect(paired).toEqual(standalone);
+		expect(paired.library.sources[0]?.rows).toHaveLength(1);
+		expect(paired.episodes.providerStatus?.availability).toBe("partial");
+		expect(f.losses).toEqual([]);
+	});
+
 	it("batches 200 missing show receipts through the guarded SQLite reader", async () => {
 		const f = await createScopedWriteFixture();
 		const now = await seed(f);

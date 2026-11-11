@@ -3,8 +3,7 @@ import {
 	aggregateProviderObservationStatuses,
 	providerObservationSourceStatusSchema,
 } from "@arr/shared";
-import type { ServiceInstance } from "../prisma.js";
-import type { PrismaClient } from "../prisma.js";
+import type { PrismaClient, ServiceInstance } from "../prisma.js";
 import {
 	type JellyfinEpisodeObservation,
 	type JellyfinEpisodeRow,
@@ -13,7 +12,10 @@ import {
 	type JellyfinObservation,
 	readOwnedJellyfinObservation,
 } from "./jellyfin-evidence-repository.js";
-import { readOwnedGenerationScopedEpisodeDisplay } from "./jellyfin-generation-scoped-display.js";
+import {
+	readOwnedGenerationScopedEpisodeDisplay,
+	readOwnedGenerationScopedLibraryAndEpisodeDisplay,
+} from "./jellyfin-generation-scoped-display.js";
 
 export type JellyfinDisplayInstance = Pick<ServiceInstance, "id" | "label"> & {
 	service: "JELLYFIN" | "EMBY";
@@ -153,57 +155,110 @@ export function isArithmeticAuthoritativeProviderObservationStatus(
 	});
 }
 
-export async function readOwnedJellyfinLibraryDisplaySources({
-	prisma,
-	userId,
-	instances,
-	now,
-	maxAgeMs,
-}: ReadOwnedJellyfinLibraryDisplaySourcesInput): Promise<JellyfinLibraryDisplayEvidence> {
-	if (instances.length === 0) return { sources: [], providerStatus: undefined };
-	const effectiveNow = now ?? new Date();
+type InstanceReadInput = Pick<
+	ReadOwnedJellyfinLibraryDisplaySourcesInput,
+	"prisma" | "userId" | "maxAgeMs"
+> & { instanceId: string; now: Date };
 
-	const observations = await Promise.all(
-		instances.map(async (instance) => {
-			let observation: JellyfinObservation | null;
-			try {
-				observation = await readOwnedJellyfinObservation({
-					prisma,
-					userId,
-					instanceId: instance.id,
-					cacheType: "jellyfin",
-					mode: "display",
-					now: effectiveNow,
-					maxAgeMs,
-				});
-			} catch {
-				observation = null;
-			}
+async function readDisplayObservation(
+	input: InstanceReadInput,
+	cacheType: "jellyfin" | "jellyfin_episode",
+): Promise<JellyfinObservation | null> {
+	try {
+		return await readOwnedJellyfinObservation({ ...input, cacheType, mode: "display" });
+	} catch {
+		return null;
+	}
+}
 
-			const sourceStatus = publicSourceStatus(
-				instance,
-				observation?.providerStatus ?? unavailableStatus,
-			);
-			return {
-				instanceId: instance.id,
-				instanceName: instance.label,
-				rows: isAdmittedObservation(observation) ? [...observation.rows] : [],
-				status: sourceStatus,
-			};
-		}),
-	);
+async function readEpisodeDisplayObservation(
+	input: InstanceReadInput,
+	showTmdbIds: readonly number[] | undefined,
+): Promise<JellyfinObservation | null> {
+	try {
+		const scoped =
+			typeof input.prisma.$transaction === "function"
+				? await readOwnedGenerationScopedEpisodeDisplay({
+						...input,
+						prisma: input.prisma as unknown as PrismaClient,
+						showTmdbIds,
+					})
+				: null;
+		return scoped ?? (await readDisplayObservation(input, "jellyfin_episode"));
+	} catch {
+		return null;
+	}
+}
 
-	const providerStatus = aggregateProviderObservationStatuses(
-		observations.map(({ status }) => status),
-	);
+function libraryDisplaySource(
+	instance: JellyfinDisplayInstance,
+	observation: JellyfinObservation | null,
+) {
+	return {
+		instanceId: instance.id,
+		instanceName: instance.label,
+		rows: isAdmittedObservation(observation) ? [...observation.rows] : [],
+		status: publicSourceStatus(instance, observation?.providerStatus ?? unavailableStatus),
+	};
+}
+
+function episodeDisplaySource(
+	instance: JellyfinDisplayInstance,
+	observation: JellyfinObservation | null,
+) {
+	return {
+		instanceId: instance.id,
+		instanceName: instance.label,
+		rows: isAdmittedEpisodeObservation(observation)
+			? observation.rows
+					// Partial observations prove positive watch facts only. Omitted
+					// rows and false flags cannot establish unwatched state.
+					.filter((row) => observation.providerStatus.evidence === "complete" || row.watched)
+					.map((row) => ({ ...row }))
+			: [],
+		status: publicEpisodeSourceStatus(instance, observation?.providerStatus ?? unavailableStatus),
+	};
+}
+
+function displayEvidence<Row>(
+	observations: readonly {
+		instanceId: string;
+		instanceName: string;
+		rows: Row[];
+		status: ProviderObservationStatusEnvelope["sources"][number];
+	}[],
+) {
 	return {
 		sources: observations.map(({ instanceId, instanceName, rows }) => ({
 			instanceId,
 			instanceName,
 			rows,
 		})),
-		providerStatus,
+		providerStatus: observations.length
+			? aggregateProviderObservationStatuses(observations.map(({ status }) => status))
+			: undefined,
 	};
+}
+
+export async function readOwnedJellyfinLibraryDisplaySources({
+	prisma,
+	userId,
+	instances,
+	now = new Date(),
+	maxAgeMs,
+}: ReadOwnedJellyfinLibraryDisplaySourcesInput): Promise<JellyfinLibraryDisplayEvidence> {
+	const observations = await Promise.all(
+		instances.map(async (instance) =>
+			libraryDisplaySource(
+				instance,
+				await readDisplayObservation(
+					{ prisma, userId, instanceId: instance.id, now, maxAgeMs },
+					"jellyfin",
+				),
+			),
+		),
+	);
+	return displayEvidence(observations);
 }
 
 export type ReadOwnedJellyfinEpisodeDisplaySourcesInput =
@@ -214,68 +269,60 @@ export async function readOwnedJellyfinEpisodeDisplaySources({
 	userId,
 	instances,
 	showTmdbIds,
-	now,
+	now = new Date(),
 	maxAgeMs,
 }: ReadOwnedJellyfinEpisodeDisplaySourcesInput): Promise<JellyfinEpisodeDisplayEvidence> {
-	if (instances.length === 0) return { sources: [], providerStatus: undefined };
-	const effectiveNow = now ?? new Date();
+	const observations = await Promise.all(
+		instances.map(async (instance) =>
+			episodeDisplaySource(
+				instance,
+				await readEpisodeDisplayObservation(
+					{ prisma, userId, instanceId: instance.id, now, maxAgeMs },
+					showTmdbIds,
+				),
+			),
+		),
+	);
+	return displayEvidence(observations);
+}
 
+export async function readOwnedJellyfinLibraryAndEpisodeDisplaySources({
+	prisma,
+	userId,
+	instances,
+	showTmdbIds,
+	now = new Date(),
+	maxAgeMs,
+}: ReadOwnedJellyfinEpisodeDisplaySourcesInput & { showTmdbIds: readonly number[] }): Promise<{
+	library: JellyfinLibraryDisplayEvidence;
+	episodes: JellyfinEpisodeDisplayEvidence;
+}> {
 	const observations = await Promise.all(
 		instances.map(async (instance) => {
-			let observation: JellyfinObservation | null;
-			try {
-				observation =
-					typeof (prisma as { $transaction?: unknown }).$transaction === "function"
-						? await readOwnedGenerationScopedEpisodeDisplay({
-								prisma: prisma as unknown as PrismaClient,
-								userId,
-								instanceId: instance.id,
-								showTmdbIds,
-								now: effectiveNow,
-								maxAgeMs,
-							})
-						: null;
-				observation ??= await readOwnedJellyfinObservation({
-					prisma,
-					userId,
-					instanceId: instance.id,
-					cacheType: "jellyfin_episode",
-					mode: "display",
-					now: effectiveNow,
-					maxAgeMs,
-				});
-			} catch {
-				observation = null;
-			}
-
-			const sourceStatus = publicEpisodeSourceStatus(
-				instance,
-				observation?.providerStatus ?? unavailableStatus,
-			);
+			const input = { prisma, userId, instanceId: instance.id, now, maxAgeMs };
+			const scoped =
+				typeof prisma.$transaction === "function"
+					? await readOwnedGenerationScopedLibraryAndEpisodeDisplay({
+							...input,
+							prisma: prisma as unknown as PrismaClient,
+							showTmdbIds,
+						}).catch(() => undefined)
+					: undefined;
+			const library =
+				scoped?.library === undefined
+					? await readDisplayObservation(input, "jellyfin")
+					: scoped.library;
+			const episodes = scoped
+				? (scoped.episodes ?? (await readDisplayObservation(input, "jellyfin_episode")))
+				: await readEpisodeDisplayObservation(input, showTmdbIds);
 			return {
-				instanceId: instance.id,
-				instanceName: instance.label,
-				rows: isAdmittedEpisodeObservation(observation)
-					? observation.rows
-							// Partial observations prove positive watch facts only. Omitted
-							// rows and false flags cannot establish unwatched state.
-							.filter((row) => observation.providerStatus.evidence === "complete" || row.watched)
-							.map((row) => ({ ...row }))
-					: [],
-				status: sourceStatus,
+				library: libraryDisplaySource(instance, library),
+				episodes: episodeDisplaySource(instance, episodes),
 			};
 		}),
 	);
-
-	const providerStatus = aggregateProviderObservationStatuses(
-		observations.map(({ status }) => status),
-	);
 	return {
-		sources: observations.map(({ instanceId, instanceName, rows }) => ({
-			instanceId,
-			instanceName,
-			rows,
-		})),
-		providerStatus,
+		library: displayEvidence(observations.map(({ library }) => library)),
+		episodes: displayEvidence(observations.map(({ episodes }) => episodes)),
 	};
 }

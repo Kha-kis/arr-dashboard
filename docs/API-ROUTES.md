@@ -420,6 +420,12 @@ percent. `status: unknown` has null counts and percent. `watchedSemantics` is
 `exact`, `lower-bound`, or `unknown` respectively. Episode coordinates are
 deduplicated across connections. The UI displays each provider separately.
 
+`GET /api/jellyfin/watch-enrichment` accepts an optional comma-separated
+`progressTmdbIds` query parameter. The response then includes
+`seriesProgress` with the Jellyfin series progress response shape and its
+own provider observation status. The progress selection accepts up to 200
+distinct positive safe integer IDs, independently of the watch item selection.
+
 ## Backup Restore (`/api/backup`)
 
 Restore is a protected, single-administrator operator action. It replaces the

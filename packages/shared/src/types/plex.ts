@@ -552,6 +552,10 @@ export interface SeriesProgressResponse {
 	providerStatus?: ProviderObservationStatusEnvelope;
 }
 
+export interface JellyfinWatchEnrichmentResponse extends WatchEnrichmentResponse {
+	seriesProgress?: SeriesProgressResponse;
+}
+
 // ============================================================================
 // Transcode Analytics (F15)
 // ============================================================================

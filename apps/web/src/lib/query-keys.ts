@@ -348,7 +348,10 @@ export const jellyfinKeys = {
 	analyticsReport: (days: number) => ["jellyfin", "analytics", "report", days] as const,
 	identity: () => ["jellyfin", "identity"] as const,
 	sections: () => ["jellyfin", "sections"] as const,
-	watchEnrichment: (key: string) => ["jellyfin", "watch-enrichment", key] as const,
+	watchEnrichment: (key: string, progressTmdbIds: readonly number[] = []) =>
+		progressTmdbIds.length
+			? (["jellyfin", "watch-enrichment", key, progressTmdbIds] as const)
+			: (["jellyfin", "watch-enrichment", key] as const),
 	onDeck: () => ["jellyfin", "on-deck"] as const,
 	recentlyAdded: (limit: number) => ["jellyfin", "recently-added", limit] as const,
 	episodes: (instanceId: string, showTmdbId: number) =>

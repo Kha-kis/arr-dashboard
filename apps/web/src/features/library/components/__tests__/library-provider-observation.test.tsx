@@ -348,9 +348,9 @@ describe("Library provider observation", () => {
 			});
 			render(<LibraryClient />);
 			await act(async () => {
-				(queryState.contentProps?.onExpandDetails as (item: LibraryItem) => void)(
-					queryState.libraryItem!,
-				);
+				const expand = queryState.contentProps?.onExpandDetails;
+				if (typeof expand !== "function") throw new Error("Missing library detail handler");
+				expand(queryState.libraryItem);
 			});
 			await waitFor(() =>
 				expect(queryState.detailProps?.episodeProvider).toBe(
@@ -551,6 +551,28 @@ describe("Library provider observation", () => {
 		expect(screen.getByText(/Showing current mapped data/i)).toBeInTheDocument();
 	});
 
+	it("uses progress bundled with watch enrichment without enabling a separate progress request", () => {
+		queryState.libraryItem = seriesLibraryItem;
+		queryState.jellyfinWatch = {
+			isEnabled: true,
+			isSuccess: true,
+			data: {
+				items: {},
+				seriesProgress: progressResponse({
+					202: { status: "exact", watched: 1, total: 2, percent: 50, watchedSemantics: "exact" },
+				}).data,
+			},
+		};
+
+		render(<LibraryClient />);
+
+		expect(queryState.contentProps?.seriesProgressMap).toMatchObject({
+			202: { jellyfin: { status: "exact", watched: 1, total: 2, percent: 50 } },
+		});
+		expect(queryState.watchHook).toHaveBeenCalledWith([seriesLibraryItem], [202]);
+		expect(queryState.progressHook).toHaveBeenCalledWith([202], false);
+	});
+
 	it("renders a nonempty degraded progress map unchanged", () => {
 		queryState.libraryItem = seriesLibraryItem;
 		setQueries({
@@ -566,7 +588,7 @@ describe("Library provider observation", () => {
 		expect(queryState.contentProps?.seriesProgressMap).toMatchObject({
 			202: { jellyfin: { status: "exact", watched: 2, total: 4, percent: 50 } },
 		});
-		expect(queryState.progressHook).toHaveBeenCalledWith([202]);
+		expect(queryState.progressHook).toHaveBeenCalledWith([202], true);
 	});
 
 	it("renders an unavailable notice for an independent progress transport error", () => {
@@ -583,7 +605,7 @@ describe("Library provider observation", () => {
 
 		expect(screen.getByText(/Media-server data is unavailable/i)).toBeInTheDocument();
 		expect(screen.queryByText("private progress transport failure")).not.toBeInTheDocument();
-		expect(queryState.progressHook).toHaveBeenCalledWith([202]);
+		expect(queryState.progressHook).toHaveBeenCalledWith([202], true);
 	});
 
 	it("turns a Jellyfin transport error into an unavailable notice without raw error text", () => {
@@ -659,7 +681,7 @@ describe("Library provider observation", () => {
 				jellyfin: { status: "exact", watched: 1, percent: 50 },
 			},
 		});
-		expect(queryState.progressHook).toHaveBeenCalledWith([202]);
+		expect(queryState.progressHook).toHaveBeenCalledWith([202], true);
 		expect(queryState.plexProgressHook).toHaveBeenCalledWith([202]);
 	});
 

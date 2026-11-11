@@ -6,20 +6,27 @@
  * verified positives, and omitted rows remain unknown.
  */
 
-import type { WatchEnrichmentItem } from "@arr/shared";
+import type { JellyfinWatchEnrichmentResponse, WatchEnrichmentItem } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { withIsolatedRuntimePrismaBulkReadClient } from "../../lib/backup/restore-runtime-client.js";
-import { withJellyfinDisplayReadTiming } from "../../lib/jellyfin/jellyfin-display-read-timing.js";
 import {
 	type JellyfinDisplayInstance,
+	readOwnedJellyfinLibraryAndEpisodeDisplaySources,
 	readOwnedJellyfinLibraryDisplaySources,
 } from "../../lib/jellyfin/jellyfin-display-evidence.js";
+import { withJellyfinDisplayReadTiming } from "../../lib/jellyfin/jellyfin-display-read-timing.js";
 import { projectWatchDisplayEvidence } from "../../lib/provider-observation/watch-display-evidence.js";
 import { validateRequest } from "../../lib/utils/validate.js";
+import {
+	MAX_SERIES_PROGRESS_BATCH_SIZE,
+	parseSeriesProgressIds,
+	projectJellyfinSeriesProgress,
+} from "./series-progress-routes.js";
 
 const enrichmentQuery = z.object({
 	tmdbIds: z.string().min(1),
+	progressTmdbIds: z.string().min(1).optional(),
 	types: z
 		.string()
 		.min(1)
@@ -49,8 +56,14 @@ export async function registerWatchEnrichmentRoutes(
 	 * Keys in response are "movie:123" or "series:456".
 	 */
 	app.get("/", async (request, reply) => {
-		const { tmdbIds: tmdbIdsRaw, types } = validateRequest(enrichmentQuery, request.query);
+		const {
+			tmdbIds: tmdbIdsRaw,
+			types,
+			progressTmdbIds,
+		} = validateRequest(enrichmentQuery, request.query);
 		const tmdbIds = tmdbIdsRaw.split(",").map(Number);
+		const showTmdbIds =
+			progressTmdbIds === undefined ? undefined : parseSeriesProgressIds(progressTmdbIds);
 		const userId = request.currentUser!.id;
 
 		if (tmdbIds.length !== types.length) {
@@ -58,6 +71,11 @@ export async function registerWatchEnrichmentRoutes(
 		}
 		if (tmdbIds.length > MAX_BATCH_SIZE) {
 			return reply.status(400).send({ error: `Max ${MAX_BATCH_SIZE} items per request` });
+		}
+		if (showTmdbIds && showTmdbIds.length > MAX_SERIES_PROGRESS_BATCH_SIZE) {
+			return reply
+				.status(400)
+				.send({ error: `Max ${MAX_SERIES_PROGRESS_BATCH_SIZE} series IDs per request` });
 		}
 		if (tmdbIds.some((id) => !Number.isFinite(id) || id <= 0)) {
 			return reply.status(400).send({ error: "All tmdbIds must be positive integers" });
@@ -74,7 +92,7 @@ export async function registerWatchEnrichmentRoutes(
 
 		const tmdbIdList = [...new Set(tmdbIds)];
 
-		const displayEvidence = await withJellyfinDisplayReadTiming(
+		const { library: displayEvidence, seriesProgress } = await withJellyfinDisplayReadTiming(
 			() =>
 				withIsolatedRuntimePrismaBulkReadClient(
 					app.prisma,
@@ -83,13 +101,24 @@ export async function registerWatchEnrichmentRoutes(
 							where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 							select: { id: true, label: true, service: true },
 						});
-						return jellyfinInstances.length > 0
-							? await readOwnedJellyfinLibraryDisplaySources({
-									prisma,
-									userId,
-									instances: jellyfinInstances as JellyfinDisplayInstance[],
-								})
-							: { sources: [], providerStatus: undefined };
+						const instances = jellyfinInstances as JellyfinDisplayInstance[];
+						const input = { prisma, userId, instances };
+						if (showTmdbIds) {
+							const { library, episodes } = await readOwnedJellyfinLibraryAndEpisodeDisplaySources({
+								...input,
+								showTmdbIds,
+							});
+							return {
+								library,
+								seriesProgress: projectJellyfinSeriesProgress(instances, episodes, showTmdbIds),
+							};
+						}
+						return {
+							library:
+								instances.length > 0
+									? await readOwnedJellyfinLibraryDisplaySources(input)
+									: { sources: [], providerStatus: undefined },
+						};
 					},
 					{ lease: "phase" },
 				),
@@ -97,7 +126,7 @@ export async function registerWatchEnrichmentRoutes(
 				app.log.info(
 					{
 						category: "jellyfin-display-read-timing",
-						kind: "watch",
+						kind: showTmdbIds ? "watch-and-progress" : "watch",
 						spansOverlap: true,
 						...timing,
 					},
@@ -181,9 +210,11 @@ export async function registerWatchEnrichmentRoutes(
 			};
 		}
 
-		return reply.send({
+		const response: JellyfinWatchEnrichmentResponse = {
 			items,
 			providerStatus: displayEvidence.providerStatus,
-		});
+			seriesProgress,
+		};
+		return reply.send(response);
 	});
 }

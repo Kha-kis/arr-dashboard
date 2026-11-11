@@ -2,11 +2,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../../prisma.js";
 import { evaluateProviderCoverageReceipt } from "../../provider-observation/coverage-receipt.js";
 import { projectProviderObservationStatus } from "../../provider-observation/status-projection.js";
+import {
+	readOwnedJellyfinEpisodeDisplaySources,
+	readOwnedJellyfinLibraryAndEpisodeDisplaySources,
+	readOwnedJellyfinLibraryDisplaySources,
+} from "../jellyfin-display-evidence.js";
 import { buildJellyfinEpisodeCatalogProvenance } from "../jellyfin-episode-catalog-provenance.js";
 import * as parentDependencies from "../jellyfin-episode-parent-dependency.js";
 import { fingerprintJellyfinEpisodeParentDependency } from "../jellyfin-episode-parent-dependency.js";
 import type {
 	JellyfinEpisodeRow,
+	JellyfinEvidencePrisma,
 	JellyfinLibraryObservation,
 	JellyfinLibraryRow,
 } from "../jellyfin-evidence-repository.js";
@@ -21,7 +27,7 @@ import {
 } from "../jellyfin-generation-metadata.js";
 import { readOwnedGenerationScopedEpisodeDisplay } from "../jellyfin-generation-scoped-display.js";
 
-const repository = vi.hoisted(() => ({ readParent: vi.fn() }));
+const repository = vi.hoisted(() => ({ readParent: vi.fn(), validateParent: vi.fn() }));
 // Only the parent database boundary is replaced. V4 decoding, coverage,
 // provenance compatibility, row digests and status projection remain real.
 vi.mock("../jellyfin-evidence-repository.js", async (original) => {
@@ -29,14 +35,16 @@ vi.mock("../jellyfin-evidence-repository.js", async (original) => {
 	return {
 		...actual,
 		materializeOwnedJellyfinLibraryDisplayInTransaction: repository.readParent,
-		validateOwnedJellyfinLibraryDisplaySnapshot: (
-			snapshot:
-				| Parameters<typeof actual.validateOwnedJellyfinLibraryDisplaySnapshot>[0]
-				| JellyfinLibraryObservation,
-		) =>
-			"snapshot" in snapshot
-				? actual.validateOwnedJellyfinLibraryDisplaySnapshot(snapshot)
-				: snapshot,
+		validateOwnedJellyfinLibraryDisplaySnapshot: repository.validateParent.mockImplementation(
+			(
+				snapshot:
+					| Parameters<typeof actual.validateOwnedJellyfinLibraryDisplaySnapshot>[0]
+					| JellyfinLibraryObservation,
+			) =>
+				"snapshot" in snapshot
+					? actual.validateOwnedJellyfinLibraryDisplaySnapshot(snapshot)
+					: snapshot,
+		),
 	};
 });
 
@@ -284,9 +292,8 @@ function fixture(service: "JELLYFIN" | "EMBY" = "JELLYFIN", catalogIds = [42]) {
 		},
 		jellyfinEpisodeGenerationRow: { findMany: vi.fn(async () => rows) },
 	};
-	const prisma = {
-		$transaction: async (read: (value: typeof tx) => unknown) => read(tx),
-	} as unknown as PrismaClient;
+	const transaction = vi.fn(async (read: (value: typeof tx) => unknown) => read(tx));
+	const prisma = { $transaction: transaction } as unknown as PrismaClient;
 	repository.readParent.mockResolvedValue(parent);
 	return {
 		prisma,
@@ -299,6 +306,7 @@ function fixture(service: "JELLYFIN" | "EMBY" = "JELLYFIN", catalogIds = [42]) {
 		showReceipt,
 		rows,
 		tx,
+		transaction,
 		read: (at = now) =>
 			readOwnedGenerationScopedEpisodeDisplay({
 				prisma,
@@ -784,5 +792,102 @@ describe("generation-scoped episode display freshness", () => {
 			providerStatus: { availability: "unavailable", reasonCodes: ["receipt-invalid"] },
 			mutationAvailable: false,
 		});
+	});
+});
+
+describe("paired Jellyfin watch and progress proof", () => {
+	function pairedInput(f: ReturnType<typeof fixture>) {
+		return {
+			prisma: f.prisma as unknown as JellyfinEvidencePrisma,
+			userId: "owner-1",
+			instances: [{ id: f.instance.id, label: "Synthetic library", service: f.instance.service }],
+			showTmdbIds: [42],
+			now,
+			maxAgeMs,
+		};
+	}
+
+	it.each(["JELLYFIN", "EMBY"] as const)(
+		"shares one materialized and validated %s parent with independent result parity",
+		async (service) => {
+			const f = fixture(service);
+			await useRealParentSnapshot(f);
+			const input = pairedInput(f);
+			const library = await readOwnedJellyfinLibraryDisplaySources(input);
+			const episodes = await readOwnedJellyfinEpisodeDisplaySources(input);
+			expect(library.sources[0]?.rows).toEqual(f.parent.rows);
+			expect(episodes.sources[0]?.rows).toEqual([f.rows[0]]);
+			vi.clearAllMocks();
+
+			expect(await readOwnedJellyfinLibraryAndEpisodeDisplaySources(input)).toEqual({
+				library,
+				episodes,
+			});
+			expect(f.transaction).toHaveBeenCalledExactlyOnceWith(expect.any(Function), {
+				isolationLevel: "Serializable",
+				timeout: 10_000,
+			});
+			expect(repository.readParent).toHaveBeenCalledExactlyOnceWith(f.tx, {
+				instanceId: f.instance.id,
+				userId: "owner-1",
+				now,
+				maxAgeMs,
+			});
+			expect(repository.validateParent).toHaveBeenCalledTimes(1);
+		},
+	);
+
+	it("retains the shared library when episode catalog provenance fails", async () => {
+		const f = fixture();
+		// A valid replacement parent with a different provider item binding still
+		// supplies watch evidence and must not validate the old episode catalog.
+		const replacement = { ...f.libraryRow, jellyfinId: "replacement-series" };
+		f.parent.rows = [replacement];
+		f.parent.metadata = {
+			...f.parent.metadata!,
+			contentFingerprint: fingerprintJellyfinLibraryRows([replacement]),
+		};
+		await useRealParentSnapshot(f);
+
+		const result = await readOwnedJellyfinLibraryAndEpisodeDisplaySources(pairedInput(f));
+
+		expect(result.library.sources[0]?.rows).toEqual([replacement]);
+		expect(result.episodes.sources[0]?.rows).toEqual([]);
+		expect(result.episodes.providerStatus?.sources[0]?.status).toMatchObject({
+			availability: "unavailable",
+			reasonCodes: ["rows-inconsistent"],
+		});
+		expect(f.transaction).toHaveBeenCalledTimes(1);
+		expect(repository.validateParent).toHaveBeenCalledTimes(1);
+	});
+
+	it("keeps an explicitly unavailable V4 episode result while reading watch independently", async () => {
+		const f = fixture();
+		f.pointer.activeRunId = "other-generation";
+		await useRealParentSnapshot(f);
+
+		const result = await readOwnedJellyfinLibraryAndEpisodeDisplaySources(pairedInput(f));
+
+		expect(result.library.sources[0]?.rows).toEqual(f.parent.rows);
+		expect(result.episodes.sources[0]?.rows).toEqual([]);
+		expect(result.episodes.providerStatus?.sources[0]?.status).toMatchObject({
+			availability: "unavailable",
+			reasonCodes: ["rows-inconsistent"],
+		});
+		expect(f.transaction).toHaveBeenCalledTimes(2);
+		expect(repository.readParent).not.toHaveBeenCalled();
+	});
+
+	it("rejects a parent observation for a different instance", async () => {
+		const f = fixture();
+		repository.readParent.mockResolvedValue({ ...f.parent, instanceId: "other-instance" });
+
+		const result = await readOwnedJellyfinLibraryAndEpisodeDisplaySources(pairedInput(f));
+
+		expect(result.library.sources[0]?.rows).toEqual([]);
+		expect(result.library.providerStatus?.availability).toBe("unavailable");
+		expect(result.episodes.sources[0]?.rows).toEqual([]);
+		expect(result.episodes.providerStatus?.availability).toBe("unavailable");
+		expect(f.transaction).toHaveBeenCalledTimes(1);
 	});
 });

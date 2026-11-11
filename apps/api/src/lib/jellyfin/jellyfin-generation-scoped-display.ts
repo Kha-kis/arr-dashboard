@@ -1,5 +1,5 @@
 import type { ProviderObservationStatus } from "@arr/shared";
-import type { PrismaClient } from "../prisma.js";
+import type { Prisma, PrismaClient } from "../prisma.js";
 import { evaluateProviderCoverageReceipt } from "../provider-observation/coverage-receipt.js";
 import { projectProviderObservationStatus } from "../provider-observation/status-projection.js";
 import {
@@ -10,6 +10,7 @@ import { fingerprintJellyfinEpisodeParentDependency } from "./jellyfin-episode-p
 import {
 	type JellyfinEpisodeObservation,
 	type JellyfinEpisodeRow,
+	type JellyfinLibraryObservation,
 	materializeOwnedJellyfinLibraryDisplayInTransaction,
 	type TransactionReader,
 	validateOwnedJellyfinLibraryDisplaySnapshot,
@@ -67,6 +68,24 @@ function attemptFromStatus(status: {
 export async function readOwnedGenerationScopedEpisodeDisplay(
 	input: Input,
 ): Promise<JellyfinEpisodeObservation | null> {
+	return (await readGenerationScopedDisplay(input)).episodes;
+}
+
+export async function readOwnedGenerationScopedLibraryAndEpisodeDisplay(
+	input: Input & { showTmdbIds: readonly number[] },
+) {
+	// Match the independent library reader's snapshot isolation and lease timeout.
+	return readGenerationScopedDisplay(input, { isolationLevel: "Serializable", timeout: 10_000 });
+}
+
+async function readGenerationScopedDisplay(
+	input: Input,
+	transactionOptions?: { isolationLevel: "Serializable"; timeout: number },
+): Promise<{
+	// Undefined means the scoped episode path did not read a parent.
+	library: JellyfinLibraryObservation | null | undefined;
+	episodes: JellyfinEpisodeObservation | null;
+}> {
 	const now = input.now ?? new Date();
 	const maxAgeMs = input.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
 	const requested = [...new Set(input.showTmdbIds ?? [])];
@@ -79,7 +98,7 @@ export async function readOwnedGenerationScopedEpisodeDisplay(
 		requested.some((id) => !Number.isSafeInteger(id) || id <= 0)
 	)
 		throw new Error("Invalid Jellyfin episode display scope");
-	const snapshot = await input.prisma.$transaction(async (tx) => {
+	async function readSnapshot(tx: Prisma.TransactionClient) {
 		const instance = await tx.serviceInstance.findFirst({
 			where: { id: input.instanceId, userId: input.userId, service: { in: ["JELLYFIN", "EMBY"] } },
 			select: {
@@ -161,10 +180,6 @@ export async function readOwnedGenerationScopedEpisodeDisplay(
 					pointer.activeCacheGenerationId !== status.generationId))
 		)
 			return fail("rows-inconsistent");
-		const parentSnapshot = await materializeOwnedJellyfinLibraryDisplayInTransaction(
-			tx as unknown as TransactionReader,
-			{ userId: input.userId, instanceId: instance.id, now, maxAgeMs },
-		);
 		const originalCatalogIds =
 			metadata.sourceVersion === 3 && metadata.publicationLevel === "positive-only"
 				? new Set(metadata.catalogProvenance?.bindings.map((binding) => binding.tmdbId) ?? [])
@@ -240,6 +255,10 @@ export async function readOwnedGenerationScopedEpisodeDisplay(
 			}
 			rows.push(...showRows);
 		}
+		const parentSnapshot = await materializeOwnedJellyfinLibraryDisplayInTransaction(
+			tx as unknown as TransactionReader,
+			{ userId: input.userId, instanceId: instance.id, now, maxAgeMs },
+		);
 		return {
 			instance,
 			service,
@@ -252,8 +271,9 @@ export async function readOwnedGenerationScopedEpisodeDisplay(
 			rows,
 			incompleteRequestedScope,
 		};
-	});
-	if (!snapshot || "available" in snapshot) return snapshot;
+	}
+	const snapshot = await input.prisma.$transaction(readSnapshot, transactionOptions);
+	if (!snapshot || "available" in snapshot) return { library: undefined, episodes: snapshot };
 	const {
 		instance,
 		service,
@@ -268,16 +288,21 @@ export async function readOwnedGenerationScopedEpisodeDisplay(
 	} = snapshot;
 	// Parent row validation and canonical hashing must not occupy the outer lease,
 	// including health reads which request no episode rows.
-	const parent = await validateOwnedJellyfinLibraryDisplaySnapshot(parentSnapshot);
+	const validatedParent = await validateOwnedJellyfinLibraryDisplaySnapshot(parentSnapshot);
+	const parent =
+		validatedParent?.cacheType === "jellyfin" &&
+		validatedParent.instanceId === instance.id &&
+		validatedParent.service === service
+			? validatedParent
+			: null;
 	if (
-		parent?.cacheType !== "jellyfin" ||
-		!parent.available ||
+		!parent?.available ||
 		!parent.metadata ||
 		!parent.generationId ||
 		!parent.publishedAt ||
 		!hasJellyfinEpisodeParentReceipt(parent.metadata.coverageReceipt)
 	)
-		return fail("rows-inconsistent");
+		return { library: parent, episodes: fail("rows-inconsistent") };
 	const exactParent =
 		metadata.parentLibraryGenerationId === parent.generationId &&
 		metadata.parentLibraryMetadataFingerprint ===
@@ -302,7 +327,7 @@ export async function readOwnedGenerationScopedEpisodeDisplay(
 					parent.rows as JellyfinLibraryRowFingerprintInput[],
 				)
 	)
-		return fail("rows-inconsistent");
+		return { library: parent, episodes: fail("rows-inconsistent") };
 	const parentCurrent =
 		exactParent &&
 		(parent.providerStatus.availability === "current" ||
@@ -334,16 +359,19 @@ export async function readOwnedGenerationScopedEpisodeDisplay(
 	const visibleRows =
 		providerStatus.evidence === "complete" ? rows : rows.filter((row) => row.watched);
 	return {
-		available: providerStatus.availability !== "unavailable",
-		instanceId: instance.id,
-		service,
-		cacheType: "jellyfin_episode",
-		generationId: status.generationId,
-		publishedAt: status.lastRefreshedAt,
-		metadata,
-		rows: visibleRows,
-		providerStatus,
-		mutationAvailable: false,
-		authority: null,
+		library: parent,
+		episodes: {
+			available: providerStatus.availability !== "unavailable",
+			instanceId: instance.id,
+			service,
+			cacheType: "jellyfin_episode",
+			generationId: status.generationId,
+			publishedAt: status.lastRefreshedAt,
+			metadata,
+			rows: visibleRows,
+			providerStatus,
+			mutationAvailable: false,
+			authority: null,
+		},
 	};
 }

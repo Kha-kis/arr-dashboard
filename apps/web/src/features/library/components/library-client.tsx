@@ -256,9 +256,17 @@ export const LibraryClient: React.FC = () => {
 	const enrichmentQuery = useLibraryEnrichment(seerrInstanceId, data.items);
 	const enrichmentMap = enrichmentQuery.isError ? null : (enrichmentQuery.data?.items ?? null);
 
+	const seriesTmdbIds = useMemo(
+		() =>
+			data.items
+				.filter((item) => item.type === "series" && item.remoteIds?.tmdbId)
+				.map((item) => item.remoteIds!.tmdbId!),
+		[data.items],
+	);
+
 	// Watch enrichment — fetch watch counts, on-deck status, last watched from Plex + Jellyfin/Emby
 	const plexWatchQuery = useWatchEnrichment(data.items);
-	const jellyfinWatchQuery = useJellyfinWatchEnrichment(data.items);
+	const jellyfinWatchQuery = useJellyfinWatchEnrichment(data.items, seriesTmdbIds);
 	const watchEnrichmentMap = useMemo(() => {
 		const plexItems = plexWatchQuery.data?.items;
 		const jfItems = jellyfinWatchQuery.data?.items;
@@ -297,18 +305,17 @@ export const LibraryClient: React.FC = () => {
 	}, [jellyfinIdentityQuery.data]);
 
 	// Series progress — fetch watched/total episode counts from Plex + Jellyfin/Emby
-	const seriesTmdbIds = useMemo(
-		() =>
-			data.items
-				.filter((item) => item.type === "series" && item.remoteIds?.tmdbId)
-				.map((item) => item.remoteIds!.tmdbId!),
-		[data.items],
-	);
 	const plexProgressQuery = useSeriesProgress(seriesTmdbIds);
-	const jellyfinProgressQuery = useJellyfinSeriesProgress(seriesTmdbIds);
+	const bundledJellyfinProgress = jellyfinWatchQuery.data?.seriesProgress;
+	const jellyfinProgressQuery = useJellyfinSeriesProgress(
+		seriesTmdbIds,
+		!bundledJellyfinProgress &&
+			(!jellyfinWatchQuery.isEnabled || jellyfinWatchQuery.isError || jellyfinWatchQuery.isSuccess),
+	);
+	const jellyfinProgress = bundledJellyfinProgress ?? jellyfinProgressQuery.data;
 	const seriesProgressMap = useMemo(() => {
-		return groupSeriesProgress(plexProgressQuery.data, jellyfinProgressQuery.data);
-	}, [plexProgressQuery.data, jellyfinProgressQuery.data]);
+		return groupSeriesProgress(plexProgressQuery.data, jellyfinProgress);
+	}, [plexProgressQuery.data, jellyfinProgress]);
 
 	// hasQui gates UI surfaces that only make sense with a qui instance configured
 	// (Torrent state filter dropdown, per-card badge). Each card now reads its
@@ -493,7 +500,7 @@ export const LibraryClient: React.FC = () => {
 			<ProviderObservationNotice
 				providerStatus={[
 					jellyfinWatchQuery.data?.providerStatus,
-					jellyfinProgressQuery.data?.providerStatus,
+					jellyfinProgress?.providerStatus,
 					plexWatchQuery.data?.tautulliStatus,
 					jellyfinWatchQuery.data?.tautulliStatus,
 				]}
@@ -504,7 +511,9 @@ export const LibraryClient: React.FC = () => {
 					TAUTULLI_REQUIRED_DOMAINS,
 				]}
 				requiredDomainsByCacheType={{ jellyfin_episode: JELLYFIN_EPISODE_REQUIRED_DOMAINS }}
-				isError={jellyfinWatchQuery.isError || jellyfinProgressQuery.isError}
+				isError={
+					jellyfinWatchQuery.isError || (!bundledJellyfinProgress && jellyfinProgressQuery.isError)
+				}
 				label="Library watch and progress values"
 			/>
 			<SeerrEnrichmentNotice

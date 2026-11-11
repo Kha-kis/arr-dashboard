@@ -10,11 +10,13 @@ import {
 
 const routeMocks = vi.hoisted(() => ({
 	readDisplay: vi.fn(),
+	readPairedDisplay: vi.fn(),
 	readTautulliDisplay: vi.fn(),
 }));
 
 vi.mock("../../../lib/jellyfin/jellyfin-display-evidence.js", () => ({
 	readOwnedJellyfinLibraryDisplaySources: routeMocks.readDisplay,
+	readOwnedJellyfinLibraryAndEpisodeDisplaySources: routeMocks.readPairedDisplay,
 	isArithmeticAuthoritativeProviderObservationStatus: (providerStatus: {
 		sources: Array<{ status: { availability: string; evidence: string } }>;
 	}) =>
@@ -211,6 +213,55 @@ describe("Jellyfin library display authority routes", () => {
 				/metadata|authority|generationId|fingerprint|scopeKey|receipt|error/i,
 			);
 		}
+	});
+
+	it("returns watch values and independently unavailable progress for the requested series", async () => {
+		const status = {
+			...currentStatus,
+			availability: "unavailable" as const,
+			evidence: "unknown" as const,
+			observedAt: null,
+			ageSeconds: null,
+			reasonCodes: ["no-publication"],
+			domains: [],
+		};
+		routeMocks.readPairedDisplay.mockResolvedValue({
+			library: display([source("jellyfin-1", "Jellyfin One", [row("jellyfin-1", "j-row")])]),
+			episodes: {
+				sources: [],
+				providerStatus: {
+					availability: "unavailable",
+					sources: [
+						{
+							instanceId: "jellyfin-1",
+							service: "jellyfin",
+							cacheType: "jellyfin_episode",
+							status,
+						},
+					],
+				},
+			},
+		});
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/api/jellyfin/watch-enrichment?tmdbIds=42&types=movie&progressTmdbIds=99,99",
+		);
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			items: { "movie:42": { watchCount: 2, watchCountSemantics: "exact" } },
+			providerStatus: { availability: "current" },
+			seriesProgress: {
+				configured: true,
+				progress: { 99: { status: "unknown", watched: null, total: null } },
+				providerStatus: { availability: "unavailable" },
+			},
+		});
+		expect(routeMocks.readPairedDisplay).toHaveBeenCalledWith(
+			expect.objectContaining({
+				showTmdbIds: [99],
+			}),
+		);
+		expect(routeMocks.readDisplay).not.toHaveBeenCalled();
 	});
 
 	it("does not turn duplicate exact zero counts into a zero lower bound", async () => {
