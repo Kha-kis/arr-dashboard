@@ -12,14 +12,15 @@
 set -eu
 
 IMAGE="${1:-arr-dashboard:smoke}"
-WORK=/tmp/test-shutdown-grace-$$
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/test-shutdown-grace-XXXXXXXX")
 CONFIG_DIR="$WORK/config"
 
 PASS=0
 FAIL=0
 
+FIXTURE_IDS=
 cleanup() {
-    for c in "${WORK##*/}-"*; do
+    for c in $FIXTURE_IDS; do
         docker rm -f "$c" >/dev/null 2>&1 || true
     done
     rm -rf "$WORK" 2>/dev/null || true
@@ -31,16 +32,34 @@ mkdir -p "$CONFIG_DIR"
 ok() { echo "  PASS: $*"; PASS=$((PASS + 1)); }
 bad() { echo "  FAIL: $*" >&2; FAIL=$((FAIL + 1)); }
 
-HOST_API_PORT=33130
-HOST_WEB_PORT=33131
+fixture_port() {
+    mapping=$(docker port "$1" "$2/tcp") || return 1
+    printf '%s\n' "$mapping" | awk -F: '
+        NF == 2 && $1 == "127.0.0.1" && $2 ~ /^[0-9]+$/ && $2 > 0 && $2 <= 65535 { port = $2 }
+        END { if (NR != 1 || !port) exit 1; print port }
+    '
+}
+
+start_fixture() {
+    fixture_name=$1
+    shift
+    FIXTURE_ID=$(docker create --name "$fixture_name" \
+        -v "$CONFIG_DIR":/config \
+        -e PUID=1000 -e PGID=1000 \
+        -p 127.0.0.1::3001 -p 127.0.0.1::3000 \
+        "$@" "$IMAGE")
+    FIXTURE_IDS="$FIXTURE_IDS $FIXTURE_ID"
+    docker start "$FIXTURE_ID" >/dev/null
+    HOST_API_PORT=$(fixture_port "$FIXTURE_ID" 3001)
+    HOST_WEB_PORT=$(fixture_port "$FIXTURE_ID" 3000)
+}
 
 wait_health() {
-    ctr=$1
-    timeout=${2:-120}
+    timeout=${1:-120}
     elapsed=0
     while [ "$elapsed" -lt "$timeout" ]; do
-        a=$(curl -sf "http://localhost:$HOST_API_PORT/health" 2>/dev/null || echo '')
-        w=$(curl -sf "http://localhost:$HOST_WEB_PORT/health" 2>/dev/null || echo '')
+        a=$(curl -sf "http://127.0.0.1:$HOST_API_PORT/health" 2>/dev/null || echo '')
+        w=$(curl -sf "http://127.0.0.1:$HOST_WEB_PORT/health" 2>/dev/null || echo '')
         if [ -n "$a" ] && [ -n "$w" ]; then
             return 0
         fi
@@ -57,14 +76,9 @@ echo ""
 echo "=== [grace-invalid] invalid SHUTDOWN_GRACE falls back to default ==="
 for badval in abc -1 1.5 "  "; do
     ctr="${WORK##*/}-invalid-$(echo "$badval" | tr -c 'a-zA-Z0-9' '_')"
-    docker rm -f "$ctr" >/dev/null 2>&1 || true
-    docker run -d --name "$ctr" \
-        -v "$CONFIG_DIR":/config \
-        -e PUID=1000 -e PGID=1000 \
-        -e SHUTDOWN_GRACE="$badval" \
-        -p "$HOST_API_PORT":3001 -p "$HOST_WEB_PORT":3000 \
-        "$IMAGE" >/dev/null
-    if wait_health "$ctr" 60; then
+    start_fixture "$ctr" -e "SHUTDOWN_GRACE=$badval"
+    ctr=$FIXTURE_ID
+    if wait_health 60; then
         ok "container started with SHUTDOWN_GRACE='$badval'"
     else
         bad "container failed to start with SHUTDOWN_GRACE='$badval'"
@@ -85,13 +99,9 @@ done
 echo ""
 echo "=== [grace-normal] normal docker stop is graceful (exit 0) ==="
 ctr="${WORK##*/}-normal"
-docker rm -f "$ctr" >/dev/null 2>&1 || true
-docker run -d --name "$ctr" \
-    -v "$CONFIG_DIR":/config \
-    -e PUID=1000 -e PGID=1000 \
-    -p "$HOST_API_PORT":3001 -p "$HOST_WEB_PORT":3000 \
-    "$IMAGE" >/dev/null
-wait_health "$ctr" 60 || bad "services did not become healthy"
+start_fixture "$ctr"
+ctr=$FIXTURE_ID
+wait_health 60 || bad "services did not become healthy"
 start=$(date +%s)
 docker stop --time 120 "$ctr" >/dev/null 2>&1 || bad "Docker stop failed"
 end=$(date +%s)
@@ -121,18 +131,12 @@ console.log("[stubborn-web] started, ignoring SIGTERM");
 process.on("SIGTERM", () => { console.log("[stubborn-web] ignoring SIGTERM"); });
 setInterval(() => {}, 1000);
 EOF
-docker rm -f "$ctr" >/dev/null 2>&1 || true
-docker run -d --name "$ctr" \
-    -v "$CONFIG_DIR":/config \
-    -e PUID=1000 -e PGID=1000 \
-    -e SHUTDOWN_GRACE=3 \
-    -v "$SHIM_DIR/server.js":/app/web/server.js:ro \
-    -p "$HOST_API_PORT":3001 -p "$HOST_WEB_PORT":3000 \
-    "$IMAGE" >/dev/null
+start_fixture "$ctr" -e SHUTDOWN_GRACE=3 -v "$SHIM_DIR/server.js":/app/web/server.js:ro
+ctr=$FIXTURE_ID
 # wait for API health only (web is a stubborn shim, no /health)
 elapsed=0
 while [ "$elapsed" -lt 60 ]; do
-    a=$(curl -sf "http://localhost:$HOST_API_PORT/health" 2>/dev/null || echo '')
+    a=$(curl -sf "http://127.0.0.1:$HOST_API_PORT/health" 2>/dev/null || echo '')
     [ -n "$a" ] && break
     sleep 1
     elapsed=$((elapsed + 1))
