@@ -74,6 +74,7 @@ const fixtures = new Map<
 		instances: Array<{ id: string; userId: string }>;
 		graphs: Graph[];
 		owners: Array<{ userId: string; channelId: string }>;
+		seedCommitted: boolean;
 	}
 >();
 const realTimeout = globalThis.setTimeout,
@@ -111,10 +112,11 @@ async function waitForNative(observe: () => boolean) {
 
 async function cleanup(native: Native) {
 	const owned = fixtures.get(native)!;
-	await native.run(async () => {
+	fixtures.delete(native);
+	const verifyCleanup = native.run(async () => {
 		expect(
 			(await native.prisma.serviceInstance.deleteMany({ where: { OR: owned.instances } })).count,
-		).toBe(owned.instances.length);
+		).toBe(owned.seedCommitted ? owned.instances.length : 0);
 		const ids = owned.instances.map((row) => row.id),
 			runs = owned.graphs.map((row) => row.runId),
 			units = owned.graphs.map((row) => row.unitId);
@@ -163,8 +165,11 @@ async function cleanup(native: Native) {
 			await native.prisma.cacheRefreshStatus.count({ where: { instanceId: { in: ids } } }),
 		).toBe(0);
 	});
-	await native.close();
-	fixtures.delete(native);
+	try {
+		await verifyCleanup;
+	} finally {
+		await native.close();
+	}
 }
 async function boot(
 	options: {
@@ -184,19 +189,19 @@ async function boot(
 		failure?: Failure;
 		batches?: boolean;
 		holdAfterIssued?: boolean;
+		seedFailure?: Error;
 	} = {},
 ) {
 	const native = await createNotificationOutboxNativeFixture();
-	const owners = [
-		{ userId: native.userId, channelId: native.channelId },
-		await native.createOwner(),
-	];
+	const owners = [{ userId: native.userId, channelId: native.channelId }];
 	const owned = {
 		instances: [] as Array<{ id: string; userId: string }>,
 		graphs: [] as Graph[],
 		owners,
+		seedCommitted: false,
 	};
 	fixtures.set(native, owned);
+	owners.push(await native.createOwner());
 	const allInstances: ServiceInstance[] = [];
 	// Seed only the synthetic pre-launch graph atomically; tested runtime work stays real.
 	await native.run(() =>
@@ -220,6 +225,7 @@ async function boot(
 				});
 				owned.instances.push({ id: instance.id, userId: instance.userId });
 				allInstances.push(instance);
+				if (options.seedFailure) throw options.seedFailure;
 				if (options.artifacts) {
 					for (const role of ["retired", "active", "previous", "status", "running", "foreign"]) {
 						const runId = randomUUID();
@@ -428,6 +434,7 @@ async function boot(
 			}
 		}),
 	);
+	owned.seedCommitted = true;
 	const instances = allInstances.filter((row) => row.enabled);
 	await native.restart(false);
 	const client = createRuntimePrismaClient(native.runtime),
@@ -1063,17 +1070,25 @@ beforeEach(() => {
 	boundary.refresh.mockReset();
 });
 afterEach(async () => {
-	for (const release of releases.splice(0)) release();
-	await Promise.all(tasks.splice(0));
-	for (const app of apps.splice(0)) await app.close();
-	vi.restoreAllMocks();
-	for (const native of [...fixtures.keys()]) await cleanup(native);
-	vi.unstubAllGlobals();
-	vi.useRealTimers();
+	try {
+		for (const release of releases.splice(0)) release();
+		await Promise.all(tasks.splice(0));
+		for (const app of apps.splice(0)) await app.close();
+		vi.restoreAllMocks();
+		for (const native of [...fixtures.keys()]) await cleanup(native);
+	} finally {
+		vi.unstubAllGlobals();
+		vi.useRealTimers();
+	}
 });
 // Native runtime setup/teardown is real even while scheduler timers are virtual.
 // Keep a bounded fixture budget without changing any scheduler timing assertions.
 describe("Jellyfin and Emby episode scheduler accepted lifetimes", { timeout: 30_000 }, () => {
+	it("releases a rolled-back seed fixture without poisoning later cases", async () => {
+		const failure = new Error("Synthetic seed rollback");
+		await expect(boot({ seedFailure: failure })).rejects.toBe(failure);
+	});
+
 	it.each(["native", "lookalike"] as const)(
 		"reports a genuine %s cleanup failure during shutdown without admitting another stage",
 		async (failure) => {
