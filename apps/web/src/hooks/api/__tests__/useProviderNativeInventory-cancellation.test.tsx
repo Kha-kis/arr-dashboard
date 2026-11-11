@@ -96,10 +96,10 @@ describe("native inventory read cancellation", () => {
 
 	it("keeps a shared read until its last consumer unmounts", async () => {
 		const { requests, Wrapper } = fixture();
-		const read = () =>
+		const useInventoryPage = () =>
 			useProviderNativeInventory({ instanceId: "synthetic-first", domain: "episode" });
-		const first = renderHook(read, { wrapper: Wrapper });
-		const second = renderHook(read, { wrapper: Wrapper });
+		const first = renderHook(useInventoryPage, { wrapper: Wrapper });
+		const second = renderHook(useInventoryPage, { wrapper: Wrapper });
 		await waitFor(() => expect(requests).toHaveLength(1));
 		first.unmount();
 		expect(requests[0]!.signal?.aborted).toBe(false);
