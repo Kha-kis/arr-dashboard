@@ -4674,7 +4674,8 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 			});
 			let discoveryAllowed = true;
 			let discoveryCalls = 0;
-			let pageCalls = 0;
+			const referenceUserId = users[1]!.id;
+			const pageUsers: string[] = [];
 			const runner = createJellyfinEpisodeWorkItemRunner({
 				createClient: () =>
 					({
@@ -4684,9 +4685,10 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 							return users;
 						},
 						getLibraries: async () => [{ id: "library-1" }],
-						getEpisodeItemsPageWithCoverage: async () => {
-							pageCalls++;
-							if (failReferencePage && pageCalls === 2)
+						getEpisodeItemsPageWithCoverage: async (userId: string) => {
+							const firstPage = !pageUsers.includes(userId);
+							pageUsers.push(userId);
+							if (failReferencePage && userId === referenceUserId && firstPage)
 								throw new Error("temporary provider failure");
 							return {
 								startIndex: 0,
@@ -4716,10 +4718,11 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 				now: seed.attempt.attemptedAt,
 				resumeFailed: false,
 			};
+			let completedUnits = failReferencePage ? 1 : 2;
 			expect(await runner(context)).toMatchObject({
-				state: "running",
+				state: failReferencePage ? "failed" : "running",
 				progressed: true,
-				completedUnits: 1,
+				completedUnits,
 			});
 			const run = await prisma.providerObservationRun.findFirstOrThrow({
 				where: { instanceId: instance.id, activeSlotKey: { not: null } },
@@ -4736,10 +4739,10 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 				expect(JSON.parse(unit.scopePayload!)).not.toHaveProperty("catalogProvenance");
 			}
 			if (failReferencePage) {
-				expect(await runner(context)).toMatchObject({
+				expect(run.units[0]).toMatchObject({ state: "complete" });
+				expect(run.units[1]).toMatchObject({
+					scopeKey: `collect:${referenceUserId}:library-1`,
 					state: "failed",
-					progressed: false,
-					completedUnits: 1,
 				});
 				await prisma.jellyfinCache.create({
 					data: {
@@ -4757,7 +4760,7 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 					progressed: false,
 					completedUnits: 1,
 				});
-				expect(pageCalls).toBe(2);
+				expect([...pageUsers].sort()).toEqual([users[0]!.id, referenceUserId]);
 				expect(discoveryCalls).toBe(1);
 				if (resumeMode === "explicit") {
 					await prisma.providerObservationUnit.updateMany({
@@ -4771,14 +4774,15 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 					context.resumeFailed = true;
 				}
 				context.now = new Date(context.now.getTime() + 21_000);
-			}
-			expect(await runner(context)).toMatchObject({
-				state: "running",
-				progressed: true,
-				completedUnits: 2,
-			});
-			if (failReferencePage) {
+				completedUnits = resumeMode === "explicit" ? 3 : 2;
+				expect(await runner(context)).toMatchObject({
+					state: "running",
+					progressed: true,
+					completedUnits,
+				});
 				expect(discoveryCalls).toBe(1);
+				expect(pageUsers.filter((userId) => userId === users[0]!.id)).toHaveLength(1);
+				expect(pageUsers.filter((userId) => userId === referenceUserId)).toHaveLength(2);
 				const resumed = await prisma.providerObservationRun.findFirstOrThrow({
 					where: { instanceId: instance.id, activeSlotKey: { not: null } },
 				});
@@ -4792,7 +4796,9 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 				discoveryAllowed = true;
 			}
 
-			for (let completedUnits = 3; completedUnits <= 16; completedUnits++) {
+			while (completedUnits < run.units.length) {
+				const phaseEnd = completedUnits < users.length ? users.length : run.units.length;
+				completedUnits = Math.min(completedUnits + 2, phaseEnd);
 				expect(await runner(context)).toMatchObject({
 					state: "running",
 					progressed: true,

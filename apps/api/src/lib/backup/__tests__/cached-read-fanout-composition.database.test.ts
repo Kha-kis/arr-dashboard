@@ -575,7 +575,9 @@ describe("real cached-route fanout composition", { timeout: 30_000 }, () => {
 					freshness: "current",
 					complete: true,
 				});
-				expect(result.trace.arrRowsRead).toBe(ROWS);
+				expect(result.trace.arrRowsRead).toBe(
+					result.trace.routeClass === "episode-primary" ? ROWS / 2 : ROWS,
+				);
 				expect(result.trace.arrQueries.length).toBeGreaterThan(0);
 				expect(result.trace.nativeTiming).toMatchObject({ outcome: "available" });
 				expect(
@@ -707,7 +709,7 @@ describe("real cached-route fanout composition", { timeout: 30_000 }, () => {
 					freshness: "current",
 					complete: true,
 				});
-				expect(trace.arrRowsRead).toBe(ROWS);
+				expect(trace.arrRowsRead).toBe(trace.routeClass === "episode-primary" ? ROWS / 2 : ROWS);
 				expect(trace.arrQueries.length).toBeGreaterThan(0);
 				expect(trace.nativeTiming).toMatchObject({ outcome: "available" });
 				expect(trace.nativeSubphases.map(({ stage, outcome }) => ({ stage, outcome }))).toEqual([

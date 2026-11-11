@@ -122,6 +122,10 @@ vi.mock("../provider-observation/observation-run-repository.js", () => ({
 		},
 	),
 	claimObservationUnit: durable.claimUnit,
+	claimJellyfinObservationBatch: async (...args: unknown[]) => {
+		const claim = await durable.claimUnit(...args);
+		return claim ? [claim] : [];
+	},
 	failObservationUnit: durable.failUnit,
 	releaseJoinedObservationUnitClaim: durable.releaseUnit,
 	getAutomaticObservationRenewalDeadline: durable.deadline,
@@ -849,8 +853,12 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 				return Object.entries(query.where).every(([key, expected]) => {
 					const actual = durable.run?.[key];
 					if (key === "nextAttemptAt") {
-						const deadline = (expected as { gt: Date }).gt;
-						return actual instanceof Date && actual > deadline;
+						const filter = expected as { gt: Date } | { not: null };
+						return actual instanceof Date && ("not" in filter || actual > filter.gt);
+					}
+					if (key === "units") {
+						const { none } = expected as { none: { state: string } };
+						return !durable.units.some((unit) => unit.state === none.state);
 					}
 					if (key === "activeSlotKey") return actual !== null && actual !== undefined;
 					return actual === expected;
@@ -2918,7 +2926,14 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			}
 
 			expect(durable.failUnit).toHaveBeenCalledTimes(4);
-			expect(durable.recordedFailureCount).toBe(1);
+			expect(durable.recordedFailureCount).toBe(4);
+			expect(durable.finishFailure.mock.calls.map(([, , reason]) => reason)).toEqual([
+				"collection-deferred",
+				"collection-deferred",
+				"collection-deferred",
+				"collection-deferred",
+				"provider-unavailable",
+			]);
 			expect(durable.invalidate).not.toHaveBeenCalled();
 			expect(durable.run).toMatchObject({ state: "failed", nextAttemptAt: null });
 		},
