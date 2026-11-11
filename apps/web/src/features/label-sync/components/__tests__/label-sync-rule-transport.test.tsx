@@ -323,6 +323,39 @@ describe("L1 maintained Label Sync lifecycle transport", () => {
 			requests.filter((r) => r.url === "/api/label-sync/rules" && r.method === "GET").length,
 		).toBeGreaterThan(2);
 	});
+	it("reads back the current rule after execution could not be recorded and does not resend", async () => {
+		rules = [structuredClone(baseRule)];
+		const originalRespond = respond;
+		const runUrl = "/api/label-sync/rules/label-b/run";
+		respond = async (request) => {
+			if (request.method === "POST" && request.url === runUrl) {
+				rules = [{ ...rules[0]!, name: "Synthetic revised mapping" }];
+				return json(
+					{
+						error: "Synthetic execution finished but could not be saved",
+						code: "label_sync_rule_changed",
+						execution: { status: "partial", totals: { attempted: 2, succeeded: 1 } },
+					},
+					409,
+				);
+			}
+			return originalRespond(request);
+		};
+		show(<LabelSyncClient />);
+		fireEvent.click(await screen.findByRole("button", { name: "Run rule now" }));
+		await settled();
+		expect(alerts).toEqual([
+			"Label Sync execution finished, but its result could not be saved because the rule changed or was deleted. Review the current rule and destination before running again.",
+		]);
+		await screen.findByText("Synthetic revised mapping");
+		const attempt = requests.findIndex(({ url, method }) => url === runUrl && method === "POST");
+		expect(attempt).toBeGreaterThanOrEqual(0);
+		expect(requests.slice(attempt)).toEqual([
+			{ url: runUrl, method: "POST", body: {} },
+			{ url: "/api/label-sync/rules", method: "GET", body: null },
+		]);
+	});
+
 	it("reports refused Run without hidden retry then explicit run returns honest partial and held recovery readback", async () => {
 		rules = [structuredClone(baseRule)];
 		runRefused = true;

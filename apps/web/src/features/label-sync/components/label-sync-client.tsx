@@ -6,6 +6,7 @@ import { useState } from "react";
 import { useIncognitoMode } from "../../../contexts/IncognitoContext";
 import { getLinuxSectionName } from "../../../lib/incognito";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { ApiError } from "../../../lib/api-client/base";
 import { GlassmorphicCard, PageLayout } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import {
@@ -21,7 +22,7 @@ import { RecoveryStatus } from "./recovery-status";
 export const LabelSyncClient = () => {
 	const [incognitoMode] = useIncognitoMode();
 	const { gradient } = useThemeGradient();
-	const { data: rules = [], isLoading, isError } = useLabelSyncRules();
+	const { data: rules = [], isLoading, isError, refetch: refetchRules } = useLabelSyncRules();
 	const deleteMutation = useDeleteLabelSyncRule();
 	const runMutation = useRunLabelSyncRule();
 	const [runningId, setRunningId] = useState<string | null>(null);
@@ -77,6 +78,20 @@ export const LabelSyncClient = () => {
 				);
 			}
 		} catch (err) {
+			if (
+				err instanceof ApiError &&
+				err.status === 409 &&
+				typeof err.payload === "object" &&
+				err.payload !== null &&
+				"code" in err.payload &&
+				err.payload.code === "label_sync_rule_changed"
+			) {
+				await refetchRules({ cancelRefetch: false });
+				alert(
+					"Label Sync execution finished, but its result could not be saved because the rule changed or was deleted. Review the current rule and destination before running again.",
+				);
+				return;
+			}
 			alert(
 				incognitoMode
 					? "Run failed; details hidden in incognito mode."
