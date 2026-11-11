@@ -197,15 +197,16 @@ describe("Jellyfin actual collection read failure boundary", () => {
 			const captured = captureLog();
 			const controller = new AbortController();
 			const stages: string[] = [];
-			const requests: string[] = [];
+			const pageRequests: Array<{ cursor: string | null; limit: string | null }> = [];
 			let held: ServerResponse | undefined;
 			let markBodyRead!: () => void;
 			const bodyRead = new Promise<void>((resolve) => {
 				markBodyRead = resolve;
 			});
 			const server = createServer((request, reply) => {
-				const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
-				requests.push(path);
+				const url = new URL(request.url ?? "/", "http://127.0.0.1");
+				const path = url.pathname;
+				if (path === "/Users/private-user/Items") reply.setHeader("Content-Length", "1000");
 				reply.writeHead(200, { "Content-Type": "application/json", Connection: "close" });
 				if (path === "/System/Info/Public")
 					reply.end(
@@ -232,6 +233,10 @@ describe("Jellyfin actual collection read failure boundary", () => {
 						}),
 					);
 				else if (path === "/Users/private-user/Items") {
+					pageRequests.push({
+						cursor: url.searchParams.get("StartIndex"),
+						limit: url.searchParams.get("Limit"),
+					});
 					held = reply;
 					reply.write('{"Items":[');
 				} else reply.end('{"Items":[],"TotalRecordCount":0}');
@@ -256,7 +261,13 @@ describe("Jellyfin actual collection read failure boundary", () => {
 					...(mode === "cancellation" ? { signal: controller.signal } : {}),
 					onStage: (stage) => {
 						stages.push(stage);
-						if (stage === "library-page-body") markBodyRead();
+						if (stage !== "library-page-body") return;
+						markBodyRead();
+						if (mode === "unsignaled-transport-failure") {
+							// Fail each reduced attempt during its body read at the same cursor.
+							const socket = held?.socket;
+							queueMicrotask(() => socket?.resetAndDestroy());
+						}
 					},
 				});
 				await Promise.race([
@@ -267,13 +278,13 @@ describe("Jellyfin actual collection read failure boundary", () => {
 				]);
 				expect(held).toBeDefined();
 				if (mode === "cancellation") controller.abort(new Error("private-cancellation"));
-				else held?.destroy();
 				const result = await running;
 				expectUnknown(result);
 				expect(result.receipt.units.some((unit) => unit.fatalCount > 0)).toBe(true);
 				expect(stages).toContain("library-page-body");
 				expect(stages).not.toContain("library-page-accepted");
-				expect(requests.filter((path) => path === "/Users/private-user/Items")).toHaveLength(1);
+				const expectedLimits = mode === "cancellation" ? ["1000"] : ["1000", "500", "250", "125"];
+				expect(pageRequests).toEqual(expectedLimits.map((limit) => ({ cursor: "0", limit })));
 				expect(controller.signal.aborted).toBe(mode === "cancellation");
 				const records = captured.records();
 				expect(records).toContainEqual(
@@ -283,7 +294,7 @@ describe("Jellyfin actual collection read failure boundary", () => {
 					expect.objectContaining({
 						category: "jellyfin-provider-read-failure",
 						phase: "body",
-						kind: mode === "cancellation" ? "aborted" : expect.not.stringMatching(/^aborted$/),
+						kind: mode === "cancellation" ? "aborted" : "transport",
 					}),
 				);
 				expect(captured.lines.join("")).not.toContain("private-");

@@ -99,12 +99,12 @@ try {
 			receipts: await prisma.jellyfinNativeWatchScopeReceipt.count({ where: { runId } }),
 			pointers: await prisma.jellyfinNativeWatchPublication.count(),
 		});
-		// Owned synthetic SQL cost from the native reproduction: about 7.2s for
-		// 500 rows. Production transaction/proof/lease defaults remain unchanged.
+		// Keep the synthetic CPU work per transaction at the original fixture's
+		// 100 × 150,000 iterations with the current 250-row write chunks.
 		await prisma.$executeRawUnsafe(`CREATE TRIGGER synthetic_native_watch_row_cost
 			AFTER INSERT ON jellyfin_native_watch_rows BEGIN
 				SELECT (WITH RECURSIVE synthetic_cost(x) AS (
-					VALUES(1) UNION ALL SELECT x+1 FROM synthetic_cost WHERE x < 150000
+					VALUES(1) UNION ALL SELECT x+1 FROM synthetic_cost WHERE x < 60000
 				) SELECT SUM(x) FROM synthetic_cost);
 			END`);
 		const loaded = await inputFor("loaded", 500);

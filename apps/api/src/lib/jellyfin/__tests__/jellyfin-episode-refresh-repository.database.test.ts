@@ -3528,7 +3528,9 @@ describe("full-watch counted checkpoints", () => {
 
 	it("admits only interior unknown pages and requires counted last pages before publication", async () => {
 		const { prisma, seed } = await fixture(2_000);
-		const total = 6_000;
+		const firstPageRows = 1;
+		const lastPageCursor = 2_001;
+		const total = lastPageCursor + 1;
 		const items = episodes(total);
 		let tick = 0;
 		const claim = () =>
@@ -3554,7 +3556,7 @@ describe("full-watch counted checkpoints", () => {
 				startIndex: 0,
 				totalRecordCount: null,
 				countMode: "uncounted" as const,
-				items: items.slice(0, 2_000),
+				items: items.slice(0, firstPageRows),
 			};
 			expect(await stageJellyfinEpisodePage(prisma, first, seed.scopes[0]!, firstUnknown)).toBe(
 				false,
@@ -3564,19 +3566,24 @@ describe("full-watch counted checkpoints", () => {
 					prisma,
 					first,
 					seed.scopes[0]!,
-					{ startIndex: 0, totalRecordCount: total, items: items.slice(0, 2_000) },
+					{ startIndex: 0, totalRecordCount: total, items: items.slice(0, firstPageRows) },
 					seed.attempt.attemptedAt,
 				),
 			).toBe(true);
 			const middle = (await claim())!;
-			expect(middle).toMatchObject({ cursor: 2_000, expectedRawCount: total });
+			expect(middle).toMatchObject({ cursor: firstPageRows, expectedRawCount: total });
 			for (const invalid of [
-				{ startIndex: 2_000, totalRecordCount: null, countMode: "uncounted" as const, items: [] },
 				{
-					startIndex: 2_000,
+					startIndex: firstPageRows,
 					totalRecordCount: null,
 					countMode: "uncounted" as const,
-					items: items.slice(2_000, 4_001),
+					items: [],
+				},
+				{
+					startIndex: firstPageRows,
+					totalRecordCount: null,
+					countMode: "uncounted" as const,
+					items: items.slice(firstPageRows),
 				},
 			])
 				expect(await stageJellyfinEpisodePage(prisma, middle, seed.scopes[0]!, invalid)).toBe(
@@ -3588,10 +3595,10 @@ describe("full-watch counted checkpoints", () => {
 					middle,
 					seed.scopes[0]!,
 					{
-						startIndex: 2_000,
+						startIndex: firstPageRows,
 						totalRecordCount: null,
 						countMode: "uncounted",
-						items: items.slice(2_000, 4_000),
+						items: items.slice(firstPageRows, lastPageCursor),
 					},
 					seed.attempt.attemptedAt,
 				),
@@ -3600,18 +3607,18 @@ describe("full-watch counted checkpoints", () => {
 				await prisma.providerObservationUnit.findUniqueOrThrow({ where: { id: middle.unitId } }),
 			).toMatchObject({
 				state: "pending",
-				cursor: 4_000,
-				observedRawCount: 4_000,
+				cursor: lastPageCursor,
+				observedRawCount: lastPageCursor,
 				expectedRawCount: total,
 			});
 			const boundary = (await claim())!;
-			expect(boundary).toMatchObject({ unitId: middle.unitId, cursor: 4_000 });
+			expect(boundary).toMatchObject({ unitId: middle.unitId, cursor: lastPageCursor });
 			expect(
 				await stageJellyfinEpisodePage(prisma, boundary, seed.scopes[0]!, {
-					startIndex: 4_000,
+					startIndex: lastPageCursor,
 					totalRecordCount: null,
 					countMode: "uncounted",
-					items: items.slice(4_000),
+					items: items.slice(lastPageCursor),
 				}),
 			).toBe(false);
 			expect(
@@ -3619,7 +3626,11 @@ describe("full-watch counted checkpoints", () => {
 					prisma,
 					boundary,
 					seed.scopes[0]!,
-					{ startIndex: 4_000, totalRecordCount: total, items: items.slice(4_000) },
+					{
+						startIndex: lastPageCursor,
+						totalRecordCount: total,
+						items: items.slice(lastPageCursor),
+					},
 					seed.attempt.attemptedAt,
 				),
 			).toBe(true);

@@ -377,6 +377,6 @@ it("fully verifies loaded native row staging within unchanged transaction defaul
 			recovered: { rows: 550, receipts: 1, pointers: 0 },
 		},
 	});
-	// Only this synthetic SQL-cost fixture gets a larger test budget (~7.2s row
-	// cost plus real schema/admission/cleanup); production defaults are untouched.
+	// The fixture budget includes synthetic SQL cost and real schema setup,
+	// admission, and cleanup. The worker uses production transaction defaults.
 }, 30_000);
