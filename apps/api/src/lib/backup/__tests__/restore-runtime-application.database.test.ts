@@ -4,6 +4,7 @@ import { createServer as createHttpServer, request as httpRequest } from "node:h
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { Worker } from "node:worker_threads";
 import Database from "better-sqlite3";
@@ -287,11 +288,39 @@ describe("actual Fastify native runtime Prisma adoption", () => {
 				if (mode === "port-loss") await bridge!.close();
 				if (mode === "parent-loss" || mode === "port-loss" || mode === "child-loss") {
 					const attempted = new Promise<unknown>((resolve) => worker!.once("message", resolve));
-					worker!.postMessage(mode === "child-loss" ? "lose" : "write");
-					expect(await attempted).toEqual({ written: false });
-					expect(count()).toBe(1);
-					if (mode !== "port-loss")
-						await expect(runtime.runOperation(() => app.prisma.user.count())).rejects.toThrow();
+					let unsubscribe: (() => void) | undefined;
+					// The worker result and the parent bridge loss arrive on separate ports.
+					const parentLost =
+						mode === "child-loss"
+							? new Promise<void>((resolve) => {
+									unsubscribe = bridge!.onUnavailable(resolve);
+								})
+							: undefined;
+					try {
+						worker!.postMessage(mode === "child-loss" ? "lose" : "write");
+						expect(await attempted).toEqual({ written: false });
+						expect(count()).toBe(1);
+						if (parentLost) {
+							const deadline = new AbortController();
+							try {
+								await Promise.race([
+									parentLost,
+									exit!.then(() => {
+										throw new Error("Worker exited before parent observed admission loss");
+									}),
+									delay(5_000, undefined, { signal: deadline.signal }).then(() => {
+										throw new Error("Parent did not observe worker admission loss");
+									}),
+								]);
+							} finally {
+								deadline.abort();
+							}
+						}
+						if (mode !== "port-loss")
+							await expect(runtime.runOperation(() => app.prisma.user.count())).rejects.toThrow();
+					} finally {
+						unsubscribe?.();
+					}
 				}
 				if (mode === "forced-stop") {
 					await worker!.terminate();

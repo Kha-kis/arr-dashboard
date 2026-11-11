@@ -1,9 +1,10 @@
 import { once } from "node:events";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
-import { Worker } from "node:worker_threads";
+import { setTimeout as delay } from "node:timers/promises";
+import { MessageChannel, Worker } from "node:worker_threads";
 import { readFile } from "node:fs/promises";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import {
 	createPlexNativePageWorker,
 	plexNativePageWorkerUrl,
@@ -248,6 +249,10 @@ globalThis.fetch = async () => new Response(new ReadableStream({ pull() { Atomic
 		async (phase) => {
 			const owned = fixture();
 			let closed: Promise<void> | undefined;
+			let arrived!: () => void;
+			const requestArrived = new Promise<void>((resolve) => {
+				arrived = resolve;
+			});
 			let exited = false;
 			const baseUrl = await owned.server((request, response) => {
 				closed = new Promise<void>((resolve) => request.socket.once("close", () => resolve()));
@@ -255,9 +260,17 @@ globalThis.fetch = async () => new Response(new ReadableStream({ pull() { Atomic
 					response.writeHead(200, { "Content-Type": "application/json" });
 					response.write('{"MediaContainer":');
 				}
+				arrived();
 			});
-			await expect(
-				runPlexNativePageWorker(
+			const bodyChannel = phase === "body" ? new MessageChannel() : undefined;
+			const ready = bodyChannel
+				? Promise.all([requestArrived, once(bodyChannel.port1, "message")])
+				: requestArrived;
+			const arrivalDeadline = new AbortController();
+			// Advance only the parent timer after the real request reaches the intended phase.
+			vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+			try {
+				const pending = runPlexNativePageWorker(
 					{ ...input, baseUrl, deadlineAt: Date.now() + 5_000 },
 					{
 						timeoutMs: 1_000,
@@ -266,10 +279,28 @@ globalThis.fetch = async () => new Response(new ReadableStream({ pull() { Atomic
 							const worker = owned.track(
 								new Worker(
 									`AbortSignal.timeout = () => new AbortController().signal;
+const { workerData } = require("node:worker_threads");
+const { bodyPort } = workerData;
+delete workerData.bodyPort;
+if (bodyPort) {
+	const fetch = globalThis.fetch;
+	globalThis.fetch = async (...args) => {
+		const response = await fetch(...args);
+		const target = response;
+		const read = target.json;
+		target.json = function (...readArgs) {
+			const result = read.apply(this, readArgs);
+			bodyPort.postMessage("reading");
+			return result;
+		};
+		return response;
+	};
+}
 (async () => { const { register } = await import("tsx/esm/api"); register(); await import(${JSON.stringify(url.href)}); })();`,
 									{
 										eval: true,
-										workerData: data,
+										workerData: { ...data, bodyPort: bodyChannel?.port2 },
+										transferList: bodyChannel ? [bodyChannel.port2] : [],
 										env: {},
 										execArgv: [],
 										stdout: true,
@@ -283,10 +314,24 @@ globalThis.fetch = async () => new Response(new ReadableStream({ pull() { Atomic
 							return worker;
 						},
 					},
-				),
-			).rejects.toMatchObject({ category: "worker-timeout" });
+				);
+				const outcome = pending.catch((error: unknown) => error);
+				const phaseEntered = await Promise.race([
+					ready.then(() => true),
+					outcome.then(() => false),
+					delay(4_000, false, { signal: arrivalDeadline.signal }),
+				]);
+				expect(phaseEntered, "Worker did not reach the requested HTTP phase").toBe(true);
+				expect(closed).toBeDefined();
+				await vi.advanceTimersByTimeAsync(1_000);
+				expect(await outcome).toMatchObject({ category: "worker-timeout" });
+			} finally {
+				arrivalDeadline.abort();
+				bodyChannel?.port1.close();
+				bodyChannel?.port2.close();
+				vi.useRealTimers();
+			}
 			expect(exited).toBe(true);
-			expect(closed).toBeDefined();
 			await closed;
 		},
 	);
