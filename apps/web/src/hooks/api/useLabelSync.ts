@@ -9,7 +9,7 @@ import type {
 	LabelSyncRule,
 	UpdateLabelSyncRuleRequest,
 } from "@arr/shared";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	createLabelSyncRule,
 	deleteLabelSyncRule,
@@ -61,12 +61,18 @@ export const useDeleteLabelSyncRule = () => {
 	});
 };
 
-export const useRunLabelSyncRule = () => {
+const labelSyncRunKey = [...labelSyncKeys.all, "run"] as const;
+
+export const useRunLabelSyncRule = (onRunError: (error: Error) => Promise<void>) => {
 	const queryClient = useQueryClient();
-	return useMutation({
+	const isRunPending = useIsMutating({ mutationKey: labelSyncRunKey, exact: true }) > 0;
+	const mutation = useMutation({
+		mutationKey: labelSyncRunKey,
 		mutationFn: (id: string) => runLabelSyncRule(id),
+		onError: onRunError,
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: labelSyncKeys.rules });
 		},
 	});
+	return { ...mutation, isRunPending };
 };

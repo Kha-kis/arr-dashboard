@@ -120,16 +120,18 @@ function show(ui: ReactNode, retry: number | false = false) {
 	clients.push(client);
 	return {
 		client,
-		...render(
-			<QueryClientProvider client={client}>
-				<ColorThemeProvider>
-					<IncognitoProvider>
-						{ui}
-						<Toaster />
-					</IncognitoProvider>
-				</ColorThemeProvider>
-			</QueryClientProvider>,
-		),
+		...render(ui, {
+			wrapper: ({ children }) => (
+				<QueryClientProvider client={client}>
+					<ColorThemeProvider>
+						<IncognitoProvider>
+							{children}
+							<Toaster />
+						</IncognitoProvider>
+					</ColorThemeProvider>
+				</QueryClientProvider>
+			),
+		}),
 	};
 }
 const service = (
@@ -363,9 +365,11 @@ describe("L1 maintained Label Sync lifecycle transport", () => {
 		const runUrl = rulesUrl + "/label-b/run";
 		const oldPoll = hold();
 		const failedRead = hold();
+		const heldRun = hold();
 		let reads = 0;
 		respond = async ({ method, url }) => {
 			if (method === "POST" && url === runUrl) {
+				await heldRun.promise;
 				rules = [];
 				return json({ code: "label_sync_rule_changed" }, 409);
 			}
@@ -382,15 +386,27 @@ describe("L1 maintained Label Sync lifecycle transport", () => {
 			}
 			return json({ rules });
 		};
-		const { client } = show(<LabelSyncClient />, 1);
-		const run = await screen.findByRole("button", { name: "Run rule now" });
+		const { client, rerender } = show(<LabelSyncClient />, 1);
+		let run = await screen.findByRole("button", { name: "Run rule now" });
 		void client.refetchQueries({ queryKey: labelSyncKeys.rules });
 		await waitFor(() => expect(reads).toBe(2));
 		fireEvent.click(run);
+		await waitFor(() => expect(writes()).toHaveLength(1));
+		const remount = () => {
+			rerender(<div />);
+			rerender(<LabelSyncClient />);
+			run = screen.getByRole("button", { name: "Run rule now" });
+			expect(run).toBeDisabled();
+			fireEvent.click(run);
+			expect(writes()).toHaveLength(1);
+		};
+		remount();
+		await act(async () => heldRun.release());
 
 		await waitFor(() => expect(alerts[0]).toMatch(/execution finished/i));
 		expect(reads).toBe(3);
 		expect(run).toBeDisabled();
+		remount();
 		await act(async () => failedRead.release());
 
 		const retry = await screen.findByRole("button", { name: "Retry rules" });

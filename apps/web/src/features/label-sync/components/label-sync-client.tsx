@@ -19,6 +19,17 @@ import { SERVICE_LABEL_BY_VALUE } from "../service-registry";
 import { RuleDialog } from "./rule-dialog";
 import { RecoveryStatus } from "./recovery-status";
 
+function isRunConflict(error: unknown): boolean {
+	return (
+		error instanceof ApiError &&
+		error.status === 409 &&
+		typeof error.payload === "object" &&
+		error.payload !== null &&
+		"code" in error.payload &&
+		error.payload.code === "label_sync_rule_changed"
+	);
+}
+
 export const LabelSyncClient = () => {
 	const [incognitoMode] = useIncognitoMode();
 	const { gradient } = useThemeGradient();
@@ -30,7 +41,15 @@ export const LabelSyncClient = () => {
 		refetch: refetchRules,
 	} = useLabelSyncRules();
 	const deleteMutation = useDeleteLabelSyncRule();
-	const runMutation = useRunLabelSyncRule();
+	const runMutation = useRunLabelSyncRule(async (error) => {
+		if (!isRunConflict(error)) return;
+		const readback = refetchRules();
+		alert(
+			"Label Sync execution finished, but its result could not be saved because the rule changed or was deleted. Review the current rule and destination before running again.",
+		);
+		await readback;
+	});
+	const { isRunPending } = runMutation;
 	const [runningId, setRunningId] = useState<string | null>(null);
 
 	const [dialogOpen, setDialogOpen] = useState(false);
@@ -57,7 +76,13 @@ export const LabelSyncClient = () => {
 	};
 
 	const handleRun = async (rule: LabelSyncRule) => {
-		if (isError || runningId !== null || !rule.destinationMutationCapability.supported) return;
+		if (
+			isError ||
+			isRunPending ||
+			runningId !== null ||
+			!rule.destinationMutationCapability.supported
+		)
+			return;
 		if (!rule.enabled) {
 			alert("Rule is disabled. Enable it before running.");
 			return;
@@ -84,21 +109,7 @@ export const LabelSyncClient = () => {
 				);
 			}
 		} catch (err) {
-			if (
-				err instanceof ApiError &&
-				err.status === 409 &&
-				typeof err.payload === "object" &&
-				err.payload !== null &&
-				"code" in err.payload &&
-				err.payload.code === "label_sync_rule_changed"
-			) {
-				const readback = refetchRules();
-				alert(
-					"Label Sync execution finished, but its result could not be saved because the rule changed or was deleted. Review the current rule and destination before running again.",
-				);
-				await readback;
-				return;
-			}
+			if (isRunConflict(err)) return;
 			alert(
 				incognitoMode
 					? "Run failed; details hidden in incognito mode."
@@ -171,6 +182,7 @@ export const LabelSyncClient = () => {
 						<RuleTable
 							rules={rules}
 							runningId={runningId}
+							isRunPending={isRunPending}
 							recoveryUnavailable={isError}
 							incognitoMode={incognitoMode}
 							onEdit={openEdit}
@@ -214,6 +226,7 @@ const EmptyState = ({ onCreateClick }: { onCreateClick: () => void }) => (
 const RuleTable = ({
 	rules,
 	runningId,
+	isRunPending,
 	recoveryUnavailable,
 	incognitoMode,
 	onEdit,
@@ -222,6 +235,7 @@ const RuleTable = ({
 }: {
 	rules: LabelSyncRule[];
 	runningId: string | null;
+	isRunPending: boolean;
 	recoveryUnavailable?: boolean;
 	incognitoMode: boolean;
 	onEdit: (rule: LabelSyncRule) => void;
@@ -321,6 +335,7 @@ const RuleTable = ({
 									onClick={() => onRun(rule)}
 									disabled={
 										runningId !== null ||
+										isRunPending ||
 										recoveryUnavailable ||
 										!rule.enabled ||
 										!rule.destinationMutationCapability.supported
