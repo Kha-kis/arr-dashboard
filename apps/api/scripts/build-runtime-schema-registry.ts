@@ -5,6 +5,7 @@ import {
 	constants,
 	existsSync,
 	fstatSync,
+	ftruncateSync,
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
@@ -602,17 +603,15 @@ async function postgresTarget(
 }
 
 function writeGenerated(path: string, contents: string): void {
-	if (existsSync(path)) {
-		const stat = lstatSync(path);
-		if (!stat.isFile() || stat.isSymbolicLink()) fail();
-	}
 	const descriptor = openSync(
 		path,
-		constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
+		constants.O_WRONLY | constants.O_CREAT | constants.O_NOFOLLOW | constants.O_NONBLOCK,
 		0o644,
 	);
 	try {
-		if (!fstatSync(descriptor).isFile()) fail();
+		const stat = fstatSync(descriptor);
+		if (!stat.isFile() || stat.nlink !== 1) fail();
+		ftruncateSync(descriptor, 0);
 		writeFileSync(descriptor, contents);
 	} finally {
 		closeSync(descriptor);

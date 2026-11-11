@@ -962,6 +962,21 @@ describe("offline native registry authoring", () => {
 		expect(parent.target.primaryKey).toEqual(["b", "a"]);
 		expect(parent.addColumnAtoms).toEqual({});
 	});
+	it("validates the generated output descriptor before truncating it", () => {
+		const source = readFileSync(
+			new URL("../../../../scripts/build-runtime-schema-registry.ts", import.meta.url),
+			"utf8",
+		);
+		const writer = source.slice(
+			source.indexOf("function writeGenerated("),
+			source.indexOf("async function runOfflineAuthoring("),
+		);
+
+		expect(writer).not.toContain("O_TRUNC");
+		expect(writer).toMatch(
+			/fstatSync\(descriptor\)[\s\S]*isFile\(\)[\s\S]*nlink[\s\S]*ftruncateSync\(descriptor, 0\)[\s\S]*writeFileSync\(descriptor, contents\)/,
+		);
+	});
 	it("rejects destination arguments before a CLI authoring run can start", () => {
 		const script = fileURLToPath(
 			new URL("../../../../scripts/build-runtime-schema-registry.ts", import.meta.url),
