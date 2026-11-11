@@ -51,21 +51,10 @@ CONFIG_DIR="$WORK/config"
 SHIM_DIR="$WORK/shim"
 TOOLS_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
-# Ports must not collide with anything else on the host; pick high unique ports.
-HOST_WEB_PORT=33080
-HOST_API_PORT=33081
-for i in 1 2 3 4 5 6 7 8 9 10; do
-    if ! (curl -s -o /dev/null --max-time 1 "http://localhost:$HOST_WEB_PORT" 2>/dev/null) && \
-       ! (curl -s -o /dev/null --max-time 1 "http://localhost:$HOST_API_PORT" 2>/dev/null); then
-        break
-    fi
-    HOST_WEB_PORT=$((HOST_WEB_PORT + 2))
-    HOST_API_PORT=$((HOST_API_PORT + 2))
-done
-
 PASS=0
 FAIL=0
 CURRENT_CASE=""
+REAL_FIXTURE_ID=""
 
 log() {
     echo ""
@@ -82,8 +71,15 @@ bad() {
     FAIL=$((FAIL + 1))
 }
 
+remove_real_fixture() {
+    [ -n "$REAL_FIXTURE_ID" ] || return 0
+    docker rm -f "$REAL_FIXTURE_ID" >/dev/null || return 1
+    REAL_FIXTURE_ID=""
+}
+
 cleanup() {
-    for c in "$API_CTR" "$WEB_CTR" "$STOP_CTR" "$SHIM_CTR" "$STARTUP_CTR"; do
+    remove_real_fixture 2>/dev/null || true
+    for c in "$SHIM_CTR" "$STARTUP_CTR"; do
         docker rm -f "$c" >/dev/null 2>&1 || true
     done
     docker rm -f "${WORK##*/}-restart" >/dev/null 2>&1 || true
@@ -101,19 +97,49 @@ fi
 # Helpers
 # ---------------------------------------------------------------------------
 
-run_base_args() {
-    # $1 = container name; remaining args passed to docker run
-    ctr_name=$1
-    shift
+fixture_port() {
+    mapping=$(docker port "$1" "$2/tcp") || return 1
+    printf '%s\n' "$mapping" | awk -F: '
+        NF == 2 && $1 == "127.0.0.1" && $2 ~ /^[0-9]+$/ && $2 > 0 && $2 <= 65535 { port = $2 }
+        END { if (NR != 1 || !port) exit 1; print port }
+    '
+}
+
+start_real_fixture() {
+    fixture_config="$WORK/$1-config"
+    if ! mkdir -p "$fixture_config"; then
+        bad "could not prepare the real-app fixture config"
+        return 1
+    fi
+
+    # The real services exercise supervision without public maintenance work.
+    set -- docker create --name "$1" -v "$fixture_config:/config" \
+        -p 127.0.0.1::3000 -p 127.0.0.1::3001 \
+        -e TRASH_UPDATE_SCHEDULER_ENABLED=false
     if [ "$ROOTLESS" = true ]; then
-        docker run -d --name "$ctr_name" --user 1000:1000 \
-            -v "$CONFIG_DIR":/config \
-            "$@"
+        chown 1000:1000 "$fixture_config" 2>/dev/null || true
+        if ! chmod 700 "$fixture_config"; then
+            bad "could not set real-app fixture config permissions"
+            return 1
+        fi
+        set -- "$@" --user 1000:1000
     else
-        docker run -d --name "$ctr_name" \
-            -v "$CONFIG_DIR":/config \
-            -e PUID=1000 -e PGID=1000 \
-            "$@"
+        set -- "$@" -e PUID=1000 -e PGID=1000
+    fi
+
+    # Retain the exact container ID even when starting or publishing fails.
+    if ! REAL_FIXTURE_ID=$("$@" "$IMAGE"); then
+        bad "Docker could not create the real-app fixture"
+        return 1
+    fi
+    if ! docker start "$REAL_FIXTURE_ID" >/dev/null; then
+        bad "Docker could not start the real-app fixture"
+        return 1
+    fi
+    if ! HOST_API_PORT=$(fixture_port "$REAL_FIXTURE_ID" 3001) ||
+        ! HOST_WEB_PORT=$(fixture_port "$REAL_FIXTURE_ID" 3000); then
+        bad "could not resolve the real-app fixture loopback ports"
+        return 1
     fi
 }
 
@@ -125,8 +151,12 @@ wait_health() {
     timeout=${4:-120}
     elapsed=0
     while [ "$elapsed" -lt "$timeout" ]; do
-        a=$(curl -sf "http://localhost:$api_port/health" 2>/dev/null || echo '')
-        w=$(curl -sf "http://localhost:$web_port/health" 2>/dev/null || echo '')
+        if ! state=$(docker inspect --format '{{.State.Status}}' "$ctr") ||
+            [ "$state" != running ]; then
+            return 1
+        fi
+        a=$(curl -sf "http://127.0.0.1:$api_port/health" 2>/dev/null || echo '')
+        w=$(curl -sf "http://127.0.0.1:$web_port/health" 2>/dev/null || echo '')
         if [ -n "$a" ] && [ -n "$w" ]; then
             return 0
         fi
@@ -402,27 +432,25 @@ case_api_death() {
     CURRENT_CASE="api-death"
     log "API top-level service exits unexpectedly (real image)"
 
-    run_base_args "$API_CTR" \
-        -p "$HOST_WEB_PORT":3000 -p "$HOST_API_PORT":3001 \
-        "$IMAGE" >/dev/null
+    start_real_fixture "$API_CTR" || return 1
 
-    if ! wait_health "$API_CTR" "$HOST_API_PORT" "$HOST_WEB_PORT"; then
+    if ! wait_health "$REAL_FIXTURE_ID" "$HOST_API_PORT" "$HOST_WEB_PORT"; then
         bad "services did not become healthy"
-        docker logs "$API_CTR" 2>&1 | tail -30 >&2
+        docker logs "$REAL_FIXTURE_ID" 2>&1 | tail -30 >&2
         return 1
     fi
 
-    assert_process_tree "$API_CTR"
+    assert_process_tree "$REAL_FIXTURE_ID"
 
-    if ! kill_tracked "$API_CTR" "API"; then
+    if ! kill_tracked "$REAL_FIXTURE_ID" "API"; then
         bad "could not find tracked API PID in logs"
         return 1
     fi
     log "killed tracked API process; expecting container to exit non-zero"
 
-    if ! wait_container_exit "$API_CTR" 30; then
+    if ! wait_container_exit "$REAL_FIXTURE_ID" 30; then
         bad "container still running 30s after API death"
-        docker logs "$API_CTR" 2>&1 | tail -20 >&2
+        docker logs "$REAL_FIXTURE_ID" 2>&1 | tail -20 >&2
         return 1
     fi
     ok "container exited promptly"
@@ -432,7 +460,7 @@ case_api_death() {
         bad "container exit code is 0 (expected non-zero)"
     fi
 
-    logs=$(docker logs "$API_CTR" 2>&1 || true)
+    logs=$(docker logs "$REAL_FIXTURE_ID" 2>&1 || true)
     if echo "$logs" | grep -q "API service exited unexpectedly"; then
         ok "supervisor logged the fatal API exit"
     else
@@ -444,34 +472,31 @@ case_api_death() {
     else
         bad "missing sibling-termination log line"
     fi
-    docker rm -f "$API_CTR" >/dev/null 2>&1 || true
 }
 
 case_web_death() {
     CURRENT_CASE="web-death"
     log "Web top-level service exits unexpectedly (real image)"
 
-    run_base_args "$WEB_CTR" \
-        -p "$HOST_WEB_PORT":3000 -p "$HOST_API_PORT":3001 \
-        "$IMAGE" >/dev/null
+    start_real_fixture "$WEB_CTR" || return 1
 
-    if ! wait_health "$WEB_CTR" "$HOST_API_PORT" "$HOST_WEB_PORT"; then
+    if ! wait_health "$REAL_FIXTURE_ID" "$HOST_API_PORT" "$HOST_WEB_PORT"; then
         bad "services did not become healthy"
-        docker logs "$WEB_CTR" 2>&1 | tail -30 >&2
+        docker logs "$REAL_FIXTURE_ID" 2>&1 | tail -30 >&2
         return 1
     fi
 
-    assert_process_tree "$WEB_CTR"
+    assert_process_tree "$REAL_FIXTURE_ID"
 
-    if ! kill_tracked "$WEB_CTR" "Web"; then
+    if ! kill_tracked "$REAL_FIXTURE_ID" "Web"; then
         bad "could not find tracked Web PID in logs"
         return 1
     fi
     log "killed tracked Web process; expecting container to exit non-zero"
 
-    if ! wait_container_exit "$WEB_CTR" 30; then
+    if ! wait_container_exit "$REAL_FIXTURE_ID" 30; then
         bad "container still running 30s after web death"
-        docker logs "$WEB_CTR" 2>&1 | tail -20 >&2
+        docker logs "$REAL_FIXTURE_ID" 2>&1 | tail -20 >&2
         return 1
     fi
     ok "container exited promptly"
@@ -481,7 +506,7 @@ case_web_death() {
         bad "container exit code is 0 (expected non-zero)"
     fi
 
-    logs=$(docker logs "$WEB_CTR" 2>&1 || true)
+    logs=$(docker logs "$REAL_FIXTURE_ID" 2>&1 || true)
     if echo "$logs" | grep -q "Web service exited unexpectedly"; then
         ok "supervisor logged the fatal web exit"
     else
@@ -493,35 +518,36 @@ case_web_death() {
     else
         bad "missing sibling-termination log line"
     fi
-    docker rm -f "$WEB_CTR" >/dev/null 2>&1 || true
 }
 
 case_graceful_stop() {
     CURRENT_CASE="graceful-stop"
     log "Normal docker stop (SIGTERM) — expected graceful exit 0"
 
-    run_base_args "$STOP_CTR" \
-        -p "$HOST_WEB_PORT":3000 -p "$HOST_API_PORT":3001 \
-        "$IMAGE" >/dev/null
+    start_real_fixture "$STOP_CTR" || return 1
 
-    if ! wait_health "$STOP_CTR" "$HOST_API_PORT" "$HOST_WEB_PORT"; then
+    if ! wait_health "$REAL_FIXTURE_ID" "$HOST_API_PORT" "$HOST_WEB_PORT"; then
         bad "services did not become healthy"
-        docker logs "$STOP_CTR" 2>&1 | tail -30 >&2
+        docker logs "$REAL_FIXTURE_ID" 2>&1 | tail -30 >&2
         return 1
     fi
 
     log "sending docker stop"
-    docker stop --time 120 "$STOP_CTR" >/dev/null
+    if ! docker stop --time 120 "$REAL_FIXTURE_ID" >/dev/null; then
+        bad "Docker could not stop the real-app fixture"
+        docker logs "$REAL_FIXTURE_ID" 2>&1 | tail -20 >&2
+        return 1
+    fi
 
-    state=$(docker inspect "$STOP_CTR" --format '{{.State.Status}}' 2>/dev/null)
-    code=$(docker inspect "$STOP_CTR" --format '{{.State.ExitCode}}' 2>/dev/null)
+    state=$(docker inspect "$REAL_FIXTURE_ID" --format '{{.State.Status}}' 2>/dev/null)
+    code=$(docker inspect "$REAL_FIXTURE_ID" --format '{{.State.ExitCode}}' 2>/dev/null)
     if [ "$state" = "exited" ] && [ "$code" = "0" ]; then
         ok "container exited gracefully (status exited, code 0)"
     else
         bad "expected exited/0, got $state/$code"
     fi
 
-    logs=$(docker logs "$STOP_CTR" 2>&1 || true)
+    logs=$(docker logs "$REAL_FIXTURE_ID" 2>&1 || true)
     if echo "$logs" | grep -q "exited unexpectedly"; then
         bad "graceful stop was reported as a crash"
     else
@@ -532,7 +558,6 @@ case_graceful_stop() {
     else
         bad "missing 'Services stopped gracefully' message"
     fi
-    docker rm -f "$STOP_CTR" >/dev/null 2>&1 || true
 }
 
 case_exit_zero() {
@@ -733,7 +758,17 @@ run_case() {
     fi
     echo ""
     echo "########## CASE: $name ##########"
-    if $fn; then
+    before=$FAIL
+    result=PASS
+    "$fn" || result=FAIL
+    if [ -n "$REAL_FIXTURE_ID" ]; then
+        if ! remove_real_fixture; then
+            bad "could not remove the real-app fixture before the next case"
+            exit 1
+        fi
+        [ "$FAIL" -eq "$before" ] || result=FAIL
+    fi
+    if [ "$result" = PASS ]; then
         echo "########## CASE $name: PASS ##########"
     else
         echo "########## CASE $name: FAIL ##########" >&2
