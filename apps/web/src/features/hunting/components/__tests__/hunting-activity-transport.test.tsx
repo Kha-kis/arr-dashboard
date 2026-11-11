@@ -176,6 +176,51 @@ beforeEach(() => {
 		throw new Error(`Unexpected request ${method} ${url}`);
 	};
 });
+describe("Hunting status recovery", () => {
+	it.each(["initial", "background"] as const)(
+		"retries a failed %s status read without enabling hunt actions",
+		async (failure) => {
+			const statusUrl = "/api/hunting/status";
+			const statusRequests = () => requests.filter(({ url }) => url === statusUrl);
+			const success = { schedulerRunning: true, instances: [], recentActivityCount: 0 };
+			let failed = failure === "initial";
+			let pending: ReturnType<typeof hold> | undefined;
+			respond = async ({ url, method }) => {
+				if (url !== statusUrl || method !== "GET") throw new Error("Unexpected request");
+				await pending?.promise;
+				return failed ? json({ error: "Synthetic unavailable" }, 503) : json(success);
+			};
+			show(<HuntingClient />);
+			if (failure === "background") {
+				const refresh = await screen.findByRole("button", { name: "Refresh" });
+				failed = true;
+				fireEvent.click(refresh);
+			}
+
+			await screen.findByText(/hunting status/i);
+			const retry = screen.getByRole("button", { name: "Retry" });
+			expect(screen.queryByRole("button", { name: "Configuration" })).toBeNull();
+			pending = hold();
+			const beforeRetry = statusRequests().length;
+			fireEvent.click(retry);
+			await waitFor(() => expect(retry).toBeDisabled());
+			expect(screen.getByText(/hunting status/i)).toBeInTheDocument();
+			fireEvent.click(retry);
+			expect(statusRequests()).toHaveLength(beforeRetry + 1);
+			await act(async () => {
+				pending!.release();
+			});
+			await waitFor(() => expect(retry).toBeEnabled());
+
+			failed = false;
+			fireEvent.click(retry);
+			await screen.findByRole("button", { name: "Configuration" });
+			expect(statusRequests()).toHaveLength(beforeRetry + 2);
+			expect(writes()).toEqual([]);
+		},
+	);
+});
+
 describe("H3 maintained Hunting history transport", () => {
 	it("reads populated details, serializes page and filters, resets page and keeps header Refresh read-only", async () => {
 		show(<HuntingClient />);
