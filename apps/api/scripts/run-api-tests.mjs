@@ -9,6 +9,9 @@ import { prepareNativePostgresFixture } from "./native-postgres-test-fixture.mjs
 const apiRoot = fileURLToPath(new URL("..", import.meta.url));
 const require = createRequire(join(apiRoot, "package.json"));
 const vitest = join(dirname(require.resolve("vitest/package.json")), "vitest.mjs");
+const sqliteWorkers = process.env.ARR_API_TEST_WORKERS ?? "4";
+if (sqliteWorkers !== "2" && sqliteWorkers !== "4")
+	throw new Error("ARR_API_TEST_WORKERS must be 2 or 4.");
 const cleanEnvironment = () => ({
 	PATH: process.env.PATH,
 	HOME: process.env.HOME,
@@ -82,7 +85,7 @@ try {
 			"--config",
 			sqliteConfig,
 			...argumentsForVitest,
-			"--maxWorkers=4",
+			`--maxWorkers=${sqliteWorkers}`,
 			...pgOnlySuites.flatMap((suite) => ["--exclude", suite]),
 			...nodeOnlySuites.flatMap((suite) => ["--exclude", suite]),
 		],

@@ -131,6 +131,8 @@ jobs:
         env:
           # Keep the native API worker pool from competing with web test workers.
           TURBO_CONCURRENCY: "1"
+          # Limit native SQLite test contention on hosted runners.
+          ARR_API_TEST_WORKERS: "2"
 
       - name: Run provider cache heap regression
         run: pnpm --filter @arr/api run test:provider-cache-heap
