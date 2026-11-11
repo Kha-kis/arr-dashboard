@@ -120,6 +120,8 @@ export type JellyfinEpisodeRefreshResult = {
 	renewalDeferred?: true;
 	renewalDeadline?: Date;
 	retryablePreRenewalFailure?: true;
+	/** A scheduled Jellyfin unit claim hit SQLite contention before returning a claim. */
+	retryableClaimContention?: true;
 	/** A valid current parent library refresh owns admission temporarily. */
 	parentRefreshPending?: true;
 };
@@ -170,6 +172,7 @@ type JellyfinEpisodeWorkProgress = ObservationRunProgress & {
 	progressed: boolean;
 	publishedItemCount?: number;
 	retryableDependencyFailure?: true;
+	retryableClaimContention?: true;
 	replanRequired?: true;
 	superseded?: true;
 	renewalDeferred?: true;
@@ -302,6 +305,16 @@ function stageFailureDiagnostics(error: unknown) {
 	return { errorCategory: "prisma-known", databaseCode, sqliteCode } as const;
 }
 
+function isJellyfinEpisodeClaimContention(error: unknown): boolean {
+	try {
+		const { databaseCode, sqliteCode } = stageFailureDiagnostics(error);
+		return databaseCode === "P1008" && sqliteCode === "SQLITE_BUSY";
+	} catch {
+		// Unreadable adapter diagnostics cannot change the original failure.
+		return false;
+	}
+}
+
 function classifyJellyfinEpisodePageFailure(error: unknown): JellyfinEpisodePageFailureCategory {
 	if (error instanceof UpstreamValidationError) {
 		return error.issues.some((issue) => issue.startsWith("Items.") || issue.startsWith("Items["))
@@ -349,6 +362,7 @@ export async function refreshOwnedJellyfinEpisodeCache(
 		upserted: progress.publishedItemCount ?? 0,
 		errors:
 			progress.retryableDependencyFailure ||
+			progress.retryableClaimContention ||
 			progress.replanRequired ||
 			progress.state === "failed" ||
 			progress.state === "invalidated"
@@ -362,6 +376,7 @@ export async function refreshOwnedJellyfinEpisodeCache(
 		...(progress.renewalDeferred ? { renewalDeferred: true as const } : {}),
 		...(progress.renewalDeadline ? { renewalDeadline: progress.renewalDeadline } : {}),
 		...(progress.retryablePreRenewalFailure ? { retryablePreRenewalFailure: true as const } : {}),
+		...(progress.retryableClaimContention ? { retryableClaimContention: true as const } : {}),
 		...(progress.parentRefreshPending ? { parentRefreshPending: true as const } : {}),
 		...(complete ? { completedAt: context.now ?? new Date() } : {}),
 	};
@@ -1131,13 +1146,27 @@ export function createJellyfinEpisodeWorkItemRunner(
 					})) === 1,
 			);
 		};
-		const claims = await observeWorkStage("unit-claim", async () => {
-			const input = { runId: run.id, now };
-			if (activeCatalog && runOwnsAttempt && authority.service === "JELLYFIN")
-				return await claimJellyfinObservationBatch(context.prisma, input);
-			const single = await claimObservationUnit(context.prisma, input);
-			return single ? [single] : [];
-		});
+		let claims: ObservationUnitClaim[];
+		try {
+			claims = await observeWorkStage("unit-claim", async () => {
+				const input = { runId: run.id, now };
+				if (activeCatalog && runOwnsAttempt && authority.service === "JELLYFIN")
+					return await claimJellyfinObservationBatch(context.prisma, input);
+				const single = await claimObservationUnit(context.prisma, input);
+				return single ? [single] : [];
+			});
+		} catch (error) {
+			if (
+				context.automaticRenewal !== "provider-unavailable-cooldown" ||
+				authority.service !== "JELLYFIN" ||
+				!runOwnsAttempt ||
+				run.state !== "running" ||
+				!isJellyfinEpisodeClaimContention(error)
+			)
+				throw error;
+			checkEpisodeCancellation(context.signal);
+			return { ...emptyEpisodeProgress(), state: "running", retryableClaimContention: true };
+		}
 		const [claim, peer] = claims;
 		if (peer) cancellation.batch = claims;
 		else if (claim) cancellation.claim = claim;

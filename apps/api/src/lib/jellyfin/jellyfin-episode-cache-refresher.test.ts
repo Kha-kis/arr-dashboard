@@ -2502,6 +2502,65 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		}
 	});
 
+	it.each([
+		{ code: "P1008", sqliteCode: "SQLITE_BUSY", classified: true },
+		{ code: "P1008", sqliteCode: "SQLITE_BUSY_SNAPSHOT" },
+		{ code: "P1008", sqliteCode: undefined },
+		{ code: "P2028", sqliteCode: "SQLITE_BUSY" },
+		{ code: "P1008", sqliteCode: "SQLITE_BUSY", service: "EMBY" },
+		{ code: "P1008", sqliteCode: "SQLITE_BUSY", manual: true },
+		{ code: "runtime-admission" },
+		{ code: "generic" },
+		{ code: "P1008", sqliteCode: "SQLITE_BUSY", cancelled: true },
+	] as const)("classifies only eligible unit claim contention (%j)", async (testCase) => {
+		const { code } = testCase;
+		const state = ownedFixture(testCase.service ?? "JELLYFIN", { v3: true });
+		const client = configureDurableRun(state, 2_001);
+		const cancellation = new AbortController();
+		const failure =
+			code === "runtime-admission"
+				? new RestoreRuntimeAdmissionError()
+				: code === "generic"
+					? new Error("SQLITE_BUSY")
+					: new Prisma.PrismaClientKnownRequestError("private claim failure", {
+							code,
+							clientVersion: "test",
+							meta: {
+								driverAdapterError: { cause: { originalCode: testCase.sqliteCode } },
+							},
+						});
+		durable.claimUnit.mockImplementationOnce(async () => {
+			if ("cancelled" in testCase) cancellation.abort();
+			throw failure;
+		});
+		const result = refreshOwnedJellyfinEpisodeCache({
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+			signal: cancellation.signal,
+			automaticRenewal: "manual" in testCase ? undefined : "provider-unavailable-cooldown",
+		});
+		if ("classified" in testCase) {
+			await expect(result).resolves.toMatchObject({
+				retryableClaimContention: true,
+				errors: 1,
+				complete: false,
+				progressed: false,
+			});
+		} else if ("cancelled" in testCase) {
+			await expect(result).rejects.toMatchObject({ code: "PUBLICATION_CANCELLED" });
+		} else {
+			await expect(result).rejects.toBe(failure);
+		}
+		expect(durable.claimUnit).toHaveBeenCalledOnce();
+		expect(durable.releaseUnit).not.toHaveBeenCalled();
+		expect(durable.failUnit).not.toHaveBeenCalled();
+		expect(durable.finishFailure).not.toHaveBeenCalled();
+		expect(client.getEpisodeItemsPageWithCoverage).not.toHaveBeenCalled();
+		expect(durable.stage).not.toHaveBeenCalled();
+	});
+
 	it("does not transfer deferred releases to a replacement database client", async () => {
 		const state = ownedFixture("JELLYFIN");
 		const client = configureDurableRun(state);

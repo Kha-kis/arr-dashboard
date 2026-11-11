@@ -34,6 +34,7 @@ import {
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const STARTUP_DELAY_MS = 6 * 60 * 1000; // 6 minutes (after jellyfin-cache populates)
 const TRANSIENT_IDENTITY_RETRY_DELAYS_MS = [30_000, 120_000, 600_000] as const;
+const UNIT_CLAIM_CONTENTION_RETRY_DELAY_MS = 10_000;
 const MAX_CATALOG_REPLANS_PER_CHAIN = 1;
 
 export async function refreshScheduledJellyfinEpisodeCacheInstance(
@@ -222,7 +223,9 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 						const retryCount = effectiveTransientIdentityRetry;
 						const transientDelay = TRANSIENT_IDENTITY_RETRY_DELAYS_MS[retryCount];
 						if (transientDelay === undefined) return;
-						delay = transientDelay;
+						delay = result.retryableClaimContention
+							? UNIT_CLAIM_CONTENTION_RETRY_DELAY_MS
+							: transientDelay;
 						nextTransientIdentityRetry = retryCount + 1;
 					}
 				}
