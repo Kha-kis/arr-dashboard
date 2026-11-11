@@ -378,7 +378,13 @@ describe("Plex identical parent publication on disposable SQLite", () => {
 				where: { instanceId: f.instance.id, generationId: parent.generationId! },
 			}),
 		).toBe(0);
-		const display = await authority.readPositiveEpisodeDisplayEvidence(input);
+		const ledgerReads = vi.spyOn(prisma.plexGenerationTarget, "findMany");
+		const display = await authority.readPositiveEpisodeDisplayEvidence(input).finally(() => {
+			const queries = [...ledgerReads.mock.calls];
+			ledgerReads.mockRestore();
+			expect(queries).toHaveLength(1);
+			expect(queries[0]?.[0]?.where).toEqual({ instanceId: f.instance.id });
+		});
 		expect(display).toMatchObject({
 			available: true,
 			provenance: {

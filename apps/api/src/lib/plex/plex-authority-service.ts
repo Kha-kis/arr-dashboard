@@ -801,19 +801,24 @@ export class PlexAuthorityService {
 				observed.evidence,
 				"target_ledger_binding_missing",
 			);
-		const currentTargets = await readPlexGenerationTargetsForSelection(this.deps.prisma, {
+		const scope = {
 			instanceId: observed.instanceId,
 			generationId: currentParent?.generationId ?? observed.parentGenerationId,
-		});
+		};
+		const reuseVerifiedTargets =
+			displayOnly && currentParent !== undefined && observed.metadata.version === 6;
+		const selectedTargets = reuseVerifiedTargets
+			? undefined
+			: await readPlexGenerationTargetsForSelection(this.deps.prisma, scope);
 		const targetLedger = await verifyPersistedPlexGenerationTargets(this.deps.prisma, {
 			expected: {
-				instanceId: observed.instanceId,
-				generationId: currentParent?.generationId ?? observed.parentGenerationId,
+				...scope,
 				connectionGeneration: observed.connectionGeneration,
 				identityGeneration: observed.identityGeneration,
 				...currentBinding.binding,
 			},
 			sections: currentParent?.metadata.sections ?? observed.parentMetadata.sections,
+			collectTargets: reuseVerifiedTargets,
 		});
 		if (!targetLedger.ok) {
 			return unavailableEvidence(
@@ -822,8 +827,12 @@ export class PlexAuthorityService {
 				targetLedger.reason as PlexCoverageReasonCode,
 			);
 		}
+		const currentTargets = targetLedger.targets ?? selectedTargets;
+		if (!currentTargets)
+			return unavailableEvidence(input.instanceId, observed.evidence, "target_ledger_unavailable");
 		if (
 			currentParent &&
+			!reuseVerifiedTargets &&
 			!verifyPlexGenerationTargetIntegrity({
 				targets: currentTargets,
 				expected: {

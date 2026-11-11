@@ -344,9 +344,11 @@ export async function verifyPersistedPlexGenerationTargets(
 	input: {
 		expected: DigestContext & PlexTargetLedgerBinding;
 		sections: readonly { key: string; uuid: string; type: "movie" | "show" }[];
+		collectTargets?: boolean;
 	},
 ) {
 	try {
+		const targets: PlexGenerationTarget[] | undefined = input.collectTargets ? [] : undefined;
 		const seenRatingKeys = new Set<string>();
 		const digest = createHash("sha256");
 		const envelope = JSON.stringify({
@@ -407,6 +409,7 @@ export async function verifyPersistedPlexGenerationTargets(
 				first = false;
 				previous = target;
 				seenRatingKeys.add(target.ratingKey);
+				if (targets && count < input.expected.targetCount) targets.push(target);
 				count++;
 			}
 			cursor = page.at(-1)!.id;
@@ -416,7 +419,7 @@ export async function verifyPersistedPlexGenerationTargets(
 		if (count !== input.expected.targetCount)
 			return { ok: false as const, reason: "target_count_mismatch" };
 		return digest.digest("hex") === input.expected.targetDigest
-			? { ok: true as const }
+			? { ok: true as const, ...(targets && { targets }) }
 			: { ok: false as const, reason: "target_digest_mismatch" };
 	} catch {
 		return { ok: false as const, reason: "target_ledger_unavailable" };
