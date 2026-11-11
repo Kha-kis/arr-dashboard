@@ -7,6 +7,7 @@
 
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
+import { constants } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -151,20 +152,32 @@ describe("BackupService database integration", () => {
 			const files: Record<string, { hash: string; mode: number; inode: string; mtime: string }> =
 				{};
 			async function walk(directory: string, relative = "") {
-				for (const name of (await fs.readdir(directory)).sort()) {
-					const filename = path.join(directory, name);
-					const key = path.join(relative, name);
-					const stat = await fs.lstat(filename, { bigint: true });
-					if (stat.isDirectory()) await walk(filename, key);
-					else {
+				const entries = await fs.readdir(directory, { withFileTypes: true });
+				for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+					const filename = path.join(directory, entry.name);
+					const key = path.join(relative, entry.name);
+					if (entry.isDirectory()) {
+						await walk(filename, key);
+						continue;
+					}
+
+					const handle = await fs.open(
+						filename,
+						constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+					);
+					try {
+						const stat = await handle.stat({ bigint: true });
+						if (!stat.isFile()) throw new Error("Expected a regular synthetic fixture file");
 						files[key] = {
 							hash: createHash("sha256")
-								.update(await fs.readFile(filename))
+								.update(await handle.readFile())
 								.digest("hex"),
 							mode: Number(stat.mode & 0o777n),
 							inode: stat.ino.toString(),
 							mtime: stat.mtimeNs.toString(),
 						};
+					} finally {
+						await handle.close();
 					}
 				}
 			}

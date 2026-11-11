@@ -12,6 +12,16 @@ import type {
 	NativeControlWorkerRequest,
 } from "../native-control-worker-protocol.js";
 
+const ignoreHttpAbortBootstrap = `const { workerData } = require("node:worker_threads");
+const { fixtureModuleUrl } = workerData;
+delete workerData.fixtureModuleUrl;
+AbortSignal.timeout = () => new AbortController().signal;
+(async () => {
+	const { register } = await import("tsx/esm/api");
+	register();
+	await import(fixtureModuleUrl);
+})();`;
+
 function fixture() {
 	const workers: Worker[] = [],
 		sockets = new Set<Socket>();
@@ -111,10 +121,14 @@ describe("real native control worker", () => {
 					requestTimeoutMs: 50,
 					createWorker: (url, data) => {
 						const worker = owned.track(
-							new Worker(
-								`AbortSignal.timeout = () => new AbortController().signal; (async () => { const { register } = await import("tsx/esm/api"); register(); await import(${JSON.stringify(url.href)}); })();`,
-								{ eval: true, workerData: data, env: {}, execArgv: [], stdout: true, stderr: true },
-							),
+							new Worker(ignoreHttpAbortBootstrap, {
+								eval: true,
+								workerData: { ...data, fixtureModuleUrl: url.href },
+								env: {},
+								execArgv: [],
+								stdout: true,
+								stderr: true,
+							}),
 						);
 						worker.once("exit", () => {
 							exited = true;
@@ -305,18 +319,14 @@ describe("real native control worker", () => {
 							requestTimeoutMs: 50,
 							createWorker: (url, data) => {
 								const worker = owned.track(
-									new Worker(
-										`AbortSignal.timeout = () => new AbortController().signal;
-(async () => { const { register } = await import("tsx/esm/api"); register(); await import(${JSON.stringify(url.href)}); })();`,
-										{
-											eval: true,
-											workerData: data,
-											env: {},
-											execArgv: [],
-											stdout: true,
-											stderr: true,
-										},
-									),
+									new Worker(ignoreHttpAbortBootstrap, {
+										eval: true,
+										workerData: { ...data, fixtureModuleUrl: url.href },
+										env: {},
+										execArgv: [],
+										stdout: true,
+										stderr: true,
+									}),
 								);
 								worker.once("exit", () => {
 									exited = true;
@@ -353,13 +363,15 @@ describe("real native control worker", () => {
 					const worker = owned.track(
 						new Worker(
 							`const { workerData, parentPort } = require("node:worker_threads");
-const marker = workerData.marker; delete workerData.marker;
+const { marker, fixtureModuleUrl } = workerData;
+delete workerData.marker;
+delete workerData.fixtureModuleUrl;
 setInterval(() => {}, 100);
 globalThis.fetch = async () => new Response(new ReadableStream({ pull() { Atomics.store(new Int32Array(marker), 0, 1); parentPort.postMessage("body-entered"); } }), { headers: { "Content-Type": "application/json" } });
-(async () => { const { register } = await import("tsx/esm/api"); register(); await import(${JSON.stringify(url.href)}); })();`,
+(async () => { const { register } = await import("tsx/esm/api"); register(); await import(fixtureModuleUrl); })();`,
 							{
 								eval: true,
-								workerData: { ...data, marker },
+								workerData: { ...data, marker, fixtureModuleUrl: url.href },
 								env: {},
 								execArgv: [],
 								stdout: true,

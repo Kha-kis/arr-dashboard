@@ -3,8 +3,13 @@ import { createHash } from "node:crypto";
 import { once } from "node:events";
 import {
 	chmodSync,
+	closeSync,
+	constants,
+	fchmodSync,
+	fstatSync,
 	lstatSync,
 	mkdtempSync,
+	openSync,
 	readdirSync,
 	readFileSync,
 	realpathSync,
@@ -34,6 +39,32 @@ type ControlledCompiler = {
 	closed: Promise<CompilerResult>;
 	release(): void;
 };
+
+function readBuildOutput(
+	path: string,
+	before = lstatSync(path, { bigint: true }),
+	mode?: number,
+): Buffer {
+	if (!before.isFile()) throw new Error("Synthetic worker build output unavailable");
+	const descriptor = openSync(
+		path,
+		constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+	);
+	try {
+		const opened = fstatSync(descriptor, { bigint: true });
+		if (
+			!opened.isFile() ||
+			opened.dev !== before.dev ||
+			opened.ino !== before.ino ||
+			opened.uid !== before.uid
+		)
+			throw new Error("Synthetic worker build output identity changed");
+		if (mode !== undefined) fchmodSync(descriptor, mode);
+		return readFileSync(descriptor);
+	} finally {
+		closeSync(descriptor);
+	}
+}
 
 function createPageFixture() {
 	let closing = false;
@@ -74,14 +105,12 @@ function createPageFixture() {
 		const files: Record<string, string> = {};
 		for (const name of readdirSync(current).sort()) {
 			const path = join(current, name);
-			const stat = lstatSync(path);
+			const stat = lstatSync(path, { bigint: true });
 			if (stat.isDirectory()) {
 				chmodSync(path, 0o700);
 				Object.assign(files, outputHashes(directory, path));
 			} else {
-				if (!stat.isFile()) throw new Error("Synthetic worker build output unavailable");
-				chmodSync(path, 0o600);
-				files[relative(directory, path)] = hash(readFileSync(path));
+				files[relative(directory, path)] = hash(readBuildOutput(path, stat, 0o600));
 			}
 		}
 		return files;
@@ -142,7 +171,9 @@ function createPageFixture() {
 		const launchedArgs = options.holdCompiler
 			? [
 					"-e",
-					`process.argv = ${JSON.stringify([process.execPath, ...args])}; process.stdin.once("end", () => require(${JSON.stringify(cli)})); process.stdin.resume();`,
+					'process.stdin.once("end", () => require(process.argv[1])); process.stdin.resume();',
+					"--",
+					...args,
 				]
 			: args;
 		const compiler = spawn(process.execPath, launchedArgs, {
@@ -186,7 +217,9 @@ function createPageFixture() {
 		expect(result).toEqual({ code: 0, signal: null, failed: false });
 		assertOwnedBuild(build);
 		expect(hash(readFileSync(entry))).toBe(entrySourceSha256);
-		const metadata = JSON.parse(readFileSync(join(outDir, "metafile-esm.json"), "utf8")) as {
+		const metadata = JSON.parse(
+			readBuildOutput(join(outDir, "metafile-esm.json")).toString("utf8"),
+		) as {
 			inputs: Record<string, unknown>;
 		};
 		const inputs = Object.fromEntries(
@@ -198,7 +231,7 @@ function createPageFixture() {
 		const worker = jellyfinEpisodePageWorkerUrl(
 			pathToFileURL(join(directory, "dist/index.js")).href,
 		);
-		build.artifactSha256 = hash(readFileSync(worker));
+		build.artifactSha256 = hash(readBuildOutput(fileURLToPath(worker)));
 		process.stdout.write(
 			`${JSON.stringify({ category: "test-page-worker-build", entrySourceSha256, inputs, outputs: build.outputs, artifactSha256: build.artifactSha256, compiler: { command: [process.execPath, ...launchedArgs], cwd: apiRoot, environment, ...result, closeJoined: true, pipesDrained: true } })}\n`,
 		);
@@ -775,6 +808,7 @@ describe("page fixture closing admission", () => {
 					expect(closed).toBe(false);
 					expect(lstatSync(control.directory).isDirectory()).toBe(true);
 					control.release();
+					expect(await control.closed).toEqual({ code: 0, signal: null, failed: false });
 				}
 				await closing;
 				continueAdmission();

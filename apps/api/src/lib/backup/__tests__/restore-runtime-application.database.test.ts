@@ -5,6 +5,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { Worker } from "node:worker_threads";
 import Database from "better-sqlite3";
@@ -611,9 +612,14 @@ describe("actual Fastify native runtime Prisma adoption", () => {
 									import.meta.dirname,
 									"../../../../node_modules/@prisma/adapter-better-sqlite3/dist/index.mjs",
 								);
-								const entry = `(async()=>{const {PrismaBetterSqlite3}=await import(${JSON.stringify(new URL(`file://${adapter}`).href)});
+								const entry = `(async()=>{
 					const {workerData}=require("node:worker_threads");
-					const words=new Int32Array(workerData.fixtureSpillWitness);
+					const {fixtureAdapterUrl,fixtureActorUrl,fixtureSpillWitness}=workerData;
+					delete workerData.fixtureAdapterUrl;
+					delete workerData.fixtureActorUrl;
+					delete workerData.fixtureSpillWitness;
+					const {PrismaBetterSqlite3}=await import(fixtureAdapterUrl);
+					const words=new Int32Array(fixtureSpillWitness);
 					const Database=(await import("better-sqlite3")).default;
 					const connect=PrismaBetterSqlite3.prototype.connect;
 					PrismaBetterSqlite3.prototype.connect=async function(){
@@ -638,10 +644,15 @@ describe("actual Fastify native runtime Prisma adoption", () => {
 					 driver.startTransaction=async(...args)=>instrument(await start(...args));
 					 instrument(driver);
 					 return driver;
-					};await import(${JSON.stringify(new URL(`file://${actor}`).href)});})();`;
+					};await import(fixtureActorUrl);})();`;
 								physical = new Worker(entry, {
 									eval: true,
-									workerData: { ...workerData, fixtureSpillWitness: witness },
+									workerData: {
+										...workerData,
+										fixtureAdapterUrl: pathToFileURL(adapter).href,
+										fixtureActorUrl: pathToFileURL(actor).href,
+										fixtureSpillWitness: witness,
+									},
 									transferList,
 								});
 								return physical;
@@ -737,9 +748,14 @@ describe("actual Fastify native runtime Prisma adoption", () => {
 									);
 									// Real SQL and real native results. Only return timing is delayed
 									// after the first actual watch-row INSERT while its tx is open.
-									const entry = `(async()=>{const {PrismaBetterSqlite3}=await import(${JSON.stringify(new URL(`file://${adapter}`).href)});
+									const entry = `(async()=>{
 					const {workerData}=require("node:worker_threads");
-					const words=new Int32Array(workerData.fixtureExpiryWitness);
+					const {fixtureAdapterUrl,fixtureActorUrl,fixtureExpiryWitness}=workerData;
+					delete workerData.fixtureAdapterUrl;
+					delete workerData.fixtureActorUrl;
+					delete workerData.fixtureExpiryWitness;
+					const {PrismaBetterSqlite3}=await import(fixtureAdapterUrl);
+					const words=new Int32Array(fixtureExpiryWitness);
 					const connect=PrismaBetterSqlite3.prototype.connect;
 					PrismaBetterSqlite3.prototype.connect=async function(){
 					 const driver=await connect.call(this);
@@ -763,10 +779,15 @@ describe("actual Fastify native runtime Prisma adoption", () => {
 					 const start=driver.startTransaction.bind(driver);
 					 driver.startTransaction=async(...args)=>instrument(await start(...args));
 					 instrument(driver);return driver;
-					};await import(${JSON.stringify(new URL(`file://${actor}`).href)});})();`;
+					};await import(fixtureActorUrl);})();`;
 									worker = new Worker(entry, {
 										eval: true,
-										workerData: { ...workerData, fixtureExpiryWitness: witness },
+										workerData: {
+											...workerData,
+											fixtureAdapterUrl: pathToFileURL(adapter).href,
+											fixtureActorUrl: pathToFileURL(actor).href,
+											fixtureExpiryWitness: witness,
+										},
 										transferList,
 									});
 								} else {

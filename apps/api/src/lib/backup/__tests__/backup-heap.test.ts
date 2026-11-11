@@ -17,6 +17,7 @@
  */
 
 import { execFile } from "node:child_process";
+import { constants } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -212,8 +213,19 @@ function makeRealisticDetailsBlob(seed: number): string {
 			expect(internal).not.toBeNull();
 			const backupPath = path.join(testBackupsDir, "backups", backup.type, backup.filename);
 			expect(internal?.path).toBe(backupPath);
-			expect((await fs.stat(backupPath)).mode & 0o777).toBe(0o600);
-			const envelope: EncryptedBackupEnvelope = JSON.parse(await fs.readFile(backupPath, "utf8"));
+			const handle = await fs.open(
+				backupPath,
+				constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+			);
+			let envelope: EncryptedBackupEnvelope;
+			try {
+				const fileStat = await handle.stat();
+				if (!fileStat.isFile()) throw new Error("Expected a regular synthetic backup file");
+				expect(fileStat.mode & 0o777).toBe(0o600);
+				envelope = JSON.parse(await handle.readFile("utf8"));
+			} finally {
+				await handle.close();
+			}
 			const restored: BackupData = JSON.parse(await decryptBackupData(envelope, TEST_PASSWORD));
 			expect(restored.data.users).toHaveLength(1);
 			expect(restored.data.serviceInstances).toHaveLength(1);

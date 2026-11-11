@@ -1,4 +1,5 @@
-import { chmod, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { chmod, mkdtemp, open, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -406,10 +407,20 @@ describe("notification backup on actual owned native storage", () => {
 					historyRetentionLimit: 1,
 				});
 				const file = join(directory, "backups", "scheduled", info.filename);
-				const fileStat = await stat(file);
-				expect(fileStat.mode & 0o777).toBe(0o600);
-				expect(info.size).toBe(fileStat.size);
-				const envelope = JSON.parse(await readFile(file, "utf8")) as EncryptedBackupEnvelope;
+				const handle = await open(
+					file,
+					constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+				);
+				let envelope: EncryptedBackupEnvelope;
+				try {
+					const fileStat = await handle.stat();
+					if (!fileStat.isFile()) throw new Error("Expected a regular synthetic backup file");
+					expect(fileStat.mode & 0o777).toBe(0o600);
+					expect(info.size).toBe(fileStat.size);
+					envelope = JSON.parse(await handle.readFile("utf8")) as EncryptedBackupEnvelope;
+				} finally {
+					await handle.close();
+				}
 				expect(envelope.version).toBe("1.0");
 				const payload: unknown = JSON.parse(
 					await decryptBackupData(envelope, "synthetic-backup-writer-password"),
