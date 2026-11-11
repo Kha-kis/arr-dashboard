@@ -1,5 +1,5 @@
 import type { ProviderObservationStatus } from "@arr/shared";
-import type { Prisma, PrismaClient } from "../prisma.js";
+import { Prisma, type PrismaClient } from "../prisma.js";
 import { evaluateProviderCoverageReceipt } from "../provider-observation/coverage-receipt.js";
 import { projectProviderObservationStatus } from "../provider-observation/status-projection.js";
 import {
@@ -29,6 +29,7 @@ import {
 	MAX_JELLYFIN_MAPPED_PROGRESS_COORDINATES,
 	MAX_JELLYFIN_MAPPED_PROGRESS_JSON_LENGTH,
 } from "./jellyfin-mapped-progress-receipt.js";
+import { retainCurrentJellyfinMappedSeriesBindings } from "./jellyfin-mapped-series-progress.js";
 
 const MAX_SCOPED_SHOWS = 200;
 const MAX_SCOPED_EPISODE_ROWS = 100_000;
@@ -225,7 +226,6 @@ async function readGenerationScopedDisplay(
 						showTmdbId: true,
 						rowCount: true,
 						contentFingerprint: true,
-						mappedProgressJson: Boolean(readMappedProgress),
 					},
 					take: eligible.length,
 				})
@@ -241,6 +241,33 @@ async function readGenerationScopedDisplay(
 				return fail("rows-inconsistent");
 			receiptsByShow.set(receipt.showTmdbId, receipt);
 		}
+		// Apply both limits before transferring proof text to the driver. Oversized
+		// values do not consume the budget for other requested shows.
+		const payloads =
+			readMappedProgress && receipts.length > 0
+				? await tx.$queryRaw<Array<{ showTmdbId: number; payload: string }>>(Prisma.sql`
+				WITH bounded AS (
+					SELECT r."id", r."showTmdbId",
+						SUM(OCTET_LENGTH(r."mappedProgressJson")) OVER (
+							ORDER BY r."showTmdbId" ROWS UNBOUNDED PRECEDING
+						) AS proof_bytes
+					FROM "jellyfin_episode_generation_show_receipts" r
+					WHERE r."instanceId" = ${instance.id} AND r."generationId" = ${status.generationId}
+						AND r."showTmdbId" IN (${Prisma.join(receipts.map(({ showTmdbId }) => showTmdbId))})
+						AND OCTET_LENGTH(r."mappedProgressJson") <= ${MAX_JELLYFIN_MAPPED_PROGRESS_JSON_LENGTH}
+						AND EXISTS (
+							SELECT 1 FROM "ServiceInstance" s
+							WHERE s."id" = r."instanceId" AND s."userId" = ${input.userId} AND s."enabled" = true
+						)
+				)
+				SELECT b."showTmdbId", r."mappedProgressJson" AS payload
+				FROM bounded b JOIN "jellyfin_episode_generation_show_receipts" r ON r."id" = b."id"
+				WHERE b.proof_bytes <= ${MAX_JELLYFIN_MAPPED_PROGRESS_JSON_LENGTH}
+			`)
+				: [];
+		const mappedPayloads = new Map(
+			payloads.map(({ showTmdbId, payload }) => [showTmdbId, payload]),
+		);
 		// Validate and discard each requested scope here to retain the existing
 		// accepted-row cap plus one fetched scope, rather than retaining all scopes.
 		const rows: JellyfinEpisodeRow[] = [];
@@ -251,7 +278,6 @@ async function readGenerationScopedDisplay(
 			payload: string;
 			rows: readonly JellyfinEpisodeRow[];
 		}> = [];
-		let remainingProofLength = MAX_JELLYFIN_MAPPED_PROGRESS_JSON_LENGTH;
 		let incompleteRequestedScope = false;
 		for (const showTmdbId of requested) {
 			if (originalCatalogIds && !originalCatalogIds.has(showTmdbId)) {
@@ -298,14 +324,12 @@ async function readGenerationScopedDisplay(
 				continue;
 			}
 			rows.push(...showRows);
+			// In source 3 positive-only generations a proof-only receipt does
+			// not establish any canonical episode coverage.
+			if (originalCatalogIds && receipt.rowCount === 0) incompleteRequestedScope = true;
 			if (input.includeSeriesProgressProof) receiptedShows.push(showTmdbId);
-			const payload = receipt.mappedProgressJson;
-			if (
-				readMappedProgress &&
-				typeof payload === "string" &&
-				payload.length <= remainingProofLength
-			) {
-				remainingProofLength -= payload.length;
+			const payload = mappedPayloads.get(showTmdbId);
+			if (payload) {
 				mappedReceipts.push({
 					showTmdbId,
 					contentFingerprint: receipt.contentFingerprint,
@@ -434,9 +458,26 @@ async function readGenerationScopedDisplay(
 					return false;
 				});
 	const coordinatesByShow = new Map<number, readonly EpisodeCoordinate[]>();
-	if (parentFresh && catalogCompatible && providerStatus.availability !== "unavailable") {
+	if (
+		mappedReceipts.length > 0 &&
+		parentFresh &&
+		catalogCompatible &&
+		metadata.catalogProvenance &&
+		providerStatus.availability !== "unavailable"
+	) {
+		const eligibleMappedIds = new Set(
+			retainCurrentJellyfinMappedSeriesBindings(
+				metadata.catalogProvenance.bindings,
+				parent.rows.flatMap((row) =>
+					row.mediaType === "series" && row.jellyfinId
+						? [{ libraryId: row.libraryId, seriesId: row.jellyfinId, tmdbId: row.tmdbId }]
+						: [],
+				),
+			).map(({ tmdbId }) => tmdbId),
+		);
 		let remainingCoordinates = MAX_JELLYFIN_MAPPED_PROGRESS_COORDINATES;
 		for (const receipt of mappedReceipts) {
+			if (!eligibleMappedIds.has(receipt.showTmdbId)) continue;
 			const coordinates = decodeJellyfinMappedProgressReceipt(
 				{
 					instanceId: instance.id,

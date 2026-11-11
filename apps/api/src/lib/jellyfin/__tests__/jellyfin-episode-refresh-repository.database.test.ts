@@ -100,6 +100,7 @@ import {
 	hasAuthoritativeJellyfinLibraryReceipt,
 } from "../jellyfin-generation-metadata.js";
 import { jellyfinMappedSeriesProgressProof } from "../jellyfin-generation-scoped-display.js";
+import { MAX_JELLYFIN_MAPPED_PROGRESS_JSON_LENGTH } from "../jellyfin-mapped-progress-receipt.js";
 import {
 	cleanupPublishedJellyfinEpisodeArtifacts,
 	prepareNativeWatchGeneration,
@@ -2025,6 +2026,13 @@ describe("native inventory independence from Jellyfin watch finalization", {
 	it("prepares matched Jellyfin progress alongside positive-only V4 rows", async () => {
 		const prisma = await database();
 		const seed = await completeFinalizerFixture(prisma);
+		const { id: _parentRowId, ...parentRow } = await prisma.jellyfinCache.findFirstOrThrow({
+			where: { instanceId: "jellyfin-1", tmdbId: 42 },
+		});
+		await prisma.jellyfinCache.create({
+			data: { ...parentRow, tmdbId: 43, jellyfinId: "all-unwatched-series" },
+		});
+		await rewriteAuthoritativeParent(prisma);
 		await bindV3Fixture(prisma, seed.run.id);
 		await prisma.serviceInstance.update({
 			where: { id: "jellyfin-1" },
@@ -2041,9 +2049,14 @@ describe("native inventory independence from Jellyfin watch finalization", {
 			seriesId: "unmapped-series",
 			played: false,
 		});
+		await addStagePair(prisma, seed.run.id, {
+			jellyfinId: "other-unwatched",
+			seriesId: "all-unwatched-series",
+			played: false,
+		});
 		await prisma.providerObservationUnit.updateMany({
 			where: { runId: seed.run.id },
-			data: { cursor: 3, expectedRawCount: 3, observedRawCount: 3 },
+			data: { cursor: 4, expectedRawCount: 4, observedRawCount: 4 },
 		});
 		await prisma.jellyfinEpisodeObservationStage.updateMany({
 			where: { runId: seed.run.id, pass: "verify", jellyfinId: "episode-1" },
@@ -2075,12 +2088,13 @@ describe("native inventory independence from Jellyfin watch finalization", {
 						{ seasonNumber: 1, episodeNumber: 2, watched: false },
 					],
 				],
+				[43, [{ seasonNumber: 1, episodeNumber: 1, watched: false }]],
 			]),
 		);
 
 		await prisma.providerObservationUnit.updateMany({
 			where: { runId: seed.run.id },
-			data: { cursor: 4, expectedRawCount: 4, observedRawCount: 4 },
+			data: { cursor: 5, expectedRawCount: 5, observedRawCount: 5 },
 		});
 		const withStageGap = await prepareJellyfinEpisodeRun(input);
 		if (withStageGap.kind !== "ready") throw new Error("Expected existing positive publication");
@@ -2088,8 +2102,25 @@ describe("native inventory independence from Jellyfin watch finalization", {
 		expect(withStageGap.mappedSeriesProgress).toBeUndefined();
 		await prisma.providerObservationUnit.updateMany({
 			where: { runId: seed.run.id },
-			data: { cursor: 3, expectedRawCount: 3, observedRawCount: 3 },
+			data: { cursor: 4, expectedRawCount: 4, observedRawCount: 4 },
 		});
+		const addAlias = async () => {
+			const alias = await prisma.jellyfinCache.create({
+				data: { ...parentRow, libraryId: "second-library", tmdbId: 44 },
+			});
+			await rewriteAuthoritativeParent(prisma);
+			return alias.id;
+		};
+		const removeAlias = async (id: string) => {
+			await prisma.jellyfinCache.delete({ where: { id } });
+			await rewriteAuthoritativeParent(prisma);
+		};
+		const preparingAlias = await addAlias();
+		const ambiguous = await prepareJellyfinEpisodeRun(input);
+		if (ambiguous.kind !== "ready") throw new Error("Expected existing positive publication");
+		expect(ambiguous.publishedRows).toEqual(prepared.publishedRows);
+		const ambiguousPreparedProof = ambiguous.mappedSeriesProgress;
+		await removeAlias(preparingAlias);
 		const staged = await stagePreparedCommit(prisma, input, prepared);
 		if (!staged.nativePublication) throw new Error("Missing native observation fixture");
 		await prepareNativeWatchGeneration(prisma, {
@@ -2124,7 +2155,7 @@ describe("native inventory independence from Jellyfin watch finalization", {
 			"published mapped progress proof",
 		).toEqual({
 			observedAt: prepared.observedAt.toISOString(),
-			coordinatesByShow: prepared.mappedSeriesProgress,
+			coordinatesByShow: new Map([[42, prepared.mappedSeriesProgress?.get(42)]]),
 		});
 		const bundled = await readOwnedJellyfinLibraryAndEpisodeDisplaySources(readInput);
 		for (const display of [read, bundled.episodes]) {
@@ -2143,6 +2174,65 @@ describe("native inventory independence from Jellyfin watch finalization", {
 		}
 		const ordinary = await readOwnedJellyfinEpisodeDisplaySources(readInput);
 		expect(ordinary.sources[0]?.[jellyfinMappedSeriesProgressProof]).toBeUndefined();
+		const publishedAlias = await addAlias();
+		const ambiguousRead = await readOwnedJellyfinEpisodeDisplaySources({
+			...readInput,
+			includeSeriesProgressProof: true,
+			showTmdbIds: [42, 43],
+		});
+		expect(ambiguousRead.sources[0]?.rows).toEqual(read.sources[0]?.rows);
+		const ambiguousPublishedProof =
+			ambiguousRead.sources[0]?.[jellyfinMappedSeriesProgressProof]?.coordinatesByShow;
+		const zeroOrdinary = await readOwnedJellyfinEpisodeDisplaySources({
+			...readInput,
+			showTmdbIds: [43],
+		});
+		await removeAlias(publishedAlias);
+		await prisma.jellyfinEpisodeGenerationShowReceipt.updateMany({
+			where: {
+				instanceId: input.instance.id,
+				generationId: prepared.cacheGenerationId,
+				showTmdbId: 42,
+			},
+			data: { mappedProgressJson: "x".repeat(MAX_JELLYFIN_MAPPED_PROGRESS_JSON_LENGTH + 1) },
+		});
+		const proofSelects: string[] = [];
+		const prepareSqlite = Database.prototype.prepare;
+		const receiptRead = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+			this: Database.Database,
+			sql,
+		) {
+			if (/^(?:SELECT|WITH)\s/i.test(sql.trim()) && sql.includes("mappedProgressJson"))
+				proofSelects.push(sql);
+			return prepareSqlite.call(this, sql);
+		});
+		const oversized = await readOwnedJellyfinEpisodeDisplaySources({
+			...readInput,
+			includeSeriesProgressProof: true,
+			showTmdbIds: [42, 43],
+		});
+		receiptRead.mockRestore();
+		expect(proofSelects).toHaveLength(1);
+		expect(oversized.sources[0]?.rows).toEqual(read.sources[0]?.rows);
+		expect([
+			...oversized.sources[0]![jellyfinMappedSeriesProgressProof]!.coordinatesByShow.keys(),
+		]).toEqual([43]);
+		expect(
+			{
+				preparedAmbiguous: ambiguousPreparedProof?.has(42),
+				publishedAmbiguous: ambiguousPublishedProof?.has(42),
+				publishedUnaffected: ambiguousPublishedProof?.has(43),
+				zeroCanonicalAvailability: zeroOrdinary.providerStatus?.sources[0]?.status.availability,
+				selectedUnboundedPayload: proofSelects.some((query) => !query.includes("OCTET_LENGTH")),
+			},
+			"mapped review findings",
+		).toEqual({
+			preparedAmbiguous: false,
+			publishedAmbiguous: false,
+			publishedUnaffected: true,
+			zeroCanonicalAvailability: "partial",
+			selectedUnboundedPayload: false,
+		});
 		const stale = await readOwnedJellyfinEpisodeDisplaySources({
 			...readInput,
 			includeSeriesProgressProof: true,

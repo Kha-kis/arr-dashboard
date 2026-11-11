@@ -101,6 +101,17 @@ function uniqueBindings(bindings: readonly Binding[]): Binding[] {
 		.sort((left, right) => left.tmdbId - right.tmdbId);
 }
 
+export function retainCurrentJellyfinMappedSeriesBindings(
+	original: readonly Binding[],
+	current: readonly Binding[],
+): Binding[] {
+	const byTmdbId = new Map(uniqueBindings(current).map((binding) => [binding.tmdbId, binding]));
+	return original.filter(({ tmdbId, seriesId, libraryId }) => {
+		const binding = byTmdbId.get(tmdbId);
+		return binding?.seriesId === seriesId && binding.libraryId === libraryId;
+	});
+}
+
 /**
  * Derives display-only coordinates from validated bindings and the full expected
  * scope plan. The caller must supply an incomplete scope for each missing pair.

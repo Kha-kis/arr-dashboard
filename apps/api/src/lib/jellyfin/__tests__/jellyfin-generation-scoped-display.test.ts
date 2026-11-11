@@ -275,6 +275,7 @@ function fixture(service: "JELLYFIN" | "EMBY" = "JELLYFIN", catalogIds = [42]) {
 		contentFingerprint: fingerprintJellyfinEpisodeRows(rows),
 	};
 	const tx = {
+		$queryRaw: vi.fn(async () => []),
 		serviceInstance: { findFirst: vi.fn(async () => instance) },
 		cacheRefreshStatus: { findUnique: vi.fn(async () => status) },
 		jellyfinEpisodePreparation: { findUnique: vi.fn(async () => preparation) },
@@ -381,7 +382,6 @@ describe("generation-scoped episode display freshness", () => {
 				showTmdbId: true,
 				rowCount: true,
 				contentFingerprint: true,
-				mappedProgressJson: false,
 			},
 			take: 200,
 		});
@@ -459,7 +459,6 @@ describe("generation-scoped episode display freshness", () => {
 				showTmdbId: true,
 				rowCount: true,
 				contentFingerprint: true,
-				mappedProgressJson: false,
 			},
 			take: 2,
 		});

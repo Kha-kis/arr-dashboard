@@ -60,6 +60,7 @@ import {
 	deriveJellyfinMappedSeriesProgress,
 	type JellyfinMappedSeriesScope,
 	type JellyfinSeriesProgressCoordinate,
+	retainCurrentJellyfinMappedSeriesBindings,
 } from "./jellyfin-mapped-series-progress.js";
 import { serializeNativeWatchScopeDiagnostics } from "./jellyfin-native-watch-diagnostics.js";
 import {
@@ -2016,9 +2017,12 @@ async function evaluateJellyfinEpisodeRun(
 			};
 		}
 		const mappedSeriesProgress =
-			mappedScopes?.length && originalCatalog
+			mappedScopes?.length && originalCatalog && currentCatalog
 				? deriveJellyfinMappedSeriesProgress({
-						bindings: originalCatalog.bindings,
+						bindings: retainCurrentJellyfinMappedSeriesBindings(
+							originalCatalog.bindings,
+							currentCatalog.bindings,
+						),
 						scopes: mappedScopes,
 					})
 				: undefined;
