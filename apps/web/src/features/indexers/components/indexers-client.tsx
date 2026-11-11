@@ -207,6 +207,8 @@ export const IndexersClient = () => {
 	const stats = useMemo(() => computeStats(aggregated), [aggregated]);
 
 	const resetPage = useCallback(() => setPage(1), []);
+	const lastPage = Math.max(1, Math.ceil(filtered.length / pageSize));
+	if (data !== undefined && page > lastPage) setPage(lastPage);
 
 	const paginatedIndexers = useMemo(() => {
 		const start = (page - 1) * pageSize;

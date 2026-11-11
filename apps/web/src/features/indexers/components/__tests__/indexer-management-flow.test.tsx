@@ -63,6 +63,7 @@ const clients: QueryClient[] = [];
 const violations: string[] = [];
 function fixture(
 	update: () => Response | Promise<Response> = () => json({ status: "outcome-unknown" }, 202),
+	readList?: () => Response,
 ) {
 	const calls: { method: string; path: string; body?: unknown }[] = [];
 	const saved = new Map([
@@ -82,6 +83,7 @@ function fixture(
 		});
 		if (method === "GET" && url.pathname === "/api/services") return json(services);
 		if (method === "GET" && url.pathname === "/api/search/indexers") {
+			if (readList) return readList();
 			const rows = [...saved.values()];
 			return json({
 				instances: rows.map((row) => ({
@@ -166,6 +168,42 @@ afterEach(() => {
 });
 
 describe("maintained indexer management flow", () => {
+	it("keeps indexers visible when a refresh removes the current page", async () => {
+		const indexers = Array.from({ length: 51 }, (_, index) => ({
+			...indexer("north"),
+			id: index + 1,
+			name: `Synthetic indexer ${String(index + 1).padStart(2, "0")}`,
+		}));
+		let count = indexers.length;
+		const view = fixture(undefined, () => {
+			const rows = indexers.slice(0, count);
+			return json({
+				instances: [{ instanceId: "north", instanceName: "north", success: true, data: rows }],
+				aggregated: rows,
+				totalCount: rows.length,
+				failedInstanceCount: 0,
+			});
+		});
+		await screen.findByRole("button", { name: /Synthetic indexer 01/ });
+		fireEvent.click(screen.getAllByTitle("Last page")[0]!);
+		expect(screen.getByRole("button", { name: /Synthetic indexer 51/ })).toBeInTheDocument();
+
+		const refreshTo = async (total: number) => {
+			count = total;
+			fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+			await screen.findByText(`${total} indexers across 1 instance`);
+		};
+		await refreshTo(26);
+		expect(screen.getByRole("button", { name: /Synthetic indexer 26/ })).toBeInTheDocument();
+		await refreshTo(2);
+		expect(screen.getByRole("button", { name: /Synthetic indexer 01/ })).toBeInTheDocument();
+		expect(screen.queryByText("No indexers match your filters")).not.toBeInTheDocument();
+		expect(screen.queryByTitle("Next page")).not.toBeInTheDocument();
+		await refreshTo(51);
+		expect(screen.getByRole("button", { name: /Synthetic indexer 01/ })).toBeInTheDocument();
+		expect(writes(view)).toEqual([]);
+	});
+
 	// Catches a lost instance coordinate, overposting a full client resource, or claiming success before readback.
 	it("saves changed fields only on the chosen same-ID source and shows verified readback", async () => {
 		const view = fixture(() => {
