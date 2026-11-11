@@ -464,8 +464,16 @@ describe("owned inventory connections on populated SQLite", () => {
 			}),
 		);
 		const materialized: string[][] = [];
+		const materializedArrTypes: string[] = [];
 		const observed = prisma.$extends({
 			query: {
+				libraryCache: {
+					async findMany({ args, query }) {
+						const rows = await query(args);
+						materializedArrTypes.push(...rows.map((row) => row.itemType ?? "<missing-type>"));
+						return rows;
+					},
+				},
 				providerNativeInventoryItem: {
 					async findMany({ args, query }) {
 						const result = await query(args);
@@ -508,6 +516,8 @@ describe("owned inventory connections on populated SQLite", () => {
 		// A display page must not materialize the rest of the parent publication.
 		expect(materialized.flat().filter((id) => id !== "parent-400")).toEqual([]);
 		expect(materialized.length).toBeLessThanOrEqual(2);
+		// Episode connections use series parents even when owned movie rows share the catalog.
+		expect(materializedArrTypes).toEqual(["series"]);
 		materialized.length = 0;
 		const complete = await readCompleteNativeLibrary(observed as unknown as PrismaClient, {
 			userId: "owner",

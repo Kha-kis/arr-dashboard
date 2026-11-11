@@ -220,7 +220,11 @@ async function readMissingTmdbLibraryPage(
 	);
 }
 
-async function readOwnedArrCatalog(prisma: PrismaClient, userId: string) {
+async function readOwnedArrCatalog(
+	prisma: PrismaClient,
+	userId: string,
+	domain: InventoryConnectionReadInput["domain"],
+) {
 	const index = createArrConnectionIndex([]);
 	let count = 0;
 	let afterId: string | undefined;
@@ -228,7 +232,7 @@ async function readOwnedArrCatalog(prisma: PrismaClient, userId: string) {
 		const page = await prisma.libraryCache.findMany({
 			where: {
 				instance: { userId, enabled: true, service: { in: ["SONARR", "RADARR"] } },
-				itemType: { in: ["movie", "series"] },
+				itemType: domain === "episode" ? "series" : { in: ["movie", "series"] },
 				...(afterId ? { id: { gt: afterId } } : {}),
 			},
 			select: {
@@ -378,7 +382,7 @@ export async function readProviderInventoryConnections(
 	let arrIndex: Awaited<ReturnType<typeof readOwnedArrCatalog>>;
 	try {
 		arrIndex = await observeRead("arr-catalog", () =>
-			readPhase((client) => readOwnedArrCatalog(client, input.userId)),
+			readPhase((client) => readOwnedArrCatalog(client, input.userId, input.domain)),
 		);
 	} catch {
 		arrIndex = undefined;
