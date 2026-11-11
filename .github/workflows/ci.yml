@@ -128,6 +128,9 @@ jobs:
 
       - name: Run tests
         run: pnpm run test
+        env:
+          # Keep the native API worker pool from competing with web test workers.
+          TURBO_CONCURRENCY: "1"
 
       - name: Run provider cache heap regression
         run: pnpm --filter @arr/api run test:provider-cache-heap
