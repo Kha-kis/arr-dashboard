@@ -1,4 +1,9 @@
-import type { ProwlarrIndexer, ProwlarrIndexerDetails, ServicesResponse } from "@arr/shared";
+import type {
+	ProwlarrIndexer,
+	ProwlarrIndexerDetails,
+	SearchIndexersResponse,
+	ServicesResponse,
+} from "@arr/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -59,6 +64,25 @@ const detail = (instanceId: string): ProwlarrIndexerDetails => ({
 });
 const json = (body: unknown, status = 200) =>
 	new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+const source = (
+	instanceId: string,
+	success: boolean,
+	data: ProwlarrIndexer[] = [],
+): SearchIndexersResponse["instances"][number] => ({
+	instanceId,
+	instanceName: instanceId,
+	success,
+	data,
+});
+function list(instances: SearchIndexersResponse["instances"]) {
+	const aggregated = instances.flatMap((instance) => instance.data);
+	return json({
+		instances,
+		aggregated,
+		totalCount: aggregated.length,
+		failedInstanceCount: instances.filter((instance) => !instance.success).length,
+	} satisfies SearchIndexersResponse);
+}
 const clients: QueryClient[] = [];
 const violations: string[] = [];
 function fixture(
@@ -168,6 +192,153 @@ afterEach(() => {
 });
 
 describe("maintained indexer management flow", () => {
+	it("discloses a partial list and keeps the successful instance usable", async () => {
+		localStorage.setItem("arr-dashboard-incognito-mode", "true");
+		const view = fixture(undefined, () =>
+			list([
+				source("north", true, [indexer("north")]),
+				{ ...source("south", false), instanceName: privateDetail },
+			]),
+		);
+
+		expect(await screen.findByRole("status")).toHaveTextContent(
+			"1 Prowlarr instance failed to load.",
+		);
+		expect(screen.getByText("1 indexer across 1 instance")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Test" })).toBeEnabled();
+		expect(screen.getByRole("button", { name: "Test All" })).toBeEnabled();
+
+		fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+		const instanceFilter = screen.getByRole("combobox", { name: "Instance" });
+		expect(instanceFilter).not.toHaveTextContent(privateDetail);
+		fireEvent.change(instanceFilter, { target: { value: "north" } });
+		expect(screen.getByRole("button", { name: "Test" })).toBeEnabled();
+		expect(writes(view)).toEqual([]);
+	});
+
+	it("labels cached partial results after a failed refresh and clears both notices on recovery", async () => {
+		let read = () => list([source("north", true, [indexer("north")]), source("south", false)]);
+		const view = fixture(undefined, () => read());
+
+		expect(await screen.findByRole("status")).toHaveTextContent(
+			"1 Prowlarr instance failed to load.",
+		);
+		expect(screen.getByRole("status")).not.toHaveTextContent(/last successful response/i);
+
+		read = () => {
+			throw new TypeError(privateDetail);
+		};
+		fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+		expect(await screen.findByText(/Unable to load indexers/)).toHaveTextContent(
+			"Indexer data is from the last successful response.",
+		);
+		expect(screen.getByRole("status")).toHaveTextContent(
+			"In the last successful response, 1 Prowlarr instance failed to load.",
+		);
+		expect(screen.getByRole("heading", { name: "north" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Test" })).toBeEnabled();
+		expect(document.body.textContent).not.toContain(privateDetail);
+
+		read = () =>
+			list([source("north", true, [indexer("north")]), source("south", true, [indexer("south")])]);
+		fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+		expect(await screen.findByRole("heading", { name: "south" })).toBeInTheDocument();
+		expect(screen.queryByText(/Unable to load indexers/)).not.toBeInTheDocument();
+		expect(screen.queryByRole("status")).not.toBeInTheDocument();
+		expect(writes(view)).toEqual([]);
+	});
+
+	it.each([
+		{ instances: [], emptyText: "No Prowlarr Instances Configured" },
+		{ instances: [source("north", true)], emptyText: "No indexers configured" },
+	])(
+		"suppresses the cached '$emptyText' state after a failed refresh",
+		async ({ instances, emptyText }) => {
+			let read = () => list(instances);
+			fixture(undefined, () => read());
+			expect(await screen.findByText(emptyText)).toBeInTheDocument();
+
+			read = () => json({ message: privateDetail }, 503);
+			fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+			expect(await screen.findByText(/Unable to load indexers/)).toBeInTheDocument();
+			expect(screen.queryByText(/no (?:prowlarr instances|indexers)/i)).not.toBeInTheDocument();
+			expect(screen.queryByRole("img", { name: "Total" })).not.toBeInTheDocument();
+			expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled();
+			expect(document.body.textContent).not.toContain(privateDetail);
+		},
+	);
+
+	it("shows the selected failed instance as unavailable and lets users switch back", async () => {
+		const view = fixture(undefined, () =>
+			list([source("north", true, [indexer("north")]), source("south", false)]),
+		);
+		await screen.findByRole("heading", { name: "north" });
+
+		fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+		fireEvent.change(screen.getByRole("combobox", { name: "Instance" }), {
+			target: { value: "south" },
+		});
+		expect(screen.getByRole("status")).toHaveTextContent(
+			"Indexers for the selected instance are unavailable.",
+		);
+		expect(screen.queryByRole("img", { name: "Total" })).not.toBeInTheDocument();
+		expect(screen.queryByText("0 of 1 indexers")).not.toBeInTheDocument();
+		expect(screen.queryByText("No indexers match your filters")).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Test All" })).not.toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled();
+
+		fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
+		expect(screen.getByRole("heading", { name: "north" })).toBeInTheDocument();
+		expect(writes(view)).toEqual([]);
+	});
+
+	it("shows all-instance failure as unavailable until Refresh restores results", async () => {
+		let instances = [source("north", false), source("south", false)];
+		const view = fixture(undefined, () => list(instances));
+
+		expect(await screen.findByRole("status")).toHaveTextContent(
+			"2 Prowlarr instances failed to load.",
+		);
+		expect(screen.getByRole("status")).toHaveTextContent("Indexers are unavailable.");
+		expect(screen.queryByRole("img", { name: "Total" })).not.toBeInTheDocument();
+		expect(screen.queryByText("No indexers match your filters")).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole("heading", { name: "No Prowlarr Instances Configured" }),
+		).not.toBeInTheDocument();
+
+		instances = [
+			source("north", true, [indexer("north")]),
+			source("south", true, [indexer("south")]),
+		];
+		fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+		expect(await screen.findByRole("heading", { name: "south" })).toBeInTheDocument();
+		expect(screen.queryByRole("status")).not.toBeInTheDocument();
+		expect(view.calls.filter((call) => call.path === "/api/search/indexers")).toHaveLength(2);
+		expect(writes(view)).toEqual([]);
+	});
+
+	it("distinguishes unconfigured, configured-empty, and filtered-empty lists", async () => {
+		let instances: SearchIndexersResponse["instances"] = [];
+		fixture(undefined, () => list(instances));
+		expect(
+			await screen.findByRole("heading", { name: "No Prowlarr Instances Configured" }),
+		).toBeInTheDocument();
+
+		instances = [source("north", true)];
+		fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+		expect(await screen.findByText("No indexers configured")).toBeInTheDocument();
+		expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+		instances = [source("north", true, [indexer("north")])];
+		fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+		await screen.findByRole("heading", { name: "north" });
+		fireEvent.change(screen.getByPlaceholderText("Search indexers..."), {
+			target: { value: "absent indexer" },
+		});
+		expect(screen.getByText("No indexers match your filters")).toBeInTheDocument();
+		expect(screen.queryByText("No indexers configured")).not.toBeInTheDocument();
+	});
+
 	it("keeps indexers visible when a refresh removes the current page", async () => {
 		const indexers = Array.from({ length: 51 }, (_, index) => ({
 			...indexer("north"),
