@@ -84,6 +84,25 @@ describe("library card series progress evidence", () => {
 		expect(screen.queryByText(/%/)).not.toBeInTheDocument();
 	});
 
+	it("helps resolve a Jellyfin series without a verified match", () => {
+		renderCard({
+			jellyfin: {
+				status: "unknown",
+				watched: null,
+				total: null,
+				percent: null,
+				watchedSemantics: "unknown",
+				reason: "no-verified-match",
+			},
+		});
+
+		expect(screen.getByText("No verified Jellyfin match")).toBeVisible();
+		expect(
+			screen.getByText("Check that the series is in Jellyfin and verify its TMDB match."),
+		).toBeVisible();
+		expect(screen.queryByText(/%/)).not.toBeInTheDocument();
+	});
+
 	it("shows Jellyfin progress for matched episodes and the recorded observation time", () => {
 		const observedAt = "2026-11-11T12:34:56.000Z";
 		const jellyfin = {

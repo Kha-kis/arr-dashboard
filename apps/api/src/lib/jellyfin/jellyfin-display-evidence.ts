@@ -16,6 +16,7 @@ import {
 	type JellyfinSeriesProgressProof,
 	jellyfinMappedSeriesProgressProof,
 	jellyfinSeriesProgressProof,
+	jellyfinSeriesWithoutCatalogMatch,
 	readOwnedGenerationScopedEpisodeDisplay,
 	readOwnedGenerationScopedLibraryAndEpisodeDisplay,
 } from "./jellyfin-generation-scoped-display.js";
@@ -214,6 +215,7 @@ function episodeDisplaySource(
 	const admitted = isAdmittedEpisodeObservation(observation);
 	const proof = admitted ? observation[jellyfinSeriesProgressProof] : undefined;
 	const mappedProof = admitted ? observation[jellyfinMappedSeriesProgressProof] : undefined;
+	const withoutMatch = admitted ? observation[jellyfinSeriesWithoutCatalogMatch] : undefined;
 	return {
 		instanceId: instance.id,
 		instanceName: instance.label,
@@ -227,6 +229,7 @@ function episodeDisplaySource(
 		status: publicEpisodeSourceStatus(instance, observation?.providerStatus ?? unavailableStatus),
 		...(proof && { [jellyfinSeriesProgressProof]: proof }),
 		...(mappedProof && { [jellyfinMappedSeriesProgressProof]: mappedProof }),
+		...(withoutMatch && { [jellyfinSeriesWithoutCatalogMatch]: withoutMatch }),
 	};
 }
 
@@ -246,12 +249,14 @@ function displayEvidence<Row>(
 				rows,
 				[jellyfinSeriesProgressProof]: proof,
 				[jellyfinMappedSeriesProgressProof]: mappedProof,
+				[jellyfinSeriesWithoutCatalogMatch]: withoutMatch,
 			}) => ({
 				instanceId,
 				instanceName,
 				rows,
 				...(proof && { [jellyfinSeriesProgressProof]: proof }),
 				...(mappedProof && { [jellyfinMappedSeriesProgressProof]: mappedProof }),
+				...(withoutMatch && { [jellyfinSeriesWithoutCatalogMatch]: withoutMatch }),
 			}),
 		),
 		providerStatus: observations.length

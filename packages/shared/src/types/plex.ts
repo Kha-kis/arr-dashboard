@@ -551,7 +551,14 @@ export type SeriesProgressItem =
 			percent: null;
 			watchedSemantics: "lower-bound";
 	  }
-	| { status: "unknown"; total: null; watched: null; percent: null; watchedSemantics: "unknown" };
+	| {
+			status: "unknown";
+			total: null;
+			watched: null;
+			percent: null;
+			watchedSemantics: "unknown";
+			reason?: "no-verified-match";
+	  };
 
 export interface SeriesProgressResponse {
 	configured: boolean;

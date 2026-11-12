@@ -39,9 +39,11 @@ const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
 // from the existing positive-only rows, never episode metadata.
 export const jellyfinSeriesProgressProof = Symbol("jellyfin-series-progress-proof");
 export const jellyfinMappedSeriesProgressProof = Symbol("jellyfin-mapped-series-progress-proof");
+export const jellyfinSeriesWithoutCatalogMatch = Symbol("jellyfin-series-without-catalog-match");
 type EpisodeCoordinate = Pick<JellyfinEpisodeRow, "seasonNumber" | "episodeNumber" | "watched">;
 export type JellyfinSeriesProgressProof = {
 	[jellyfinSeriesProgressProof]?: ReadonlyMap<number, readonly EpisodeCoordinate[]>;
+	[jellyfinSeriesWithoutCatalogMatch]?: ReadonlySet<number>;
 	[jellyfinMappedSeriesProgressProof]?: {
 		observedAt: string;
 		coordinatesByShow: ReadonlyMap<number, readonly EpisodeCoordinate[]>;
@@ -354,6 +356,7 @@ async function readGenerationScopedDisplay(
 			fail,
 			parentSnapshot,
 			originalCatalogIds,
+			readMappedProgress,
 			rows,
 			receiptedShows,
 			mappedReceipts,
@@ -371,6 +374,7 @@ async function readGenerationScopedDisplay(
 		fail,
 		parentSnapshot,
 		originalCatalogIds,
+		readMappedProgress,
 		rows,
 		receiptedShows,
 		mappedReceipts,
@@ -460,6 +464,22 @@ async function readGenerationScopedDisplay(
 					seriesProgressProof?.get(showTmdbId)?.push({ seasonNumber, episodeNumber, watched });
 					return false;
 				});
+	let withoutCatalogMatch: Set<number> | undefined;
+	if (
+		readMappedProgress &&
+		parentFresh &&
+		catalogCompatible &&
+		providerStatus.availability !== "unavailable"
+	) {
+		withoutCatalogMatch = new Set(requested.filter((id) => !originalCatalogIds?.has(id)));
+		if (withoutCatalogMatch.size > 0) {
+			for (const row of parent.rows) {
+				if (row.mediaType === "series" && row.tmdbId !== null) {
+					withoutCatalogMatch.delete(row.tmdbId);
+				}
+			}
+		}
+	}
 	const coordinatesByShow = new Map<number, readonly EpisodeCoordinate[]>();
 	if (
 		mappedReceipts.length > 0 &&
@@ -516,6 +536,9 @@ async function readGenerationScopedDisplay(
 			rows: visibleRows,
 			providerStatus,
 			...(seriesProgressProof && { [jellyfinSeriesProgressProof]: seriesProgressProof }),
+			...(withoutCatalogMatch?.size && {
+				[jellyfinSeriesWithoutCatalogMatch]: withoutCatalogMatch,
+			}),
 			...(coordinatesByShow.size && {
 				[jellyfinMappedSeriesProgressProof]: {
 					observedAt: status.lastRefreshedAt.toISOString(),

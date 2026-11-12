@@ -18,6 +18,7 @@ import { withJellyfinDisplayReadTiming } from "../../lib/jellyfin/jellyfin-displ
 import {
 	jellyfinMappedSeriesProgressProof,
 	jellyfinSeriesProgressProof,
+	jellyfinSeriesWithoutCatalogMatch,
 } from "../../lib/jellyfin/jellyfin-generation-scoped-display.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { aggregateSeriesProgress, type EpisodeInput } from "../plex/lib/series-progress-helpers.js";
@@ -66,7 +67,14 @@ export function projectJellyfinSeriesProgress(
 			!["complete", "positive-only"].includes(status.evidence) ||
 			source.rows.some((row) => row.instanceId !== instance.id)
 		)
-			return { complete: false, rows: [], proof: undefined, mapped: undefined, observedAt: NaN };
+			return {
+				complete: false,
+				rows: [],
+				proof: undefined,
+				mapped: undefined,
+				withoutMatch: undefined,
+				observedAt: NaN,
+			};
 
 		const complete = status.availability === "current" && status.evidence === "complete";
 		const scopeDegraded =
@@ -85,6 +93,12 @@ export function projectJellyfinSeriesProgress(
 				mapped &&
 				mapped.observedAt === status.observedAt
 					? mapped.coordinatesByShow
+					: undefined,
+			withoutMatch:
+				instance.service === "JELLYFIN" &&
+				Number.isFinite(observedAt) &&
+				!status.reasonCodes.includes("publication-stale")
+					? source[jellyfinSeriesWithoutCatalogMatch]
 					: undefined,
 			observedAt,
 		};
@@ -135,6 +149,18 @@ export function projectJellyfinSeriesProgress(
 				watchedSemantics: "matched",
 				observedAt,
 			};
+		}
+	}
+
+	if (uniqueInstances && sources.every((source) => source.withoutMatch)) {
+		for (const showTmdbId of tmdbIds) {
+			const progress = progressMap[showTmdbId];
+			if (
+				progress?.status === "unknown" &&
+				sources.every((source) => source.withoutMatch?.has(showTmdbId))
+			) {
+				progressMap[showTmdbId] = { ...progress, reason: "no-verified-match" };
+			}
 		}
 	}
 

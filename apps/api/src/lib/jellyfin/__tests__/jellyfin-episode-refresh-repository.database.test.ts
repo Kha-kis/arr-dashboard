@@ -2142,7 +2142,7 @@ describe("native inventory independence from Jellyfin watch finalization", {
 			prisma,
 			userId: input.userId,
 			instances: [{ id: input.instance.id, label: "Synthetic", service: "JELLYFIN" as const }],
-			showTmdbIds: [42],
+			showTmdbIds: [42, 987654],
 			now: input.now,
 		};
 		const read = await readOwnedJellyfinEpisodeDisplaySources({
@@ -2169,6 +2169,14 @@ describe("native inventory independence from Jellyfin watch finalization", {
 					percent: 50,
 					watchedSemantics: "matched",
 					observedAt: prepared.observedAt.toISOString(),
+				},
+				987654: {
+					status: "unknown",
+					total: null,
+					watched: null,
+					percent: null,
+					watchedSemantics: "unknown",
+					reason: "no-verified-match",
 				},
 			});
 		}

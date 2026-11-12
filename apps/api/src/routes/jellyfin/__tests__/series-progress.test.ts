@@ -3,7 +3,10 @@ import type {
 	JellyfinDisplayInstance,
 	JellyfinEpisodeDisplayEvidence,
 } from "../../../lib/jellyfin/jellyfin-display-evidence.js";
-import { jellyfinMappedSeriesProgressProof } from "../../../lib/jellyfin/jellyfin-generation-scoped-display.js";
+import {
+	jellyfinMappedSeriesProgressProof,
+	jellyfinSeriesWithoutCatalogMatch,
+} from "../../../lib/jellyfin/jellyfin-generation-scoped-display.js";
 import { projectJellyfinSeriesProgress } from "../series-progress-routes.js";
 
 const instances: JellyfinDisplayInstance[] = [
@@ -85,6 +88,32 @@ describe("Jellyfin mapped series progress projection", () => {
 		});
 		expect(result.progress[43]).toMatchObject({ status: "unknown", total: null });
 		expect(result.providerStatus).toEqual(display.providerStatus);
+	});
+
+	it("explains unknown only when every enabled source lacks a verified catalog match", () => {
+		const display = evidence();
+		for (const source of display.sources) {
+			source[jellyfinSeriesWithoutCatalogMatch] = new Set([43, 44]);
+		}
+		const result = projectJellyfinSeriesProgress(instances, display, [42, 43]);
+		expect(result.progress[43]).toMatchObject({
+			status: "unknown",
+			reason: "no-verified-match",
+			total: null,
+		});
+		expect(result.progress[42]?.status).toBe("mapped");
+		expect(result.progress[44]).toBeUndefined();
+
+		display.sources[1]![jellyfinSeriesWithoutCatalogMatch] = new Set();
+		expect(projectJellyfinSeriesProgress(instances, display, [43]).progress[43]).not.toHaveProperty(
+			"reason",
+		);
+
+		display.sources[1]![jellyfinSeriesWithoutCatalogMatch] = new Set([43]);
+		display.providerStatus!.sources[1]!.status.reasonCodes.push("publication-stale");
+		expect(projectJellyfinSeriesProgress(instances, display, [43]).progress[43]).not.toHaveProperty(
+			"reason",
+		);
 	});
 
 	it("combines a retained mapped snapshot with complete evidence without promoting it to exact", () => {

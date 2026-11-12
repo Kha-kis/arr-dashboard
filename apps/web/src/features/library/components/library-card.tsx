@@ -36,9 +36,9 @@ import { RATING_COLOR, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
 import { formatBytes, formatRuntime } from "../lib/library-utils";
 import { LibraryBadge } from "./library-badge";
+import type { SeriesProgressByProvider } from "./library-content";
 import { PosterImage } from "./poster-image";
 import { TorrentStateBadge } from "./torrent-state-badge";
-import type { SeriesProgressByProvider } from "./library-content";
 
 function formatRelativeTime(isoDate: string): string {
 	const diff = Date.now() - new Date(isoDate).getTime();
@@ -208,7 +208,14 @@ function SeriesProgressDisplay({
 	return (
 		<div className="flex items-center gap-2 text-[10px] text-muted-foreground">
 			<span className="font-medium w-14 shrink-0">{provider}</span>
-			<span>Watch status unknown</span>
+			{provider === "Jellyfin" && progress.reason === "no-verified-match" ? (
+				<div className="min-w-0 wrap-break-word">
+					<div>No verified Jellyfin match</div>
+					<div>Check that the series is in Jellyfin and verify its TMDB match.</div>
+				</div>
+			) : (
+				<span>Watch status unknown</span>
+			)}
 		</div>
 	);
 }
