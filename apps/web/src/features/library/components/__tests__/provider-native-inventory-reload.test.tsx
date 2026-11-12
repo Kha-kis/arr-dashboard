@@ -17,7 +17,15 @@ vi.mock("../../../../hooks/api/useServicesQuery", () => ({
 	}),
 }));
 
-import { ProviderNativeInventoryPanel } from "../provider-native-inventory-panel";
+import {
+	ProviderNativeInventoryPanel as InventoryPanel,
+	useProviderNativeInventoryPanelState,
+} from "../provider-native-inventory-panel";
+
+function ProviderNativeInventoryPanel() {
+	const inventory = useProviderNativeInventoryPanelState();
+	return <InventoryPanel inventory={inventory} />;
+}
 
 const services: ServiceInstanceSummary[] = ["plex-one", "plex-two"].map((id) => ({
 	id,

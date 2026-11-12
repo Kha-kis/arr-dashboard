@@ -169,13 +169,8 @@ function attemptReason(reason: ProviderNativeInventoryAttempt["reasonCode"]): st
 	}
 }
 
-export function ProviderNativeInventoryPanel({
-	onInitialReadSettled,
-}: {
-	onInitialReadSettled?: () => void;
-} = {}) {
+export function useProviderNativeInventoryPanelState() {
 	const servicesQuery = useServicesQuery();
-	const [incognitoMode] = useIncognitoMode();
 	const supportedServices = useMemo(
 		() =>
 			(servicesQuery.data ?? []).filter(
@@ -248,32 +243,11 @@ export function ProviderNativeInventoryPanel({
 	});
 
 	const data = inventoryQuery.data;
-	const initialReadSettled =
+	const readSettled =
 		servicesQuery.isError ||
 		(servicesQuery.isSuccess &&
 			(supportedServices.length === 0 ||
 				(Boolean(selectedService) && (data !== undefined || inventoryQuery.isError))));
-	useEffect(() => {
-		if (initialReadSettled) onInitialReadSettled?.();
-	}, [initialReadSettled, onInitialReadSettled]);
-	const available = isAvailable(data) ? data : undefined;
-	const attempt = data?.attempt;
-	const serviceLabels = useMemo(
-		() => new Map((servicesQuery.data ?? []).map((service) => [service.id, service.label])),
-		[servicesQuery.data],
-	);
-	const showLoading =
-		inventoryQuery.isLoading || (Boolean(instanceId) && !data && inventoryQuery.isFetching);
-	const showUnconfirmed =
-		available !== undefined &&
-		(inventoryQuery.isError ||
-			available.evidence === "positive-only" ||
-			available.freshness !== "current" ||
-			!available.complete ||
-			available.lastAttemptResult !== "success");
-
-	if (servicesQuery.isSuccess && supportedServices.length === 0) return null;
-
 	const setScope = (nextInstanceId: string, nextDomain: InventoryDomain) => {
 		initialLinkApplied.current = true;
 		setInstanceId(nextInstanceId);
@@ -301,6 +275,67 @@ export function ProviderNativeInventoryPanel({
 	const handleServicesReload = () => {
 		void servicesQuery.refetch();
 	};
+
+	return {
+		servicesQuery,
+		supportedServices,
+		instanceId,
+		domain,
+		selectedService,
+		activeMetadataFilter,
+		inventoryQuery,
+		data,
+		readSettled,
+		setScope,
+		setMetadataFilter,
+		resetPagination,
+		handleReload,
+		handleServicesReload,
+		setAfterNativeId,
+		setExpectedGenerationId,
+	};
+}
+
+export function ProviderNativeInventoryPanel({
+	inventory,
+}: {
+	inventory: ReturnType<typeof useProviderNativeInventoryPanelState>;
+}) {
+	const {
+		servicesQuery,
+		supportedServices,
+		instanceId,
+		domain,
+		selectedService,
+		activeMetadataFilter,
+		inventoryQuery,
+		data,
+		setScope,
+		setMetadataFilter,
+		resetPagination,
+		handleReload,
+		handleServicesReload,
+		setAfterNativeId,
+		setExpectedGenerationId,
+	} = inventory;
+	const [incognitoMode] = useIncognitoMode();
+	const available = isAvailable(data) ? data : undefined;
+	const attempt = data?.attempt;
+	const serviceLabels = useMemo(
+		() => new Map((servicesQuery.data ?? []).map((service) => [service.id, service.label])),
+		[servicesQuery.data],
+	);
+	const showLoading =
+		inventoryQuery.isLoading || (Boolean(instanceId) && !data && inventoryQuery.isFetching);
+	const showUnconfirmed =
+		available !== undefined &&
+		(inventoryQuery.isError ||
+			available.evidence === "positive-only" ||
+			available.freshness !== "current" ||
+			!available.complete ||
+			available.lastAttemptResult !== "success");
+
+	if (servicesQuery.isSuccess && supportedServices.length === 0) return null;
 
 	return (
 		<Card

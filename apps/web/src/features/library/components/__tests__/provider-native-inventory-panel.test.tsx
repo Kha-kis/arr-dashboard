@@ -71,7 +71,15 @@ vi.mock("../../../../lib/incognito", () => ({
 	getLinuxIsoName: () => "masked-item.iso",
 }));
 
-import { ProviderNativeInventoryPanel } from "../provider-native-inventory-panel";
+import {
+	ProviderNativeInventoryPanel as InventoryPanel,
+	useProviderNativeInventoryPanelState,
+} from "../provider-native-inventory-panel";
+
+function ProviderNativeInventoryPanel() {
+	const inventory = useProviderNativeInventoryPanelState();
+	return <InventoryPanel inventory={inventory} />;
+}
 
 function service(id: string, label: string): ServiceInstanceSummary {
 	return {

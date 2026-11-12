@@ -33,7 +33,10 @@ import { LibraryCard } from "./library-card";
 import { LibraryContent, type SeriesProgressByProvider } from "./library-content";
 import { LibraryHeader } from "./library-header";
 import { LibraryInsightsSection } from "./library-insights-section";
-import { ProviderNativeInventoryPanel } from "./provider-native-inventory-panel";
+import {
+	ProviderNativeInventoryPanel,
+	useProviderNativeInventoryPanelState,
+} from "./provider-native-inventory-panel";
 import { SeerrEnrichmentNotice } from "./seerr-enrichment-notice";
 
 function monitoringTargetKey(item: LibraryItem): string {
@@ -152,9 +155,9 @@ export const LibraryClient: React.FC = () => {
 	const [selectedItemDetail, setItemDetail] = useState<LibraryItem | null>(null);
 	const [albumDetail, setAlbumDetail] = useState<LibraryItem | null>(null);
 	const [bookDetail, setBookDetail] = useState<LibraryItem | null>(null);
-	const [nativeInitialReadSettled, setNativeInitialReadSettled] = useState(false);
+	const inventory = useProviderNativeInventoryPanelState();
+	const nativeReadSettled = inventory.readSettled;
 	const [insightsEnabled, setInsightsEnabled] = useState(false);
-	const handleNativeInitialReadSettled = useCallback(() => setNativeInitialReadSettled(true), []);
 
 	// Deep link: auto-open detail modal when ?tmdbId= is in the URL
 	const searchParams = useSearchParams();
@@ -261,11 +264,11 @@ export const LibraryClient: React.FC = () => {
 
 	// Watch enrichment — fetch watch counts, on-deck status, last watched from Plex + Jellyfin/Emby
 	const plexWatchQuery = useWatchEnrichment(data.items);
-	// Let the initial native inventory read finish before starting its heavier peers.
+	// Give a cold inventory selection priority over new heavy reads.
 	const jellyfinWatchQuery = useJellyfinWatchEnrichment(
 		data.items,
 		seriesTmdbIds,
-		nativeInitialReadSettled,
+		nativeReadSettled,
 	);
 	const watchEnrichmentMap = useMemo(() => {
 		const plexItems = plexWatchQuery.data?.items;
@@ -305,11 +308,11 @@ export const LibraryClient: React.FC = () => {
 	}, [jellyfinIdentityQuery.data]);
 
 	// Series progress — fetch watched/total episode counts from Plex + Jellyfin/Emby
-	const plexProgressQuery = useSeriesProgress(seriesTmdbIds, nativeInitialReadSettled);
+	const plexProgressQuery = useSeriesProgress(seriesTmdbIds, nativeReadSettled);
 	const bundledJellyfinProgress = jellyfinWatchQuery.data?.seriesProgress;
 	const jellyfinProgressQuery = useJellyfinSeriesProgress(
 		seriesTmdbIds,
-		nativeInitialReadSettled &&
+		nativeReadSettled &&
 			!bundledJellyfinProgress &&
 			(!jellyfinWatchQuery.isEnabled || jellyfinWatchQuery.isError || jellyfinWatchQuery.isSuccess),
 	);
@@ -327,10 +330,10 @@ export const LibraryClient: React.FC = () => {
 	// Wait for cold required reads once. Cached evidence and terminal errors let
 	// Insights start, and later filters or reloads leave it enabled.
 	useEffect(() => {
-		if (nativeInitialReadSettled && !data.isLoading && !requiredWatchOrProgressPending) {
+		if (nativeReadSettled && !data.isLoading && !requiredWatchOrProgressPending) {
 			setInsightsEnabled(true);
 		}
-	}, [nativeInitialReadSettled, data.isLoading, requiredWatchOrProgressPending]);
+	}, [nativeReadSettled, data.isLoading, requiredWatchOrProgressPending]);
 
 	// hasQui gates UI surfaces that only make sense with a qui instance configured
 	// (Torrent state filter dropdown, per-card badge). Each card now reads its
@@ -538,7 +541,7 @@ export const LibraryClient: React.FC = () => {
 				enrichmentFailures={enrichmentQuery.data?.enrichmentFailures}
 			/>
 
-			<ProviderNativeInventoryPanel onInitialReadSettled={handleNativeInitialReadSettled} />
+			<ProviderNativeInventoryPanel inventory={inventory} />
 
 			<LibraryInsightsSection enabled={insightsEnabled} />
 

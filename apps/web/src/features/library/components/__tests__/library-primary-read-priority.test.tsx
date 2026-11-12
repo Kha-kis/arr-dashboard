@@ -1,7 +1,8 @@
 import type { ProviderNativeInventoryResponse, ServiceInstanceSummary } from "@arr/shared";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { notifyManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SearchParamsContext } from "next/dist/shared/lib/hooks-client-context.shared-runtime";
+import { flushSync } from "react-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
 import { plexKeys } from "../../../../lib/query-keys";
@@ -164,6 +165,17 @@ function fixture({
 				totalCachedItems: empty ? 0 : 1,
 			},
 		});
+	const element = () => (
+		<QueryClientProvider client={client}>
+			<SearchParamsContext.Provider value={new URLSearchParams()}>
+				<ColorThemeProvider>
+					<IncognitoProvider>
+						<LibraryClient />
+					</IncognitoProvider>
+				</ColorThemeProvider>
+			</SearchParamsContext.Provider>
+		</QueryClientProvider>
+	);
 	return {
 		arr,
 		filteredArr,
@@ -173,18 +185,10 @@ function fixture({
 		arrResponse,
 		requests,
 		insights: () => requests.filter((path) => insightPaths.includes(path)),
-		render: () =>
-			render(
-				<QueryClientProvider client={client}>
-					<SearchParamsContext.Provider value={new URLSearchParams()}>
-						<ColorThemeProvider>
-							<IncognitoProvider>
-								<LibraryClient />
-							</IncognitoProvider>
-						</ColorThemeProvider>
-					</SearchParamsContext.Provider>
-				</QueryClientProvider>,
-			),
+		render: () => {
+			const view = render(element());
+			return { ...view, rerenderLibrary: () => view.rerender(element()) };
+		},
 	};
 }
 
@@ -268,6 +272,106 @@ describe("Library primary-read priority with real query hooks", () => {
 			}
 		},
 	);
+
+	it.each(["success", "error"] as const)(
+		"waits for a newly selected episode inventory before admitting watch reads on %s",
+		async (result) => {
+			const f = fixture({ bundleJellyfinProgress: true });
+			f.render();
+			await act(async () => f.native.resolve(Response.json(nativeInventory)));
+			expect(await screen.findByText("Synthetic native row")).toBeVisible();
+
+			fireEvent.change(screen.getByRole("combobox", { name: "Inventory domain" }), {
+				target: { value: "episode" },
+			});
+			await waitFor(() =>
+				expect(
+					f.requests.filter((path) => path === "/api/library/provider-inventory"),
+				).toHaveLength(2),
+			);
+			await act(async () => f.arr.resolve(f.arrResponse(false, true)));
+			await waitFor(() => expect(f.requests).toContain("/api/plex/watch-enrichment"));
+			expect(f.requests).not.toContain(jellyfinWatchPath);
+			expect(f.requests).not.toContain(plexProgressPath);
+			expect(f.requests).not.toContain(jellyfinProgressPath);
+
+			await act(async () =>
+				f.reload.resolve(
+					result === "success"
+						? Response.json(nativeInventory)
+						: Response.json({ error: "Synthetic unavailable" }, { status: 503 }),
+				),
+			);
+			await waitFor(() => {
+				expect(f.requests).toContain(jellyfinWatchPath);
+				expect(f.requests).toContain(plexProgressPath);
+			});
+		},
+	);
+
+	it("keeps a cold inventory selection ahead of watch reads when ARR data arrives in the same render", async () => {
+		const f = fixture({ bundleJellyfinProgress: true });
+		const view = f.render();
+		await act(async () => f.native.resolve(Response.json(nativeInventory)));
+		expect(await screen.findByText("Synthetic native row")).toBeVisible();
+
+		const arrQueries = client.getQueryCache().findAll({
+			queryKey: ["library"],
+			predicate: ({ queryKey }) => queryKey.length === 2 && typeof queryKey[1] === "object",
+		});
+		expect(arrQueries).toHaveLength(1);
+		const arrData = await f.arrResponse(false, true).json();
+		notifyManager.setScheduler((callback) => callback());
+		try {
+			await act(async () => {
+				flushSync(() => {
+					client.setQueryData(arrQueries[0]!.queryKey, arrData);
+					fireEvent.change(screen.getByRole("combobox", { name: "Inventory domain" }), {
+						target: { value: "episode" },
+					});
+					view.rerenderLibrary();
+				});
+			});
+		} finally {
+			notifyManager.setScheduler((callback) => setTimeout(callback, 0));
+		}
+		await waitFor(() => {
+			expect(f.requests.filter((path) => path === "/api/library/provider-inventory")).toHaveLength(
+				2,
+			);
+			expect(f.requests).toContain("/api/plex/watch-enrichment");
+		});
+		expect(f.requests).not.toContain(jellyfinWatchPath);
+		expect(f.requests).not.toContain(plexProgressPath);
+
+		await act(async () => {
+			f.reload.resolve(Response.json(nativeInventory));
+			f.arr.resolve(f.arrResponse(false, true));
+		});
+		await waitFor(() => expect(f.requests).toContain(jellyfinWatchPath));
+		expect(f.requests).toContain(plexProgressPath);
+	});
+
+	it("admits watch reads while retained inventory refreshes", async () => {
+		const f = fixture({ bundleJellyfinProgress: true });
+		f.render();
+		await act(async () => f.native.resolve(Response.json(nativeInventory)));
+		expect(await screen.findByText("Synthetic native row")).toBeVisible();
+
+		fireEvent.click(screen.getByRole("button", { name: "Reload media server inventory" }));
+		await waitFor(() =>
+			expect(f.requests.filter((path) => path === "/api/library/provider-inventory")).toHaveLength(
+				2,
+			),
+		);
+		await act(async () => f.arr.resolve(f.arrResponse(false, true)));
+		await waitFor(() => {
+			expect(f.requests).toContain(jellyfinWatchPath);
+			expect(f.requests).toContain(plexProgressPath);
+		});
+		expect(screen.getByText("Synthetic native row")).toBeVisible();
+		await act(async () => f.reload.resolve(Response.json(nativeInventory)));
+	});
 
 	it.each(["arr", "native"] as const)(
 		"admits insights only after both primary reads settle (%s first)",

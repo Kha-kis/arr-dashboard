@@ -7,7 +7,6 @@ import type {
 	WatchEnrichmentResponse,
 } from "@arr/shared";
 import { act, render, screen, waitFor } from "@testing-library/react";
-import { useEffect } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { UnauthorizedError } from "../../../../lib/api-client/base";
 import { fetchLibraryItemByTmdbId } from "../../../../lib/api-client/library";
@@ -165,14 +164,8 @@ vi.mock("../library-content", () => ({
 vi.mock("../library-header", () => ({ LibraryHeader: () => null }));
 vi.mock("../library-insights-section", () => ({ LibraryInsightsSection: () => null }));
 vi.mock("../provider-native-inventory-panel", () => ({
-	ProviderNativeInventoryPanel: ({
-		onInitialReadSettled,
-	}: {
-		onInitialReadSettled: () => void;
-	}) => {
-		useEffect(() => onInitialReadSettled(), [onInitialReadSettled]);
-		return null;
-	},
+	ProviderNativeInventoryPanel: () => null,
+	useProviderNativeInventoryPanelState: () => ({ readSettled: true }),
 }));
 
 import { LibraryClient } from "../library-client";

@@ -14,7 +14,10 @@ vi.mock("../library-content", () => ({
 	LibraryContent: () => <div>Synthetic library content</div>,
 }));
 vi.mock("../library-insights-section", () => ({ LibraryInsightsSection: () => null }));
-vi.mock("../provider-native-inventory-panel", () => ({ ProviderNativeInventoryPanel: () => null }));
+vi.mock("../provider-native-inventory-panel", () => ({
+	ProviderNativeInventoryPanel: () => null,
+	useProviderNativeInventoryPanelState: () => ({ readSettled: false }),
+}));
 
 const section = {
 	instanceId: "plex-fixture",
