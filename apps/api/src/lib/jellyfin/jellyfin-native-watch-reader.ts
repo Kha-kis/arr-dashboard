@@ -50,14 +50,27 @@ export async function readNativeEpisodeWatchPage(
 				},
 			});
 			if (!instance?.expectedIdentity?.trim()) return new Map();
-			const positiveStatus = await tx.cacheRefreshStatus.findUnique({
+			const statuses = await tx.cacheRefreshStatus.findMany({
 				where: {
-					instanceId_cacheType: {
-						instanceId: input.instanceId,
-						cacheType: "jellyfin_episode_positive",
-					},
+					instanceId: input.instanceId,
+					instance: { userId: input.userId, enabled: true },
+					cacheType: { in: ["jellyfin_episode", "jellyfin_episode_positive"] },
+				},
+				select: {
+					cacheType: true,
+					lastResult: true,
+					lastAttemptResult: true,
+					lastRefreshedAt: true,
+					generationId: true,
+					connectionGeneration: true,
+					identityGeneration: true,
+					itemCount: true,
 				},
 			});
+			const status = statuses.find((entry) => entry.cacheType === "jellyfin_episode");
+			const positiveStatus = statuses.find(
+				(entry) => entry.cacheType === "jellyfin_episode_positive",
+			);
 			const positiveObservedAt =
 				instance.service === "JELLYFIN" &&
 				positiveStatus?.lastResult === "success" &&
@@ -71,14 +84,6 @@ export async function readNativeEpisodeWatchPage(
 			base: {
 				const pointer = await tx.jellyfinNativeWatchPublication.findUnique({
 					where: { instanceId: input.instanceId },
-				});
-				const status = await tx.cacheRefreshStatus.findUnique({
-					where: {
-						instanceId_cacheType: {
-							instanceId: input.instanceId,
-							cacheType: "jellyfin_episode",
-						},
-					},
 				});
 				if (
 					!pointer ||

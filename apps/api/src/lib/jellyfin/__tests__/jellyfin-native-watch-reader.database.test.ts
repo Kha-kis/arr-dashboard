@@ -300,7 +300,7 @@ describe("native episode watch page", { timeout: 30_000 }, () => {
 		expect(result.get("episode-b")?.state).toBe("unknown");
 	});
 
-	it("supersedes an older exact negative but demotes absent full-scan values to last-known", async () => {
+	it("reads both refresh statuses once and applies newer positive evidence over the full scan", async () => {
 		const prior = new Date(now.getTime() - 60_000);
 		await prisma.cacheRefreshStatus.update({
 			where: {
@@ -313,13 +313,30 @@ describe("native episode watch page", { timeout: 30_000 }, () => {
 		await seedWatch({ observedAt: prior });
 		await seedWatch({ jellyfinId: "episode-b", episodeNumber: 2, observedAt: prior });
 		await seedPositive({ observedAt: now });
-		const result = await read([inventory(), inventory("episode-b")]);
+		let statusReads = 0;
+		const observed = prisma.$extends({
+			query: {
+				cacheRefreshStatus: {
+					$allOperations({ args, query }) {
+						statusReads++;
+						return query(args);
+					},
+				},
+			},
+		});
+		const result = await readNativeEpisodeWatchPage(observed as unknown as typeof prisma, {
+			userId: "owner",
+			instanceId: "jellyfin-instance",
+			rows: [inventory(), inventory("episode-b")],
+			now,
+		});
 		expect(result.get("episode-a")).toMatchObject({
 			state: "watched",
 			valueSemantics: "lower-bound",
 			freshness: "current",
 		});
 		expect(result.get("episode-b")).toMatchObject({ state: "unwatched", freshness: "last-known" });
+		expect(statusReads).toBe(1);
 	});
 
 	it("rejects mismatched positive coordinates, identity, and stale or failed pointers", async () => {
