@@ -84,8 +84,13 @@ export const ApprovalQueueTab = ({
 		declineMutation.isPending ||
 		deleteMutation.isPending ||
 		bulkMutation.isPending;
+	const [confirmationInstanceId, setConfirmationInstanceId] = useState(instanceId);
 	const [confirmingDeclineId, setConfirmingDeclineId] = useState<number | null>(null);
 	const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null);
+	const [bulkConfirmation, setBulkConfirmation] = useState<{
+		action: "decline" | "delete";
+		ids: ReadonlySet<number>;
+	} | null>(null);
 
 	const requests = useMemo(() => data?.results ?? [], [data?.results]);
 	const selectedIds = useMemo(
@@ -97,6 +102,20 @@ export const ApprovalQueueTab = ({
 			),
 		[selection, instanceId, requests],
 	);
+	// Reset before rendering rows that can reuse another instance's request IDs.
+	if (confirmationInstanceId !== instanceId) {
+		setConfirmationInstanceId(instanceId);
+		setConfirmingDeclineId(null);
+		setConfirmingDeleteId(null);
+		setBulkConfirmation(null);
+	} else if (
+		bulkConfirmation &&
+		(bulkConfirmation.ids.size !== selectedIds.size ||
+			[...selectedIds].some((id) => !bulkConfirmation.ids.has(id)))
+	) {
+		setBulkConfirmation(null);
+	}
+
 	const unknownIds = unresolvedByInstance[instanceId] ?? [];
 	const currentUnknownOutcome =
 		unknownIds.length > 0 ? { count: unknownIds.length, ids: unknownIds } : null;
@@ -181,25 +200,28 @@ export const ApprovalQueueTab = ({
 		[instanceId, selectedIds, bulkMutation, isRequestActionPending],
 	);
 
-	const [confirmBulkAction, setConfirmBulkAction] = useState<"decline" | "delete" | null>(null);
+	const confirmBulkAction = bulkConfirmation?.action;
 
 	useEffect(() => {
-		if (!confirmBulkAction) return;
-		const timer = setTimeout(() => setConfirmBulkAction(null), 3000);
+		if (!bulkConfirmation) return;
+		const timer = setTimeout(
+			() => setBulkConfirmation((current) => (current === bulkConfirmation ? null : current)),
+			3000,
+		);
 		return () => clearTimeout(timer);
-	}, [confirmBulkAction]);
+	}, [bulkConfirmation]);
 
 	const handleBulkDestructive = useCallback(
 		(action: "decline" | "delete") => {
 			if (isRequestActionPending) return;
 			if (confirmBulkAction === action) {
 				handleBulkAction(action);
-				setConfirmBulkAction(null);
+				setBulkConfirmation(null);
 			} else {
-				setConfirmBulkAction(action);
+				setBulkConfirmation({ action, ids: selectedIds });
 			}
 		},
-		[confirmBulkAction, handleBulkAction, isRequestActionPending],
+		[confirmBulkAction, handleBulkAction, isRequestActionPending, selectedIds],
 	);
 
 	const togglePreview = useCallback((id: number) => {

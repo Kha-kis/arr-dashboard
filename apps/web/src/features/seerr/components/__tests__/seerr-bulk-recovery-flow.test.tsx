@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
 import { ColorThemeProvider } from "../../../../providers/color-theme-provider";
 import { ApprovalQueueTab } from "../approval-queue-tab";
+import { RequestsHistoryTab } from "../requests-history-tab";
 
 // Transport is the external API seam; component, hooks, QueryClient, client,
 // request cards, notifications and selection state are maintained code.
@@ -40,7 +41,11 @@ const json = (body: unknown, status = 200) =>
 const clients: QueryClient[] = [];
 const violations: string[] = [];
 type Action = "approve" | "decline" | "delete";
-function fixture(reply: () => Response | Promise<Response>) {
+function fixture(
+	reply: () => Response | Promise<Response>,
+	tab: "queue" | "history" = "queue",
+	deleteReply: () => Response | Promise<Response> = () => new Response(null, { status: 204 }),
+) {
 	const posts: { path: string; body: unknown }[] = [];
 	const reads: string[] = [];
 	const openOptions = vi.fn();
@@ -69,6 +74,17 @@ function fixture(reply: () => Response | Promise<Response>) {
 			posts.push({ path, body: null });
 			return rowReply();
 		}
+		if (method === "POST" && /^\/api\/seerr\/requests\/(north|south)\/41\/decline$/.test(path)) {
+			posts.push({ path, body: null });
+			return json({ ...request(41), status: 3 });
+		}
+		if (method === "DELETE" && /^\/api\/seerr\/requests\/(north|south)\/41$/.test(path)) {
+			posts.push({ path, body: null });
+			return deleteReply();
+		}
+		if (method === "GET" && /^\/api\/seerr\/users\/(north|south)\?/.test(path)) {
+			return json({ pageInfo: { pages: 1, pageSize: 50, results: 0, page: 1 }, results: [] });
+		}
 		// Optional requester popover reads are unrelated to bulk actions.
 		if (method === "GET" && path.includes("/quota"))
 			return json({ movie: { used: 0, limit: 0, days: 7 }, tv: { used: 0, limit: 0, days: 7 } });
@@ -86,7 +102,11 @@ function fixture(reply: () => Response | Promise<Response>) {
 		<QueryClientProvider client={client}>
 			<ColorThemeProvider>
 				<IncognitoProvider>
-					<ApprovalQueueTab instanceId={instanceId} onOpenApproveOptions={openOptions} />
+					{tab === "queue" ? (
+						<ApprovalQueueTab instanceId={instanceId} onOpenApproveOptions={openOptions} />
+					) : (
+						<RequestsHistoryTab instanceId={instanceId} />
+					)}
 					<Toaster />
 				</IncognitoProvider>
 			</ColorThemeProvider>
@@ -143,6 +163,149 @@ afterEach(() => {
 	localStorage.clear();
 	vi.unstubAllGlobals();
 	expect(violations.splice(0)).toEqual([]);
+});
+
+describe("Seerr inline confirmation targets", () => {
+	it.each([
+		{ tab: "queue", action: "decline", suffix: "/decline", message: "Request declined" },
+		{ tab: "queue", action: "delete", suffix: "", message: "Request deleted" },
+		{ tab: "history", action: "delete", suffix: "", message: "Request deleted" },
+	] as const)(
+		"$tab $action requires confirmation on the current instance",
+		async ({ tab, action, suffix, message }) => {
+			const view = fixture(() => json(null), tab);
+			const arm = () => {
+				const button =
+					action === "decline"
+						? screen.getAllByRole("button", { name: "Decline" })[0]
+						: tab === "history"
+							? screen.getAllByRole("button", { name: "Delete request" })[0]
+							: screen
+									.getAllByRole("button", { name: "" })
+									.find((button) => button.querySelector(".lucide-trash-2"));
+				expect(button).toBeDefined();
+				fireEvent.click(button!);
+			};
+			const confirm = () => screen.queryByRole("button", { name: "Confirm", exact: true });
+			await screen.findByText("Synthetic 41");
+			view.switch("south");
+			await screen.findByText("Synthetic 41");
+			view.switch("north");
+			await screen.findByText("Synthetic 41");
+			arm();
+			expect(confirm()).toBeInTheDocument();
+
+			view.switch("south");
+			expect(screen.getByText("Synthetic 41")).toBeInTheDocument();
+			expect(confirm()).not.toBeInTheDocument();
+			view.switch("north");
+			expect(confirm()).not.toBeInTheDocument();
+			view.switch("south");
+			arm();
+			expect(view.posts).toEqual([]);
+			const readCount = view.reads.length;
+			fireEvent.click(screen.getByRole("button", { name: "Confirm", exact: true }));
+			await settled(view);
+
+			expect(view.posts).toEqual([{ path: `/api/seerr/requests/south/41${suffix}`, body: null }]);
+			expect(view.reads.slice(readCount)).toEqual([
+				expect.stringMatching(/^\/api\/seerr\/requests\/south\?/),
+			]);
+			expect(await screen.findByText(message)).toBeInTheDocument();
+		},
+	);
+
+	it.each([
+		{ action: "decline", label: "Decline All" },
+		{ action: "delete", label: "Delete All" },
+	] as const)(
+		"bulk $action requires fresh confirmation after an instance switch",
+		async ({ action, label }) => {
+			const view = fixture(() =>
+				json({
+					results: [{ requestId: 41, success: true }],
+					totalSuccess: 1,
+					totalFailed: 0,
+					totalUnknown: 0,
+				}),
+			);
+			const arm = () => fireEvent.click(screen.getByRole("button", { name: label }));
+			const confirm = { name: `Confirm ${action} 1?` };
+			const select = () =>
+				fireEvent.click(screen.getByRole("checkbox", { name: "Select request for Synthetic 41" }));
+			await ready();
+			select();
+			arm();
+			expect(screen.getByRole("button", confirm)).toBeInTheDocument();
+
+			view.switch("south");
+			await ready();
+			select();
+			expect(screen.queryByRole("button", confirm)).not.toBeInTheDocument();
+			arm();
+			expect(view.posts).toEqual([]);
+			fireEvent.click(screen.getByRole("button", confirm));
+			await settled(view);
+			expect(view.posts).toEqual([
+				{ path: "/api/seerr/requests/south/bulk", body: { action, requestIds: [41] } },
+			]);
+		},
+	);
+
+	it("bulk delete requires fresh confirmation when the selected targets change", async () => {
+		const view = fixture(() =>
+			json({
+				results: [{ requestId: 42, success: true }],
+				totalSuccess: 1,
+				totalFailed: 0,
+				totalUnknown: 0,
+			}),
+		);
+		const select = (id: number) =>
+			fireEvent.click(screen.getByRole("checkbox", { name: `Select request for Synthetic ${id}` }));
+		const arm = () => fireEvent.click(screen.getByRole("button", { name: "Delete All" }));
+		await ready();
+		select(41);
+		arm();
+		expect(screen.getByRole("button", { name: "Confirm delete 1?" })).toBeInTheDocument();
+		select(42);
+		select(41);
+		expect(screen.queryByRole("button", { name: "Confirm delete 1?" })).not.toBeInTheDocument();
+
+		arm();
+		expect(view.posts).toEqual([]);
+		fireEvent.click(screen.getByRole("button", { name: "Confirm delete 1?" }));
+		await settled(view);
+		expect(view.posts).toEqual([
+			{ path: "/api/seerr/requests/north/bulk", body: { action: "delete", requestIds: [42] } },
+		]);
+	});
+
+	it("keeps history delete feedback for a request already submitted before switching", async () => {
+		let release!: (response: Response) => void;
+		const held = new Promise<Response>((resolve) => {
+			release = resolve;
+		});
+		const view = fixture(
+			() => json(null),
+			"history",
+			() => held,
+		);
+		await screen.findByText("Synthetic 41");
+		fireEvent.click(screen.getAllByRole("button", { name: "Delete request" })[0]!);
+		fireEvent.click(screen.getByRole("button", { name: "Confirm", exact: true }));
+		try {
+			await waitFor(() => expect(view.posts).toHaveLength(1));
+			view.switch("south");
+			await screen.findByText("Synthetic 41");
+			expect(screen.getAllByRole("button", { name: "Delete request" })[0]).toBeDisabled();
+		} finally {
+			await act(async () => release(new Response(null, { status: 204 })));
+		}
+		await settled(view);
+		expect(view.posts).toEqual([{ path: "/api/seerr/requests/north/41", body: null }]);
+		expect(await screen.findByText("Request deleted")).toBeInTheDocument();
+	});
 });
 
 describe("maintained Seerr bulk request recovery", () => {

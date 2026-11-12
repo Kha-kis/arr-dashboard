@@ -100,7 +100,13 @@ export const RequestsHistoryTab = ({
 	const handleLoadMore = useCallback(() => setTake((prev) => prev + PAGE_SIZE), []);
 	const deleteMutation = useDeleteSeerrRequest();
 	const retryMutation = useRetrySeerrRequest();
+	const [confirmationInstanceId, setConfirmationInstanceId] = useState(instanceId);
 	const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null);
+	// Reset before rendering rows that can reuse another instance's request IDs.
+	if (confirmationInstanceId !== instanceId) {
+		setConfirmationInstanceId(instanceId);
+		setConfirmingDeleteId(null);
+	}
 
 	const userOptions = useMemo(() => {
 		const base: { value: string; label: string }[] = [{ value: "all", label: "All Users" }];
