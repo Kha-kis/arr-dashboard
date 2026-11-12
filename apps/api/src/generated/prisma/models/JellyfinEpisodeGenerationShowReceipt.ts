@@ -43,6 +43,7 @@ export type JellyfinEpisodeGenerationShowReceiptMinAggregateOutputType = {
   showTmdbId: number | null
   rowCount: number | null
   contentFingerprint: string | null
+  mappedProgressJson: string | null
 }
 
 export type JellyfinEpisodeGenerationShowReceiptMaxAggregateOutputType = {
@@ -52,6 +53,7 @@ export type JellyfinEpisodeGenerationShowReceiptMaxAggregateOutputType = {
   showTmdbId: number | null
   rowCount: number | null
   contentFingerprint: string | null
+  mappedProgressJson: string | null
 }
 
 export type JellyfinEpisodeGenerationShowReceiptCountAggregateOutputType = {
@@ -61,6 +63,7 @@ export type JellyfinEpisodeGenerationShowReceiptCountAggregateOutputType = {
   showTmdbId: number
   rowCount: number
   contentFingerprint: number
+  mappedProgressJson: number
   _all: number
 }
 
@@ -82,6 +85,7 @@ export type JellyfinEpisodeGenerationShowReceiptMinAggregateInputType = {
   showTmdbId?: true
   rowCount?: true
   contentFingerprint?: true
+  mappedProgressJson?: true
 }
 
 export type JellyfinEpisodeGenerationShowReceiptMaxAggregateInputType = {
@@ -91,6 +95,7 @@ export type JellyfinEpisodeGenerationShowReceiptMaxAggregateInputType = {
   showTmdbId?: true
   rowCount?: true
   contentFingerprint?: true
+  mappedProgressJson?: true
 }
 
 export type JellyfinEpisodeGenerationShowReceiptCountAggregateInputType = {
@@ -100,6 +105,7 @@ export type JellyfinEpisodeGenerationShowReceiptCountAggregateInputType = {
   showTmdbId?: true
   rowCount?: true
   contentFingerprint?: true
+  mappedProgressJson?: true
   _all?: true
 }
 
@@ -196,6 +202,7 @@ export type JellyfinEpisodeGenerationShowReceiptGroupByOutputType = {
   showTmdbId: number
   rowCount: number
   contentFingerprint: string
+  mappedProgressJson: string | null
   _count: JellyfinEpisodeGenerationShowReceiptCountAggregateOutputType | null
   _avg: JellyfinEpisodeGenerationShowReceiptAvgAggregateOutputType | null
   _sum: JellyfinEpisodeGenerationShowReceiptSumAggregateOutputType | null
@@ -228,6 +235,7 @@ export type JellyfinEpisodeGenerationShowReceiptWhereInput = {
   showTmdbId?: Prisma.IntFilter<"JellyfinEpisodeGenerationShowReceipt"> | number
   rowCount?: Prisma.IntFilter<"JellyfinEpisodeGenerationShowReceipt"> | number
   contentFingerprint?: Prisma.StringFilter<"JellyfinEpisodeGenerationShowReceipt"> | string
+  mappedProgressJson?: Prisma.StringNullableFilter<"JellyfinEpisodeGenerationShowReceipt"> | string | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
 }
 
@@ -238,6 +246,7 @@ export type JellyfinEpisodeGenerationShowReceiptOrderByWithRelationInput = {
   showTmdbId?: Prisma.SortOrder
   rowCount?: Prisma.SortOrder
   contentFingerprint?: Prisma.SortOrder
+  mappedProgressJson?: Prisma.SortOrderInput | Prisma.SortOrder
   instance?: Prisma.ServiceInstanceOrderByWithRelationInput
 }
 
@@ -252,6 +261,7 @@ export type JellyfinEpisodeGenerationShowReceiptWhereUniqueInput = Prisma.AtLeas
   showTmdbId?: Prisma.IntFilter<"JellyfinEpisodeGenerationShowReceipt"> | number
   rowCount?: Prisma.IntFilter<"JellyfinEpisodeGenerationShowReceipt"> | number
   contentFingerprint?: Prisma.StringFilter<"JellyfinEpisodeGenerationShowReceipt"> | string
+  mappedProgressJson?: Prisma.StringNullableFilter<"JellyfinEpisodeGenerationShowReceipt"> | string | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
 }, "id" | "instanceId_generationId_showTmdbId">
 
@@ -262,6 +272,7 @@ export type JellyfinEpisodeGenerationShowReceiptOrderByWithAggregationInput = {
   showTmdbId?: Prisma.SortOrder
   rowCount?: Prisma.SortOrder
   contentFingerprint?: Prisma.SortOrder
+  mappedProgressJson?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.JellyfinEpisodeGenerationShowReceiptCountOrderByAggregateInput
   _avg?: Prisma.JellyfinEpisodeGenerationShowReceiptAvgOrderByAggregateInput
   _max?: Prisma.JellyfinEpisodeGenerationShowReceiptMaxOrderByAggregateInput
@@ -279,6 +290,7 @@ export type JellyfinEpisodeGenerationShowReceiptScalarWhereWithAggregatesInput =
   showTmdbId?: Prisma.IntWithAggregatesFilter<"JellyfinEpisodeGenerationShowReceipt"> | number
   rowCount?: Prisma.IntWithAggregatesFilter<"JellyfinEpisodeGenerationShowReceipt"> | number
   contentFingerprint?: Prisma.StringWithAggregatesFilter<"JellyfinEpisodeGenerationShowReceipt"> | string
+  mappedProgressJson?: Prisma.StringNullableWithAggregatesFilter<"JellyfinEpisodeGenerationShowReceipt"> | string | null
 }
 
 export type JellyfinEpisodeGenerationShowReceiptCreateInput = {
@@ -287,6 +299,7 @@ export type JellyfinEpisodeGenerationShowReceiptCreateInput = {
   showTmdbId: number
   rowCount: number
   contentFingerprint: string
+  mappedProgressJson?: string | null
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutJellyfinEpisodeGenerationShowReceiptsInput
 }
 
@@ -297,6 +310,7 @@ export type JellyfinEpisodeGenerationShowReceiptUncheckedCreateInput = {
   showTmdbId: number
   rowCount: number
   contentFingerprint: string
+  mappedProgressJson?: string | null
 }
 
 export type JellyfinEpisodeGenerationShowReceiptUpdateInput = {
@@ -305,6 +319,7 @@ export type JellyfinEpisodeGenerationShowReceiptUpdateInput = {
   showTmdbId?: Prisma.IntFieldUpdateOperationsInput | number
   rowCount?: Prisma.IntFieldUpdateOperationsInput | number
   contentFingerprint?: Prisma.StringFieldUpdateOperationsInput | string
+  mappedProgressJson?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutJellyfinEpisodeGenerationShowReceiptsNestedInput
 }
 
@@ -315,6 +330,7 @@ export type JellyfinEpisodeGenerationShowReceiptUncheckedUpdateInput = {
   showTmdbId?: Prisma.IntFieldUpdateOperationsInput | number
   rowCount?: Prisma.IntFieldUpdateOperationsInput | number
   contentFingerprint?: Prisma.StringFieldUpdateOperationsInput | string
+  mappedProgressJson?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type JellyfinEpisodeGenerationShowReceiptCreateManyInput = {
@@ -324,6 +340,7 @@ export type JellyfinEpisodeGenerationShowReceiptCreateManyInput = {
   showTmdbId: number
   rowCount: number
   contentFingerprint: string
+  mappedProgressJson?: string | null
 }
 
 export type JellyfinEpisodeGenerationShowReceiptUpdateManyMutationInput = {
@@ -332,6 +349,7 @@ export type JellyfinEpisodeGenerationShowReceiptUpdateManyMutationInput = {
   showTmdbId?: Prisma.IntFieldUpdateOperationsInput | number
   rowCount?: Prisma.IntFieldUpdateOperationsInput | number
   contentFingerprint?: Prisma.StringFieldUpdateOperationsInput | string
+  mappedProgressJson?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyInput = {
@@ -341,6 +359,7 @@ export type JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyInput = {
   showTmdbId?: Prisma.IntFieldUpdateOperationsInput | number
   rowCount?: Prisma.IntFieldUpdateOperationsInput | number
   contentFingerprint?: Prisma.StringFieldUpdateOperationsInput | string
+  mappedProgressJson?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type JellyfinEpisodeGenerationShowReceiptListRelationFilter = {
@@ -366,6 +385,7 @@ export type JellyfinEpisodeGenerationShowReceiptCountOrderByAggregateInput = {
   showTmdbId?: Prisma.SortOrder
   rowCount?: Prisma.SortOrder
   contentFingerprint?: Prisma.SortOrder
+  mappedProgressJson?: Prisma.SortOrder
 }
 
 export type JellyfinEpisodeGenerationShowReceiptAvgOrderByAggregateInput = {
@@ -380,6 +400,7 @@ export type JellyfinEpisodeGenerationShowReceiptMaxOrderByAggregateInput = {
   showTmdbId?: Prisma.SortOrder
   rowCount?: Prisma.SortOrder
   contentFingerprint?: Prisma.SortOrder
+  mappedProgressJson?: Prisma.SortOrder
 }
 
 export type JellyfinEpisodeGenerationShowReceiptMinOrderByAggregateInput = {
@@ -389,6 +410,7 @@ export type JellyfinEpisodeGenerationShowReceiptMinOrderByAggregateInput = {
   showTmdbId?: Prisma.SortOrder
   rowCount?: Prisma.SortOrder
   contentFingerprint?: Prisma.SortOrder
+  mappedProgressJson?: Prisma.SortOrder
 }
 
 export type JellyfinEpisodeGenerationShowReceiptSumOrderByAggregateInput = {
@@ -444,6 +466,7 @@ export type JellyfinEpisodeGenerationShowReceiptCreateWithoutInstanceInput = {
   showTmdbId: number
   rowCount: number
   contentFingerprint: string
+  mappedProgressJson?: string | null
 }
 
 export type JellyfinEpisodeGenerationShowReceiptUncheckedCreateWithoutInstanceInput = {
@@ -452,6 +475,7 @@ export type JellyfinEpisodeGenerationShowReceiptUncheckedCreateWithoutInstanceIn
   showTmdbId: number
   rowCount: number
   contentFingerprint: string
+  mappedProgressJson?: string | null
 }
 
 export type JellyfinEpisodeGenerationShowReceiptCreateOrConnectWithoutInstanceInput = {
@@ -489,6 +513,7 @@ export type JellyfinEpisodeGenerationShowReceiptScalarWhereInput = {
   showTmdbId?: Prisma.IntFilter<"JellyfinEpisodeGenerationShowReceipt"> | number
   rowCount?: Prisma.IntFilter<"JellyfinEpisodeGenerationShowReceipt"> | number
   contentFingerprint?: Prisma.StringFilter<"JellyfinEpisodeGenerationShowReceipt"> | string
+  mappedProgressJson?: Prisma.StringNullableFilter<"JellyfinEpisodeGenerationShowReceipt"> | string | null
 }
 
 export type JellyfinEpisodeGenerationShowReceiptCreateManyInstanceInput = {
@@ -497,6 +522,7 @@ export type JellyfinEpisodeGenerationShowReceiptCreateManyInstanceInput = {
   showTmdbId: number
   rowCount: number
   contentFingerprint: string
+  mappedProgressJson?: string | null
 }
 
 export type JellyfinEpisodeGenerationShowReceiptUpdateWithoutInstanceInput = {
@@ -505,6 +531,7 @@ export type JellyfinEpisodeGenerationShowReceiptUpdateWithoutInstanceInput = {
   showTmdbId?: Prisma.IntFieldUpdateOperationsInput | number
   rowCount?: Prisma.IntFieldUpdateOperationsInput | number
   contentFingerprint?: Prisma.StringFieldUpdateOperationsInput | string
+  mappedProgressJson?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type JellyfinEpisodeGenerationShowReceiptUncheckedUpdateWithoutInstanceInput = {
@@ -513,6 +540,7 @@ export type JellyfinEpisodeGenerationShowReceiptUncheckedUpdateWithoutInstanceIn
   showTmdbId?: Prisma.IntFieldUpdateOperationsInput | number
   rowCount?: Prisma.IntFieldUpdateOperationsInput | number
   contentFingerprint?: Prisma.StringFieldUpdateOperationsInput | string
+  mappedProgressJson?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceInput = {
@@ -521,6 +549,7 @@ export type JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstan
   showTmdbId?: Prisma.IntFieldUpdateOperationsInput | number
   rowCount?: Prisma.IntFieldUpdateOperationsInput | number
   contentFingerprint?: Prisma.StringFieldUpdateOperationsInput | string
+  mappedProgressJson?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 
@@ -532,6 +561,7 @@ export type JellyfinEpisodeGenerationShowReceiptSelect<ExtArgs extends runtime.T
   showTmdbId?: boolean
   rowCount?: boolean
   contentFingerprint?: boolean
+  mappedProgressJson?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["jellyfinEpisodeGenerationShowReceipt"]>
 
@@ -542,6 +572,7 @@ export type JellyfinEpisodeGenerationShowReceiptSelectCreateManyAndReturn<ExtArg
   showTmdbId?: boolean
   rowCount?: boolean
   contentFingerprint?: boolean
+  mappedProgressJson?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["jellyfinEpisodeGenerationShowReceipt"]>
 
@@ -552,6 +583,7 @@ export type JellyfinEpisodeGenerationShowReceiptSelectUpdateManyAndReturn<ExtArg
   showTmdbId?: boolean
   rowCount?: boolean
   contentFingerprint?: boolean
+  mappedProgressJson?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["jellyfinEpisodeGenerationShowReceipt"]>
 
@@ -562,9 +594,10 @@ export type JellyfinEpisodeGenerationShowReceiptSelectScalar = {
   showTmdbId?: boolean
   rowCount?: boolean
   contentFingerprint?: boolean
+  mappedProgressJson?: boolean
 }
 
-export type JellyfinEpisodeGenerationShowReceiptOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "generationId" | "showTmdbId" | "rowCount" | "contentFingerprint", ExtArgs["result"]["jellyfinEpisodeGenerationShowReceipt"]>
+export type JellyfinEpisodeGenerationShowReceiptOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "generationId" | "showTmdbId" | "rowCount" | "contentFingerprint" | "mappedProgressJson", ExtArgs["result"]["jellyfinEpisodeGenerationShowReceipt"]>
 export type JellyfinEpisodeGenerationShowReceiptInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }
@@ -587,6 +620,7 @@ export type $JellyfinEpisodeGenerationShowReceiptPayload<ExtArgs extends runtime
     showTmdbId: number
     rowCount: number
     contentFingerprint: string
+    mappedProgressJson: string | null
   }, ExtArgs["result"]["jellyfinEpisodeGenerationShowReceipt"]>
   composites: {}
 }
@@ -1017,6 +1051,7 @@ export interface JellyfinEpisodeGenerationShowReceiptFieldRefs {
   readonly showTmdbId: Prisma.FieldRef<"JellyfinEpisodeGenerationShowReceipt", 'Int'>
   readonly rowCount: Prisma.FieldRef<"JellyfinEpisodeGenerationShowReceipt", 'Int'>
   readonly contentFingerprint: Prisma.FieldRef<"JellyfinEpisodeGenerationShowReceipt", 'String'>
+  readonly mappedProgressJson: Prisma.FieldRef<"JellyfinEpisodeGenerationShowReceipt", 'String'>
 }
     
 

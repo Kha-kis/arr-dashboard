@@ -9302,7 +9302,8 @@ export const JellyfinEpisodeGenerationShowReceiptScalarFieldEnum = {
   generationId: 'generationId',
   showTmdbId: 'showTmdbId',
   rowCount: 'rowCount',
-  contentFingerprint: 'contentFingerprint'
+  contentFingerprint: 'contentFingerprint',
+  mappedProgressJson: 'mappedProgressJson'
 } as const
 
 export type JellyfinEpisodeGenerationShowReceiptScalarFieldEnum = (typeof JellyfinEpisodeGenerationShowReceiptScalarFieldEnum)[keyof typeof JellyfinEpisodeGenerationShowReceiptScalarFieldEnum]
