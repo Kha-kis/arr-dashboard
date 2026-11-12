@@ -282,7 +282,7 @@ describe("historical bandwidth measurement presentation", () => {
 			},
 		},
 		{
-			label: /some samples failed/i,
+			label: /some samples failed.*no active-stream bandwidth measurements/i,
 			configuredSources: 1,
 			counts: {
 				activeSnapshots: 0,

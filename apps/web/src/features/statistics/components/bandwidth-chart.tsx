@@ -7,7 +7,7 @@ import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { formatBandwidth, MiniStatCard, Sparkline } from "./chart-primitives";
-import { hasMixedCollectionSamples, MIXED_COLLECTION_EMPTY_NOTICE } from "./collection-coverage";
+import { hasMixedCollectionSamples } from "./collection-coverage";
 
 // ============================================================================
 // Bandwidth Chart Section
@@ -101,7 +101,7 @@ export const BandwidthChart = ({
 		? measurement.configuredSources === 0
 			? `No configured ${serviceLabel} sources. Check Settings to configure a connection.`
 			: hasMixedCollectionSamples(collection)
-				? MIXED_COLLECTION_EMPTY_NOTICE
+				? "Some samples failed. The available samples contain no active-stream bandwidth measurements."
 				: collection && collection.failedSnapshots > 0
 					? "Collection failed in this window. Check source settings and retry collection."
 					: collection && collection.invalidSnapshots > 0
