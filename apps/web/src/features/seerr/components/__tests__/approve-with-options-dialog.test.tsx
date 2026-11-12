@@ -71,7 +71,7 @@ const request = {
 } as SeerrRequest;
 
 const defaultMutation = {
-	mutate: vi.fn(),
+	mutateAsync: vi.fn(),
 	isPending: false,
 };
 
@@ -89,12 +89,12 @@ function renderDialog() {
 }
 
 describe("ApproveWithOptionsDialog", () => {
-	let mutate: ReturnType<typeof vi.fn>;
+	let mutateAsync: ReturnType<typeof vi.fn>;
 
 	beforeEach(() => {
 		vi.clearAllMocks();
 		localStorage.clear();
-		mutate = vi.fn();
+		mutateAsync = vi.fn().mockResolvedValue(undefined);
 		mockUseSeerrRequestOptions.mockReturnValue({
 			data: {
 				servers: [defaultServer, alternateServer],
@@ -107,7 +107,7 @@ describe("ApproveWithOptionsDialog", () => {
 			isFetching: false,
 			refetch: vi.fn(),
 		});
-		mockUseApproveSeerrRequest.mockReturnValue({ ...defaultMutation, mutate });
+		mockUseApproveSeerrRequest.mockReturnValue({ ...defaultMutation, mutateAsync });
 	});
 
 	it("sends selected server defaults as overrides when changing a first-time route", () => {
@@ -116,18 +116,15 @@ describe("ApproveWithOptionsDialog", () => {
 		fireEvent.change(screen.getByLabelText("Server"), { target: { value: "2" } });
 		fireEvent.click(screen.getByRole("button", { name: "Approve" }));
 
-		expect(mutate).toHaveBeenCalledWith(
-			{
-				instanceId: "seerr-1",
-				requestId: 42,
-				overrides: {
-					serverId: 2,
-					profileId: 20,
-					rootFolder: "/tv-b",
-				},
+		expect(mutateAsync).toHaveBeenCalledWith({
+			instanceId: "seerr-1",
+			requestId: 42,
+			overrides: {
+				serverId: 2,
+				profileId: 20,
+				rootFolder: "/tv-b",
 			},
-			expect.any(Object),
-		);
+		});
 	});
 
 	it("does not send overrides when approving the default first-time route", () => {
@@ -135,14 +132,11 @@ describe("ApproveWithOptionsDialog", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: "Approve" }));
 
-		expect(mutate).toHaveBeenCalledWith(
-			{
-				instanceId: "seerr-1",
-				requestId: 42,
-				overrides: undefined,
-			},
-			expect.any(Object),
-		);
+		expect(mutateAsync).toHaveBeenCalledWith({
+			instanceId: "seerr-1",
+			requestId: 42,
+			overrides: undefined,
+		});
 	});
 
 	it("masks Sonarr server names and root folders in incognito mode", async () => {

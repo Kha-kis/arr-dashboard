@@ -77,23 +77,16 @@ export const UserSettingsDialog = ({
 		draft.tvQuotaLimit !== original.tvQuotaLimit ||
 		draft.tvQuotaDays !== original.tvQuotaDays;
 
-	const handleSave = () => {
-		updateMutation.mutate(
-			{ instanceId, seerrUserId: user.id, data: draft },
-			{
-				onSuccess: () => {
-					toast.success(
-						`Updated quota settings for ${incognitoMode ? getLinuxUsername(user.displayName) : user.displayName}`,
-					);
-					onOpenChange(false);
-				},
-				onError: (error) =>
-					notifySeerrActionError(
-						error,
-						`Failed to update quota for ${incognitoMode ? getLinuxUsername(user.displayName) : user.displayName}`,
-					),
-			},
-		);
+	const handleSave = async () => {
+		if (!hasChanges || updateMutation.isPending) return;
+		const displayName = incognitoMode ? getLinuxUsername(user.displayName) : user.displayName;
+		try {
+			await updateMutation.mutateAsync({ instanceId, seerrUserId: user.id, data: draft });
+			toast.success(`Updated quota settings for ${displayName}`);
+			onOpenChange(false);
+		} catch (error) {
+			notifySeerrActionError(error, `Failed to update quota for ${displayName}`);
+		}
 	};
 
 	return (
@@ -147,7 +140,7 @@ export const UserSettingsDialog = ({
 					size="sm"
 					variant="primary"
 					disabled={!hasChanges || updateMutation.isPending}
-					onClick={handleSave}
+					onClick={() => void handleSave()}
 					icon={updateMutation.isPending ? Loader2 : undefined}
 				>
 					{updateMutation.isPending ? "Saving..." : "Save"}

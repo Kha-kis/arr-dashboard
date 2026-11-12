@@ -56,6 +56,11 @@ const AuditLogTab = lazy(() => import("./audit-log-tab").then((m) => ({ default:
 
 export type RequestsTab = "approval" | "all" | "users" | "issues" | "notifications" | "history";
 
+interface RequestSelection {
+	instanceId: string;
+	request: SeerrRequest;
+}
+
 export const RequestsClient = () => {
 	const { gradient: _themeGradient } = useThemeGradient();
 	const {
@@ -70,8 +75,8 @@ export const RequestsClient = () => {
 	const hasConnectionError = !!instancesError || hasFailedInitialRead;
 	const [activeTab, setActiveTab] = useState<RequestsTab>("approval");
 	const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
-	const [selectedRequest, setSelectedRequest] = useState<SeerrRequest | null>(null);
-	const [approveOptionsRequest, setApproveOptionsRequest] = useState<SeerrRequest | null>(null);
+	const [selectedRequest, setSelectedRequest] = useState<RequestSelection | null>(null);
+	const [approveOptionsRequest, setApproveOptionsRequest] = useState<RequestSelection | null>(null);
 
 	// Deep-link: ?tab=<id> pre-selects a tab, ?user=<id> pre-selects requester filter on "All Requests" tab
 	const searchParams = useSearchParams();
@@ -100,6 +105,34 @@ export const RequestsClient = () => {
 	// Resolve current instance
 	const currentInstanceId = selectedInstanceId ?? defaultInstance?.id ?? "";
 	const currentInstance = seerrInstances.find((s) => s.id === currentInstanceId) ?? null;
+	const enabledInstanceId = currentInstance?.id;
+	const activeRequest = selectedRequest?.instanceId === enabledInstanceId ? selectedRequest : null;
+	const activeOptions =
+		approveOptionsRequest?.instanceId === enabledInstanceId ? approveOptionsRequest : null;
+
+	useEffect(() => {
+		setSelectedRequest((selection) =>
+			selection?.instanceId === enabledInstanceId ? selection : null,
+		);
+		setApproveOptionsRequest((selection) =>
+			selection?.instanceId === enabledInstanceId ? selection : null,
+		);
+	}, [enabledInstanceId]);
+
+	const openRequest = (request: SeerrRequest) =>
+		setSelectedRequest({ instanceId: currentInstanceId, request });
+	const openApprovalOptions = (request: SeerrRequest) =>
+		setApproveOptionsRequest({ instanceId: currentInstanceId, request });
+	const closeRequest = () =>
+		setSelectedRequest((selection) => (selection === activeRequest ? null : selection));
+	const closeApprovalOptions = () =>
+		setApproveOptionsRequest((selection) => (selection === activeOptions ? null : selection));
+	const closeCompletedRequest = (instanceId: string, requestId: number) => {
+		const keepOtherSelection = (selection: RequestSelection | null) =>
+			selection?.instanceId === instanceId && selection.request.id === requestId ? null : selection;
+		setSelectedRequest(keepOtherSelection);
+		setApproveOptionsRequest(keepOtherSelection);
+	};
 
 	// Fetch request counts for badge
 	const {
@@ -286,18 +319,20 @@ export const RequestsClient = () => {
 						{activeTab === "approval" && (
 							<ApprovalQueueTab
 								instanceId={currentInstanceId}
-								onSelectRequest={setSelectedRequest}
-								onOpenApproveOptions={setApproveOptionsRequest}
+								onSelectRequest={openRequest}
+								onOpenApproveOptions={openApprovalOptions}
 							/>
 						)}
 						{activeTab === "all" && (
 							<RequestsHistoryTab
 								instanceId={currentInstanceId}
-								onSelectRequest={setSelectedRequest}
+								onSelectRequest={openRequest}
 								initialUserFilter={initialUserFilter}
 							/>
 						)}
-						{activeTab === "users" && <UsersTab instanceId={currentInstanceId} />}
+						{activeTab === "users" && (
+							<UsersTab key={currentInstanceId} instanceId={currentInstanceId} />
+						)}
 						{activeTab === "issues" && <IssuesTab instanceId={currentInstanceId} />}
 						{activeTab === "notifications" && <NotificationsTab instanceId={currentInstanceId} />}
 						{activeTab === "history" && (
@@ -310,35 +345,35 @@ export const RequestsClient = () => {
 			</div>
 
 			{/* Detail modal — lazy loaded on first click */}
-			{selectedRequest && (
+			{activeRequest && (
 				<Suspense>
 					<RequestDetailModal
-						request={selectedRequest}
-						instanceId={currentInstanceId}
-						onClose={() => setSelectedRequest(null)}
+						request={activeRequest.request}
+						instanceId={activeRequest.instanceId}
+						onClose={closeRequest}
 						onApprove={(requestId) =>
 							approveMutation.mutate(
-								{ instanceId: currentInstanceId, requestId },
+								{ instanceId: activeRequest.instanceId, requestId },
 								{
 									onSuccess: () => {
 										toast.success("Request approved");
-										setSelectedRequest(null);
+										closeCompletedRequest(activeRequest.instanceId, requestId);
 									},
 									onError: (error) => notifySeerrActionError(error, "Failed to approve request"),
 								},
 							)
 						}
 						onApproveWithOptions={(req) => {
-							setApproveOptionsRequest(req);
-							setSelectedRequest(null);
+							setApproveOptionsRequest({ instanceId: activeRequest.instanceId, request: req });
+							closeRequest();
 						}}
 						onDecline={(requestId) =>
 							declineMutation.mutate(
-								{ instanceId: currentInstanceId, requestId },
+								{ instanceId: activeRequest.instanceId, requestId },
 								{
 									onSuccess: () => {
 										toast.success("Request declined");
-										setSelectedRequest(null);
+										closeCompletedRequest(activeRequest.instanceId, requestId);
 									},
 									onError: (error) => notifySeerrActionError(error, "Failed to decline request"),
 								},
@@ -346,11 +381,11 @@ export const RequestsClient = () => {
 						}
 						onRetry={(requestId) =>
 							retryMutation.mutate(
-								{ instanceId: currentInstanceId, requestId },
+								{ instanceId: activeRequest.instanceId, requestId },
 								{
 									onSuccess: () => {
 										toast.success("Request retried");
-										setSelectedRequest(null);
+										closeCompletedRequest(activeRequest.instanceId, requestId);
 									},
 									onError: (error) => notifySeerrActionError(error, "Failed to retry request"),
 								},
@@ -358,11 +393,11 @@ export const RequestsClient = () => {
 						}
 						onDelete={(requestId) =>
 							deleteMutation.mutate(
-								{ instanceId: currentInstanceId, requestId },
+								{ instanceId: activeRequest.instanceId, requestId },
 								{
 									onSuccess: () => {
 										toast.success("Request deleted");
-										setSelectedRequest(null);
+										closeCompletedRequest(activeRequest.instanceId, requestId);
 									},
 									onError: (error) => notifySeerrActionError(error, "Failed to delete request"),
 								},
@@ -372,14 +407,14 @@ export const RequestsClient = () => {
 				</Suspense>
 			)}
 
-			{approveOptionsRequest && (
+			{activeOptions && (
 				<Suspense>
 					<ApproveWithOptionsDialog
-						request={approveOptionsRequest}
-						instanceId={currentInstanceId}
-						open={!!approveOptionsRequest}
+						request={activeOptions.request}
+						instanceId={activeOptions.instanceId}
+						open
 						onOpenChange={(open) => {
-							if (!open) setApproveOptionsRequest(null);
+							if (!open) closeApprovalOptions();
 						}}
 					/>
 				</Suspense>

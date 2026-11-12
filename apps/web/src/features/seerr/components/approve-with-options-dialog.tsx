@@ -117,7 +117,7 @@ export const ApproveWithOptionsDialog = ({
 		setClearedTagIds((previous) => new Set([...previous, ...unavailableTagIds]));
 	};
 
-	const handleApprove = () => {
+	const handleApprove = async () => {
 		if (submitDisabled || !selectedServer || !verifiedSelection) return;
 		const overrides: {
 			serverId?: number;
@@ -153,24 +153,18 @@ export const ApproveWithOptionsDialog = ({
 			overrides.tags = selectedTags;
 		}
 
-		approveMutation.mutate(
-			{
+		const customOverrides = Object.keys(overrides).length > 0 ? overrides : undefined;
+		try {
+			await approveMutation.mutateAsync({
 				instanceId,
 				requestId: request.id,
-				overrides: Object.keys(overrides).length > 0 ? overrides : undefined,
-			},
-			{
-				onSuccess: () => {
-					toast.success(
-						Object.keys(overrides).length > 0
-							? "Request approved with custom profile"
-							: "Request approved",
-					);
-					onOpenChange(false);
-				},
-				onError: (error) => notifySeerrActionError(error, "Failed to approve request"),
-			},
-		);
+				overrides: customOverrides,
+			});
+			toast.success(customOverrides ? "Request approved with custom profile" : "Request approved");
+			onOpenChange(false);
+		} catch (error) {
+			notifySeerrActionError(error, "Failed to approve request");
+		}
 	};
 
 	const isLoading = optionsQuery.isLoading;
@@ -365,7 +359,7 @@ export const ApproveWithOptionsDialog = ({
 					>
 						Cancel
 					</Button>
-					<GradientButton onClick={handleApprove} disabled={submitDisabled}>
+					<GradientButton onClick={() => void handleApprove()} disabled={submitDisabled}>
 						{approveMutation.isPending ? (
 							<span className="flex items-center gap-2">
 								<Loader2 className="h-4 w-4 animate-spin" />

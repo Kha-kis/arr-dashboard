@@ -51,7 +51,7 @@ export const UsersTab = ({ instanceId }: UsersTabProps) => {
 	const [sort, setSort] = useState<UserSort>("displayname");
 	const [take, setTake] = useState(PAGE_SIZE);
 	const { data, isLoading, isFetching, isError } = useSeerrUsers({ instanceId, take, sort });
-	const [managingUser, setManagingUser] = useState<SeerrUser | null>(null);
+	const [managingUser, setManagingUser] = useState<{ user: SeerrUser } | null>(null);
 	const totalResults = data?.pageInfo.results ?? 0;
 	const hasMore = (data?.results.length ?? 0) < totalResults;
 	const handleLoadMore = useCallback(() => setTake((prev) => prev + PAGE_SIZE), []);
@@ -205,7 +205,7 @@ export const UsersTab = ({ instanceId }: UsersTabProps) => {
 							{/* Manage button */}
 							<button
 								type="button"
-								onClick={() => setManagingUser(user)}
+								onClick={() => setManagingUser({ user })}
 								className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
 								title="Manage user quotas"
 							>
@@ -231,11 +231,12 @@ export const UsersTab = ({ instanceId }: UsersTabProps) => {
 			)}
 
 			<UserSettingsDialog
-				user={managingUser}
+				user={managingUser?.user ?? null}
 				instanceId={instanceId}
 				open={managingUser !== null}
 				onOpenChange={(open) => {
-					if (!open) setManagingUser(null);
+					if (!open)
+						setManagingUser((selection) => (selection === managingUser ? null : selection));
 				}}
 			/>
 		</div>
