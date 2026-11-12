@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { JellyfinEpisodeDisplayEvidence } from "../../../lib/jellyfin/jellyfin-display-evidence.js";
 import { createInjectAuthenticated, setupAuthInjection } from "../../__tests__/test-helpers.js";
 
 const mocks = vi.hoisted(() => ({ exact: vi.fn(), positive: vi.fn(), jellyfin: vi.fn() }));
@@ -141,8 +142,18 @@ describe("read-only series progress evidence", () => {
 
 	it("retains positive Jellyfin observations without inventing a denominator", async () => {
 		instances = [{ id: "jf-one", label: "Jellyfin", service: "JELLYFIN" }];
+		const rows = [episode(1), episode(1), episode(2, false)].map(
+			({ ratingKey, ...row }, index) => ({
+				...row,
+				id: `row-${index}`,
+				instanceId: "jf-one",
+				jellyfinId: `${ratingKey}-${index}`,
+				connectionGeneration: 1,
+				identityGeneration: 1,
+			}),
+		);
 		mocks.jellyfin.mockResolvedValue({
-			sources: [{ instanceId: "jf-one", rows: [episode(1), episode(1), episode(2, false)] }],
+			sources: [{ instanceId: "jf-one", instanceName: "Jellyfin", rows }],
 			providerStatus: {
 				availability: "partial",
 				sources: [
@@ -161,7 +172,7 @@ describe("read-only series progress evidence", () => {
 					},
 				],
 			},
-		});
+		} satisfies JellyfinEpisodeDisplayEvidence);
 		const response = await createInjectAuthenticated(app)("GET", "/jellyfin?tmdbIds=42,43");
 		expect(response.statusCode).toBe(200);
 		expect(response.json()).toMatchObject({
