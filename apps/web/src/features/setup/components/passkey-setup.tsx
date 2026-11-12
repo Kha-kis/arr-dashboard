@@ -1,7 +1,10 @@
 "use client";
 
 import type { CurrentUser } from "@arr/shared";
-import { startRegistration } from "@simplewebauthn/browser";
+import {
+	type PublicKeyCredentialCreationOptionsJSON,
+	startRegistration,
+} from "@simplewebauthn/browser";
 import { KeyRound, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -16,21 +19,29 @@ interface RegisterResponse {
 	user: CurrentUser;
 }
 
-export const PasskeySetup = () => {
+interface PasskeySetupProps {
+	onMethodLockChange?: (locked: boolean) => void;
+}
+
+const INITIAL_FORM_STATE = {
+	username: "",
+	password: "",
+	confirmPassword: "",
+	passkeyName: "",
+};
+
+export const PasskeySetup = ({ onMethodLockChange }: PasskeySetupProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 
 	const router = useRouter();
-	const [formState, setFormState] = useState({
-		username: "",
-		password: "",
-		confirmPassword: "",
-		passkeyName: "",
-	});
+	const [formState, setFormState] = useState(INITIAL_FORM_STATE);
 	const [error, setError] = useState<string | null>(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [passkeyUnconfirmed, setPasskeyUnconfirmed] = useState(false);
 
 	const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
+		if (isSubmitting || passkeyUnconfirmed) return;
 		setError(null);
 
 		// Validation
@@ -64,70 +75,64 @@ export const PasskeySetup = () => {
 		}
 
 		setIsSubmitting(true);
-
-		let userCreated = false;
+		onMethodLockChange?.(true);
 
 		try {
-			// Step 1: Create user account with password (required for initial setup)
-			const _registerResponse = await apiRequest<RegisterResponse>("/auth/register", {
+			await apiRequest<RegisterResponse>("/auth/register", {
 				method: "POST",
 				json: {
 					username: formState.username.trim(),
 					password: formState.password,
 				},
 			});
-			userCreated = true;
+		} catch (err: unknown) {
+			setError(getErrorMessage(err, "Failed to create admin account with passkey"));
+			setIsSubmitting(false);
+			onMethodLockChange?.(false);
+			return;
+		}
 
-			// Step 2: Get passkey registration options
-			const options = await apiRequest<Parameters<typeof startRegistration>[0]>(
+		const friendlyName = formState.passkeyName.trim() || `${formState.username}'s passkey`;
+		try {
+			const options = await apiRequest<PublicKeyCredentialCreationOptionsJSON>(
 				"/auth/passkey/register/options",
-				{
-					method: "POST",
-					json: {
-						friendlyName: formState.passkeyName.trim() || `${formState.username}'s passkey`,
-					},
-				},
+				{ method: "POST", json: { friendlyName } },
 			);
-
-			// Step 3: Trigger WebAuthn registration
-			const registrationResponse = await startRegistration(options);
-
-			// Step 4: Verify passkey registration
+			const registrationResponse = await startRegistration({ optionsJSON: options });
 			await apiRequest("/auth/passkey/register/verify", {
 				method: "POST",
-				json: {
-					response: registrationResponse,
-					friendlyName: formState.passkeyName.trim() || `${formState.username}'s passkey`,
-				},
+				json: { response: registrationResponse, friendlyName },
 			});
-
-			// Registration successful, redirect to dashboard
-			router.push("/dashboard");
-		} catch (err: unknown) {
-			// If user was created but passkey registration failed, delete the incomplete account
-			if (userCreated) {
-				try {
-					await apiRequest("/auth/account", { method: "DELETE" });
-					setError(
-						"Passkey registration failed. The incomplete account has been deleted. Please try again. Make sure your browser supports passkeys and you approve the biometric prompt.",
-					);
-				} catch {
-					// If cleanup fails, just log out to clear the session
-					try {
-						await apiRequest("/auth/logout", { method: "POST" });
-					} catch {
-						// Best-effort cleanup — error message is set below regardless
-					}
-					setError(
-						"Passkey registration failed. Please refresh the page and try again. If the problem persists, contact support to delete the incomplete account.",
-					);
-				}
-			} else {
-				setError(getErrorMessage(err, "Failed to create admin account with passkey"));
-			}
+		} catch {
+			setFormState(INITIAL_FORM_STATE);
+			setPasskeyUnconfirmed(true);
 			setIsSubmitting(false);
+			return;
 		}
+
+		router.push("/dashboard");
 	};
+
+	if (passkeyUnconfirmed) {
+		return (
+			<div className="space-y-4">
+				<Alert variant="warning">
+					<AlertDescription>
+						Your admin account was created, but we could not confirm passkey enrollment. If
+						prompted, sign in with the password you just set. You can review or add passkeys under
+						Settings → Auth → Passkeys.
+					</AlertDescription>
+				</Alert>
+				<Button
+					type="button"
+					className="w-full rounded-xl font-medium"
+					onClick={() => router.push("/dashboard")}
+				>
+					Continue to Dashboard
+				</Button>
+			</div>
+		);
+	}
 
 	return (
 		<form className="space-y-4" onSubmit={handleSubmit}>
