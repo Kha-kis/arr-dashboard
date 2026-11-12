@@ -50,7 +50,6 @@ async function readStatistics(
 			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
 		} as never);
 		app.decorate("queueCleanerEnabled", true);
-		app.decorate("queueCleanerInitError", null);
 		setupAuthInjection(app);
 		registerTestErrorHandler(app);
 		await app.register(registerQueueCleanerRoutes);
