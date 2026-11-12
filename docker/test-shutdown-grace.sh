@@ -32,6 +32,68 @@ mkdir -p "$CONFIG_DIR"
 ok() { echo "  PASS: $*"; PASS=$((PASS + 1)); }
 bad() { echo "  FAIL: $*" >&2; FAIL=$((FAIL + 1)); }
 
+fixture_exit_code() {
+    if exit_code=$(timeout -k 1s 5s docker inspect "$1" --format '{{.State.ExitCode}}' 2>/dev/null); then
+        case "$exit_code" in
+            [0-9]|[0-9][0-9]|[0-9][0-9][0-9])
+                if [ "$exit_code" -le 255 ]; then
+                    printf '%s\n' "$exit_code"
+                    return
+                fi
+                ;;
+        esac
+    fi
+    printf '?\n'
+}
+
+report_shutdown_failure() {
+    diagnostic_oom=$(timeout -k 1s 5s docker inspect "$1" --format '{{.State.OOMKilled}}' 2>/dev/null) || diagnostic_oom=?
+    case "$diagnostic_oom" in
+        true|false) ;;
+        *) diagnostic_oom=? ;;
+    esac
+    printf '  shutdown diagnostic elapsed=%ss exit=%s oom=%s\n' "$2" "$3" "$diagnostic_oom" >&2
+    if [ "$3" = '?' ]; then
+        echo '  shutdown diagnostic unavailable: exit status' >&2
+    fi
+    if [ "$diagnostic_oom" = '?' ]; then
+        echo '  shutdown diagnostic unavailable: OOM status' >&2
+    fi
+
+    # Count exact launcher and supervisor markers without forwarding raw lines.
+    # A failed Docker read may contain partial output that cannot be summarized.
+    if diagnostic_logs=$(timeout -k 1s 5s docker logs --tail 120 "$1" 2>&1) &&
+        printf '%s\n' "$diagnostic_logs" | awk '
+            $0 == "Shutting down services..." { shutdown++ }
+            $0 == "Services stopped gracefully" { graceful++ }
+            $0 == "ERROR: Services required forced or failed termination" { failed++ }
+            /^  Web did not stop within [0-9]+s - sending SIGKILL$/ { web_kill++ }
+            /^  API did not stop within [0-9]+s - sending SIGKILL$/ { api_kill++ }
+            /^SUPERVISOR_WAIT_COMPLETED pid=[0-9]+ status=[0-9]+$/ {
+                if ($3 == "status=0") wait_ok++
+                else if ($3 == "status=143") wait_term++
+                else if ($3 == "status=137") wait_kill++
+                else wait_other++
+            }
+            /^\[Launcher\] Received (SIGTERM|SIGINT), shutting down\.\.\.$/ { launcher_shutdown++ }
+            $0 == "{\"category\":\"launcher-shutdown-failure\",\"reason\":\"forced-child-termination\"}" { launcher_kill++ }
+            $0 == "{\"category\":\"launcher-shutdown-failure\",\"reason\":\"handoff-revocation-failed\"}" { launcher_revoke++ }
+            $0 == "{\"category\":\"launcher-shutdown-failure\",\"reason\":\"combined-handoff-rejected\"}" { launcher_reject++ }
+            END {
+                printf "  shutdown diagnostic markers supervisor_shutdown=%d supervisor_graceful=%d supervisor_failed=%d",
+                    shutdown, graceful, failed
+                printf " supervisor_web_sigkill=%d supervisor_api_sigkill=%d", web_kill, api_kill
+                printf " supervisor_wait_ok=%d supervisor_wait_sigterm=%d supervisor_wait_sigkill=%d supervisor_wait_other=%d",
+                    wait_ok, wait_term, wait_kill, wait_other
+                printf " launcher_shutdown=%d launcher_forced_child=%d launcher_handoff_revocation_failed=%d launcher_handoff_rejected=%d\n",
+                    launcher_shutdown, launcher_kill, launcher_revoke, launcher_reject
+            }
+        ' >&2; then
+        return
+    fi
+    echo '  shutdown diagnostic unavailable: shutdown log' >&2
+}
+
 fixture_port() {
     mapping=$(docker port "$1" "$2/tcp") || return 1
     printf '%s\n' "$mapping" | awk -F: '
@@ -75,6 +137,7 @@ echo "########## SHUTDOWN_GRACE ROBUSTNESS (image: $IMAGE) ##########"
 echo ""
 echo "=== [grace-invalid] invalid SHUTDOWN_GRACE falls back to default ==="
 for badval in abc -1 1.5 "  "; do
+    fixture_failures=$FAIL
     ctr="${WORK##*/}-invalid-$(echo "$badval" | tr -c 'a-zA-Z0-9' '_')"
     start_fixture "$ctr" -e "SHUTDOWN_GRACE=$badval"
     ctr=$FIXTURE_ID
@@ -82,15 +145,20 @@ for badval in abc -1 1.5 "  "; do
         ok "container started with SHUTDOWN_GRACE='$badval'"
     else
         bad "container failed to start with SHUTDOWN_GRACE='$badval'"
-        docker logs "$ctr" 2>&1 | tail -10 >&2
     fi
     # graceful stop must still work (exit 0)
+    start=$(date +%s)
     docker stop --time 120 "$ctr" >/dev/null 2>&1 || bad "Docker stop failed with SHUTDOWN_GRACE='$badval'"
-    code=$(docker inspect "$ctr" --format '{{.State.ExitCode}}' 2>/dev/null || echo '?')
+    end=$(date +%s)
+    elapsed=$((end - start))
+    code=$(fixture_exit_code "$ctr")
     if [ "$code" = "0" ]; then
         ok "graceful stop exit 0 with SHUTDOWN_GRACE='$badval'"
     else
         bad "graceful stop exit $code with SHUTDOWN_GRACE='$badval'"
+    fi
+    if [ "$FAIL" -gt "$fixture_failures" ]; then
+        report_shutdown_failure "$ctr" "$elapsed" "$code"
     fi
     docker rm -f "$ctr" >/dev/null 2>&1 || true
 done
@@ -98,6 +166,7 @@ done
 # --- 2/3. normal docker stop: graceful, exit 0, within Docker's window ---
 echo ""
 echo "=== [grace-normal] normal docker stop is graceful (exit 0) ==="
+fixture_failures=$FAIL
 ctr="${WORK##*/}-normal"
 start_fixture "$ctr"
 ctr=$FIXTURE_ID
@@ -106,7 +175,7 @@ start=$(date +%s)
 docker stop --time 120 "$ctr" >/dev/null 2>&1 || bad "Docker stop failed"
 end=$(date +%s)
 elapsed=$((end - start))
-code=$(docker inspect "$ctr" --format '{{.State.ExitCode}}' 2>/dev/null || echo '?')
+code=$(fixture_exit_code "$ctr")
 echo "  stop elapsed=${elapsed}s exit=$code"
 if [ "$code" = "0" ]; then
     ok "normal docker stop exit 0"
@@ -118,11 +187,15 @@ if [ "$elapsed" -lt 120 ]; then
 else
     bad "stop took ${elapsed}s (Docker may have force-killed PID 1)"
 fi
+if [ "$FAIL" -gt "$fixture_failures" ]; then
+    report_shutdown_failure "$ctr" "$elapsed" "$code"
+fi
 docker rm -f "$ctr" >/dev/null 2>&1 || true
 
 # --- 4. stubborn child under intentional stop: start.sh SIGKILLs it ---
 echo ""
 echo "=== [grace-stubborn] stubborn child is SIGKILLed by start.sh ==="
+fixture_failures=$FAIL
 ctr="${WORK##*/}-stubborn"
 SHIM_DIR="$WORK/shim"
 mkdir -p "$SHIM_DIR"
@@ -161,7 +234,7 @@ start=$(date +%s)
 docker stop --time 30 "$ctr" >/dev/null 2>&1 || bad "Docker stop failed for the stubborn fixture"
 end=$(date +%s)
 elapsed=$((end - start))
-code=$(docker inspect "$ctr" --format '{{.State.ExitCode}}' 2>/dev/null || echo '?')
+code=$(fixture_exit_code "$ctr")
 logs=$(docker logs "$ctr" 2>&1 || true)
 echo "  stop elapsed=${elapsed}s exit=$code"
 if echo "$logs" | grep -q "sending SIGKILL"; then
@@ -189,6 +262,9 @@ if [ "$elapsed" -lt 30 ]; then
     ok "stubborn stop completed within Docker's window (${elapsed}s)"
 else
     bad "stubborn stop took ${elapsed}s (Docker force-killed PID 1)"
+fi
+if [ "$FAIL" -gt "$fixture_failures" ]; then
+    report_shutdown_failure "$ctr" "$elapsed" "$code"
 fi
 docker rm -f "$ctr" >/dev/null 2>&1 || true
 
