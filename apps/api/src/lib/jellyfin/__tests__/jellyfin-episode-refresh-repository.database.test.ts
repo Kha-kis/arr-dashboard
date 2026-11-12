@@ -3491,6 +3491,70 @@ describe("full-watch counted checkpoints", () => {
 		}
 	});
 
+	it("pairs counted continuations after recovery and settles both subsequent failures", async () => {
+		const { prisma, instance, run, now } = await batchFixture();
+		const at = (seconds: number) => new Date(now.getTime() + seconds * 1_000);
+		const requests: Array<[string, number]> = [];
+		let allowRecoveryPage = false;
+		const runner = createProductionJellyfinEpisodeWorkItemRunner({
+			createClient: () => ({}) as never,
+			readPage: async ({ userId, startIndex }) => {
+				requests.push([userId, startIndex]);
+				if (!allowRecoveryPage || startIndex !== 0) throw new Error("Synthetic read failure");
+				return { startIndex, totalRecordCount: 2, items: episodes(1) };
+			},
+		});
+		const context = {
+			prisma,
+			instance,
+			encryptor: { decrypt: () => "plaintext" },
+			log: { warn() {}, error() {} } as never,
+		};
+		const units = () =>
+			prisma.providerObservationUnit.findMany({
+				where: { runId: run.id, phase: "collect" },
+				orderBy: { ordinal: "asc" },
+			});
+
+		await runner({ ...context, now });
+		expect(await units()).toMatchObject([
+			{ state: "failed", attemptCount: 1 },
+			{ state: "failed", attemptCount: 1 },
+		]);
+		allowRecoveryPage = true;
+		requests.length = 0;
+		await runner({ ...context, now: at(30) });
+		expect(requests).toEqual([["user-1", 0]]);
+		await runner({ ...context, now: at(30) });
+		expect(requests).toEqual([
+			["user-1", 0],
+			["user-2", 0],
+		]);
+		const recovered = {
+			state: "pending",
+			attemptCount: 1,
+			cursor: 1,
+			expectedRawCount: 2,
+			lastReasonCode: null,
+		};
+		expect(await units()).toMatchObject([recovered, recovered]);
+
+		requests.length = 0;
+		await runner({ ...context, now: at(41) });
+		expect(requests.sort(([left], [right]) => left.localeCompare(right))).toEqual([
+			["user-1", 1],
+			["user-2", 1],
+		]);
+		const failed = {
+			state: "failed",
+			attemptCount: 2,
+			cursor: 1,
+			claimToken: null,
+			nextAttemptAt: at(161),
+		};
+		expect(await units()).toMatchObject([failed, failed]);
+	});
+
 	it.each(["startup", "expired"] as const)(
 		"keeps both failed V3 scopes retryable until their own outcome is known: %s",
 		async (recovery) => {

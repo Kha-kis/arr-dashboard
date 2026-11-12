@@ -302,7 +302,7 @@ export async function claimObservationUnit(
 	return (await claimObservationUnits(prisma, input, false))[0] ?? null;
 }
 
-/** Claim one fresh page per independent Jellyfin user, under a single run fence. */
+/** Claim one ready page per independent Jellyfin user, under a single run fence. */
 export async function claimJellyfinObservationBatch(
 	prisma: Db,
 	input: { runId: string; now: Date },
@@ -462,11 +462,13 @@ async function claimObservationUnits(
 			if (incompleteCollect > 0) return [];
 		}
 		const candidates = [first];
+		// A staged counted retry clears its failure reason but preserves the
+		// retry budget. Only a page without an unresolved failure may pair.
 		if (
 			jellyfinBatch &&
 			activeRun.state === "running" &&
 			first.state === "pending" &&
-			first.attemptCount === 0
+			first.lastReasonCode === null
 		) {
 			const user = observationScopeUser(first);
 			if (user !== null) {
@@ -475,7 +477,7 @@ async function claimObservationUnits(
 						runId: input.runId,
 						phase: first.phase,
 						state: "pending",
-						attemptCount: 0,
+						lastReasonCode: null,
 						NOT: { scopeKey: { startsWith: `${first.phase}:${user}:` } },
 						OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: input.now } }],
 					},
@@ -1345,7 +1347,7 @@ export async function failOwnedObservationUnit(
 	return await settleOwnedObservationFailures(prisma, input, [input.failure]);
 }
 
-/** Settle both joined first-attempt Jellyfin failures with the shared outer marker. */
+/** Settle both joined Jellyfin page failures with the shared outer marker. */
 export async function failOwnedJellyfinObservationBatch(
 	prisma: Db,
 	input: OwnedObservationFailureContext & {
@@ -1414,7 +1416,7 @@ async function settleOwnedObservationFailures(
 					select: {
 						id: true,
 						claimToken: true,
-						attemptCount: true,
+						lastReasonCode: true,
 						scopeKey: true,
 						scopePayload: true,
 						phase: true,
@@ -1427,8 +1429,8 @@ async function settleOwnedObservationFailures(
 					owned.length !== 2 ||
 					!firstUnit ||
 					!secondUnit ||
-					firstUnit.attemptCount !== 0 ||
-					secondUnit.attemptCount !== 0 ||
+					firstUnit.lastReasonCode !== null ||
+					secondUnit.lastReasonCode !== null ||
 					firstUnit.claimToken !== first.claim.claimToken ||
 					secondUnit.claimToken !== second.claim.claimToken ||
 					firstUnit.phase !== secondUnit.phase
