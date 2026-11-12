@@ -2182,6 +2182,25 @@ describe("native inventory independence from Jellyfin watch finalization", {
 		}
 		const ordinary = await readOwnedJellyfinEpisodeDisplaySources(readInput);
 		expect(ordinary.sources[0]?.[jellyfinMappedSeriesProgressProof]).toBeUndefined();
+		const newCatalogMatch = await prisma.jellyfinCache.create({
+			data: { ...parentRow, tmdbId: 987654, jellyfinId: "newly-matched-series" },
+		});
+		await rewriteAuthoritativeParent(prisma);
+		const currentCatalogOnly = await readOwnedJellyfinLibraryAndEpisodeDisplaySources(readInput);
+		const currentProgress = projectJellyfinSeriesProgress(
+			readInput.instances,
+			currentCatalogOnly.episodes,
+			readInput.showTmdbIds,
+		).progress;
+		expect(currentProgress[42]?.status).toBe("mapped");
+		expect(currentProgress[987654]).toEqual({
+			status: "unknown",
+			total: null,
+			watched: null,
+			percent: null,
+			watchedSemantics: "unknown",
+		});
+		await removeAlias(newCatalogMatch.id);
 		const publishedAlias = await addAlias();
 		const ambiguousRead = await readOwnedJellyfinEpisodeDisplaySources({
 			...readInput,
@@ -2248,6 +2267,13 @@ describe("native inventory independence from Jellyfin watch finalization", {
 			maxAgeMs: 0,
 		});
 		expect(stale.sources[0]?.[jellyfinMappedSeriesProgressProof]).toBeUndefined();
+		const staleProgress = projectJellyfinSeriesProgress(
+			readInput.instances,
+			stale,
+			readInput.showTmdbIds,
+		).progress[987654];
+		expect(staleProgress?.status).toBe("unknown");
+		expect(staleProgress).not.toHaveProperty("reason");
 		await prisma.jellyfinEpisodeGenerationShowReceipt.updateMany({
 			where: { instanceId: input.instance.id, generationId: prepared.cacheGenerationId },
 			data: { mappedProgressJson: '[1,"altered",[[1,1,1],[1,2,0]]]' },
