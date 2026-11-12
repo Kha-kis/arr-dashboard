@@ -186,7 +186,7 @@ describe("Seerr inline confirmation targets", () => {
 				expect(button).toBeDefined();
 				fireEvent.click(button!);
 			};
-			const confirm = () => screen.queryByRole("button", { name: "Confirm", exact: true });
+			const confirm = () => screen.queryByRole("button", { name: /^Confirm$/ });
 			await screen.findByText("Synthetic 41");
 			view.switch("south");
 			await screen.findByText("Synthetic 41");
@@ -204,7 +204,7 @@ describe("Seerr inline confirmation targets", () => {
 			arm();
 			expect(view.posts).toEqual([]);
 			const readCount = view.reads.length;
-			fireEvent.click(screen.getByRole("button", { name: "Confirm", exact: true }));
+			fireEvent.click(screen.getByRole("button", { name: /^Confirm$/ }));
 			await settled(view);
 
 			expect(view.posts).toEqual([{ path: `/api/seerr/requests/south/41${suffix}`, body: null }]);
@@ -293,7 +293,7 @@ describe("Seerr inline confirmation targets", () => {
 		);
 		await screen.findByText("Synthetic 41");
 		fireEvent.click(screen.getAllByRole("button", { name: "Delete request" })[0]!);
-		fireEvent.click(screen.getByRole("button", { name: "Confirm", exact: true }));
+		fireEvent.click(screen.getByRole("button", { name: /^Confirm$/ }));
 		try {
 			await waitFor(() => expect(view.posts).toHaveLength(1));
 			view.switch("south");
