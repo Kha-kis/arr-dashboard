@@ -91,6 +91,42 @@ describe("native video processing measurement presentation", () => {
 		expect(screen.getByText(/audio-only transcoding.*video copy/i)).toBeInTheDocument();
 		expect(screen.getByText(/not continuous.*history/i)).toBeInTheDocument();
 	});
+	it("describes mixed idle and failed samples in a daily video processing tooltip", () => {
+		const dailyMeasurement = measurement();
+		providers(
+			<TranscodeChart
+				data={data({
+					dailyBreakdown: [
+						{ date: "2026-10-04", directPlay: 2, directStream: 1, transcode: 1, unknown: 2 },
+						{
+							date: "2026-10-05",
+							directPlay: 0,
+							directStream: 0,
+							transcode: 0,
+							unknown: 0,
+							measurement: {
+								...dailyMeasurement,
+								status: "unavailable",
+								observedSessions: 0,
+								measuredSessions: 0,
+								collection: {
+									...dailyMeasurement.collection,
+									activeSnapshots: 0,
+									idleSnapshots: 2,
+									failedSnapshots: 1,
+								},
+							},
+						},
+					],
+				})}
+				isLoading={false}
+				isError={false}
+			/>,
+		);
+		expect(
+			screen.getByTitle(/2026-10-05: some samples failed.*no observed video decisions/i),
+		).toBeInTheDocument();
+	});
 	it("retains observed activity when every method is unknown instead of claiming no data or a zero rate", () => {
 		providers(
 			<TranscodeChart
@@ -157,6 +193,7 @@ describe("native video processing measurement presentation", () => {
 		{ label: /no observations/i, sources: 1, idle: 0, failed: 0 },
 		{ label: /successful idle/i, sources: 1, idle: 2, failed: 0 },
 		{ label: /collection failed/i, sources: 1, idle: 0, failed: 2 },
+		{ label: /some samples failed/i, sources: 1, idle: 2, failed: 2 },
 	])("distinguishes empty collection state $label", ({ label, sources, idle, failed }) => {
 		providers(
 			<TranscodeChart

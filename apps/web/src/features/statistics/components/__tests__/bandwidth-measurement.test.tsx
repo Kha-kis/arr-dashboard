@@ -281,6 +281,17 @@ describe("historical bandwidth measurement presentation", () => {
 				invalidSnapshots: 0,
 			},
 		},
+		{
+			label: /some samples failed/i,
+			configuredSources: 1,
+			counts: {
+				activeSnapshots: 0,
+				idleSnapshots: 2,
+				failedSnapshots: 2,
+				legacySnapshots: 0,
+				invalidSnapshots: 0,
+			},
+		},
 	])(
 		"distinguishes collection state $label without presenting missing rate as zero",
 		({ label, configuredSources, counts }) => {

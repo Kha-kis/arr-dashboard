@@ -196,6 +196,7 @@ describe("codec observation coverage presentation", () => {
 		{ label: /no observations/i, sources: 1, idle: 0, failed: 0 },
 		{ label: /successful idle/i, sources: 1, idle: 2, failed: 0 },
 		{ label: /collection failed/i, sources: 1, idle: 0, failed: 2 },
+		{ label: /some samples failed/i, sources: 1, idle: 2, failed: 2 },
 	])("distinguishes empty collection $label", ({ label, sources, idle, failed }) => {
 		providers(
 			<CodecChart

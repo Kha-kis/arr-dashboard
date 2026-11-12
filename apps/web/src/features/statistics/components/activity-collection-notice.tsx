@@ -1,4 +1,5 @@
 import type { SampledActivityCollection } from "@arr/shared";
+import { hasMixedCollectionSamples } from "./collection-coverage";
 
 export function ActivityCollectionNotice({
 	measurement,
@@ -19,15 +20,17 @@ export function ActivityCollectionNotice({
 		? null
 		: measurement.configuredSources === 0
 			? "No configured media-server sources. Check Settings to configure a connection."
-			: collection.failedSnapshots > 0
-				? "Collection failed in this window. Check source Settings and retry collection."
-				: collection.invalidSnapshots > 0
-					? "Invalid collection evidence. Check source Settings."
-					: collection.idleSnapshots > 0
-						? "Successful idle observations recorded; no matching activity was observed."
-						: collection.activeSnapshots + collection.legacySnapshots > 0
-							? "No matching title observations are available in this sampled window."
-							: "No observations recorded in this window. Check source Settings and the collection scheduler.";
+			: hasMixedCollectionSamples(collection)
+				? "No matching activity was found in successful samples. Some samples failed."
+				: collection.failedSnapshots > 0
+					? "Collection failed in this window. Check source Settings and retry collection."
+					: collection.invalidSnapshots > 0
+						? "Invalid collection evidence. Check source Settings."
+						: collection.idleSnapshots > 0
+							? "Successful idle observations recorded; no matching activity was observed."
+							: collection.activeSnapshots + collection.legacySnapshots > 0
+								? "No matching title observations are available in this sampled window."
+								: "No observations recorded in this window. Check source Settings and the collection scheduler.";
 	return (
 		<div className="text-xs text-muted-foreground space-y-1">
 			{emptyState && <p role="status">{emptyState}</p>}

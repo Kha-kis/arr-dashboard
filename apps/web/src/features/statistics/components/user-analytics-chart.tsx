@@ -7,6 +7,7 @@ import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { formatBandwidth } from "./chart-primitives";
+import { hasMixedCollectionSamples, MIXED_COLLECTION_EMPTY_NOTICE } from "./collection-coverage";
 
 type User = UserAnalytics["users"][number];
 type Day = UserAnalytics["dailyBreakdown"][number];
@@ -180,13 +181,15 @@ export const UserAnalyticsChart = ({
 		measurement?.observedSessions === 0
 			? measurement.configuredSources === 0
 				? `No configured ${serviceLabel} sources. Check Settings to configure a connection.`
-				: (collection?.failedSnapshots ?? 0) > 0
-					? "Collection failed in this window. Check source settings and retry collection."
-					: (collection?.invalidSnapshots ?? 0) > 0
-						? "Collection evidence is invalid. Check source settings."
-						: (collection?.idleSnapshots ?? 0) > 0
-							? "Successful idle observations recorded; no active user observations are available."
-							: "No observations recorded in this window. Check source settings and the collection scheduler."
+				: hasMixedCollectionSamples(collection)
+					? MIXED_COLLECTION_EMPTY_NOTICE
+					: (collection?.failedSnapshots ?? 0) > 0
+						? "Collection failed in this window. Check source settings and retry collection."
+						: (collection?.invalidSnapshots ?? 0) > 0
+							? "Collection evidence is invalid. Check source settings."
+							: (collection?.idleSnapshots ?? 0) > 0
+								? "Successful idle observations recorded; no active user observations are available."
+								: "No observations recorded in this window. Check source settings and the collection scheduler."
 			: null;
 	return (
 		<div className="rounded-xl border border-border/30 bg-card/30 p-6 space-y-5 min-w-0">

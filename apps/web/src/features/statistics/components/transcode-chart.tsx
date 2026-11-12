@@ -6,6 +6,7 @@ import { useMemo } from "react";
 import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { hasMixedCollectionSamples, MIXED_COLLECTION_EMPTY_NOTICE } from "./collection-coverage";
 
 // ============================================================================
 // Donut Chart Component
@@ -121,11 +122,13 @@ const StackedBarChart = ({
 							title={
 								total > 0
 									? `${day.date}: ${day.directPlay} DP / ${day.directStream} DS / ${day.transcode} TC / ${day.unknown} unknown`
-									: day.measurement?.collection.failedSnapshots
-										? `${day.date}: collection failed; no observed video decisions`
-										: day.measurement?.collection.idleSnapshots
-											? `${day.date}: successful idle; no active video decisions`
-											: `${day.date}: no observations; not measured zero`
+									: hasMixedCollectionSamples(day.measurement?.collection)
+										? `${day.date}: some samples failed, with no observed video decisions`
+										: day.measurement?.collection.failedSnapshots
+											? `${day.date}: collection failed; no observed video decisions`
+											: day.measurement?.collection.idleSnapshots
+												? `${day.date}: successful idle; no active video decisions`
+												: `${day.date}: no observations; not measured zero`
 							}
 						>
 							{dpH > 0 && (
@@ -248,13 +251,15 @@ export const TranscodeChart = ({
 		measurement?.observedSessions === 0
 			? measurement.configuredSources === 0
 				? `No configured ${serviceLabel} sources. Check Settings to configure a connection.`
-				: collection && collection.failedSnapshots > 0
-					? "Collection failed in this window. Check source settings and retry collection."
-					: collection && collection.invalidSnapshots > 0
-						? "Collection evidence is invalid in this window. Check source settings."
-						: collection && collection.idleSnapshots > 0
-							? "Successful idle observations recorded; no active video processing rate is available."
-							: "No observations recorded in this window. Check source settings and the collection scheduler."
+				: hasMixedCollectionSamples(collection)
+					? MIXED_COLLECTION_EMPTY_NOTICE
+					: collection && collection.failedSnapshots > 0
+						? "Collection failed in this window. Check source settings and retry collection."
+						: collection && collection.invalidSnapshots > 0
+							? "Collection evidence is invalid in this window. Check source settings."
+							: collection && collection.idleSnapshots > 0
+								? "Successful idle observations recorded; no active video processing rate is available."
+								: "No observations recorded in this window. Check source settings and the collection scheduler."
 			: null;
 	const measured = counts.directPlay + counts.directStream + counts.transcode;
 	const dpPercent = measured > 0 ? Math.round((counts.directPlay / measured) * 100) : null;

@@ -126,6 +126,7 @@ describe("source-scoped sampled user activity", () => {
 		{ label: /no observations/i, sources: 1, idle: 0, failed: 0 },
 		{ label: /successful idle/i, sources: 1, idle: 2, failed: 0 },
 		{ label: /collection failed/i, sources: 1, idle: 0, failed: 2 },
+		{ label: /some samples failed/i, sources: 1, idle: 2, failed: 2 },
 	])("distinguishes empty collection state $label", ({ label, sources, idle, failed }) => {
 		providers(
 			<UserAnalyticsChart

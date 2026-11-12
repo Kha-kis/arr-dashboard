@@ -7,6 +7,7 @@ import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { formatBandwidth, MiniStatCard, Sparkline } from "./chart-primitives";
+import { hasMixedCollectionSamples, MIXED_COLLECTION_EMPTY_NOTICE } from "./collection-coverage";
 
 // ============================================================================
 // Bandwidth Chart Section
@@ -99,13 +100,15 @@ export const BandwidthChart = ({
 	const collectionState = noActiveObservations
 		? measurement.configuredSources === 0
 			? `No configured ${serviceLabel} sources. Check Settings to configure a connection.`
-			: collection && collection.failedSnapshots > 0
-				? "Collection failed in this window. Check source settings and retry collection."
-				: collection && collection.invalidSnapshots > 0
-					? "Collection evidence is invalid in this window. Check source settings."
-					: collection && collection.idleSnapshots > 0
-						? "Successful idle observations recorded; no active-stream bandwidth average is available."
-						: "No observations recorded in this window. Check source settings and the collection scheduler."
+			: hasMixedCollectionSamples(collection)
+				? MIXED_COLLECTION_EMPTY_NOTICE
+				: collection && collection.failedSnapshots > 0
+					? "Collection failed in this window. Check source settings and retry collection."
+					: collection && collection.invalidSnapshots > 0
+						? "Collection evidence is invalid in this window. Check source settings."
+						: collection && collection.idleSnapshots > 0
+							? "Successful idle observations recorded; no active-stream bandwidth average is available."
+							: "No observations recorded in this window. Check source settings and the collection scheduler."
 		: null;
 	const basis =
 		measurement?.bandwidthBasis === "encoding-estimate"

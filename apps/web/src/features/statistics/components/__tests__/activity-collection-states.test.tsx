@@ -72,6 +72,24 @@ describe.each(["history", "top"] as const)("%s collection state presentation", (
 		panel(family);
 		expect(screen.getByText(/legacy.*unverified.*collection/i)).toBeInTheDocument();
 	});
+
+	it.each(["activeSnapshots", "idleSnapshots"] as const)(
+		"reports incomplete coverage when %s and failed samples coexist",
+		(successfulCategory) => {
+			panel(family, {
+				version: 1,
+				configuredSources: 1,
+				collection: { ...collection, [successfulCategory]: 3, failedSnapshots: 1 },
+			});
+			expect(
+				screen.getByText(/no matching activity.*successful samples.*some samples failed/i),
+			).toBeInTheDocument();
+			expect(screen.getByText(/1 failed/)).toBeInTheDocument();
+			expect(
+				screen.queryByText(/check source settings and retry collection/i),
+			).not.toBeInTheDocument();
+		},
+	);
 });
 
 function TogglePrivacy() {

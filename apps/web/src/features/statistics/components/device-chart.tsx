@@ -7,6 +7,7 @@ import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getLinuxDevice, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { hasMixedCollectionSamples, MIXED_COLLECTION_EMPTY_NOTICE } from "./collection-coverage";
 
 // ============================================================================
 // Donut Chart (consistent with codec-chart)
@@ -266,15 +267,17 @@ export const DeviceChart = ({ data, isLoading, isError, service = "plex" }: Devi
 				<p className="text-sm text-muted-foreground">
 					{measurement?.configuredSources === 0
 						? "No configured sources. Configure a media-server connection in Settings."
-						: measurement && measurement.collection.failedSnapshots > 0
-							? "Collection failed. Check the connection in Settings and try again."
-							: measurement &&
-									(measurement.collection.invalidSnapshots > 0 ||
-										measurement.collection.legacySnapshots > 0)
-								? "Collection evidence is unverified. Check the connection in Settings; new native observations are needed."
-								: measurement && measurement.collection.idleSnapshots > 0
-									? "Successful idle collection: no active sessions were observed."
-									: "No observations yet. Check the connection in Settings; device data appears after native sessions are captured."}
+						: hasMixedCollectionSamples(measurement?.collection)
+							? MIXED_COLLECTION_EMPTY_NOTICE
+							: measurement && measurement.collection.failedSnapshots > 0
+								? "Collection failed. Check the connection in Settings and try again."
+								: measurement &&
+										(measurement.collection.invalidSnapshots > 0 ||
+											measurement.collection.legacySnapshots > 0)
+									? "Collection evidence is unverified. Check the connection in Settings; new native observations are needed."
+									: measurement && measurement.collection.idleSnapshots > 0
+										? "Successful idle collection: no active sessions were observed."
+										: "No observations yet. Check the connection in Settings; device data appears after native sessions are captured."}
 				</p>
 			)}
 

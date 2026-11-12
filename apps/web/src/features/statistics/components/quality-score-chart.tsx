@@ -7,6 +7,7 @@ import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { Sparkline } from "./chart-primitives";
+import { hasMixedCollectionSamples, MIXED_COLLECTION_EMPTY_NOTICE } from "./collection-coverage";
 
 // ============================================================================
 // Circular Gauge (0-100)
@@ -191,13 +192,15 @@ export const QualityScoreChart = ({
 		measurement?.observedSessions === 0
 			? measurement.configuredSources === 0
 				? `No configured ${serviceLabel} sources. Check Settings to configure a connection.`
-				: collection && collection.failedSnapshots > 0
-					? "Collection failed in this window. Check source settings and retry collection."
-					: collection && collection.invalidSnapshots > 0
-						? "Collection evidence is invalid in this window. Check source settings."
-						: collection && collection.idleSnapshots > 0
-							? "Successful idle observations recorded; no active quality observations are available."
-							: "No observations recorded in this window. Check source settings and the collection scheduler."
+				: hasMixedCollectionSamples(collection)
+					? MIXED_COLLECTION_EMPTY_NOTICE
+					: collection && collection.failedSnapshots > 0
+						? "Collection failed in this window. Check source settings and retry collection."
+						: collection && collection.invalidSnapshots > 0
+							? "Collection evidence is invalid in this window. Check source settings."
+							: collection && collection.idleSnapshots > 0
+								? "Successful idle observations recorded; no active quality observations are available."
+								: "No observations recorded in this window. Check source settings and the collection scheduler."
 			: null;
 
 	return (

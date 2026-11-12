@@ -246,6 +246,7 @@ describe("forecast measurement truth and presentation", () => {
 		{ sources: 1, idle: 0, failed: 0, expected: /no observations.*scheduler/i },
 		{ sources: 1, idle: 2, failed: 0, expected: /successful idle/i },
 		{ sources: 1, idle: 0, failed: 2, expected: /collection failed.*settings/i },
+		{ sources: 1, idle: 2, failed: 2, expected: /some samples failed/i },
 	])("distinguishes collection-only window $expected", ({ sources, idle, failed, expected }) => {
 		providers(
 			<ForecastChart

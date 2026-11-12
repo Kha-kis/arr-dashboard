@@ -215,6 +215,7 @@ describe("device observation truth and presentation", () => {
 		{ sources: 1, idle: 0, failed: 0, label: /no observations/i },
 		{ sources: 1, idle: 2, failed: 0, label: /successful idle/i },
 		{ sources: 1, idle: 0, failed: 2, label: /collection failed/i },
+		{ sources: 1, idle: 2, failed: 2, label: /some samples failed/i },
 	])("distinguishes empty collection $label", ({ sources, idle, failed, label }) => {
 		providers(
 			<DeviceChart
