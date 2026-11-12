@@ -68,11 +68,39 @@ describe("deriveJellyfinMappedSeriesProgress", () => {
 	});
 
 	it.each([
+		["collection-only", [a1, a2, { ...b1, played: false }], [a1, a2]],
+		["verification-only", [a1, a2], [a1, a2, b1]],
+	] as const)(
+		"retains an unchanged show alongside a %s neighboring episode",
+		(_reason, collect, verify) => {
+			const result = deriveJellyfinMappedSeriesProgress({
+				bindings: [bindingA, bindingB, { ...bindingA, seriesId: "unobserved", tmdbId: 404 }],
+				scopes: [scope([a1, a2], [a1, a2], "user-a"), scope(collect, verify, "user-b")],
+			});
+
+			expect([...result]).toEqual([[101, aCoordinates]]);
+		},
+	);
+
+	it.each([
 		["missing native ID", []],
 		["changed native ID", [{ ...b1, jellyfinId: "other-native" }]],
+		["extra native ID", [b1, { ...b1, jellyfinId: "extra-native", episodeNumber: 3 }]],
+	] as const)("retains a verified show when its unmapped neighbor has a %s", (_reason, verify) => {
+		const result = deriveJellyfinMappedSeriesProgress({
+			bindings: [bindingA, bindingC],
+			scopes: [scope([a1, a2, b1], [a1, a2, ...verify]), scope([c1], [c1], "user-a", "library-c")],
+		});
+
+		expect([...result]).toEqual([
+			[101, aCoordinates],
+			[303, [{ seasonNumber: 1, episodeNumber: 1, watched: true }]],
+		]);
+	});
+
+	it.each([
 		["changed series", [{ ...b1, seriesId: "other-series" }]],
 		["changed coordinate", [{ ...b1, episodeNumber: 3 }]],
-		["extra native ID", [b1, { ...b1, jellyfinId: "extra-native", episodeNumber: 3 }]],
 		["duplicate native ID", [b1, b1]],
 	] as const)("rejects the library for %s in an unmapped neighbor", (_reason, verify) => {
 		const result = deriveJellyfinMappedSeriesProgress({

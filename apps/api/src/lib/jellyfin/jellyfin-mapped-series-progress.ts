@@ -69,16 +69,20 @@ function indexObservations(
 	return valid ? byId : null;
 }
 
-function sameMembership(
+function seriesWithMembershipChanges(
 	collect: ReadonlyMap<string, JellyfinMappedSeriesObservation>,
 	verify: ReadonlyMap<string, JellyfinMappedSeriesObservation>,
-): boolean {
-	if (collect.size !== verify.size) return false;
+): Set<string> | null {
+	const changedSeries = new Set<string>();
 	for (const [id, row] of collect) {
 		const other = verify.get(id);
-		if (!other || !sameNativeCoordinate(row, other)) return false;
+		if (!other) changedSeries.add(row.seriesId);
+		else if (!sameNativeCoordinate(row, other)) return null;
 	}
-	return true;
+	for (const [id, row] of verify) {
+		if (!collect.has(id)) changedSeries.add(row.seriesId);
+	}
+	return changedSeries;
 }
 
 function uniqueBindings(bindings: readonly Binding[]): Binding[] {
@@ -138,6 +142,7 @@ export function deriveJellyfinMappedSeriesProgress(input: {
 	const seenScopes = new Set<string>();
 	const completeLibraries = new Set<string>();
 	const invalidLibraries = new Set<string>();
+	const librariesWithMembershipChanges = new Set<string>();
 
 	for (const scope of input.scopes) {
 		const { libraryId, userKeyDigest } = scope;
@@ -156,17 +161,23 @@ export function deriveJellyfinMappedSeriesProgress(input: {
 		}
 		seenScopes.add(scopeKey);
 
-		// Membership includes unmapped episodes. Played drift invalidates only
-		// the affected show once library membership has been established.
-		if (!collect || !verify || !sameMembership(collect, verify)) {
+		const changedSeries = collect && verify && seriesWithMembershipChanges(collect, verify);
+		if (!collect || !verify || !changedSeries) {
 			invalidLibraries.add(libraryId);
 			continue;
 		}
 		completeLibraries.add(libraryId);
+		if (changedSeries.size > 0) {
+			librariesWithMembershipChanges.add(libraryId);
+			for (const seriesId of changedSeries) {
+				const show = showsBySeries.get(seriesId);
+				if (show?.libraryId === libraryId) show.ambiguous = true;
+			}
+		}
 
 		for (const row of collect.values()) {
 			const show = showsBySeries.get(row.seriesId);
-			if (show?.libraryId !== libraryId) continue;
+			if (show?.libraryId !== libraryId || show.ambiguous) continue;
 			const key = `${row.seasonNumber}:${row.episodeNumber}`;
 			const prior = show.coordinates.get(key);
 			if (
@@ -186,6 +197,9 @@ export function deriveJellyfinMappedSeriesProgress(input: {
 			continue;
 
 		const rows = [...show.coordinates.values()];
+		// A changed library can still prove nonempty shows whose rows agree.
+		// Keep unobserved shows unknown until the entire membership agrees.
+		if (rows.length === 0 && librariesWithMembershipChanges.has(libraryId)) continue;
 		if (rows.some((row) => nativeIdentities.get(row.jellyfinId) === null)) continue;
 
 		rows.sort(
