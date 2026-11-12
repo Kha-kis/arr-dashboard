@@ -12,6 +12,7 @@
 set -eu
 
 IMAGE="${1:-arr-dashboard:smoke}"
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/test-shutdown-grace-XXXXXXXX")
 CONFIG_DIR="$WORK/config"
 
@@ -89,6 +90,12 @@ report_shutdown_failure() {
                     launcher_shutdown, launcher_kill, launcher_revoke, launcher_reject
             }
         ' >&2; then
+        if progress=$(printf '%s\n' "$diagnostic_logs" |
+            node "$SCRIPT_DIR/shutdown-progress-diagnostics.cjs" 2>/dev/null); then
+            printf '  shutdown progress: %s\n' "$progress" >&2
+        else
+            echo '  shutdown diagnostic unavailable: API shutdown progress' >&2
+        fi
         return
     fi
     echo '  shutdown diagnostic unavailable: shutdown log' >&2
