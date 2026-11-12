@@ -343,27 +343,96 @@ case_green_stubborn() {
     done
 }
 
+report_normal_stop_failure() (
+    elapsed_ms=${ELAPSED_MS:-unknown}
+    case "$elapsed_ms" in *[!0-9]*) elapsed_ms=unknown ;; esac
+    snapshot=$(timeout -k 1s 5s docker inspect --type container \
+        --format '{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}}' "$ctr" 2>/dev/null) || snapshot=
+    state=$(printf '%s\n' "$snapshot" | awk 'NR == 1 && NF == 3 &&
+            $1 ~ /^(created|running|paused|restarting|removing|exited|dead)$/ &&
+            $2 ~ /^[0-9]+$/ && $2 <= 255 && $3 ~ /^(true|false)$/ {
+                result = "state=" $1 " exit=" $2 " oom=" $3
+            }
+            END { if (NR == 1 && result != "") print result }')
+    printf '  %s normal stop diagnostic stage=%s elapsed_ms=%s %s\n' \
+        "$mode" "$stage" "$elapsed_ms" "${state:-state=unknown exit=unknown oom=unknown}" >&2
+
+    # Keep only exact supervisor markers and the exit statuses of the captured
+    # children. This runs before the fixture is removed and emits no raw logs.
+    if ! logs=$(timeout -k 1s 5s docker logs --tail 120 "$ctr" 2>&1); then
+        printf '  %s normal stop markers unavailable\n' "$mode" >&2
+        return
+    fi
+    printf '%s\n' "$logs" | awk -v mode="$mode" -v api="$API_PID" -v web="$WEB_PID" '
+        $0 == "Shutting down services..." { shutdown++ }
+        $0 == "Services stopped gracefully" { graceful++ }
+        $0 == "ERROR: Services required forced or failed termination" { failed++ }
+        /^  API did not stop within [0-9]+s - sending SIGKILL$/ { api_kill++ }
+        /^  Web did not stop within [0-9]+s - sending SIGKILL$/ { web_kill++ }
+        /^SUPERVISOR_WAIT_COMPLETED pid=[0-9]+ status=[0-9]+$/ {
+            if ($2 == "pid=" api) { api_wait = substr($3, 8); api_count++ }
+            if ($2 == "pid=" web) { web_wait = substr($3, 8); web_count++ }
+        }
+        END {
+            printf "  %s normal stop markers shutdown=%d graceful=%d failed=%d", mode, shutdown, graceful, failed
+            printf " api_wait=%s web_wait=%s api_sigkill=%d web_sigkill=%d\n",
+                api_count == 1 && api_wait + 0 <= 255 ? api_wait : "unknown",
+                web_count == 1 && web_wait + 0 <= 255 ? web_wait : "unknown", api_kill, web_kill
+        }
+    ' >&2
+)
+
 case_default_normal() {
     echo ""
     echo "=== [default-normal] normal-child stop ==="
     for mode in rootful rootless; do
         ctr="${PREFIX}normal-$mode"
         owner=$ctr
+        API_PID=invalid
+        WEB_PID=invalid
+        ELAPSED_MS=
         pass=true
+        stage=start
         start_container "$ctr" "$mode" normal "" "$owner" || pass=false
-        if [ "$pass" = true ]; then wait_health false && capture_supervisor_epoch "$ctr" || pass=false; fi
-        if [ "$pass" = true ]; then measure_unchecked docker stop --time 120 "$ctr" || pass=false; fi
         if [ "$pass" = true ]; then
-            code=$(stop_timing_exit_code "$ctr") || pass=false
-            oom=$(stop_timing_oom_killed "$ctr") || pass=false
-            state=$(stop_timing_runtime_state "$ctr") || pass=false
+            stage=readiness
+            wait_health false || pass=false
+        fi
+        if [ "$pass" = true ]; then
+            stage=supervisor-epoch
+            if ! capture_supervisor_epoch "$ctr"; then
+                API_PID=invalid
+                WEB_PID=invalid
+                pass=false
+            fi
+        fi
+        if [ "$pass" = true ]; then
+            stage=docker-stop
+            measure_unchecked docker stop --time 120 "$ctr" || pass=false
+        fi
+        if [ "$pass" = true ]; then
+            stage=docker-state
+            code=$(stop_timing_exit_code "$ctr") &&
+                oom=$(stop_timing_oom_killed "$ctr") &&
+                state=$(stop_timing_runtime_state "$ctr") || pass=false
+        fi
+        if [ "$pass" = true ]; then
+            stage=log-capture
             segment=$(appended_logs "$ctr" "$LOG_CURSOR") || pass=false
+        fi
+        if [ "$pass" = true ]; then
+            stage=reaping
             assert_epoch_reaped "$segment" "Services stopped gracefully" || pass=false
         fi
-        if [ "$pass" = true ] && [ "$code" = 0 ] && [ "$oom" = false ] && [ "$state" = exited ]; then
+        if [ "$pass" = true ]; then
+            stage=container-exit
+            [ "$code" = 0 ] && [ "$oom" = false ] && [ "$state" = exited ] || pass=false
+        fi
+        if [ "$pass" = true ]; then
             ok "$mode normal stop: ${ELAPSED_MS}ms, exact old PIDs reaped"
         else
             bad "$mode normal stop failed binding-faithful assertions"
+            report_normal_stop_failure || true
         fi
         strict_remove "$ctr" "$owner" || bad "$mode normal container removal was not proven"
     done
