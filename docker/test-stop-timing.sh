@@ -369,6 +369,9 @@ report_normal_stop_failure() (
         $0 == "ERROR: Services required forced or failed termination" { failed++ }
         /^  API did not stop within [0-9]+s - sending SIGKILL$/ { api_kill++ }
         /^  Web did not stop within [0-9]+s - sending SIGKILL$/ { web_kill++ }
+        $0 == "{\"category\":\"launcher-shutdown-failure\",\"reason\":\"forced-child-termination\"}" { launcher_kill++ }
+        $0 == "{\"category\":\"launcher-shutdown-failure\",\"reason\":\"handoff-revocation-failed\"}" { launcher_revoke++ }
+        $0 == "{\"category\":\"launcher-shutdown-failure\",\"reason\":\"combined-handoff-rejected\"}" { launcher_reject++ }
         /^SUPERVISOR_WAIT_COMPLETED pid=[0-9]+ status=[0-9]+$/ {
             if ($2 == "pid=" api) { api_wait = substr($3, 8); api_count++ }
             if ($2 == "pid=" web) { web_wait = substr($3, 8); web_count++ }
@@ -378,8 +381,16 @@ report_normal_stop_failure() (
             printf " api_wait=%s web_wait=%s api_sigkill=%d web_sigkill=%d\n",
                 api_count == 1 && api_wait + 0 <= 255 ? api_wait : "unknown",
                 web_count == 1 && web_wait + 0 <= 255 ? web_wait : "unknown", api_kill, web_kill
+            printf "  %s normal stop launcher forced_child=%d handoff_revocation_failed=%d handoff_rejected=%d\n",
+                mode, launcher_kill, launcher_revoke, launcher_reject
         }
     ' >&2
+    if progress=$(printf '%s\n' "$logs" |
+        node "$SCRIPT_DIR/shutdown-progress-diagnostics.cjs" 2>/dev/null); then
+        printf '  %s normal stop API progress: %s\n' "$mode" "$progress" >&2
+    else
+        printf '  %s normal stop API progress unavailable\n' "$mode" >&2
+    fi
 )
 
 case_default_normal() {

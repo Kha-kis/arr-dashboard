@@ -93,6 +93,9 @@ case "$1" in
 				echo "  API did not stop within 90s - sending SIGKILL" >&2
 				echo "ERROR: Services required forced or failed termination" >&2
 				echo "raw-fixture-log-must-not-appear" >&2
+				echo '{"category":"launcher-shutdown-failure","reason":"forced-child-termination"}'
+				echo '{"category":"shutdown-progress","phase":"fastify","elapsedMs":85000,"runningSchedulers":1,"private":"raw-fixture-progress-must-not-appear"}'
+				echo '{"category":"launcher-shutdown-failure","reason":"raw-fixture-launcher-must-not-appear"}'
 			else
 				echo "SUPERVISOR_WAIT_COMPLETED pid=11 status=0"
 				echo "Services stopped gracefully"
@@ -142,7 +145,17 @@ esac
 		result.stderr,
 		/rootless normal stop markers .*api_wait=137 web_wait=0 .*api_sigkill=1/,
 	);
-	assert.doesNotMatch(result.stdout + result.stderr, /raw-fixture-log-must-not-appear/);
+	assert.match(
+		result.stderr,
+		/rootless normal stop launcher forced_child=1 handoff_revocation_failed=0 handoff_rejected=0/,
+	);
+	const progress = result.stderr.match(/^  rootless normal stop API progress: (.*)$/m);
+	assert(progress);
+	assert.deepEqual(JSON.parse(progress[1]), {
+		observations: 1,
+		latestByPhase: [{ phase: "fastify", elapsedMs: 85000, runningSchedulers: 1 }],
+	});
+	assert.doesNotMatch(result.stdout + result.stderr, /raw-fixture-.*-must-not-appear/);
 	assert.equal(fs.existsSync(path.join(fixture, "name")), false);
 
 	const rejectedEpoch = run("duplicate-epoch");
