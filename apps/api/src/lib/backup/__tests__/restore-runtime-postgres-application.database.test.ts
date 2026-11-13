@@ -7,7 +7,11 @@ import { Client } from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { envSchema } from "../../../config/env.js";
 import { buildServer } from "../../../server.js";
-import { openRestoreRuntime, retainRestoreRuntimeOperation } from "../restore-runtime-admission.js";
+import {
+	getRestoreRuntimeShutdownStatus,
+	openRestoreRuntime,
+	retainRestoreRuntimeOperation,
+} from "../restore-runtime-admission.js";
 import { acquirePostgresRestoreRuntimeOwnership } from "../restore-runtime-postgres.js";
 
 /** Real server/plugins/client; only the database and outbound webhook are synthetic. */
@@ -621,9 +625,17 @@ AND EXISTS (
 				finished = resolve;
 			});
 			let outcome = "pending";
+			let ordinaryPid: number | undefined;
 			server.register(async (scope) => {
 				scope.get("/fixture-pg-handler", async (_request, reply) => {
-					await scope.prisma.user.count();
+					if (mode === "owner-loss-after-idle-retirement") {
+						const [backend] = await scope.prisma.$queryRaw<
+							{ pid: number }[]
+						>`SELECT pg_backend_pid() AS pid`;
+						ordinaryPid = backend?.pid;
+					} else {
+						await scope.prisma.user.count();
+					}
 					entered();
 					reply.send({ accepted: true });
 					try {
@@ -639,6 +651,12 @@ AND EXISTS (
 			});
 			let contender: Awaited<ReturnType<typeof acquirePostgresRestoreRuntimeOwnership>> | undefined;
 			try {
+				if (mode === "owner-loss-after-idle-retirement") {
+					await server.ready();
+					await vi.waitFor(() => {
+						expect(getRestoreRuntimeShutdownStatus(server.restoreRuntime).activeOperations).toBe(0);
+					});
+				}
 				expect(
 					(await server.inject({ method: "GET", url: "/fixture-pg-handler" })).statusCode,
 				).toBe(200);
@@ -646,21 +664,47 @@ AND EXISTS (
 				if (mode === "owner-loss-after-idle-retirement") {
 					// Ordinary idle pool retirement must not end the accepted handler's
 					// database-visible exclusion before its actual promise settles.
-					const retired = await fixture.query(`
-SELECT pg_terminate_backend(a.pid) AS stopped
+					expect(Number.isInteger(ordinaryPid)).toBe(true);
+					const participants = await participantPids();
+					expect(participants).toHaveLength(1);
+					const [participant] = participants;
+					if (!participant) throw new Error("Missing handler operation participant");
+					expect(participant.pid).not.toBe(ordinaryPid);
+					const operationLocks = `
+FROM pg_locks l
+WHERE l.locktype = 'advisory' AND l.granted AND l.mode = 'ShareLock'
+AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+AND l.classid = 1095914052::oid AND l.objid = 2::oid AND l.objsubid = 2`;
+					const idleBackends = `
 FROM pg_stat_activity a
 WHERE a.datname = current_database() AND a.state = 'idle'
-AND a.pid <> pg_backend_pid()
+AND a.pid <> pg_backend_pid() AND a.pid <> $1
 AND a.pid <> (SELECT "ownerBackendPid" FROM "RestoreRuntimeControl" WHERE id = 1)
-AND EXISTS (
- SELECT 1 FROM pg_locks l
- WHERE l.pid = a.pid AND l.locktype = 'advisory' AND l.granted
- AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
- AND l.classid = 1095914052::oid AND l.objid = 2::oid AND l.objsubid = 2
- AND l.mode = 'ShareLock'
-)`);
-					expect(retired.rows.length).toBeGreaterThan(0);
-					expect(retired.rows.every((row) => row.stopped === true)).toBe(true);
+AND a.pid IN (SELECT l.pid ${operationLocks})`;
+					let idlePids: number[] = [];
+					await vi.waitFor(
+						async () => {
+							const idle = await fixture.query(`SELECT a.pid ${idleBackends} ORDER BY a.pid`, [
+								participant.pid,
+							]);
+							idlePids = idle.rows.map(({ pid }) => pid);
+							expect(idlePids).toContain(ordinaryPid);
+							const locks = await fixture.query(`SELECT l.pid ${operationLocks}`);
+							expect(locks.rows.map(({ pid }) => pid).sort((a, b) => a - b)).toEqual(
+								[participant.pid, ...idlePids].sort((a, b) => a - b),
+							);
+						},
+						{ timeout: 5000, interval: 20 },
+					);
+					const retired = await fixture.query(
+						`SELECT a.pid, pg_terminate_backend(a.pid, 2000) AS stopped
+						 ${idleBackends} AND a.pid = ANY($2::int[]) ORDER BY a.pid`,
+						[participant.pid, idlePids],
+					);
+					expect(retired.rows).toEqual(idlePids.map((pid) => ({ pid, stopped: true })));
+					expect((await fixture.query(`SELECT l.pid ${operationLocks}`)).rows).toEqual(
+						participants,
+					);
 				}
 				if (mode !== "ordinary-close") {
 					await terminateOwner();
