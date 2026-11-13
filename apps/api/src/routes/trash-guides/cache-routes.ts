@@ -6,7 +6,7 @@
 
 import type { TrashConfigType } from "@arr/shared";
 import { TRASH_CONFIG_TYPES } from "@arr/shared";
-import type { FastifyInstance, FastifyPluginOptions } from "fastify";
+import type { FastifyInstance, FastifyPluginOptions, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { CacheCorruptionError, createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher, getRateLimitState } from "../../lib/trash-guides/github-fetcher.js";
@@ -332,31 +332,39 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 		});
 	});
 
-	/**
-	 * GET /api/trash-guides/cache/custom-formats/list
-	 * Get all available custom formats from cache for browsing
-	 */
-	app.get<{
-		Querystring: z.infer<typeof optionalServiceTypeSchema>;
-	}>("/custom-formats/list", async (request, reply) => {
+	async function listCatalogue(
+		request: FastifyRequest<{ Querystring: z.infer<typeof optionalServiceTypeSchema> }>,
+		configType: "CUSTOM_FORMATS" | "CF_DESCRIPTIONS",
+	) {
 		const { serviceType } = validateRequest(optionalServiceTypeSchema, request.query);
 
 		const results: Record<string, unknown> = {};
 		const unavailableServices: ServiceType[] = [];
-		const serviceTypes: ServiceType[] = serviceType ? [serviceType] : [...ALL_SERVICE_TYPES];
+		const serviceTypes = serviceType ? [serviceType] : ALL_SERVICE_TYPES;
 
 		for (const service of serviceTypes) {
-			const isFresh = await cacheManager.isFresh(service, "CUSTOM_FORMATS");
+			const isFresh = await cacheManager.isFresh(service, configType);
 
 			if (!isFresh) {
 				const fetcher = await getFetcher(request.currentUser!.id);
-				const data = await fetcher.fetchConfigs(service, "CUSTOM_FORMATS");
-				await cacheManager.set(service, "CUSTOM_FORMATS", data);
+				let data: unknown[];
+				try {
+					data = await fetcher.fetchConfigs(service, configType);
+				} catch (error) {
+					if (serviceType) throw error;
+					request.log.warn(
+						{ serviceType: service, configType },
+						"TRaSH catalogue refresh unavailable",
+					);
+					unavailableServices.push(service);
+					continue;
+				}
+				await cacheManager.set(service, configType, data);
 				results[SERVICE_RESULT_KEY[service]] = data;
 			} else {
 				try {
 					results[SERVICE_RESULT_KEY[service]] =
-						(await cacheManager.get(service, "CUSTOM_FORMATS")) ?? [];
+						(await cacheManager.get(service, configType)) ?? [];
 				} catch (error) {
 					if (!(error instanceof CacheCorruptionError) || serviceType) throw error;
 					unavailableServices.push(service);
@@ -364,9 +372,17 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 			}
 		}
 
-		return reply.send(
-			unavailableServices.length > 0 ? { ...results, unavailableServices } : results,
-		);
+		return unavailableServices.length > 0 ? { ...results, unavailableServices } : results;
+	}
+
+	/**
+	 * GET /api/trash-guides/cache/custom-formats/list
+	 * Get all available custom formats from cache for browsing
+	 */
+	app.get<{
+		Querystring: z.infer<typeof optionalServiceTypeSchema>;
+	}>("/custom-formats/list", async (request, reply) => {
+		return reply.send(await listCatalogue(request, "CUSTOM_FORMATS"));
 	});
 
 	/**
@@ -376,34 +392,7 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 	app.get<{
 		Querystring: z.infer<typeof optionalServiceTypeSchema>;
 	}>("/cf-descriptions/list", async (request, reply) => {
-		const { serviceType } = validateRequest(optionalServiceTypeSchema, request.query);
-
-		const results: Record<string, unknown> = {};
-		const unavailableServices: ServiceType[] = [];
-		const serviceTypes: ServiceType[] = serviceType ? [serviceType] : [...ALL_SERVICE_TYPES];
-
-		for (const service of serviceTypes) {
-			const isFresh = await cacheManager.isFresh(service, "CF_DESCRIPTIONS");
-
-			if (!isFresh) {
-				const fetcher = await getFetcher(request.currentUser!.id);
-				const data = await fetcher.fetchConfigs(service, "CF_DESCRIPTIONS");
-				await cacheManager.set(service, "CF_DESCRIPTIONS", data);
-				results[SERVICE_RESULT_KEY[service]] = data;
-			} else {
-				try {
-					results[SERVICE_RESULT_KEY[service]] =
-						(await cacheManager.get(service, "CF_DESCRIPTIONS")) ?? [];
-				} catch (error) {
-					if (!(error instanceof CacheCorruptionError) || serviceType) throw error;
-					unavailableServices.push(service);
-				}
-			}
-		}
-
-		return reply.send(
-			unavailableServices.length > 0 ? { ...results, unavailableServices } : results,
-		);
+		return reply.send(await listCatalogue(request, "CF_DESCRIPTIONS"));
 	});
 
 	/**

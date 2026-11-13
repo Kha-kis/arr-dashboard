@@ -114,6 +114,109 @@ it("keeps healthy service results when the other catalogue is unreadable", async
 	await expect(prisma.trashCache.findMany()).resolves.toEqual(before);
 });
 
+it.each([
+	{ configType: "CUSTOM_FORMATS", path: "custom-formats", extension: "json" },
+	{ configType: "CF_DESCRIPTIONS", path: "cf-descriptions", extension: "md" },
+] as const)(
+	"keeps the healthy peer when a stale $configType refresh fails",
+	async ({ configType, path, extension }) => {
+		const now = new Date();
+		const format = { trash_id: "fixture", name: "Fixture format", specifications: [] };
+		const peer =
+			configType === "CUSTOM_FORMATS"
+				? { ...format, trash_id: "peer" }
+				: {
+						cfName: "peer",
+						displayName: "Peer description",
+						description: "<p>Peer content</p>",
+						rawMarkdown: "# Peer description\nPeer content",
+						fetchedAt: now.toISOString(),
+					};
+		await prisma.trashCache.createMany({
+			data: [
+				{
+					serviceType: "RADARR",
+					configType,
+					data: gzipSync("[]").toString("base64"),
+					fetchedAt: new Date(0),
+					lastCheckedAt: new Date(0),
+				},
+				{
+					serviceType: "SONARR",
+					configType,
+					data: gzipSync(JSON.stringify([peer])).toString("base64"),
+					fetchedAt: now,
+					lastCheckedAt: now,
+				},
+			],
+		});
+		const before = await prisma.trashCache.findMany({ orderBy: { serviceType: "asc" } });
+		let failListing = true;
+		vi.stubGlobal("fetch", async (input: string) => {
+			upstreamRequests++;
+			const url = new URL(input);
+			if (url.hostname === "api.github.com") {
+				return failListing
+					? Response.json({}, { status: 404 })
+					: Response.json([{ name: `fixture.${extension}`, type: "file" }]);
+			}
+			expect(url.hostname).toBe("raw.githubusercontent.com");
+			return configType === "CUSTOM_FORMATS"
+				? Response.json(format)
+				: new Response("# Fixture description\nFixture content");
+		});
+		const url = `/cache/${path}/list`;
+		const combined = await app.inject({ url, headers });
+		const single = await app.inject({ url: `${url}?serviceType=RADARR`, headers });
+		expect(upstreamRequests).toBe(2);
+		await expect(prisma.trashCache.findMany({ orderBy: { serviceType: "asc" } })).resolves.toEqual(
+			before,
+		);
+		expect(single.statusCode).toBe(500);
+		expect(combined.statusCode).toBe(200);
+		expect(combined.json()).toEqual({ sonarr: [peer], unavailableServices: ["RADARR"] });
+
+		failListing = false;
+		const recovered = await app.inject({ url, headers });
+		expect(recovered.statusCode).toBe(200);
+		expect(recovered.json()).toEqual({
+			radarr: [
+				configType === "CUSTOM_FORMATS"
+					? format
+					: expect.objectContaining({ cfName: "fixture", displayName: "Fixture description" }),
+			],
+			sonarr: [peer],
+		});
+		expect(upstreamRequests).toBe(4);
+		const [radarr, sonarr] = await prisma.trashCache.findMany({ orderBy: { serviceType: "asc" } });
+		expect(radarr!.version).toBe(before[0]!.version + 1);
+		expect(sonarr).toEqual(before[1]);
+	},
+);
+
+it("reports both services as unavailable when neither catalogue can be fetched", async () => {
+	listingStatus = 404;
+	const response = await app.inject({ url: "/cache/custom-formats/list", headers });
+	expect(response.statusCode).toBe(200);
+	expect(response.json()).toEqual({ unavailableServices: ["RADARR", "SONARR"] });
+	expect(upstreamRequests).toBe(2);
+	await expect(prisma.trashCache.count()).resolves.toBe(0);
+});
+
+it("propagates a database publication failure after a successful aggregate fetch", async () => {
+	emptyContent = true;
+	await prisma.$executeRawUnsafe(`CREATE TRIGGER reject_cache_insert BEFORE INSERT ON trash_cache
+		BEGIN SELECT RAISE(ABORT, 'fixture cache publication failure'); END`);
+	try {
+		const response = await app.inject({ url: "/cache/custom-formats/list", headers });
+		expect(response.statusCode).toBe(500);
+		expect(upstreamRequests).toBe(2);
+		await expect(prisma.trashCache.count()).resolves.toBe(0);
+	} finally {
+		await prisma.$executeRawUnsafe("DROP TRIGGER reject_cache_insert");
+	}
+});
+
 for (const serviceType of ["RADARR", "SONARR"] as const) {
 	for (const configType of ["NAMING_PRESETS", "QUALITY_PROFILE_GROUPS"] as const) {
 		describe(`${serviceType} ${configType} complete publication`, () => {

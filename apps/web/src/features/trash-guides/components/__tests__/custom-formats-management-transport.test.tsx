@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { Toaster, toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
@@ -183,6 +183,58 @@ describe("Custom formats maintained selection and recovery", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Show all services" }));
 		await screen.findByText("Selected cached");
 		expect(events.every((event) => event.method === "GET")).toBe(true);
+	});
+
+	it("rechecks partial catalogues on return and keeps complete results fresh", async () => {
+		const formats = "/api/trash-guides/cache/custom-formats/list";
+		const descriptions = "/api/trash-guides/cache/cf-descriptions/list";
+		const restored = { trash_id: "restored", name: "Restored format", specifications: [] };
+		let recovered = false;
+		transport(({ url }) => {
+			if (url === "/api/services") return response({ services: [] });
+			if (url === formats)
+				return response(
+					recovered
+						? { sonarr: cached, radarr: [restored] }
+						: { sonarr: cached, unavailableServices: ["RADARR"] },
+				);
+			if (url === descriptions)
+				return response(
+					recovered ? { sonarr: [], radarr: [] } : { sonarr: [], unavailableServices: ["RADARR"] },
+				);
+			if (url === "/api/trash-guides/user-custom-formats")
+				return response({ success: true, customFormats: [], count: 0 });
+		});
+		function CatalogueTab() {
+			const [open, setOpen] = useState(true);
+			return (
+				<>
+					<button type="button" onClick={() => setOpen(!open)}>
+						Toggle catalogue
+					</button>
+					{open && <CustomFormatsBrowser />}
+				</>
+			);
+		}
+		mount(<CatalogueTab />);
+		const formatsWarning = /Custom formats unavailable for RADARR/;
+		const descriptionsWarning = /Custom format descriptions could not be refreshed/;
+		await screen.findByText(formatsWarning);
+		await screen.findByText(descriptionsWarning);
+		expect(screen.getByText("Selected cached")).toBeInTheDocument();
+
+		const toggle = screen.getByRole("button", { name: "Toggle catalogue" });
+		fireEvent.click(toggle);
+		recovered = true;
+		fireEvent.click(toggle);
+		await screen.findByText("Restored format");
+		await waitFor(() => expect(screen.queryByText(descriptionsWarning)).not.toBeInTheDocument());
+		expect(screen.queryByText(formatsWarning)).not.toBeInTheDocument();
+
+		fireEvent.click(toggle);
+		fireEvent.click(toggle);
+		await screen.findByText("Restored format");
+		expect(events.filter(({ url }) => url === formats || url === descriptions)).toHaveLength(4);
 	});
 
 	it("W5 cached selected deployment partial refusal retains selection and deliberate retry excludes unselected CF", async () => {
