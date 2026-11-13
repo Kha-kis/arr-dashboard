@@ -130,7 +130,7 @@ export const SeerrRequestsWidget = ({
 				className="block cursor-pointer"
 				onClick={() => router.push("/requests")}
 				onKeyDown={(e) => {
-					if (e.key === "Enter") router.push("/requests");
+					if (e.key === "Enter" && e.target === e.currentTarget) router.push("/requests");
 				}}
 			>
 				<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10 group transition-all hover:border-border/80">

@@ -5,13 +5,14 @@ import { NetworkError } from "../../../../lib/api-client/base";
 
 const mocks = vi.hoisted(() => ({
 	requests: vi.fn(),
+	push: vi.fn(),
 	count: vi.fn(),
 	attention: vi.fn(),
 	retry: vi.fn(),
 	approve: vi.fn(),
 }));
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
 vi.mock("../../../../hooks/api/useSeerr", () => ({
 	useSeerrRequestCount: () => mocks.count(),
 	useSeerrRequests: () => mocks.requests(),
@@ -104,5 +105,44 @@ describe("SeerrRequestsWidget attention availability", () => {
 		act(() => callback.onError(new NetworkError()));
 		expect(toast.warning).toHaveBeenCalledWith("Outcome unknown. Check Seerr before retrying.");
 		expect(toast.error).not.toHaveBeenCalled();
+	});
+});
+
+describe("SeerrRequestsWidget keyboard navigation", () => {
+	it("navigates with Enter when the widget link itself has focus", () => {
+		renderWidget();
+		const widget = screen.getByRole("link");
+		widget.focus();
+		fireEvent.keyDown(widget, { key: "Enter" });
+		expect(mocks.push).toHaveBeenCalledExactlyOnceWith("/requests");
+	});
+
+	it("keeps keyboard Retry in the widget", () => {
+		mocks.attention.mockReturnValue({
+			data: { items: [{ request, reason: "failed", ageMs: 1000 }], total: 1 },
+			isError: false,
+		});
+		renderWidget();
+
+		const retry = screen.getByRole("button", { name: /Retry request for Synthetic Item/ });
+		retry.focus();
+		fireEvent.keyDown(retry, { key: "Enter" });
+		fireEvent.click(retry);
+		expect(mocks.push).not.toHaveBeenCalled();
+		expect(mocks.retry).toHaveBeenCalledTimes(1);
+	});
+
+	it("keeps keyboard Approve in the widget", () => {
+		const count = mocks.count();
+		mocks.count.mockReturnValue({ ...count, data: { ...count.data, pending: 1 } });
+		mocks.requests.mockReturnValue({ data: { results: [request] } });
+		renderWidget();
+
+		const approve = screen.getByRole("button", { name: /Approve request for Synthetic Item/ });
+		approve.focus();
+		fireEvent.keyDown(approve, { key: "Enter" });
+		fireEvent.click(approve);
+		expect(mocks.push).not.toHaveBeenCalled();
+		expect(mocks.approve).toHaveBeenCalledTimes(1);
 	});
 });
