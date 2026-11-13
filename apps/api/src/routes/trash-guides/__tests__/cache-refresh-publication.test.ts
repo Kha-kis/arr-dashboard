@@ -248,6 +248,14 @@ for (const serviceType of ["RADARR", "SONARR"] as const) {
 			]);
 			expect(upstreamRequests).toBe(readsBefore);
 			await expect(prisma.trashCache.findUnique({ where })).resolves.toEqual(corrupt);
+
+			listingStatus = 404;
+			const failed = await refresh(serviceType, false);
+			expect(failed.statusCode).toBeGreaterThanOrEqual(400);
+			expect(upstreamRequests).toBeGreaterThan(readsBefore);
+			await expect(prisma.trashCache.findUnique({ where })).resolves.toEqual(corrupt);
+
+			listingStatus = 200;
 			const recovered = await refresh(serviceType, false);
 			expect(recovered.statusCode).toBe(200);
 			expect(recovered.json()).toMatchObject({
