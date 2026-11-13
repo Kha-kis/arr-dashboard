@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import {
 	existsSync,
 	mkdtempSync,
-	readFileSync,
 	readdirSync,
+	readFileSync,
 	rmdirSync,
 	unlinkSync,
 	writeFileSync,
@@ -129,18 +129,31 @@ it("does not accept a published result after the bound launcher exits", async ()
 	await a.closed;
 	expect(() => api.readCombinedStartupStatus(c)).toThrow();
 });
-it("enforces the exact600-second monotonic deadline without a ten-minute test wait", async () => {
+it("accepts a valid populated startup handoff after ten minutes", async () => {
 	const api = implementation(),
 		c = context(),
 		a = await actor();
 	api.bindCombinedStartupLauncher(c, a.pid, process.pid);
 	const request = JSON.parse(readFileSync(join(c.directory, "request.json"), "utf8"));
 	const clock = vi.spyOn(process.hrtime, "bigint");
-	clock.mockReturnValue(BigInt(request.startedAtNs) + 599_999_999_999n);
+	clock.mockReturnValue(BigInt(request.startedAtNs) + 639_642_000_000n);
 	expect(api.readCombinedStartupStatus(c)).toBeNull();
-	clock.mockReturnValue(BigInt(request.startedAtNs) + 600_000_000_000n);
+	startup.publishCombinedStartupResult(c, message(c.nonce));
+	expect(api.readCombinedStartupStatus(c)).toEqual(message(c.nonce));
+	startup.consumeCombinedStartupChannel(c);
+	expect(existsSync(c.directory)).toBe(false);
+});
+it("enforces the exact 15-minute monotonic deadline", async () => {
+	const api = implementation(),
+		c = context(),
+		a = await actor();
+	api.bindCombinedStartupLauncher(c, a.pid, process.pid);
+	const request = JSON.parse(readFileSync(join(c.directory, "request.json"), "utf8"));
+	const clock = vi.spyOn(process.hrtime, "bigint");
+	clock.mockReturnValue(BigInt(request.startedAtNs) + 899_999_999_999n);
+	expect(api.readCombinedStartupStatus(c)).toBeNull();
+	clock.mockReturnValue(BigInt(request.startedAtNs) + 900_000_000_000n);
 	expect(() => api.readCombinedStartupStatus(c)).toThrow();
-	clock.mockRestore();
 });
 
 const apiRoot = fileURLToPath(new URL("../../../../", import.meta.url)),

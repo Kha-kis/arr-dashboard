@@ -8,8 +8,8 @@ import {
 	lstatSync,
 	mkdtempSync,
 	openSync,
-	readSync,
 	readdirSync,
+	readSync,
 	realpathSync,
 	rmdirSync,
 	unlinkSync,
@@ -38,6 +38,8 @@ type SettingsInput = Readonly<{
 	listenAddress: string | null;
 }>;
 type Environment = Readonly<Record<string, string | undefined>>;
+
+const COMBINED_STARTUP_DEADLINE_NS = 900_000_000_000n;
 
 function requireValue(condition: unknown): asserts condition {
 	if (!condition) throw new Error("Combined startup handoff is unavailable.");
@@ -471,7 +473,7 @@ export function readCombinedStartupStatus(
 ): CombinedStartupMessage | null {
 	const startedAt = request(context),
 		now = process.hrtime.bigint();
-	requireValue(now >= startedAt && now - startedAt < 600_000_000_000n);
+	requireValue(now >= startedAt && now - startedAt < COMBINED_STARTUP_DEADLINE_NS);
 	const binding = launcherBinding(context);
 	requireValue(launcherIdentity(binding.pid, binding.supervisorPid) === binding.startTicks);
 	const result = readCombinedStartupResult(context);
