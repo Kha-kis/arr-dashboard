@@ -266,6 +266,11 @@ function fixture(service: "JELLYFIN" | "EMBY" = "JELLYFIN", catalogIds = [42]) {
 	const pointer = {
 		activeRunId: status.generationId,
 		activeCacheGenerationId: status.generationId,
+		activeObservedAt: publishedAt,
+		previousRunId: null,
+		previousObservedAt: null,
+		connectionGeneration: instance.connectionGeneration,
+		identityGeneration: instance.identityGeneration,
 	};
 	const showReceipt = {
 		instanceId: instance.id,
@@ -815,9 +820,15 @@ describe("generation-scoped episode display freshness", () => {
 		expect(result?.providerStatus.reasonCodes).toContain("coverage-incomplete");
 	});
 
-	it("refuses a mismatched active publication pointer", async () => {
+	it.each([
+		["run", { activeRunId: "other-generation" }],
+		["cache generation", { activeCacheGenerationId: "other-generation" }],
+		["observation time", { activeObservedAt: new Date(0) }],
+		["connection generation", { connectionGeneration: 8 }],
+		["identity generation", { identityGeneration: 4 }],
+	] as const)("refuses a mismatched active publication %s", async (_field, mismatch) => {
 		const f = fixture();
-		f.pointer.activeRunId = "other-generation";
+		Object.assign(f.pointer, mismatch);
 		expect(await f.read()).toMatchObject({
 			available: false,
 			rows: [],
