@@ -545,6 +545,15 @@ export type SeriesProgressItem =
 			observedAt: string;
 	  }
 	| {
+			status: "mapped-last-known";
+			total: number;
+			watched: number;
+			percent: number;
+			watchedSemantics: "matched";
+			observedAt: string;
+			currentWatchedLowerBound: number | null;
+	  }
+	| {
 			status: "partial";
 			total: null;
 			watched: number;

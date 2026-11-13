@@ -16,6 +16,7 @@ import {
 } from "../../lib/jellyfin/jellyfin-display-evidence.js";
 import { withJellyfinDisplayReadTiming } from "../../lib/jellyfin/jellyfin-display-read-timing.js";
 import {
+	jellyfinLastKnownSeriesProgress,
 	jellyfinMappedSeriesProgressProof,
 	jellyfinSeriesProgressProof,
 	jellyfinSeriesWithoutCatalogMatch,
@@ -72,6 +73,7 @@ export function projectJellyfinSeriesProgress(
 				rows: [],
 				proof: undefined,
 				mapped: undefined,
+				lastKnown: undefined,
 				withoutMatch: undefined,
 				observedAt: NaN,
 			};
@@ -93,6 +95,12 @@ export function projectJellyfinSeriesProgress(
 				mapped &&
 				mapped.observedAt === status.observedAt
 					? mapped.coordinatesByShow
+					: undefined,
+			lastKnown:
+				status.evidence === "positive-only" &&
+				status.reasonCodes.includes("coverage-incomplete") &&
+				!status.reasonCodes.includes("publication-stale")
+					? source[jellyfinLastKnownSeriesProgress]
 					: undefined,
 			withoutMatch:
 				instance.service === "JELLYFIN" &&
@@ -148,6 +156,26 @@ export function projectJellyfinSeriesProgress(
 				status: "mapped",
 				watchedSemantics: "matched",
 				observedAt,
+			};
+		}
+	}
+
+	// A retained observation is a separate ratio. Never combine generations
+	// or use one instance's historical denominator for a multi-source result.
+	const lastKnown = sources.length === 1 ? sources[0]?.lastKnown : undefined;
+	if (lastKnown) {
+		for (const [id, coordinates] of lastKnown.coordinatesByShow) {
+			const progress = progressMap[id];
+			if (!progress || (progress.status !== "partial" && progress.status !== "unknown")) continue;
+			const watched = coordinates.filter((coordinate) => coordinate.watched).length;
+			progressMap[id] = {
+				status: "mapped-last-known",
+				total: coordinates.length,
+				watched,
+				percent: Math.round((watched / coordinates.length) * 100),
+				watchedSemantics: "matched",
+				observedAt: lastKnown.observedAt,
+				currentWatchedLowerBound: progress.watched,
 			};
 		}
 	}

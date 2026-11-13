@@ -14,6 +14,7 @@ import {
 } from "./jellyfin-evidence-repository.js";
 import {
 	type JellyfinSeriesProgressProof,
+	jellyfinLastKnownSeriesProgress,
 	jellyfinMappedSeriesProgressProof,
 	jellyfinSeriesProgressProof,
 	jellyfinSeriesWithoutCatalogMatch,
@@ -179,6 +180,7 @@ async function readEpisodeDisplayObservation(
 	input: InstanceReadInput,
 	showTmdbIds: readonly number[] | undefined,
 	includeSeriesProgressProof?: boolean,
+	includeLastKnownSeriesProgress = false,
 ): Promise<(JellyfinObservation & JellyfinSeriesProgressProof) | null> {
 	try {
 		const scoped =
@@ -188,6 +190,7 @@ async function readEpisodeDisplayObservation(
 						prisma: input.prisma as unknown as PrismaClient,
 						showTmdbIds,
 						includeSeriesProgressProof,
+						includeLastKnownSeriesProgress,
 					})
 				: null;
 		return scoped ?? (await readDisplayObservation(input, "jellyfin_episode"));
@@ -214,6 +217,7 @@ function episodeDisplaySource(
 ) {
 	const admitted = isAdmittedEpisodeObservation(observation);
 	const proof = admitted ? observation[jellyfinSeriesProgressProof] : undefined;
+	const lastKnown = admitted ? observation[jellyfinLastKnownSeriesProgress] : undefined;
 	const mappedProof = admitted ? observation[jellyfinMappedSeriesProgressProof] : undefined;
 	const withoutMatch = admitted ? observation[jellyfinSeriesWithoutCatalogMatch] : undefined;
 	return {
@@ -229,6 +233,7 @@ function episodeDisplaySource(
 		status: publicEpisodeSourceStatus(instance, observation?.providerStatus ?? unavailableStatus),
 		...(proof && { [jellyfinSeriesProgressProof]: proof }),
 		...(mappedProof && { [jellyfinMappedSeriesProgressProof]: mappedProof }),
+		...(lastKnown && { [jellyfinLastKnownSeriesProgress]: lastKnown }),
 		...(withoutMatch && { [jellyfinSeriesWithoutCatalogMatch]: withoutMatch }),
 	};
 }
@@ -249,6 +254,7 @@ function displayEvidence<Row>(
 				rows,
 				[jellyfinSeriesProgressProof]: proof,
 				[jellyfinMappedSeriesProgressProof]: mappedProof,
+				[jellyfinLastKnownSeriesProgress]: lastKnown,
 				[jellyfinSeriesWithoutCatalogMatch]: withoutMatch,
 			}) => ({
 				instanceId,
@@ -256,6 +262,7 @@ function displayEvidence<Row>(
 				rows,
 				...(proof && { [jellyfinSeriesProgressProof]: proof }),
 				...(mappedProof && { [jellyfinMappedSeriesProgressProof]: mappedProof }),
+				...(lastKnown && { [jellyfinLastKnownSeriesProgress]: lastKnown }),
 				...(withoutMatch && { [jellyfinSeriesWithoutCatalogMatch]: withoutMatch }),
 			}),
 		),
@@ -309,6 +316,7 @@ export async function readOwnedJellyfinEpisodeDisplaySources({
 					{ prisma, userId, instanceId: instance.id, now, maxAgeMs },
 					showTmdbIds,
 					includeSeriesProgressProof,
+					instances.length === 1,
 				),
 			),
 		),
@@ -337,6 +345,7 @@ export async function readOwnedJellyfinLibraryAndEpisodeDisplaySources({
 							prisma: prisma as unknown as PrismaClient,
 							showTmdbIds,
 							includeSeriesProgressProof: true,
+							includeLastKnownSeriesProgress: instances.length === 1,
 						}).catch(() => undefined)
 					: undefined;
 			const library =
@@ -345,7 +354,7 @@ export async function readOwnedJellyfinLibraryAndEpisodeDisplaySources({
 					: scoped.library;
 			const episodes = scoped
 				? (scoped.episodes ?? (await readDisplayObservation(input, "jellyfin_episode")))
-				: await readEpisodeDisplayObservation(input, showTmdbIds, true);
+				: await readEpisodeDisplayObservation(input, showTmdbIds, true, instances.length === 1);
 			return {
 				library: libraryDisplaySource(instance, library),
 				episodes: episodeDisplaySource(instance, episodes),

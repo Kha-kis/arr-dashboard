@@ -426,6 +426,12 @@ and an ISO `observedAt` for the oldest contributing snapshot. Each configured
 source must contribute verified evidence for the denominator. The counts
 describe matched episodes and carry no cleanup authority.
 
+For one configured Jellyfin source, `status: mapped-last-known` can carry a
+retained matched ratio when the latest publication lacks that show's verified
+total. Its `observedAt`, `total`, `watched` and `percent` describe the same
+earlier observation. `currentWatchedLowerBound` separately counts episodes
+confirmed watched in the latest publication, or is null when unavailable.
+
 `GET /api/jellyfin/watch-enrichment` accepts an optional comma-separated
 `progressTmdbIds` query parameter. The response then includes
 `seriesProgress` with the Jellyfin series progress response shape and its

@@ -174,13 +174,15 @@ function SeriesProgressDisplay({
 			</div>
 		);
 	}
-	if (progress.status === "mapped") {
+	if (progress.status === "mapped" || progress.status === "mapped-last-known") {
 		const observedAt = Date.parse(progress.observedAt);
+		const lastKnown = progress.status === "mapped-last-known";
 		return (
 			<div className="flex items-baseline gap-2 text-[10px] text-muted-foreground">
 				<span className="font-medium w-14 shrink-0">{provider}</span>
 				<div className="min-w-0 wrap-break-word">
 					<div>
+						{lastKnown && "Last known: "}
 						{progress.watched}/{progress.total} matched episodes watched ({progress.percent}%)
 					</div>
 					<div>
@@ -193,6 +195,12 @@ function SeriesProgressDisplay({
 							"Observation time unavailable"
 						)}
 					</div>
+					{lastKnown && progress.currentWatchedLowerBound !== null && (
+						<div>
+							At least {progress.currentWatchedLowerBound} episodes confirmed watched in the latest
+							publication
+						</div>
+					)}
 				</div>
 			</div>
 		);

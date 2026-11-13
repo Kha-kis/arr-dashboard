@@ -3,7 +3,10 @@ import { Prisma, type PrismaClient } from "../prisma.js";
 import { evaluateProviderCoverageReceipt } from "../provider-observation/coverage-receipt.js";
 import { projectProviderObservationStatus } from "../provider-observation/status-projection.js";
 import {
+	decodeJellyfinEpisodeCatalogProvenance,
 	isJellyfinEpisodeCatalogCompatible,
+	type JellyfinEpisodeCatalogProvenance,
+	jellyfinEpisodeCatalogGenerationKey,
 	jellyfinEpisodeCatalogScopesFromReceipt,
 } from "./jellyfin-episode-catalog-provenance.js";
 import { fingerprintJellyfinEpisodeParentDependency } from "./jellyfin-episode-parent-dependency.js";
@@ -39,9 +42,14 @@ const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
 // from the existing positive-only rows, never episode metadata.
 export const jellyfinSeriesProgressProof = Symbol("jellyfin-series-progress-proof");
 export const jellyfinMappedSeriesProgressProof = Symbol("jellyfin-mapped-series-progress-proof");
+export const jellyfinLastKnownSeriesProgress = Symbol("jellyfin-last-known-series-progress");
 export const jellyfinSeriesWithoutCatalogMatch = Symbol("jellyfin-series-without-catalog-match");
 type EpisodeCoordinate = Pick<JellyfinEpisodeRow, "seasonNumber" | "episodeNumber" | "watched">;
 export type JellyfinSeriesProgressProof = {
+	[jellyfinLastKnownSeriesProgress]?: {
+		observedAt: string;
+		coordinatesByShow: ReadonlyMap<number, readonly EpisodeCoordinate[]>;
+	};
 	[jellyfinSeriesProgressProof]?: ReadonlyMap<number, readonly EpisodeCoordinate[]>;
 	[jellyfinSeriesWithoutCatalogMatch]?: ReadonlySet<number>;
 	[jellyfinMappedSeriesProgressProof]?: {
@@ -57,9 +65,151 @@ type Input = {
 	instanceId: string;
 	showTmdbIds?: readonly number[];
 	includeSeriesProgressProof?: boolean;
+	includeLastKnownSeriesProgress?: boolean;
 	now?: Date;
 	maxAgeMs?: number;
 };
+
+const episodeRowSelection = {
+	id: true,
+	instanceId: true,
+	showTmdbId: true,
+	seasonNumber: true,
+	episodeNumber: true,
+	jellyfinId: true,
+	title: true,
+	watched: true,
+	watchedByUsers: true,
+	lastWatchedAt: true,
+	connectionGeneration: true,
+	identityGeneration: true,
+} as const;
+
+async function readPreviousMappedProgress(
+	tx: Prisma.TransactionClient,
+	input: {
+		userId: string;
+		instance: { id: string; connectionGeneration: number; identityGeneration: number };
+		activeGenerationId: string;
+		previousRunId: string;
+		observedAt: Date;
+		showIds: readonly number[];
+		bytesRemaining: number;
+		rowsRemaining: number;
+	},
+) {
+	const { instance, previousRunId, observedAt } = input;
+	const run = await tx.providerObservationRun.findFirst({
+		where: {
+			id: previousRunId,
+			instanceId: instance.id,
+			state: "complete",
+			activeSlotKey: null,
+			provider: "jellyfin_episode",
+			cacheType: "jellyfin_episode",
+			connectionGeneration: instance.connectionGeneration,
+			identityGeneration: instance.identityGeneration,
+			instance: { userId: input.userId, enabled: true },
+		},
+		select: {
+			parentGenerationId: true,
+			units: { where: { ordinal: 0, phase: "collect" }, select: { scopePayload: true }, take: 1 },
+		},
+	});
+	const preparation = await tx.jellyfinEpisodePreparation.findFirst({
+		where: {
+			runId: previousRunId,
+			instanceId: instance.id,
+			generationId: previousRunId,
+			state: "published",
+			observedAt,
+			instance: { userId: input.userId, enabled: true },
+		},
+		select: { runId: true },
+	});
+	const payload = run?.units[0]?.scopePayload;
+	if (!run || !preparation || !payload || payload.length > MAX_JELLYFIN_MAPPED_PROGRESS_JSON_LENGTH)
+		return null;
+	let catalog: JellyfinEpisodeCatalogProvenance | null;
+	try {
+		catalog = decodeJellyfinEpisodeCatalogProvenance(JSON.parse(payload)?.catalogProvenance);
+	} catch {
+		return null;
+	}
+	if (!catalog || jellyfinEpisodeCatalogGenerationKey(catalog) !== run.parentGenerationId)
+		return null;
+
+	const receipts = await tx.$queryRaw<
+		Array<{
+			showTmdbId: number;
+			rowCount: number;
+			contentFingerprint: string;
+			payload: string;
+		}>
+	>(Prisma.sql`
+		WITH bounded AS (
+			SELECT r."id",
+				SUM(OCTET_LENGTH(r."mappedProgressJson")) OVER (ORDER BY r."showTmdbId") AS bytes
+			FROM "jellyfin_episode_generation_show_receipts" r
+			WHERE r."instanceId" = ${instance.id} AND r."generationId" = ${previousRunId}
+				AND r."showTmdbId" IN (${Prisma.join(input.showIds)})
+				AND OCTET_LENGTH(r."mappedProgressJson") <= ${input.bytesRemaining}
+				AND EXISTS (SELECT 1 FROM "ServiceInstance" s WHERE s."id" = r."instanceId"
+					AND s."userId" = ${input.userId} AND s."enabled" = true)
+				AND NOT EXISTS (SELECT 1 FROM "jellyfin_episode_generation_show_receipts" current
+					WHERE current."instanceId" = r."instanceId"
+					AND current."generationId" = ${input.activeGenerationId}
+					AND current."showTmdbId" = r."showTmdbId"
+					AND current."mappedProgressJson" IS NOT NULL)
+		)
+		SELECT r."showTmdbId", r."rowCount", r."contentFingerprint", r."mappedProgressJson" AS payload
+		FROM bounded b JOIN "jellyfin_episode_generation_show_receipts" r ON r."id" = b."id"
+		WHERE b.bytes <= ${input.bytesRemaining}
+	`);
+	const coordinatesByShow = new Map<number, readonly EpisodeCoordinate[]>();
+	let rowsRemaining = input.rowsRemaining;
+	for (const receipt of receipts) {
+		if (receipt.rowCount < 0 || receipt.rowCount > rowsRemaining) continue;
+		const rows = await tx.jellyfinEpisodeGenerationRow.findMany({
+			where: {
+				instanceId: instance.id,
+				generationId: previousRunId,
+				showTmdbId: receipt.showTmdbId,
+				instance: { userId: input.userId, enabled: true },
+			},
+			select: episodeRowSelection,
+			take: receipt.rowCount + 1,
+		});
+		rowsRemaining -= rows.length;
+		if (
+			rows.length !== receipt.rowCount ||
+			rows.some(
+				(row) =>
+					row.connectionGeneration !== instance.connectionGeneration ||
+					row.identityGeneration !== instance.identityGeneration ||
+					!row.jellyfinId.trim(),
+			) ||
+			fingerprintJellyfinEpisodeRows(rows) !== receipt.contentFingerprint
+		)
+			continue;
+		const coordinates = decodeJellyfinMappedProgressReceipt(
+			{
+				instanceId: instance.id,
+				generationId: previousRunId,
+				showTmdbId: receipt.showTmdbId,
+				connectionGeneration: instance.connectionGeneration,
+				identityGeneration: instance.identityGeneration,
+				observedAt,
+				contentFingerprint: receipt.contentFingerprint,
+			},
+			receipt.payload,
+		);
+		if (coordinates?.length && jellyfinMappedProgressMatchesPositiveRows(coordinates, rows)) {
+			coordinatesByShow.set(receipt.showTmdbId, coordinates);
+		}
+	}
+	return { catalog, observedAt: observedAt.toISOString(), coordinatesByShow };
+}
 
 function unavailable(
 	reason: "identity-unverified" | "receipt-invalid" | "rows-inconsistent",
@@ -190,7 +340,15 @@ async function readGenerationScopedDisplay(
 		});
 		const pointer = await tx.jellyfinNativeWatchPublication.findUnique({
 			where: { instanceId: instance.id },
-			select: { activeRunId: true, activeCacheGenerationId: true },
+			select: {
+				activeRunId: true,
+				activeCacheGenerationId: true,
+				activeObservedAt: true,
+				previousRunId: true,
+				previousObservedAt: true,
+				connectionGeneration: true,
+				identityGeneration: true,
+			},
 		});
 		if (
 			preparation?.instanceId !== instance.id ||
@@ -201,7 +359,10 @@ async function readGenerationScopedDisplay(
 			preparation.observedAt?.getTime() !== status.lastRefreshedAt.getTime() ||
 			(metadata.sourceVersion === 3 &&
 				(pointer?.activeRunId !== status.generationId ||
-					pointer.activeCacheGenerationId !== status.generationId))
+					pointer.activeCacheGenerationId !== status.generationId ||
+					pointer.activeObservedAt.getTime() !== status.lastRefreshedAt.getTime() ||
+					pointer.connectionGeneration !== instance.connectionGeneration ||
+					pointer.identityGeneration !== instance.identityGeneration))
 		)
 			return fail("rows-inconsistent");
 		const originalCatalogIds =
@@ -300,20 +461,7 @@ async function readGenerationScopedDisplay(
 			}
 			const showRows = await tx.jellyfinEpisodeGenerationRow.findMany({
 				where: { instanceId: instance.id, generationId: status.generationId, showTmdbId },
-				select: {
-					id: true,
-					instanceId: true,
-					showTmdbId: true,
-					seasonNumber: true,
-					episodeNumber: true,
-					jellyfinId: true,
-					title: true,
-					watched: true,
-					watchedByUsers: true,
-					lastWatchedAt: true,
-					connectionGeneration: true,
-					identityGeneration: true,
-				},
+				select: episodeRowSelection,
 				take: MAX_SCOPED_EPISODE_ROWS + 1,
 			});
 			if (
@@ -343,6 +491,39 @@ async function readGenerationScopedDisplay(
 				});
 			}
 		}
+
+		const previousTime = pointer?.previousObservedAt;
+		const previousId = pointer?.previousRunId;
+		const previousShows =
+			input.includeLastKnownSeriesProgress && readMappedProgress
+				? eligible
+						.filter((id) => {
+							const receipt = receiptsByShow.get(id);
+							return !receipt || receipt.rowCount === 0 || receiptedShows.includes(id);
+						})
+						.filter((id) => !mappedPayloads.has(id))
+				: [];
+		const bytesRemaining =
+			MAX_JELLYFIN_MAPPED_PROGRESS_JSON_LENGTH -
+			payloads.reduce((size, { payload }) => size + Buffer.byteLength(payload), 0);
+		const previousMapped =
+			previousId &&
+			previousTime &&
+			previousTime < status.lastRefreshedAt &&
+			now.getTime() - previousTime.getTime() <= maxAgeMs &&
+			previousShows.length &&
+			bytesRemaining > 0
+				? await readPreviousMappedProgress(tx, {
+						userId: input.userId,
+						instance,
+						activeGenerationId: status.generationId,
+						previousRunId: previousId,
+						observedAt: previousTime,
+						showIds: previousShows,
+						bytesRemaining,
+						rowsRemaining: MAX_SCOPED_EPISODE_ROWS - rows.length,
+					})
+				: null;
 		const parentSnapshot = await materializeOwnedJellyfinLibraryDisplayInTransaction(
 			tx as unknown as TransactionReader,
 			{ userId: input.userId, instanceId: instance.id, now, maxAgeMs },
@@ -360,6 +541,7 @@ async function readGenerationScopedDisplay(
 			rows,
 			receiptedShows,
 			mappedReceipts,
+			previousMapped,
 			incompleteRequestedScope,
 		};
 	}
@@ -378,6 +560,7 @@ async function readGenerationScopedDisplay(
 		rows,
 		receiptedShows,
 		mappedReceipts,
+		previousMapped,
 		incompleteRequestedScope,
 	} = snapshot;
 	// Parent row validation and canonical hashing must not occupy the outer lease,
@@ -480,6 +663,15 @@ async function readGenerationScopedDisplay(
 			}
 		}
 	}
+	const currentBindings =
+		mappedReceipts.length || previousMapped?.coordinatesByShow.size
+			? parent.rows.flatMap((row) =>
+					row.mediaType === "series" && row.jellyfinId
+						? [{ libraryId: row.libraryId, seriesId: row.jellyfinId, tmdbId: row.tmdbId }]
+						: [],
+				)
+			: [];
+
 	const coordinatesByShow = new Map<number, readonly EpisodeCoordinate[]>();
 	if (
 		mappedReceipts.length > 0 &&
@@ -491,11 +683,7 @@ async function readGenerationScopedDisplay(
 		const eligibleMappedIds = new Set(
 			retainCurrentJellyfinMappedSeriesBindings(
 				metadata.catalogProvenance.bindings,
-				parent.rows.flatMap((row) =>
-					row.mediaType === "series" && row.jellyfinId
-						? [{ libraryId: row.libraryId, seriesId: row.jellyfinId, tmdbId: row.tmdbId }]
-						: [],
-				),
+				currentBindings,
 			).map(({ tmdbId }) => tmdbId),
 		);
 		let remainingCoordinates = MAX_JELLYFIN_MAPPED_PROGRESS_COORDINATES;
@@ -523,6 +711,40 @@ async function readGenerationScopedDisplay(
 			coordinatesByShow.set(receipt.showTmdbId, coordinates);
 		}
 	}
+	const previousCoordinates = new Map<number, readonly EpisodeCoordinate[]>();
+	if (
+		previousMapped?.coordinatesByShow.size &&
+		parentFresh &&
+		catalogCompatible &&
+		currentScopes &&
+		providerStatus.availability !== "unavailable" &&
+		isJellyfinEpisodeCatalogCompatible(
+			previousMapped.catalog,
+			parent.rows as JellyfinLibraryRowFingerprintInput[],
+			currentScopes,
+		)
+	) {
+		let remaining =
+			MAX_JELLYFIN_MAPPED_PROGRESS_COORDINATES -
+			[...coordinatesByShow.values()].reduce((total, coordinates) => total + coordinates.length, 0);
+		const eligiblePreviousIds = new Set(
+			retainCurrentJellyfinMappedSeriesBindings(
+				previousMapped.catalog.bindings,
+				currentBindings,
+			).map(({ tmdbId }) => tmdbId),
+		);
+		for (const [id, coordinates] of previousMapped.coordinatesByShow) {
+			if (
+				!eligiblePreviousIds.has(id) ||
+				coordinatesByShow.has(id) ||
+				coordinates.length > remaining
+			)
+				continue;
+			previousCoordinates.set(id, coordinates);
+			remaining -= coordinates.length;
+		}
+	}
+
 	return {
 		library: parent,
 		episodes: {
@@ -539,6 +761,13 @@ async function readGenerationScopedDisplay(
 			...(withoutCatalogMatch?.size && {
 				[jellyfinSeriesWithoutCatalogMatch]: withoutCatalogMatch,
 			}),
+			...(previousCoordinates.size &&
+				previousMapped && {
+					[jellyfinLastKnownSeriesProgress]: {
+						observedAt: previousMapped.observedAt,
+						coordinatesByShow: previousCoordinates,
+					},
+				}),
 			...(coordinatesByShow.size && {
 				[jellyfinMappedSeriesProgressProof]: {
 					observedAt: status.lastRefreshedAt.toISOString(),

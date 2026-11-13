@@ -130,6 +130,30 @@ describe("library card series progress evidence", () => {
 		expect(container.querySelector("time")).toBeNull();
 	});
 
+	it("labels the previous mapped ratio and shows current positives separately", () => {
+		const observedAt = "2026-11-11T12:34:56.000Z";
+		renderCard({
+			jellyfin: {
+				status: "mapped-last-known",
+				watched: 1,
+				total: 2,
+				percent: 50,
+				watchedSemantics: "matched",
+				observedAt,
+				currentWatchedLowerBound: 2,
+			},
+		});
+
+		expect(screen.getByText("Last known: 1/2 matched episodes watched (50%)")).toBeVisible();
+		expect(screen.getByText(new Date(observedAt).toLocaleString())).toHaveAttribute(
+			"datetime",
+			observedAt,
+		);
+		expect(
+			screen.getByText("At least 2 episodes confirmed watched in the latest publication"),
+		).toBeVisible();
+	});
+
 	it("labels a partial tracker count as a lower bound", () => {
 		renderCard({}, { trackerCount: 2, topHosts: ["tracker.invalid"], complete: false });
 		expect(screen.getByTitle("At least 2 trackers observed")).toBeInTheDocument();
