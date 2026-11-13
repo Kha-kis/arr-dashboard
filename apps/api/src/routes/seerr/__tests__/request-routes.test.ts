@@ -116,6 +116,38 @@ describe("GET /:instanceId", () => {
 		expect(mockClient.enrichRequestsWithMedia).toHaveBeenCalledWith(samplePageResult);
 	});
 
+	it.each(["complete", "list-error"] as const)(
+		"logs only aggregate stage timing when the list read ends with %s",
+		async (outcome) => {
+			const info = vi.spyOn(app.log, "info");
+			if (outcome === "complete") {
+				mockClient.getRequests.mockResolvedValueOnce(samplePageResult);
+				mockClient.enrichRequestsWithMedia.mockResolvedValueOnce(samplePageResult);
+			} else {
+				mockClient.getRequests.mockRejectedValueOnce(new Error("Synthetic provider failure"));
+			}
+
+			const result = await app.inject({ url: "/api/seerr/requests/synthetic-private-instance" });
+			expect(result.statusCode).toBe(outcome === "complete" ? 200 : 500);
+			if (outcome === "complete") expect(result.json()).toEqual(samplePageResult);
+			else expect(mockClient.enrichRequestsWithMedia).not.toHaveBeenCalled();
+			expect(
+				info.mock.calls.filter(([, message]) => message === "Seerr request list timing"),
+			).toEqual([
+				[
+					{
+						category: "seerr-request-list-timing",
+						outcome,
+						clientLookupMs: expect.any(Number),
+						listMs: expect.any(Number),
+						enrichmentMs: outcome === "complete" ? expect.any(Number) : null,
+					},
+					"Seerr request list timing",
+				],
+			]);
+		},
+	);
+
 	it("forwards custom filter/sort/take params", async () => {
 		mockClient.getRequests.mockResolvedValueOnce(samplePageResult);
 		mockClient.enrichRequestsWithMedia.mockResolvedValueOnce(samplePageResult);

@@ -64,11 +64,43 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 	app.get("/:instanceId", async (request) => {
 		const { instanceId } = validateRequest(instanceIdParams, request.params);
 		const query = validateRequest(listRequestsQuery, request.query);
-		const client = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
-			requireSeerrClient(app, request.currentUser!.id, instanceId, { prisma }),
-		);
-		const result = await client.getRequests(query);
-		return client.enrichRequestsWithMedia(result);
+		const startedAt = performance.now();
+		let clientReadyAt: number | undefined;
+		let listReadyAt: number | undefined;
+		let outcome = "client-error";
+		try {
+			const client = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+				requireSeerrClient(app, request.currentUser!.id, instanceId, { prisma }),
+			);
+			clientReadyAt = performance.now();
+			outcome = "list-error";
+			const result = await client.getRequests(query);
+			listReadyAt = performance.now();
+			outcome = "enrichment-error";
+			const enriched = await client.enrichRequestsWithMedia(result);
+			outcome = "complete";
+			return enriched;
+		} finally {
+			const endedAt = performance.now();
+			try {
+				// Use the unbound logger and record no request or provider fields.
+				app.log.info(
+					{
+						category: "seerr-request-list-timing",
+						outcome,
+						clientLookupMs: Math.round((clientReadyAt ?? endedAt) - startedAt),
+						listMs:
+							clientReadyAt === undefined
+								? null
+								: Math.round((listReadyAt ?? endedAt) - clientReadyAt),
+						enrichmentMs: listReadyAt === undefined ? null : Math.round(endedAt - listReadyAt),
+					},
+					"Seerr request list timing",
+				);
+			} catch {
+				// Diagnostic failures must not replace the result of the read.
+			}
+		}
 	});
 
 	// GET /api/seerr/requests/:instanceId/count — Aggregated counts
