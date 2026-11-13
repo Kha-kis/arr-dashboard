@@ -8,12 +8,14 @@
 import { promisify } from "node:util";
 import { gunzip, gzip } from "node:zlib";
 import type { TrashCacheStatus, TrashConfigType } from "@arr/shared";
-import type { z } from "zod";
-import type { PrismaClient } from "../../lib/prisma.js";
+import { z } from "zod";
+import type { PrismaClient, TrashCache } from "../../lib/prisma.js";
 import { loggers } from "../logger.js";
-import { safeJsonParse } from "./utils.js";
+
+import { trashQualitySizeSchema } from "./github-schemas.js";
 
 const log = loggers.trashGuides;
+const qualitySizeCacheSchema = z.array(trashQualitySizeSchema);
 
 // ============================================================================
 // Compression Utilities
@@ -31,24 +33,11 @@ async function compressData(data: unknown): Promise<string> {
 	return compressed.toString("base64");
 }
 
-/**
- * Decompress gzip data to JSON, with optional schema validation.
- * When a schema is provided, the parsed JSON is validated against it —
- * this catches cache corruption after upgrades or schema changes.
- * @throws Error if decompression, parsing, or validation fails
- */
-async function decompressData<T = unknown>(
-	compressedData: string,
-	schema?: z.ZodType<T>,
-): Promise<T> {
+/** Decompress a stored gzip payload. */
+async function decompressData(compressedData: string): Promise<unknown> {
 	const buffer = Buffer.from(compressedData, "base64");
 	const decompressed = await gunzipAsync(buffer);
-	const jsonString = decompressed.toString("utf-8");
-	const parsed = JSON.parse(jsonString);
-	if (schema) {
-		return schema.parse(parsed);
-	}
-	return parsed as T;
+	return JSON.parse(decompressed.toString("utf-8"));
 }
 
 // ============================================================================
@@ -123,18 +112,23 @@ function decodeVerifiedProvenance(value: string | null): TrashCacheProvenance | 
 	const encoded = value.slice(VERIFIED_PROVENANCE_PREFIX.length);
 	const separatorIndex = encoded.lastIndexOf(":");
 	if (separatorIndex <= 0) return null;
-	const repository = decodeURIComponent(encoded.slice(0, separatorIndex));
+	let repository: string;
+	try {
+		repository = decodeURIComponent(encoded.slice(0, separatorIndex));
+	} catch {
+		return null;
+	}
 	const commitHash = encoded.slice(separatorIndex + 1);
 	if (!repository || !/^[0-9a-f]{40}$/i.test(commitHash)) return null;
 	return { version: 1, repository, commitHash: commitHash.toLowerCase() };
 }
 
-/** Thrown when a cache entry is corrupted and has been automatically cleaned up. */
+/** Thrown when a stored cache entry cannot be read. */
 export class CacheCorruptionError extends Error {
-	readonly statusCode = 500;
+	readonly statusCode = 503;
 	constructor(serviceType: string, configType: string) {
 		super(
-			`Cache for ${serviceType}/${configType} was corrupted and has been cleared. Please refresh to re-fetch from GitHub.`,
+			`Cache for ${serviceType}/${configType} is unavailable. Refresh the cache to fetch a replacement.`,
 		);
 		this.name = "CacheCorruptionError";
 	}
@@ -190,41 +184,26 @@ export class TrashCacheManager {
 			return null;
 		}
 
-		// Decompress and return data
-		try {
-			const provenance = decodeVerifiedProvenance(cacheEntry.commitHash);
-			if (this.options.compressionEnabled) {
-				return {
-					data: await decompressData<T>(cacheEntry.data, schema),
-					commitHash: provenance?.commitHash ?? null,
-					provenance,
-				};
-			}
+		const data = await this.readData(cacheEntry, schema);
+		const provenance = decodeVerifiedProvenance(cacheEntry.commitHash);
+		return { data, commitHash: provenance?.commitHash ?? null, provenance };
+	}
 
-			const parsed = safeJsonParse<T>(cacheEntry.data, {
-				source: "TrashCacheManager",
-				identifier: `${serviceType}/${configType}`,
-			});
-			if (parsed === undefined) {
-				// Invalidate corrupted cache entry and signal the error
-				await this.delete(serviceType, configType);
-				throw new CacheCorruptionError(serviceType, configType);
-			}
-			return {
-				data: parsed,
-				commitHash: provenance?.commitHash ?? null,
-				provenance,
-			};
-		} catch (error) {
-			if (error instanceof CacheCorruptionError) throw error;
-			// Handle decompression or parsing errors
-			log.error(
-				{ err: error, serviceType, configType, dataSize: cacheEntry.data.length },
-				"Failed to retrieve cache",
+	private async readData<T>(entry: TrashCache, schema?: z.ZodType<T>): Promise<T> {
+		try {
+			const data = this.options.compressionEnabled
+				? await decompressData(entry.data)
+				: JSON.parse(entry.data);
+			if (!Array.isArray(data)) throw new Error("Expected an array in the TRaSH cache");
+			if (schema) return schema.parse(data);
+			if (entry.configType === "QUALITY_SIZE") qualitySizeCacheSchema.parse(data);
+			return data as T;
+		} catch {
+			log.warn(
+				{ serviceType: entry.serviceType, configType: entry.configType },
+				"TRaSH cache entry is unreadable",
 			);
-			// Invalidate corrupted cache entry and signal the error
-			await this.delete(serviceType, configType);
-			throw new CacheCorruptionError(serviceType, configType);
+			throw new CacheCorruptionError(entry.serviceType, entry.configType);
 		}
 	}
 
@@ -276,7 +255,7 @@ export class TrashCacheManager {
 			update: {
 				data: dataString,
 				version: newVersion,
-				commitHash,
+				commitHash: commitHash ?? null,
 				fetchedAt: now,
 				lastCheckedAt: now,
 			},
@@ -336,114 +315,40 @@ export class TrashCacheManager {
 			return null;
 		}
 
-		// Determine if cache is stale
-		const staleThreshold = new Date();
-		staleThreshold.setHours(staleThreshold.getHours() - this.options.staleAfterHours);
-		const isStale = cacheEntry.lastCheckedAt <= staleThreshold;
-
-		// Get item count and source breakdown with error handling
-		let itemCount = 0;
-		let sourceBreakdown: { official: number; custom: number } | undefined;
-		try {
-			const data = this.options.compressionEnabled
-				? await decompressData<unknown[]>(cacheEntry.data)
-				: safeJsonParse<unknown[]>(cacheEntry.data, {
-						source: "TrashCacheManager",
-						identifier: `${serviceType}/${configType}`,
-					});
-
-			// If parsing failed in non-compressed mode, invalidate the entry
-			if (!this.options.compressionEnabled && data === undefined) {
-				await this.delete(serviceType, configType);
-				return null;
-			}
-
-			itemCount = Array.isArray(data) ? data.length : 0;
-			sourceBreakdown = countSourceBreakdown(data);
-		} catch (error) {
-			// Handle decompression errors
-			log.error(
-				{ err: error, serviceType, configType, dataSize: cacheEntry.data.length },
-				"Failed to get cache status",
-			);
-			await this.delete(serviceType, configType);
-			return null;
-		}
-
-		return {
-			serviceType,
-			configType,
-			version: cacheEntry.version,
-			lastFetched: cacheEntry.fetchedAt.toISOString(),
-			lastChecked: cacheEntry.lastCheckedAt.toISOString(),
-			itemCount,
-			isStale,
-			...(sourceBreakdown && { sourceBreakdown }),
-		};
+		return this.describeEntry(cacheEntry, serviceType);
 	}
 
-	/**
-	 * Get all cache statuses for a service
-	 */
+	/** Read cache status without changing any stored entry. */
 	async getAllStatuses(serviceType: "RADARR" | "SONARR"): Promise<TrashCacheStatus[]> {
-		const cacheEntries = await this.prisma.trashCache.findMany({
-			where: { serviceType },
-		});
-
+		const entries = await this.prisma.trashCache.findMany({ where: { serviceType } });
 		const statuses: TrashCacheStatus[] = [];
-		const entriesToDelete: string[] = [];
-
-		for (const entry of cacheEntries) {
-			const staleThreshold = new Date();
-			staleThreshold.setHours(staleThreshold.getHours() - this.options.staleAfterHours);
-			const isStale = entry.lastCheckedAt <= staleThreshold;
-
-			let itemCount = 0;
-			let sourceBreakdown: { official: number; custom: number } | undefined;
-			try {
-				const data = this.options.compressionEnabled
-					? await decompressData<unknown[]>(entry.data)
-					: safeJsonParse<unknown[]>(entry.data, {
-							source: "TrashCacheManager",
-							identifier: `${serviceType}/${entry.configType}`,
-						});
-
-				// If parsing failed in non-compressed mode, mark for deletion
-				if (!this.options.compressionEnabled && data === undefined) {
-					entriesToDelete.push(entry.configType);
-					continue;
-				}
-
-				itemCount = Array.isArray(data) ? data.length : 0;
-				sourceBreakdown = countSourceBreakdown(data);
-			} catch (error) {
-				// Handle decompression errors - mark for deletion
-				log.error(
-					{ err: error, serviceType, configType: entry.configType, dataSize: entry.data.length },
-					"Failed to get cache status",
-				);
-				entriesToDelete.push(entry.configType);
-				continue;
-			}
-
-			statuses.push({
-				serviceType,
-				configType: entry.configType as TrashConfigType,
-				version: entry.version,
-				lastFetched: entry.fetchedAt.toISOString(),
-				lastChecked: entry.lastCheckedAt.toISOString(),
-				itemCount,
-				isStale,
-				...(sourceBreakdown && { sourceBreakdown }),
-			});
-		}
-
-		// Clean up corrupted entries
-		for (const configType of entriesToDelete) {
-			await this.delete(serviceType, configType as TrashConfigType);
-		}
-
+		for (const entry of entries) statuses.push(await this.describeEntry(entry, serviceType));
 		return statuses;
+	}
+
+	private async describeEntry(
+		entry: TrashCache,
+		serviceType: "RADARR" | "SONARR",
+	): Promise<TrashCacheStatus> {
+		const staleThreshold = new Date();
+		staleThreshold.setHours(staleThreshold.getHours() - this.options.staleAfterHours);
+		const metadata = {
+			serviceType,
+			configType: entry.configType as TrashConfigType,
+			version: entry.version,
+			lastFetched: entry.fetchedAt.toISOString(),
+			lastChecked: entry.lastCheckedAt.toISOString(),
+			isStale: entry.lastCheckedAt <= staleThreshold,
+		};
+
+		try {
+			const data = await this.readData<unknown[]>(entry);
+			const sourceBreakdown = countSourceBreakdown(data);
+			return { ...metadata, itemCount: data.length, ...(sourceBreakdown && { sourceBreakdown }) };
+		} catch (error) {
+			if (!(error instanceof CacheCorruptionError)) throw error;
+			return { ...metadata, unavailable: true, itemCount: null };
+		}
 	}
 
 	/**
@@ -577,7 +482,7 @@ export class TrashCacheManager {
 		return (await this.getProvenance(serviceType, configType))?.commitHash ?? null;
 	}
 
-	/** Get durable provenance without decompressing the cache payload. */
+	/** Return durable provenance only for a readable cache entry. */
 	async getProvenance(
 		serviceType: "RADARR" | "SONARR",
 		configType: TrashConfigType,
@@ -589,12 +494,18 @@ export class TrashCacheManager {
 					configType,
 				},
 			},
-			select: {
-				commitHash: true,
-			},
 		});
 
-		return decodeVerifiedProvenance(cacheEntry?.commitHash ?? null);
+		if (!cacheEntry) return null;
+		const provenance = decodeVerifiedProvenance(cacheEntry.commitHash);
+		if (!provenance) return null;
+		try {
+			await this.readData(cacheEntry);
+			return provenance;
+		} catch (error) {
+			if (!(error instanceof CacheCorruptionError)) throw error;
+			return null;
+		}
 	}
 }
 

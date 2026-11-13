@@ -218,6 +218,7 @@ export const deploymentHistoryKeys = {
 export const customFormatKeys = {
 	all: ["custom-formats"] as const,
 	list: (serviceType?: string) => ["custom-formats", "list", serviceType] as const,
+	allDescriptions: ["cf-descriptions"] as const,
 	descriptions: (serviceType?: string) => ["cf-descriptions", "list", serviceType] as const,
 	user: ["user-custom-formats"] as const,
 	userByService: (serviceType?: string) => ["user-custom-formats", serviceType] as const,

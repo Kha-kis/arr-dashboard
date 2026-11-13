@@ -187,17 +187,55 @@ function CacheControl() {
 		<CacheStatusSection
 			serviceType="RADARR"
 			statuses={data?.radarr ?? []}
-			configTypeLabels={{ CUSTOM_FORMATS: "Custom Formats" }}
+			configTypeLabels={{ CUSTOM_FORMATS: "Custom Formats", CF_INCLUDES: "CF Includes" }}
 			refreshing={actions.refreshing === "RADARR"}
 			onRefresh={() => {
 				void actions.handleRefresh("RADARR");
 			}}
+			onRefreshEntry={actions.handleRefreshEntry}
 			onDelete={actions.handleDelete}
 			isRefreshPending={actions.refreshMutation.isPending}
 		/>
 	);
 }
 describe("ordinary templates and maintained update/cache controls", () => {
+	it("offers a targeted refresh for unreadable lazy cache entries", async () => {
+		let repaired = false;
+		transport((event) => {
+			if (event.url === "/api/trash-guides/cache/status?serviceType=RADARR") {
+				return response({
+					radarr: [
+						{
+							serviceType: "RADARR",
+							configType: "CF_INCLUDES",
+							version: repaired ? 2 : 1,
+							itemCount: repaired ? 0 : null,
+							lastFetched: "2026-01-01T00:00:00Z",
+							lastChecked: "2026-01-01T00:00:00Z",
+							isStale: false,
+							...(repaired ? {} : { unavailable: true }),
+						},
+					],
+					sonarr: [],
+				});
+			}
+			if (event.url === "/api/trash-guides/cache/refresh") {
+				repaired = true;
+				return response({ message: "Refreshed", refreshed: true });
+			}
+		});
+		mount(<CacheControl />);
+		await screen.findByText("Unavailable");
+		expect(screen.queryByText("0")).not.toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "Refresh CF Includes" }));
+		await screen.findByText("Version 2");
+		expect(screen.getByText("0")).toBeInTheDocument();
+		expect(screen.queryByText("Unavailable")).not.toBeInTheDocument();
+		expect(events.filter((event) => event.method === "POST").map((event) => event.body)).toEqual([
+			{ serviceType: "RADARR", configType: "CF_INCLUDES", force: true },
+		]);
+	});
+
 	it("W11 ordinary edit/duplicate/delete confirmation with failed draft and current list readback", async () => {
 		let templates = [structuredClone(original)],
 			duplicateAttempts = 0;

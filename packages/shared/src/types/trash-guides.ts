@@ -458,7 +458,8 @@ export interface TrashCacheStatus {
 	version: number;
 	lastFetched: string;
 	lastChecked: string;
-	itemCount: number;
+	itemCount: number | null;
+	unavailable?: true;
 	isStale: boolean;
 	sourceBreakdown?: {
 		official: number;

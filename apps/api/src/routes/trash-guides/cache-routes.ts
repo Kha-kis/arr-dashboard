@@ -148,12 +148,12 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 		if (configType) {
 			// Check if refresh is needed
 			if (!force) {
-				const isFresh = await cacheManager.isFresh(serviceType, configType);
-				if (isFresh) {
+				const status = await cacheManager.getStatus(serviceType, configType);
+				if (status && !status.isStale && !status.unavailable) {
 					return reply.send({
 						message: "Cache is already fresh",
 						refreshed: false,
-						status: await cacheManager.getStatus(serviceType, configType),
+						status,
 					});
 				}
 			}
@@ -194,8 +194,8 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 			try {
 				// Check if refresh is needed
 				if (!force) {
-					const isFresh = await cacheManager.isFresh(serviceType, type);
-					if (isFresh) {
+					const status = await cacheManager.getStatus(serviceType, type);
+					if (status && !status.isStale && !status.unavailable) {
 						results[type] = {
 							success: true,
 							skipped: true,
@@ -342,6 +342,7 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 		const { serviceType } = validateRequest(optionalServiceTypeSchema, request.query);
 
 		const results: Record<string, unknown> = {};
+		const unavailableServices: ServiceType[] = [];
 		const serviceTypes: ServiceType[] = serviceType ? [serviceType] : [...ALL_SERVICE_TYPES];
 
 		for (const service of serviceTypes) {
@@ -354,19 +355,18 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 				results[SERVICE_RESULT_KEY[service]] = data;
 			} else {
 				try {
-					const data = await cacheManager.get(service, "CUSTOM_FORMATS");
-					results[SERVICE_RESULT_KEY[service]] = data || [];
+					results[SERVICE_RESULT_KEY[service]] =
+						(await cacheManager.get(service, "CUSTOM_FORMATS")) ?? [];
 				} catch (error) {
-					if (error instanceof CacheCorruptionError) {
-						results[SERVICE_RESULT_KEY[service]] = [];
-					} else {
-						throw error;
-					}
+					if (!(error instanceof CacheCorruptionError) || serviceType) throw error;
+					unavailableServices.push(service);
 				}
 			}
 		}
 
-		return reply.send(results);
+		return reply.send(
+			unavailableServices.length > 0 ? { ...results, unavailableServices } : results,
+		);
 	});
 
 	/**
@@ -379,6 +379,7 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 		const { serviceType } = validateRequest(optionalServiceTypeSchema, request.query);
 
 		const results: Record<string, unknown> = {};
+		const unavailableServices: ServiceType[] = [];
 		const serviceTypes: ServiceType[] = serviceType ? [serviceType] : [...ALL_SERVICE_TYPES];
 
 		for (const service of serviceTypes) {
@@ -391,19 +392,18 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 				results[SERVICE_RESULT_KEY[service]] = data;
 			} else {
 				try {
-					const data = await cacheManager.get(service, "CF_DESCRIPTIONS");
-					results[SERVICE_RESULT_KEY[service]] = data || [];
+					results[SERVICE_RESULT_KEY[service]] =
+						(await cacheManager.get(service, "CF_DESCRIPTIONS")) ?? [];
 				} catch (error) {
-					if (error instanceof CacheCorruptionError) {
-						results[SERVICE_RESULT_KEY[service]] = [];
-					} else {
-						throw error;
-					}
+					if (!(error instanceof CacheCorruptionError) || serviceType) throw error;
+					unavailableServices.push(service);
 				}
 			}
 		}
 
-		return reply.send(results);
+		return reply.send(
+			unavailableServices.length > 0 ? { ...results, unavailableServices } : results,
+		);
 	});
 
 	/**
@@ -476,14 +476,7 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 			return reply.send({ data });
 		}
 
-		try {
-			const data = await cacheManager.get("RADARR", "CF_INCLUDES");
-			return reply.send({ data: data || [] });
-		} catch (error) {
-			if (error instanceof CacheCorruptionError) {
-				return reply.send({ data: [] });
-			}
-			throw error;
-		}
+		const data = await cacheManager.get("RADARR", "CF_INCLUDES");
+		return reply.send({ data: data ?? [] });
 	});
 }

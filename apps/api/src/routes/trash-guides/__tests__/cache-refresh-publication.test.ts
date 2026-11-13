@@ -1,3 +1,4 @@
+import { gzipSync } from "node:zlib";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestPrismaClient } from "../../../lib/__tests__/test-prisma.js";
@@ -79,6 +80,39 @@ function refresh(
 		payload: { serviceType, configType, force },
 	});
 }
+
+it("keeps healthy service results when the other catalogue is unreadable", async () => {
+	const now = new Date();
+	await prisma.trashCache.createMany({
+		data: [
+			{
+				serviceType: "RADARR",
+				configType: "CUSTOM_FORMATS",
+				data: "invalid gzip",
+				fetchedAt: now,
+				lastCheckedAt: now,
+			},
+			{
+				serviceType: "SONARR",
+				configType: "CUSTOM_FORMATS",
+				data: gzipSync("[]").toString("base64"),
+				fetchedAt: now,
+				lastCheckedAt: now,
+			},
+		],
+	});
+	const before = await prisma.trashCache.findMany();
+	const mixed = await app.inject({ url: "/cache/custom-formats/list", headers });
+	expect(mixed.statusCode).toBe(200);
+	expect(mixed.json()).toEqual({ sonarr: [], unavailableServices: ["RADARR"] });
+	const unavailable = await app.inject({
+		url: "/cache/custom-formats/list?serviceType=RADARR",
+		headers,
+	});
+	expect(unavailable.statusCode).toBe(503);
+	expect(upstreamRequests).toBe(0);
+	await expect(prisma.trashCache.findMany()).resolves.toEqual(before);
+});
 
 for (const serviceType of ["RADARR", "SONARR"] as const) {
 	for (const configType of ["NAMING_PRESETS", "QUALITY_PROFILE_GROUPS"] as const) {
@@ -195,6 +229,34 @@ for (const serviceType of ["RADARR", "SONARR"] as const) {
 				);
 			},
 		);
+
+		it("reports unreadable data and repairs it on a non-forced refresh", async () => {
+			expect((await refresh(serviceType)).statusCode).toBe(200);
+			const where = { serviceType_configType: { serviceType, configType: "QUALITY_SIZE" } };
+			const corrupt = await prisma.trashCache.update({
+				where,
+				data: {
+					data: gzipSync(JSON.stringify([{ invalid: true }])).toString("base64"),
+					commitHash: "verified:v1:synthetic%2Frepo:0123456789abcdef0123456789abcdef01234567",
+				},
+			});
+			const readsBefore = upstreamRequests;
+			const status = await app.inject({ url: `/cache/status?serviceType=${serviceType}`, headers });
+			expect(status.statusCode).toBe(200);
+			expect(status.json().statuses).toMatchObject([
+				{ configType: "QUALITY_SIZE", unavailable: true, itemCount: null },
+			]);
+			expect(upstreamRequests).toBe(readsBefore);
+			await expect(prisma.trashCache.findUnique({ where })).resolves.toEqual(corrupt);
+			const recovered = await refresh(serviceType, false);
+			expect(recovered.statusCode).toBe(200);
+			expect(recovered.json()).toMatchObject({
+				refreshed: true,
+				status: { itemCount: 1, version: corrupt.version + 1 },
+			});
+			expect(recovered.json().status.unavailable).toBeUndefined();
+			expect((await prisma.trashCache.findUniqueOrThrow({ where })).commitHash).toBeNull();
+		});
 
 		it("allows a genuinely fetched and validated empty content array", async () => {
 			emptyContent = true;

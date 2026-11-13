@@ -243,7 +243,7 @@ export const CustomFormatsBrowser = () => {
 	} = useCustomFormats(selectedService === "ALL" ? undefined : selectedService);
 
 	// Fetch CF descriptions
-	const { data: cfDescriptionsData } = useCFDescriptions(
+	const { data: cfDescriptionsData, isError: descriptionsUnavailable } = useCFDescriptions(
 		selectedService === "ALL" ? undefined : selectedService,
 	);
 
@@ -495,6 +495,18 @@ export const CustomFormatsBrowser = () => {
 						<p className="text-sm text-muted-foreground">
 							{getErrorMessage(error, "Please refresh the page and try again.")}
 						</p>
+						{selectedService !== "ALL" && (
+							<button
+								type="button"
+								className="mt-3 text-sm font-medium text-foreground underline"
+								onClick={() => {
+									setSelectedService("ALL");
+									setSelectedFormats(new Set());
+								}}
+							>
+								Show all services
+							</button>
+						)}
 					</div>
 				</div>
 			</div>
@@ -503,6 +515,17 @@ export const CustomFormatsBrowser = () => {
 
 	return (
 		<div className="space-y-6 animate-in fade-in duration-300">
+			{(descriptionsUnavailable || !!cfDescriptionsData?.unavailableServices?.length) && (
+				<p role="status" className="text-sm text-muted-foreground">
+					Custom format descriptions could not be refreshed. Check the Cache tab for recovery.
+				</p>
+			)}
+			{!!customFormatsData?.unavailableServices?.length && (
+				<p role="status" className="text-sm text-muted-foreground">
+					Custom formats unavailable for {customFormatsData.unavailableServices.join(", ")}. Refresh
+					the affected entries on the Cache tab.
+				</p>
+			)}
 			{/* Header and Controls */}
 			<div className="rounded-2xl border border-border/30 bg-muted/10 p-6">
 				<div className="space-y-5">
@@ -810,11 +833,17 @@ export const CustomFormatsBrowser = () => {
 			{customFormats.length === 0 ? (
 				<div className="rounded-2xl border border-dashed border-border/30 bg-muted/10 p-12 text-center">
 					<Package className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-					<p className="text-lg font-medium text-foreground mb-2">No custom formats found</p>
+					<p className="text-lg font-medium text-foreground mb-2">
+						{customFormatsData?.unavailableServices?.length
+							? "No results from readable caches"
+							: "No custom formats found"}
+					</p>
 					<p className="text-sm text-muted-foreground">
 						{searchQuery
 							? "Try adjusting your search query"
-							: "No custom formats available for the selected service"}
+							: customFormatsData?.unavailableServices?.length
+								? "Other cache entries are unavailable"
+								: "No custom formats available for the selected service"}
 					</p>
 				</div>
 			) : (

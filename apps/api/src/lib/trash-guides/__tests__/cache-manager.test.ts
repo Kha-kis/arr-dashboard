@@ -13,7 +13,7 @@ import { promisify } from "node:util";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PrismaClient } from "../../../lib/prisma.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
-import { TrashCacheManager } from "../cache-manager.js";
+import { CacheCorruptionError, TrashCacheManager } from "../cache-manager.js";
 import { TemplateUpdater } from "../template-updater.js";
 
 const execFileAsync = promisify(execFile);
@@ -303,6 +303,80 @@ describe("TrashCacheManager Integration Tests", () => {
 			expect(statuses).toHaveLength(2);
 			expect(statuses.map((s) => s.configType)).toContain("CUSTOM_FORMATS");
 			expect(statuses.map((s) => s.configType)).toContain("CF_GROUPS");
+		});
+	});
+
+	describe("Unreadable cache entries", () => {
+		const format = { serviceType: "RADARR", configType: "CUSTOM_FORMATS" } as const;
+		const key = { serviceType_configType: format };
+
+		beforeEach(async () => {
+			await cacheManager.set("RADARR", "CUSTOM_FORMATS", [{ id: "original" }]);
+			await prisma.trashCache.update({ where: key, data: { data: "invalid gzip" } });
+		});
+
+		it("reports unreadable status without removing the row or reporting zero items", async () => {
+			const before = await prisma.trashCache.findUniqueOrThrow({ where: key });
+			await expect(cacheManager.getStatus("RADARR", "CUSTOM_FORMATS")).resolves.toMatchObject({
+				unavailable: true,
+				itemCount: null,
+			});
+			await expect(prisma.trashCache.findUnique({ where: key })).resolves.toEqual(before);
+		});
+
+		it("reports readable and unreadable entries together without deleting either", async () => {
+			await cacheManager.set("RADARR", "CF_GROUPS", []);
+			await expect(cacheManager.getAllStatuses("RADARR")).resolves.toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						configType: "CUSTOM_FORMATS",
+						unavailable: true,
+						itemCount: null,
+					}),
+					expect.objectContaining({ configType: "CF_GROUPS", itemCount: 0 }),
+				]),
+			);
+			await expect(prisma.trashCache.count()).resolves.toBe(2);
+		});
+
+		it("does not report current provenance for unreadable bytes", async () => {
+			const provenance = {
+				version: 1 as const,
+				repository: "synthetic/repo",
+				commitHash: "0123456789abcdef0123456789abcdef01234567",
+			};
+			await cacheManager.setVerified("RADARR", "CUSTOM_FORMATS", [], provenance);
+			await expect(cacheManager.getProvenance("RADARR", "CUSTOM_FORMATS")).resolves.toEqual(
+				provenance,
+			);
+			const before = await prisma.trashCache.update({ where: key, data: { data: "invalid gzip" } });
+			await expect(cacheManager.getProvenance("RADARR", "CUSTOM_FORMATS")).resolves.toBeNull();
+			await expect(prisma.trashCache.findUnique({ where: key })).resolves.toEqual(before);
+		});
+
+		it("preserves a valid replacement written after a corrupt snapshot was read", async () => {
+			const original = await prisma.trashCache.findUniqueOrThrow({ where: key });
+			const replacement = [{ id: "replacement" }];
+			const reader = new TrashCacheManager(
+				prisma.$extends({
+					query: {
+						trashCache: {
+							async findUnique({ args, query }) {
+								const snapshot = await query(args);
+								if (snapshot?.data === original.data) {
+									await cacheManager.set("RADARR", "CUSTOM_FORMATS", replacement);
+								}
+								return snapshot;
+							},
+						},
+					},
+				}) as unknown as PrismaClient,
+			);
+
+			await expect(reader.getSnapshot("RADARR", "CUSTOM_FORMATS")).rejects.toBeInstanceOf(
+				CacheCorruptionError,
+			);
+			await expect(cacheManager.get("RADARR", "CUSTOM_FORMATS")).resolves.toEqual(replacement);
 		});
 	});
 

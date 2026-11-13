@@ -163,6 +163,28 @@ describe("Custom formats maintained selection and recovery", () => {
 			return extra(event);
 		});
 	}
+	it("can return to the readable catalogue after selecting an unavailable service", async () => {
+		transport((event) => {
+			if (event.url === "/api/services") return response({ services: [] });
+			if (event.url === "/api/trash-guides/cache/custom-formats/list")
+				return response({ sonarr: cached, unavailableServices: ["RADARR"] });
+			if (event.url === "/api/trash-guides/cache/custom-formats/list?serviceType=RADARR")
+				return response({ message: "Radarr cache unavailable" }, 503);
+			if (event.url.startsWith("/api/trash-guides/cache/cf-descriptions/list"))
+				return response({ radarr: [], sonarr: [] });
+			if (event.url.startsWith("/api/trash-guides/user-custom-formats"))
+				return response({ success: true, customFormats: [], count: 0 });
+		});
+		mount(<CustomFormatsBrowser />);
+		await screen.findByText(/Custom formats unavailable for RADARR/);
+		expect(screen.getByText("Selected cached")).toBeInTheDocument();
+		fireEvent.change(screen.getByRole("combobox"), { target: { value: "RADARR" } });
+		await screen.findByText("Radarr cache unavailable");
+		fireEvent.click(screen.getByRole("button", { name: "Show all services" }));
+		await screen.findByText("Selected cached");
+		expect(events.every((event) => event.method === "GET")).toBe(true);
+	});
+
 	it("W5 cached selected deployment partial refusal retains selection and deliberate retry excludes unselected CF", async () => {
 		const held = gate();
 		let attempts = 0;

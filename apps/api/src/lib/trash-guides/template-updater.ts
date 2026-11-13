@@ -1617,11 +1617,16 @@ export class TemplateUpdater {
 			let writeOperation: "touchCache" | "setVerified" | undefined;
 			try {
 				if (configType === "QUALITY_SIZE") {
-					const snapshot = await this.cacheManager.getSnapshot<TrashQualitySize[]>(
-						serviceType,
-						configType,
-						z.array(trashQualitySizeSchema),
-					);
+					const snapshot = await this.cacheManager
+						.getSnapshot<TrashQualitySize[]>(
+							serviceType,
+							configType,
+							z.array(trashQualitySizeSchema),
+						)
+						.catch((error: unknown) => {
+							if (error instanceof CacheCorruptionError) return null;
+							throw error;
+						});
 					signal?.throwIfAborted();
 					if (sameCacheProvenance(snapshot?.provenance ?? null, expectedProvenance)) {
 						writeOperation = "touchCache";
