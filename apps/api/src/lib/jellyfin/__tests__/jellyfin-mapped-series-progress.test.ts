@@ -111,6 +111,20 @@ describe("deriveJellyfinMappedSeriesProgress", () => {
 		expect([...result]).toEqual([[303, [{ seasonNumber: 1, episodeNumber: 1, watched: true }]]]);
 	});
 
+	it("rejects a collection gap when verification cannot account for a collected identity", () => {
+		const result = deriveJellyfinMappedSeriesProgress({
+			bindings: [bindingA, bindingB],
+			scopes: [
+				{
+					...scope([a1, a2, b1], [a1, a2, { ...b1, jellyfinId: "replacement" }]),
+					allowCollectSubset: true,
+				},
+			],
+		});
+
+		expect(result.size).toBe(0);
+	});
+
 	it("rejects a library with a missing or incomplete user scope", () => {
 		const result = deriveJellyfinMappedSeriesProgress({
 			bindings: [bindingA, bindingB, bindingC],

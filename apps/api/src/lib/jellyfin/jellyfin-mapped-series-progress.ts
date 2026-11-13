@@ -16,6 +16,8 @@ export type JellyfinMappedSeriesScope = {
 	userKeyDigest: string;
 	libraryId: string;
 	complete: boolean;
+	allowCollectSubset?: boolean;
+	conflictingSeriesIds?: readonly string[];
 	collect: readonly JellyfinMappedSeriesObservation[];
 	verify: readonly JellyfinMappedSeriesObservation[];
 };
@@ -72,12 +74,15 @@ function indexObservations(
 function seriesWithMembershipChanges(
 	collect: ReadonlyMap<string, JellyfinMappedSeriesObservation>,
 	verify: ReadonlyMap<string, JellyfinMappedSeriesObservation>,
+	requireCollectSubset: boolean,
 ): Set<string> | null {
 	const changedSeries = new Set<string>();
 	for (const [id, row] of collect) {
 		const other = verify.get(id);
-		if (!other) changedSeries.add(row.seriesId);
-		else if (!sameNativeCoordinate(row, other)) return null;
+		if (!other) {
+			if (requireCollectSubset) return null;
+			changedSeries.add(row.seriesId);
+		} else if (!sameNativeCoordinate(row, other)) return null;
 	}
 	for (const [id, row] of verify) {
 		if (!collect.has(id)) changedSeries.add(row.seriesId);
@@ -161,12 +166,19 @@ export function deriveJellyfinMappedSeriesProgress(input: {
 		}
 		seenScopes.add(scopeKey);
 
-		const changedSeries = collect && verify && seriesWithMembershipChanges(collect, verify);
+		const changedSeries =
+			collect &&
+			verify &&
+			seriesWithMembershipChanges(collect, verify, scope.allowCollectSubset === true);
 		if (!collect || !verify || !changedSeries) {
 			invalidLibraries.add(libraryId);
 			continue;
 		}
 		completeLibraries.add(libraryId);
+		for (const seriesId of scope.conflictingSeriesIds ?? []) {
+			const show = showsBySeries.get(seriesId);
+			if (show?.libraryId === libraryId) show.ambiguous = true;
+		}
 		if (changedSeries.size > 0) {
 			librariesWithMembershipChanges.add(libraryId);
 			for (const seriesId of changedSeries) {

@@ -100,6 +100,16 @@ export {
 export const MAX_JELLYFIN_FINALIZER_STAGE_ROWS = 600_000;
 const JELLYFIN_FINALIZER_STAGE_READ_PAGE_SIZE = 1_000;
 
+// Uses the existing run-scoped staging sidecar and its cleanup lifecycle.
+function parseRepeatedEpisode(reason: string) {
+	const match = /^repeated-episode:([1-9][0-9]*):(agrees|conflicts)$/.exec(reason);
+	if (!match) return null;
+	const count = Number(match[1]);
+	return Number.isSafeInteger(count) && count <= JELLYFIN_EPISODE_MAX_SCOPE_ROWS
+		? { count, conflicts: match[2] === "conflicts" }
+		: null;
+}
+
 export type JellyfinEpisodePageRejectionReason =
 	| "invalid-scope-or-phase"
 	| "total-count-decreased"
@@ -838,6 +848,7 @@ export async function stageJellyfinEpisodePage(
 						seriesId: true,
 						seasonNumber: true,
 						episodeNumber: true,
+						played: true,
 					},
 				});
 				const existingByItemId = new Map(existing.map((row) => [row.jellyfinId, row]));
@@ -863,23 +874,48 @@ export async function stageJellyfinEpisodePage(
 				});
 				if (
 					priorExclusions.some(
-						(row) => row.unitId !== unit.id || row.reason !== "missing-episode-metadata",
+						(row) =>
+							row.unitId !== unit.id ||
+							(row.reason !== "missing-episode-metadata" && !parseRepeatedEpisode(row.reason)),
 					)
 				)
 					return reportPageRejection(onRejected, "source-coordinate-conflict");
-				const priorExcludedIds = new Set(priorExclusions.map((row) => row.jellyfinId));
-				const newExclusions = excludedItems.filter((item) => !priorExcludedIds.has(item.id));
-				if (newExclusions.length)
+				const priorById = new Map(priorExclusions.map((row) => [row.jellyfinId, row]));
+				const sidecars: Array<{ jellyfinId: string; reason: string }> = [];
+				for (const item of excludedItems) {
+					if (priorById.get(item.id)?.reason !== "missing-episode-metadata")
+						sidecars.push({ jellyfinId: item.id, reason: "missing-episode-metadata" });
+				}
+				for (const item of admittedItems) {
+					const staged = existingByItemId.get(item.id);
+					const prior = priorById.get(item.id);
+					if (!staged || prior?.reason === "missing-episode-metadata") continue;
+					const repeated = prior && parseRepeatedEpisode(prior.reason);
+					const conflicts = repeated?.conflicts || staged.played !== item.played;
+					sidecars.push({
+						jellyfinId: item.id,
+						reason: `repeated-episode:${(repeated?.count ?? 0) + 1}:${conflicts ? "conflicts" : "agrees"}`,
+					});
+				}
+				const newSidecars = sidecars.filter(({ jellyfinId }) => !priorById.has(jellyfinId));
+				if (newSidecars.length)
 					await tx.jellyfinEpisodeObservationExclusion.createMany({
-						data: newExclusions.map((item) => ({
+						data: newSidecars.map((row) => ({
+							...row,
 							runId: run.id,
 							unitId: unit.id,
 							pass: claim.phase,
 							userKeyDigest,
-							jellyfinId: item.id,
-							reason: item.excludedReason,
 						})),
 					});
+				for (const { jellyfinId, reason } of sidecars) {
+					const prior = priorById.get(jellyfinId);
+					if (prior)
+						await tx.jellyfinEpisodeObservationExclusion.update({
+							where: { id: prior.id },
+							data: { reason },
+						});
+				}
 			}
 			if (newItems.length) {
 				await tx.jellyfinEpisodeObservationStage.createMany({
@@ -1407,16 +1443,28 @@ async function evaluateJellyfinEpisodeRun(
 					row.pass !== unit.phase ||
 					row.userKeyDigest !== digest(["jellyfin-user", scope.userId]) ||
 					!row.jellyfinId.trim() ||
-					row.reason !== "missing-episode-metadata"
+					(row.reason !== "missing-episode-metadata" && !parseRepeatedEpisode(row.reason))
 				);
 			})
 		)
 			return await invalidate();
 		// An unavailable mapping in either pass/user cannot corroborate a positive
 		// observation for that identity. Other independently verified IDs remain usable.
-		const excludedIds = new Set(exclusions.map((row) => row.jellyfinId));
+		const excludedIds = new Set<string>();
 		const exclusionsByUnit = new Map<string, Set<string>>();
+		const repeatsByUnit = new Map<
+			string,
+			Map<string, NonNullable<ReturnType<typeof parseRepeatedEpisode>>>
+		>();
 		for (const row of exclusions) {
+			const repeated = parseRepeatedEpisode(row.reason);
+			if (repeated) {
+				const repeats = repeatsByUnit.get(row.unitId) ?? new Map();
+				repeats.set(row.jellyfinId, repeated);
+				repeatsByUnit.set(row.unitId, repeats);
+				continue;
+			}
+			excludedIds.add(row.jellyfinId);
 			const ids = exclusionsByUnit.get(row.unitId) ?? new Set<string>();
 			ids.add(row.jellyfinId);
 			exclusionsByUnit.set(row.unitId, ids);
@@ -1687,7 +1735,7 @@ async function evaluateJellyfinEpisodeRun(
 			exactCurrentV3Catalog;
 		const exactV3Cardinality =
 			exactV3Catalog &&
-			exclusions.length === 0 &&
+			excludedIds.size === 0 &&
 			run.units.every((unit) => {
 				const unitStages = stagesByUnit.get(unit.id) ?? [];
 				const stageIds = new Set(unitStages.map((row) => row.jellyfinId));
@@ -1937,8 +1985,25 @@ async function evaluateJellyfinEpisodeRun(
 				const collectRows = collectUnit ? (stagesByUnit.get(collectUnit.id) ?? []) : [];
 				const verifyRows = verifyUnit ? (stagesByUnit.get(verifyUnit.id) ?? []) : [];
 				if (mappedScopes) {
-					// The planned units above already bind both passes to the same user and
-					// library. A staged gap or an exclusion prevents a denominator here.
+					// A complete verification pass can identify the series omitted from
+					// collection when the collected identities are a strict subset.
+					const collectRepeats = collectUnit && repeatsByUnit.get(collectUnit.id);
+					const collectDeficit = (collectUnit?.observedRawCount ?? 0) - collectRows.length;
+					const repeatedRows = collectRepeats
+						? collectRows.filter((row) => collectRepeats.has(row.jellyfinId))
+						: [];
+					const allowCollectSubset =
+						collectUnit !== undefined &&
+						verifyUnit !== undefined &&
+						collectUnit.observedRawCount === verifyUnit.observedRawCount &&
+						collectDeficit > 0 &&
+						collectRepeats !== undefined &&
+						collectRepeats.size === repeatedRows.length &&
+						repeatedRows.reduce(
+							(count, row) => count + collectRepeats.get(row.jellyfinId)!.count,
+							0,
+						) === collectDeficit &&
+						verifyRows.length === verifyUnit.observedRawCount;
 					mappedScopes.push({
 						userKeyDigest,
 						libraryId: scope.libraryId,
@@ -1946,11 +2011,15 @@ async function evaluateJellyfinEpisodeRun(
 							matchingUnits.length === 2 &&
 							collectUnit !== undefined &&
 							verifyUnit !== undefined &&
-							collectRows.length === collectUnit.observedRawCount &&
+							(collectRows.length === collectUnit.observedRawCount || allowCollectSubset) &&
 							verifyRows.length === verifyUnit.observedRawCount &&
 							matchingUnits.every((unit) => !exclusionsByUnit.has(unit.id)) &&
 							collectRows.every((row) => !excludedIds.has(row.jellyfinId)) &&
 							verifyRows.every((row) => !excludedIds.has(row.jellyfinId)),
+						allowCollectSubset,
+						conflictingSeriesIds: repeatedRows
+							.filter((row) => collectRepeats?.get(row.jellyfinId)?.conflicts)
+							.map((row) => row.seriesId),
 						collect: collectRows,
 						verify: verifyRows,
 					});
