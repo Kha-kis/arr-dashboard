@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
+import { NetworkError } from "../../../../lib/api-client/base";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -55,6 +56,7 @@ vi.mock("next/image", () => ({
 	},
 }));
 
+import { toast } from "sonner";
 // Import after mocks
 import { ApprovalQueueTab } from "../approval-queue-tab";
 
@@ -323,6 +325,70 @@ describe("ApprovalQueueTab", () => {
 			});
 			expect(callArgs.requestIds).toEqual(expect.arrayContaining([1, 2]));
 			expect(callArgs.requestIds).toHaveLength(2);
+		});
+
+		it("warns when a bulk action has an unknown provider outcome", () => {
+			renderTab();
+			fireEvent.click(screen.getAllByRole("checkbox")[0]!);
+			fireEvent.click(screen.getByText("Approve All"));
+			const callbacks = bulkMutate.mock.calls[0]![1];
+			act(() =>
+				callbacks.onSuccess({
+					results: [
+						{ requestId: 1, success: true },
+						{ requestId: 2, success: false, outcome: "unknown" },
+					],
+					totalSuccess: 1,
+					totalFailed: 0,
+					totalUnknown: 1,
+				}),
+			);
+			expect(toast.warning).toHaveBeenCalledWith(
+				"1 succeeded, 0 failed, 1 unknown. Check Seerr before retrying.",
+			);
+			expect(screen.getByRole("status")).toHaveTextContent("#2");
+			expect(screen.getByRole("checkbox", { name: /Select request for Show 1/ })).not.toBeChecked();
+			expect(screen.queryByText("Approve All")).not.toBeInTheDocument();
+		});
+
+		it("retains all selected IDs when the bulk response is lost", () => {
+			renderTab();
+			fireEvent.click(screen.getAllByRole("checkbox")[0]!);
+			fireEvent.click(screen.getByText("Approve All"));
+			const callbacks = bulkMutate.mock.calls[0]![1];
+			act(() => callbacks.onError(new NetworkError()));
+			expect(screen.getByRole("status")).toHaveTextContent("#1, #2");
+			expect(
+				screen.getByRole("checkbox", { name: /Select request for Movie 1/ }),
+			).not.toBeChecked();
+			expect(screen.getByRole("checkbox", { name: /Select request for Show 1/ })).not.toBeChecked();
+			expect(screen.queryByText("Approve All")).not.toBeInTheDocument();
+		});
+
+		it("does not carry a same-numbered selection or unknown notice to another instance", () => {
+			const view = renderTab();
+			fireEvent.click(screen.getByRole("checkbox", { name: /Select request for Movie 1/ }));
+			view.rerender(<ApprovalQueueTab instanceId="inst-2" />);
+			expect(
+				screen.getByRole("checkbox", { name: /Select request for Movie 1/ }),
+			).not.toBeChecked();
+			expect(screen.queryByText("Approve All")).not.toBeInTheDocument();
+			view.rerender(<ApprovalQueueTab instanceId="inst-1" />);
+			fireEvent.click(screen.getAllByRole("checkbox")[0]!);
+			fireEvent.click(screen.getByText("Approve All"));
+			const callbacks = bulkMutate.mock.calls[0]![1];
+			act(() =>
+				callbacks.onSuccess({
+					results: [{ requestId: 1, success: false, outcome: "unknown" }],
+					totalSuccess: 0,
+					totalFailed: 0,
+					totalUnknown: 1,
+				}),
+			);
+			expect(screen.getByRole("status")).toHaveTextContent("#1");
+			view.rerender(<ApprovalQueueTab instanceId="inst-2" />);
+			expect(screen.queryByRole("status")).not.toBeInTheDocument();
+			expect(screen.queryByText("Approve All")).not.toBeInTheDocument();
 		});
 	});
 

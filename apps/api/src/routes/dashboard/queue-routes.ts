@@ -3,8 +3,8 @@ import {
 	queueActionRequestSchema,
 	queueBulkActionRequestSchema,
 	queueItemSchema,
+	queueSearchOutcomeSchema,
 } from "@arr/shared";
-import type { LidarrClient, RadarrClient, ReadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyPluginCallback } from "fastify";
 import {
 	executeOnInstances,
@@ -14,16 +14,20 @@ import {
 	isReadarrClient,
 	isSonarrClient,
 } from "../../lib/arr/client-helpers.js";
+import { submitTrackedQueueManualImport } from "../../lib/arr/import-operations/queue-submission.js";
+import { serializeImportStatus } from "../../lib/arr/import-operations/status.js";
+import { TrackedImportConflictError } from "../../lib/arr/import-operations/submission.js";
 import {
 	normalizeQueueItem,
 	parseQueueId,
 	type QueueClient,
 	type QueueService,
+	selectQueueSearchCommand,
 	triggerQueueSearchWithSdk,
 } from "../../lib/dashboard/queue-utils.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { validateAndCollect } from "../../lib/validation/validate-batch.js";
-import { autoImportByDownloadIdWithSdk, setManualImportLogger } from "../manual-import-utils.js";
+import { setManualImportLogger } from "../manual-import-utils.js";
 
 /**
  * Queue-related routes for the dashboard
@@ -99,6 +103,7 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			instanceId: result.instanceId,
 			instanceName: result.instanceName,
 			service: result.service as QueueService,
+			success: result.success,
 			data: result.success ? result.data : [],
 		}));
 
@@ -115,6 +120,43 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.post("/dashboard/queue/action", async (request, reply) => {
 		const body = validateRequest(queueActionRequestSchema, request.body);
+		if (body.action === "manualImport") {
+			const queueId = parseQueueId(body.itemId);
+			if (
+				queueId === null ||
+				!Number.isSafeInteger(queueId) ||
+				queueId <= 0 ||
+				(typeof body.itemId === "string" && !/^\d+$/.test(body.itemId.trim())) ||
+				!body.downloadId?.trim()
+			)
+				return reply
+					.status(400)
+					.send({ error: "Manual import requires valid queue and download identifiers." });
+			const operation = await submitTrackedQueueManualImport(
+				{
+					prisma: app.prisma,
+					encryptor: app.encryptor,
+					createClient: (instance, options) => {
+						if (
+							instance.service !== "SONARR" &&
+							instance.service !== "RADARR" &&
+							instance.service !== "LIDARR" &&
+							instance.service !== "READARR"
+						)
+							throw new TrackedImportConflictError();
+						return app.arrClientFactory.create({ ...instance, service: instance.service }, options);
+					},
+				},
+				{
+					userId: request.currentUser!.id,
+					instanceId: body.instanceId,
+					service: body.service,
+					queueId,
+					downloadId: body.downloadId.trim(),
+				},
+			);
+			return reply.status(202).send(serializeImportStatus(operation));
+		}
 
 		const clientResult = await getClientForInstance(app, request, body.instanceId);
 		if (!clientResult.success) {
@@ -142,23 +184,18 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
-		if (body.action === "manualImport") {
-			const downloadId = typeof body.downloadId === "string" ? body.downloadId.trim() : "";
+		const searchCommand =
+			body.action === "delete" && body.search
+				? selectQueueSearchCommand(service, body.searchPayload)
+				: null;
+		if (body.action === "delete" && body.search && !searchCommand) {
+			return reply.status(400).send({
+				message:
+					"A valid search target is required. Refresh the queue or choose removal without search.",
+			});
+		}
 
-			if (!downloadId) {
-				return reply.status(400).send({
-					success: false,
-					message: "Manual import requires a download identifier.",
-				});
-			}
-
-			// Manual import supported for all *arr services with download queues
-			await autoImportByDownloadIdWithSdk(
-				client as SonarrClient | RadarrClient | LidarrClient | ReadarrClient,
-				service,
-				downloadId,
-			);
-		} else if (body.action === "retry") {
+		if (body.action === "retry") {
 			// Retry by removing from queue without blocklisting
 			const deleteOptions = {
 				removeFromClient: body.removeFromClient ?? true,
@@ -194,12 +231,17 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			}
 
 			// Trigger search if requested
-			if (body.search) {
+			if (searchCommand) {
+				let search: "submitted" | "unconfirmed" = "submitted";
 				try {
-					await triggerQueueSearchWithSdk(client as QueueClient, service, body.searchPayload);
+					await triggerQueueSearchWithSdk(client as QueueClient, searchCommand);
 				} catch (error) {
+					search = "unconfirmed";
 					request.log.error({ err: error, queueId, service }, "queue search trigger failed");
 				}
+				return reply
+					.status(200)
+					.send(queueSearchOutcomeSchema.parse({ removal: "completed", search }));
 			}
 		}
 

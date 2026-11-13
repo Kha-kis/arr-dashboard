@@ -1,4 +1,10 @@
-import type { CalendarItem, ServiceInstanceSummary } from "@arr/shared";
+import {
+	type CalendarAvailability,
+	type CalendarItem,
+	getCalendarAvailability,
+	type MultiInstanceCalendarResponse,
+	type ServiceInstanceSummary,
+} from "@arr/shared";
 import { useMemo } from "react";
 import {
 	type CalendarDateRange,
@@ -107,13 +113,9 @@ const deduplicateEvents = (events: CalendarItem[]): DeduplicatedCalendarItem[] =
 };
 
 export interface CalendarDataHookResult {
+	availability: CalendarAvailability;
 	aggregated: CalendarItem[];
-	instances: Array<{
-		instanceId: string;
-		instanceName: string;
-		service: "sonarr" | "radarr" | "lidarr" | "readarr";
-		data: CalendarItem[];
-	}>;
+	instances: MultiInstanceCalendarResponse["instances"];
 	instanceOptions: Array<{ value: string; label: string }>;
 	filteredEvents: DeduplicatedCalendarItem[];
 	eventsByDate: Map<string, DeduplicatedCalendarItem[]>;
@@ -121,23 +123,22 @@ export interface CalendarDataHookResult {
 }
 
 export const useCalendarData = (
-	data:
-		| {
-				aggregated?: CalendarItem[];
-				instances?: Array<{
-					instanceId: string;
-					instanceName: string;
-					service: "sonarr" | "radarr" | "lidarr" | "readarr";
-					data: CalendarItem[];
-				}>;
-		  }
-		| undefined,
+	data: MultiInstanceCalendarResponse | undefined,
 	services: ServiceInstanceSummary[] | undefined,
 	filters: CalendarFilters,
 	visibleRange: CalendarDateRange,
 ): CalendarDataHookResult => {
 	const aggregated = useMemo(() => data?.aggregated ?? [], [data?.aggregated]);
 	const instances = useMemo(() => data?.instances ?? [], [data?.instances]);
+	const availability = useMemo(() => {
+		if (!data) return "unavailable";
+		const selected = instances.filter(
+			(source) =>
+				(filters.serviceFilter === "all" || source.service === filters.serviceFilter) &&
+				(filters.instanceFilter === "all" || source.instanceId === filters.instanceFilter),
+		);
+		return getCalendarAvailability(selected);
+	}, [data, instances, filters.serviceFilter, filters.instanceFilter]);
 
 	const serviceMap = useMemo(() => {
 		const map = new Map<string, ServiceInstanceSummary>();
@@ -226,6 +227,7 @@ export const useCalendarData = (
 	}, [filteredEvents]);
 
 	return {
+		availability,
 		aggregated,
 		instances,
 		instanceOptions,

@@ -11,22 +11,45 @@
  * or without any attention-worthy requests — they skip rather than fail.
  */
 
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { ROUTES, TIMEOUTS, waitForLoadingComplete } from "./utils/test-helpers";
 
 // ============================================================================
 // Helpers
 // ============================================================================
 
-/** Check if the Seerr requests widget is present on the dashboard */
+/** Skip only when no enabled Seerr instance is configured; otherwise require its widget. */
 async function hasSeerrWidget(page: import("@playwright/test").Page): Promise<boolean> {
-	const widget = page.getByText("Seerr Requests").first();
-	try {
-		await widget.waitFor({ state: "visible", timeout: TIMEOUTS.medium });
-		return true;
-	} catch {
-		return false;
+	const response = await page.request.get("/api/services", { timeout: 5_000 });
+	if (!response.ok()) throw new Error("Services precondition request failed");
+	const payload: unknown = await response.json();
+	if (
+		typeof payload !== "object" ||
+		payload === null ||
+		Array.isArray(payload) ||
+		!("services" in payload) ||
+		!Array.isArray(payload.services) ||
+		!payload.services.every(
+			(service: unknown) =>
+				typeof service === "object" &&
+				service !== null &&
+				!Array.isArray(service) &&
+				"service" in service &&
+				typeof service.service === "string" &&
+				"enabled" in service &&
+				typeof service.enabled === "boolean",
+		)
+	) {
+		throw new Error("Invalid services response");
 	}
+	const seerr = payload.services.find(
+		(service) => service.service.toLowerCase() === "seerr" && service.enabled,
+	);
+	if (!seerr) return false;
+
+	const widget = page.getByText("Seerr Requests").first();
+	await widget.waitFor({ state: "visible", timeout: 5_000 });
+	return true;
 }
 
 /** Check if the "Needs Attention" section is visible in the widget */
@@ -109,10 +132,10 @@ test.describe("Dashboard - Seerr Attention Widget", () => {
 		const hasStuck = await stuckBadge.isVisible().catch(() => false);
 
 		if (hasStuck) {
-			// Stuck items should have a View link that points to /requests
-			const viewLink = page.getByRole("link", { name: /view/i }).first();
+			// Select a real row anchor, not the clickable widget wrapper.
+			const viewLink = page.locator('a[aria-label^="View stuck request for "]').first();
 			await expect(viewLink).toBeVisible();
-			await expect(viewLink).toHaveAttribute("href", "/requests");
+			await expect(viewLink).toHaveAttribute("href", "/requests?tab=all");
 		}
 		// If no stuck items (only failed), that's fine
 	});
@@ -143,15 +166,16 @@ test.describe("Dashboard - Seerr Attention Widget", () => {
 		const hasAttention = await hasAttentionSection(page);
 		test.skip(!hasAttention, "No attention items present");
 
-		const viewLink = page.getByRole("link", { name: /view/i }).first();
+		const viewLink = page.locator('a[aria-label^="View stuck request for "]').first();
 		const hasView = await viewLink.isVisible().catch(() => false);
 		test.skip(!hasView, "No stuck items with view link");
 
 		// Click the view link
+		await expect(viewLink).toHaveAttribute("href", "/requests?tab=all");
 		await viewLink.click();
 
-		// Should navigate to /requests
-		await expect(page).toHaveURL(/\/requests/, { timeout: TIMEOUTS.navigation });
+		// Should navigate to the all-requests route.
+		await expect(page).toHaveURL(/\/requests\?tab=all$/, { timeout: TIMEOUTS.navigation });
 	});
 });
 
@@ -198,7 +222,8 @@ test.describe("Dashboard - Attention Widget Incognito", () => {
 		// Linux distro names (used by getLinuxIsoName) will appear instead
 		// We can't check for specific names without knowing the originals,
 		// but we verify the section is rendered (incognito didn't break rendering)
-		const attentionItems = page.locator('[class*="attention"], [class*="Attention"]')
+		const attentionItems = page
+			.locator('[class*="attention"], [class*="Attention"]')
 			.or(page.getByText(/^failed$/i).or(page.getByText(/^stuck/i)));
 		const itemCount = await attentionItems.count();
 		expect(itemCount).toBeGreaterThan(0);

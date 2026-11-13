@@ -775,6 +775,78 @@ describe("Plex cache refresh attempt lifecycle", () => {
 		});
 	});
 
+	it("settles the exact attempt after a transient status-write conflict", async () => {
+		const current = plexSnapshot();
+		const state = publicationFixture(current, {
+			connectionGeneration: 4,
+			identityGeneration: 9,
+		});
+		state.prisma.$transaction.mockRejectedValueOnce(
+			Object.assign(new Error("database is locked"), { code: "P2034" }),
+		);
+		const attempt = {
+			attemptedAt: new Date("2026-08-20T12:00:00.000Z"),
+			resultMarker: "in_progress:attempt-a",
+		};
+
+		const result = await finishPlexCacheRefreshAttemptFailure(
+			state.prisma as never,
+			"plex",
+			"coverage-incomplete",
+			current,
+			attempt,
+			log,
+		);
+
+		expect(result).toBe("recorded");
+		expect(state.prisma.$transaction).toHaveBeenCalledTimes(2);
+		expect(state.tx.cacheRefreshStatus.updateMany).toHaveBeenCalledWith({
+			where: expect.objectContaining({
+				lastAttemptAt: attempt.attemptedAt,
+				lastAttemptResult: attempt.resultMarker,
+			}),
+			data: {
+				lastAttemptResult: "error",
+				lastAttemptErrorMessage: "coverage-incomplete",
+			},
+		});
+	});
+
+	it("bounds retries when exact-attempt status writes keep conflicting", async () => {
+		vi.useFakeTimers();
+		try {
+			const current = plexSnapshot();
+			const state = publicationFixture(current, {
+				connectionGeneration: 4,
+				identityGeneration: 9,
+			});
+			state.prisma.$transaction.mockRejectedValue(
+				Object.assign(new Error("database is locked"), { code: "P2034" }),
+			);
+			const settlement = finishPlexCacheRefreshAttemptFailure(
+				state.prisma as never,
+				"plex",
+				"coverage-incomplete",
+				current,
+				{
+					attemptedAt: new Date("2026-08-20T12:00:00.000Z"),
+					resultMarker: "in_progress:attempt-a",
+				},
+				log,
+			);
+			await vi.runAllTimersAsync();
+
+			expect(await settlement).toBe("failed");
+			expect(state.prisma.$transaction).toHaveBeenCalledTimes(5);
+			expect(log.warn).toHaveBeenCalledWith(
+				{ cacheType: "plex", reasonCode: "attempt_status_write_failed" },
+				expect.any(String),
+			);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it("does not finish an attempt when its transactional precondition is false", async () => {
 		const current = plexSnapshot();
 		const state = publicationFixture(current, {

@@ -99,12 +99,26 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 				produce: (attempt) =>
 					refreshOwnedPlexCacheWithAttempt(
 						// Background provider diagnostics must not inherit authenticated user bindings.
-						{ prisma: app.prisma, encryptor: app.encryptor, instance, log: app.log },
+						{
+							prisma: app.prisma,
+							encryptor: app.encryptor,
+							instance,
+							log: app.log,
+							nativeInventoryMode: "force",
+						},
 						attempt,
 					),
 				log,
 				...(recovery
-					? { recovery: { provider: "plex" as const, userId, instanceId, handoff: recovery } }
+					? {
+							recovery: {
+								provider: "plex" as const,
+								userId,
+								instanceId,
+								authority,
+								handoff: recovery,
+							},
+						}
 					: {}),
 			});
 			const response: ProviderObservationAcceptedResponse = {

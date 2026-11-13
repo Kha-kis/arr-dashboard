@@ -59,6 +59,8 @@ vi.mock("framer-motion", () => {
 });
 
 import { Sidebar } from "../sidebar";
+import { Dialog } from "../../ui/dialog";
+import { IncognitoProvider } from "../../../contexts/IncognitoContext";
 
 describe("Sidebar navigation prefetching", () => {
 	beforeEach(() => {
@@ -67,7 +69,13 @@ describe("Sidebar navigation prefetching", () => {
 	});
 
 	it("disables speculative prefetch while retaining clickable destinations", () => {
-		render(<Sidebar />);
+		render(
+			<IncognitoProvider>
+				<Dialog>
+					<Sidebar onNavigate={() => {}} />
+				</Dialog>
+			</IncognitoProvider>,
+		);
 
 		expect(capturedLinks.length).toBeGreaterThan(0);
 		expect(capturedLinks.every((link) => link.prefetch === false)).toBe(true);

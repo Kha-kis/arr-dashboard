@@ -214,6 +214,7 @@ interface ArrServiceTabProps {
 	gradient: ServiceGradient;
 	totals: ArrTotals;
 	rows: ArrRow[];
+	availabilityIncomplete?: boolean;
 }
 
 export const ArrServiceTab = ({
@@ -222,62 +223,85 @@ export const ArrServiceTab = ({
 	gradient,
 	totals,
 	rows,
+	availabilityIncomplete = false,
 }: ArrServiceTabProps) => {
 	const [incognitoMode] = useIncognitoMode();
 	const variant = SERVICE_VARIANTS[serviceType];
 
-	const primaryStats = variant.primaryStats(totals);
-	const secondaryStats = variant.secondaryStats(totals);
+	const primaryStats = availabilityIncomplete ? [] : variant.primaryStats(totals);
+	const secondaryStats = availabilityIncomplete ? [] : variant.secondaryStats(totals);
 
 	return (
 		<div className="flex flex-col gap-6">
-			{/* Primary Stats Grid */}
-			<div
-				className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
-				style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
-			>
-				{primaryStats.map((stat) => (
-					<StatCard
-						key={stat.label}
-						value={stat.value}
-						label={stat.label}
-						icon={stat.icon}
-						gradient={gradient}
-						animationDelay={stat.animationDelay}
-					/>
-				))}
-			</div>
+			{availabilityIncomplete && (
+				<p
+					role="status"
+					className="rounded-xl border border-warning/30 bg-warning/5 p-4 text-warning"
+				>
+					Statistics are incomplete; only verified instance rows appear below.
+				</p>
+			)}
+			{!availabilityIncomplete && (
+				<>
+					{/* Primary Stats Grid */}
+					<div
+						className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
+						style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
+					>
+						{primaryStats.map((stat) => (
+							<StatCard
+								key={stat.label}
+								value={stat.value}
+								label={stat.label}
+								icon={stat.icon}
+								gradient={gradient}
+								animationDelay={stat.animationDelay}
+							/>
+						))}
+					</div>
 
-			{/* Secondary Stats Grid */}
-			<div
-				className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
-				style={{ animationDelay: "300ms", animationFillMode: "backwards" }}
-			>
-				{secondaryStats.map((stat) => (
-					<StatCard
-						key={stat.label}
-						value={stat.value}
-						label={stat.label}
-						description={stat.description}
-						animationDelay={stat.animationDelay}
-					/>
-				))}
-			</div>
+					{/* Secondary Stats Grid */}
+					<div
+						className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
+						style={{ animationDelay: "300ms", animationFillMode: "backwards" }}
+					>
+						{secondaryStats.map((stat) => (
+							<StatCard
+								key={stat.label}
+								value={stat.value}
+								label={stat.label}
+								description={stat.description}
+								animationDelay={stat.animationDelay}
+							/>
+						))}
+					</div>
 
-			{/* Quality & Tags */}
-			<div
-				className="grid gap-6 lg:grid-cols-2 animate-in fade-in slide-in-from-bottom-4 duration-500"
-				style={{ animationDelay: "400ms", animationFillMode: "backwards" }}
-			>
-				<PremiumCard title="Quality Distribution" icon={BarChart3} gradientIcon={false} showHeader>
-					<QualityBreakdown breakdown={totals.qualityBreakdown} />
-				</PremiumCard>
-				{totals.tagBreakdown && Object.keys(totals.tagBreakdown).length > 0 && (
-					<PremiumCard title="Tag Distribution" icon={BarChart3} gradientIcon={false} showHeader>
-						<QualityBreakdown breakdown={totals.tagBreakdown} />
-					</PremiumCard>
-				)}
-			</div>
+					{/* Quality & Tags */}
+					<div
+						className="grid gap-6 lg:grid-cols-2 animate-in fade-in slide-in-from-bottom-4 duration-500"
+						style={{ animationDelay: "400ms", animationFillMode: "backwards" }}
+					>
+						<PremiumCard
+							title="Quality Distribution"
+							icon={BarChart3}
+							gradientIcon={false}
+							showHeader
+						>
+							<QualityBreakdown breakdown={totals.qualityBreakdown} />
+						</PremiumCard>
+						{totals.tagBreakdown && Object.keys(totals.tagBreakdown).length > 0 && (
+							<PremiumCard
+								title="Tag Distribution"
+								icon={BarChart3}
+								gradientIcon={false}
+								showHeader
+							>
+								<QualityBreakdown breakdown={totals.tagBreakdown} />
+							</PremiumCard>
+						)}
+					</div>
+				</>
+			)}
 
 			{/* Instance Table */}
 			<PremiumCard
@@ -288,7 +312,11 @@ export const ArrServiceTab = ({
 				animationDelay={500}
 			>
 				{rows.length === 0 ? (
-					<p className="text-muted-foreground text-center py-8">{variant.emptyMessage}</p>
+					<p className="text-muted-foreground text-center py-8">
+						{availabilityIncomplete
+							? "Statistics unavailable for configured instances."
+							: variant.emptyMessage}
+					</p>
 				) : (
 					<div className="overflow-x-auto">
 						<table className="w-full text-sm">

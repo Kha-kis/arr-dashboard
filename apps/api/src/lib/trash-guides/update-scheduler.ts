@@ -17,7 +17,10 @@ import {
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { PrismaClient } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
-import { withCleanupOperationGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
+import {
+	CleanupMaintenanceConflictError,
+	withCleanupOperationGuard,
+} from "../library-cleanup/cleanup-maintenance-gate.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { createCacheManager } from "./cache-manager.js";
 import { createTrashFetcher } from "./github-fetcher.js";
@@ -91,6 +94,11 @@ export class UpdateScheduler {
 	private logger: Logger;
 	private arrClientFactory?: ArrClientFactory;
 	private intervalId?: NodeJS.Timeout;
+	private scheduleGeneration = 0;
+	private admissionClosed = false;
+	private pendingChecks = new Set<Promise<void>>();
+	private shutdownPromise: Promise<void> | null = null;
+	private readonly githubReadAbort = new AbortController();
 	private stats: SchedulerStats = { isRunning: false };
 	private isCheckInProgress = false;
 
@@ -103,6 +111,7 @@ export class UpdateScheduler {
 		options?: { userId?: string; fallbackEventTypes?: NotificationEventType[] },
 	) => Promise<void>;
 	private trackTick: import("../scheduler-registry/scheduler-registry.js").TickWrapper;
+	private trackProducer: import("../scheduler-registry/scheduler-registry.js").TickWrapper;
 
 	constructor(
 		config: SchedulerConfig,
@@ -119,6 +128,7 @@ export class UpdateScheduler {
 				options?: { userId?: string; fallbackEventTypes?: NotificationEventType[] },
 			) => Promise<void>;
 			trackTick?: import("../scheduler-registry/scheduler-registry.js").TickWrapper;
+			trackProducer?: import("../scheduler-registry/scheduler-registry.js").TickWrapper;
 		},
 	) {
 		this.config = {
@@ -135,6 +145,7 @@ export class UpdateScheduler {
 		this.deploymentExecutor = options?.deploymentExecutor;
 		this.notifyFn = options?.notifyFn;
 		this.trackTick = options?.trackTick ?? (<T>(fn: () => Promise<T>) => fn());
+		this.trackProducer = options?.trackProducer ?? (<T>(fn: () => Promise<T>) => fn());
 	}
 
 	/**
@@ -173,6 +184,7 @@ export class UpdateScheduler {
 	 * Start the scheduler
 	 */
 	start(): void {
+		if (this.admissionClosed) return;
 		if (!this.config.enabled) {
 			this.logger.info("TRaSH Guides update scheduler is disabled");
 			return;
@@ -187,27 +199,17 @@ export class UpdateScheduler {
 			`Starting TRaSH Guides update scheduler (interval: ${this.config.intervalHours}h)`,
 		);
 
-		// Run immediately on start
-		this.trackTick(() => this.checkForUpdates()).catch((error) => {
-			this.logger.error(
-				{ err: error instanceof Error ? error : new Error(String(error)) },
-				"Initial update check failed",
-			);
-		});
-
 		// Schedule periodic checks
+		const generation = ++this.scheduleGeneration;
 		const intervalMs = this.config.intervalHours * 60 * 60 * 1000;
 		this.intervalId = setInterval(() => {
-			this.trackTick(() => this.checkForUpdates()).catch((error) => {
-				this.logger.error(
-					{ err: error instanceof Error ? error : new Error(String(error)) },
-					"Scheduled update check failed",
-				);
-			});
+			void this.runScheduledCheck(generation, "Scheduled update check failed");
 		}, intervalMs);
 
 		this.stats.isRunning = true;
 		this.stats.nextCheckAt = new Date(Date.now() + intervalMs);
+		// Install timer admission before entering the immediate startup wrapper.
+		void this.runScheduledCheck(generation, "Initial update check failed");
 
 		this.logger.info("TRaSH Guides update scheduler started successfully");
 	}
@@ -225,6 +227,60 @@ export class UpdateScheduler {
 		}
 	}
 
+	/** Close admission without delaying sibling plugins' preClose hooks. */
+	closeAdmission(): void {
+		this.admissionClosed = true;
+		this.stop();
+		this.stats.nextCheckAt = undefined;
+		// Cancel GitHub acquisition while entered writes and handoffs drain.
+		this.githubReadAbort.abort(new Error("TRaSH GitHub read cancelled during shutdown"));
+	}
+
+	/** Retain accepted automatic and manual checks through their complete handoffs. */
+	shutdown(): Promise<void> {
+		this.closeAdmission();
+		this.shutdownPromise ??= (async () => {
+			while (this.pendingChecks.size > 0) await Promise.all(this.pendingChecks);
+		})();
+		return this.shutdownPromise;
+	}
+
+	private async runScheduledCheck(generation: number, errorMessage: string): Promise<void> {
+		if (this.admissionClosed || !this.intervalId || generation !== this.scheduleGeneration) return;
+		await this.runCheck(() => this.trackTick(() => this.checkForUpdates()), errorMessage);
+	}
+
+	private async runCheck(operation: () => Promise<void>, errorMessage?: string): Promise<void> {
+		if (this.admissionClosed) throw new Error("TRaSH update scheduler is shutting down");
+		// Register synchronously before either wrapper can enter an asynchronous dependency.
+		let settle!: () => void;
+		const completion = new Promise<void>((resolve) => {
+			settle = resolve;
+		});
+		this.pendingChecks.add(completion);
+		try {
+			await this.trackProducer(operation);
+		} catch (error) {
+			// Manual callers keep the existing rejection semantics; timers log failures.
+			if (!errorMessage) throw error;
+			if (this.githubReadAbort.signal.aborted && error === this.githubReadAbort.signal.reason) {
+				this.logger.debug("TRaSH GitHub read cancelled during shutdown");
+			} else if (error instanceof CleanupMaintenanceConflictError) {
+				this.logger.debug("TRaSH update check paused during database maintenance");
+			} else {
+				this.logger.error(
+					{ err: error instanceof Error ? error : new Error(String(error)) },
+					errorMessage,
+				);
+			}
+		} finally {
+			// A settling accepted check must not resurrect a stopped timer's next-run status.
+			if (this.admissionClosed) this.stats.nextCheckAt = undefined;
+			this.pendingChecks.delete(completion);
+			settle();
+		}
+	}
+
 	/**
 	 * Get current scheduler statistics
 	 */
@@ -239,7 +295,19 @@ export class UpdateScheduler {
 	 */
 	async triggerCheck(): Promise<void> {
 		this.logger.info("Manual update check triggered");
-		await this.checkForUpdates();
+		await this.runCheck(() => this.checkForUpdates());
+	}
+
+	/** Failure does not cancel sibling queries/refreshes; keep them inside the guard and drain. */
+	private async settleTogether<T extends unknown[]>(
+		operations: { [K in keyof T]: Promise<T[K]> },
+	): Promise<T> {
+		try {
+			return await Promise.all(operations);
+		} catch (error) {
+			await Promise.allSettled(operations);
+			throw error;
+		}
 	}
 
 	/**
@@ -265,6 +333,8 @@ export class UpdateScheduler {
 	}
 
 	private async checkForUpdatesAttempt(): Promise<void> {
+		const signal = this.githubReadAbort.signal;
+		const readOptions = { signal };
 		const startTime = Date.now();
 		const errors: string[] = [];
 		let templatesAutoSynced = 0;
@@ -279,6 +349,25 @@ export class UpdateScheduler {
 		let templatesWithAutoStrategy = 0;
 		let templatesWithNotifyStrategy = 0;
 
+		const notifyAutoSyncSummary = async (interrupted: boolean): Promise<void> => {
+			if (templatesAutoSynced === 0) return;
+			await this.notifyFn?.({
+				eventType: "TRASH_PROFILE_UPDATED",
+				title: `TRaSH Guides: ${templatesAutoSynced} template(s) auto-synced`,
+				body: interrupted
+					? `${templatesAutoSynced} synced before the update check was interrupted by shutdown`
+					: `${templatesAutoSynced} synced, ${templatesNeedingAttention} need attention, ${qualitySizeAutoSynced} quality sizes updated`,
+				url: "/trash-guides",
+				metadata: {
+					templatesAutoSynced,
+					qualitySizeAutoSynced,
+					...(interrupted ? { interrupted: true } : { templatesNeedingAttention }),
+				},
+			}).catch((err) => {
+				this.logger.debug({ err }, "TRaSH sync notification dispatch failed");
+			});
+		};
+
 		try {
 			// Re-read repo config and rebuild services if the user changed settings
 			await this.refreshRepoConfigIfNeeded();
@@ -286,7 +375,7 @@ export class UpdateScheduler {
 			this.logger.info("Checking for TRaSH Guides updates...");
 
 			// Count templates by sync strategy (unique templates with at least one mapping of each type)
-			[templatesWithAutoStrategy, templatesWithNotifyStrategy] = await Promise.all([
+			[templatesWithAutoStrategy, templatesWithNotifyStrategy] = await this.settleTogether([
 				this.prisma.trashTemplate.count({
 					where: {
 						deletedAt: null,
@@ -315,17 +404,21 @@ export class UpdateScheduler {
 			]);
 
 			// Get latest version info
-			const latestCommit = await this.versionTracker.getLatestCommit();
+			const latestCommit = await this.versionTracker.getLatestCommit(readOptions);
+			// An injected dependency may ignore cancellation. Join it, but never
+			// let its late result begin cache or upstream mutation work afterward.
+			signal.throwIfAborted();
 			this.logger.debug(
 				`Latest TRaSH commit: ${latestCommit.commitHash} (${latestCommit.commitDate})`,
 			);
 
 			// Refresh caches for both services
 			this.logger.info("Refreshing TRaSH Guides caches...");
-			const [radarrCacheResult, sonarrCacheResult] = await Promise.all([
-				this.templateUpdater.refreshAllCaches("RADARR"),
-				this.templateUpdater.refreshAllCaches("SONARR"),
+			const [radarrCacheResult, sonarrCacheResult] = await this.settleTogether([
+				this.templateUpdater.refreshAllCaches("RADARR", readOptions),
+				this.templateUpdater.refreshAllCaches("SONARR", readOptions),
 			]);
+			signal.throwIfAborted();
 
 			const totalCachesRefreshed = radarrCacheResult.refreshed + sonarrCacheResult.refreshed;
 			const totalCacheFailed = radarrCacheResult.failed + sonarrCacheResult.failed;
@@ -391,14 +484,19 @@ export class UpdateScheduler {
 
 			// Process each user's templates
 			for (const user of usersWithTemplates) {
+				signal.throwIfAborted();
 				// Check for template updates for this user
-				const updateCheck = await this.templateUpdater.checkForUpdates(user.id);
+				const updateCheck = await this.templateUpdater.checkForUpdates(user.id, readOptions);
+				signal.throwIfAborted();
 				totalTemplatesChecked += updateCheck.totalTemplates;
 				totalOutdated += updateCheck.outdatedTemplates;
 
 				if (updateCheck.outdatedTemplates > 0) {
 					// Process auto-sync templates for this user
-					const autoSyncResult = await this.templateUpdater.processAutoUpdates(user.id);
+					const autoSyncResult = await this.templateUpdater.processAutoUpdates(
+						user.id,
+						readOptions,
+					);
 					templatesAutoSynced += autoSyncResult.successful;
 					templatesNeedingApproval += autoSyncResult.skippedForApproval;
 					templatesWithScoreConflicts += autoSyncResult.templatesWithScoreConflicts;
@@ -439,10 +537,14 @@ export class UpdateScheduler {
 						}
 					}
 
+					signal.throwIfAborted();
+
 					// Get templates needing user attention for this user
 					const attentionTemplates = await this.templateUpdater.getTemplatesNeedingAttention(
 						user.id,
+						readOptions,
 					);
+					signal.throwIfAborted();
 					templatesNeedingAttention += attentionTemplates.length;
 
 					if (attentionTemplates.length > 0) {
@@ -519,23 +621,19 @@ export class UpdateScheduler {
 				`Update check completed in ${duration}ms. Next check at ${this.stats.nextCheckAt.toISOString()}`,
 			);
 
-			// Notify about auto-sync results
-			if (templatesAutoSynced > 0) {
-				await this.notifyFn?.({
-					eventType: "TRASH_PROFILE_UPDATED",
-					title: `TRaSH Guides: ${templatesAutoSynced} template(s) auto-synced`,
-					body: `${templatesAutoSynced} synced, ${templatesNeedingAttention} need attention, ${qualitySizeAutoSynced} quality sizes updated`,
-					url: "/trash-guides",
-					metadata: {
-						templatesAutoSynced,
-						templatesNeedingAttention,
-						qualitySizeAutoSynced,
-					},
-				}).catch((err) => {
-					this.logger.debug({ err }, "TRaSH sync notification dispatch failed");
-				});
-			}
+			await notifyAutoSyncSummary(false);
 		} catch (error) {
+			// Preserve the last completed check when shutdown cancels GitHub acquisition.
+			if (signal.aborted && error === signal.reason) {
+				if (errors.length > 0) {
+					this.logger.warn(
+						{ errorCount: errors.length },
+						"TRaSH update check had errors before shutdown interrupted acquisition",
+					);
+				}
+				await notifyAutoSyncSummary(true);
+				throw error;
+			}
 			this.logger.error(
 				{ err: error instanceof Error ? error : new Error(String(error)) },
 				"Update check failed",
@@ -1053,6 +1151,7 @@ export function createUpdateScheduler(
 			options?: { userId?: string; fallbackEventTypes?: NotificationEventType[] },
 		) => Promise<void>;
 		trackTick?: import("../scheduler-registry/scheduler-registry.js").TickWrapper;
+		trackProducer?: import("../scheduler-registry/scheduler-registry.js").TickWrapper;
 	},
 ): UpdateScheduler {
 	return new UpdateScheduler(

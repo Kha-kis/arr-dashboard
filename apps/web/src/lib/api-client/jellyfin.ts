@@ -12,6 +12,7 @@ import type {
 	CodecAnalytics,
 	DeviceAnalytics,
 	JellyfinNowPlayingResponse,
+	JellyfinWatchEnrichmentResponse,
 	MostConcurrentResponse,
 	PlaysByDateResponse,
 	ProviderObservationAcceptedResponse,
@@ -23,7 +24,6 @@ import type {
 	TranscodeAnalytics,
 	UserAnalytics,
 	UserEpisodeCompletion,
-	WatchEnrichmentResponse,
 	WatchHistoryResponse,
 } from "@arr/shared";
 import { apiRequest } from "./base";
@@ -137,11 +137,15 @@ export async function fetchJellyfinSections(): Promise<JellyfinSectionsResponse>
 export async function fetchJellyfinWatchEnrichment(
 	tmdbIds: number[],
 	types: string[],
-): Promise<WatchEnrichmentResponse> {
+	progressTmdbIds: readonly number[] = [],
+): Promise<JellyfinWatchEnrichmentResponse> {
 	const params = new URLSearchParams({
 		tmdbIds: tmdbIds.join(","),
 		types: types.join(","),
 	});
+	if (progressTmdbIds.length > 0) {
+		params.set("progressTmdbIds", progressTmdbIds.join(","));
+	}
 	return apiRequest(`/api/jellyfin/watch-enrichment?${params.toString()}`);
 }
 

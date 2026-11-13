@@ -1,14 +1,53 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	createSanitizedProviderEvidence,
 	serializeExecutableSafetyPlan,
 } from "../../library-cleanup/shared-plex-safety.js";
 import { createPlexTargetLedgerBinding } from "../../plex/plex-generation-target-ledger.js";
 import {
+	clearDurableProviderCacheState,
 	createProviderReplacementAuthority,
 	expireApprovalsForProviderReplacement,
 	verifiedIdentityData,
 } from "../service-identity-lifecycle.js";
+
+describe("clearDurableProviderCacheState", () => {
+	it("invalidates native watch rows, receipts, and pointer for the replaced instance", async () => {
+		const deleted = vi.fn().mockResolvedValue({ count: 0 });
+		const prisma = {
+			providerNativeInventorySnapshot: { deleteMany: deleted },
+			providerNativeInventoryRun: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+			plexCache: { deleteMany: deleted },
+			plexEpisodeCache: { deleteMany: deleted },
+			tautulliCache: { deleteMany: deleted },
+			jellyfinCache: { deleteMany: deleted },
+			jellyfinEpisodeCache: { deleteMany: deleted },
+			jellyfinNativeWatchPublication: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+			jellyfinNativeWatchScopeReceipt: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+			jellyfinNativeWatchRow: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+			jellyfinPositiveWatchRow: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+			cacheRefreshStatus: { deleteMany: deleted },
+		};
+		await clearDurableProviderCacheState(prisma, "provider-1");
+		expect(prisma.providerNativeInventoryRun.updateMany).toHaveBeenCalledWith({
+			where: { instanceId: "provider-1", activeSlotKey: { not: null } },
+			data: {
+				state: "superseded",
+				activeSlotKey: null,
+				claimToken: null,
+				leaseUntil: null,
+				nextAttemptAt: null,
+			},
+		});
+		for (const delegate of [
+			prisma.jellyfinNativeWatchPublication,
+			prisma.jellyfinNativeWatchScopeReceipt,
+			prisma.jellyfinNativeWatchRow,
+			prisma.jellyfinPositiveWatchRow,
+		])
+			expect(delegate.deleteMany).toHaveBeenCalledWith({ where: { instanceId: "provider-1" } });
+	});
+});
 
 function approvalStore(rows: Array<Record<string, unknown>>) {
 	return {

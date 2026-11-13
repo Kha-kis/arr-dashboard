@@ -66,11 +66,25 @@ describe("Library native episode source selection", () => {
 		expect(result.current.episodes).toBeUndefined();
 		expect(clients.plex).not.toHaveBeenCalled();
 	});
-	it("does not query episode status for a missing series or instance", () => {
-		renderHook(() => useLibraryEpisodeWatchStatus(undefined, undefined, "jellyfin"), {
-			wrapper: wrapper(),
-		});
-		expect(clients.plex).not.toHaveBeenCalled();
-		expect(clients.jellyfin).not.toHaveBeenCalled();
-	});
+	it.each(["plex", "jellyfin"] as const)(
+		"guards explicit %s retry for a missing series or instance",
+		(provider) => {
+			const initialProps: { instance?: string; series?: number } = {
+				instance: undefined,
+				series: 42,
+			};
+			const { result, rerender } = renderHook(
+				({ instance, series }: { instance?: string; series?: number }) =>
+					useLibraryEpisodeWatchStatus(instance, series, provider),
+				{ wrapper: wrapper(), initialProps },
+			);
+			expect(result.current.canRetry).toBe(false);
+			result.current.retry();
+			rerender({ instance: "native-instance", series: undefined });
+			expect(result.current.canRetry).toBe(false);
+			result.current.retry();
+			expect(clients.plex).not.toHaveBeenCalled();
+			expect(clients.jellyfin).not.toHaveBeenCalled();
+		},
+	);
 });

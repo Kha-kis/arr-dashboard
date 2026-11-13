@@ -6,6 +6,7 @@ import { useState } from "react";
 import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getLinuxIsoName, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
+import { ActivityCollectionNotice } from "./activity-collection-notice";
 
 // ============================================================================
 // Time Formatting
@@ -40,7 +41,7 @@ export const WatchHistoryWidget = ({ data, isLoading, isError }: WatchHistoryWid
 	const [incognitoMode] = useIncognitoMode();
 	const [expanded, setExpanded] = useState(false);
 
-	if (isLoading) {
+	if (isLoading && !data) {
 		return (
 			<div className="rounded-xl border border-border/30 bg-card/30 p-6">
 				<PremiumSkeleton variant="line" className="h-5 w-40 mb-4" />
@@ -58,23 +59,34 @@ export const WatchHistoryWidget = ({ data, isLoading, isError }: WatchHistoryWid
 		);
 	}
 
-	if (isError) {
+	if (isError && !data) {
 		return (
 			<PremiumEmptyState
 				icon={Clock}
 				title="Failed to Load Watch History"
-				description="Could not fetch watch history data."
+				description="Check the media-server connection in Settings and try again."
 			/>
 		);
 	}
 
+	const refreshNotice = isError ? (
+		<p role="status" className="text-xs text-muted-foreground">
+			Showing last-known observations; refresh failed. Check the media-server connection in Settings
+			and try again.
+		</p>
+	) : null;
+
 	if (!data || data.events.length === 0) {
 		return (
-			<PremiumEmptyState
-				icon={Clock}
-				title="No Watch History Yet"
-				description="Watch events will appear here once session data is captured."
-			/>
+			<div>
+				{refreshNotice}
+				<ActivityCollectionNotice measurement={data?.measurement} empty />
+				<PremiumEmptyState
+					icon={Clock}
+					title="No Matching Sampled Observations"
+					description="Only recorded title observations can be shown; this is not proof of no playback."
+				/>
+			</div>
 		);
 	}
 
@@ -84,6 +96,8 @@ export const WatchHistoryWidget = ({ data, isLoading, isError }: WatchHistoryWid
 
 	return (
 		<div className="rounded-xl border border-border/30 bg-card/30 p-6 space-y-4">
+			{refreshNotice}
+			<ActivityCollectionNotice measurement={data.measurement} empty={false} />
 			<div className="flex items-center justify-between">
 				<h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
 					<Clock className="h-4 w-4" style={{ color: gradient.from }} />
@@ -100,6 +114,7 @@ export const WatchHistoryWidget = ({ data, isLoading, isError }: WatchHistoryWid
 				{visibleEvents.map(
 					(
 						event: {
+							key?: string;
 							user: string;
 							title: string;
 							timestamp: string;
@@ -109,7 +124,16 @@ export const WatchHistoryWidget = ({ data, isLoading, isError }: WatchHistoryWid
 						i: number,
 					) => (
 						<div
-							key={`${event.user}-${event.title}-${event.timestamp}`}
+							key={
+								event.key ??
+								JSON.stringify([
+									event.user,
+									event.title,
+									event.timestamp,
+									event.platform,
+									event.videoDecision,
+								])
+							}
 							className="flex items-center gap-3 py-2 px-2 rounded-lg hover:bg-muted/20 transition-colors animate-in fade-in slide-in-from-bottom-1 duration-200"
 							style={{ animationDelay: `${i * 30}ms`, animationFillMode: "backwards" }}
 						>
@@ -130,13 +154,15 @@ export const WatchHistoryWidget = ({ data, isLoading, isError }: WatchHistoryWid
 								</p>
 								<p className="text-[10px] text-muted-foreground flex items-center gap-2">
 									<span>{incognitoMode ? getLinuxUsername(event.user) : event.user}</span>
-									{event.platform && (
+									{data.measurement && event.platform ? (
 										<>
 											<span className="text-border">·</span>
 											<span>{incognitoMode ? "Linux" : event.platform}</span>
 										</>
+									) : (
+										<span>Device unknown</span>
 									)}
-									{event.videoDecision && (
+									{data.measurement && event.videoDecision ? (
 										<>
 											<span className="text-border">·</span>
 											<span className="flex items-center gap-0.5">
@@ -144,6 +170,8 @@ export const WatchHistoryWidget = ({ data, isLoading, isError }: WatchHistoryWid
 												{event.videoDecision}
 											</span>
 										</>
+									) : (
+										<span>Video method unknown</span>
 									)}
 								</p>
 							</div>

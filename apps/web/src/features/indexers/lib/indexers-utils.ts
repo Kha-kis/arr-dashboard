@@ -1,4 +1,8 @@
-import type { ProwlarrIndexer, ProwlarrIndexerField } from "@arr/shared";
+import {
+	isSensitiveProwlarrField,
+	type ProwlarrIndexer,
+	type ProwlarrIndexerField,
+} from "@arr/shared";
 
 /**
  * Number formatter for displaying counts
@@ -74,55 +78,8 @@ export const protocolLabel = (protocol: ProwlarrIndexer["protocol"]): string => 
 	}
 };
 
-/** Prowlarr field types that indicate sensitive/non-displayable content */
-const SENSITIVE_FIELD_TYPES = new Set(["password", "hidden"]);
-
-/** Field name patterns that indicate credentials or private tracker identifiers */
-const SENSITIVE_NAME_PATTERNS = [
-	"apikey",
-	"api_key",
-	"passkey",
-	"cookie",
-	"password",
-	"secret",
-	"token",
-] as const;
-
-/** Exact field names that are credentials (private tracker IDs, user secrets, etc.) */
-const SENSITIVE_FIELD_NAMES = new Set(["mamId", "pid", "rsskey", "uid", "userId", "userPasskey"]);
-
-/**
- * Determines if a field contains sensitive data (API keys, credentials,
- * private tracker identifiers) that should not be displayed by default.
- * @param field - Indexer field object
- * @returns True if field is sensitive
- */
-export const isSensitiveField = (field: ProwlarrIndexerField): boolean => {
-	const name = (field.name ?? "").toLowerCase();
-	const label = (field.label ?? "").toLowerCase();
-	const type = (field.type ?? "").toLowerCase();
-
-	// Type-based: Prowlarr marks sensitive fields as password/hidden
-	if (SENSITIVE_FIELD_TYPES.has(type)) return true;
-
-	// Exact name match (case-insensitive via the Set check on original casing)
-	if (SENSITIVE_FIELD_NAMES.has(field.name)) return true;
-
-	// Pattern match on name or label
-	for (const pattern of SENSITIVE_NAME_PATTERNS) {
-		if (name.includes(pattern) || label.includes(pattern)) return true;
-	}
-
-	// "about api" info fields
-	if (
-		(name.includes("about") && name.includes("api")) ||
-		(label.includes("about") && label.includes("api"))
-	) {
-		return true;
-	}
-
-	return false;
-};
+export const isSensitiveField = (field: ProwlarrIndexerField): boolean =>
+	isSensitiveProwlarrField(field);
 
 /**
  * Formats a field value for display

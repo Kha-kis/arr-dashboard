@@ -85,6 +85,7 @@ export async function* streamLibraryItems(
 		method: "GET",
 		timeout: options?.timeoutMs ?? STREAM_TIMEOUT_MS,
 	});
+	const headerWaitMs = Math.max(0, Date.now() - startedAt);
 
 	if (!response.ok) {
 		// Surface the body for diagnostic logging — bounded to first 512 chars
@@ -121,6 +122,7 @@ export async function* streamLibraryItems(
 	};
 
 	const reader = response.body.getReader();
+	const consumeStartedAt = Date.now();
 	try {
 		while (true) {
 			if (parserError) throw parserError;
@@ -154,6 +156,20 @@ export async function* streamLibraryItems(
 		while (queue.length > 0) {
 			const item = queue.shift();
 			if (item) yield item;
+		}
+		try {
+			log.info(
+				{
+					category: "arr-library-stream-timing",
+					service: instance.service.toLowerCase(),
+					headerWaitMs,
+					consumeMs: Math.max(0, Date.now() - consumeStartedAt),
+					itemCount,
+				},
+				"ARR library stream timing",
+			);
+		} catch {
+			// Timing diagnostics cannot change a successful provider read.
 		}
 
 		log.debug(

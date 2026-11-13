@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { jellyfinSeriesProgressProof } from "../../../lib/jellyfin/jellyfin-generation-scoped-display.js";
 import { createInjectAuthenticated, setupAuthInjection } from "../../__tests__/test-helpers.js";
 import { registerAnalyticsRoutes } from "../analytics-routes.js";
 import { registerEpisodeRoutes } from "../episode-routes.js";
@@ -233,6 +234,7 @@ describe("Jellyfin episode observation routes", () => {
 			prisma: app.prisma,
 			userId: "user-1",
 			instances: [primary],
+			showTmdbIds: [42],
 		});
 	});
 
@@ -268,6 +270,19 @@ describe("Jellyfin episode observation routes", () => {
 			providerStatus: evidenceFor([primary], "current").providerStatus,
 		});
 	});
+
+	it.each(["42.5", "9007199254740992"])(
+		"rejects non-integer or unsafe show IDs before reading episode evidence: %s",
+		async (showTmdbId) => {
+			const response = await createInjectAuthenticated(app)(
+				"GET",
+				`/api/jellyfin/episodes?instanceId=jellyfin-1&showTmdbId=${showTmdbId}`,
+			);
+			expect(response.statusCode).toBe(400);
+			expect(findFirst).not.toHaveBeenCalled();
+			expect(mocks.readEpisodes).not.toHaveBeenCalled();
+		},
+	);
 
 	it.each(["missing", "foreign", "disabled"] as const)(
 		"preserves 404 semantics for a %s requested instance",
@@ -420,6 +435,92 @@ describe("Jellyfin episode observation routes", () => {
 				},
 				providerStatus: evidenceFor(configuredInstances, state).providerStatus,
 			});
+		});
+
+		it("requires proof from each source in a degraded batch and serializes only display progress", async () => {
+			configuredInstances = [primary, secondary];
+			const evidence = evidenceFor(configuredInstances, "positive-only");
+			const primarySource = {
+				...evidence.sources[0]!,
+				rows: [row()],
+				[jellyfinSeriesProgressProof]: new Map([
+					[42, [{ seasonNumber: 1, episodeNumber: 2, watched: false }]],
+					[44, []],
+				]),
+			};
+			const secondarySource = evidence.sources[1]!;
+			const primaryStatus = sourceStatus(primary, "partial", "positive-only");
+			const providerStatus = {
+				availability: "partial",
+				sources: [
+					{
+						...primaryStatus,
+						status: { ...primaryStatus.status, reasonCodes: ["coverage-incomplete"] },
+					},
+					sourceStatus(secondary, "current", "complete"),
+				],
+			};
+			const request = createInjectAuthenticated(app);
+			const path = "/api/jellyfin/series-progress?tmdbIds=42,43,44";
+			const unknown = {
+				status: "unknown",
+				total: null,
+				watched: null,
+				percent: null,
+				watchedSemantics: "unknown",
+			};
+			const lowerBound = {
+				status: "partial",
+				total: null,
+				watched: 1,
+				percent: null,
+				watchedSemantics: "lower-bound",
+			};
+
+			mocks.readEpisodes.mockResolvedValue({
+				sources: [primarySource, secondarySource],
+				providerStatus,
+			});
+			const missing = await request("GET", path);
+			expect(missing.statusCode).toBe(200);
+			expect(missing.json()).toEqual({
+				configured: true,
+				providerStatus,
+				progress: { 42: lowerBound, 43: unknown, 44: unknown },
+			});
+
+			const coveredSecondary = {
+				...secondarySource,
+				[jellyfinSeriesProgressProof]: new Map([
+					[42, []],
+					[44, []],
+				]),
+			};
+			mocks.readEpisodes.mockResolvedValue({
+				sources: [primarySource, coveredSecondary],
+				providerStatus,
+			});
+			const covered = await request("GET", path);
+			expect(covered.statusCode).toBe(200);
+			expect(covered.json()).toEqual({
+				configured: true,
+				providerStatus,
+				progress: {
+					42: { status: "exact", total: 2, watched: 1, percent: 50, watchedSemantics: "exact" },
+					43: unknown,
+					44: unknown,
+				},
+			});
+
+			for (const invalidSources of [
+				[primarySource, coveredSecondary, coveredSecondary],
+				[primarySource, { ...coveredSecondary, rows: [row({ watched: false })] }],
+			]) {
+				mocks.readEpisodes.mockResolvedValue({ sources: invalidSources, providerStatus });
+				const invalid = await request("GET", path);
+				expect(invalid.statusCode).toBe(200);
+				expect(invalid.json().progress).toEqual({ 42: lowerBound, 43: unknown, 44: unknown });
+			}
 		});
 
 		it("omits status and helper calls when no instances are configured", async () => {

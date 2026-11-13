@@ -1,11 +1,13 @@
 import {
 	ARR_SERVICES_UPPER,
 	type DashboardStatisticsResponse,
+	dashboardStatisticsEnvelopeSchema,
 	dashboardStatisticsResponseSchema,
 } from "@arr/shared";
 import { LidarrClient, ProwlarrClient, RadarrClient, ReadarrClient, SonarrClient } from "arr-sdk";
-import type { FastifyPluginCallback } from "fastify";
+import type { FastifyBaseLogger, FastifyInstance, FastifyPluginCallback } from "fastify";
 import { streamLibraryItems } from "../../lib/arr/library-stream.js";
+import { withIsolatedRuntimePrismaReadClient } from "../../lib/backup/restore-runtime-client.js";
 import {
 	aggregateLidarrStatistics,
 	aggregateProwlarrStatistics,
@@ -23,397 +25,542 @@ import {
 	fetchReadarrStatisticsWithSdk,
 	fetchSonarrStatisticsWithSdk,
 } from "../../lib/statistics/dashboard-statistics.js";
+import { queueDashboardStatisticsRefresh } from "../../lib/statistics/dashboard-statistics-refresh.js";
+import {
+	fingerprintDashboardSources,
+	readDashboardSnapshot,
+} from "../../lib/statistics/dashboard-statistics-snapshot.js";
 import { buildCombinedDiskPayload } from "../../lib/statistics/statistics-utils.js";
 
-/**
- * Statistics-related routes for the dashboard
- */
-export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
-	/**
-	 * GET /dashboard/statistics
-	 * Fetches aggregated statistics from all enabled instances
-	 */
-	app.get("/dashboard/statistics", async (request, reply) => {
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: { enabled: true, userId: request.currentUser!.id },
-		});
+/** Retains the existing provider aggregation off the latency-sensitive GET path. */
+export async function collectDashboardStatistics(
+	app: FastifyInstance,
+	userId: string,
+	log: FastifyBaseLogger,
+	options: { legacyTotals?: boolean } = {},
+): Promise<{ data: DashboardStatisticsResponse; partial: boolean }> {
+	const includeFailedInTotals = options.legacyTotals === true;
+	const instances = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		prisma.serviceInstance.findMany({ where: { enabled: true, userId } }),
+	);
 
-		// Filter to ARR-compatible services only (integration services use different clients)
-		const arrInstances = instances.filter((i) =>
-			(ARR_SERVICES_UPPER as readonly string[]).includes(i.service),
-		);
+	// Filter to ARR-compatible services only (integration services use different clients)
+	const arrInstances = instances.filter((i) =>
+		(ARR_SERVICES_UPPER as readonly string[]).includes(i.service),
+	);
 
-		// Fetch all instances in parallel for better performance
-		const fetchResults = await Promise.all(
-			arrInstances.map(async (instance) => {
-				const service = instance.service.toLowerCase();
-				// `arrClientFactory.create` decrypts the stored API key. If the
-				// `ENCRYPTION_KEY` has rotated since the row was last written,
-				// or the ciphertext is malformed for any other reason, this
-				// throws. Pre-fix versions left the throw uncaught and the
-				// entire `Promise.all` rejected → 500 on the WHOLE endpoint,
-				// taking every healthy instance's stats down with the one
-				// broken one. Catching here and setting `client = null`
-				// causes the `client instanceof XxxClient` guard in each
-				// per-service branch below to fail naturally, which routes
-				// the request into that branch's existing per-service error
-				// path (the `catch` after each `fetchXxxStatisticsWithSdk`).
-				// Net effect: the dashboard degrades per-instance, not
-				// wholesale, AND the per-service result type narrowing
-				// downstream stays intact (each branch still returns its
-				// own `service: "xxx" as const` literal).
-				let client: ReturnType<typeof app.arrClientFactory.create> | null = null;
+	// Fetch all instances in parallel for better performance
+	const fetchResults = await Promise.all(
+		arrInstances.map(async (instance, sourceOrdinal) => {
+			const service = instance.service.toLowerCase();
+			let providerIncomplete = false;
+			const markIncomplete = (phase: "ancillary" | "stream") => {
+				if (providerIncomplete) return;
+				providerIncomplete = true;
 				try {
-					client = app.arrClientFactory.create(instance);
-				} catch (clientErr) {
-					request.log.error(
-						{ err: clientErr, instance: instance.id, service: instance.service },
-						"arr client construction failed (likely encryption key mismatch); per-instance fetch will use the empty-stats fallback",
+					log.warn(
+						{ category: "dashboard-statistics-provider-incomplete", service, sourceOrdinal, phase },
+						"Dashboard statistics provider data is incomplete",
 					);
+				} catch {
+					// Logging cannot change the incomplete-data decision.
 				}
-
-				if (service === "sonarr" && client instanceof SonarrClient) {
+			};
+			const providerStartedAt = Date.now();
+			const timedStreamItems = () =>
+				(async function* () {
+					const startedAt = Date.now();
+					let completed = false;
 					try {
-						const data = await fetchSonarrStatisticsWithSdk(
-							client,
-							instance.id,
-							instance.label,
-							instance.baseUrl,
-							instance.externalUrl ?? undefined,
-							{
-								streamItems: () => streamLibraryItems(app.arrClientFactory, instance, request.log),
-								log: request.log,
-							},
-						);
-						return {
-							service: "sonarr" as const,
-							instanceId: instance.id,
-							instanceName: instance.label,
-							storageGroupId: instance.storageGroupId,
-							data,
-							error: false,
-						};
-					} catch (error) {
-						request.log.error(
-							{ err: error, instance: instance.id },
-							"sonarr statistics fetch failed",
-						);
-						return {
-							service: "sonarr" as const,
-							instanceId: instance.id,
-							instanceName: instance.label,
-							storageGroupId: instance.storageGroupId,
-							data: emptySonarrStatistics,
-							error: true,
-						};
+						yield* streamLibraryItems(app.arrClientFactory, instance, log, { timeoutMs: 60_000 });
+						completed = true;
+					} finally {
+						try {
+							log.info(
+								{
+									category: "dashboard-statistics-stream-timing",
+									service,
+									sourceOrdinal,
+									outcome: completed ? "complete" : "interrupted",
+									durationMs: Math.max(0, Date.now() - startedAt),
+								},
+								"Dashboard statistics stream timing",
+							);
+						} catch {
+							// Diagnostics must not change stream or response behavior.
+						}
 					}
+				})();
+			const logProviderTiming = () => {
+				// Only fixed service type and duration; never log instance
+				// identity, URL, title, upstream response, or credential.
+				try {
+					log.info(
+						{
+							category: "dashboard-statistics-provider-timing",
+							service,
+							sourceOrdinal,
+							durationMs: Math.max(0, Date.now() - providerStartedAt),
+						},
+						"Dashboard statistics provider timing",
+					);
+				} catch {
+					// Diagnostics must not change the statistics response.
 				}
-
-				if (service === "radarr" && client instanceof RadarrClient) {
-					try {
-						const data = await fetchRadarrStatisticsWithSdk(
-							client,
-							instance.id,
-							instance.label,
-							instance.baseUrl,
-							instance.externalUrl ?? undefined,
-							{
-								streamItems: () => streamLibraryItems(app.arrClientFactory, instance, request.log),
-								log: request.log,
-							},
-						);
-						return {
-							service: "radarr" as const,
-							instanceId: instance.id,
-							instanceName: instance.label,
-							storageGroupId: instance.storageGroupId,
-							data,
-							error: false,
-						};
-					} catch (error) {
-						request.log.error(
-							{ err: error, instance: instance.id },
-							"radarr statistics fetch failed",
-						);
-						return {
-							service: "radarr" as const,
-							instanceId: instance.id,
-							instanceName: instance.label,
-							storageGroupId: instance.storageGroupId,
-							data: emptyRadarrStatistics,
-							error: true,
-						};
-					}
-				}
-
-				if (service === "prowlarr" && client instanceof ProwlarrClient) {
-					try {
-						const data = await fetchProwlarrStatisticsWithSdk(
-							client,
-							instance.id,
-							instance.label,
-							instance.baseUrl,
-							instance.externalUrl ?? undefined,
-						);
-						return {
-							service: "prowlarr" as const,
-							instanceId: instance.id,
-							instanceName: instance.label,
-							data,
-							error: false,
-						};
-					} catch (error) {
-						request.log.error(
-							{ err: error, instance: instance.id },
-							"prowlarr statistics fetch failed",
-						);
-						return {
-							service: "prowlarr" as const,
-							instanceId: instance.id,
-							instanceName: instance.label,
-							data: emptyProwlarrStatistics,
-							error: true,
-						};
-					}
-				}
-
-				if (service === "lidarr" && client instanceof LidarrClient) {
-					try {
-						const data = await fetchLidarrStatisticsWithSdk(
-							client,
-							instance.id,
-							instance.label,
-							instance.baseUrl,
-							instance.externalUrl ?? undefined,
-							{
-								streamItems: () => streamLibraryItems(app.arrClientFactory, instance, request.log),
-								log: request.log,
-							},
-						);
-						return {
-							service: "lidarr" as const,
-							instanceId: instance.id,
-							instanceName: instance.label,
-							storageGroupId: instance.storageGroupId,
-							data,
-							error: false,
-						};
-					} catch (error) {
-						request.log.error(
-							{ err: error, instance: instance.id },
-							"lidarr statistics fetch failed",
-						);
-						return {
-							service: "lidarr" as const,
-							instanceId: instance.id,
-							instanceName: instance.label,
-							storageGroupId: instance.storageGroupId,
-							data: emptyLidarrStatistics,
-							error: true,
-						};
-					}
-				}
-
-				if (service === "readarr" && client instanceof ReadarrClient) {
-					try {
-						const data = await fetchReadarrStatisticsWithSdk(
-							client,
-							instance.id,
-							instance.label,
-							instance.baseUrl,
-							instance.externalUrl ?? undefined,
-							{
-								streamItems: () => streamLibraryItems(app.arrClientFactory, instance, request.log),
-								log: request.log,
-							},
-						);
-						return {
-							service: "readarr" as const,
-							instanceId: instance.id,
-							instanceName: instance.label,
-							storageGroupId: instance.storageGroupId,
-							data,
-							error: false,
-						};
-					} catch (error) {
-						request.log.error(
-							{ err: error, instance: instance.id },
-							"readarr statistics fetch failed",
-						);
-						return {
-							service: "readarr" as const,
-							instanceId: instance.id,
-							instanceName: instance.label,
-							storageGroupId: instance.storageGroupId,
-							data: emptyReadarrStatistics,
-							error: true,
-						};
-					}
-				}
-
-				request.log.warn(
-					{ service: instance.service, instanceId: instance.id },
-					"unknown service type for statistics",
+			};
+			// A client-construction failure degrades only this source. Each
+			// service branch below returns an explicit error-marked fallback.
+			let client: ReturnType<typeof app.arrClientFactory.create> | null = null;
+			try {
+				client = app.arrClientFactory.create(instance);
+			} catch {
+				log.error(
+					{ category: "dashboard-statistics-client-unavailable", service, sourceOrdinal },
+					"arr client construction failed (likely encryption key mismatch); per-instance fetch will use the empty-stats fallback",
 				);
-				return null;
+			}
+
+			if (service === "sonarr") {
+				try {
+					if (!(client instanceof SonarrClient)) throw new Error("client unavailable");
+					const data = await fetchSonarrStatisticsWithSdk(
+						client,
+						instance.id,
+						instance.label,
+						instance.baseUrl,
+						instance.externalUrl ?? undefined,
+						{
+							streamItems: timedStreamItems,
+							log,
+							markIncomplete,
+						},
+					);
+					return {
+						service: "sonarr" as const,
+						instanceId: instance.id,
+						instanceName: instance.label,
+						storageGroupId: instance.storageGroupId,
+						data,
+						error: providerIncomplete,
+					};
+				} catch {
+					log.error(
+						{ category: "dashboard-statistics-provider-failed", service, sourceOrdinal },
+						"sonarr statistics fetch failed",
+					);
+					return {
+						service: "sonarr" as const,
+						instanceId: instance.id,
+						instanceName: instance.label,
+						storageGroupId: instance.storageGroupId,
+						data: emptySonarrStatistics,
+						error: true,
+					};
+				} finally {
+					logProviderTiming();
+				}
+			}
+
+			if (service === "radarr") {
+				try {
+					if (!(client instanceof RadarrClient)) throw new Error("client unavailable");
+					const data = await fetchRadarrStatisticsWithSdk(
+						client,
+						instance.id,
+						instance.label,
+						instance.baseUrl,
+						instance.externalUrl ?? undefined,
+						{
+							streamItems: timedStreamItems,
+							log,
+							markIncomplete,
+						},
+					);
+					return {
+						service: "radarr" as const,
+						instanceId: instance.id,
+						instanceName: instance.label,
+						storageGroupId: instance.storageGroupId,
+						data,
+						error: providerIncomplete,
+					};
+				} catch {
+					log.error(
+						{ category: "dashboard-statistics-provider-failed", service, sourceOrdinal },
+						"radarr statistics fetch failed",
+					);
+					return {
+						service: "radarr" as const,
+						instanceId: instance.id,
+						instanceName: instance.label,
+						storageGroupId: instance.storageGroupId,
+						data: emptyRadarrStatistics,
+						error: true,
+					};
+				} finally {
+					logProviderTiming();
+				}
+			}
+
+			if (service === "prowlarr") {
+				try {
+					if (!(client instanceof ProwlarrClient)) throw new Error("client unavailable");
+					const data = await fetchProwlarrStatisticsWithSdk(
+						client,
+						instance.id,
+						instance.label,
+						instance.baseUrl,
+						instance.externalUrl ?? undefined,
+						{ markIncomplete },
+					);
+					return {
+						service: "prowlarr" as const,
+						instanceId: instance.id,
+						instanceName: instance.label,
+						data,
+						error: providerIncomplete,
+					};
+				} catch {
+					log.error(
+						{ category: "dashboard-statistics-provider-failed", service, sourceOrdinal },
+						"prowlarr statistics fetch failed",
+					);
+					return {
+						service: "prowlarr" as const,
+						instanceId: instance.id,
+						instanceName: instance.label,
+						data: emptyProwlarrStatistics,
+						error: true,
+					};
+				} finally {
+					logProviderTiming();
+				}
+			}
+
+			if (service === "lidarr") {
+				try {
+					if (!(client instanceof LidarrClient)) throw new Error("client unavailable");
+					const data = await fetchLidarrStatisticsWithSdk(
+						client,
+						instance.id,
+						instance.label,
+						instance.baseUrl,
+						instance.externalUrl ?? undefined,
+						{
+							streamItems: timedStreamItems,
+							log,
+							markIncomplete,
+						},
+					);
+					return {
+						service: "lidarr" as const,
+						instanceId: instance.id,
+						instanceName: instance.label,
+						storageGroupId: instance.storageGroupId,
+						data,
+						error: providerIncomplete,
+					};
+				} catch {
+					log.error(
+						{ category: "dashboard-statistics-provider-failed", service, sourceOrdinal },
+						"lidarr statistics fetch failed",
+					);
+					return {
+						service: "lidarr" as const,
+						instanceId: instance.id,
+						instanceName: instance.label,
+						storageGroupId: instance.storageGroupId,
+						data: emptyLidarrStatistics,
+						error: true,
+					};
+				} finally {
+					logProviderTiming();
+				}
+			}
+
+			if (service === "readarr") {
+				try {
+					if (!(client instanceof ReadarrClient)) throw new Error("client unavailable");
+					const data = await fetchReadarrStatisticsWithSdk(
+						client,
+						instance.id,
+						instance.label,
+						instance.baseUrl,
+						instance.externalUrl ?? undefined,
+						{
+							streamItems: timedStreamItems,
+							log,
+							markIncomplete,
+						},
+					);
+					return {
+						service: "readarr" as const,
+						instanceId: instance.id,
+						instanceName: instance.label,
+						storageGroupId: instance.storageGroupId,
+						data,
+						error: providerIncomplete,
+					};
+				} catch {
+					log.error(
+						{ category: "dashboard-statistics-provider-failed", service, sourceOrdinal },
+						"readarr statistics fetch failed",
+					);
+					return {
+						service: "readarr" as const,
+						instanceId: instance.id,
+						instanceName: instance.label,
+						storageGroupId: instance.storageGroupId,
+						data: emptyReadarrStatistics,
+						error: true,
+					};
+				} finally {
+					logProviderTiming();
+				}
+			}
+
+			logProviderTiming();
+			log.warn(
+				{ category: "dashboard-statistics-service-unsupported", service, sourceOrdinal },
+				"unknown service type for statistics",
+			);
+			return null;
+		}),
+	);
+
+	// Track storage groups GLOBALLY across all service types for disk deduplication
+	// This ensures that if Sonarr and Radarr share the same storage group,
+	// disk stats are only counted once total (not once per service type)
+	const globalSeenStorageGroups = new Set<string>();
+
+	// Group results by service type and mark which should count disk stats
+	const sonarrInstances: Array<{
+		instanceId: string;
+		instanceName: string;
+		storageGroupId: string | null;
+		shouldCountDisk: boolean;
+		data: DashboardStatisticsResponse["sonarr"]["instances"][number]["data"];
+		error?: boolean;
+	}> = [];
+	const radarrInstances: Array<{
+		instanceId: string;
+		instanceName: string;
+		storageGroupId: string | null;
+		shouldCountDisk: boolean;
+		data: DashboardStatisticsResponse["radarr"]["instances"][number]["data"];
+		error?: boolean;
+	}> = [];
+	const prowlarrInstances: Array<{
+		instanceId: string;
+		instanceName: string;
+		data: DashboardStatisticsResponse["prowlarr"]["instances"][number]["data"];
+		error?: boolean;
+	}> = [];
+	const lidarrInstances: Array<{
+		instanceId: string;
+		instanceName: string;
+		storageGroupId: string | null;
+		shouldCountDisk: boolean;
+		data: DashboardStatisticsResponse["lidarr"]["instances"][number]["data"];
+		error?: boolean;
+	}> = [];
+	const readarrInstances: Array<{
+		instanceId: string;
+		instanceName: string;
+		storageGroupId: string | null;
+		shouldCountDisk: boolean;
+		data: DashboardStatisticsResponse["readarr"]["instances"][number]["data"];
+		error?: boolean;
+	}> = [];
+
+	for (const result of fetchResults) {
+		if (!result) continue;
+
+		if (result.service === "sonarr") {
+			// Determine if this instance should count disk stats
+			const storageGroupId = result.storageGroupId;
+			const shouldCountDisk =
+				(includeFailedInTotals || !result.error) &&
+				(!storageGroupId || !globalSeenStorageGroups.has(storageGroupId));
+			if (storageGroupId && (includeFailedInTotals || !result.error)) {
+				globalSeenStorageGroups.add(storageGroupId);
+			}
+
+			sonarrInstances.push({
+				instanceId: result.instanceId,
+				instanceName: result.instanceName,
+				storageGroupId: result.storageGroupId,
+				shouldCountDisk,
+				data: result.data,
+				error: result.error,
+			});
+		} else if (result.service === "radarr") {
+			// Determine if this instance should count disk stats
+			const storageGroupId = result.storageGroupId;
+			const shouldCountDisk =
+				(includeFailedInTotals || !result.error) &&
+				(!storageGroupId || !globalSeenStorageGroups.has(storageGroupId));
+			if (storageGroupId && (includeFailedInTotals || !result.error)) {
+				globalSeenStorageGroups.add(storageGroupId);
+			}
+
+			radarrInstances.push({
+				instanceId: result.instanceId,
+				instanceName: result.instanceName,
+				storageGroupId: result.storageGroupId,
+				shouldCountDisk,
+				data: result.data,
+				error: result.error,
+			});
+		} else if (result.service === "prowlarr") {
+			prowlarrInstances.push({
+				instanceId: result.instanceId,
+				instanceName: result.instanceName,
+				data: result.data,
+				error: result.error,
+			});
+		} else if (result.service === "lidarr") {
+			// Determine if this instance should count disk stats
+			const storageGroupId = result.storageGroupId;
+			const shouldCountDisk =
+				(includeFailedInTotals || !result.error) &&
+				(!storageGroupId || !globalSeenStorageGroups.has(storageGroupId));
+			if (storageGroupId && (includeFailedInTotals || !result.error)) {
+				globalSeenStorageGroups.add(storageGroupId);
+			}
+
+			lidarrInstances.push({
+				instanceId: result.instanceId,
+				instanceName: result.instanceName,
+				storageGroupId: result.storageGroupId,
+				shouldCountDisk,
+				data: result.data,
+				error: result.error,
+			});
+		} else if (result.service === "readarr") {
+			// Determine if this instance should count disk stats
+			const storageGroupId = result.storageGroupId;
+			const shouldCountDisk =
+				(includeFailedInTotals || !result.error) &&
+				(!storageGroupId || !globalSeenStorageGroups.has(storageGroupId));
+			if (storageGroupId && (includeFailedInTotals || !result.error)) {
+				globalSeenStorageGroups.add(storageGroupId);
+			}
+
+			readarrInstances.push({
+				instanceId: result.instanceId,
+				instanceName: result.instanceName,
+				storageGroupId: result.storageGroupId,
+				shouldCountDisk,
+				data: result.data,
+				error: result.error,
+			});
+		}
+	}
+	const usableSonarr = includeFailedInTotals
+		? sonarrInstances
+		: sonarrInstances.filter((entry) => !entry.error);
+	const usableRadarr = includeFailedInTotals
+		? radarrInstances
+		: radarrInstances.filter((entry) => !entry.error);
+	const usableProwlarr = includeFailedInTotals
+		? prowlarrInstances
+		: prowlarrInstances.filter((entry) => !entry.error);
+	const usableLidarr = includeFailedInTotals
+		? lidarrInstances
+		: lidarrInstances.filter((entry) => !entry.error);
+	const usableReadarr = includeFailedInTotals
+		? readarrInstances
+		: readarrInstances.filter((entry) => !entry.error);
+
+	const payload = {
+		sonarr: {
+			instances: sonarrInstances,
+			aggregate:
+				!includeFailedInTotals && sonarrInstances.some((entry) => entry.error)
+					? undefined
+					: aggregateSonarrStatistics(usableSonarr),
+		},
+		radarr: {
+			instances: radarrInstances,
+			aggregate:
+				!includeFailedInTotals && radarrInstances.some((entry) => entry.error)
+					? undefined
+					: aggregateRadarrStatistics(usableRadarr),
+		},
+		prowlarr: {
+			instances: prowlarrInstances,
+			aggregate:
+				!includeFailedInTotals && prowlarrInstances.some((entry) => entry.error)
+					? undefined
+					: aggregateProwlarrStatistics(usableProwlarr),
+		},
+		lidarr: {
+			instances: lidarrInstances,
+			aggregate:
+				!includeFailedInTotals && lidarrInstances.some((entry) => entry.error)
+					? undefined
+					: aggregateLidarrStatistics(usableLidarr),
+		},
+		readarr: {
+			instances: readarrInstances,
+			aggregate:
+				!includeFailedInTotals && readarrInstances.some((entry) => entry.error)
+					? undefined
+					: aggregateReadarrStatistics(usableReadarr),
+		},
+		// Combined disk stats, de-duplicated across services + storage groups.
+		// diskCount/instanceCount drive the transparency line in the UI so a
+		// large total reads as "N disks across M instances", never a silent lie.
+		combinedDisk: buildCombinedDiskPayload({
+			sonarr: usableSonarr,
+			radarr: usableRadarr,
+			lidarr: usableLidarr,
+			readarr: usableReadarr,
+		}),
+	};
+
+	return {
+		data: dashboardStatisticsResponseSchema.parse(payload),
+		partial: fetchResults.some((result) => result?.error === true),
+	};
+}
+
+/** Statistics-related routes for the dashboard. */
+export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
+	app.get("/dashboard/statistics", async (request, reply) => {
+		const { data } = await collectDashboardStatistics(app, request.currentUser!.id, request.log, {
+			legacyTotals: true,
+		});
+		return reply.send(data);
+	});
+
+	app.get("/dashboard/statistics/snapshot", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const initial = await withIsolatedRuntimePrismaReadClient(app.prisma, async (prisma) => {
+			const sources = await prisma.serviceInstance.findMany({
+				where: { enabled: true, userId },
+				select: { id: true, service: true, enabled: true, updatedAt: true },
+			});
+			const fingerprint = fingerprintDashboardSources(sources);
+			return {
+				fingerprint,
+				snapshot: await readDashboardSnapshot(prisma, userId, fingerprint, new Date()),
+			};
+		});
+		const { fingerprint, snapshot } = initial;
+		if (snapshot.refreshDue) {
+			void queueDashboardStatisticsRefresh(app, userId, fingerprint, request.log, () =>
+				collectDashboardStatistics(app, userId, request.log),
+			);
+		}
+		return reply.send(
+			dashboardStatisticsEnvelopeSchema.parse({
+				availability: snapshot.availability,
+				observedAt: snapshot.observedAt?.toISOString() ?? null,
+				data: snapshot.data,
 			}),
 		);
-
-		// Track storage groups GLOBALLY across all service types for disk deduplication
-		// This ensures that if Sonarr and Radarr share the same storage group,
-		// disk stats are only counted once total (not once per service type)
-		const globalSeenStorageGroups = new Set<string>();
-
-		// Group results by service type and mark which should count disk stats
-		const sonarrInstances: Array<{
-			instanceId: string;
-			instanceName: string;
-			storageGroupId: string | null;
-			shouldCountDisk: boolean;
-			data: DashboardStatisticsResponse["sonarr"]["instances"][number]["data"];
-			error?: boolean;
-		}> = [];
-		const radarrInstances: Array<{
-			instanceId: string;
-			instanceName: string;
-			storageGroupId: string | null;
-			shouldCountDisk: boolean;
-			data: DashboardStatisticsResponse["radarr"]["instances"][number]["data"];
-			error?: boolean;
-		}> = [];
-		const prowlarrInstances: Array<{
-			instanceId: string;
-			instanceName: string;
-			data: DashboardStatisticsResponse["prowlarr"]["instances"][number]["data"];
-			error?: boolean;
-		}> = [];
-		const lidarrInstances: Array<{
-			instanceId: string;
-			instanceName: string;
-			storageGroupId: string | null;
-			shouldCountDisk: boolean;
-			data: DashboardStatisticsResponse["lidarr"]["instances"][number]["data"];
-			error?: boolean;
-		}> = [];
-		const readarrInstances: Array<{
-			instanceId: string;
-			instanceName: string;
-			storageGroupId: string | null;
-			shouldCountDisk: boolean;
-			data: DashboardStatisticsResponse["readarr"]["instances"][number]["data"];
-			error?: boolean;
-		}> = [];
-
-		for (const result of fetchResults) {
-			if (!result) continue;
-
-			if (result.service === "sonarr") {
-				// Determine if this instance should count disk stats
-				const storageGroupId = result.storageGroupId;
-				const shouldCountDisk = !storageGroupId || !globalSeenStorageGroups.has(storageGroupId);
-				if (storageGroupId) {
-					globalSeenStorageGroups.add(storageGroupId);
-				}
-
-				sonarrInstances.push({
-					instanceId: result.instanceId,
-					instanceName: result.instanceName,
-					storageGroupId: result.storageGroupId,
-					shouldCountDisk,
-					data: result.data,
-					error: result.error,
-				});
-			} else if (result.service === "radarr") {
-				// Determine if this instance should count disk stats
-				const storageGroupId = result.storageGroupId;
-				const shouldCountDisk = !storageGroupId || !globalSeenStorageGroups.has(storageGroupId);
-				if (storageGroupId) {
-					globalSeenStorageGroups.add(storageGroupId);
-				}
-
-				radarrInstances.push({
-					instanceId: result.instanceId,
-					instanceName: result.instanceName,
-					storageGroupId: result.storageGroupId,
-					shouldCountDisk,
-					data: result.data,
-					error: result.error,
-				});
-			} else if (result.service === "prowlarr") {
-				prowlarrInstances.push({
-					instanceId: result.instanceId,
-					instanceName: result.instanceName,
-					data: result.data,
-					error: result.error,
-				});
-			} else if (result.service === "lidarr") {
-				// Determine if this instance should count disk stats
-				const storageGroupId = result.storageGroupId;
-				const shouldCountDisk = !storageGroupId || !globalSeenStorageGroups.has(storageGroupId);
-				if (storageGroupId) {
-					globalSeenStorageGroups.add(storageGroupId);
-				}
-
-				lidarrInstances.push({
-					instanceId: result.instanceId,
-					instanceName: result.instanceName,
-					storageGroupId: result.storageGroupId,
-					shouldCountDisk,
-					data: result.data,
-					error: result.error,
-				});
-			} else if (result.service === "readarr") {
-				// Determine if this instance should count disk stats
-				const storageGroupId = result.storageGroupId;
-				const shouldCountDisk = !storageGroupId || !globalSeenStorageGroups.has(storageGroupId);
-				if (storageGroupId) {
-					globalSeenStorageGroups.add(storageGroupId);
-				}
-
-				readarrInstances.push({
-					instanceId: result.instanceId,
-					instanceName: result.instanceName,
-					storageGroupId: result.storageGroupId,
-					shouldCountDisk,
-					data: result.data,
-					error: result.error,
-				});
-			}
-		}
-
-		const payload = {
-			sonarr: {
-				instances: sonarrInstances,
-				aggregate: aggregateSonarrStatistics(sonarrInstances),
-			},
-			radarr: {
-				instances: radarrInstances,
-				aggregate: aggregateRadarrStatistics(radarrInstances),
-			},
-			prowlarr: {
-				instances: prowlarrInstances,
-				aggregate: aggregateProwlarrStatistics(prowlarrInstances),
-			},
-			lidarr: {
-				instances: lidarrInstances,
-				aggregate: aggregateLidarrStatistics(lidarrInstances),
-			},
-			readarr: {
-				instances: readarrInstances,
-				aggregate: aggregateReadarrStatistics(readarrInstances),
-			},
-			// Combined disk stats, de-duplicated across services + storage groups.
-			// diskCount/instanceCount drive the transparency line in the UI so a
-			// large total reads as "N disks across M instances", never a silent lie.
-			combinedDisk: buildCombinedDiskPayload({
-				sonarr: sonarrInstances,
-				radarr: radarrInstances,
-				lidarr: lidarrInstances,
-				readarr: readarrInstances,
-			}),
-		};
-
-		return reply.send(dashboardStatisticsResponseSchema.parse(payload));
 	});
 
 	done();

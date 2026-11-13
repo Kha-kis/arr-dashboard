@@ -5,13 +5,15 @@
  * Aggregates across all user's Jellyfin instances.
  */
 
-import type {
-	JellyfinNowPlayingResponse,
-	JellyfinSessionInfo,
-	SessionAvailability,
+import {
+	type JellyfinNowPlayingResponse,
+	type JellyfinSessionInfo,
+	measureSessionBandwidth,
+	type SessionAvailability,
 } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { executeOnJellyfinInstances } from "../../lib/jellyfin/jellyfin-helpers.js";
+import { projectJellyfinSessionMeasurements } from "../../lib/jellyfin/jellyfin-session-measurements.js";
 
 export async function registerNowPlayingRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	/**
@@ -26,7 +28,6 @@ export async function registerNowPlayingRoutes(app: FastifyInstance, _opts: Fast
 			const sessions = await client.getSessions();
 			return sessions.map((s): JellyfinSessionInfo => {
 				const item = s.nowPlayingItem;
-				const isTranscoding = s.transcodingInfo && !s.transcodingInfo.isVideoDirect;
 
 				return {
 					sessionId: s.id,
@@ -39,14 +40,7 @@ export async function registerNowPlayingRoutes(app: FastifyInstance, _opts: Fast
 					state: s.isPaused ? "paused" : "playing",
 					viewOffset: s.positionMs,
 					duration: s.durationMs,
-					videoDecision: isTranscoding ? "Transcode" : (s.playMethod ?? "DirectPlay"),
-					audioDecision:
-						s.transcodingInfo && !s.transcodingInfo.isAudioDirect ? "Transcode" : "Direct",
-					bandwidth: s.transcodingInfo?.bitrate
-						? Math.round(s.transcodingInfo.bitrate / 1000)
-						: undefined,
-					videoCodec: s.transcodingInfo?.videoCodec,
-					audioCodec: s.transcodingInfo?.audioCodec,
+					...projectJellyfinSessionMeasurements(s),
 					thumb: item?.imageTags?.Primary ? `/Items/${item.id}/Images/Primary` : undefined,
 					instanceId: instance.id,
 					instanceName: instance.label,
@@ -72,15 +66,18 @@ export async function registerNowPlayingRoutes(app: FastifyInstance, _opts: Fast
 		}
 
 		const sessions = result.aggregated as unknown as JellyfinSessionInfo[];
-		let totalBandwidth = 0;
-		for (const s of sessions) {
-			totalBandwidth += s.bandwidth ?? 0;
+		const bandwidthCoverage = measureSessionBandwidth(sessions);
+		if (configuredSources === 0) {
+			bandwidthCoverage.status = "unavailable";
+			bandwidthCoverage.knownTotalKbps = null;
 		}
 
 		const response: JellyfinNowPlayingResponse = {
 			sessions,
-			totalBandwidth,
+			totalBandwidth: bandwidthCoverage.knownTotalKbps ?? 0,
 			availability,
+			bandwidthCoverage,
+			bandwidthBasis: "encoding-estimate",
 		};
 
 		return reply.send(response);

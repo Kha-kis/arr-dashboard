@@ -33,6 +33,10 @@ export class LabelSyncScheduler {
 	private intervalId: NodeJS.Timeout | null = null;
 	private inFlight = false;
 	private trackTick: TickWrapper;
+	private admissionClosed = false;
+	private scheduleGeneration = 0;
+	private pendingTicks = new Set<Promise<void>>();
+	private shutdownPromise: Promise<void> | null = null;
 
 	constructor(
 		private prisma: PrismaClient,
@@ -45,6 +49,7 @@ export class LabelSyncScheduler {
 	}
 
 	start(): void {
+		if (this.admissionClosed) return;
 		if (this.intervalId) {
 			this.log.warn("Label sync scheduler already running");
 			return;
@@ -52,24 +57,55 @@ export class LabelSyncScheduler {
 
 		this.log.info({ intervalMs: TICK_INTERVAL_MS }, "Starting Plex label sync scheduler");
 
+		const generation = ++this.scheduleGeneration;
+		this.intervalId = setInterval(() => {
+			void this.runScheduledTick(generation, "Scheduled label-sync tick failed");
+		}, TICK_INTERVAL_MS);
 		// Fire one tick immediately so a recently-modified rule doesn't wait the
 		// full interval before its first scheduled run.
-		this.trackTick(() => this.tick()).catch((err) => {
-			this.log.error({ err }, "Initial label-sync tick failed");
-		});
-
-		this.intervalId = setInterval(() => {
-			this.trackTick(() => this.tick()).catch((err) => {
-				this.log.error({ err }, "Scheduled label-sync tick failed");
-			});
-		}, TICK_INTERVAL_MS);
+		void this.runScheduledTick(generation, "Initial label-sync tick failed");
 	}
 
 	stop(): void {
+		this.scheduleGeneration++;
 		if (this.intervalId) {
 			clearInterval(this.intervalId);
 			this.intervalId = null;
 			this.log.info("Plex label sync scheduler stopped");
+		}
+	}
+
+	/** Close admission early, without delaying sibling plugins' preClose hooks. */
+	closeAdmission(): void {
+		this.admissionClosed = true;
+		this.stop();
+	}
+
+	/** Finish reconciliation, execution and result bookkeeping before dependencies close. */
+	shutdown(): Promise<void> {
+		this.closeAdmission();
+		this.shutdownPromise ??= (async () => {
+			while (this.pendingTicks.size > 0) await Promise.all(this.pendingTicks);
+		})();
+		return this.shutdownPromise;
+	}
+
+	private async runScheduledTick(generation: number, errorMessage: string): Promise<void> {
+		if (this.admissionClosed || !this.intervalId || generation !== this.scheduleGeneration) return;
+		// Own the entire wrapper, including admission delay and rejection, not
+		// only reconciliation or the rule-query body. Drain tokens never reject.
+		let finish!: () => void;
+		const completion = new Promise<void>((resolve) => {
+			finish = resolve;
+		});
+		this.pendingTicks.add(completion);
+		try {
+			await this.trackTick(() => this.tick());
+		} catch (err) {
+			this.log.error({ err }, errorMessage);
+		} finally {
+			this.pendingTicks.delete(completion);
+			finish();
 		}
 	}
 

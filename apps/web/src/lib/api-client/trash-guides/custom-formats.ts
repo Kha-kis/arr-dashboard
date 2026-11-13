@@ -33,11 +33,13 @@ export interface CFDescription {
 export interface CustomFormatsListResponse {
 	radarr?: CustomFormat[];
 	sonarr?: CustomFormat[];
+	unavailableServices?: ("RADARR" | "SONARR")[];
 }
 
 export interface CFDescriptionsListResponse {
 	radarr?: CFDescription[];
 	sonarr?: CFDescription[];
+	unavailableServices?: ("RADARR" | "SONARR")[];
 }
 
 export interface DeployMultipleCustomFormatsRequest {

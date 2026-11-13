@@ -95,20 +95,25 @@ export const QueueTable = ({
 				return;
 			}
 
-			if (action === "retry" && onRetry) {
-				await onRetry(actionableItems);
-			}
+			try {
+				if (action === "retry" && onRetry) {
+					await onRetry(actionableItems);
+				}
 
-			if (action === "manualImport" && onManualImport) {
-				await onManualImport(actionableItems);
-			}
+				if (action === "manualImport" && onManualImport) {
+					await onManualImport(actionableItems);
+				}
 
-			if (action === "remove" && onRemove) {
-				await onRemove(actionableItems, actionOptions);
-			}
+				if (action === "remove" && onRemove) {
+					await onRemove(actionableItems, actionOptions);
+				}
 
-			if (action === "category" && onChangeCategory) {
-				await onChangeCategory(actionableItems);
+				if (action === "category" && onChangeCategory) {
+					await onChangeCategory(actionableItems);
+				}
+			} catch {
+				// The action hook owns the visible Dashboard error. Event adapters consume
+				// its rejection; programmatic executeAsync callers still receive it.
 			}
 		},
 		[onRetry, onManualImport, onRemove, onChangeCategory],
@@ -179,7 +184,7 @@ export const QueueTable = ({
 						<Inbox className="h-6 w-6" style={{ color: themeGradient.from }} />
 					</div>
 					<p className="text-sm text-muted-foreground">
-						{emptyMessage ?? "Queue is empty across all instances."}
+						{emptyMessage ?? "No queue items returned."}
 					</p>
 				</div>
 			</div>
@@ -194,10 +199,16 @@ export const QueueTable = ({
 				manualImportItems={selectedManualImportItems}
 				retryItems={selectedRetryItems}
 				pending={pending}
-				onManualImport={onManualImport}
-				onRetry={onRetry}
-				onRemove={onRemove}
-				onChangeCategory={onChangeCategory}
+				onManualImport={
+					onManualImport ? (items) => handleRowAction(items, "manualImport") : undefined
+				}
+				onRetry={onRetry ? (items) => handleRowAction(items, "retry") : undefined}
+				onRemove={
+					onRemove ? (items, options) => handleRowAction(items, "remove", options) : undefined
+				}
+				onChangeCategory={
+					onChangeCategory ? (items) => handleRowAction(items, "category") : undefined
+				}
 			/>
 
 			{/* Queue items and groups with staggered animations */}

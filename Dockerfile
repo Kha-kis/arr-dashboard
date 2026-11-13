@@ -3,7 +3,7 @@
 # syntax=docker/dockerfile:1
 
 # ===== BUILD BASE =====
-FROM node:22-alpine3.21 AS build-base
+FROM node:22-alpine3.24@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a AS build-base
 ENV NEXT_TELEMETRY_DISABLED=1
 # python3, make, and g++ are required for native module compilation (better-sqlite3 node-gyp)
 # Alpine has no prebuilt musl binaries for better-sqlite3, so it must compile from source
@@ -16,6 +16,7 @@ WORKDIR /app
 
 # Copy workspace configuration and package.json files
 COPY .npmrc pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY patches ./patches
 COPY packages/shared/package.json ./packages/shared/
 COPY apps/api/package.json ./apps/api/
 COPY apps/web/package.json ./apps/web/
@@ -35,6 +36,7 @@ COPY packages/shared ./packages/shared
 COPY apps/api ./apps/api
 COPY apps/web ./apps/web
 COPY tsconfig.base.json turbo.json ./
+COPY docker/prepare-provider-runtimes.cjs docker/validate-provider-runtime.cjs /tmp/provider-build/
 
 # Regenerate Prisma client BEFORE building so the bundled code matches the
 # installed @prisma/client runtime version (tsup inlines the generated config)
@@ -55,6 +57,11 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     # Remove non-Linux native module prebuilds to reduce image size (~1MB)
     find node_modules -type d -name "prebuilds" -exec sh -c 'cd "{}" && rm -rf darwin-* win32-* freebsd-*' \; 2>/dev/null || true
 
+# Stage the complete SQLite package, then generate and compile PostgreSQL using
+# the same installed API build command. Startup only selects a read-only package;
+# an arbitrary runtime UID never needs write access to application code.
+RUN node /tmp/provider-build/prepare-provider-runtimes.cjs /app/apps/api /app/deploy-api
+
 # Prepare web output (consolidate standalone + static + custom server)
 RUN cp /app/apps/web/server.js /app/apps/web/.next/standalone/server.js && \
     chmod 644 /app/apps/web/.next/standalone/server.js
@@ -69,7 +76,7 @@ RUN cd /app/apps/web/.next/standalone/node_modules && \
     done
 
 # ===== RUNTIME STAGE =====
-FROM node:22-alpine3.21 AS runner
+FROM node:22-alpine3.24@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a AS runner
 
 # Build arguments for version injection (set by CI)
 ARG VERSION=dev
@@ -97,21 +104,20 @@ RUN apk upgrade --no-cache \
     && addgroup -g 911 abc \
     && adduser -D -u 911 -G abc abc \
     && mkdir -p /app/api /app/web /config \
-    && chown -R abc:abc /app /config \
+    && chown abc:abc /config \
     && rm -rf /opt/yarn-v* \
     && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
     && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/yarn /usr/local/bin/yarnpkg /usr/local/bin/corepack
 
 WORKDIR /app
 
-# Copy API (single layer: node_modules + dist + prisma with generated client)
-COPY --from=builder --chown=abc:abc /app/deploy-api ./api
+# Copy API dependencies and both immutable, manifest-bound provider packages.
+COPY --from=builder --chown=root:root /app/deploy-api ./api
 
 # Fix tsconfig.json for runtime Prisma config transpilation (#130)
 # The deployed tsconfig.json extends ../../tsconfig.base.json (monorepo root),
-# which doesn't exist in the container. Prisma 7 reads tsconfig.json when
-# transpiling prisma.config.ts during `prisma generate` (triggered on
-# SQLite→PostgreSQL provider switch). Replace with a standalone version.
+# which doesn't exist in the container. Keep the top-level metadata standalone;
+# each provider package also has its own standalone configuration.
 RUN printf '{"compilerOptions":{"target":"ES2022","module":"ESNext","moduleResolution":"Bundler","esModuleInterop":true,"skipLibCheck":true}}\n' > /app/api/tsconfig.json
 
 # Copy Web (single layer: standalone + static + public + custom server)
@@ -128,16 +134,14 @@ RUN chown root:root /app/web \
     && chmod 1777 /app/web/apps/web/.next/cache
 
 # Copy startup scripts and fix line endings (single layer)
-COPY --chown=abc:abc docker/start-combined.sh ./
-COPY --chown=abc:abc docker/patch-prisma-provider-bundles.sh ./
-COPY --chown=abc:abc docker/read-base-path.cjs ./api/
-COPY --chown=abc:abc docker/sync-postgresql-schema.cjs ./api/
-COPY --chown=abc:abc docker/validate-runtime.sh ./api/
+COPY --chown=root:root docker/start-combined.sh ./
+COPY --chown=root:root docker/validate-runtime.sh docker/validate-provider-runtime.cjs ./api/
+COPY --chown=root:root docker/runtime-health.cjs ./runtime-health.cjs
 # Heap-snapshot helper for operators (issue #427). Installed in PATH so
 # users can run `docker exec <container> dump-heap` without needing to
 # know the API's internal process layout.
 COPY --chown=root:root docker/dump-heap.sh /usr/local/bin/dump-heap
-RUN sed -i 's/\r$//' ./start-combined.sh ./patch-prisma-provider-bundles.sh && chmod +x ./start-combined.sh ./patch-prisma-provider-bundles.sh \
+RUN sed -i 's/\r$//' ./start-combined.sh && chmod +x ./start-combined.sh \
     && mv start-combined.sh start.sh \
     && chmod +x ./api/validate-runtime.sh \
     && sed -i 's/\r$//' /usr/local/bin/dump-heap && chmod +x /usr/local/bin/dump-heap
@@ -174,8 +178,10 @@ ENV DATABASE_URL="file:/config/prod.db" \
     # Off by default — see NODE_OPTIONS comment above.
     HEAP_AUTO_SNAPSHOT=0
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD wget -q --spider http://127.0.0.1:${PORT:-3000}/health || exit 1
+# Populated databases may need several minutes of pre-launch validation. Keep
+# them starting until a real probe succeeds rather than prematurely unhealthy.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10m --retries=3 \
+    CMD node /app/runtime-health.cjs check
 
 # Signal for graceful shutdown (tini forwards to child processes)
 STOPSIGNAL SIGTERM

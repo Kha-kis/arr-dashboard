@@ -388,37 +388,21 @@ export async function registerAutoTagRoutes(app: FastifyInstance, _opts: Fastify
 	// ========================================================================
 	// Webhook config (read + rotate)
 	//
-	// Returns the user's webhook secret (lazy-generated on first read) plus
-	// instructions for wiring up Sonarr/Radarr Connect. The secret is shown
-	// in plaintext to the authenticated user — they need it to copy into the
-	// Connect webhook header. Rotation invalidates any prior Connect config
-	// using the old secret.
+	// Reads report configuration status only. Explicit generation/rotation
+	// returns plaintext once for Sonarr/Radarr Connect and persists only its
+	// hash. Replacing a secret invalidates Connect configs using the old value.
 	// ========================================================================
 
-	// GET returns the existing secret only if we still have it cached (i.e., it
-	// was generated/rotated *this session*); otherwise we tell the user to
-	// rotate to see a fresh one. We never persist the plaintext, so once it's
-	// lost from the response, only rotation can show it again. This is a small
-	// UX loss for a meaningful security win — a DB dump no longer yields the
-	// auth token.
-	app.get("/webhook-config", { config: { backupMutation: true } }, async (request, reply) => {
+	app.get("/webhook-config", async (request, reply) => {
 		const userId = request.currentUser!.id;
 		const user = await app.prisma.user.findUnique({ where: { id: userId } });
 		if (!user) return reply.status(404).send({ error: "User not found" });
 
-		if (!user.hashedWebhookSecret) {
-			// First-ever access: generate, persist hash, return plaintext once.
-			const secret = generateWebhookSecret();
-			await app.prisma.user.update({
-				where: { id: userId },
-				data: { hashedWebhookSecret: hashSecret(secret) },
-			});
-			return reply.send({ secret, configured: true, freshlyGenerated: true });
-		}
-
-		// Secret already configured — we don't store the plaintext, so we can
-		// only confirm "you have one; rotate to view".
-		return reply.send({ secret: null, configured: true, freshlyGenerated: false });
+		return reply.send({
+			secret: null,
+			configured: Boolean(user.hashedWebhookSecret),
+			freshlyGenerated: false,
+		});
 	});
 
 	app.post("/webhook-config/regenerate", async (request, reply) => {
@@ -462,8 +446,8 @@ export async function registerAutoTagRoutes(app: FastifyInstance, _opts: Fastify
 
 	const installBody = z.object({
 		// The plaintext webhook secret. We never read this from the DB —
-		// frontend gets it via /webhook-config (which only returns it on
-		// freshly-generated/rotated requests) and passes it through here.
+		// frontend gets it via POST /webhook-config/regenerate and passes it
+		// through here. Status reads never return plaintext.
 		secret: z.string().min(16),
 		instanceIds: z.array(z.string().min(1)).min(1).max(20),
 		events: z

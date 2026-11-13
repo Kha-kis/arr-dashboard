@@ -1,5 +1,9 @@
 import { type ProviderCoverageReceiptV2, providerCoverageReceiptV2Schema } from "@arr/shared";
 import { evaluateProviderCoverageReceipt } from "../provider-observation/coverage-receipt.js";
+import {
+	decodePlexPositiveEpisodeParentProof,
+	type PlexPositiveEpisodeParentProof,
+} from "./plex-positive-episode-display-proof.js";
 
 const POSITIVE_EPISODE_PARTIAL_REASON_CODES = [
 	"ambiguous_episode_parent_targets",
@@ -63,7 +67,17 @@ export type PlexPositiveEpisodeGenerationMetadataV5 = Omit<
 export type PlexPositiveEpisodeGenerationMetadata =
 	| PlexPositiveEpisodeGenerationMetadataV3
 	| PlexPositiveEpisodeGenerationMetadataV4
-	| PlexPositiveEpisodeGenerationMetadataV5;
+	| PlexPositiveEpisodeGenerationMetadataV5
+	| PlexPositiveEpisodeGenerationMetadataV6;
+
+/** Independent display proof only; strict readers still require the current parent ledger. */
+export type PlexPositiveEpisodeGenerationMetadataV6 = Omit<
+	PlexPositiveEpisodeGenerationMetadataV5,
+	"version"
+> & {
+	version: 6;
+	parentProof: PlexPositiveEpisodeParentProof;
+};
 
 function isNonemptyString(value: unknown): value is string {
 	return typeof value === "string" && value.trim() !== "" && !value.includes("\0");
@@ -164,7 +178,8 @@ export function decodePlexPositiveEpisodeGenerationMetadata(
 		if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
 			return { ok: false };
 		const value = parsed as Record<string, unknown>;
-		const v5 = value.version === 5;
+		const v6 = value.version === 6;
+		const v5 = value.version === 5 || v6;
 		if (
 			!hasExactKeys(
 				value,
@@ -185,6 +200,7 @@ export function decodePlexPositiveEpisodeGenerationMetadata(
 							"coverageReceipt",
 							"connectionGeneration",
 							"identityGeneration",
+							...(v6 ? ["parentProof"] : []),
 						]
 					: [
 							"version",
@@ -203,7 +219,7 @@ export function decodePlexPositiveEpisodeGenerationMetadata(
 							"identityGeneration",
 						],
 			) ||
-			(value.version !== 3 && value.version !== 4 && value.version !== 5) ||
+			(value.version !== 3 && value.version !== 4 && value.version !== 5 && !v6) ||
 			value.publicationLevel !== "positive-only" ||
 			value.completeness !== "partial" ||
 			typeof value.itemCount !== "number" ||
@@ -250,10 +266,24 @@ export function decodePlexPositiveEpisodeGenerationMetadata(
 		if (v5) {
 			const receipt = decodeV5Receipt(value.coverageReceipt);
 			if (!receipt) return { ok: false };
+			const parentProof = v6 ? decodePlexPositiveEpisodeParentProof(value.parentProof) : null;
+			if (
+				v6 &&
+				(!parentProof ||
+					parentProof.generationId !== value.parentPlexGenerationId ||
+					parentProof.metadata.targetDigest !== value.parentTargetDigest ||
+					parentProof.metadata.publicationLevel !== value.parentPublicationLevel ||
+					parentProof.connectionGeneration !== value.connectionGeneration ||
+					parentProof.identityGeneration !== value.identityGeneration ||
+					Date.parse(parentProof.publishedAt) > Date.parse(receipt.observedAt) ||
+					receipt.publishedCanonicalEntities !== value.itemCount)
+			)
+				return { ok: false };
 			return {
 				ok: true,
 				metadata: {
-					version: 5,
+					version: v6 ? 6 : 5,
+					...(parentProof ? { parentProof } : {}),
 					publicationLevel: "positive-only",
 					completeness: "partial",
 					itemCount: value.itemCount,
@@ -273,7 +303,7 @@ export function decodePlexPositiveEpisodeGenerationMetadata(
 					coverageReceipt: receipt,
 					connectionGeneration: value.connectionGeneration,
 					identityGeneration: value.identityGeneration,
-				},
+				} as PlexPositiveEpisodeGenerationMetadataV5 | PlexPositiveEpisodeGenerationMetadataV6,
 			};
 		}
 		const version = value.version as 3 | 4;

@@ -1,5 +1,6 @@
 "use client";
 
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { Command } from "cmdk";
 import {
@@ -27,13 +28,14 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { useCallback, useEffect, useState } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useOLEDMode } from "../../hooks/useOLEDMode";
 import { useThemeGradient } from "../../hooks/useThemeGradient";
 import { logout } from "../../lib/api-client/auth";
+import { navigateToSignedOutPage } from "../../lib/auth-navigation";
 import { cn } from "../../lib/utils";
 import { type ColorTheme, useColorTheme } from "../../providers/color-theme-provider";
+import { toast } from "../ui/toast";
 
 /**
  * Navigation items matching sidebar
@@ -134,6 +136,21 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 	const { colorTheme, setColorTheme } = useColorTheme();
 	const { isOLED, toggleOLED } = useOLEDMode();
 	const [search, setSearch] = useState("");
+	const openerRef = useRef<HTMLElement | null>(null);
+	const inputRef = useRef<HTMLInputElement>(null);
+
+	useLayoutEffect(() => {
+		if (!open) return;
+		const handleEscape = (event: KeyboardEvent) => {
+			if (event.key !== "Escape" || event.defaultPrevented) return;
+			// The palette is above the drawer; claim Escape before document modal handlers.
+			event.preventDefault();
+			event.stopPropagation();
+			onOpenChange(false);
+		};
+		window.addEventListener("keydown", handleEscape, true);
+		return () => window.removeEventListener("keydown", handleEscape, true);
+	}, [open, onOpenChange]);
 
 	// Reset search when closing
 	useEffect(() => {
@@ -154,355 +171,370 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 		try {
 			await logout();
 			queryClient.clear();
-			router.push("/login");
+			navigateToSignedOutPage();
 		} catch {
-			// Still redirect on error
-			router.push("/login");
+			toast.error("Sign out could not be confirmed. Please try again.", {
+				position: "bottom-right",
+			});
 		}
-	}, [queryClient, router]);
+	}, [queryClient]);
 
 	const handleRefreshData = useCallback(() => {
 		queryClient.invalidateQueries();
 	}, [queryClient]);
 
-	// Don't render on server or when closed
-	if (!open || typeof document === "undefined") return null;
-
-	// Use portal to render at document.body level, escaping all stacking contexts
-	return createPortal(
-		<div
-			className="fixed inset-0 flex items-start justify-center pt-[20vh] animate-in fade-in duration-150"
-			style={{ zIndex: 9999 }}
-			onClick={() => onOpenChange(false)}
-		>
-			{/* Backdrop */}
-			<div className="absolute inset-0 bg-black/60 backdrop-blur-xs" />
-
-			{/* Command Dialog */}
-			<Command
-				className={cn(
-					"relative w-full max-w-2xl overflow-hidden rounded-2xl border border-border/50",
-					"bg-card/95 backdrop-blur-xl shadow-2xl",
-					"animate-in zoom-in-95 slide-in-from-top-4 duration-200",
-				)}
-				style={{
-					boxShadow: `0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px ${themeGradient.from}15`,
-				}}
-				onClick={(e) => e.stopPropagation()}
-				loop
-			>
-				{/* Search Input */}
-				<div
-					className="flex items-center gap-3 border-b border-border/50 px-4"
-					style={{
-						background: `linear-gradient(135deg, ${themeGradient.from}05, transparent)`,
+	return (
+		<DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+			<DialogPrimitive.Portal>
+				<DialogPrimitive.Overlay className="fixed inset-0 z-command-palette bg-black/60 backdrop-blur-xs" />
+				<DialogPrimitive.Content
+					aria-describedby={undefined}
+					className="fixed left-1/2 top-[20vh] z-command-palette w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 outline-hidden"
+					onOpenAutoFocus={(event) => {
+						event.preventDefault();
+						openerRef.current =
+							document.activeElement instanceof HTMLElement ? document.activeElement : null;
+						inputRef.current?.focus();
+					}}
+					onCloseAutoFocus={(event) => {
+						event.preventDefault();
+						if (openerRef.current?.isConnected) openerRef.current.focus();
 					}}
 				>
-					<Search className="h-5 w-5 text-muted-foreground" />
-					<Command.Input
-						value={search}
-						onValueChange={setSearch}
-						placeholder="Type a command or search..."
+					<DialogPrimitive.Title className="sr-only">Command palette</DialogPrimitive.Title>
+
+					{/* Command Dialog */}
+					<Command
 						className={cn(
-							"flex h-14 w-full bg-transparent py-4 text-base outline-hidden",
-							"placeholder:text-muted-foreground",
+							"relative w-full max-w-2xl overflow-hidden rounded-2xl border border-border/50",
+							"bg-card/95 backdrop-blur-xl shadow-2xl",
+							"animate-in zoom-in-95 slide-in-from-top-4 duration-200",
 						)}
-						autoFocus
-					/>
-					<kbd className="hidden sm:inline-flex items-center gap-1 rounded-md border border-border/50 bg-muted/30 px-2 py-1 text-xs text-muted-foreground">
-						ESC
-					</kbd>
-				</div>
-
-				{/* Command List */}
-				<Command.List className="max-h-[60vh] overflow-y-auto p-2">
-					<Command.Empty className="py-8 text-center text-sm text-muted-foreground">
-						No results found.
-					</Command.Empty>
-
-					{/* Navigation */}
-					<Command.Group
-						heading={
-							<span className="px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-								Navigation
-							</span>
-						}
-						className="mb-2"
+						style={{
+							boxShadow: `0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px ${themeGradient.from}15`,
+						}}
+						loop
 					>
-						{NAV_ITEMS.map((item) => {
-							const Icon = item.icon;
-							return (
+						{/* Search Input */}
+						<div
+							className="flex items-center gap-3 border-b border-border/50 px-4"
+							style={{
+								background: `linear-gradient(135deg, ${themeGradient.from}05, transparent)`,
+							}}
+						>
+							<Search className="h-5 w-5 text-muted-foreground" />
+							<Command.Input
+								ref={inputRef}
+								value={search}
+								onValueChange={setSearch}
+								placeholder="Type a command or search..."
+								className={cn(
+									"flex h-14 w-full bg-transparent py-4 text-base outline-hidden",
+									"placeholder:text-muted-foreground",
+								)}
+							/>
+							<kbd className="hidden sm:inline-flex items-center gap-1 rounded-md border border-border/50 bg-muted/30 px-2 py-1 text-xs text-muted-foreground">
+								ESC
+							</kbd>
+						</div>
+
+						{/* Command List */}
+						<Command.List className="max-h-[60vh] overflow-y-auto p-2">
+							<Command.Empty className="py-8 text-center text-sm text-muted-foreground">
+								No results found.
+							</Command.Empty>
+
+							{/* Navigation */}
+							<Command.Group
+								heading={
+									<span className="px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+										Navigation
+									</span>
+								}
+								className="mb-2"
+							>
+								{NAV_ITEMS.map((item) => {
+									const Icon = item.icon;
+									return (
+										<Command.Item
+											key={item.href}
+											value={`${item.label} ${item.keywords.join(" ")}`}
+											onSelect={() => runCommand(() => router.push(item.href))}
+											className={cn(
+												"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
+												"aria-selected:bg-muted/50",
+											)}
+										>
+											<div
+												className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors"
+												style={{
+													background: `${themeGradient.from}15`,
+												}}
+											>
+												<Icon className="h-4 w-4" style={{ color: themeGradient.from }} />
+											</div>
+											<span className="flex-1 text-foreground">{item.label}</span>
+											<span className="text-xs text-muted-foreground opacity-0 transition-opacity group-aria-selected:opacity-100">
+												Go to {item.label.toLowerCase()}
+											</span>
+										</Command.Item>
+									);
+								})}
+							</Command.Group>
+
+							{/* Theme Mode */}
+							<Command.Group
+								heading={
+									<span className="px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+										Appearance
+									</span>
+								}
+								className="mb-2"
+							>
 								<Command.Item
-									key={item.href}
-									value={`${item.label} ${item.keywords.join(" ")}`}
-									onSelect={() => runCommand(() => router.push(item.href))}
+									value="light mode theme"
+									onSelect={() => runCommand(() => setTheme("light"))}
 									className={cn(
 										"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
 										"aria-selected:bg-muted/50",
 									)}
 								>
 									<div
-										className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors"
+										className="flex h-8 w-8 items-center justify-center rounded-lg"
+										style={{ background: `${themeGradient.from}15` }}
+									>
+										<Sun className="h-4 w-4" style={{ color: themeGradient.from }} />
+									</div>
+									<span className="flex-1 text-foreground">Light Mode</span>
+									{theme === "light" && (
+										<span className="text-xs" style={{ color: themeGradient.from }}>
+											Active
+										</span>
+									)}
+								</Command.Item>
+
+								<Command.Item
+									value="dark mode theme"
+									onSelect={() => runCommand(() => setTheme("dark"))}
+									className={cn(
+										"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
+										"aria-selected:bg-muted/50",
+									)}
+								>
+									<div
+										className="flex h-8 w-8 items-center justify-center rounded-lg"
+										style={{ background: `${themeGradient.from}15` }}
+									>
+										<Moon className="h-4 w-4" style={{ color: themeGradient.from }} />
+									</div>
+									<span className="flex-1 text-foreground">Dark Mode</span>
+									{theme === "dark" && (
+										<span className="text-xs" style={{ color: themeGradient.from }}>
+											Active
+										</span>
+									)}
+								</Command.Item>
+
+								<Command.Item
+									value="system mode theme auto"
+									onSelect={() => runCommand(() => setTheme("system"))}
+									className={cn(
+										"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
+										"aria-selected:bg-muted/50",
+									)}
+								>
+									<div
+										className="flex h-8 w-8 items-center justify-center rounded-lg"
+										style={{ background: `${themeGradient.from}15` }}
+									>
+										<Monitor className="h-4 w-4" style={{ color: themeGradient.from }} />
+									</div>
+									<span className="flex-1 text-foreground">System Theme</span>
+									{theme === "system" && (
+										<span className="text-xs" style={{ color: themeGradient.from }}>
+											Active
+										</span>
+									)}
+								</Command.Item>
+
+								<Command.Item
+									value="oled dark black amoled pure"
+									onSelect={() => isDarkMode && runCommand(toggleOLED)}
+									className={cn(
+										"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
+										"aria-selected:bg-muted/50",
+										!isDarkMode && "opacity-50",
+									)}
+								>
+									<div
+										className="flex h-8 w-8 items-center justify-center rounded-lg"
 										style={{
-											background: `${themeGradient.from}15`,
+											background:
+												isOLED && isDarkMode ? themeGradient.from : `${themeGradient.from}15`,
 										}}
 									>
-										<Icon className="h-4 w-4" style={{ color: themeGradient.from }} />
+										<Smartphone
+											className="h-4 w-4"
+											style={{ color: isOLED && isDarkMode ? "#fff" : themeGradient.from }}
+										/>
 									</div>
-									<span className="flex-1 text-foreground">{item.label}</span>
-									<span className="text-xs text-muted-foreground opacity-0 transition-opacity group-aria-selected:opacity-100">
-										Go to {item.label.toLowerCase()}
+									<span className="flex-1 text-foreground">OLED Mode (Pure Black)</span>
+									<span className="text-xs text-muted-foreground">
+										{!isDarkMode ? "Requires dark mode" : isOLED ? "On" : "Off"}
 									</span>
 								</Command.Item>
-							);
-						})}
-					</Command.Group>
+							</Command.Group>
 
-					{/* Theme Mode */}
-					<Command.Group
-						heading={
-							<span className="px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-								Appearance
-							</span>
-						}
-						className="mb-2"
-					>
-						<Command.Item
-							value="light mode theme"
-							onSelect={() => runCommand(() => setTheme("light"))}
-							className={cn(
-								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
-								"aria-selected:bg-muted/50",
-							)}
-						>
-							<div
-								className="flex h-8 w-8 items-center justify-center rounded-lg"
-								style={{ background: `${themeGradient.from}15` }}
-							>
-								<Sun className="h-4 w-4" style={{ color: themeGradient.from }} />
-							</div>
-							<span className="flex-1 text-foreground">Light Mode</span>
-							{theme === "light" && (
-								<span className="text-xs" style={{ color: themeGradient.from }}>
-									Active
-								</span>
-							)}
-						</Command.Item>
-
-						<Command.Item
-							value="dark mode theme"
-							onSelect={() => runCommand(() => setTheme("dark"))}
-							className={cn(
-								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
-								"aria-selected:bg-muted/50",
-							)}
-						>
-							<div
-								className="flex h-8 w-8 items-center justify-center rounded-lg"
-								style={{ background: `${themeGradient.from}15` }}
-							>
-								<Moon className="h-4 w-4" style={{ color: themeGradient.from }} />
-							</div>
-							<span className="flex-1 text-foreground">Dark Mode</span>
-							{theme === "dark" && (
-								<span className="text-xs" style={{ color: themeGradient.from }}>
-									Active
-								</span>
-							)}
-						</Command.Item>
-
-						<Command.Item
-							value="system mode theme auto"
-							onSelect={() => runCommand(() => setTheme("system"))}
-							className={cn(
-								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
-								"aria-selected:bg-muted/50",
-							)}
-						>
-							<div
-								className="flex h-8 w-8 items-center justify-center rounded-lg"
-								style={{ background: `${themeGradient.from}15` }}
-							>
-								<Monitor className="h-4 w-4" style={{ color: themeGradient.from }} />
-							</div>
-							<span className="flex-1 text-foreground">System Theme</span>
-							{theme === "system" && (
-								<span className="text-xs" style={{ color: themeGradient.from }}>
-									Active
-								</span>
-							)}
-						</Command.Item>
-
-						<Command.Item
-							value="oled dark black amoled pure"
-							onSelect={() => isDarkMode && runCommand(toggleOLED)}
-							className={cn(
-								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
-								"aria-selected:bg-muted/50",
-								!isDarkMode && "opacity-50",
-							)}
-						>
-							<div
-								className="flex h-8 w-8 items-center justify-center rounded-lg"
-								style={{
-									background: isOLED && isDarkMode ? themeGradient.from : `${themeGradient.from}15`,
-								}}
-							>
-								<Smartphone
-									className="h-4 w-4"
-									style={{ color: isOLED && isDarkMode ? "#fff" : themeGradient.from }}
-								/>
-							</div>
-							<span className="flex-1 text-foreground">OLED Mode (Pure Black)</span>
-							<span className="text-xs text-muted-foreground">
-								{!isDarkMode ? "Requires dark mode" : isOLED ? "On" : "Off"}
-							</span>
-						</Command.Item>
-					</Command.Group>
-
-					{/* Color Themes */}
-					<Command.Group
-						heading={
-							<span className="px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-								Color Theme
-							</span>
-						}
-						className="mb-2"
-					>
-						{THEME_COLOR_OPTIONS.map((option) => (
-							<Command.Item
-								key={option.name}
-								value={`theme color ${option.label} ${option.name}`}
-								onSelect={() => runCommand(() => setColorTheme(option.name))}
-								className={cn(
-									"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
-									"aria-selected:bg-muted/50",
-								)}
-							>
-								<div
-									className="flex h-8 w-8 items-center justify-center rounded-lg"
-									style={{
-										background: `linear-gradient(135deg, ${option.from}, ${option.to})`,
-									}}
-								>
-									<Palette className="h-4 w-4 text-white" />
-								</div>
-								<span className="flex-1 text-foreground">{option.label}</span>
-								{colorTheme === option.name && (
-									<span className="text-xs" style={{ color: themeGradient.from }}>
-										Active
+							{/* Color Themes */}
+							<Command.Group
+								heading={
+									<span className="px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+										Color Theme
 									</span>
-								)}
-							</Command.Item>
-						))}
-					</Command.Group>
-
-					{/* Actions */}
-					<Command.Group
-						heading={
-							<span className="px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-								Actions
-							</span>
-						}
-					>
-						<Command.Item
-							value="refresh data reload"
-							onSelect={() => runCommand(handleRefreshData)}
-							className={cn(
-								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
-								"aria-selected:bg-muted/50",
-							)}
-						>
-							<div
-								className="flex h-8 w-8 items-center justify-center rounded-lg"
-								style={{ background: `${themeGradient.from}15` }}
+								}
+								className="mb-2"
 							>
-								<RefreshCw className="h-4 w-4" style={{ color: themeGradient.from }} />
-							</div>
-							<span className="flex-1 text-foreground">Refresh All Data</span>
-						</Command.Item>
+								{THEME_COLOR_OPTIONS.map((option) => (
+									<Command.Item
+										key={option.name}
+										value={`theme color ${option.label} ${option.name}`}
+										onSelect={() => runCommand(() => setColorTheme(option.name))}
+										className={cn(
+											"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
+											"aria-selected:bg-muted/50",
+										)}
+									>
+										<div
+											className="flex h-8 w-8 items-center justify-center rounded-lg"
+											style={{
+												background: `linear-gradient(135deg, ${option.from}, ${option.to})`,
+											}}
+										>
+											<Palette className="h-4 w-4 text-white" />
+										</div>
+										<span className="flex-1 text-foreground">{option.label}</span>
+										{colorTheme === option.name && (
+											<span className="text-xs" style={{ color: themeGradient.from }}>
+												Active
+											</span>
+										)}
+									</Command.Item>
+								))}
+							</Command.Group>
 
-						<Command.Item
-							value="account profile user"
-							onSelect={() => runCommand(() => router.push("/settings"))}
-							className={cn(
-								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
-								"aria-selected:bg-muted/50",
-							)}
-						>
-							<div
-								className="flex h-8 w-8 items-center justify-center rounded-lg"
-								style={{ background: `${themeGradient.from}15` }}
+							{/* Actions */}
+							<Command.Group
+								heading={
+									<span className="px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+										Actions
+									</span>
+								}
 							>
-								<User className="h-4 w-4" style={{ color: themeGradient.from }} />
-							</div>
-							<span className="flex-1 text-foreground">Account Settings</span>
-						</Command.Item>
+								<Command.Item
+									value="refresh data reload"
+									onSelect={() => runCommand(handleRefreshData)}
+									className={cn(
+										"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
+										"aria-selected:bg-muted/50",
+									)}
+								>
+									<div
+										className="flex h-8 w-8 items-center justify-center rounded-lg"
+										style={{ background: `${themeGradient.from}15` }}
+									>
+										<RefreshCw className="h-4 w-4" style={{ color: themeGradient.from }} />
+									</div>
+									<span className="flex-1 text-foreground">Refresh All Data</span>
+								</Command.Item>
 
-						<Command.Item
-							value="documentation help docs"
-							onSelect={() =>
-								runCommand(() => window.open("https://github.com/khak1s/arr-dashboard", "_blank"))
-							}
-							className={cn(
-								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
-								"aria-selected:bg-muted/50",
-							)}
+								<Command.Item
+									value="account profile user"
+									onSelect={() => runCommand(() => router.push("/settings"))}
+									className={cn(
+										"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
+										"aria-selected:bg-muted/50",
+									)}
+								>
+									<div
+										className="flex h-8 w-8 items-center justify-center rounded-lg"
+										style={{ background: `${themeGradient.from}15` }}
+									>
+										<User className="h-4 w-4" style={{ color: themeGradient.from }} />
+									</div>
+									<span className="flex-1 text-foreground">Account Settings</span>
+								</Command.Item>
+
+								<Command.Item
+									value="documentation help docs"
+									onSelect={() =>
+										runCommand(() =>
+											window.open("https://github.com/Kha-kis/arr-dashboard", "_blank"),
+										)
+									}
+									className={cn(
+										"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
+										"aria-selected:bg-muted/50",
+									)}
+								>
+									<div
+										className="flex h-8 w-8 items-center justify-center rounded-lg"
+										style={{ background: `${themeGradient.from}15` }}
+									>
+										<FileText className="h-4 w-4" style={{ color: themeGradient.from }} />
+									</div>
+									<span className="flex-1 text-foreground">Documentation</span>
+								</Command.Item>
+
+								<Command.Item
+									value="logout sign out"
+									onSelect={() => runCommand(handleLogout)}
+									className={cn(
+										"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
+										"aria-selected:bg-muted/50",
+									)}
+								>
+									<div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-500/15">
+										<LogOut className="h-4 w-4 text-red-500" />
+									</div>
+									<span className="flex-1 text-foreground">Log Out</span>
+								</Command.Item>
+							</Command.Group>
+						</Command.List>
+
+						{/* Footer */}
+						<div
+							className="flex items-center justify-between border-t border-border/50 px-4 py-2"
+							style={{
+								background: `linear-gradient(135deg, ${themeGradient.from}03, transparent)`,
+							}}
 						>
-							<div
-								className="flex h-8 w-8 items-center justify-center rounded-lg"
-								style={{ background: `${themeGradient.from}15` }}
-							>
-								<FileText className="h-4 w-4" style={{ color: themeGradient.from }} />
+							<div className="flex items-center gap-4 text-xs text-muted-foreground">
+								<span className="flex items-center gap-1">
+									<kbd className="rounded border border-border/50 bg-muted/30 px-1.5 py-0.5">
+										↑↓
+									</kbd>
+									Navigate
+								</span>
+								<span className="flex items-center gap-1">
+									<kbd className="rounded border border-border/50 bg-muted/30 px-1.5 py-0.5">↵</kbd>
+									Select
+								</span>
+								<span className="flex items-center gap-1">
+									<kbd className="rounded border border-border/50 bg-muted/30 px-1.5 py-0.5">
+										ESC
+									</kbd>
+									Close
+								</span>
 							</div>
-							<span className="flex-1 text-foreground">Documentation</span>
-						</Command.Item>
-
-						<Command.Item
-							value="logout sign out"
-							onSelect={() => runCommand(handleLogout)}
-							className={cn(
-								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
-								"aria-selected:bg-muted/50",
-							)}
-						>
-							<div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-500/15">
-								<LogOut className="h-4 w-4 text-red-500" />
+							<div className="flex items-center gap-1 text-xs text-muted-foreground">
+								<Zap className="h-3 w-3" style={{ color: themeGradient.from }} />
+								<span>Command Palette</span>
 							</div>
-							<span className="flex-1 text-foreground">Log Out</span>
-						</Command.Item>
-					</Command.Group>
-				</Command.List>
-
-				{/* Footer */}
-				<div
-					className="flex items-center justify-between border-t border-border/50 px-4 py-2"
-					style={{
-						background: `linear-gradient(135deg, ${themeGradient.from}03, transparent)`,
-					}}
-				>
-					<div className="flex items-center gap-4 text-xs text-muted-foreground">
-						<span className="flex items-center gap-1">
-							<kbd className="rounded border border-border/50 bg-muted/30 px-1.5 py-0.5">↑↓</kbd>
-							Navigate
-						</span>
-						<span className="flex items-center gap-1">
-							<kbd className="rounded border border-border/50 bg-muted/30 px-1.5 py-0.5">↵</kbd>
-							Select
-						</span>
-						<span className="flex items-center gap-1">
-							<kbd className="rounded border border-border/50 bg-muted/30 px-1.5 py-0.5">ESC</kbd>
-							Close
-						</span>
-					</div>
-					<div className="flex items-center gap-1 text-xs text-muted-foreground">
-						<Zap className="h-3 w-3" style={{ color: themeGradient.from }} />
-						<span>Command Palette</span>
-					</div>
-				</div>
-			</Command>
-		</div>,
-		document.body,
+						</div>
+					</Command>
+				</DialogPrimitive.Content>
+			</DialogPrimitive.Portal>
+		</DialogPrimitive.Root>
 	);
 }
 

@@ -261,6 +261,32 @@ export async function readPlexGenerationTargets(
 	return await readPlexGenerationTargetsForSelection(prisma, scope);
 }
 
+/** Reads all instance targets for transaction-local reuse, exposing surplus/crossed generations. */
+export async function readPlexGenerationTargetsForReuse(
+	prisma: Pick<PrismaClientInstance, "plexGenerationTarget">,
+	instanceId: string,
+	expectedCount: number,
+): Promise<PlexGenerationTarget[] | null> {
+	const targets: PlexGenerationTarget[] = [];
+	let cursor: string | undefined;
+	while (true) {
+		const take = Math.min(PLEX_TARGET_LEDGER_READ_PAGE_SIZE, expectedCount - targets.length + 1);
+		const page = await prisma.plexGenerationTarget.findMany({
+			// Deliberately not generation-filtered: old/crossed/surplus rows must remain visible.
+			where: { instanceId },
+			orderBy: { id: "asc" },
+			take,
+			...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+		});
+		if (page.length > take || targets.length + page.length > expectedCount) return null;
+		targets.push(...page.map(({ id: _id, ...target }) => target as PlexGenerationTarget));
+		if (page.length < take) return targets;
+		const next = page.at(-1)?.id;
+		if (!next || next === cursor) return null;
+		cursor = next;
+	}
+}
+
 /** Reads only the exact logical targets a caller needs, in bounded pages. */
 export async function readPlexGenerationTargetsForSelection(
 	prisma: Pick<PrismaClientInstance, "plexGenerationTarget">,
@@ -318,9 +344,11 @@ export async function verifyPersistedPlexGenerationTargets(
 	input: {
 		expected: DigestContext & PlexTargetLedgerBinding;
 		sections: readonly { key: string; uuid: string; type: "movie" | "show" }[];
+		collectTargets?: boolean;
 	},
 ) {
 	try {
+		const targets: PlexGenerationTarget[] | undefined = input.collectTargets ? [] : undefined;
 		const seenRatingKeys = new Set<string>();
 		const digest = createHash("sha256");
 		const envelope = JSON.stringify({
@@ -381,6 +409,7 @@ export async function verifyPersistedPlexGenerationTargets(
 				first = false;
 				previous = target;
 				seenRatingKeys.add(target.ratingKey);
+				if (targets && count < input.expected.targetCount) targets.push(target);
 				count++;
 			}
 			cursor = page.at(-1)!.id;
@@ -390,7 +419,7 @@ export async function verifyPersistedPlexGenerationTargets(
 		if (count !== input.expected.targetCount)
 			return { ok: false as const, reason: "target_count_mismatch" };
 		return digest.digest("hex") === input.expected.targetDigest
-			? { ok: true as const }
+			? { ok: true as const, ...(targets && { targets }) }
 			: { ok: false as const, reason: "target_digest_mismatch" };
 	} catch {
 		return { ok: false as const, reason: "target_ledger_unavailable" };

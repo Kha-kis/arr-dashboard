@@ -71,7 +71,7 @@ describe("telegramSender", () => {
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
 		expect(result.retryAfterMs).toBe(30000);
-		expect(result.error).toContain("429");
+		expect(result.failureCategory).toBe("rate-limited");
 	});
 
 	it("escapes HTML special characters in title and body", async () => {
@@ -136,6 +136,6 @@ describe("telegramSender", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(false);
-		expect(result.error).toContain("400");
+		expect(result.failureCategory).toBe("rejected");
 	});
 });

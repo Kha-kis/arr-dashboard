@@ -11,6 +11,7 @@ import {
 const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 200;
+const READ_TRANSACTION_MAX_WAIT_MS = 5_000;
 const WRITE_CHUNK_SIZE = 500;
 const ATTEMPT_TOKEN_PATTERN =
 	/^in_progress:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -82,7 +83,24 @@ export type NativeInventoryUnavailableReason =
 	| "identity-changed"
 	| "no-publication"
 	| "snapshot-changed"
+	| "filter-limit-exceeded"
+	| "unsupported-provider"
 	| "malformed-publication";
+
+export type NativeInventoryAttemptProgress = {
+	state: "pending" | "running" | "ready" | "published" | "incomplete" | "superseded" | "unknown";
+	passOrdinal: number;
+	pagesCompleted: number;
+	itemsStaged: number;
+	failureCount: number;
+	reasonCode:
+		| "provider-unavailable"
+		| "coverage-incomplete"
+		| "deadline-exceeded"
+		| "database-retryable"
+		| "budget-exhausted"
+		| null;
+};
 
 export type NativeInventoryPage =
 	| {
@@ -96,10 +114,84 @@ export type NativeInventoryPage =
 			lastAttemptReason: string | null;
 			freshness: "current" | "last-known";
 			complete: boolean;
+			/** Display-only positive observations; never authority for absence or cleanup. */
+			evidence?: "positive-only";
 			rows: NativeInventoryRow[];
 			nextNativeId: string | null;
+			attempt?: NativeInventoryAttemptProgress;
 	  }
-	| { status: "unavailable"; reason: NativeInventoryUnavailableReason };
+	| {
+			status: "unavailable";
+			reason: NativeInventoryUnavailableReason;
+			attempt?: NativeInventoryAttemptProgress;
+	  };
+
+const NATIVE_ATTEMPT_STATES = new Set([
+	"pending",
+	"running",
+	"ready",
+	"published",
+	"incomplete",
+	"superseded",
+]);
+const NATIVE_ATTEMPT_REASONS = new Set([
+	"provider-unavailable",
+	"coverage-incomplete",
+	"deadline-exceeded",
+	"database-retryable",
+	"budget-exhausted",
+]);
+
+async function readNativeAttemptProgress(
+	tx: Prisma.TransactionClient,
+	instance: { id: string; connectionGeneration: number; identityGeneration: number },
+	domain: NativeInventoryDomain,
+): Promise<NativeInventoryAttemptProgress | null> {
+	const run = await tx.providerNativeInventoryRun.findFirst({
+		where: {
+			instanceId: instance.id,
+			workKey: { in: [domain, "paired"] },
+			connectionGeneration: instance.connectionGeneration,
+			identityGeneration: instance.identityGeneration,
+		},
+		orderBy: [{ createdAt: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
+	});
+	if (!run) return null;
+	const pass = await tx.providerNativeInventoryPass.findUnique({
+		where: { runId_ordinal: { runId: run.id, ordinal: run.passOrdinal } },
+		select: { id: true },
+	});
+	const [pagesCompleted, itemsStaged] = pass
+		? await Promise.all([
+				tx.providerNativeInventoryPageReceipt.count({ where: { passId: pass.id, domain } }),
+				tx.providerNativeInventoryStageItem.count({ where: { passId: pass.id, domain } }),
+			])
+		: [0, 0];
+	return {
+		state: NATIVE_ATTEMPT_STATES.has(run.state)
+			? (run.state as NativeInventoryAttemptProgress["state"])
+			: "unknown",
+		passOrdinal:
+			Number.isSafeInteger(run.passOrdinal) && run.passOrdinal >= 1 && run.passOrdinal <= 3
+				? run.passOrdinal
+				: 0,
+		pagesCompleted,
+		itemsStaged,
+		failureCount:
+			Number.isSafeInteger(run.failureCount) && run.failureCount >= 0 ? run.failureCount : 0,
+		reasonCode:
+			run.lastFailureCategory && NATIVE_ATTEMPT_REASONS.has(run.lastFailureCategory)
+				? (run.lastFailureCategory as NativeInventoryAttemptProgress["reasonCode"])
+				: null,
+	};
+}
+
+function attachNativeAttempt<T extends object>(
+	result: T,
+	attempt: NativeInventoryAttemptProgress | null,
+): T | (T & { attempt: NativeInventoryAttemptProgress }) {
+	return attempt ? { ...result, attempt } : result;
+}
 
 export class NativeInventoryInputError extends Error {
 	constructor(message: string) {
@@ -404,10 +496,83 @@ export async function readNativeInventoryPage(
 		limit?: number;
 		now?: Date;
 		maxAgeMs?: number;
+		/** "unavailable" defers progress work that a successful initial display read will discard. */
+		includeAttempt?: boolean | "unavailable";
+		/** Internal admission guard: prove the exact authority in the same read transaction. */
+		expectedAuthority?: ProviderPublicationAuthority;
 	},
+): Promise<NativeInventoryPage> {
+	return readNativeInventoryPageInternal(prisma, input);
+}
+
+/** Selected display evidence only; missing rows never establish catalog absence. */
+export async function readNativeInventoryDisplayTargets(
+	prisma: PrismaClient,
+	input: Pick<
+		Parameters<typeof readNativeInventoryPage>[1],
+		"userId" | "instanceId" | "expectedGenerationId" | "now" | "maxAgeMs" | "expectedAuthority"
+	> & { nativeIds: readonly string[] },
+): Promise<
+	| {
+			status: "available";
+			generationId: string;
+			observedAt: Date;
+			freshness: "current" | "last-known";
+			publicationItemCount: number;
+			rows: NativeInventoryRow[];
+	  }
+	| { status: "unavailable"; reason: NativeInventoryUnavailableReason }
+> {
+	if (
+		!Array.isArray(input.nativeIds) ||
+		input.nativeIds.length < 1 ||
+		input.nativeIds.length > MAX_LIMIT ||
+		input.nativeIds.some((id) => !isNonEmptySafeString(id)) ||
+		new Set(input.nativeIds).size !== input.nativeIds.length
+	) {
+		throw new NativeInventoryInputError("Native inventory display selection is invalid");
+	}
+	// Copy before awaiting so caller mutation cannot change the selected query.
+	const nativeIds = [...input.nativeIds];
+	const page = await readNativeInventoryPageInternal(
+		prisma,
+		{
+			userId: input.userId,
+			instanceId: input.instanceId,
+			expectedGenerationId: input.expectedGenerationId,
+			expectedAuthority: input.expectedAuthority,
+			now: input.now,
+			maxAgeMs: input.maxAgeMs,
+			domain: "library",
+			limit: MAX_LIMIT,
+		},
+		nativeIds,
+	);
+	if (page.status !== "available") return page;
+	return {
+		status: "available",
+		generationId: page.generationId,
+		observedAt: page.observedAt,
+		freshness: page.freshness,
+		publicationItemCount: page.itemCount,
+		rows: page.rows,
+	};
+}
+
+async function readNativeInventoryPageInternal(
+	prisma: PrismaClient,
+	input: Parameters<typeof readNativeInventoryPage>[1],
+	displayNativeIds?: readonly string[],
 ): Promise<NativeInventoryPage> {
 	if (!isNonEmptySafeString(input.userId) || !isNonEmptySafeString(input.instanceId)) {
 		throw new NativeInventoryInputError("Native inventory owner or instance is invalid");
+	}
+	if (
+		input.expectedAuthority &&
+		(input.expectedAuthority.id !== input.instanceId ||
+			input.expectedAuthority.userId !== input.userId)
+	) {
+		throw new NativeInventoryInputError("Native inventory authority does not match the owner");
 	}
 	if (!isDomain(input.domain))
 		throw new NativeInventoryInputError("Native inventory domain is invalid");
@@ -436,7 +601,9 @@ export async function readNativeInventoryPage(
 	return await prisma.$transaction(
 		async (tx) => {
 			const instance = await tx.serviceInstance.findFirst({
-				where: { id: input.instanceId, userId: input.userId },
+				where: input.expectedAuthority
+					? providerPublicationPredicate(input.expectedAuthority)
+					: { id: input.instanceId, userId: input.userId },
 				select: {
 					id: true,
 					userId: true,
@@ -453,56 +620,153 @@ export async function readNativeInventoryPage(
 					identityGeneration: true,
 				},
 			});
-			if (!instance) return { status: "unavailable", reason: "not-owned" } as const;
+			if (!instance)
+				return {
+					status: "unavailable",
+					reason: input.expectedAuthority ? "identity-changed" : "not-owned",
+				} as const;
 			if (!isCurrentPublishableAuthority(instance)) {
 				return {
 					status: "unavailable",
 					reason: instance.enabled ? "identity-changed" : "provider-unavailable",
 				} as const;
 			}
-			const snapshot = await tx.providerNativeInventorySnapshot.findUnique({
-				where: { instanceId_domain: { instanceId: instance.id, domain: input.domain } },
-			});
+			const [attempt, snapshot] = await Promise.all([
+				input.includeAttempt === true
+					? readNativeAttemptProgress(tx, instance, input.domain)
+					: null,
+				tx.providerNativeInventorySnapshot.findUnique({
+					where: { instanceId_domain: { instanceId: instance.id, domain: input.domain } },
+				}),
+			]);
+			const attachAttempt = async <T extends { status: "available" | "unavailable" }>(result: T) =>
+				attachNativeAttempt(
+					result,
+					input.includeAttempt === "unavailable" && result.status === "unavailable"
+						? await readNativeAttemptProgress(tx, instance, input.domain)
+						: attempt,
+				);
 			if (!snapshot?.generationId) {
-				return { status: "unavailable", reason: "no-publication" } as const;
+				return attachAttempt({ status: "unavailable", reason: "no-publication" } as const);
 			}
 			if (
 				input.expectedGenerationId !== undefined &&
 				snapshot.generationId !== input.expectedGenerationId
 			) {
-				return { status: "unavailable", reason: "snapshot-changed" } as const;
+				return attachAttempt({ status: "unavailable", reason: "snapshot-changed" } as const);
 			}
 			if (!isValidSnapshotMetadata(snapshot, instance, now)) {
-				return { status: "unavailable", reason: "malformed-publication" } as const;
+				return attachAttempt({ status: "unavailable", reason: "malformed-publication" } as const);
 			}
 			const observedAt = snapshot.observedAt;
-			if (!observedAt) return { status: "unavailable", reason: "malformed-publication" } as const;
-			const itemCount = await tx.providerNativeInventoryItem.count({
-				where: { snapshotId: snapshot.id },
-			});
-			if (itemCount !== snapshot.itemCount) {
-				return { status: "unavailable", reason: "malformed-publication" } as const;
+			if (!observedAt)
+				return attachAttempt({ status: "unavailable", reason: "malformed-publication" } as const);
+			const publishedPass = snapshot.publishedPassId
+				? await tx.providerNativeInventoryPass.findUnique({
+						where: { id: snapshot.publishedPassId },
+						include: { run: true },
+					})
+				: null;
+			if (
+				snapshot.publishedPassId &&
+				(!publishedPass ||
+					publishedPass.state !== "complete" ||
+					publishedPass.run.instanceId !== instance.id ||
+					publishedPass.run.connectionGeneration !== instance.connectionGeneration ||
+					publishedPass.run.identityGeneration !== instance.identityGeneration ||
+					!(publishedPass.run.workKey === input.domain || publishedPass.run.workKey === "paired"))
+			) {
+				return attachAttempt({ status: "unavailable", reason: "malformed-publication" } as const);
 			}
-			const items = await tx.providerNativeInventoryItem.findMany({
-				where: {
-					snapshotId: snapshot.id,
-					...(input.afterNativeId ? { nativeId: { gt: input.afterNativeId } } : {}),
-				},
-				orderBy: { nativeId: "asc" },
-				take: limit + 1,
-			});
+			// Ownership and pass authority are established before overlapping these reads.
+			// Keep every count, prior-pass and row check inside the same snapshot transaction.
+			const [itemCount, items, prior, newerUnpublishedRun] = await Promise.all([
+				snapshot.publishedPassId
+					? tx.providerNativeInventoryStageItem.count({
+							where: { passId: snapshot.publishedPassId, domain: input.domain },
+						})
+					: tx.providerNativeInventoryItem.count({ where: { snapshotId: snapshot.id } }),
+				snapshot.publishedPassId
+					? tx.providerNativeInventoryStageItem.findMany({
+							where: {
+								passId: snapshot.publishedPassId,
+								domain: input.domain,
+								...(displayNativeIds ? { nativeId: { in: [...displayNativeIds] } } : {}),
+								...(input.afterNativeId ? { nativeId: { gt: input.afterNativeId } } : {}),
+							},
+							orderBy: { nativeId: "asc" },
+							take: limit + 1,
+						})
+					: tx.providerNativeInventoryItem.findMany({
+							where: {
+								snapshotId: snapshot.id,
+								...(displayNativeIds ? { nativeId: { in: [...displayNativeIds] } } : {}),
+								...(input.afterNativeId ? { nativeId: { gt: input.afterNativeId } } : {}),
+							},
+							orderBy: { nativeId: "asc" },
+							take: limit + 1,
+						}),
+				publishedPass
+					? tx.providerNativeInventoryPass.findUnique({
+							where: {
+								runId_ordinal: {
+									runId: publishedPass.runId,
+									ordinal: publishedPass.ordinal - 1,
+								},
+							},
+						})
+					: null,
+				tx.providerNativeInventoryRun.findFirst({
+					where: {
+						instanceId: instance.id,
+						workKey: { in: [input.domain, "paired"] },
+						connectionGeneration: instance.connectionGeneration,
+						identityGeneration: instance.identityGeneration,
+						createdAt: { gte: observedAt },
+						state: { not: "published" },
+					},
+					select: { id: true },
+				}),
+			]);
+			if (itemCount !== snapshot.itemCount) {
+				return attachAttempt({ status: "unavailable", reason: "malformed-publication" } as const);
+			}
 			const parsedRows = items.map((item) => parseStoredItem(item, input.domain));
 			if (parsedRows.some((row) => row === null)) {
-				return { status: "unavailable", reason: "malformed-publication" } as const;
+				return attachAttempt({ status: "unavailable", reason: "malformed-publication" } as const);
 			}
-			const rows = parsedRows as NativeInventoryRow[];
+			let rows = parsedRows as NativeInventoryRow[];
+			if (publishedPass) {
+				if (
+					!prior ||
+					prior.state !== "complete" ||
+					prior.scopeDigest !== publishedPass.scopeDigest ||
+					prior.comparisonDigest !== publishedPass.comparisonDigest
+				) {
+					return attachAttempt({ status: "unavailable", reason: "malformed-publication" } as const);
+				}
+				const priorItems = await tx.providerNativeInventoryStageItem.findMany({
+					where: {
+						passId: prior.id,
+						domain: input.domain,
+						nativeId: { in: rows.map((row) => row.nativeId) },
+					},
+				});
+				const priorRows = priorItems.map((item) => parseStoredItem(item, input.domain));
+				if (priorRows.some((row) => row === null) || priorRows.length !== rows.length) {
+					return attachAttempt({ status: "unavailable", reason: "malformed-publication" } as const);
+				}
+				rows = reconcileNativeInventoryIdentifiers(priorRows as NativeInventoryRow[], rows);
+			}
 			const hasNext = rows.length > limit;
 			const selected = rows.slice(0, limit);
 			const freshness =
-				snapshot.lastAttemptResult === "success" && now.getTime() - observedAt.getTime() <= maxAgeMs
+				snapshot.lastAttemptResult === "success" &&
+				!newerUnpublishedRun &&
+				now.getTime() - observedAt.getTime() <= maxAgeMs
 					? "current"
 					: "last-known";
-			return {
+			return attachAttempt({
 				status: "available",
 				generationId: snapshot.generationId,
 				observedAt,
@@ -515,10 +779,155 @@ export async function readNativeInventoryPage(
 				complete: freshness === "current",
 				rows: selected,
 				nextNativeId: hasNext ? (selected[selected.length - 1]?.nativeId ?? null) : null,
-			} as const;
+			} as const);
 		},
-		{ isolationLevel: "Serializable", timeout: 10_000 },
+		{ isolationLevel: "Serializable", maxWait: READ_TRANSACTION_MAX_WAIT_MS, timeout: 10_000 },
 	);
+}
+
+/**
+ * The exact publication reader above remains the only authority for absence.
+ * A completed Jellyfin episode pass can still supply observed rows for display
+ * when a moving catalog prevents two whole-library passes from agreeing.
+ */
+export async function readNativeInventoryDisplayPage(
+	prisma: PrismaClient,
+	input: Parameters<typeof readNativeInventoryPage>[1],
+): Promise<NativeInventoryPage> {
+	const authoritative = await readNativeInventoryPage(prisma, input);
+	if (input.domain !== "episode") return authoritative;
+	if (
+		authoritative.status === "unavailable" &&
+		["not-owned", "identity-changed", "provider-unavailable"].includes(authoritative.reason)
+	) {
+		return authoritative;
+	}
+	const pinnedPositive = input.expectedGenerationId?.startsWith("positive:") ?? false;
+	if (input.expectedGenerationId && !pinnedPositive) return authoritative;
+	const limit = input.limit ?? DEFAULT_LIMIT;
+	const now = input.now ?? new Date();
+	const positive = await prisma.$transaction(
+		async (tx): Promise<NativeInventoryPage | null> => {
+			const instance = await tx.serviceInstance.findFirst({
+				where: input.expectedAuthority
+					? providerPublicationPredicate(input.expectedAuthority)
+					: { id: input.instanceId, userId: input.userId },
+				select: {
+					id: true,
+					service: true,
+					enabled: true,
+					expectedIdentity: true,
+					identityStatus: true,
+					connectionGeneration: true,
+					identityGeneration: true,
+				},
+			});
+			if (
+				!instance ||
+				instance.service !== "JELLYFIN" ||
+				!isCurrentPublishableAuthority(instance)
+			) {
+				return null;
+			}
+			const pass = await tx.providerNativeInventoryPass.findFirst({
+				where: {
+					state: "complete",
+					completedAt: { not: null },
+					episodeItemCount: { not: null },
+					run: {
+						instanceId: instance.id,
+						workKey: "episode",
+						connectionGeneration: instance.connectionGeneration,
+						identityGeneration: instance.identityGeneration,
+						state: { in: ["pending", "running", "ready", "incomplete"] },
+					},
+				},
+				include: { run: true },
+				orderBy: [{ completedAt: "desc" }, { id: "desc" }],
+			});
+			if (!pass) return null;
+			const generationId = `positive:${pass.id}`;
+			if (input.expectedGenerationId && input.expectedGenerationId !== generationId) {
+				return { status: "unavailable", reason: "snapshot-changed" };
+			}
+			let manifest: unknown;
+			try {
+				manifest = JSON.parse(pass.scopeManifest ?? "");
+			} catch {
+				return { status: "unavailable", reason: "malformed-publication" };
+			}
+			const scopeKeys =
+				Array.isArray(manifest) && manifest.length === 1 && manifest[0]?.domain === "episode"
+					? manifest[0].scopeKeys
+					: null;
+			if (
+				!isValidDate(pass.completedAt) ||
+				pass.completedAt > now ||
+				!isDigest(pass.scopeDigest) ||
+				!isDigest(pass.comparisonDigest) ||
+				!isSafeCount(pass.episodeItemCount) ||
+				!Array.isArray(scopeKeys) ||
+				scopeKeys.length > 10_000 ||
+				scopeKeys.some((key: unknown) => !isNonEmptySafeString(key) || key.length > 512) ||
+				new Set(scopeKeys).size !== scopeKeys.length
+			) {
+				return { status: "unavailable", reason: "malformed-publication" };
+			}
+			const itemCount = await tx.providerNativeInventoryStageItem.count({
+				where: { passId: pass.id, domain: "episode" },
+			});
+			if (itemCount !== pass.episodeItemCount) {
+				return { status: "unavailable", reason: "malformed-publication" };
+			}
+			const items = await tx.providerNativeInventoryStageItem.findMany({
+				where: {
+					passId: pass.id,
+					domain: "episode",
+					...(input.afterNativeId ? { nativeId: { gt: input.afterNativeId } } : {}),
+				},
+				orderBy: { nativeId: "asc" },
+				take: limit + 1,
+			});
+			const parsed = items.map((item) => parseStoredItem(item, "episode"));
+			if (parsed.some((row) => row === null)) {
+				return { status: "unavailable", reason: "malformed-publication" };
+			}
+			const rows = (parsed as NativeInventoryRow[]).slice(0, limit);
+			const attemptResult = pass.run.state === "incomplete" ? "failed" : "in_progress";
+			const reason = attemptResult === "failed" ? pass.run.lastFailureCategory : null;
+			return {
+				status: "available",
+				generationId,
+				observedAt: pass.completedAt,
+				itemCount,
+				scopeCount: scopeKeys.length,
+				lastAttemptAt: pass.run.updatedAt,
+				lastAttemptResult: attemptResult,
+				lastAttemptReason:
+					reason === "provider-unavailable" || reason === "coverage-incomplete" ? reason : null,
+				freshness: "last-known",
+				complete: false,
+				evidence: "positive-only",
+				rows,
+				nextNativeId: items.length > limit ? (rows[rows.length - 1]?.nativeId ?? null) : null,
+			};
+		},
+		{ isolationLevel: "Serializable", maxWait: READ_TRANSACTION_MAX_WAIT_MS, timeout: 10_000 },
+	);
+	if (!positive) {
+		return pinnedPositive ? { status: "unavailable", reason: "snapshot-changed" } : authoritative;
+	}
+	if (positive.status === "unavailable") {
+		return pinnedPositive || authoritative.status === "unavailable" ? positive : authoritative;
+	}
+	if (
+		!pinnedPositive &&
+		authoritative.status === "available" &&
+		authoritative.observedAt >= positive.observedAt
+	) {
+		return authoritative;
+	}
+	return authoritative.attempt ? { ...positive, attempt: authoritative.attempt } : positive;
 }
 
 function validateSnapshotInputs(
@@ -563,7 +972,10 @@ function validateSnapshotInputs(
 	});
 }
 
-function validateRow(value: NativeInventoryRow, domain: NativeInventoryDomain): NativeInventoryRow {
+export function validateNativeInventoryRow(
+	value: NativeInventoryRow,
+	domain: NativeInventoryDomain,
+): NativeInventoryRow {
 	if (!value || typeof value !== "object")
 		throw new NativeInventoryInputError("Native inventory row is invalid");
 	const nativeId = validateString(value.nativeId, "native id");
@@ -598,7 +1010,9 @@ function validateRow(value: NativeInventoryRow, domain: NativeInventoryDomain): 
 	};
 }
 
-function parseStoredItem(
+const validateRow = validateNativeInventoryRow;
+
+export function parseStoredItem(
 	item: {
 		nativeId: string;
 		mediaType: string;
@@ -698,7 +1112,17 @@ export function reconcileNativeInventoryIdentifiers(
 ): NativeInventoryRow[] {
 	const priorById = new Map(previous.map((row) => [row.nativeId, row]));
 	return current.map((row) => {
-		if (row.mediaType === "episode") return row;
+		if (row.mediaType === "episode") {
+			const prior = priorById.get(row.nativeId);
+			const sameCoordinate =
+				prior?.mediaType === "episode" &&
+				prior.parentNativeId === row.parentNativeId &&
+				prior.seasonNumber === row.seasonNumber &&
+				prior.episodeNumber === row.episodeNumber;
+			return sameCoordinate
+				? row
+				: { ...row, parentNativeId: null, seasonNumber: null, episodeNumber: null };
+		}
 		const prior = priorById.get(row.nativeId)?.externalIds;
 		const merged = mergeNativeInventoryExternalIds(prior, row.externalIds);
 		for (const family of ["tmdb", "tvdb"] as const) {

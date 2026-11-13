@@ -1,5 +1,6 @@
 import { Button } from "../../../components/ui/button";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxIsoName, getLinuxSavePath, useIncognitoMode } from "../../../lib/incognito";
 import { cn } from "../../../lib/utils";
 import {
 	candidateDisplayPath,
@@ -48,6 +49,8 @@ export const CandidateCard = ({
 	disabled = false,
 }: CandidateCardProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
+	const displayTitle = (value: string) => (incognitoMode ? getLinuxIsoName(value) : value);
 	const key = candidateKey(candidate);
 	const rejection = describeRejections(candidate);
 	const downloadAvailable = Boolean(extractDownloadId(candidate) ?? downloadId);
@@ -75,7 +78,7 @@ export const CandidateCard = ({
 		statusText = "Download identifier not available.";
 	} else if (rejection) {
 		statusTone = "warning";
-		statusText = rejection;
+		statusText = incognitoMode ? "Provider rejection; review ARR privately." : rejection;
 	} else if (selected && isSonarrCandidate(candidate) && episodeIds.length === 0) {
 		statusTone = "warning";
 		statusText = "Select at least one episode before importing.";
@@ -104,9 +107,9 @@ export const CandidateCard = ({
 				: "Book mapping is missing.";
 	}
 
-	const chips = [qualityLabel, sizeLabel, languageLabel, releaseGroup].filter(
-		(value): value is string => Boolean(value),
-	);
+	const chips = (
+		incognitoMode ? [sizeLabel] : [qualityLabel, sizeLabel, languageLabel, releaseGroup]
+	).filter((value): value is string => Boolean(value));
 
 	const episodes = isSonarrCandidate(candidate) && candidate.episodes ? candidate.episodes : [];
 
@@ -124,6 +127,7 @@ export const CandidateCard = ({
 				<div className="flex items-start gap-3">
 					<input
 						type="checkbox"
+						aria-label="Select file"
 						className="mt-1 h-4 w-4"
 						checked={selected}
 						onChange={onToggle}
@@ -131,9 +135,13 @@ export const CandidateCard = ({
 					/>
 					<div className="min-w-0 space-y-2">
 						<div className="space-y-1">
-							<p className="font-medium text-foreground">{describeCandidate(candidate)}</p>
+							<p className="break-all font-medium text-foreground">
+								{displayTitle(describeCandidate(candidate))}
+							</p>
 							<p className="wrap-break-word text-xs text-muted-foreground">
-								{candidateDisplayPath(candidate)}
+								{incognitoMode
+									? getLinuxSavePath(candidateDisplayPath(candidate))
+									: candidateDisplayPath(candidate)}
 							</p>
 						</div>
 						{chips.length > 0 && (
@@ -153,12 +161,16 @@ export const CandidateCard = ({
 				<div className="space-y-2 text-sm text-muted-foreground">
 					<div>
 						<p className="text-xs uppercase text-muted-foreground">Mapping</p>
-						<p>{mappingSummary}</p>
+						<p className="break-all">{displayTitle(mappingSummary)}</p>
 						{isLidarrCandidate(candidate) && candidate.album?.title && (
-							<p className="text-xs text-muted-foreground/70">{candidate.album.title}</p>
+							<p className="text-xs text-muted-foreground/70">
+								{displayTitle(candidate.album.title)}
+							</p>
 						)}
 						{isReadarrCandidate(candidate) && candidate.book?.title && (
-							<p className="text-xs text-muted-foreground/70">{candidate.book.title}</p>
+							<p className="text-xs text-muted-foreground/70">
+								{displayTitle(candidate.book.title)}
+							</p>
 						)}
 					</div>
 					{isSonarrCandidate(candidate) && episodes.length > 0 && (
@@ -211,7 +223,9 @@ export const CandidateCard = ({
 												disabled={disabled || !selected}
 											/>
 											<span className="truncate text-xs">
-												{describeEpisode(episode as Parameters<typeof describeEpisode>[0])}
+												{displayTitle(
+													describeEpisode(episode as Parameters<typeof describeEpisode>[0]),
+												)}
 											</span>
 										</label>
 									);

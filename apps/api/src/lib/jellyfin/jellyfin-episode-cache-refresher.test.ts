@@ -1,20 +1,28 @@
-import type { FastifyBaseLogger } from "fastify";
+import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
+import fastifyPlugin from "fastify-plugin";
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
+import jellyfinEpisodeCacheSchedulerPlugin from "../../plugins/jellyfin-episode-cache-scheduler.js";
+import { RestoreRuntimeAdmissionError } from "../backup/restore-runtime-admission.js";
 import { Prisma, type PrismaClient, type ServiceInstance } from "../prisma.js";
 import {
 	buildObservationActiveSlotKey,
 	buildObservationAuthorityKey,
 	type ObservationRunAuthority,
 } from "../provider-observation/observation-run-types.js";
+import { KNOWN_JOBS } from "../scheduler-registry/job-definitions.js";
+import { SchedulerRegistry } from "../scheduler-registry/scheduler-registry.js";
+import type { FastifyWithEpisodeRefreshScheduler } from "../services/episode-refresh-scheduler-bridge.js";
 import { ProviderIdentityGuardError } from "../services/provider-identity-guard.js";
 import { UpstreamValidationError } from "../validation/parse-upstream.js";
 import type { JellyfinClient } from "./jellyfin-client.js";
 import {
 	classifyJellyfinEpisodeScopeFailure,
+	createJellyfinEpisodeWorkItemRunner,
 	logJellyfinEpisodePrePageFailure,
 	refreshOwnedJellyfinEpisodeCache,
 } from "./jellyfin-episode-cache-refresher.js";
+import * as generationMetadata from "./jellyfin-generation-metadata.js";
 import {
 	encodeJellyfinLibraryGenerationMetadata,
 	fingerprintJellyfinLibraryRows,
@@ -38,16 +46,33 @@ const durable = vi.hoisted(() => ({
 	units: [] as Array<Record<string, unknown> & { expectedTargets?: number }>,
 	stage: vi.fn(),
 	finalize: vi.fn(),
+	readCompleted: vi.fn(),
 	invalidate: vi.fn(),
 	invalidateAttempt: vi.fn(),
 	claimUnit: vi.fn(),
 	failUnit: vi.fn(),
+	releaseUnit: vi.fn(),
 	exhausted: vi.fn(),
 	renew: vi.fn(),
 	deadline: vi.fn(),
 	guard: vi.fn(),
+	collectionGuard: vi.fn(),
 	finishFailure: vi.fn(),
 	recordedFailureCount: 0,
+	activePreparationCount: 0,
+}));
+
+const finalizerWorker = vi.hoisted(() => ({ run: vi.fn() }));
+const pageWorker = vi.hoisted(() => ({ run: vi.fn() }));
+
+vi.mock("./jellyfin-episode-page-worker-transport.js", async (importOriginal) => ({
+	...(await importOriginal<typeof import("./jellyfin-episode-page-worker-transport.js")>()),
+	runJellyfinEpisodePageWorker: pageWorker.run,
+}));
+
+vi.mock("./jellyfin-episode-finalizer-worker-transport.js", async (importOriginal) => ({
+	...(await importOriginal<typeof import("./jellyfin-episode-finalizer-worker-transport.js")>()),
+	runJellyfinEpisodeFinalizerWorker: finalizerWorker.run,
 }));
 
 vi.mock("../services/provider-identity-guard.js", async (importOriginal) => {
@@ -55,6 +80,7 @@ vi.mock("../services/provider-identity-guard.js", async (importOriginal) => {
 	return {
 		...actual,
 		withGuardedProviderPublication: durable.guard,
+		withGuardedProviderCollection: durable.collectionGuard,
 	};
 });
 
@@ -96,7 +122,12 @@ vi.mock("../provider-observation/observation-run-repository.js", () => ({
 		},
 	),
 	claimObservationUnit: durable.claimUnit,
+	claimJellyfinObservationBatch: async (...args: unknown[]) => {
+		const claim = await durable.claimUnit(...args);
+		return claim ? [claim] : [];
+	},
 	failObservationUnit: durable.failUnit,
+	releaseJoinedObservationUnitClaim: durable.releaseUnit,
 	getAutomaticObservationRenewalDeadline: durable.deadline,
 	hasExhaustedObservationRunRetries: durable.exhausted,
 	renewExhaustedObservationRun: durable.renew,
@@ -108,6 +139,7 @@ vi.mock("./jellyfin-episode-refresh-repository.js", async (importOriginal) => {
 		...actual,
 		stageJellyfinEpisodePage: durable.stage,
 		finalizeJellyfinEpisodeRun: durable.finalize,
+		readCompletedJellyfinEpisodePublication: durable.readCompleted,
 		invalidateJellyfinEpisodeRun: durable.invalidate,
 	};
 });
@@ -291,6 +323,495 @@ function ownedFixture(
 }
 
 describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
+	it.each([
+		["JELLYFIN", false],
+		["JELLYFIN", true],
+		["EMBY", false],
+		["EMBY", true],
+	] as const)(
+		"validates parent content once for a successful %s page (v3: %s)",
+		async (service, v3) => {
+			const state = ownedFixture(service, { v3 });
+			configureDurableRun(state);
+			const fingerprint = vi.spyOn(generationMetadata, "fingerprintJellyfinLibraryRows");
+			try {
+				const result = await refreshOwnedJellyfinEpisodeCache({
+					prisma: state.prisma,
+					encryptor: { decrypt: vi.fn() },
+					instance: state.instance,
+					log,
+				});
+				expect(result).toMatchObject({ errors: 0, progressed: true, complete: false });
+				expect(durable.run).toMatchObject({ state: "running", completedUnits: 1 });
+				expect(fingerprint).toHaveBeenCalledTimes(1);
+			} finally {
+				fingerprint.mockRestore();
+			}
+		},
+	);
+
+	it.each(["content", "users", "collections", "rating", "generation"] as const)(
+		"refuses invalid parent %s before collecting or staging a page",
+		async (invalid) => {
+			const state = ownedFixture("JELLYFIN", { v3: true });
+			const client = configureDurableRun(state);
+			if (invalid === "content") state.parentRow.title = "Corrupted parent";
+			if (invalid === "users") state.parentRow.watchedByUsers = "{}";
+			if (invalid === "collections") state.parentRow.collections = "{}";
+			if (invalid === "rating")
+				Object.assign(state.parentRow, { userRating: Number.POSITIVE_INFINITY });
+			if (invalid === "generation") state.parentRow.connectionGeneration += 1;
+			if (invalid === "users" || invalid === "collections") {
+				state.parentStatus.generationMetadata = encodeJellyfinLibraryGenerationMetadata({
+					...(JSON.parse(state.parentStatus.generationMetadata) as Record<string, unknown>),
+					contentFingerprint: fingerprintJellyfinLibraryRows([state.parentRow]),
+				} as Parameters<typeof encodeJellyfinLibraryGenerationMetadata>[0]);
+			}
+			const result = await refreshOwnedJellyfinEpisodeCache({
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log,
+			});
+			expect(result.progressed).toBe(false);
+			expect(client.getEpisodeItemsPageWithCoverage).not.toHaveBeenCalled();
+			expect(durable.stage).not.toHaveBeenCalled();
+		},
+	);
+
+	it("logs ordered bounded work stages without private values for a successful page", async () => {
+		const state = ownedFixture("JELLYFIN");
+		configureDurableRun(state);
+		const lines: string[] = [];
+		const logger = pino(
+			{ level: "info", base: null, timestamp: false },
+			{ write: (line: string) => lines.push(line) },
+		);
+		const result = await refreshOwnedJellyfinEpisodeCache({
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log: logger,
+		});
+		expect(result).toMatchObject({ errors: 0, progressed: true, complete: false });
+		expect(durable.run).toMatchObject({ state: "running", completedUnits: 1 });
+		const stages = lines
+			.map((line) => JSON.parse(line) as Record<string, unknown>)
+			.filter((line) => line.category === "jellyfin-episode-work-stage");
+		expect(stages.map((line) => [line.stage, line.state])).toEqual([
+			["unit-claim", "entered"],
+			["unit-claim", "succeeded"],
+			["guarded-read", "entered"],
+			["provider-read", "entered"],
+			["provider-read", "succeeded"],
+			["collection-fence", "entered"],
+			["collection-fence", "succeeded"],
+			["guarded-read", "succeeded"],
+			["page-stage", "entered"],
+			["page-stage", "succeeded"],
+			["run-progress", "entered"],
+			["run-progress", "succeeded"],
+		]);
+		for (const stage of stages) {
+			expect(Object.keys(stage).sort()).toEqual(
+				["category", "elapsedMs", "level", "msg", "stage", "state"].sort(),
+			);
+			expect(stage.elapsedMs).toEqual(expect.any(Number));
+			expect(Number.isFinite(stage.elapsedMs)).toBe(true);
+			expect(stage.elapsedMs).toBeGreaterThanOrEqual(0);
+		}
+		for (const value of [
+			"user-1",
+			"library-1",
+			"series-1",
+			"plain-api-key",
+			"jellyfin-1",
+			"claim-unit-0",
+		])
+			expect(JSON.stringify(stages)).not.toContain(value);
+	});
+
+	it.each([
+		["runtime", "runtime-admission", null, null],
+		["P1008", "prisma-known", "P1008", "SQLITE_BUSY_SNAPSHOT"],
+		["P2028", "prisma-known", "P2028", null],
+		["unknown", "other", null, null],
+		["throwing-metadata", "other", null, null],
+	])(
+		"logs a bounded failed unit claim for %s and preserves the original rejection",
+		async (kind, errorCategory, databaseCode, sqliteCode) => {
+			const state = ownedFixture("JELLYFIN");
+			configureDurableRun(state);
+			const failure =
+				kind === "runtime"
+					? new RestoreRuntimeAdmissionError()
+					: kind === "unknown"
+						? new Error("PRIVATE_ERROR_DETAIL")
+						: new Prisma.PrismaClientKnownRequestError("PRIVATE_DATABASE_DETAIL", {
+								code: kind === "throwing-metadata" ? "P1008" : kind!,
+								clientVersion: "test",
+								meta: {
+									target: "PRIVATE_COLUMN",
+									driverAdapterError: {
+										cause: { originalCode: kind === "P1008" ? "SQLITE_BUSY_SNAPSHOT" : null },
+									},
+								},
+							});
+			if (kind === "throwing-metadata") {
+				Object.defineProperty(failure, "meta", {
+					get: () => {
+						throw new Error("PRIVATE_METADATA_DETAIL");
+					},
+				});
+			}
+			durable.claimUnit.mockRejectedValueOnce(failure);
+			const lines: string[] = [];
+			const logger = pino(
+				{ level: "info", base: null, timestamp: false },
+				{ write: (line: string) => lines.push(line) },
+			);
+			await expect(
+				refreshOwnedJellyfinEpisodeCache({
+					prisma: state.prisma,
+					encryptor: { decrypt: vi.fn() },
+					instance: state.instance,
+					log: logger,
+				}),
+			).rejects.toBe(failure);
+			const stages = lines
+				.map((line) => JSON.parse(line) as Record<string, unknown>)
+				.filter((line) => line.category === "jellyfin-episode-work-stage");
+			expect(stages.map((line) => [line.stage, line.state])).toEqual([
+				["unit-claim", "entered"],
+				["unit-claim", "failed"],
+			]);
+			expect(stages[1]).toEqual({
+				level: 30,
+				msg: "Jellyfin episode work stage",
+				category: "jellyfin-episode-work-stage",
+				stage: "unit-claim",
+				state: "failed",
+				elapsedMs: expect.any(Number),
+				errorCategory,
+				databaseCode,
+				sqliteCode,
+			});
+			expect(JSON.stringify(stages)).not.toContain("PRIVATE");
+			expect(durable.claimUnit).toHaveBeenCalledOnce();
+			expect(pageWorker.run).not.toHaveBeenCalled();
+			expect(durable.failUnit).not.toHaveBeenCalled();
+			expect(durable.releaseUnit).not.toHaveBeenCalled();
+			expect(durable.units[0]).toMatchObject({ state: "pending", claimToken: null });
+		},
+	);
+
+	it("preserves a failed claim rejection when diagnostic logging throws", async () => {
+		const state = ownedFixture("JELLYFIN");
+		configureDurableRun(state);
+		const failure = new Error("PRIVATE_CLAIM_DETAIL");
+		durable.claimUnit.mockRejectedValueOnce(failure);
+		const logger = {
+			...log,
+			info: () => {
+				throw new Error("diagnostic sink unavailable");
+			},
+		} as unknown as FastifyBaseLogger;
+		await expect(
+			refreshOwnedJellyfinEpisodeCache({
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log: logger,
+			}),
+		).rejects.toBe(failure);
+		expect(durable.claimUnit).toHaveBeenCalledOnce();
+		expect(pageWorker.run).not.toHaveBeenCalled();
+		expect(durable.releaseUnit).not.toHaveBeenCalled();
+	});
+
+	it.each(["unit-claim", "provider-read", "page-stage"] as const)(
+		"logs an entry before a held %s settles without releasing its operation",
+		async (heldStage) => {
+			const state = ownedFixture("JELLYFIN");
+			const client = configureDurableRun(state);
+			const boundary =
+				heldStage === "unit-claim"
+					? durable.claimUnit
+					: heldStage === "provider-read"
+						? client.getEpisodeItemsPageWithCoverage
+						: durable.stage;
+			const original = boundary.getMockImplementation()!;
+			let release!: () => void;
+			let entered!: () => void;
+			const held = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			const reached = new Promise<void>((resolve) => {
+				entered = resolve;
+			});
+			boundary.mockImplementationOnce(async (...args: unknown[]) => {
+				entered();
+				await held;
+				return await original(...args);
+			});
+			const lines: string[] = [];
+			const logger = pino(
+				{ level: "info", base: null, timestamp: false },
+				{ write: (line: string) => lines.push(line) },
+			);
+			let settled = false;
+			const task = refreshOwnedJellyfinEpisodeCache({
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log: logger,
+			}).finally(() => {
+				settled = true;
+			});
+			try {
+				await reached;
+				expect(settled).toBe(false);
+				const markers = lines
+					.map((line) => JSON.parse(line) as Record<string, unknown>)
+					.filter(
+						(line) => line.category === "jellyfin-episode-work-stage" && line.stage === heldStage,
+					);
+				expect(markers.map((line) => line.state)).toEqual(["entered"]);
+				expect(durable.run).toMatchObject({ state: "running", completedUnits: 0 });
+			} finally {
+				release();
+				await task;
+			}
+			expect(settled).toBe(true);
+			expect(durable.run).toMatchObject({ completedUnits: 1 });
+			const markers = lines
+				.map((line) => JSON.parse(line) as Record<string, unknown>)
+				.filter(
+					(line) => line.category === "jellyfin-episode-work-stage" && line.stage === heldStage,
+				);
+			expect(markers.map((line) => line.state)).toEqual(["entered", "succeeded"]);
+		},
+	);
+
+	it("logs a rejected provider stage without its error body and preserves durable retry", async () => {
+		const state = ownedFixture("JELLYFIN");
+		const client = configureDurableRun(state);
+		client.getEpisodeItemsPageWithCoverage.mockRejectedValueOnce(
+			new Error("private provider response account and endpoint"),
+		);
+		const lines: string[] = [];
+		const logger = pino(
+			{ level: "info", base: null, timestamp: false },
+			{ write: (line: string) => lines.push(line) },
+		);
+		const result = await refreshOwnedJellyfinEpisodeCache({
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log: logger,
+		});
+		expect(result).toMatchObject({ errors: 1, complete: false, progressed: false });
+		expect(durable.run).toMatchObject({
+			state: "failed",
+			lastReasonCode: "provider-unavailable",
+			completedUnits: 0,
+		});
+		expect(durable.units[0]).toMatchObject({ state: "failed", claimToken: null, attemptCount: 1 });
+		const stages = lines
+			.map((line) => JSON.parse(line) as Record<string, unknown>)
+			.filter((line) => line.category === "jellyfin-episode-work-stage");
+		expect(
+			stages.filter((line) => line.stage === "provider-read").map((line) => line.state),
+		).toEqual(["entered", "failed"]);
+		expect(
+			stages.filter((line) => line.stage === "guarded-read").map((line) => line.state),
+		).toEqual(["entered", "failed"]);
+		expect(stages.some((line) => line.stage === "page-stage")).toBe(false);
+		expect(JSON.stringify(stages)).not.toContain("private");
+	});
+
+	for (const service of ["JELLYFIN", "EMBY"] as const) {
+		it.each([false, true])(
+			`preserves claimed ${service} provider failure settlement when its warning throws (database failure=%s)`,
+			async (databaseFailure) => {
+				const state = ownedFixture(service);
+				const client = configureDurableRun(state);
+				state.parentStatus.lastRefreshedAt = new Date("2026-09-06T23:59:59.000Z");
+				state.parentStatus.lastAttemptAt = new Date("2026-09-06T23:59:59.000Z");
+				client.getEpisodeItemsPageWithCoverage.mockImplementationOnce(async () => {
+					expect(durable.units[0]).toMatchObject({
+						state: "running",
+						claimToken: "claim-unit-0",
+					});
+					throw Object.assign(new Error("private provider response"), { name: "TimeoutError" });
+				});
+				const databaseError = new Error("database settlement unavailable");
+				if (databaseFailure) durable.failUnit.mockRejectedValueOnce(databaseError);
+				const warnings: unknown[][] = [];
+				const context = {
+					prisma: state.prisma,
+					encryptor: { decrypt: vi.fn() },
+					instance: state.instance,
+					log: {
+						...log,
+						warn: (...args: unknown[]) => {
+							warnings.push(args);
+							throw new Error("diagnostic warning unavailable");
+						},
+					} as FastifyBaseLogger,
+					now: new Date("2026-09-07T00:00:00.000Z"),
+				};
+				const operation = refreshOwnedJellyfinEpisodeCache(context);
+				if (databaseFailure) {
+					await expect(operation).rejects.toBe(databaseError);
+					expect(durable.units[0]).toMatchObject({
+						state: "running",
+						claimToken: "claim-unit-0",
+					});
+					expect(durable.run).toMatchObject({ state: "running", completedUnits: 0 });
+				} else {
+					await expect(operation).resolves.toMatchObject({
+						errors: 1,
+						complete: false,
+						progressed: false,
+					});
+					expect(durable.units[0]).toMatchObject({
+						state: "failed",
+						claimToken: null,
+						attemptCount: 1,
+						nextAttemptAt: new Date("2026-09-07T00:00:30.000Z"),
+					});
+					expect(durable.run).toMatchObject({
+						state: "failed",
+						lastReasonCode: "provider-unavailable",
+					});
+				}
+				expect(warnings).toEqual([
+					[{ category: "provider-timeout" }, "Jellyfin episode page unavailable"],
+				]);
+			},
+		);
+	}
+
+	it("keeps a staged result when diagnostic logging throws", async () => {
+		const state = ownedFixture("JELLYFIN");
+		configureDurableRun(state);
+		const logger = {
+			...log,
+			info: () => {
+				throw new Error("diagnostic sink unavailable");
+			},
+		} as unknown as FastifyBaseLogger;
+		await expect(
+			refreshOwnedJellyfinEpisodeCache({
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log: logger,
+			}),
+		).resolves.toMatchObject({ errors: 0, complete: false, progressed: true });
+		expect(durable.run).toMatchObject({ state: "running", completedUnits: 1 });
+	});
+
+	it("logs bounded phase timings for a staged page without provider identifiers", async () => {
+		const state = ownedFixture("JELLYFIN");
+		configureDurableRun(state);
+		const lines: string[] = [];
+		const logger = pino(
+			{ level: "info", base: null, timestamp: false },
+			{ write: (line: string) => lines.push(line) },
+		);
+		const result = await refreshOwnedJellyfinEpisodeCache({
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log: logger,
+		});
+
+		expect(result).toMatchObject({ errors: 0, progressed: true });
+		const timings = lines
+			.map((line) => JSON.parse(line) as Record<string, unknown>)
+			.filter((line) => line.category === "jellyfin-episode-page-timing");
+		expect(timings).toHaveLength(1);
+		const timing = timings[0]!;
+		expect(Object.keys(timing).sort()).toEqual(
+			[
+				"category",
+				"guardMs",
+				"itemCount",
+				"level",
+				"msg",
+				"outcome",
+				"phase",
+				"postStageMs",
+				"prePageMs",
+				"providerReadMs",
+				"stageMs",
+				"totalMs",
+			].sort(),
+		);
+		expect(timing).toMatchObject({
+			phase: "collect",
+			outcome: "progressed",
+			itemCount: 1,
+		});
+		for (const key of [
+			"prePageMs",
+			"guardMs",
+			"providerReadMs",
+			"stageMs",
+			"postStageMs",
+			"totalMs",
+		]) {
+			expect(timing[key]).toEqual(expect.any(Number));
+			expect(Number.isFinite(timing[key])).toBe(true);
+			expect(timing[key]).toBeGreaterThanOrEqual(0);
+		}
+		for (const privateValue of ["user-1", "library-1", "series-1", "plain-api-key"])
+			expect(JSON.stringify(timing)).not.toContain(privateValue);
+	});
+
+	it("preserves staged-page progress when the timing log sink throws", async () => {
+		const state = ownedFixture("JELLYFIN");
+		configureDurableRun(state);
+		const throwingLog = {
+			warn: vi.fn(),
+			info: () => {
+				throw new Error("timing sink unavailable");
+			},
+		} as unknown as FastifyBaseLogger;
+
+		await expect(
+			refreshOwnedJellyfinEpisodeCache({
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log: throwingLog,
+			}),
+		).resolves.toMatchObject({ errors: 0, progressed: true });
+	});
+
+	it("preserves handled provider failure when the timing log sink throws", async () => {
+		const state = ownedFixture("JELLYFIN");
+		configureDurableRun(state);
+		durable.collectionGuard.mockRejectedValueOnce(new Error("provider unavailable"));
+		const throwingLog = {
+			warn: vi.fn(),
+			info: () => {
+				throw new Error("timing sink unavailable");
+			},
+		} as unknown as FastifyBaseLogger;
+
+		await expect(
+			refreshOwnedJellyfinEpisodeCache({
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log: throwingLog,
+			}),
+		).resolves.toMatchObject({ errors: 1, progressed: false });
+	});
+
 	it("serializes only closed pre-page failure categories", () => {
 		const canaries = [
 			"https://private.invalid/Secret-Show?token=secret",
@@ -327,6 +848,24 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		);
 		(state.prisma as unknown as { providerObservationRun: unknown }).providerObservationRun = {
 			findUnique: vi.fn(async () => durable.run),
+			count: vi.fn(async (query: { where: Record<string, unknown> }) => {
+				if (!durable.run) return 0;
+				return Object.entries(query.where).every(([key, expected]) => {
+					const actual = durable.run?.[key];
+					if (key === "nextAttemptAt") {
+						const filter = expected as { gt: Date } | { not: null };
+						return actual instanceof Date && ("not" in filter || actual > filter.gt);
+					}
+					if (key === "units") {
+						const { none } = expected as { none: { state: string } };
+						return !durable.units.some((unit) => unit.state === none.state);
+					}
+					if (key === "activeSlotKey") return actual !== null && actual !== undefined;
+					return actual === expected;
+				})
+					? 1
+					: 0;
+			}),
 			findFirst: vi.fn(async (query: { where?: Record<string, unknown>; include?: unknown }) => {
 				const matches = (where: Record<string, unknown>): boolean =>
 					Object.entries(where).every(([key, expected]) => {
@@ -372,6 +911,8 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			if (durable.run) durable.run.state = "complete";
 			return { published: true, itemCount: totalRecordCount === 0 ? 0 : 1 };
 		});
+		durable.readCompleted.mockReset();
+		durable.readCompleted.mockResolvedValue(null);
 		durable.invalidate.mockImplementation(async () => {
 			if (durable.run) durable.run.state = "invalidated";
 			return true;
@@ -380,6 +921,7 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		durable.invalidateAttempt.mockResolvedValue("recorded");
 		durable.finishFailure.mockReset();
 		durable.recordedFailureCount = 0;
+		durable.activePreparationCount = 0;
 		durable.exhausted.mockReset();
 		durable.exhausted.mockResolvedValue(false);
 		durable.deadline.mockReset();
@@ -388,7 +930,17 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		durable.renew.mockResolvedValue("deferred");
 		durable.finishFailure.mockImplementation(async (...args: unknown[]) => {
 			const precondition = args[7];
-			if (typeof precondition === "function" && !(await precondition({ transaction: true }))) {
+			if (
+				typeof precondition === "function" &&
+				!(await precondition({
+					transaction: true,
+					providerObservationRun: (state.prisma as unknown as { providerObservationRun: unknown })
+						.providerObservationRun,
+					jellyfinEpisodePreparation: {
+						count: async () => durable.activePreparationCount,
+					},
+				}))
+			) {
 				return "superseded";
 			}
 			durable.recordedFailureCount += 1;
@@ -415,12 +967,31 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			};
 		});
 		durable.failUnit.mockReset();
+		durable.releaseUnit.mockReset();
+		durable.releaseUnit.mockImplementation(async (_prisma, input) => {
+			const unit = durable.units.find(
+				(candidate) =>
+					candidate.id === input.claim.unitId &&
+					candidate.state === "running" &&
+					candidate.claimToken === input.claim.claimToken,
+			);
+			if (!unit) return false;
+			unit.state = "pending";
+			unit.claimToken = null;
+			return true;
+		});
 		durable.failUnit.mockImplementation(async (_prisma, input) => {
 			const unit = durable.units.find((candidate) => candidate.id === input.claim.unitId);
 			if (!unit || !durable.run) return false;
+			const attemptCount = Number(unit.attemptCount ?? 0) + 1;
+			const delay = [30_000, 120_000, 600_000][attemptCount - 1] ?? null;
+			const nextAttemptAt = delay === null ? null : new Date(input.now.getTime() + delay);
 			unit.state = "failed";
 			unit.claimToken = null;
+			unit.attemptCount = attemptCount;
+			unit.nextAttemptAt = nextAttemptAt;
 			durable.run.state = "failed";
+			durable.run.nextAttemptAt = nextAttemptAt;
 			durable.run.lastReasonCode = input.reasonCode;
 			return true;
 		});
@@ -429,6 +1000,12 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			async (_prisma, _snapshot, _log, collect, publish) =>
 				await publish({ transaction: true }, await collect()),
 		);
+		durable.collectionGuard.mockReset();
+		// The unit fixture has no real guarded database. Model the collection-only
+		// contract explicitly; write-style scope/finalizer guards stay separate.
+		durable.collectionGuard.mockImplementation(
+			async (_prisma, _snapshot, _log, collect) => await collect(),
+		);
 		durable.stage.mockClear();
 		durable.finalize.mockClear();
 		durable.invalidate.mockClear();
@@ -436,25 +1013,113 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		const client = {
 			getUsers: vi.fn().mockResolvedValue([{ id: "user-1", name: "Alice" }]),
 			getLibraries: vi.fn().mockResolvedValue([{ id: "library-1" }]),
-			getEpisodeItemsPageWithCoverage: vi.fn(async (_userId, _libraryId, cursor) => ({
-				items: Array.from({ length: Math.min(1_000, totalRecordCount - cursor) }, (_, index) => ({
-					type: "Episode",
-					id: `episode-${cursor + index}`,
-					seriesId: "series-1",
-					name: `Episode ${cursor + index}`,
-					seasonNumber: 1,
-					episodeNumber: cursor + index,
-					played: true,
-					playCount: 1,
-					lastPlayedDate: "2026-09-01T00:00:00Z",
-				})),
-				startIndex: cursor,
-				totalRecordCount,
-			})),
+			getEpisodeItemsPageWithCoverage: vi.fn(
+				async (_userId, _libraryId, cursor, _limit?: number) => ({
+					items: Array.from({ length: Math.min(1_000, totalRecordCount - cursor) }, (_, index) => ({
+						type: "Episode",
+						id: `episode-${cursor + index}`,
+						seriesId: "series-1",
+						name: `Episode ${cursor + index}`,
+						seasonNumber: 1,
+						episodeNumber: cursor + index,
+						played: true,
+						playCount: 1,
+						lastPlayedDate: "2026-09-01T00:00:00Z",
+					})),
+					startIndex: cursor,
+					totalRecordCount,
+				}),
+			),
 		};
 		publication.client = client as unknown as JellyfinClient;
+		pageWorker.run.mockReset();
+		pageWorker.run.mockImplementation(
+			async (input) =>
+				await publication.client!.getEpisodeItemsPageWithCoverage(
+					input.userId,
+					input.libraryId,
+					input.startIndex,
+					input.limit,
+				),
+		);
 		return client;
 	}
+
+	it.each([
+		["JELLYFIN", 2_000],
+		["EMBY", 1_000],
+	] as const)(
+		"routes the default %s page through the worker with the owned connection and saved coordinates",
+		async (service, limit) => {
+			const state = ownedFixture(service);
+			const client = configureDurableRun(state, 2_001);
+			pageWorker.run.mockResolvedValue({
+				startIndex: 0,
+				totalRecordCount: 2_001,
+				items: [{ id: "native-1", type: "Episode", excludedReason: "missing-episode-metadata" }],
+			});
+			client.getEpisodeItemsPageWithCoverage.mockRejectedValue(
+				new Error("Parent direct page read forbidden"),
+			);
+			const context = {
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log,
+			};
+			expect(await refreshOwnedJellyfinEpisodeCache(context)).toMatchObject({
+				progressed: true,
+				complete: false,
+			});
+			expect(client.getEpisodeItemsPageWithCoverage).not.toHaveBeenCalled();
+			expect(pageWorker.run).toHaveBeenLastCalledWith(
+				{
+					baseUrl: "https://provider.invalid",
+					apiKey: "plain-api-key",
+					httpAuthHeaders: {},
+					userId: "user-1",
+					libraryId: "library-1",
+					startIndex: 0,
+					limit,
+				},
+				{ signal: undefined },
+			);
+			pageWorker.run.mockResolvedValue({ startIndex: 1, totalRecordCount: 2_001, items: [] });
+			await refreshOwnedJellyfinEpisodeCache(context);
+			expect(pageWorker.run).toHaveBeenLastCalledWith(
+				{
+					baseUrl: "https://provider.invalid",
+					apiKey: "plain-api-key",
+					httpAuthHeaders: {},
+					userId: "user-1",
+					libraryId: "library-1",
+					startIndex: 1,
+					limit,
+				},
+				{ signal: undefined },
+			);
+		},
+	);
+
+	it("stages the episode page through collection admission without a no-op write publication", async () => {
+		const state = ownedFixture("JELLYFIN");
+		const client = configureDurableRun(state);
+		durable.guard.mockRejectedValue(new RestoreRuntimeAdmissionError());
+
+		const result = await refreshOwnedJellyfinEpisodeCache({
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+		});
+
+		expect(result).toMatchObject({ errors: 0, progressed: true, complete: false });
+		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledOnce();
+		expect(durable.stage).toHaveBeenCalledOnce();
+		expect(durable.finalize).not.toHaveBeenCalled();
+		expect(durable.collectionGuard).toHaveBeenCalledTimes(2);
+		expect(durable.guard).not.toHaveBeenCalled();
+	});
 
 	it("fetches and stages exactly one page per invocation, then finalizes only after collect and verify", async () => {
 		const state = ownedFixture("JELLYFIN");
@@ -469,6 +1134,7 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		const first = await refreshOwnedJellyfinEpisodeCache(context);
 		expect(first).toMatchObject({ complete: false, errors: 0, progressed: true });
 		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledTimes(1);
+		expect(client.getEpisodeItemsPageWithCoverage.mock.calls[0]?.[3]).toBe(2_000);
 		expect(durable.finalize).not.toHaveBeenCalled();
 
 		const second = await refreshOwnedJellyfinEpisodeCache(context);
@@ -480,6 +1146,509 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		expect(finished).toMatchObject({ complete: true, errors: 0, upserted: 1, progressed: false });
 		expect(durable.finalize).toHaveBeenCalledOnce();
 		expect((client as { getEpisodes?: unknown }).getEpisodes).toBeUndefined();
+	});
+
+	it.each(["valid", "malformed", "accessor"])(
+		"offloads the guarded SQLite finalizer and logs only sanitized %s native timing",
+		async (mode) => {
+			(log.info as ReturnType<typeof vi.fn>).mockClear();
+			const zero = {
+				requested: 0,
+				callbackEntered: 0,
+				succeeded: 0,
+				failed: 0,
+				refusedStart: 0,
+				callbackFailed: 0,
+				admissionTotalMs: 0,
+				admissionMaxMs: 0,
+				callbackToSuccessTotalMs: 0,
+				callbackToSuccessMaxMs: 0,
+				refusedStartTotalMs: 0,
+				refusedStartMaxMs: 0,
+				callbackToFailureTotalMs: 0,
+				callbackToFailureMaxMs: 0,
+			};
+			const metric = {
+				version: 1,
+				transactions: {
+					"row-chunk": {
+						...zero,
+						requested: 1,
+						callbackEntered: 1,
+						succeeded: 1,
+						admissionTotalMs: 10,
+						admissionMaxMs: 10,
+						callbackToSuccessTotalMs: 40,
+						callbackToSuccessMaxMs: 40,
+					},
+					"receipt-chunk": { ...zero },
+					"lease-checkpoint": { ...zero },
+				},
+			};
+			const expectedMetric = structuredClone(metric);
+			Object.assign(metric, { privateValue: "must-not-cross" });
+			Object.assign(metric.transactions["row-chunk"], { privateValue: "must-not-cross" });
+			const getter = vi.fn(() => {
+				throw Error("must-not-cross");
+			});
+			const state = ownedFixture("JELLYFIN");
+			configureDurableRun(state);
+			const context = {
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log,
+			};
+			await refreshOwnedJellyfinEpisodeCache(context);
+			await refreshOwnedJellyfinEpisodeCache(context);
+			finalizerWorker.run.mockImplementationOnce(async () => {
+				if (durable.run) durable.run.state = "complete";
+				const workerResult = {
+					status: "published",
+					itemCount: 17,
+					timing: {
+						authorityMs: 10,
+						stageLoadMs: 20,
+						computeMs: 30,
+						episodeWriteMs: 40,
+						nativeProjectionMs: 50,
+						nativeWatchWriteMs: 60,
+						totalMs: 210,
+						stageRows: 4,
+						nativeCandidates: 2,
+					},
+					finalizationCallMs: 250,
+					outerOverheadMs: 40,
+					cleanupMs: 80,
+					cleanupFailed: false,
+				};
+				if (mode === "accessor")
+					Object.defineProperty(workerResult, "nativeWatchPreparationTiming", { get: getter });
+				else
+					Object.assign(workerResult, {
+						nativeWatchPreparationTiming: mode === "valid" ? metric : { ...metric, version: 2 },
+					});
+				return workerResult;
+			});
+
+			const result = await refreshOwnedJellyfinEpisodeCache({
+				...context,
+				databaseUrl: "file:/config/prod.db",
+			});
+
+			expect(result).toMatchObject({ complete: true, upserted: 17 });
+			expect(finalizerWorker.run).toHaveBeenCalledWith(
+				expect.objectContaining({
+					databaseUrl: "file:/config/prod.db",
+					runId: "run-1",
+					userId: state.instance.userId,
+				}),
+				{ signal: undefined },
+			);
+			expect(log.info).toHaveBeenCalledWith(
+				expect.objectContaining({
+					category: "jellyfin-episode-finalizer-admission-timing",
+					outcome: "admitted",
+					durationMs: expect.any(Number),
+				}),
+				"Jellyfin episode finalizer admission timing",
+			);
+			expect(log.info).toHaveBeenCalledWith(
+				expect.objectContaining({
+					category: "jellyfin-episode-finalization-timing",
+					workerWaitMs: expect.any(Number),
+				}),
+				"Jellyfin episode finalization timing",
+			);
+			expect(durable.finalize).not.toHaveBeenCalled();
+			const timingLogs = (log.info as ReturnType<typeof vi.fn>).mock.calls.filter(
+				([value]) => value.category === "jellyfin-episode-finalization-timing",
+			);
+			expect(timingLogs).toHaveLength(1);
+			if (mode === "valid")
+				expect(timingLogs[0]?.[0].nativeWatchPreparationTiming).toEqual(expectedMetric);
+			else expect(timingLogs[0]?.[0]).not.toHaveProperty("nativeWatchPreparationTiming");
+			expect(JSON.stringify(timingLogs)).not.toContain("must-not-cross");
+			expect(getter).not.toHaveBeenCalled();
+		},
+	);
+
+	it("reconciles an exact committed run when the worker publication acknowledgement is lost", async () => {
+		const state = ownedFixture("JELLYFIN");
+		configureDurableRun(state);
+		const context = {
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+			databaseUrl: "file:/config/prod.db",
+		};
+		await refreshOwnedJellyfinEpisodeCache(context);
+		await refreshOwnedJellyfinEpisodeCache(context);
+		const attemptedAt = (durable.outer as { attempt: { attemptedAt: Date } }).attempt.attemptedAt;
+		durable.readCompleted.mockResolvedValueOnce(17);
+		finalizerWorker.run.mockImplementationOnce(async ({ now }: { now: Date }) => {
+			expect(now.getTime()).toBeGreaterThan(attemptedAt.getTime());
+			if (durable.run) {
+				durable.run.state = "complete";
+				durable.run.completedAt = now;
+			}
+			(state.prisma.cacheRefreshStatus.findUnique as ReturnType<typeof vi.fn>).mockImplementation(
+				async (query: { where?: { instanceId_cacheType?: { cacheType?: string } } }) =>
+					query.where?.instanceId_cacheType?.cacheType === "jellyfin_episode"
+						? {
+								lastResult: "success",
+								itemCount: 17,
+								lastRefreshedAt: now,
+								lastAttemptAt: attemptedAt,
+								lastAttemptResult: "success",
+								connectionGeneration: state.instance.connectionGeneration,
+								identityGeneration: state.instance.identityGeneration,
+							}
+						: state.parentStatus,
+			);
+			throw new Error("simulated worker acknowledgement loss");
+		});
+
+		const result = await refreshOwnedJellyfinEpisodeCache(context);
+
+		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 17, progressed: false });
+		expect(durable.invalidate).not.toHaveBeenCalled();
+		expect(durable.finishFailure).not.toHaveBeenCalled();
+		expect(durable.readCompleted).toHaveBeenCalledWith(state.prisma, {
+			userId: state.instance.userId,
+			instanceId: state.instance.id,
+			runId: "run-1",
+			attempt: expect.objectContaining({ attemptedAt }),
+		});
+	});
+
+	it("does not acknowledge a stale generation after worker transport failure", async () => {
+		const state = ownedFixture("JELLYFIN");
+		configureDurableRun(state);
+		const context = {
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+			databaseUrl: "file:/config/prod.db",
+		};
+		await refreshOwnedJellyfinEpisodeCache(context);
+		await refreshOwnedJellyfinEpisodeCache(context);
+		const attemptedAt = (durable.outer as { attempt: { attemptedAt: Date } }).attempt.attemptedAt;
+		durable.readCompleted.mockResolvedValueOnce(null);
+		finalizerWorker.run.mockImplementationOnce(async ({ now }: { now: Date }) => {
+			if (durable.run) {
+				durable.run.state = "complete";
+				durable.run.completedAt = now;
+			}
+			(state.prisma.cacheRefreshStatus.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+				lastResult: "success",
+				itemCount: 17,
+				lastRefreshedAt: now,
+				lastAttemptAt: attemptedAt,
+				lastAttemptResult: "success",
+				connectionGeneration: state.instance.connectionGeneration,
+				identityGeneration: state.instance.identityGeneration,
+				generationId: "different-run",
+			});
+			throw new Error("simulated worker acknowledgement loss");
+		});
+
+		const result = await refreshOwnedJellyfinEpisodeCache(context);
+		expect(result).toMatchObject({ complete: false, errors: 1, progressed: false });
+		expect(durable.readCompleted).toHaveBeenCalledOnce();
+		expect(durable.invalidate).not.toHaveBeenCalled();
+	});
+
+	it.each(["lease-busy", "lease-lost"] as const)(
+		"retains staged work and the active attempt when the finalizer reports %s",
+		async (reason) => {
+			const state = ownedFixture("JELLYFIN");
+			configureDurableRun(state);
+			const context = {
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log,
+				databaseUrl: "file:/config/prod.db",
+			};
+			await refreshOwnedJellyfinEpisodeCache(context);
+			await refreshOwnedJellyfinEpisodeCache(context);
+			finalizerWorker.run.mockResolvedValueOnce({ status: "not-published", reason });
+
+			const result = await refreshOwnedJellyfinEpisodeCache(context);
+
+			expect(result).toMatchObject({ complete: false, errors: 1, progressed: false });
+			expect(durable.finishFailure).not.toHaveBeenCalled();
+			expect(durable.invalidate).not.toHaveBeenCalled();
+			expect(log.warn).toHaveBeenCalledWith(
+				expect.objectContaining({
+					category: "jellyfin-episode-finalizer-not-published",
+					reason,
+				}),
+				"Jellyfin episode finalizer did not publish",
+			);
+		},
+	);
+
+	it.each(["transport", "worker", "snapshot-worker", "throwing-log", "settlement-error"] as const)(
+		"retains staged work when the finalizer %s fails before publication",
+		async (failure) => {
+			const failureCode = failure === "snapshot-worker" ? "SQLITE_BUSY_SNAPSHOT" : "P1008";
+			const state = ownedFixture("JELLYFIN");
+			configureDurableRun(state);
+			const context = {
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log,
+				databaseUrl: "file:/config/prod.db",
+			};
+			await refreshOwnedJellyfinEpisodeCache(context);
+			await refreshOwnedJellyfinEpisodeCache(context);
+			if (failure === "throwing-log") {
+				context.log = {
+					...log,
+					warn: vi.fn((fields: { category?: string }) => {
+						if (fields.category === "jellyfin-episode-finalizer-worker-unavailable")
+							throw new Error("private logger detail");
+					}),
+				} as FastifyBaseLogger;
+			}
+			if (failure === "settlement-error")
+				durable.finishFailure.mockRejectedValueOnce(new Error("private settlement detail"));
+			if (failure !== "worker" && failure !== "snapshot-worker")
+				finalizerWorker.run.mockRejectedValueOnce(new Error("private worker launch detail"));
+			else
+				finalizerWorker.run.mockResolvedValueOnce({
+					status: "failed",
+					failurePhase: "publication",
+					failureCategory: "database-contention",
+					failureStage: "native-watch-stage",
+					failureCode,
+					failureElapsedMs: 1_234,
+					nativeWatchStage: "row-chunk-write",
+					nativeWatchStageElapsedMs: 42,
+					nativeWatchStageCount: 500,
+					nativeWatchPreviousStage: "lease-checkpoint",
+					nativeWatchPreviousStageElapsedMs: 5_000,
+					nativeWatchTransactionKind: "row-chunk",
+					nativeWatchTransactionElapsedMs: 5_042,
+					nativeWatchTransactionCallbackEntered: true,
+					nativeWatchTransactionWaitMs: 20,
+					nativeWatchTransactionCallbackElapsedMs: 5_022,
+				});
+
+			const result = await refreshOwnedJellyfinEpisodeCache(context);
+
+			expect(result).toMatchObject({ complete: false, errors: 1, progressed: false });
+			expect(durable.invalidate).not.toHaveBeenCalled();
+			expect(durable.finishFailure).toHaveBeenCalled();
+			if (failure === "worker" || failure === "snapshot-worker")
+				expect(log.warn).toHaveBeenCalledWith(
+					expect.objectContaining({
+						category: "jellyfin-episode-finalizer-worker-unavailable",
+						reasonCode: "database-contention",
+						stage: "native-watch-stage",
+						code: failureCode,
+						nativeWatchStage: "row-chunk-write",
+						nativeWatchStageElapsedMs: 42,
+						nativeWatchStageCount: 500,
+						nativeWatchPreviousStage: "lease-checkpoint",
+						nativeWatchPreviousStageElapsedMs: 5_000,
+						nativeWatchTransactionKind: "row-chunk",
+						nativeWatchTransactionElapsedMs: 5_042,
+						nativeWatchTransactionCallbackEntered: true,
+						nativeWatchTransactionWaitMs: 20,
+						nativeWatchTransactionCallbackElapsedMs: 5_022,
+					}),
+					"Jellyfin episode finalizer worker unavailable",
+				);
+		},
+	);
+	it.each(["transport", "returned"] as const)(
+		"projects closed loop observations in the existing %s failure warning without changing retry state",
+		async (path) => {
+			for (const scenario of ["valid", "malformed", "accessor", "private-extra"] as const) {
+				const state = ownedFixture("JELLYFIN");
+				configureDurableRun(state);
+				const warn = vi.fn();
+				const context = {
+					prisma: state.prisma,
+					encryptor: { decrypt: vi.fn() },
+					instance: state.instance,
+					log: { ...log, warn } as FastifyBaseLogger,
+					databaseUrl: "file:/config/prod.db",
+				};
+				await refreshOwnedJellyfinEpisodeCache(context);
+				await refreshOwnedJellyfinEpisodeCache(context);
+				const pair = {
+					parent: {
+						state: "sampled",
+						sampleCount: 4,
+						sampleSpanMs: 1000,
+						maxCompletedGapMs: 250,
+						currentGapMs: 20,
+					},
+					worker: {
+						state: "warming",
+						sampleCount: 0,
+						sampleSpanMs: 0,
+						maxCompletedGapMs: 0,
+						currentGapMs: 7,
+					},
+				};
+				const carrier =
+					path === "transport" ? new Error("private worker launch detail") : { status: "failed" };
+				const getter = vi.fn(() => "private sentinel");
+				for (const [name, value] of [
+					["transportFailure", "runtime-bridge-unavailable"],
+					["runtimeLossReason", "worker-proof-timeout"],
+				] as const) {
+					Object.defineProperty(
+						carrier,
+						name,
+						scenario === "accessor"
+							? { get: getter }
+							: {
+									value: scenario === "malformed" ? "private sentinel" : value,
+								},
+					);
+				}
+				if (scenario === "accessor")
+					Object.defineProperty(carrier, "loopObservation", { get: getter });
+				else
+					Object.defineProperty(carrier, "loopObservation", {
+						value:
+							scenario === "valid"
+								? pair
+								: scenario === "private-extra"
+									? { ...pair, private: "private sentinel" }
+									: {
+											parent: { ...pair.parent, currentGapMs: Number.NaN },
+											worker: { state: "private sentinel" },
+										},
+					});
+				if (path === "transport") finalizerWorker.run.mockRejectedValueOnce(carrier);
+				else finalizerWorker.run.mockResolvedValueOnce(carrier);
+				const result = await refreshOwnedJellyfinEpisodeCache(context);
+				expect(result).toMatchObject({ complete: false, errors: 1, progressed: false });
+				expect(durable.invalidate).not.toHaveBeenCalled();
+				expect(durable.finishFailure).toHaveBeenCalled();
+				const fields = warn.mock.calls.find(
+					([fields]) => fields.category === "jellyfin-episode-finalizer-worker-unavailable",
+				)?.[0];
+				expect(fields.loopObservation).toEqual(
+					scenario === "valid"
+						? pair
+						: { parent: { state: "unavailable" }, worker: { state: "unavailable" } },
+				);
+				if (path === "transport" && (scenario === "valid" || scenario === "private-extra")) {
+					expect(fields).toMatchObject({
+						transportFailure: "runtime-bridge-unavailable",
+						runtimeLossReason: "worker-proof-timeout",
+					});
+				} else {
+					expect(fields).not.toHaveProperty("transportFailure");
+					expect(fields).not.toHaveProperty("runtimeLossReason");
+				}
+				expect(JSON.stringify(fields)).not.toContain("private");
+				expect(getter).not.toHaveBeenCalled();
+			}
+		},
+	);
+
+	it.each(["valid", "malformed", "out-of-context"] as const)(
+		"sanitizes native timing warning fields from %s worker results and preserves retry lifecycle",
+		async (scenario) => {
+			const state = ownedFixture("JELLYFIN");
+			configureDurableRun(state);
+			const warn = vi.fn();
+			const context = {
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log: { ...log, warn } as FastifyBaseLogger,
+				databaseUrl: "file:/config/prod.db",
+			};
+			await refreshOwnedJellyfinEpisodeCache(context);
+			await refreshOwnedJellyfinEpisodeCache(context);
+			finalizerWorker.run.mockResolvedValueOnce({
+				status: "failed",
+				failurePhase: "publication",
+				failureCategory: "transaction-expired",
+				failureCode: "P2028",
+				failureElapsedMs: 10,
+				failureStage: scenario === "out-of-context" ? "commit" : "native-watch-stage",
+				nativeWatchStage: "authority-check",
+				nativeWatchStageElapsedMs: 2,
+				nativeWatchPreviousStage: scenario === "malformed" ? "private" : "row-chunk-write",
+				nativeWatchPreviousStageElapsedMs: scenario === "malformed" ? -1 : 5_000,
+				nativeWatchPreviousStageCount: scenario === "malformed" ? 501 : 500,
+				nativeWatchTransactionKind: scenario === "malformed" ? "private" : "row-chunk",
+				nativeWatchTransactionElapsedMs: scenario === "malformed" ? 1.5 : 2,
+				nativeWatchTransactionCallbackEntered: false,
+				nativeWatchTransactionWaitMs: 1,
+				nativeWatchTransactionCallbackElapsedMs: 1,
+				nativeWatchTransactionError: { message: "private" },
+				title: "private",
+				sql: "private",
+			});
+			const result = await refreshOwnedJellyfinEpisodeCache(context);
+			expect(result).toMatchObject({ complete: false, errors: 1, progressed: false });
+			expect(durable.finishFailure).toHaveBeenCalledTimes(1);
+			expect(durable.invalidate).not.toHaveBeenCalled();
+			const warning = warn.mock.calls.find(
+				([fields]) => fields.category === "jellyfin-episode-finalizer-worker-unavailable",
+			)?.[0];
+			expect(warning).toBeDefined();
+			const diagnostics = Object.fromEntries(
+				Object.entries(warning ?? {}).filter(([key]) => key.startsWith("nativeWatch")),
+			);
+			expect(diagnostics).toEqual(
+				scenario === "out-of-context"
+					? {}
+					: {
+							nativeWatchStage: "authority-check",
+							nativeWatchStageElapsedMs: 2,
+							...(scenario === "valid"
+								? {
+										nativeWatchPreviousStage: "row-chunk-write",
+										nativeWatchPreviousStageElapsedMs: 5_000,
+										nativeWatchPreviousStageCount: 500,
+										nativeWatchTransactionKind: "row-chunk",
+										nativeWatchTransactionElapsedMs: 2,
+										nativeWatchTransactionCallbackEntered: false,
+									}
+								: {}),
+						},
+			);
+			expect(JSON.stringify(warning)).not.toContain("private");
+		},
+	);
+
+	it("does not settle a worker failure while a replacement preparation lease is active", async () => {
+		const state = ownedFixture("JELLYFIN");
+		configureDurableRun(state);
+		const context = {
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+			databaseUrl: "file:/config/prod.db",
+		};
+		await refreshOwnedJellyfinEpisodeCache(context);
+		await refreshOwnedJellyfinEpisodeCache(context);
+		durable.activePreparationCount = 1;
+		finalizerWorker.run.mockResolvedValueOnce({ status: "failed" });
+
+		const result = await refreshOwnedJellyfinEpisodeCache(context);
+
+		expect(result).toMatchObject({ complete: false, errors: 1, progressed: false });
+		expect(durable.finishFailure).toHaveBeenCalledOnce();
+		expect(durable.recordedFailureCount).toBe(0);
+		expect(durable.invalidate).not.toHaveBeenCalled();
 	});
 
 	it.each([true, false])(
@@ -614,7 +1783,9 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		failedUnit.nextAttemptAt = null;
 		failedUnit.claimToken = null;
 		durable.run.state = "failed";
+		durable.run.nextAttemptAt = null;
 		durable.run.lastReasonCode = "provider-unavailable";
+		durable.exhausted.mockResolvedValue(true);
 		durable.outer = {
 			status: "already-running",
 			attempt: {
@@ -657,7 +1828,9 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			failedUnit.nextAttemptAt = null;
 			failedUnit.claimToken = null;
 			durable.run.state = "failed";
+			durable.run.nextAttemptAt = null;
 			durable.run.lastReasonCode = "provider-unavailable";
+			durable.exhausted.mockResolvedValue(true);
 			durable.outer = {
 				status: "acquired",
 				attempt: {
@@ -844,6 +2017,7 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			errors: 0,
 		});
 		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledTimes(2);
+		expect(client.getEpisodeItemsPageWithCoverage.mock.calls[0]?.[3]).toBe(1_000);
 	});
 
 	it("fails the acquired attempt without provider reads when credential preparation fails", async () => {
@@ -941,7 +2115,7 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			now: expect.any(Date),
 		});
 		expect(durable.invalidate).not.toHaveBeenCalled();
-		expect(durable.recordedFailureCount).toBe(0);
+		expect(durable.recordedFailureCount).toBe(1);
 	});
 
 	it("logs only a bounded schema category when a private provider page is rejected", async () => {
@@ -972,6 +2146,539 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 	});
 
 	it.each([
+		["P1008", "prisma-known", "P1008", "SQLITE_BUSY"],
+		["P1008-snapshot", "prisma-known", "P1008", "SQLITE_BUSY_SNAPSHOT"],
+		["P1008-unclassified", "prisma-known", "P1008", null],
+		["P2024", "prisma-known", "P2024", null],
+		["P9999", "prisma-known", "other", "other"],
+		["runtime", "runtime-admission", null, null],
+		["unknown", "other", null, null],
+	])(
+		"logs a bounded staging failure class for exhausted %s without changing settlement",
+		async (code, errorCategory, databaseCode, sqliteCode) => {
+			const state = ownedFixture("JELLYFIN");
+			configureDurableRun(state);
+			const info = log.info as unknown as ReturnType<typeof vi.fn>;
+			info.mockClear();
+			const failure =
+				code === "runtime"
+					? new RestoreRuntimeAdmissionError()
+					: code === "unknown"
+						? new Error("PRIVATE_ERROR_DETAIL")
+						: new Prisma.PrismaClientKnownRequestError("PRIVATE_DATABASE_DETAIL", {
+								code: code!.startsWith("P1008") ? "P1008" : code!,
+								clientVersion: "test",
+								meta: {
+									target: "PRIVATE_COLUMN",
+									driverAdapterError: {
+										cause: {
+											originalCode:
+												code === "P1008"
+													? "SQLITE_BUSY"
+													: code === "P1008-snapshot"
+														? "SQLITE_BUSY_SNAPSHOT"
+														: code === "P9999"
+															? "PRIVATE_DRIVER"
+															: null,
+										},
+									},
+								},
+							});
+			const attempts = code === "P1008" || code === "P1008-snapshot" ? 3 : 1;
+			for (let attempt = 0; attempt < attempts; attempt++)
+				durable.stage.mockRejectedValueOnce(failure);
+			const result = await refreshOwnedJellyfinEpisodeCache({
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log,
+			});
+			expect(info).toHaveBeenCalledWith(
+				{ category: "jellyfin-episode-stage-failure", errorCategory, databaseCode, sqliteCode },
+				"Jellyfin episode staging failure category",
+			);
+			expect(JSON.stringify(info.mock.calls)).not.toContain("PRIVATE");
+			expect(durable.stage).toHaveBeenCalledTimes(attempts);
+			if (code === "P1008" || code === "P1008-snapshot") {
+				expect(durable.failUnit).not.toHaveBeenCalled();
+				expect(durable.units[0]).toMatchObject({ state: "pending", claimToken: null });
+			} else {
+				expect(durable.failUnit).toHaveBeenCalledOnce();
+			}
+			expect(durable.invalidate).not.toHaveBeenCalled();
+			expect(result.progressed).toBe(false);
+		},
+	);
+
+	it.each(["P1008", "P2028"])(
+		"finishes a deferred joined release before resuming a page after %s",
+		async (code) => {
+			const state = ownedFixture("JELLYFIN");
+			const client = configureDurableRun(state, 2_001);
+			const run = createJellyfinEpisodeWorkItemRunner();
+			const context = {
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log,
+				cleanupRunClaimToken: "cleanup-first",
+			};
+			await run(context);
+			const failure = new Prisma.PrismaClientKnownRequestError("private database failure", {
+				code,
+				clientVersion: "test",
+				meta: { driverAdapterError: { cause: { originalCode: "SQLITE_BUSY" } } },
+			});
+			const stageAttempts = code === "P1008" ? 3 : 1;
+			for (let attempt = 0; attempt < stageAttempts; attempt++)
+				durable.stage.mockRejectedValueOnce(failure);
+			durable.releaseUnit.mockResolvedValueOnce("deferred");
+
+			await expect(run(context)).resolves.toMatchObject({
+				progressed: false,
+				retryableDependencyFailure: true,
+			});
+			expect(durable.units[0]).toMatchObject({
+				state: "running",
+				cursor: 1_000,
+				observedRawCount: 1_000,
+				claimToken: "claim-unit-0",
+			});
+			const claimCalls = durable.claimUnit.mock.calls.length;
+			const providerCalls = client.getEpisodeItemsPageWithCoverage.mock.calls.length;
+			const stageCalls = durable.stage.mock.calls.length;
+
+			await expect(
+				run({ ...context, cleanupRunClaimToken: "cleanup-current" }),
+			).resolves.toMatchObject({
+				progressed: false,
+			});
+			expect(durable.units[0]).toMatchObject({
+				state: "pending",
+				cursor: 1_000,
+				observedRawCount: 1_000,
+				claimToken: null,
+			});
+			expect(durable.releaseUnit).toHaveBeenCalledTimes(2);
+			expect(durable.releaseUnit.mock.calls[1]![1]).toEqual({
+				...durable.releaseUnit.mock.calls[0]![1],
+				cleanupRunClaimToken: "cleanup-current",
+			});
+			expect(durable.claimUnit).toHaveBeenCalledTimes(claimCalls);
+			expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledTimes(providerCalls);
+			expect(durable.stage).toHaveBeenCalledTimes(stageCalls);
+			expect(durable.failUnit).not.toHaveBeenCalled();
+			expect(durable.recordedFailureCount).toBe(0);
+
+			await expect(run(context)).resolves.toMatchObject({ progressed: true });
+			expect(durable.units[0]).toMatchObject({ cursor: 2_000, observedRawCount: 2_000 });
+			expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenLastCalledWith(
+				"user-1",
+				"library-1",
+				1_000,
+				2_000,
+			);
+			expect(durable.releaseUnit).toHaveBeenCalledTimes(2);
+		},
+	);
+
+	it.each(["deferred", "transient-throw", "unexpected-throw"])(
+		"retains a joined release obligation across %s without spending provider retries",
+		async (outcome) => {
+			const state = ownedFixture("JELLYFIN");
+			const client = configureDurableRun(state);
+			const run = createJellyfinEpisodeWorkItemRunner();
+			const context = {
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log,
+			};
+			const timeout = new Prisma.PrismaClientKnownRequestError("private transaction timeout", {
+				code: "P2028",
+				clientVersion: "test",
+			});
+			durable.stage.mockRejectedValueOnce(timeout);
+			const releaseError =
+				outcome === "transient-throw" ? timeout : new Error("private release error");
+			if (outcome === "deferred") durable.releaseUnit.mockResolvedValueOnce("deferred");
+			else durable.releaseUnit.mockRejectedValueOnce(releaseError);
+
+			if (outcome === "unexpected-throw") await expect(run(context)).rejects.toBe(releaseError);
+			else
+				await expect(run(context)).resolves.toMatchObject({
+					retryableDependencyFailure: true,
+					progressed: false,
+				});
+			durable.releaseUnit.mockResolvedValueOnce("deferred");
+			await expect(run(context)).resolves.toMatchObject({
+				retryableDependencyFailure: true,
+				progressed: false,
+			});
+			expect(durable.units[0]).toMatchObject({
+				state: "running",
+				claimToken: "claim-unit-0",
+				cursor: 0,
+			});
+			await expect(run(context)).resolves.toMatchObject({ progressed: false });
+			expect(durable.units[0]).toMatchObject({ state: "pending", claimToken: null, cursor: 0 });
+			expect(durable.releaseUnit).toHaveBeenCalledTimes(3);
+			expect(durable.claimUnit).toHaveBeenCalledOnce();
+			expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledOnce();
+			expect(durable.stage).toHaveBeenCalledOnce();
+			expect(durable.failUnit).not.toHaveBeenCalled();
+			expect(durable.recordedFailureCount).toBe(0);
+		},
+	);
+
+	it.each([
+		{ userId: "different-owner" },
+		{ expectedIdentity: "different-server" },
+		{ connectionGeneration: 8 },
+		{ identityGeneration: 3 },
+	])("discards a deferred release when its authority changes (%j)", async (change) => {
+		const state = ownedFixture("JELLYFIN");
+		const client = configureDurableRun(state);
+		const run = createJellyfinEpisodeWorkItemRunner();
+		const context = {
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+		};
+		durable.stage.mockRejectedValueOnce(
+			new Prisma.PrismaClientKnownRequestError("timeout", { code: "P2028", clientVersion: "test" }),
+		);
+		durable.releaseUnit.mockResolvedValueOnce("deferred");
+		await run(context);
+
+		await expect(
+			run({ ...context, instance: { ...state.instance, ...change } }),
+		).resolves.toMatchObject({ superseded: true, progressed: false });
+		expect(durable.releaseUnit).toHaveBeenCalledOnce();
+		expect(durable.claimUnit).toHaveBeenCalledOnce();
+		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledOnce();
+		expect(durable.units[0]).toMatchObject({
+			state: "running",
+			claimToken: "claim-unit-0",
+			cursor: 0,
+		});
+	});
+
+	it("retires a deferred release without touching a replacement claim", async () => {
+		const state = ownedFixture("JELLYFIN");
+		const client = configureDurableRun(state);
+		const run = createJellyfinEpisodeWorkItemRunner();
+		const context = {
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+		};
+		durable.stage.mockRejectedValueOnce(
+			new Prisma.PrismaClientKnownRequestError("timeout", { code: "P2028", clientVersion: "test" }),
+		);
+		durable.releaseUnit.mockResolvedValueOnce("deferred");
+		await run(context);
+		durable.units[0]!.claimToken = "replacement-owner-claim";
+
+		const recovered = await run(context);
+		expect(recovered).toMatchObject({ retryableDependencyFailure: true, progressed: false });
+		expect(recovered.superseded).not.toBe(true);
+		expect(durable.units[0]).toMatchObject({
+			state: "running",
+			claimToken: "replacement-owner-claim",
+			cursor: 0,
+		});
+		expect(durable.releaseUnit.mock.calls[1]![1].claim.claimToken).toBe("claim-unit-0");
+		expect(durable.claimUnit).toHaveBeenCalledOnce();
+		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledOnce();
+	});
+
+	it("resumes the committed cursor after a lost stage acknowledgement and deferred release", async () => {
+		const state = ownedFixture("JELLYFIN");
+		const client = configureDurableRun(state, 2_001);
+		const run = createJellyfinEpisodeWorkItemRunner();
+		const context = {
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+		};
+		const stage = durable.stage.getMockImplementation()!;
+		durable.stage.mockImplementationOnce(async (...args) => {
+			await stage(...args);
+			durable.units[0]!.claimToken = null;
+			throw new Prisma.PrismaClientKnownRequestError("lost acknowledgement", {
+				code: "P2028",
+				clientVersion: "test",
+			});
+		});
+		durable.releaseUnit.mockResolvedValueOnce("deferred");
+		await run(context);
+		const recovered = await run(context);
+		expect(recovered).toMatchObject({ retryableDependencyFailure: true, progressed: false });
+		expect(recovered.superseded).not.toBe(true);
+		expect(durable.units[0]).toMatchObject({
+			state: "pending",
+			cursor: 1_000,
+			observedRawCount: 1_000,
+			claimToken: null,
+		});
+		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledOnce();
+
+		await expect(run(context)).resolves.toMatchObject({ progressed: true });
+		expect(durable.units[0]).toMatchObject({ cursor: 2_000, observedRawCount: 2_000 });
+		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenLastCalledWith(
+			"user-1",
+			"library-1",
+			1_000,
+			2_000,
+		);
+		expect(durable.releaseUnit).toHaveBeenCalledTimes(2);
+	});
+
+	it("continues the real scheduler from the committed cursor after lost acknowledgement", async () => {
+		vi.useFakeTimers();
+		const app: FastifyInstance = Fastify({ logger: false });
+		try {
+			const state = ownedFixture("JELLYFIN");
+			const client = configureDurableRun(state, 2_001);
+			const stage = durable.stage.getMockImplementation()!;
+			durable.stage.mockImplementationOnce(async (...args) => {
+				await stage(...args);
+				durable.units[0]!.claimToken = null;
+				throw new Prisma.PrismaClientKnownRequestError("lost acknowledgement", {
+					code: "P2028",
+					clientVersion: "test",
+				});
+			});
+			durable.releaseUnit.mockResolvedValueOnce("deferred");
+			const registry = new SchedulerRegistry();
+			for (const definition of KNOWN_JOBS) registry.register(definition);
+			for (const [name, decorate] of [
+				["prisma", () => app.decorate("prisma", state.prisma)],
+				["security", () => app.decorate("encryptor", { decrypt: vi.fn() } as never)],
+				["scheduler-registry", () => app.decorate("schedulerRegistry", registry)],
+			] as const) {
+				await app.register(
+					fastifyPlugin(
+						async () => {
+							decorate();
+						},
+						{ name },
+					),
+				);
+			}
+			await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+			await app.ready();
+			const admitted = await (
+				app as FastifyWithEpisodeRefreshScheduler
+			).episodeRefreshScheduler.retry("jellyfin_episode", {
+				userId: state.instance.userId,
+				instanceId: state.instance.id,
+			});
+			expect(admitted.status).toBe("accepted");
+			if (admitted.status === "accepted") await admitted.backgroundTask;
+			expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledOnce();
+			expect(durable.units[0]).toMatchObject({ state: "pending", cursor: 1_000, claimToken: null });
+
+			await vi.advanceTimersByTimeAsync(30_000);
+			expect(durable.releaseUnit).toHaveBeenCalledTimes(2);
+			expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledOnce();
+			await vi.advanceTimersByTimeAsync(120_000);
+			expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledTimes(2);
+			expect(durable.units[0]).toMatchObject({ cursor: 2_000, observedRawCount: 2_000 });
+			expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenLastCalledWith(
+				"user-1",
+				"library-1",
+				1_000,
+				2_000,
+			);
+			expect(durable.failUnit).not.toHaveBeenCalled();
+		} finally {
+			await app.close();
+			vi.useRealTimers();
+		}
+	});
+
+	it.each([
+		{ code: "P1008", sqliteCode: "SQLITE_BUSY", classified: true },
+		{ code: "P1008", sqliteCode: "SQLITE_BUSY_SNAPSHOT" },
+		{ code: "P1008", sqliteCode: undefined },
+		{ code: "P2028", sqliteCode: "SQLITE_BUSY" },
+		{ code: "P1008", sqliteCode: "SQLITE_BUSY", service: "EMBY" },
+		{ code: "P1008", sqliteCode: "SQLITE_BUSY", manual: true },
+		{ code: "runtime-admission" },
+		{ code: "generic" },
+		{ code: "P1008", sqliteCode: "SQLITE_BUSY", cancelled: true },
+	] as const)("classifies only eligible unit claim contention (%j)", async (testCase) => {
+		const { code } = testCase;
+		const state = ownedFixture(testCase.service ?? "JELLYFIN", { v3: true });
+		const client = configureDurableRun(state, 2_001);
+		const cancellation = new AbortController();
+		const failure =
+			code === "runtime-admission"
+				? new RestoreRuntimeAdmissionError()
+				: code === "generic"
+					? new Error("SQLITE_BUSY")
+					: new Prisma.PrismaClientKnownRequestError("private claim failure", {
+							code,
+							clientVersion: "test",
+							meta: {
+								driverAdapterError: { cause: { originalCode: testCase.sqliteCode } },
+							},
+						});
+		durable.claimUnit.mockImplementationOnce(async () => {
+			if ("cancelled" in testCase) cancellation.abort();
+			throw failure;
+		});
+		const result = refreshOwnedJellyfinEpisodeCache({
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+			signal: cancellation.signal,
+			automaticRenewal: "manual" in testCase ? undefined : "provider-unavailable-cooldown",
+		});
+		if ("classified" in testCase) {
+			await expect(result).resolves.toMatchObject({
+				retryableClaimContention: true,
+				errors: 1,
+				complete: false,
+				progressed: false,
+			});
+		} else if ("cancelled" in testCase) {
+			await expect(result).rejects.toMatchObject({ code: "PUBLICATION_CANCELLED" });
+		} else {
+			await expect(result).rejects.toBe(failure);
+		}
+		expect(durable.claimUnit).toHaveBeenCalledOnce();
+		expect(durable.releaseUnit).not.toHaveBeenCalled();
+		expect(durable.failUnit).not.toHaveBeenCalled();
+		expect(durable.finishFailure).not.toHaveBeenCalled();
+		expect(client.getEpisodeItemsPageWithCoverage).not.toHaveBeenCalled();
+		expect(durable.stage).not.toHaveBeenCalled();
+	});
+
+	it("does not transfer deferred releases to a replacement database client", async () => {
+		const state = ownedFixture("JELLYFIN");
+		const client = configureDurableRun(state);
+		const run = createJellyfinEpisodeWorkItemRunner();
+		const context = {
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+		};
+		durable.stage.mockRejectedValueOnce(
+			new Prisma.PrismaClientKnownRequestError("timeout", { code: "P2028", clientVersion: "test" }),
+		);
+		durable.releaseUnit.mockResolvedValueOnce("deferred");
+		await run(context);
+
+		await run({ ...context, prisma: { ...state.prisma } as PrismaClient });
+		expect(durable.releaseUnit).toHaveBeenCalledOnce();
+		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledTimes(2);
+		await run(context);
+		expect(durable.releaseUnit).toHaveBeenCalledTimes(2);
+		expect(durable.units[0]).toMatchObject({ state: "pending", claimToken: null, cursor: 0 });
+	});
+
+	it("keeps a deferred release when a later invocation is cancelled before settlement", async () => {
+		const state = ownedFixture("JELLYFIN");
+		const client = configureDurableRun(state);
+		const run = createJellyfinEpisodeWorkItemRunner();
+		const context = {
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+		};
+		durable.stage.mockRejectedValueOnce(
+			new Prisma.PrismaClientKnownRequestError("timeout", { code: "P2028", clientVersion: "test" }),
+		);
+		durable.releaseUnit.mockResolvedValueOnce("deferred");
+		await run(context);
+		await expect(run({ ...context, signal: AbortSignal.abort() })).rejects.toMatchObject({
+			code: "PUBLICATION_CANCELLED",
+		});
+		expect(durable.releaseUnit).toHaveBeenCalledOnce();
+		await run(context);
+		expect(durable.units[0]).toMatchObject({ state: "pending", claimToken: null, cursor: 0 });
+		expect(durable.releaseUnit).toHaveBeenCalledTimes(2);
+		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledOnce();
+	});
+
+	it("does not let an older release completion erase a newer obligation", async () => {
+		const state = ownedFixture("JELLYFIN");
+		const client = configureDurableRun(state);
+		client.getUsers.mockResolvedValue([
+			{ id: "user-1", name: "Alice" },
+			{ id: "user-2", name: "Bob" },
+		]);
+		const run = createJellyfinEpisodeWorkItemRunner();
+		const context = {
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+		};
+		const readPage = client.getEpisodeItemsPageWithCoverage.getMockImplementation()!;
+		const deferred = () => {
+			let resolve!: () => void;
+			const promise = new Promise<void>((done) => {
+				resolve = done;
+			});
+			return { promise, resolve };
+		};
+		const readEntered = deferred();
+		const finishRead = deferred();
+		client.getEpisodeItemsPageWithCoverage.mockImplementationOnce(async (...args) => {
+			readEntered.resolve();
+			await finishRead.promise;
+			return await readPage(...args);
+		});
+		const timeout = new Prisma.PrismaClientKnownRequestError("timeout", {
+			code: "P2028",
+			clientVersion: "test",
+		});
+		durable.stage.mockRejectedValueOnce(timeout).mockRejectedValueOnce(timeout);
+		const release = durable.releaseUnit.getMockImplementation()!;
+		const releaseEntered = deferred();
+		const finishRelease = deferred();
+		durable.releaseUnit
+			.mockImplementationOnce(async (...args) => {
+				releaseEntered.resolve();
+				await finishRelease.promise;
+				return await release(...args);
+			})
+			.mockResolvedValueOnce("deferred");
+
+		const first = run(context);
+		await readEntered.promise;
+		const second = run(context);
+		await releaseEntered.promise;
+		finishRead.resolve();
+		await first;
+		expect(durable.units[0]).toMatchObject({ state: "running", claimToken: "claim-unit-0" });
+		finishRelease.resolve();
+		await second;
+		expect(durable.units[1]).toMatchObject({ state: "pending", claimToken: null });
+
+		await run(context);
+		expect(durable.units[0]).toMatchObject({ state: "pending", claimToken: null, cursor: 0 });
+		expect(durable.releaseUnit.mock.calls.map((call) => call[1].claim.unitId)).toEqual([
+			"unit-1",
+			"unit-0",
+			"unit-0",
+		]);
+		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledTimes(2);
+		expect(durable.stage).toHaveBeenCalledTimes(2);
+		expect(durable.failUnit).not.toHaveBeenCalled();
+	});
+
+	it.each([
 		["P2002", "episode-stage-conflict"],
 		["P2028", "episode-stage-timeout"],
 		["P2034", "episode-stage-contention"],
@@ -996,11 +2703,17 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		});
 		expect(warn).toHaveBeenCalledWith({ category }, "Jellyfin episode page unavailable");
 		expect(JSON.stringify(warn.mock.calls)).not.toContain("PRIVATE");
-		expect(durable.failUnit).toHaveBeenCalledWith(state.prisma, {
-			claim: expect.any(Object),
-			reasonCode: "provider-unavailable",
-			now: expect.any(Date),
-		});
+		if (code === "P2028") {
+			expect(durable.failUnit).not.toHaveBeenCalled();
+			expect(durable.units[0]).toMatchObject({ state: "pending", claimToken: null });
+			expect(durable.recordedFailureCount).toBe(0);
+		} else {
+			expect(durable.failUnit).toHaveBeenCalledWith(state.prisma, {
+				claim: expect.any(Object),
+				reasonCode: "provider-unavailable",
+				now: expect.any(Date),
+			});
+		}
 		expect(durable.invalidate).not.toHaveBeenCalled();
 		expect(result.progressed).toBe(false);
 	});
@@ -1188,7 +2901,7 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		expect((client as { getEpisodes?: unknown }).getEpisodes).toBeUndefined();
 	});
 
-	it("retains staged work and the acquired outer attempt while a failed page backs off", async () => {
+	it("retains staged work and settles the outer attempt while a failed page backs off", async () => {
 		const state = ownedFixture("JELLYFIN");
 		const client = configureDurableRun(state);
 		client.getEpisodeItemsPageWithCoverage.mockRejectedValueOnce(new Error("unavailable"));
@@ -1203,7 +2916,7 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		expect(result).toMatchObject({ complete: false, errors: 1 });
 		expect(durable.failUnit).toHaveBeenCalledOnce();
 		expect(durable.invalidate).not.toHaveBeenCalled();
-		expect(durable.recordedFailureCount).toBe(0);
+		expect(durable.recordedFailureCount).toBe(1);
 	});
 
 	it.each([false, true])(
@@ -1272,13 +2985,20 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			}
 
 			expect(durable.failUnit).toHaveBeenCalledTimes(4);
-			expect(durable.recordedFailureCount).toBe(1);
+			expect(durable.recordedFailureCount).toBe(4);
+			expect(durable.finishFailure.mock.calls.map(([, , reason]) => reason)).toEqual([
+				"collection-deferred",
+				"collection-deferred",
+				"collection-deferred",
+				"collection-deferred",
+				"provider-unavailable",
+			]);
 			expect(durable.invalidate).not.toHaveBeenCalled();
 			expect(durable.run).toMatchObject({ state: "failed", nextAttemptAt: null });
 		},
 	);
 
-	it("guards resumed scope discovery before any new provider data read", async () => {
+	it("guards resumed page collection before any new provider data read", async () => {
 		const state = ownedFixture("JELLYFIN");
 		const client = configureDurableRun(state);
 		const context = {
@@ -1301,7 +3021,7 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		durable.stage.mockClear();
 		durable.finalize.mockClear();
 		durable.invalidate.mockClear();
-		durable.guard.mockRejectedValueOnce(
+		durable.collectionGuard.mockRejectedValueOnce(
 			new ProviderIdentityGuardError(
 				"IDENTITY_MISMATCH",
 				"Provider identity changed; cache publication was not attempted.",
@@ -1337,7 +3057,7 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 				resultMarker: "in_progress:test",
 			},
 		};
-		durable.guard.mockRejectedValueOnce(
+		durable.collectionGuard.mockRejectedValueOnce(
 			new ProviderIdentityGuardError(
 				"IDENTITY_UNAVAILABLE",
 				"Provider identity could not be read; cache publication was not attempted.",
@@ -1363,15 +3083,8 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 	it("invalidates staged evidence when identity changes between scope discovery and a page read", async () => {
 		const state = ownedFixture("JELLYFIN");
 		const client = configureDurableRun(state);
-		const defaultGuard = async (
-			_prisma: unknown,
-			_snapshot: unknown,
-			_log: unknown,
-			collect: () => Promise<unknown>,
-			publish: (tx: unknown, collected: unknown) => Promise<unknown>,
-		) => await publish({ transaction: true }, await collect());
-		durable.guard
-			.mockImplementationOnce(defaultGuard)
+		durable.collectionGuard
+			.mockImplementationOnce(async (_prisma, _snapshot, _log, collect) => await collect())
 			.mockRejectedValueOnce(
 				new ProviderIdentityGuardError(
 					"IDENTITY_MISMATCH",
@@ -1398,17 +3111,12 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 	it("invalidates staged evidence when live identity changes immediately before final publication", async () => {
 		const state = ownedFixture("JELLYFIN");
 		const client = configureDurableRun(state, 0);
-		let guardCall = 0;
-		durable.guard.mockImplementation(async (_prisma, _snapshot, _log, collect, publish) => {
-			guardCall += 1;
-			if (guardCall === 5) {
-				throw new ProviderIdentityGuardError(
-					"IDENTITY_MISMATCH",
-					"Provider identity changed; cache publication was not attempted.",
-				);
-			}
-			return await publish({ transaction: true }, await collect());
-		});
+		durable.guard.mockRejectedValueOnce(
+			new ProviderIdentityGuardError(
+				"IDENTITY_MISMATCH",
+				"Provider identity changed; cache publication was not attempted.",
+			),
+		);
 		const context = {
 			prisma: state.prisma,
 			encryptor: { decrypt: vi.fn() },
@@ -1429,17 +3137,12 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 	it("retains a fully staged run when final identity proof is temporarily unavailable", async () => {
 		const state = ownedFixture("JELLYFIN");
 		configureDurableRun(state, 0);
-		let guardCall = 0;
-		durable.guard.mockImplementation(async (_prisma, _snapshot, _log, collect, publish) => {
-			guardCall += 1;
-			if (guardCall === 5) {
-				throw new ProviderIdentityGuardError(
-					"IDENTITY_UNAVAILABLE",
-					"Provider identity could not be read; cache publication was not attempted.",
-				);
-			}
-			return await publish({ transaction: true }, await collect());
-		});
+		durable.guard.mockRejectedValueOnce(
+			new ProviderIdentityGuardError(
+				"IDENTITY_UNAVAILABLE",
+				"Provider identity could not be read; cache publication was not attempted.",
+			),
+		);
 		const context = {
 			prisma: state.prisma,
 			encryptor: { decrypt: vi.fn() },

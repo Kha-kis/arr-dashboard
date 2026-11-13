@@ -11,6 +11,9 @@ vi.mock("../../lib/plex/plex-persisted-observation-repository.js", () => ({
 	getPublishedEpisodeGenerationObservation: mocks.observation,
 }));
 
+import { RestoreRuntimeAdmissionError } from "../../lib/backup/restore-runtime-admission.js";
+import { SqliteRestoreRuntimeOwnershipError } from "../../lib/backup/restore-runtime-sqlite.js";
+import { Prisma } from "../../lib/prisma.js";
 import { dispatchPulseAction } from "../../lib/pulse/actions.js";
 import type { FastifyWithEpisodeRefreshScheduler } from "../../lib/services/episode-refresh-scheduler-bridge.js";
 import scheduler, { plexEpisodeRefreshResultStatus } from "../plex-episode-cache-scheduler.js";
@@ -64,6 +67,7 @@ beforeEach(async () => {
 		fastifyPlugin(
 			async (server) => {
 				server.decorate("notificationService", {
+					runProducer: async (run: () => Promise<unknown>) => await run(),
 					notify: vi.fn().mockResolvedValue(undefined),
 				} as never);
 			},
@@ -132,6 +136,293 @@ describe("plexEpisodeRefreshResultStatus", () => {
 });
 
 describe("Plex episode scheduler continuations", () => {
+	it("retries startup enumeration before starting provider work and preserves resume intent", async () => {
+		const enumerate = app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>;
+		enumerate
+			.mockRejectedValueOnce(new Error("Synthetic enumeration contention"))
+			.mockResolvedValue([{ id: "a", label: "A" }]);
+		mocks.refresh.mockResolvedValue({
+			complete: true,
+			errors: 0,
+			upserted: 1,
+			refreshedShows: 1,
+			capacityDegraded: false,
+		});
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		expect(mocks.refresh).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(29_999);
+		expect(mocks.refresh).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(1);
+		expect(enumerate).toHaveBeenCalledTimes(2);
+		expect(mocks.refresh).toHaveBeenCalledOnce();
+		expect(mocks.refresh.mock.calls[0]![0].resumeFailed).toBe(true);
+	});
+
+	it("exhausts bounded round enumeration retries without starting provider work", async () => {
+		const enumerate = app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>;
+		enumerate.mockRejectedValue(new Error("Synthetic enumeration contention"));
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		for (const delay of [30_000, 2 * 60_000, 10 * 60_000]) await vi.advanceTimersByTimeAsync(delay);
+		expect(enumerate).toHaveBeenCalledTimes(4);
+		expect(mocks.refresh).not.toHaveBeenCalled();
+		expect(
+			serializedLogs
+				.map((line) => JSON.parse(line))
+				.filter((record) => record.category === "plex-episode-cache-round-retry-exhausted"),
+		).toHaveLength(1);
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+		expect(enumerate).toHaveBeenCalledTimes(4);
+	});
+
+	it("cancels a pending round enumeration retry during shutdown", async () => {
+		const enumerate = app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>;
+		enumerate.mockRejectedValue(new Error("Synthetic enumeration contention"));
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		await app.close();
+		await vi.advanceTimersByTimeAsync(20 * 60_000);
+		expect(enumerate).toHaveBeenCalledOnce();
+		expect(mocks.refresh).not.toHaveBeenCalled();
+	});
+
+	it("does not replay a round after enumeration and provider work have completed", async () => {
+		const enumerate = app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>;
+		enumerate.mockResolvedValue([{ id: "a", label: "A" }]);
+		mocks.refresh.mockResolvedValue({
+			complete: true,
+			errors: 0,
+			upserted: 1,
+			refreshedShows: 1,
+			capacityDegraded: false,
+		});
+		(app.prisma.cacheRefreshStatus.findMany as ReturnType<typeof vi.fn>).mockRejectedValue(
+			new Error("Synthetic stale-status read failure"),
+		);
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		await vi.advanceTimersByTimeAsync(20 * 60_000);
+		expect(enumerate).toHaveBeenCalledOnce();
+		expect(mocks.refresh).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		[new RestoreRuntimeAdmissionError(), "runtime-admission", "unknown"],
+		[new SqliteRestoreRuntimeOwnershipError(), "sqlite-ownership", "unknown"],
+		[
+			new Prisma.PrismaClientKnownRequestError("private-prisma-message", {
+				code: "P2002",
+				clientVersion: "synthetic",
+			}),
+			"prisma-known-request",
+			"P2002",
+		],
+		[
+			new Prisma.PrismaClientUnknownRequestError("private-prisma-message", {
+				clientVersion: "synthetic",
+			}),
+			"prisma-unknown-request",
+			"unknown",
+		],
+		[
+			new Prisma.PrismaClientValidationError("private-prisma-message", {
+				clientVersion: "synthetic",
+			}),
+			"prisma-validation",
+			"unknown",
+		],
+		[
+			new Prisma.PrismaClientInitializationError("private-prisma-message", "synthetic", "P1001"),
+			"prisma-initialization",
+			"P1001",
+		],
+		[Object.assign(new Error(), { code: "SQLITE_BUSY" }), "other", "SQLITE_BUSY"],
+		[Object.assign(new Error(), { code: "P2028" }), "other", "P2028"],
+		[
+			Object.assign(new Error(), { name: "private-name", code: "private-code" }),
+			"other",
+			"unknown",
+		],
+		[null, "other", "unknown"],
+		["private-thrown-value", "other", "unknown"],
+	] as const)(
+		"projects only fixed exception kind/code through failure and exhaustion (case %#)",
+		async (error, errorKind, errorCode) => {
+			(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+				{ id: "a", label: "A" },
+			]);
+			const privateValue = "private-exception-diagnostic-sentinel";
+			if (error instanceof Error)
+				Object.assign(error, { message: privateValue, privateField: privateValue });
+			mocks.refresh.mockRejectedValue(error);
+			await app.ready();
+			await vi.advanceTimersByTimeAsync(5 * 60_000);
+			await vi.advanceTimersByTimeAsync(30_000);
+			await vi.advanceTimersByTimeAsync(2 * 60_000);
+			await vi.advanceTimersByTimeAsync(10 * 60_000);
+			await vi.advanceTimersByTimeAsync(10 * 60_000);
+			const records = serializedLogs.map((line) => JSON.parse(line));
+			const failures = records.filter(
+				(record) => record.category === "plex-episode-cache-refresh-failed",
+			);
+			const exhausted = records.filter(
+				(record) => record.category === "plex-episode-cache-refresh-retry-exhausted",
+			);
+			expect(failures).toHaveLength(3);
+			expect(exhausted).toHaveLength(1);
+			for (const record of [...failures, ...exhausted])
+				expect(record).toMatchObject({ errorKind, errorCode });
+			expect(mocks.refresh).toHaveBeenCalledTimes(4);
+			for (const secret of [privateValue, "private-name", "private-code", "private-thrown-value"])
+				expect(serializedLogs.join("\n")).not.toContain(secret);
+		},
+	);
+
+	it.each(["accessor", "proxy", "inherited"] as const)(
+		"does not evaluate or expose untrusted diagnostic properties: %s",
+		async (mode) => {
+			(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+				{ id: "a", label: "A" },
+			]);
+			const secret = "private-diagnostic-property-sentinel";
+			let nameReads = 0;
+			const error =
+				mode === "accessor"
+					? Object.defineProperties(
+							{},
+							{
+								name: {
+									get() {
+										nameReads++;
+										throw new Error(secret);
+									},
+								},
+								code: {
+									get() {
+										throw new Error(secret);
+									},
+								},
+								toJSON: {
+									get() {
+										throw new Error(secret);
+									},
+								},
+							},
+						)
+					: mode === "proxy"
+						? new Proxy(
+								{},
+								{
+									get() {
+										throw new Error(secret);
+									},
+									getOwnPropertyDescriptor() {
+										throw new Error(secret);
+									},
+								},
+							)
+						: Object.create({ name: "RestoreRuntimeAdmissionError", code: "P2002" });
+			mocks.refresh.mockRejectedValueOnce(error);
+			await app.ready();
+			await vi.advanceTimersByTimeAsync(5 * 60_000);
+			const failure = serializedLogs
+				.map((line) => JSON.parse(line))
+				.find((record) => record.category === "plex-episode-cache-refresh-failed");
+			expect(failure).toMatchObject({ errorKind: "other", errorCode: "unknown" });
+			expect(nameReads).toBe(0);
+			expect(serializedLogs.join("\n")).not.toContain(secret);
+			await vi.advanceTimersByTimeAsync(30_000);
+			expect(mocks.refresh).toHaveBeenCalledTimes(2);
+		},
+	);
+
+	it("uses fresh stage diagnostics for every exception retry", async () => {
+		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ id: "a", label: "A" },
+		]);
+		mocks.refresh
+			.mockImplementationOnce(async (input) => {
+				if (input.diagnostics) input.diagnostics.stage = "unit-claim";
+				throw new Error("private-first-attempt");
+			})
+			.mockRejectedValueOnce(new Error("private-second-attempt"));
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		await vi.advanceTimersByTimeAsync(30_000);
+		const failures = serializedLogs
+			.map((line) => JSON.parse(line))
+			.filter((record) => record.category === "plex-episode-cache-refresh-failed");
+		expect(failures.map((record) => record.runnerStage)).toEqual(["unit-claim", "not-started"]);
+		expect(serializedLogs.join("\n")).not.toContain("private-first-attempt");
+		expect(serializedLogs.join("\n")).not.toContain("private-second-attempt");
+	});
+	it("keeps a hostile native-cause getter private and preserves retry handling", async () => {
+		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ id: "a", label: "A" },
+		]);
+		const canary = "private-native-cause-getter";
+		const error = Object.assign(new Error(canary), {
+			code: "P1008",
+			meta: {
+				get driverAdapterError() {
+					throw new Error(canary);
+				},
+			},
+		});
+		mocks.refresh.mockRejectedValueOnce(error);
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		const failure = serializedLogs
+			.map((line) => JSON.parse(line))
+			.find((record) => record.category === "plex-episode-cache-refresh-failed");
+		expect(failure).toMatchObject({ runnerStage: "not-started", errorCategory: "unknown" });
+		expect(serializedLogs.join("\n")).not.toContain(canary);
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(2);
+	});
+	it.each([
+		["P1008", undefined, "database-timeout"],
+		["P2010", undefined, "database-query-error"],
+		["P1008", { originalCode: "SQLITE_BUSY", kind: "SocketTimeout" }, "database-busy"],
+		["P2010", { originalCode: "SQLITE_BUSY", kind: "SocketTimeout" }, "database-busy"],
+	] as const)(
+		"logs bounded %s diagnostics without raw native data (case %#)",
+		async (code, cause, expected) => {
+			(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+				{ id: "a", label: "A" },
+			]);
+			const privateValue = "private-provider-secret-sentinel";
+			const error = Object.assign(new Error(privateValue), {
+				code,
+				meta: {
+					modelName: privateValue,
+					driverAdapterError: {
+						cause: cause ? { ...cause, originalMessage: privateValue } : undefined,
+					},
+				},
+			});
+			mocks.refresh.mockImplementationOnce(async (input) => {
+				if (input.diagnostics) input.diagnostics.stage = "unit-claim";
+				throw error;
+			});
+			await app.ready();
+			await vi.advanceTimersByTimeAsync(5 * 60_000);
+			const records = serializedLogs.map((line) => JSON.parse(line));
+			const failure = records.find(
+				(record) => record.category === "plex-episode-cache-refresh-failed",
+			);
+			expect(failure).toMatchObject({
+				phase: "runner",
+				runnerStage: "unit-claim",
+				errorCategory: expected,
+			});
+			expect(serializedLogs.join("\n")).not.toContain(privateValue);
+			await vi.advanceTimersByTimeAsync(30_000);
+			expect(mocks.refresh).toHaveBeenCalledTimes(2);
+		},
+	);
+
 	it("re-admits an unexpected runner failure and completes the instance", async () => {
 		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
 			{ id: "a", label: "A" },
@@ -173,6 +464,11 @@ describe("Plex episode scheduler continuations", () => {
 		const records = serializedLogs.join("\n");
 		expect(records).toContain("plex-episode-cache-refresh-retry-exhausted");
 		expect(records).not.toContain("private runner failure");
+		expect(
+			serializedLogs
+				.map((line) => JSON.parse(line))
+				.find((record) => record.category === "plex-episode-cache-refresh-retry-exhausted"),
+		).toMatchObject({ runnerStage: "not-started", errorCategory: "unknown" });
 	});
 
 	it("retains the exact continuation attempt across an exception retry", async () => {

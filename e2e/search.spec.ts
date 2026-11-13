@@ -4,8 +4,77 @@
  * Tests for the global search page (Prowlarr indexer search).
  */
 
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { ROUTES, TIMEOUTS, waitForLoadingComplete } from "./utils/test-helpers";
+
+/** Browser-only reads with one configured indexer and a verified empty search batch. */
+async function ae148InstallConfiguredSearchRoutes(page: import("@playwright/test").Page) {
+	const indexer = {
+		id: 1,
+		name: "AE148 synthetic indexer",
+		enable: true,
+		protocol: "torrent" as const,
+		supportsSearch: true,
+		instanceId: "ae148-prowlarr",
+		instanceName: "AE148 synthetic Prowlarr",
+	};
+	const indexers = {
+		instances: [
+			{
+				instanceId: indexer.instanceId,
+				instanceName: indexer.instanceName,
+				success: true,
+				data: [indexer],
+			},
+		],
+		aggregated: [indexer],
+		totalCount: 1,
+		failedInstanceCount: 0,
+	} satisfies import("@arr/shared").SearchIndexersResponse;
+	const coverage = {
+		receivedCount: 0,
+		acceptedCount: 0,
+		rejectedCount: 0,
+		metadataIncompleteCount: 0,
+	};
+	const results = {
+		instances: [
+			{
+				instanceId: indexer.instanceId,
+				instanceName: indexer.instanceName,
+				success: true,
+				data: [],
+				coverage,
+			},
+		],
+		aggregated: [],
+		totalCount: 0,
+		failedInstanceCount: 0,
+		coverage,
+	} satisfies import("@arr/shared").MultiInstanceSearchResponse;
+	await page.route(
+		(url) => url.pathname === "/api/search/indexers",
+		async (route) => {
+			expect(route.request().method()).toBe("GET");
+			await route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				body: JSON.stringify(indexers),
+			});
+		},
+	);
+	await page.route(
+		(url) => url.pathname === "/api/search/query",
+		async (route) => {
+			expect(route.request().method()).toBe("POST");
+			await route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				body: JSON.stringify(results),
+			});
+		},
+	);
+}
 
 test.describe("Search - Page Load", () => {
 	test("should display search page with heading", async ({ page }) => {
@@ -31,9 +100,18 @@ test.describe("Search - Page Load", () => {
 		const configMessage = page.getByText(/prowlarr|no indexers|configure|not configured/i);
 		const errorState = page.locator('[role="alert"]');
 
-		const hasSearchInput = await searchInput.first().isVisible({ timeout: TIMEOUTS.medium }).catch(() => false);
-		const hasConfigMessage = await configMessage.first().isVisible({ timeout: 2000 }).catch(() => false);
-		const hasError = await errorState.first().isVisible({ timeout: 2000 }).catch(() => false);
+		const hasSearchInput = await searchInput
+			.first()
+			.isVisible({ timeout: TIMEOUTS.medium })
+			.catch(() => false);
+		const hasConfigMessage = await configMessage
+			.first()
+			.isVisible({ timeout: 2000 })
+			.catch(() => false);
+		const hasError = await errorState
+			.first()
+			.isVisible({ timeout: 2000 })
+			.catch(() => false);
 
 		// Either search input is visible OR configuration/error message is shown (CI without Prowlarr)
 		expect(hasSearchInput || hasConfigMessage || hasError).toBe(true);
@@ -42,18 +120,32 @@ test.describe("Search - Page Load", () => {
 	test("should have search button", async ({ page }) => {
 		await page.goto(ROUTES.search);
 		await waitForLoadingComplete(page);
-
-		// Wait for page to be authenticated (not showing Sign in link)
-		// If we see "Sign in", test should be skipped (session expired)
-		const signInLink = page.getByRole("link", { name: /sign in/i });
-		if (await signInLink.isVisible({ timeout: 1000 }).catch(() => false)) {
-			test.skip(true, "Session expired - Sign in link visible");
-			return;
+		await expect(page.getByRole("heading", { name: "Manual Search", exact: true })).toBeVisible({
+			timeout: TIMEOUTS.medium,
+		});
+		await expect(page).toHaveURL(/\/search(?:\?.*)?$/);
+		await expect(page.getByRole("link", { name: /sign in/i })).toHaveCount(0);
+		const form = page.locator("main form");
+		const searchButton = form.getByRole("button", { name: "Search", exact: true });
+		const configuration = page.getByRole("heading", {
+			name: "Prowlarr Configuration Required",
+			exact: true,
+		});
+		await expect(configuration.or(searchButton)).toBeVisible({ timeout: TIMEOUTS.medium });
+		if (await configuration.isVisible()) {
+			await expect(
+				page.getByText(
+					"Add at least one Prowlarr instance in Settings to enable manual searches across your indexers.",
+					{ exact: true },
+				),
+			).toBeVisible();
+			await expect(form).toHaveCount(0);
+			await expect(page.getByRole("button", { name: "Search", exact: true })).toHaveCount(0);
+		} else {
+			await expect(searchButton).toBeVisible({
+				timeout: TIMEOUTS.medium,
+			});
 		}
-
-		const searchButton = page.getByRole("button", { name: /search/i });
-
-		await expect(searchButton).toBeVisible({ timeout: TIMEOUTS.medium });
 	});
 });
 
@@ -86,26 +178,34 @@ test.describe("Search - Search Functionality", () => {
 	});
 
 	test("should display results or no results message", async ({ page }) => {
-		const searchInput = page.getByPlaceholder(/search|query/i).first();
-		const searchButton = page.getByRole("button", { name: /search/i }).first();
-
-		if ((await searchInput.count()) > 0 && (await searchButton.count()) > 0) {
-			await searchInput.fill("test");
-			await searchButton.click();
-
-			// Wait for results
-			await page.waitForTimeout(3000);
-
-			// Either results or no results message
-			const results = page.locator("article, [class*='result'], tr");
-			const noResults = page.getByText(/no results|nothing found|0 results/i);
-
-			const hasResults = (await results.count()) > 0;
-			const hasNoResults = (await noResults.count()) > 0;
-
-			// Either state is valid
-			expect(hasResults || hasNoResults || true).toBe(true);
-		}
+		await ae148InstallConfiguredSearchRoutes(page);
+		await page.goto(ROUTES.search);
+		await expect(page.getByRole("heading", { name: "Manual Search", exact: true })).toBeVisible({
+			timeout: TIMEOUTS.medium,
+		});
+		const searchInput = page.getByPlaceholder("Search for movies, series, music, or books", {
+			exact: true,
+		});
+		await expect(searchInput).toBeVisible();
+		await searchInput.fill("AE148 empty query");
+		await page.locator("main form").getByRole("button", { name: "All", exact: true }).click();
+		const completed = page.waitForResponse(
+			(response) =>
+				new URL(response.url()).pathname === "/api/search/query" &&
+				response.request().method() === "POST",
+		);
+		await page.locator("main form").getByRole("button", { name: "Search", exact: true }).click();
+		const response = await completed;
+		expect(response.status()).toBe(200);
+		expect(response.request().postDataJSON()).toEqual({
+			query: "AE148 empty query",
+			type: "all",
+			filters: [{ instanceId: "ae148-prowlarr", indexerIds: [1] }],
+		});
+		await expect(page.getByText("No results found for that query.", { exact: true })).toBeVisible();
+		await expect(
+			page.getByText("No results returned from your indexers for that query.", { exact: true }),
+		).toBeVisible();
 	});
 });
 
@@ -116,12 +216,45 @@ test.describe("Search - Filters", () => {
 	});
 
 	test("should have category filter", async ({ page }) => {
-		const categoryFilter = page.getByRole("combobox", { name: /category|type/i });
-		const categoryButtons = page.getByRole("button", { name: /movie|series|tv|all/i });
-
-		const hasFilter = (await categoryFilter.count()) > 0 || (await categoryButtons.count()) > 0;
-
-		expect(hasFilter || true).toBe(true);
+		await ae148InstallConfiguredSearchRoutes(page);
+		await page.goto(ROUTES.search);
+		await expect(page.getByRole("heading", { name: "Manual Search", exact: true })).toBeVisible({
+			timeout: TIMEOUTS.medium,
+		});
+		const form = page.locator("main form");
+		for (const name of ["Movies", "Series", "Music", "Books", "All"]) {
+			await expect(form.getByRole("button", { name, exact: true })).toBeVisible();
+		}
+		await page
+			.getByPlaceholder("Search for movies, series, music, or books", { exact: true })
+			.fill("AE148 type selection");
+		const searchButton = form.getByRole("button", { name: "Search", exact: true });
+		for (const [name, type] of [
+			["Movies", "movie"],
+			["Series", "tv"],
+		]) {
+			await form.getByRole("button", { name, exact: true }).click();
+			const completed = page.waitForResponse(
+				(response) =>
+					new URL(response.url()).pathname === "/api/search/query" &&
+					response.request().method() === "POST",
+			);
+			await searchButton.click();
+			const response = await completed;
+			expect(response.status()).toBe(200);
+			expect(response.request().postDataJSON()).toEqual({
+				query: "AE148 type selection",
+				type,
+				filters: [{ instanceId: "ae148-prowlarr", indexerIds: [1] }],
+			});
+			await expect(
+				page.getByText("No results found for that query.", { exact: true }),
+			).toBeVisible();
+			await expect(
+				page.getByText("No results returned from your indexers for that query.", { exact: true }),
+			).toBeVisible();
+			await expect(searchButton).toBeEnabled();
+		}
 	});
 
 	test("should have indexer filter", async ({ page }) => {

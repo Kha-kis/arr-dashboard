@@ -14,12 +14,14 @@ import { JOB_ID } from "../../lib/scheduler-registry/job-definitions.js";
 import schedulerRegistryPlugin from "../../plugins/scheduler-registry.js";
 import { registerSystemRoutes } from "../system.js";
 import { createInjectAuthenticated, setupAuthInjection } from "./test-helpers.js";
+import { installNonDatabaseRuntimeFixture } from "../../lib/__tests__/runtime-admission-fixture.js";
 
 let app: ReturnType<typeof Fastify>;
 let injectAuthenticated: ReturnType<typeof createInjectAuthenticated>;
 
 beforeEach(async () => {
 	app = Fastify();
+	installNonDatabaseRuntimeFixture(app);
 
 	// Decorations system.ts touches that aren't relevant to /jobs but are
 	// referenced when the plugin loads (lifecycle, prisma, dbProvider, config).

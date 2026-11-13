@@ -4,6 +4,7 @@ import { AlertCircle, Check, Copy, Power, RotateCw, Webhook } from "lucide-react
 import { useState } from "react";
 import { toast } from "sonner";
 import { GlassmorphicCard } from "../../../components/layout";
+import { Alert, AlertDescription } from "../../../components/ui/alert";
 import { Button } from "../../../components/ui/button";
 import { useIncognitoMode } from "../../../contexts/IncognitoContext";
 import {
@@ -43,6 +44,9 @@ export const QuiWebhookConfigPanel = () => {
 	const plaintextSecret = rotate.data?.secret ?? null;
 	const recentEvents = eventLog.data?.pages.flatMap((p) => p.entries) ?? [];
 	const quiInstances = (services.data ?? []).filter((s) => s.service === "qui" && s.enabled);
+	const configUnavailable = config.isError || (!config.isLoading && config.data === undefined);
+	const servicesUnavailable =
+		services.isError || (!services.isLoading && services.data === undefined);
 
 	const handleRotate = async () => {
 		const ok = window.confirm(
@@ -52,15 +56,13 @@ export const QuiWebhookConfigPanel = () => {
 		try {
 			await rotate.mutateAsync();
 		} catch (err) {
-			// A failed rotation looks identical to a successful one from
-			// the UI: spinner stops, but the operator has no way to know
-			// the request didn't land. Surface the error so they can
-			// distinguish "secret was rotated" from "rotation failed —
-			// previous secret still valid" — the security model depends
-			// on knowing which state you're in.
-			toast.error("Couldn't rotate the webhook secret. Previous secret is still valid.", {
-				description: getErrorMessage(err),
-			});
+			// A rejected response can follow a committed rotation.
+			toast.error(
+				"Webhook secret rotation was not confirmed. The previous secret may no longer work.",
+				{
+					description: getErrorMessage(err),
+				},
+			);
 		}
 	};
 
@@ -105,6 +107,22 @@ export const QuiWebhookConfigPanel = () => {
 					</div>
 				</div>
 
+				{configUnavailable ? (
+					<Alert variant="warning">
+						<AlertDescription>
+							Webhook configuration unavailable.
+							{config.data !== undefined ? " Showing last-known configuration." : ""}
+							<Button
+								variant="secondary"
+								disabled={config.isFetching}
+								onClick={() => void config.refetch()}
+							>
+								Retry
+							</Button>
+						</AlertDescription>
+					</Alert>
+				) : null}
+
 				<div className="space-y-2">
 					<div className="space-y-1">
 						<label htmlFor="qui-webhook-url" className="text-xs font-medium text-muted-foreground">
@@ -114,7 +132,7 @@ export const QuiWebhookConfigPanel = () => {
 							<input
 								id="qui-webhook-url"
 								readOnly
-								value={config.isLoading ? "Loading…" : baseUrl}
+								value={config.isLoading ? "Loading…" : baseUrl || "Unavailable"}
 								className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-mono"
 							/>
 							<button
@@ -149,7 +167,9 @@ export const QuiWebhookConfigPanel = () => {
 												? plaintextSecret
 												: config.data?.hasSecret
 													? "(hidden — only shown once at rotation; rotate to view a new one)"
-													: ""
+													: configUnavailable
+														? "Unavailable"
+														: ""
 								}
 								className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-mono"
 							/>
@@ -223,16 +243,40 @@ export const QuiWebhookConfigPanel = () => {
 					</Button>
 				</div>
 
-				<AutoRegisterSection
-					quiInstances={quiInstances}
-					plaintextSecret={plaintextSecret}
-					hasSecret={Boolean(config.data?.hasSecret)}
-				/>
+				{servicesUnavailable ? (
+					<Alert variant="warning">
+						<AlertDescription>
+							qUI instances unavailable.
+							{services.data !== undefined ? " Showing last-known instances." : ""}
+							<Button
+								variant="secondary"
+								disabled={services.isFetching}
+								onClick={() => void services.refetch()}
+							>
+								Retry
+							</Button>
+						</AlertDescription>
+					</Alert>
+				) : null}
+				{services.isLoading ? (
+					<p className="text-xs text-muted-foreground">Loading qUI instances…</p>
+				) : null}
+				{services.data !== undefined && (quiInstances.length > 0 || !servicesUnavailable) ? (
+					<AutoRegisterSection
+						quiInstances={quiInstances}
+						plaintextSecret={plaintextSecret}
+						hasSecret={configUnavailable ? undefined : config.data?.hasSecret}
+						isIncognito={isIncognito}
+					/>
+				) : null}
 
 				<RecentEventsStrip
 					recentEvents={recentEvents}
 					isIncognito={isIncognito}
 					isError={eventLog.isError}
+					isLoading={eventLog.isLoading}
+					isFetching={eventLog.isFetching}
+					onRetry={() => void eventLog.refetch()}
 				/>
 			</div>
 		</GlassmorphicCard>
@@ -244,13 +288,15 @@ export const QuiWebhookConfigPanel = () => {
 interface AutoRegisterSectionProps {
 	quiInstances: ReadonlyArray<{ id: string; label: string }>;
 	plaintextSecret: string | null;
-	hasSecret: boolean;
+	hasSecret: boolean | undefined;
+	isIncognito: boolean;
 }
 
 const AutoRegisterSection = ({
 	quiInstances,
 	plaintextSecret,
 	hasSecret,
+	isIncognito,
 }: AutoRegisterSectionProps) => {
 	const register = useRegisterQuiWebhook();
 	const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
@@ -319,7 +365,7 @@ const AutoRegisterSection = ({
 				</p>
 			</div>
 
-			{!hasSecret ? (
+			{hasSecret === false ? (
 				<div className="flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
 					<AlertCircle className="h-3.5 w-3.5 shrink-0" />
 					<span>
@@ -327,7 +373,7 @@ const AutoRegisterSection = ({
 						store plaintext, so registration needs a fresh rotation.
 					</span>
 				</div>
-			) : !plaintextSecret ? (
+			) : hasSecret === true && !plaintextSecret ? (
 				<div className="flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
 					<AlertCircle className="h-3.5 w-3.5 shrink-0" />
 					<span>
@@ -354,7 +400,9 @@ const AutoRegisterSection = ({
 									onChange={() => setSelectedInstanceId(inst.id)}
 									className="h-3.5 w-3.5"
 								/>
-								<span className="font-medium">{inst.label}</span>
+								<span className="font-medium">
+									{isIncognito ? getLinuxInstanceName(inst.label) : inst.label}
+								</span>
 								<span className="text-muted-foreground">(qui)</span>
 							</div>
 							<span className="text-xs">
@@ -421,60 +469,65 @@ interface RecentEventsStripProps {
 	 * this flag the empty state lies, claiming the wire works when it
 	 * may have errored. */
 	isError: boolean;
+	isLoading: boolean;
+	isFetching: boolean;
+	onRetry: () => void;
 }
 
-const RecentEventsStrip = ({ recentEvents, isIncognito, isError }: RecentEventsStripProps) => {
-	if (isError) {
-		// Distinguish "fetch errored" from "fetch succeeded + 0 events".
-		// The default empty-state message claims the wire works; if it's
-		// shown while the fetch is broken, it's actively misleading.
-		return (
-			<div className="border-t border-border/40 pt-3">
-				<h4 className="text-sm font-semibold mb-1">Recent events</h4>
-				<p className="text-xs text-amber-300/80">
-					Couldn’t load recent events — the event-log endpoint returned an error. Webhook delivery
-					may still be working; this is a display-side problem. Refresh the page or check the server
-					logs.
-				</p>
-			</div>
-		);
-	}
-	if (recentEvents.length === 0) {
-		return (
-			<div className="border-t border-border/40 pt-3">
-				<h4 className="text-sm font-semibold mb-1">Recent events</h4>
+const RecentEventsStrip = ({
+	recentEvents,
+	isIncognito,
+	isError,
+	isLoading,
+	isFetching,
+	onRetry,
+}: RecentEventsStripProps) => {
+	return (
+		<div className="border-t border-border/40 pt-3 space-y-2">
+			<h4 className="text-sm font-semibold">Recent events</h4>
+			{isError ? (
+				<Alert variant="warning">
+					<AlertDescription>
+						Couldn’t load recent events. This does not establish whether webhook delivery is
+						working.
+						{recentEvents.length > 0 ? " Showing last-known events." : ""}
+						<Button variant="secondary" disabled={isFetching} onClick={onRetry}>
+							Retry
+						</Button>
+					</AlertDescription>
+				</Alert>
+			) : null}
+			{isLoading ? (
+				<p className="text-xs text-muted-foreground">Loading recent events…</p>
+			) : recentEvents.length === 0 && !isError ? (
 				<p className="text-xs text-muted-foreground">
 					No webhook events received yet. Once registered, events will appear here within seconds —
 					proving the wire works end-to-end.
 				</p>
-			</div>
-		);
-	}
-
-	return (
-		<div className="border-t border-border/40 pt-3 space-y-2">
-			<h4 className="text-sm font-semibold">Recent events</h4>
-			<ul className="space-y-1">
-				{recentEvents.map((ev) => {
-					// Prefer the hydrated label; fall back through id then "—".
-					const instanceRaw = ev.serviceInstanceLabel ?? ev.serviceInstanceId ?? "—";
-					const instance = isIncognito ? getLinuxInstanceName(instanceRaw) : instanceRaw;
-					return (
-						<li
-							key={ev.id}
-							className="flex items-center justify-between gap-3 rounded-md border border-border/40 bg-card/20 px-3 py-1.5 text-xs"
-						>
-							<span className="font-mono text-muted-foreground">{ev.eventType}</span>
-							<span className="font-mono text-muted-foreground/70 truncate flex-1 mx-2">
-								{ev.torrentHash ? shortenHash(ev.torrentHash) : instance}
-							</span>
-							<time className="text-muted-foreground/70" dateTime={ev.receivedAt}>
-								{relative(ev.receivedAt)}
-							</time>
-						</li>
-					);
-				})}
-			</ul>
+			) : null}
+			{recentEvents.length > 0 ? (
+				<ul className="space-y-1">
+					{recentEvents.map((ev) => {
+						// Prefer the hydrated label; fall back through id then "—".
+						const instanceRaw = ev.serviceInstanceLabel ?? ev.serviceInstanceId ?? "—";
+						const instance = isIncognito ? getLinuxInstanceName(instanceRaw) : instanceRaw;
+						return (
+							<li
+								key={ev.id}
+								className="flex items-center justify-between gap-3 rounded-md border border-border/40 bg-card/20 px-3 py-1.5 text-xs"
+							>
+								<span className="font-mono text-muted-foreground">{ev.eventType}</span>
+								<span className="font-mono text-muted-foreground/70 truncate flex-1 mx-2">
+									{ev.torrentHash ? shortenHash(ev.torrentHash) : instance}
+								</span>
+								<time className="text-muted-foreground/70" dateTime={ev.receivedAt}>
+									{relative(ev.receivedAt)}
+								</time>
+							</li>
+						);
+					})}
+				</ul>
+			) : null}
 		</div>
 	);
 };

@@ -2,6 +2,7 @@
 
 import { Loader2, Plus, Tags } from "lucide-react";
 import { PremiumEmptyState, PremiumSection } from "../../../components/layout";
+import { Alert } from "../../../components/ui/alert";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -25,6 +26,11 @@ interface TagsTabProps {
 	isCreatingTag: boolean;
 	/** Whether tag deletion is pending */
 	isDeletingTag: boolean;
+	readStatus: "loading" | "unavailable" | "ready";
+	hasCachedTags: boolean;
+	isFetchingTags: boolean;
+	onRetryTags: () => void;
+	actionError: string | null;
 }
 
 /**
@@ -43,11 +49,21 @@ export const TagsTab = ({
 	onDeleteTag,
 	isCreatingTag,
 	isDeletingTag,
+	readStatus,
+	hasCachedTags,
+	isFetchingTags,
+	onRetryTags,
+	actionError,
 }: TagsTabProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
 		<div className="grid gap-6 lg:grid-cols-[1fr_2fr]">
+			{actionError && (
+				<Alert variant="danger" className="lg:col-span-2">
+					{actionError}
+				</Alert>
+			)}
 			{/* Create tag form */}
 			<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 				<div className="space-y-4">
@@ -84,7 +100,7 @@ export const TagsTab = ({
 						</div>
 						<Button
 							type="submit"
-							disabled={isCreatingTag || !newTagName.trim()}
+							disabled={isCreatingTag || isDeletingTag || !newTagName.trim()}
 							className="w-full gap-2"
 							style={{
 								background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
@@ -113,12 +129,36 @@ export const TagsTab = ({
 				description="Use tags to filter multi-instance data across the dashboard"
 				icon={Tags}
 			>
-				{tags.length === 0 ? (
-					<PremiumEmptyState
-						icon={Tags}
-						title="No tags yet"
-						description="Create your first tag to organize your service instances."
-					/>
+				{readStatus === "unavailable" && (
+					<Alert variant="warning" className="mb-4">
+						<p>
+							{hasCachedTags
+								? "Could not refresh tags. Showing last-known tags; they may be stale."
+								: "Tags are unavailable. Please try again."}
+						</p>
+						<Button
+							type="button"
+							variant="secondary"
+							className="mt-2"
+							onClick={onRetryTags}
+							disabled={isFetchingTags}
+						>
+							Retry
+						</Button>
+					</Alert>
+				)}
+				{readStatus === "loading" ? (
+					<p role="status" className="text-sm text-muted-foreground">
+						Loading tags...
+					</p>
+				) : tags.length === 0 ? (
+					readStatus === "ready" ? (
+						<PremiumEmptyState
+							icon={Tags}
+							title="No tags yet"
+							description="Create your first tag to organize your service instances."
+						/>
+					) : null
 				) : (
 					<ul className="space-y-3">
 						{tags.map((tag, index) => (
@@ -128,6 +168,7 @@ export const TagsTab = ({
 								name={tag.name}
 								onRemove={onDeleteTag}
 								isPending={isDeletingTag}
+								disabled={isCreatingTag || isDeletingTag}
 								animationDelay={index * 50}
 							/>
 						))}

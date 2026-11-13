@@ -32,6 +32,7 @@ export type ProviderObservationUnitAvgAggregateOutputType = {
   cursor: number | null
   expectedRawCount: number | null
   observedRawCount: number | null
+  completedPages: number | null
   attemptCount: number | null
 }
 
@@ -41,6 +42,7 @@ export type ProviderObservationUnitSumAggregateOutputType = {
   cursor: number | null
   expectedRawCount: number | null
   observedRawCount: number | null
+  completedPages: number | null
   attemptCount: number | null
 }
 
@@ -56,6 +58,7 @@ export type ProviderObservationUnitMinAggregateOutputType = {
   cursor: number | null
   expectedRawCount: number | null
   observedRawCount: number | null
+  completedPages: number | null
   state: string | null
   claimToken: string | null
   attemptCount: number | null
@@ -78,6 +81,7 @@ export type ProviderObservationUnitMaxAggregateOutputType = {
   cursor: number | null
   expectedRawCount: number | null
   observedRawCount: number | null
+  completedPages: number | null
   state: string | null
   claimToken: string | null
   attemptCount: number | null
@@ -100,6 +104,7 @@ export type ProviderObservationUnitCountAggregateOutputType = {
   cursor: number
   expectedRawCount: number
   observedRawCount: number
+  completedPages: number
   state: number
   claimToken: number
   attemptCount: number
@@ -118,6 +123,7 @@ export type ProviderObservationUnitAvgAggregateInputType = {
   cursor?: true
   expectedRawCount?: true
   observedRawCount?: true
+  completedPages?: true
   attemptCount?: true
 }
 
@@ -127,6 +133,7 @@ export type ProviderObservationUnitSumAggregateInputType = {
   cursor?: true
   expectedRawCount?: true
   observedRawCount?: true
+  completedPages?: true
   attemptCount?: true
 }
 
@@ -142,6 +149,7 @@ export type ProviderObservationUnitMinAggregateInputType = {
   cursor?: true
   expectedRawCount?: true
   observedRawCount?: true
+  completedPages?: true
   state?: true
   claimToken?: true
   attemptCount?: true
@@ -164,6 +172,7 @@ export type ProviderObservationUnitMaxAggregateInputType = {
   cursor?: true
   expectedRawCount?: true
   observedRawCount?: true
+  completedPages?: true
   state?: true
   claimToken?: true
   attemptCount?: true
@@ -186,6 +195,7 @@ export type ProviderObservationUnitCountAggregateInputType = {
   cursor?: true
   expectedRawCount?: true
   observedRawCount?: true
+  completedPages?: true
   state?: true
   claimToken?: true
   attemptCount?: true
@@ -295,6 +305,7 @@ export type ProviderObservationUnitGroupByOutputType = {
   cursor: number
   expectedRawCount: number | null
   observedRawCount: number
+  completedPages: number
   state: string
   claimToken: string | null
   attemptCount: number
@@ -340,6 +351,7 @@ export type ProviderObservationUnitWhereInput = {
   cursor?: Prisma.IntFilter<"ProviderObservationUnit"> | number
   expectedRawCount?: Prisma.IntNullableFilter<"ProviderObservationUnit"> | number | null
   observedRawCount?: Prisma.IntFilter<"ProviderObservationUnit"> | number
+  completedPages?: Prisma.IntFilter<"ProviderObservationUnit"> | number
   state?: Prisma.StringFilter<"ProviderObservationUnit"> | string
   claimToken?: Prisma.StringNullableFilter<"ProviderObservationUnit"> | string | null
   attemptCount?: Prisma.IntFilter<"ProviderObservationUnit"> | number
@@ -366,6 +378,7 @@ export type ProviderObservationUnitOrderByWithRelationInput = {
   cursor?: Prisma.SortOrder
   expectedRawCount?: Prisma.SortOrderInput | Prisma.SortOrder
   observedRawCount?: Prisma.SortOrder
+  completedPages?: Prisma.SortOrder
   state?: Prisma.SortOrder
   claimToken?: Prisma.SortOrderInput | Prisma.SortOrder
   attemptCount?: Prisma.SortOrder
@@ -398,6 +411,7 @@ export type ProviderObservationUnitWhereUniqueInput = Prisma.AtLeast<{
   cursor?: Prisma.IntFilter<"ProviderObservationUnit"> | number
   expectedRawCount?: Prisma.IntNullableFilter<"ProviderObservationUnit"> | number | null
   observedRawCount?: Prisma.IntFilter<"ProviderObservationUnit"> | number
+  completedPages?: Prisma.IntFilter<"ProviderObservationUnit"> | number
   state?: Prisma.StringFilter<"ProviderObservationUnit"> | string
   claimToken?: Prisma.StringNullableFilter<"ProviderObservationUnit"> | string | null
   attemptCount?: Prisma.IntFilter<"ProviderObservationUnit"> | number
@@ -424,6 +438,7 @@ export type ProviderObservationUnitOrderByWithAggregationInput = {
   cursor?: Prisma.SortOrder
   expectedRawCount?: Prisma.SortOrderInput | Prisma.SortOrder
   observedRawCount?: Prisma.SortOrder
+  completedPages?: Prisma.SortOrder
   state?: Prisma.SortOrder
   claimToken?: Prisma.SortOrderInput | Prisma.SortOrder
   attemptCount?: Prisma.SortOrder
@@ -454,6 +469,7 @@ export type ProviderObservationUnitScalarWhereWithAggregatesInput = {
   cursor?: Prisma.IntWithAggregatesFilter<"ProviderObservationUnit"> | number
   expectedRawCount?: Prisma.IntNullableWithAggregatesFilter<"ProviderObservationUnit"> | number | null
   observedRawCount?: Prisma.IntWithAggregatesFilter<"ProviderObservationUnit"> | number
+  completedPages?: Prisma.IntWithAggregatesFilter<"ProviderObservationUnit"> | number
   state?: Prisma.StringWithAggregatesFilter<"ProviderObservationUnit"> | string
   claimToken?: Prisma.StringNullableWithAggregatesFilter<"ProviderObservationUnit"> | string | null
   attemptCount?: Prisma.IntWithAggregatesFilter<"ProviderObservationUnit"> | number
@@ -475,6 +491,7 @@ export type ProviderObservationUnitCreateInput = {
   cursor?: number
   expectedRawCount?: number | null
   observedRawCount?: number
+  completedPages?: number
   state: string
   claimToken?: string | null
   attemptCount?: number
@@ -501,6 +518,7 @@ export type ProviderObservationUnitUncheckedCreateInput = {
   cursor?: number
   expectedRawCount?: number | null
   observedRawCount?: number
+  completedPages?: number
   state: string
   claimToken?: string | null
   attemptCount?: number
@@ -525,6 +543,7 @@ export type ProviderObservationUnitUpdateInput = {
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
   expectedRawCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   observedRawCount?: Prisma.IntFieldUpdateOperationsInput | number
+  completedPages?: Prisma.IntFieldUpdateOperationsInput | number
   state?: Prisma.StringFieldUpdateOperationsInput | string
   claimToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   attemptCount?: Prisma.IntFieldUpdateOperationsInput | number
@@ -551,6 +570,7 @@ export type ProviderObservationUnitUncheckedUpdateInput = {
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
   expectedRawCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   observedRawCount?: Prisma.IntFieldUpdateOperationsInput | number
+  completedPages?: Prisma.IntFieldUpdateOperationsInput | number
   state?: Prisma.StringFieldUpdateOperationsInput | string
   claimToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   attemptCount?: Prisma.IntFieldUpdateOperationsInput | number
@@ -576,6 +596,7 @@ export type ProviderObservationUnitCreateManyInput = {
   cursor?: number
   expectedRawCount?: number | null
   observedRawCount?: number
+  completedPages?: number
   state: string
   claimToken?: string | null
   attemptCount?: number
@@ -597,6 +618,7 @@ export type ProviderObservationUnitUpdateManyMutationInput = {
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
   expectedRawCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   observedRawCount?: Prisma.IntFieldUpdateOperationsInput | number
+  completedPages?: Prisma.IntFieldUpdateOperationsInput | number
   state?: Prisma.StringFieldUpdateOperationsInput | string
   claimToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   attemptCount?: Prisma.IntFieldUpdateOperationsInput | number
@@ -619,6 +641,7 @@ export type ProviderObservationUnitUncheckedUpdateManyInput = {
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
   expectedRawCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   observedRawCount?: Prisma.IntFieldUpdateOperationsInput | number
+  completedPages?: Prisma.IntFieldUpdateOperationsInput | number
   state?: Prisma.StringFieldUpdateOperationsInput | string
   claimToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   attemptCount?: Prisma.IntFieldUpdateOperationsInput | number
@@ -666,6 +689,7 @@ export type ProviderObservationUnitCountOrderByAggregateInput = {
   cursor?: Prisma.SortOrder
   expectedRawCount?: Prisma.SortOrder
   observedRawCount?: Prisma.SortOrder
+  completedPages?: Prisma.SortOrder
   state?: Prisma.SortOrder
   claimToken?: Prisma.SortOrder
   attemptCount?: Prisma.SortOrder
@@ -682,6 +706,7 @@ export type ProviderObservationUnitAvgOrderByAggregateInput = {
   cursor?: Prisma.SortOrder
   expectedRawCount?: Prisma.SortOrder
   observedRawCount?: Prisma.SortOrder
+  completedPages?: Prisma.SortOrder
   attemptCount?: Prisma.SortOrder
 }
 
@@ -697,6 +722,7 @@ export type ProviderObservationUnitMaxOrderByAggregateInput = {
   cursor?: Prisma.SortOrder
   expectedRawCount?: Prisma.SortOrder
   observedRawCount?: Prisma.SortOrder
+  completedPages?: Prisma.SortOrder
   state?: Prisma.SortOrder
   claimToken?: Prisma.SortOrder
   attemptCount?: Prisma.SortOrder
@@ -719,6 +745,7 @@ export type ProviderObservationUnitMinOrderByAggregateInput = {
   cursor?: Prisma.SortOrder
   expectedRawCount?: Prisma.SortOrder
   observedRawCount?: Prisma.SortOrder
+  completedPages?: Prisma.SortOrder
   state?: Prisma.SortOrder
   claimToken?: Prisma.SortOrder
   attemptCount?: Prisma.SortOrder
@@ -735,6 +762,7 @@ export type ProviderObservationUnitSumOrderByAggregateInput = {
   cursor?: Prisma.SortOrder
   expectedRawCount?: Prisma.SortOrder
   observedRawCount?: Prisma.SortOrder
+  completedPages?: Prisma.SortOrder
   attemptCount?: Prisma.SortOrder
 }
 
@@ -838,6 +866,7 @@ export type ProviderObservationUnitCreateWithoutRunInput = {
   cursor?: number
   expectedRawCount?: number | null
   observedRawCount?: number
+  completedPages?: number
   state: string
   claimToken?: string | null
   attemptCount?: number
@@ -862,6 +891,7 @@ export type ProviderObservationUnitUncheckedCreateWithoutRunInput = {
   cursor?: number
   expectedRawCount?: number | null
   observedRawCount?: number
+  completedPages?: number
   state: string
   claimToken?: string | null
   attemptCount?: number
@@ -915,6 +945,7 @@ export type ProviderObservationUnitScalarWhereInput = {
   cursor?: Prisma.IntFilter<"ProviderObservationUnit"> | number
   expectedRawCount?: Prisma.IntNullableFilter<"ProviderObservationUnit"> | number | null
   observedRawCount?: Prisma.IntFilter<"ProviderObservationUnit"> | number
+  completedPages?: Prisma.IntFilter<"ProviderObservationUnit"> | number
   state?: Prisma.StringFilter<"ProviderObservationUnit"> | string
   claimToken?: Prisma.StringNullableFilter<"ProviderObservationUnit"> | string | null
   attemptCount?: Prisma.IntFilter<"ProviderObservationUnit"> | number
@@ -936,6 +967,7 @@ export type ProviderObservationUnitCreateWithoutPlexEpisodeRowsInput = {
   cursor?: number
   expectedRawCount?: number | null
   observedRawCount?: number
+  completedPages?: number
   state: string
   claimToken?: string | null
   attemptCount?: number
@@ -961,6 +993,7 @@ export type ProviderObservationUnitUncheckedCreateWithoutPlexEpisodeRowsInput = 
   cursor?: number
   expectedRawCount?: number | null
   observedRawCount?: number
+  completedPages?: number
   state: string
   claimToken?: string | null
   attemptCount?: number
@@ -1000,6 +1033,7 @@ export type ProviderObservationUnitUpdateWithoutPlexEpisodeRowsInput = {
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
   expectedRawCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   observedRawCount?: Prisma.IntFieldUpdateOperationsInput | number
+  completedPages?: Prisma.IntFieldUpdateOperationsInput | number
   state?: Prisma.StringFieldUpdateOperationsInput | string
   claimToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   attemptCount?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1025,6 +1059,7 @@ export type ProviderObservationUnitUncheckedUpdateWithoutPlexEpisodeRowsInput = 
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
   expectedRawCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   observedRawCount?: Prisma.IntFieldUpdateOperationsInput | number
+  completedPages?: Prisma.IntFieldUpdateOperationsInput | number
   state?: Prisma.StringFieldUpdateOperationsInput | string
   claimToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   attemptCount?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1048,6 +1083,7 @@ export type ProviderObservationUnitCreateWithoutJellyfinEpisodeRowsInput = {
   cursor?: number
   expectedRawCount?: number | null
   observedRawCount?: number
+  completedPages?: number
   state: string
   claimToken?: string | null
   attemptCount?: number
@@ -1073,6 +1109,7 @@ export type ProviderObservationUnitUncheckedCreateWithoutJellyfinEpisodeRowsInpu
   cursor?: number
   expectedRawCount?: number | null
   observedRawCount?: number
+  completedPages?: number
   state: string
   claimToken?: string | null
   attemptCount?: number
@@ -1112,6 +1149,7 @@ export type ProviderObservationUnitUpdateWithoutJellyfinEpisodeRowsInput = {
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
   expectedRawCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   observedRawCount?: Prisma.IntFieldUpdateOperationsInput | number
+  completedPages?: Prisma.IntFieldUpdateOperationsInput | number
   state?: Prisma.StringFieldUpdateOperationsInput | string
   claimToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   attemptCount?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1137,6 +1175,7 @@ export type ProviderObservationUnitUncheckedUpdateWithoutJellyfinEpisodeRowsInpu
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
   expectedRawCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   observedRawCount?: Prisma.IntFieldUpdateOperationsInput | number
+  completedPages?: Prisma.IntFieldUpdateOperationsInput | number
   state?: Prisma.StringFieldUpdateOperationsInput | string
   claimToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   attemptCount?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1160,6 +1199,7 @@ export type ProviderObservationUnitCreateWithoutJellyfinEpisodeExclusionsInput =
   cursor?: number
   expectedRawCount?: number | null
   observedRawCount?: number
+  completedPages?: number
   state: string
   claimToken?: string | null
   attemptCount?: number
@@ -1185,6 +1225,7 @@ export type ProviderObservationUnitUncheckedCreateWithoutJellyfinEpisodeExclusio
   cursor?: number
   expectedRawCount?: number | null
   observedRawCount?: number
+  completedPages?: number
   state: string
   claimToken?: string | null
   attemptCount?: number
@@ -1224,6 +1265,7 @@ export type ProviderObservationUnitUpdateWithoutJellyfinEpisodeExclusionsInput =
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
   expectedRawCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   observedRawCount?: Prisma.IntFieldUpdateOperationsInput | number
+  completedPages?: Prisma.IntFieldUpdateOperationsInput | number
   state?: Prisma.StringFieldUpdateOperationsInput | string
   claimToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   attemptCount?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1249,6 +1291,7 @@ export type ProviderObservationUnitUncheckedUpdateWithoutJellyfinEpisodeExclusio
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
   expectedRawCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   observedRawCount?: Prisma.IntFieldUpdateOperationsInput | number
+  completedPages?: Prisma.IntFieldUpdateOperationsInput | number
   state?: Prisma.StringFieldUpdateOperationsInput | string
   claimToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   attemptCount?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1272,6 +1315,7 @@ export type ProviderObservationUnitCreateManyRunInput = {
   cursor?: number
   expectedRawCount?: number | null
   observedRawCount?: number
+  completedPages?: number
   state: string
   claimToken?: string | null
   attemptCount?: number
@@ -1293,6 +1337,7 @@ export type ProviderObservationUnitUpdateWithoutRunInput = {
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
   expectedRawCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   observedRawCount?: Prisma.IntFieldUpdateOperationsInput | number
+  completedPages?: Prisma.IntFieldUpdateOperationsInput | number
   state?: Prisma.StringFieldUpdateOperationsInput | string
   claimToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   attemptCount?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1317,6 +1362,7 @@ export type ProviderObservationUnitUncheckedUpdateWithoutRunInput = {
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
   expectedRawCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   observedRawCount?: Prisma.IntFieldUpdateOperationsInput | number
+  completedPages?: Prisma.IntFieldUpdateOperationsInput | number
   state?: Prisma.StringFieldUpdateOperationsInput | string
   claimToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   attemptCount?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1341,6 +1387,7 @@ export type ProviderObservationUnitUncheckedUpdateManyWithoutRunInput = {
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
   expectedRawCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   observedRawCount?: Prisma.IntFieldUpdateOperationsInput | number
+  completedPages?: Prisma.IntFieldUpdateOperationsInput | number
   state?: Prisma.StringFieldUpdateOperationsInput | string
   claimToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   attemptCount?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1412,6 +1459,7 @@ export type ProviderObservationUnitSelect<ExtArgs extends runtime.Types.Extensio
   cursor?: boolean
   expectedRawCount?: boolean
   observedRawCount?: boolean
+  completedPages?: boolean
   state?: boolean
   claimToken?: boolean
   attemptCount?: boolean
@@ -1439,6 +1487,7 @@ export type ProviderObservationUnitSelectCreateManyAndReturn<ExtArgs extends run
   cursor?: boolean
   expectedRawCount?: boolean
   observedRawCount?: boolean
+  completedPages?: boolean
   state?: boolean
   claimToken?: boolean
   attemptCount?: boolean
@@ -1462,6 +1511,7 @@ export type ProviderObservationUnitSelectUpdateManyAndReturn<ExtArgs extends run
   cursor?: boolean
   expectedRawCount?: boolean
   observedRawCount?: boolean
+  completedPages?: boolean
   state?: boolean
   claimToken?: boolean
   attemptCount?: boolean
@@ -1485,6 +1535,7 @@ export type ProviderObservationUnitSelectScalar = {
   cursor?: boolean
   expectedRawCount?: boolean
   observedRawCount?: boolean
+  completedPages?: boolean
   state?: boolean
   claimToken?: boolean
   attemptCount?: boolean
@@ -1495,7 +1546,7 @@ export type ProviderObservationUnitSelectScalar = {
   completedAt?: boolean
 }
 
-export type ProviderObservationUnitOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "runId" | "ordinal" | "scopeKey" | "scopeDigest" | "scopePayload" | "phase" | "expectedTargets" | "cursor" | "expectedRawCount" | "observedRawCount" | "state" | "claimToken" | "attemptCount" | "nextAttemptAt" | "lastReasonCode" | "createdAt" | "updatedAt" | "completedAt", ExtArgs["result"]["providerObservationUnit"]>
+export type ProviderObservationUnitOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "runId" | "ordinal" | "scopeKey" | "scopeDigest" | "scopePayload" | "phase" | "expectedTargets" | "cursor" | "expectedRawCount" | "observedRawCount" | "completedPages" | "state" | "claimToken" | "attemptCount" | "nextAttemptAt" | "lastReasonCode" | "createdAt" | "updatedAt" | "completedAt", ExtArgs["result"]["providerObservationUnit"]>
 export type ProviderObservationUnitInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   run?: boolean | Prisma.ProviderObservationRunDefaultArgs<ExtArgs>
   plexEpisodeRows?: boolean | Prisma.ProviderObservationUnit$plexEpisodeRowsArgs<ExtArgs>
@@ -1530,6 +1581,7 @@ export type $ProviderObservationUnitPayload<ExtArgs extends runtime.Types.Extens
     cursor: number
     expectedRawCount: number | null
     observedRawCount: number
+    completedPages: number
     state: string
     claimToken: string | null
     attemptCount: number
@@ -1976,6 +2028,7 @@ export interface ProviderObservationUnitFieldRefs {
   readonly cursor: Prisma.FieldRef<"ProviderObservationUnit", 'Int'>
   readonly expectedRawCount: Prisma.FieldRef<"ProviderObservationUnit", 'Int'>
   readonly observedRawCount: Prisma.FieldRef<"ProviderObservationUnit", 'Int'>
+  readonly completedPages: Prisma.FieldRef<"ProviderObservationUnit", 'Int'>
   readonly state: Prisma.FieldRef<"ProviderObservationUnit", 'String'>
   readonly claimToken: Prisma.FieldRef<"ProviderObservationUnit", 'String'>
   readonly attemptCount: Prisma.FieldRef<"ProviderObservationUnit", 'Int'>

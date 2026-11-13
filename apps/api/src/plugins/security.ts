@@ -3,6 +3,7 @@ import fp from "fastify-plugin";
 import { Encryptor } from "../lib/auth/encryption.js";
 import { SecretManager } from "../lib/auth/secret-manager.js";
 import { SessionService } from "../lib/auth/session.js";
+import { createRuntimeSessionMetadataPrismaClient } from "../lib/backup/restore-runtime-client.js";
 import { resolveSecretsPath } from "../lib/utils/secrets-path.js";
 
 export const securityPlugin = fp(
@@ -35,6 +36,7 @@ export const securityPlugin = fp(
 		if (!app.config.ENCRYPTION_KEY || !app.config.SESSION_COOKIE_SECRET) {
 			app.log.info("Auto-generating secrets (not provided in environment)");
 		}
+		await app.restoreRuntime.bindDestination(secrets.installationId);
 
 		// Register cookie plugin with the secret (auto-generated or from env)
 		await app.register(fastifyCookie, {
@@ -43,6 +45,10 @@ export const securityPlugin = fp(
 		});
 
 		const encryptor = new Encryptor(secrets.encryptionKey);
+		const metadataClient =
+			app.dbProvider === "sqlite"
+				? createRuntimeSessionMetadataPrismaClient(app.restoreRuntime)
+				: undefined;
 		const sessionService = new SessionService(
 			app.prisma,
 			{
@@ -50,10 +56,18 @@ export const securityPlugin = fp(
 				SESSION_COOKIE_SECRET: secrets.sessionCookieSecret,
 			},
 			app.log,
+			metadataClient?.prisma,
 		);
 
 		app.decorate("encryptor", encryptor);
 		app.decorate("sessionService", sessionService);
+		app.addHook("preClose", async () => {
+			sessionService.closeValidationAdmission();
+		});
+		app.addHook("onClose", async () => {
+			await sessionService.drainValidations();
+			await metadataClient?.close();
+		});
 		app.decorate("installationId", secrets.installationId);
 		app.decorate("installationIdIsPersistent", secretManager.installationIdIsPersistent);
 		app.decorate("secretsSynchronized", secretManager.secretsSynchronized);

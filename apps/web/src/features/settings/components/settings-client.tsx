@@ -23,10 +23,10 @@ import { TABS, type TabType } from "../lib/settings-constants";
 import { AccountTab } from "./account-tab";
 import { AppearanceTab } from "./appearance-tab";
 import { BackupTab } from "./backup-tab";
+import { GettingStartedBanner } from "./getting-started-banner";
 import { OIDCProviderSection } from "./oidc-provider-section";
 import { PasskeySection } from "./passkey-section";
 import { PasswordSection } from "./password-section";
-import { GettingStartedBanner } from "./getting-started-banner";
 import { ServiceForm } from "./service-form";
 import { ServicesTab } from "./services-tab";
 import { SessionsSection } from "./sessions-section";
@@ -46,26 +46,34 @@ export const SettingsClient = () => {
 
 	// Data queries
 	const { data: services = [], isLoading: servicesLoading } = useServicesQuery();
-	const { data: tags = [] } = useTagsQuery();
+	const tagsQuery = useTagsQuery();
+	const tags = tagsQuery.data ?? [];
 	const { data: currentUser } = useCurrentUser();
 
 	// Local state
 	const [activeTab, setActiveTab] = useState<TabType>("services");
 
-	// Deep-link support: `/settings#system` (and other tab ids) selects that
-	// tab on mount. Mirrors the hash-scroll pattern used by /pulse#<item-id>.
+	// Keep deep links in sync when Settings stays mounted across hash navigation.
 	useEffect(() => {
-		if (typeof window === "undefined") return;
-		const hash = window.location.hash.slice(1);
-		if ((TABS as readonly string[]).includes(hash)) {
-			setActiveTab(hash as TabType);
-		}
+		const selectHashTab = () => {
+			const hash = window.location.hash.slice(1);
+			if ((TABS as readonly string[]).includes(hash)) {
+				setActiveTab(hash as TabType);
+			}
+		};
+		selectHashTab();
+		window.addEventListener("hashchange", selectHashTab);
+		return () => window.removeEventListener("hashchange", selectHashTab);
 	}, []);
 
 	// Custom hooks
 	const serviceFormState = useServiceFormState();
-	const servicesManagement = useServicesManagement();
+	const servicesManagement = useServicesManagement({
+		formState: serviceFormState.formState,
+		selectedServiceId: serviceFormState.selectedServiceForEdit?.id,
+	});
 	const tagsManagement = useTagsManagement();
+	const tagsUnavailable = tagsQuery.isError || (!tagsQuery.data && tagsQuery.errorUpdatedAt > 0);
 	const accountManagement = useAccountManagement(currentUser);
 
 	// Available tags for autocomplete
@@ -143,14 +151,20 @@ export const SettingsClient = () => {
 					<div role="tabpanel" id="settings-panel-services" aria-labelledby="settings-tab-services">
 						<GettingStartedBanner
 							services={services}
-							onSelectService={(service) => serviceFormState.resetForm(service)}
+							onSelectService={(service) => {
+								servicesManagement.dismissIdentityFlow();
+								serviceFormState.resetForm(service);
+							}}
 						/>
 						<div className="grid gap-4 sm:gap-6 xl:grid-cols-[2fr_1fr]">
 							<ServicesTab
 								services={services}
 								isLoading={servicesLoading}
 								onTestConnection={servicesManagement.handleTestConnection}
-								onEdit={serviceFormState.handleEdit}
+								onEdit={(instance) => {
+									servicesManagement.dismissIdentityFlow();
+									serviceFormState.handleEdit(instance);
+								}}
 								onToggleDefault={servicesManagement.toggleDefault}
 								onToggleEnabled={servicesManagement.toggleEnabled}
 								onDelete={handleDeleteService}
@@ -167,10 +181,13 @@ export const SettingsClient = () => {
 								formState={serviceFormState.formState}
 								onFormStateChange={serviceFormState.setFormState}
 								onSubmit={handleServiceFormSubmit}
-								onCancel={() => serviceFormState.resetForm(serviceFormState.formState.service)}
-								onTestConnection={() =>
+								onCancel={() => {
+									servicesManagement.dismissIdentityFlow();
+									serviceFormState.resetForm(serviceFormState.formState.service);
+								}}
+								onTestConnection={(draft) =>
 									servicesManagement.handleTestFormConnection(
-										serviceFormState.formState,
+										draft ?? serviceFormState.formState,
 										serviceFormState.selectedServiceForEdit,
 									)
 								}
@@ -204,9 +221,22 @@ export const SettingsClient = () => {
 							newTagName={tagsManagement.newTagName}
 							onNewTagNameChange={tagsManagement.setNewTagName}
 							onCreateTag={tagsManagement.handleCreateTag}
-							onDeleteTag={(id) => tagsManagement.deleteTagMutation.mutate(id)}
+							onDeleteTag={tagsManagement.handleDeleteTag}
 							isCreatingTag={tagsManagement.createTagMutation.isPending}
 							isDeletingTag={tagsManagement.deleteTagMutation.isPending}
+							readStatus={
+								tagsUnavailable ? "unavailable" : tagsQuery.isLoading ? "loading" : "ready"
+							}
+							hasCachedTags={tagsQuery.data !== undefined}
+							isFetchingTags={tagsQuery.isFetching}
+							onRetryTags={() => void tagsQuery.refetch()}
+							actionError={
+								tagsManagement.createTagMutation.isError
+									? "Could not create the tag. Your draft has been kept; please try again."
+									: tagsManagement.deleteTagMutation.isError
+										? "Could not remove the tag. It is still listed; please try again."
+										: null
+							}
 						/>
 					</div>
 				)}

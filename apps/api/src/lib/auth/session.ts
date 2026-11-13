@@ -1,7 +1,18 @@
 import { createHash, randomBytes } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from "fastify";
 import type { ApiEnv } from "../../config/env.js";
 import type { Prisma, PrismaClient } from "../../lib/prisma.js";
+import {
+	retainRestoreRuntimeOperation,
+	withRestoreRuntimeOperation,
+} from "../backup/restore-runtime-admission.js";
+import {
+	isRetryableSqlitePublicationStartRefusal,
+	withIsolatedRuntimePrismaReadClient,
+	withIsolatedRuntimePrismaTransaction,
+} from "../backup/restore-runtime-client.js";
+import { withSqliteTransactionWriteIntent } from "../sqlite-transaction-intent.js";
 
 /**
  * Base cookie options for session management.
@@ -45,12 +56,53 @@ interface SessionRotationOptions {
 	revokeOtherSessions?: boolean;
 }
 
+// The raw join keeps the session's complete shape and only the public principal
+// fields. SQLite raw booleans may be 0/1; PostgreSQL returns true/false.
+type SessionPrincipalRow = Prisma.SessionGetPayload<Record<string, never>> & {
+	principalId: string;
+	principalUsername: string;
+	principalMustChangePassword: boolean | number;
+	principalCreatedAt: Date;
+	principalUpdatedAt: Date;
+};
+
 export class SessionService {
+	private validationAdmissionClosed = false;
+	private readonly pendingValidationWork = new Set<Promise<void>>();
+
 	constructor(
 		private readonly prisma: PrismaClient,
 		private readonly env: ApiEnv,
 		private readonly logger?: FastifyBaseLogger,
+		private readonly metadataPrisma: Pick<PrismaClient, "session"> = prisma,
 	) {}
+
+	/** Stop new validation without blocking the remaining preClose hooks. */
+	closeValidationAdmission(): void {
+		this.validationAdmissionClosed = true;
+	}
+
+	/** Admitted lookups may still start their background metadata update. */
+	async drainValidations(): Promise<void> {
+		this.closeValidationAdmission();
+		while (this.pendingValidationWork.size > 0) {
+			await Promise.all(this.pendingValidationWork);
+		}
+	}
+
+	private async trackValidationWork<T>(operation: () => PromiseLike<T>): Promise<T> {
+		let settle!: () => void;
+		const completion = new Promise<void>((resolve) => {
+			settle = resolve;
+		});
+		this.pendingValidationWork.add(completion);
+		try {
+			return await operation();
+		} finally {
+			this.pendingValidationWork.delete(completion);
+			settle();
+		}
+	}
 
 	/**
 	 * Create a new session with optional metadata
@@ -65,15 +117,31 @@ export class SessionService {
 
 		const expiresAt = new Date(Date.now() + ttlMs);
 
-		await this.prisma.session.create({
-			data: {
-				id: hashedToken,
-				userId,
-				expiresAt,
-				userAgent: metadata?.userAgent,
-				ipAddress: metadata?.ipAddress,
-			},
-		});
+		// Do not borrow a connection held by an unrelated interactive transaction.
+		// The token is returned only after this short guarded publication commits.
+		const publish = () =>
+			withSqliteTransactionWriteIntent(() =>
+				withIsolatedRuntimePrismaTransaction(this.prisma, (tx) =>
+					tx.session.create({
+						data: {
+							id: hashedToken,
+							userId,
+							expiresAt,
+							userAgent: metadata?.userAgent,
+							ipAddress: metadata?.ipAddress,
+						},
+					}),
+				),
+			);
+		try {
+			await publish();
+		} catch (error) {
+			if (!isRetryableSqlitePublicationStartRefusal(error)) throw error;
+			// Only a physically settled start refusal proves replay is safe.
+			// Reacquire every fence once, with the same token and expiry.
+			await delay(25);
+			await publish();
+		}
 
 		return { token, expiresAt };
 	}
@@ -210,6 +278,15 @@ export class SessionService {
 	}
 
 	async validateRequest(request: FastifyRequest) {
+		if (this.validationAdmissionClosed) {
+			throw Object.assign(new Error("Session validation is unavailable during shutdown"), {
+				statusCode: 503,
+			});
+		}
+		return this.trackValidationWork(() => this.resolveRequest(request));
+	}
+
+	private async resolveRequest(request: FastifyRequest) {
 		const rawCookie = request.cookies?.[this.env.SESSION_COOKIE_NAME];
 		if (!rawCookie) {
 			return null;
@@ -221,19 +298,39 @@ export class SessionService {
 		}
 
 		const hashedToken = hashToken(unsigned.value);
-		const record = await this.prisma.session.findUnique({
-			where: { id: hashedToken },
-			include: {
+		// Validate committed session/user state without waiting on or borrowing
+		// an unrelated transaction held by the ordinary SQLite connection.
+		const record = await withIsolatedRuntimePrismaReadClient(this.prisma, async (prisma) => {
+			// Prisma's relation include uses two separately guarded statements here.
+			// One bound join reads the same committed session and user atomically.
+			const [row] = await prisma.$queryRaw<SessionPrincipalRow[]>`
+				SELECT s."id", s."userId", s."expiresAt", s."createdAt",
+					s."lastAccessedAt", s."userAgent", s."ipAddress",
+					u."id" AS "principalId", u."username" AS "principalUsername",
+					u."mustChangePassword" AS "principalMustChangePassword",
+					u."createdAt" AS "principalCreatedAt", u."updatedAt" AS "principalUpdatedAt"
+				FROM "sessions" AS s INNER JOIN "User" AS u ON u."id" = s."userId"
+				WHERE s."id" = ${hashedToken}
+			`;
+			if (!row) return null;
+			const {
+				principalId,
+				principalUsername,
+				principalMustChangePassword,
+				principalCreatedAt,
+				principalUpdatedAt,
+				...session
+			} = row;
+			return {
+				...session,
 				user: {
-					select: {
-						id: true,
-						username: true,
-						mustChangePassword: true,
-						createdAt: true,
-						updatedAt: true,
-					},
+					id: principalId,
+					username: principalUsername,
+					mustChangePassword: Boolean(principalMustChangePassword),
+					createdAt: principalCreatedAt,
+					updatedAt: principalUpdatedAt,
 				},
-			},
+			};
 		});
 
 		if (!record) {
@@ -246,13 +343,24 @@ export class SessionService {
 			return null;
 		}
 
-		// Update lastAccessedAt in the background (non-blocking, non-critical metadata)
-		this.prisma.session
-			.update({
-				where: { id: hashedToken },
-				data: { lastAccessedAt: new Date() },
-			})
-			.catch(() => {});
+		// Metadata stays nonblocking for authentication, but must settle before DB teardown.
+		void this.trackValidationWork(async () => {
+			// The accepted lookup may finish after new admission closes. Retain its
+			// metadata obligation without extending the request's database ticket.
+			const retained = retainRestoreRuntimeOperation();
+			try {
+				const update = async () =>
+					this.metadataPrisma.session.update({
+						where: { id: hashedToken },
+						data: { lastAccessedAt: new Date() },
+					});
+				return await (retained
+					? retained.run(update)
+					: withRestoreRuntimeOperation(update, { independent: true }));
+			} finally {
+				await retained?.release();
+			}
+		}).catch(() => {});
 
 		return { session: record, token: unsigned.value };
 	}

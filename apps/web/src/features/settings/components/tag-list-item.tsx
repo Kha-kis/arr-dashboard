@@ -17,6 +17,8 @@ interface TagListItemProps {
 	onRemove: (id: string) => void;
 	/** Whether deletion is pending */
 	isPending: boolean;
+	/** Disable interaction during another tag action without showing deletion progress. */
+	disabled?: boolean;
 	/** Animation delay for staggered entrance */
 	animationDelay?: number;
 }
@@ -34,6 +36,7 @@ export const TagListItem = ({
 	name,
 	onRemove,
 	isPending,
+	disabled = isPending,
 	animationDelay = 0,
 }: TagListItemProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
@@ -78,7 +81,7 @@ export const TagListItem = ({
 				variant="ghost"
 				size="sm"
 				onClick={handleRemove}
-				disabled={isPending}
+				disabled={disabled}
 				aria-label={confirmingDelete ? `Confirm remove ${name}` : `Remove ${name}`}
 				className={`gap-1.5 transition-opacity ${
 					confirmingDelete

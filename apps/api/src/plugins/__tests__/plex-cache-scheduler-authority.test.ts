@@ -7,20 +7,67 @@ const mocks = vi.hoisted(() => ({
 	refreshEpisodes: vi.fn(),
 	loadGenerationObservationsForOwnedInstances: vi.fn(),
 	getPublishedEpisodeGenerationObservation: vi.fn(),
+	claim: vi.fn(),
+	order: vi.fn(),
+	reconcile: vi.fn(),
 }));
 
 vi.mock("../../lib/plex/plex-refresh-orchestration.js", () => ({
-	refreshOwnedPlexCache: mocks.refreshLibrary,
+	refreshOwnedPlexCacheWithAttempt: mocks.refreshLibrary,
 	refreshOwnedPlexEpisodeCache: mocks.refreshEpisodes,
+}));
+vi.mock("../../lib/services/provider-cache-status.js", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../lib/services/provider-cache-status.js")>()),
+	claimProviderCacheRefreshAttempt: mocks.claim,
+	getProviderCacheRefreshClaimOrder: mocks.order,
+	reconcileSettledProviderCacheRefreshAttempt: mocks.reconcile,
 }));
 vi.mock("../../lib/plex/plex-evidence-repository.js", () => ({
 	loadGenerationObservationsForOwnedInstances: mocks.loadGenerationObservationsForOwnedInstances,
 	getPublishedEpisodeGenerationObservation: mocks.getPublishedEpisodeGenerationObservation,
 }));
 
-import type { FastifyWithLibraryRefreshRecovery } from "../../lib/services/library-refresh-recovery.js";
+import type {
+	LibraryRefreshRecoveryRequest,
+	FastifyWithLibraryRefreshRecovery,
+} from "../../lib/services/library-refresh-recovery.js";
+import { createProviderPublicationAuthority } from "../../lib/services/provider-identity-guard.js";
 import plexCacheSchedulerPlugin from "../plex-cache-scheduler.js";
 import plexEpisodeCacheSchedulerPlugin from "../plex-episode-cache-scheduler.js";
+
+let fixtureOrder = 0n;
+let fixtureOrders = new WeakMap<object, { order: bigint; cacheType: string; authority: string }>();
+// Explicit claim-boundary double; unknown objects remain unregistered.
+function trackRequest<T extends LibraryRefreshRecoveryRequest>(request: T): T {
+	if (!fixtureOrders.has(request.attempt))
+		fixtureOrders.set(request.attempt, {
+			order: ++fixtureOrder,
+			cacheType: request.provider,
+			authority: JSON.stringify(request.authority),
+		});
+	return request;
+}
+function resetClaimOrder() {
+	fixtureOrder = 0n;
+	fixtureOrders = new WeakMap();
+	mocks.order.mockReset().mockImplementation((attempt, cacheType, authority) => {
+		const record = fixtureOrders.get(attempt);
+		return record &&
+			record.cacheType === cacheType &&
+			record.authority === JSON.stringify(authority)
+			? record.order
+			: undefined;
+	});
+	mocks.claim.mockReset().mockImplementation(async (_prisma, cacheType, authority) => {
+		const attempt = { attemptedAt: new Date(), resultMarker: `in_progress:${crypto.randomUUID()}` };
+		fixtureOrders.set(attempt, {
+			order: ++fixtureOrder,
+			cacheType,
+			authority: JSON.stringify(authority),
+		});
+		return { status: "acquired", attempt };
+	});
+}
 
 describe("Plex scheduler publication authority", () => {
 	let app: FastifyInstance;
@@ -32,10 +79,20 @@ describe("Plex scheduler publication authority", () => {
 		label: "Plex",
 		connectionGeneration: 4,
 		identityGeneration: 9,
+		baseUrl: "https://plex.invalid",
+		enabled: true,
+		encryptedApiKey: "encrypted",
+		encryptionIv: "iv",
+		encryptedHttpAuthCredentials: null,
+		httpAuthEncryptionIv: null,
+		expectedIdentity: "plex-machine",
+		identityStatus: "VERIFIED",
 	};
 
 	beforeEach(async () => {
 		vi.useFakeTimers();
+		resetClaimOrder();
+		mocks.reconcile.mockReset().mockResolvedValue("ready");
 		mocks.refreshLibrary.mockReset().mockResolvedValue({
 			complete: true,
 			completedAt: new Date(),
@@ -108,6 +165,7 @@ describe("Plex scheduler publication authority", () => {
 			fastifyPlugin(
 				async (server) => {
 					server.decorate("notificationService", {
+						runProducer: <T>(operation: () => Promise<T>) => operation(),
 						notify: vi.fn().mockResolvedValue({}),
 					} as never);
 				},
@@ -203,19 +261,25 @@ describe("Plex scheduler publication authority", () => {
 	it("uses the pre-decryption boundary for startup and recurring publication paths", async () => {
 		await vi.advanceTimersByTimeAsync(5 * 60_000);
 
-		expect(mocks.refreshLibrary).toHaveBeenCalledWith({
-			prisma: app.prisma,
-			encryptor: app.encryptor,
-			instance,
-			log: app.log,
-		});
-		expect(mocks.refreshEpisodes).toHaveBeenCalledWith(
+		expect(mocks.refreshLibrary).toHaveBeenCalledWith(
 			{
 				prisma: app.prisma,
 				encryptor: app.encryptor,
 				instance,
 				log: app.log,
+				signal: expect.any(AbortSignal),
+			},
+			expect.objectContaining({ resultMarker: expect.stringMatching(/^in_progress:/) }),
+		);
+		expect(mocks.refreshEpisodes).toHaveBeenCalledWith(
+			{
+				prisma: app.prisma,
+				signal: expect.any(AbortSignal),
+				encryptor: app.encryptor,
+				instance,
+				log: app.log,
 				resumeFailed: true,
+				diagnostics: { stage: "not-started" },
 			},
 			undefined,
 		);
@@ -312,12 +376,13 @@ describe("Plex scheduler publication authority", () => {
 			provider: "plex" as const,
 			userId: "user-1",
 			instanceId: instance.id,
+			authority: createProviderPublicationAuthority(instance as never),
 			attempt: {
 				attemptedAt: new Date("2026-09-14T12:00:00.000Z"),
 				resultMarker: "in_progress:00000000-0000-4000-8000-000000000001",
 			},
 		};
-		recovery.admit(request);
+		recovery.admit(trackRequest(request));
 		expect(await recovery.arm(request)).toEqual({ status: "accepted" });
 		await vi.advanceTimersByTimeAsync(29_999);
 		expect(mocks.refreshLibrary).not.toHaveBeenCalled();
@@ -334,17 +399,87 @@ describe("Plex scheduler publication authority", () => {
 			provider: "plex" as const,
 			userId: "user-1",
 			instanceId: instance.id,
+			authority: createProviderPublicationAuthority(instance as never),
 			attempt: {
 				attemptedAt: new Date("2026-09-14T12:00:00.000Z"),
 				resultMarker: "in_progress:00000000-0000-4000-8000-000000000002",
 			},
 		};
-		recovery.admit(request);
+		recovery.admit(trackRequest(request));
 		findFirst.mockResolvedValue(instance);
 		expect(await recovery.arm(request)).toEqual({ status: "accepted" });
 		findFirst.mockResolvedValueOnce(null);
 		await vi.advanceTimersByTimeAsync(30_000);
 		expect(mocks.refreshLibrary).not.toHaveBeenCalled();
+	});
+
+	it("queues without admission reads, preserves the origin through database failure and retries each new failed claim once per rung", async () => {
+		await vi.advanceTimersByTimeAsync(30_000);
+		mocks.refreshLibrary.mockClear();
+		const bridge = (app as FastifyWithLibraryRefreshRecovery).libraryRefreshRecovery;
+		const request = {
+			provider: "plex" as const,
+			userId: instance.userId,
+			instanceId: instance.id,
+			authority: createProviderPublicationAuthority(instance as never),
+			attempt: {
+				attemptedAt: new Date(),
+				resultMarker: "in_progress:00000000-0000-4000-8000-000000000001",
+			},
+		};
+		const lookup = app.prisma.serviceInstance.findFirst as ReturnType<typeof vi.fn>;
+		lookup
+			.mockClear()
+			.mockRejectedValueOnce(new Error("database unavailable"))
+			.mockResolvedValue(instance);
+		bridge.admit(trackRequest(request));
+		expect(await Promise.all([bridge.arm(request), bridge.arm(request)])).toEqual([
+			{ status: "accepted" },
+			{ status: "accepted" },
+		]);
+		expect(lookup).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(mocks.refreshLibrary).not.toHaveBeenCalled();
+		mocks.refreshLibrary
+			.mockResolvedValueOnce({ complete: false, errors: 1 })
+			.mockResolvedValueOnce({ complete: true, errors: 0 });
+		await vi.advanceTimersByTimeAsync(120_000);
+		expect(mocks.refreshLibrary).toHaveBeenCalledOnce();
+		expect(mocks.reconcile.mock.calls[0]?.[3]).toEqual(request.attempt);
+		const fresh = mocks.refreshLibrary.mock.calls[0]?.[1];
+		expect(fresh.resultMarker).not.toBe(request.attempt.resultMarker);
+		await vi.advanceTimersByTimeAsync(600_000);
+		expect(mocks.refreshLibrary).toHaveBeenCalledTimes(2);
+		expect(mocks.reconcile.mock.calls[1]?.[3]).toEqual(fresh);
+		await vi.advanceTimersByTimeAsync(600_000);
+		expect(mocks.refreshLibrary).toHaveBeenCalledTimes(2);
+	});
+
+	it("retains an exhausted settled owner for the ordinary cadence without adding retry timers", async () => {
+		await vi.advanceTimersByTimeAsync(30_000);
+		mocks.refreshLibrary.mockClear();
+		mocks.reconcile.mockResolvedValue("unavailable");
+		const bridge = (app as FastifyWithLibraryRefreshRecovery).libraryRefreshRecovery;
+		const request = {
+			provider: "plex" as const,
+			userId: instance.userId,
+			instanceId: instance.id,
+			authority: createProviderPublicationAuthority(instance as never),
+			attempt: {
+				attemptedAt: new Date(),
+				resultMarker: "in_progress:00000000-0000-4000-8000-000000000001",
+			},
+		};
+		bridge.admit(trackRequest(request));
+		await bridge.arm(request);
+		await vi.advanceTimersByTimeAsync(30_000 + 120_000 + 600_000 + 600_000);
+		expect(mocks.reconcile).toHaveBeenCalledTimes(3);
+		expect(mocks.refreshLibrary).not.toHaveBeenCalled();
+		mocks.reconcile.mockResolvedValue("ready");
+		await vi.advanceTimersByTimeAsync(6 * 60 * 60_000);
+		expect(mocks.reconcile).toHaveBeenCalledTimes(4);
+		expect(mocks.reconcile.mock.calls[3]?.[3]).toBe(request.attempt);
+		expect(mocks.refreshLibrary).toHaveBeenCalledOnce();
 	});
 
 	it("bounds parent refresh retries and cancels them after close", async () => {
@@ -364,6 +499,88 @@ describe("Plex scheduler publication authority", () => {
 		await app.close();
 		await vi.advanceTimersByTimeAsync(6 * 60 * 60_000);
 		expect(mocks.refreshLibrary).toHaveBeenCalledTimes(4);
+	});
+
+	it.each(["superseded", "non-acquired", "complete", "failed"] as const)(
+		"FAR-SAF-001 preserves settled B when older A finishes %s",
+		async (exit) => {
+			await vi.advanceTimersByTimeAsync(30_000);
+			mocks.refreshLibrary.mockClear();
+			const bridge = (app as FastifyWithLibraryRefreshRecovery).libraryRefreshRecovery;
+			const request = (nonce: string) => ({
+				provider: "plex" as const,
+				userId: instance.userId,
+				instanceId: instance.id,
+				authority: createProviderPublicationAuthority(instance as never),
+				attempt: {
+					attemptedAt: new Date(),
+					resultMarker: `in_progress:00000000-0000-4000-8000-${nonce}`,
+				},
+			});
+			const a = request("000000000001"),
+				b = request("000000000002");
+			let finish!: (result: unknown) => void;
+			const blocked = new Promise((resolve) => {
+				finish = resolve;
+			});
+			if (exit === "superseded") mocks.reconcile.mockImplementationOnce(() => blocked);
+			else if (exit === "non-acquired") mocks.claim.mockImplementationOnce(() => blocked);
+			else mocks.refreshLibrary.mockImplementationOnce(() => blocked);
+			bridge.admit(trackRequest(a));
+			await bridge.arm(a);
+			await vi.advanceTimersByTimeAsync(30_000);
+			bridge.admit(trackRequest(b));
+			expect(await bridge.arm(b)).toEqual({ status: "accepted" });
+			finish(
+				exit === "superseded"
+					? "superseded"
+					: exit === "non-acquired"
+						? { status: "superseded" }
+						: { complete: exit === "complete", errors: exit === "failed" ? 1 : 0 },
+			);
+			await vi.advanceTimersByTimeAsync(30_000);
+			expect(
+				mocks.reconcile.mock.calls.some((call) => call[3].resultMarker === b.attempt.resultMarker),
+			).toBe(true);
+			expect(mocks.refreshLibrary).toHaveBeenCalledTimes(
+				exit === "complete" || exit === "failed" ? 2 : 1,
+			);
+		},
+	);
+
+	it("FAR-REG-001 gives new external B a finite ladder after exhausted A without resetting duplicate budgets", async () => {
+		await vi.advanceTimersByTimeAsync(30_000);
+		mocks.refreshLibrary.mockClear();
+		const bridge = (app as FastifyWithLibraryRefreshRecovery).libraryRefreshRecovery;
+		const request = (nonce: string) => ({
+			provider: "plex" as const,
+			userId: instance.userId,
+			instanceId: instance.id,
+			authority: createProviderPublicationAuthority(instance as never),
+			attempt: {
+				attemptedAt: new Date(),
+				resultMarker: `in_progress:00000000-0000-4000-8000-${nonce}`,
+			},
+		});
+		const a = request("000000000001"),
+			b = request("000000000002");
+		mocks.reconcile.mockResolvedValue("unavailable");
+		bridge.admit(trackRequest(a));
+		await bridge.arm(a);
+		await vi.advanceTimersByTimeAsync(30_000 + 120_000 + 600_000);
+		await bridge.arm(a);
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(mocks.reconcile).toHaveBeenCalledTimes(3);
+		bridge.admit(trackRequest(b));
+		await Promise.all([bridge.arm(b), bridge.arm(b)]);
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(mocks.reconcile).toHaveBeenCalledTimes(4);
+		expect(mocks.reconcile.mock.calls[3]?.[3]).toBe(b.attempt);
+		await bridge.arm(b);
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(mocks.reconcile).toHaveBeenCalledTimes(4);
+		await vi.advanceTimersByTimeAsync(90_000 + 600_000 + 600_000);
+		expect(mocks.reconcile).toHaveBeenCalledTimes(6);
 	});
 
 	it("does not retry a successfully published positive-only parent", async () => {
@@ -396,8 +613,17 @@ describe("Plex scheduler publication authority", () => {
 			}),
 		);
 		await vi.advanceTimersByTimeAsync(30_000);
-		await app.close();
-		finish({ complete: false, upserted: 0, errors: 1 });
+		let closeSettled = false;
+		const closing = app.close().then(() => {
+			closeSettled = true;
+		});
+		try {
+			await vi.advanceTimersByTimeAsync(0);
+			expect(closeSettled).toBe(false);
+		} finally {
+			finish({ complete: false, upserted: 0, errors: 1 });
+			await closing;
+		}
 		await vi.advanceTimersByTimeAsync(20 * 60_000);
 		expect(mocks.refreshLibrary).toHaveBeenCalledOnce();
 	});

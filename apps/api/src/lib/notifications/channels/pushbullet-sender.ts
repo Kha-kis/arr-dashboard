@@ -1,4 +1,10 @@
 import type { PushbulletConfig } from "@arr/shared";
+import {
+	httpFailureCategory,
+	networkFailureCategory,
+	notificationFailure,
+	NotificationFailureError,
+} from "../failure-diagnostics.js";
 import type { ChannelPlugin, ChannelSender, NotificationPayload, SendResult } from "../types.js";
 import { extractMetadataFields } from "./format-metadata.js";
 
@@ -41,43 +47,42 @@ export const pushbulletSender: ChannelSender = {
 			if (response.ok) {
 				return { success: true, retryable: false };
 			}
+			await response.body?.cancel().catch(() => {});
 
-			const text = await response.text().catch(() => "");
-			const error = `Pushbullet API failed: ${response.status} ${text}`;
-
-			if (response.status === 429) {
-				return { success: false, retryable: true, error };
-			}
-			if (response.status >= 500) {
-				return { success: false, retryable: true, error };
-			}
-			return { success: false, retryable: false, error };
+			return notificationFailure(
+				httpFailureCategory(response.status),
+				response.status === 429 || response.status >= 500,
+			);
 		} catch (err) {
-			const error = err instanceof Error ? err.message : String(err);
-			return { success: false, retryable: true, error: `Pushbullet network error: ${error}` };
+			return notificationFailure(networkFailureCategory(err), true);
 		}
 	},
 
 	async test(config: Record<string, unknown>): Promise<void> {
 		const { apiToken } = config as PushbulletConfig;
 
-		const response = await fetch(PUSHBULLET_API, {
-			method: "POST",
-			headers: {
-				"Access-Token": apiToken,
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({
-				type: "note",
-				title: "Test Notification",
-				body: "Arr Dashboard notification channel is working!",
-			}),
-			signal: AbortSignal.timeout(PUSHBULLET_TIMEOUT_MS),
-		});
+		try {
+			const response = await fetch(PUSHBULLET_API, {
+				method: "POST",
+				headers: {
+					"Access-Token": apiToken,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					type: "note",
+					title: "Test Notification",
+					body: "Arr Dashboard notification channel is working!",
+				}),
+				signal: AbortSignal.timeout(PUSHBULLET_TIMEOUT_MS),
+			});
 
-		if (!response.ok) {
-			const text = await response.text().catch(() => "");
-			throw new Error(`Pushbullet test failed: ${response.status} ${text}`);
+			if (!response.ok) {
+				await response.body?.cancel().catch(() => {});
+				throw new NotificationFailureError(httpFailureCategory(response.status));
+			}
+		} catch (err) {
+			if (err instanceof NotificationFailureError) throw err;
+			throw new NotificationFailureError(networkFailureCategory(err));
 		}
 	},
 };

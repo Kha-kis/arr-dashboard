@@ -22,13 +22,19 @@
 
 import type { FastifyInstance } from "fastify";
 import { describe, expect, it, vi } from "vitest";
-import type { QueueCleanerConfig, ServiceInstance } from "../../prisma.js";
+import type {
+	QueueCleanerConfig,
+	QueueCleanerImportReceipt,
+	ServiceInstance,
+} from "../../prisma.js";
+import type { QuiObservationRead } from "../../qui/torrent-observation-repository.js";
 import { JOB_ID } from "../../scheduler-registry/job-definitions.js";
 import { SchedulerRegistry } from "../../scheduler-registry/scheduler-registry.js";
 
 const quiMocks = vi.hoisted(() => ({
 	createQuiClient: vi.fn(),
 	listQuiInstances: vi.fn(),
+	readObservation: vi.fn<(...args: unknown[]) => Promise<QuiObservationRead>>(),
 }));
 
 const autoImportMocks = vi.hoisted(() => ({
@@ -42,6 +48,10 @@ vi.mock("../../qui/client-factory.js", () => ({
 vi.mock("../../qui/instance-helpers.js", () => ({
 	listQuiInstances: quiMocks.listQuiInstances,
 }));
+// Explicit repository INPUT seam; native producer/publication proof is separate.
+vi.mock("../../qui/torrent-observation-repository.js", () => ({
+	readQuiTorrentObservations: quiMocks.readObservation,
+}));
 
 vi.mock("../auto-import-handler.js", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../auto-import-handler.js")>();
@@ -51,7 +61,11 @@ vi.mock("../auto-import-handler.js", async (importOriginal) => {
 	};
 });
 
+import { importCommandFingerprint } from "../../arr/manual-import-command.js";
 import { executeEnhancedPreview, executeQueueCleaner } from "../cleaner-executor.js";
+import { importConnectionFingerprint, queueDownloadKey } from "../import-receipt.js";
+import * as lastSeedGate from "../last-seed-gate.js";
+import { queueItemFingerprint, readCompleteQueue } from "../queue-observation.js";
 
 function makeInstance(overrides: Partial<ServiceInstance> = {}): ServiceInstance {
 	return {
@@ -129,24 +143,60 @@ function makeConfig(overrides: Partial<QueueCleanerConfig> = {}): QueueCleanerCo
  * Accepts a queue-get behavior so we can inject success and failure.
  */
 function makeApp(queueBehavior: {
-	get: () => Promise<unknown>;
+	get: (options?: Record<string, unknown>) => Promise<unknown>;
+	getById?: (id: number) => Promise<unknown>;
 	del: ReturnType<typeof vi.fn>;
+	apiGet?: ReturnType<typeof vi.fn>;
+	apiPost?: ReturnType<typeof vi.fn>;
+	manualImportGet?: ReturnType<typeof vi.fn>;
 }): FastifyInstance {
+	const get = async (options?: Record<string, unknown>): Promise<Record<string, unknown>> => {
+		const page = (await queueBehavior.get(options)) as Record<string, unknown>;
+		// Older fixtures describe one complete page; model the real paging envelope.
+		return {
+			page: options?.page ?? 1,
+			pageSize: options?.pageSize ?? 1000,
+			totalRecords: Array.isArray(page.records) ? page.records.length : undefined,
+			...page,
+		};
+	};
 	const app = {
 		arrClientFactory: {
 			create: () => ({
+				get: queueBehavior.apiGet,
+				post: queueBehavior.apiPost,
+				manualImport: { get: queueBehavior.manualImportGet },
 				queue: {
-					get: queueBehavior.get,
+					get,
+					getById:
+						queueBehavior.getById ??
+						(async (id: number) => {
+							const page = await get();
+							return (page as { records: Array<{ id: number }> }).records.find(
+								(item) => item.id === id,
+							);
+						}),
 					delete: queueBehavior.del,
 				},
 			}),
 		},
 		prisma: {
+			arrImportOperation: { findMany: vi.fn().mockResolvedValue([]) },
+			arrImportSourceClaim: { findMany: vi.fn().mockResolvedValue([]) },
 			$transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
+			serviceInstance: { findUnique: vi.fn().mockResolvedValue(makeInstance()) },
+			queueCleanerImportReceipt: {
+				findMany: vi.fn().mockResolvedValue([]),
+				findUnique: vi.fn().mockResolvedValue(null),
+				create: vi.fn().mockResolvedValue({ id: "receipt-1" }),
+				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+			},
 			queueCleanerStrike: {
 				findMany: vi.fn().mockResolvedValue([]),
 				create: vi.fn(),
 				update: vi.fn(),
+				upsert: vi.fn(),
+				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 				deleteMany: vi.fn(),
 			},
 		},
@@ -157,6 +207,7 @@ function makeApp(queueBehavior: {
 			debug: vi.fn(),
 		},
 	};
+	app.prisma.$transaction = vi.fn(async (fn) => fn(app.prisma));
 	return app as unknown as FastifyInstance;
 }
 
@@ -178,6 +229,623 @@ describe("executeQueueCleaner — integration", () => {
 		indexer: "TestIndexer",
 		errorMessage: "The download is stalled with no connections",
 	};
+
+	async function importFixture() {
+		autoImportMocks.attemptAutoImport.mockReset().mockImplementation(async () => ({
+			attempted: false,
+			success: false,
+			safetyBlocked: true,
+		}));
+		const item = {
+			...STALLED_ITEM,
+			protocol: "usenet",
+			movieId: 10,
+			trackedDownloadState: "importPending",
+			statusMessages: [],
+			errorMessage: undefined,
+		};
+		let records: unknown[] = [item];
+		const del = vi.fn();
+		const apiGet = vi.fn();
+		const apiPost = vi.fn();
+		const manualImportGet = vi
+			.fn()
+			.mockResolvedValue([
+				{ id: 1, path: "/fixture/movie.mkv", movie: { id: 10 }, downloadId: item.downloadId },
+			]);
+		const app = makeApp({ get: async () => ({ records }), del, apiGet, apiPost, manualImportGet });
+		vi.mocked(app.prisma.serviceInstance.findUnique).mockResolvedValue(
+			makeInstance({ service: "RADARR" }),
+		);
+		const receipts: QueueCleanerImportReceipt[] = [];
+		Object.assign(app.prisma.queueCleanerImportReceipt, {
+			findMany: vi.fn(async () => receipts.map((receipt) => ({ ...receipt }))),
+			findUnique: vi.fn(
+				async ({ where }: { where: { instanceId_downloadKey: { downloadKey: string } } }) =>
+					receipts.find(
+						(receipt) => receipt.downloadKey === where.instanceId_downloadKey?.downloadKey,
+					) ?? null,
+			),
+			create: vi.fn(async ({ data }: { data: Partial<QueueCleanerImportReceipt> }) => {
+				if (receipts.some((receipt) => receipt.downloadKey === data.downloadKey))
+					throw new Error("fixture unique constraint");
+				const receipt = {
+					id: "receipt-1",
+					createdAt: new Date(),
+					updatedAt: new Date(),
+					...data,
+				} as QueueCleanerImportReceipt;
+				receipts.push(receipt);
+				return receipt;
+			}),
+			updateMany: vi.fn(
+				async ({
+					where,
+					data,
+				}: {
+					where: Partial<QueueCleanerImportReceipt>;
+					data: Partial<QueueCleanerImportReceipt>;
+				}) => {
+					if (!where || !(where.lastAttemptAt instanceof Date)) return { count: 0 };
+					const receipt = receipts.find(
+						(receipt) =>
+							receipt.id === where?.id &&
+							receipt.state === where?.state &&
+							receipt.lastAttemptAt.getTime() === (where.lastAttemptAt as Date).getTime(),
+					);
+					if (!receipt) return { count: 0 };
+					Object.assign(receipt, data);
+					return { count: 1 };
+				},
+			),
+		});
+		const config = makeConfig({
+			stalledEnabled: false,
+			importPendingEnabled: true,
+			importPendingThresholdMins: 0,
+			autoImportEnabled: true,
+			autoImportMaxAttempts: 2,
+			autoImportCooldownMins: 0,
+			autoImportSafeOnly: false,
+		});
+		return {
+			app,
+			item,
+			instance: makeInstance({ service: "RADARR" }),
+			config,
+			receipts,
+			del,
+			apiGet,
+			apiPost,
+			manualImportGet,
+			clearQueue: () => {
+				records = [];
+			},
+			setQueueId: (id: number) => {
+				records = [{ ...item, id }];
+			},
+		};
+	}
+
+	async function seedLegacyReceipt(
+		f: Awaited<ReturnType<typeof importFixture>>,
+		overrides: Partial<QueueCleanerImportReceipt> = {},
+		files: Array<Record<string, unknown>> = [
+			{ path: "/fixture/movie.mkv", downloadId: f.item.downloadId, movieId: 10 },
+		],
+	) {
+		const receipt = {
+			id: "legacy-receipt-1",
+			instanceId: f.instance.id,
+			downloadKey: queueDownloadKey(f.item),
+			queueId: f.item.id,
+			downloadTitle: f.item.title,
+			connectionFingerprint: importConnectionFingerprint(f.instance),
+			commandFingerprint: importCommandFingerprint(files),
+			commandId: 7,
+			state: "pending",
+			lastAttemptAt: new Date(Date.now() - 60_000),
+			createdAt: new Date(Date.now() - 60_000),
+			updatedAt: new Date(Date.now() - 60_000),
+			...overrides,
+		} as QueueCleanerImportReceipt;
+		f.receipts.push(receipt);
+		f.apiGet.mockImplementation(async (path) => {
+			if (path.endsWith("/command")) return [];
+			if (path.endsWith("/history")) return { totalRecords: 0, records: [] };
+			if (!path.includes("/command/")) return {};
+			const status = receipt.state === "failed" ? "failed" : "started";
+			return {
+				id: receipt.commandId ?? undefined,
+				name: "ManualImport",
+				status,
+				result: status === "failed" ? "unsuccessful" : undefined,
+				body: { files },
+			};
+		});
+		return receipt;
+	}
+
+	it("reconciles an explicitly seeded legacy receipt and counts only verified completion once", async () => {
+		const f = await importFixture();
+		const legacy = await seedLegacyReceipt(f);
+		const body = {
+			files: [{ path: "/fixture/movie.mkv", downloadId: f.item.downloadId, movieId: 10 }],
+		};
+		const run = () => executeQueueCleaner(f.app, f.instance, f.config);
+		expect(await run()).toMatchObject({ status: "partial", itemsCleaned: 0 });
+		expect(f.receipts[0]).toMatchObject({
+			commandId: 7,
+			state: "pending",
+			id: legacy.id,
+		});
+		f.apiGet.mockResolvedValue({ id: 7, name: "ManualImport", status: "started" });
+		f.setQueueId(99); // The same source keeps its receipt despite a changed queue slot.
+		expect(await run()).toMatchObject({ status: "partial", itemsCleaned: 0 });
+		f.clearQueue();
+		f.apiGet
+			.mockResolvedValueOnce({
+				id: 7,
+				name: "ManualImport",
+				status: "completed",
+				result: "successful",
+				body,
+			})
+			.mockResolvedValueOnce({
+				totalRecords: 1,
+				records: [
+					{
+						id: 1,
+						eventType: "downloadFolderImported",
+						downloadId: f.item.downloadId,
+						movieId: 10,
+						date: new Date(Date.now() + 1000).toISOString(),
+						data: { droppedPath: "/fixture/movie.mkv", fileId: "21" },
+					},
+				],
+			});
+		expect(await run()).toMatchObject({ status: "completed", itemsCleaned: 1 });
+		expect(await run()).toMatchObject({ status: "completed", itemsCleaned: 0 });
+		expect(f.receipts[0]?.state).toBe("completed");
+		expect(f.apiPost).not.toHaveBeenCalled();
+		expect(f.del).not.toHaveBeenCalled();
+	});
+
+	it("retains a seeded unknown legacy attempt when its source leaves the queue", async () => {
+		const f = await importFixture();
+		await seedLegacyReceipt(f, { state: "unknown", commandId: null });
+		expect(await executeQueueCleaner(f.app, f.instance, f.config)).toMatchObject({
+			status: "partial",
+			itemsCleaned: 0,
+		});
+		expect(f.receipts[0]?.state).toBe("unknown");
+		f.apiGet.mockResolvedValue([]);
+		f.clearQueue();
+		expect(await executeQueueCleaner(f.app, f.instance, f.config)).toMatchObject({
+			status: "partial",
+			itemsCleaned: 0,
+		});
+		expect(f.apiPost).not.toHaveBeenCalled();
+		expect(f.del).not.toHaveBeenCalled();
+	});
+
+	it("does not delete or submit when legacy receipt evidence cannot be read", async () => {
+		const f = await importFixture();
+		await seedLegacyReceipt(f);
+		vi.mocked(f.app.prisma.queueCleanerImportReceipt.findMany).mockRejectedValue(
+			new Error("fixture database unavailable"),
+		);
+		expect(await executeQueueCleaner(f.app, f.instance, f.config)).toMatchObject({
+			status: "error",
+			itemsCleaned: 0,
+		});
+		expect(f.apiPost).not.toHaveBeenCalled();
+		expect(f.del).not.toHaveBeenCalled();
+	});
+
+	it("does not turn a lost legacy receipt fence into removal permission", async () => {
+		const f = await importFixture();
+		f.apiPost.mockResolvedValue({ id: 7, name: "ManualImport", status: "queued" });
+		await seedLegacyReceipt(f, { state: "submitting" });
+		vi.mocked(f.app.prisma.queueCleanerImportReceipt.updateMany).mockResolvedValue({ count: 0 });
+		expect(await executeQueueCleaner(f.app, f.instance, f.config)).toMatchObject({
+			status: "error",
+			itemsCleaned: 0,
+		});
+		expect(f.receipts[0]?.state).toBe("submitting");
+		expect(f.del).not.toHaveBeenCalled();
+	});
+
+	it("preserves preview parity and prevents transferring command authority to a changed provider", async () => {
+		const f = await importFixture();
+		await seedLegacyReceipt(f);
+		await executeQueueCleaner(f.app, f.instance, f.config);
+		const dry = await executeQueueCleaner(f.app, f.instance, { ...f.config, dryRunMode: true });
+		const preview = await executeEnhancedPreview(f.app, f.instance, f.config);
+		expect(dry.skippedItems[0]?.reason).not.toContain("Would remove");
+		expect(preview.previewItems[0]?.action).toBe("skip");
+		expect(f.apiGet).toHaveBeenCalledOnce();
+		expect(f.app.prisma.queueCleanerImportReceipt.updateMany).toHaveBeenCalledOnce();
+		expect(
+			await executeQueueCleaner(
+				f.app,
+				{ ...f.instance, baseUrl: "http://replacement:7878" },
+				f.config,
+			),
+		).toMatchObject({ status: "partial", itemsCleaned: 0 });
+		expect(f.apiGet).toHaveBeenCalledOnce();
+		expect(f.apiPost).not.toHaveBeenCalled();
+		expect(f.del).not.toHaveBeenCalled();
+	});
+
+	it("does not delete or resubmit a seeded failed legacy command", async () => {
+		const f = await importFixture();
+		await seedLegacyReceipt(f, { state: "failed" });
+		expect(await executeQueueCleaner(f.app, f.instance, f.config)).toMatchObject({
+			status: "partial",
+			itemsCleaned: 0,
+		});
+		expect(f.receipts[0]?.state).toBe("failed");
+		expect(f.del).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		{ autoImportEnabled: false, autoImportMaxAttempts: 0 },
+		{ autoImportEnabled: true, autoImportMaxAttempts: 0 },
+		{ autoImportEnabled: true, autoImportMaxAttempts: 2 },
+	])(
+		"retains a partial batch's sources in preview and execution with retry policy %j",
+		async (retryPolicy) => {
+			const f = await importFixture();
+			const files = [
+				{ path: "/fixture/movie.mkv", downloadId: f.item.downloadId, movieId: 10 },
+				{ path: "/fixture/second.mkv", downloadId: f.item.downloadId, movieId: 10 },
+			];
+			await seedLegacyReceipt(
+				f,
+				{ state: "failed", commandFingerprint: importCommandFingerprint(files)! },
+				files,
+			);
+			f.apiGet.mockImplementation(async (path) =>
+				path.includes("/command/")
+					? {
+							id: 7,
+							name: "ManualImport",
+							status: "failed",
+							result: "unsuccessful",
+							body: {
+								files: [
+									{ path: "/fixture/movie.mkv", downloadId: f.item.downloadId, movieId: 10 },
+									{ path: "/fixture/second.mkv", downloadId: f.item.downloadId, movieId: 10 },
+								],
+							},
+						}
+					: {
+							totalRecords: 1,
+							records: [
+								{
+									eventType: "downloadFolderImported",
+									downloadId: f.item.downloadId,
+									movieId: 10,
+									date: new Date().toISOString(),
+									data: { droppedPath: "/fixture/movie.mkv", fileId: "21" },
+								},
+							],
+						},
+			);
+			const config = { ...f.config, ...retryPolicy };
+			expect(await executeQueueCleaner(f.app, f.instance, config)).toMatchObject({
+				status: "partial",
+				itemsCleaned: 0,
+			});
+			const dry = await executeQueueCleaner(f.app, f.instance, { ...config, dryRunMode: true });
+			const preview = await executeEnhancedPreview(f.app, f.instance, config);
+			expect(dry.skippedItems[0]?.reason).not.toContain("Would remove");
+			expect(preview.previewItems[0]?.action).toBe("skip");
+			expect(f.apiPost).not.toHaveBeenCalled();
+			expect(f.del).not.toHaveBeenCalled();
+		},
+	);
+
+	it("withholds source actions with missing download identity in all modes, including Usenet", async () => {
+		const del = vi.fn();
+		const app = makeApp({
+			get: async () => ({
+				records: [{ ...STALLED_ITEM, protocol: "usenet", downloadId: undefined }],
+			}),
+			del,
+		});
+		const config = makeConfig({ lastSeedProtection: false });
+		const live = await executeQueueCleaner(app, makeInstance(), config);
+		const dry = await executeQueueCleaner(app, makeInstance(), { ...config, dryRunMode: true });
+		const preview = await executeEnhancedPreview(app, makeInstance(), config);
+		expect(live).toMatchObject({ status: "partial", itemsCleaned: 0 });
+		expect(dry.skippedItems[0]?.reason).toContain("identity");
+		expect(preview.previewItems[0]?.action).toBe("skip");
+		expect(del).not.toHaveBeenCalled();
+	});
+
+	it.each(["torrent", undefined, "unknown"])(
+		"defers %s items without a hash consistently in all modes",
+		async (protocol) => {
+			const del = vi.fn();
+			const app = makeApp({ get: async () => ({ records: [{ ...STALLED_ITEM, protocol }] }), del });
+			const config = makeConfig({ lastSeedProtection: true });
+			const live = await executeQueueCleaner(app, makeInstance(), config);
+			const dry = await executeQueueCleaner(app, makeInstance(), { ...config, dryRunMode: true });
+			const preview = await executeEnhancedPreview(app, makeInstance(), config);
+			for (const result of [live, dry]) {
+				expect(result.itemsCleaned).toBe(0);
+				expect(result.skippedItems[0]?.reason).toContain("identity");
+			}
+			expect(preview.previewItems[0]?.action).toBe("skip");
+			expect(preview.previewItems[0]?.reason).toContain("identity");
+			expect(del).not.toHaveBeenCalled();
+		},
+	);
+
+	it("does not apply torrent hash requirements to known Usenet", async () => {
+		const del = vi.fn().mockResolvedValue(undefined);
+		const app = makeApp({
+			get: async () => ({ records: [{ ...STALLED_ITEM, protocol: "usenet" }] }),
+			del,
+		});
+		const result = await executeQueueCleaner(
+			app,
+			makeInstance(),
+			makeConfig({ lastSeedProtection: true }),
+		);
+		expect(result.itemsCleaned).toBe(1);
+		expect(del).toHaveBeenCalledOnce();
+	});
+
+	it("reads every advertised queue page in preview and execution", async () => {
+		const first = Array.from({ length: 1000 }, (_, index) => ({
+			...STALLED_ITEM,
+			id: index + 1,
+			downloadId: `download-${index + 1}`,
+			protocol: "usenet",
+		}));
+		const last = { ...STALLED_ITEM, id: 1001, downloadId: "download-1001", protocol: "usenet" };
+		const get = vi.fn(async (options?: Record<string, unknown>) => ({
+			records: options?.page === 2 ? [last] : first,
+			totalRecords: 1001,
+		}));
+		const del = vi.fn();
+		const app = makeApp({ get, del });
+		const config = makeConfig({ dryRunMode: true, maxRemovalsPerRun: 2000 });
+		const dry = await executeQueueCleaner(app, makeInstance(), config);
+		const preview = await executeEnhancedPreview(app, makeInstance(), config);
+		expect(dry.skippedItems).toHaveLength(1001);
+		expect(preview.queueSummary.totalItems).toBe(1001);
+		expect(preview.wouldRemove).toBe(1001);
+		expect(get).toHaveBeenCalledWith(expect.objectContaining({ page: 2 }));
+		expect(del).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		{ records: [STALLED_ITEM], totalRecords: 2 },
+		{ records: [STALLED_ITEM], totalRecords: undefined },
+		{ records: [STALLED_ITEM, STALLED_ITEM], totalRecords: 2 },
+		{ records: [{ ...STALLED_ITEM, id: 0 }], totalRecords: 1 },
+		{ records: null, totalRecords: 0 },
+	])("rejects incomplete or ambiguous queue envelopes before any writes (%j)", async (page) => {
+		const del = vi.fn();
+		const app = makeApp({ get: async () => page, del });
+		const result = await executeQueueCleaner(
+			app,
+			makeInstance(),
+			makeConfig({ strikeSystemEnabled: true }),
+		);
+		expect(result.status).toBe("error");
+		expect(del).not.toHaveBeenCalled();
+		expect(app.prisma.$transaction).not.toHaveBeenCalled();
+		const preview = await executeEnhancedPreview(app, makeInstance(), makeConfig());
+		expect(preview.errorMessage).toBeTruthy();
+		expect(preview.wouldRemove).toBe(0);
+	});
+
+	it.each([
+		{ downloadId: "another-download" },
+		{ protocol: "usenet" },
+		{
+			trackedDownloadState: "downloading",
+			statusMessages: [],
+			errorMessage: undefined,
+			trackedDownloadStatus: "ok",
+			sizeleft: 500_000_000,
+		},
+		{ seriesId: 999 },
+	])("defers a changed target before strikes or removal (%j)", async (change) => {
+		const del = vi.fn();
+		const app = makeApp({
+			get: async () => ({ records: [STALLED_ITEM] }),
+			getById: async () => ({ ...STALLED_ITEM, ...change }),
+			del,
+		});
+		const result = await executeQueueCleaner(
+			app,
+			makeInstance(),
+			makeConfig({ strikeSystemEnabled: true, maxStrikes: 1 }),
+		);
+		expect(result.itemsCleaned).toBe(0);
+		expect(result.skippedItems[0]?.reason).toMatch(/changed|eligible|identity/);
+		expect(del).not.toHaveBeenCalled();
+		expect(app.prisma.queueCleanerStrike.create).not.toHaveBeenCalled();
+		expect(app.prisma.queueCleanerStrike.update).not.toHaveBeenCalled();
+	});
+
+	it("reports a deletion 404 as unavailable, not a successful cleanup", async () => {
+		const del = vi.fn().mockRejectedValue(new Error("404 Not Found"));
+		const app = makeApp({ get: async () => ({ records: [STALLED_ITEM] }), del });
+		const result = await executeQueueCleaner(app, makeInstance(), makeConfig());
+		expect(result.itemsCleaned).toBe(0);
+		expect(result.status).toBe("partial");
+		expect(result.skippedItems[0]?.reason).toContain("outcome");
+	});
+
+	it.each([null, "previous-download-fingerprint"])(
+		"does not inherit legacy/recycled strikes (%s)",
+		async (downloadFingerprint) => {
+			const del = vi.fn();
+			const app = makeApp({ get: async () => ({ records: [STALLED_ITEM] }), del });
+			vi.mocked(app.prisma.queueCleanerStrike.findMany).mockResolvedValue([
+				{
+					id: "existing-strike",
+					instanceId: "inst-1",
+					downloadId: "42",
+					downloadHash: null,
+					downloadTitle: "Old slot occupant",
+					strikeCount: 2,
+					lastRule: "stalled",
+					lastReason: "old",
+					importAttempts: 2,
+					lastImportAttempt: new Date(),
+					lastImportError: "old",
+					firstStrikeAt: new Date(),
+					lastStrikeAt: new Date(),
+					...{ downloadFingerprint },
+				},
+			]);
+			const config = makeConfig({ strikeSystemEnabled: true, maxStrikes: 3 });
+			const dry = await executeQueueCleaner(app, makeInstance(), { ...config, dryRunMode: true });
+			const preview = await executeEnhancedPreview(app, makeInstance(), config);
+			const live = await executeQueueCleaner(app, makeInstance(), config);
+			expect(dry.warnedItems[0]?.strikeCount).toBe(1);
+			expect(preview.previewItems[0]?.strikeInfo?.currentStrikes).toBe(1);
+			expect(live.warnedItems[0]?.strikeCount).toBe(1);
+			expect(del).not.toHaveBeenCalled();
+			expect(app.prisma.queueCleanerStrike.update).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.objectContaining({
+						downloadFingerprint: queueItemFingerprint(STALLED_ITEM),
+						strikeCount: 1,
+						importAttempts: 0,
+					}),
+				}),
+			);
+		},
+	);
+
+	it("revalidates again after strike admission before the upstream action", async () => {
+		const del = vi.fn();
+		const getById = vi
+			.fn()
+			.mockResolvedValueOnce(STALLED_ITEM)
+			.mockResolvedValue({ ...STALLED_ITEM, downloadId: "replacement" });
+		const app = makeApp({ get: async () => ({ records: [STALLED_ITEM] }), getById, del });
+		const result = await executeQueueCleaner(app, makeInstance(), makeConfig());
+		expect(result.itemsCleaned).toBe(0);
+		expect(result.skippedItems[0]?.reason).toContain("identity changed");
+		expect(del).not.toHaveBeenCalled();
+	});
+
+	it("fails closed when the last-seed dependency unexpectedly throws in every mode", async () => {
+		const lookup = vi
+			.spyOn(lastSeedGate, "resolveLibraryReferencedItemIds")
+			.mockRejectedValue(new Error("fixture dependency failure"));
+		try {
+			const del = vi.fn();
+			const app = makeApp({
+				get: async () => ({ records: [{ ...STALLED_ITEM, downloadId: "a".repeat(40) }] }),
+				del,
+			});
+			const config = makeConfig({ lastSeedProtection: true });
+			for (const dryRunMode of [false, true]) {
+				const result = await executeQueueCleaner(app, makeInstance(), { ...config, dryRunMode });
+				expect(result.skippedItems[0]?.reason).toContain("reference evidence is unavailable");
+			}
+			const preview = await executeEnhancedPreview(app, makeInstance(), config);
+			expect(preview.previewItems[0]?.action).toBe("skip");
+			expect(preview.previewItems[0]?.reason).toContain("reference evidence is unavailable");
+			expect(del).not.toHaveBeenCalled();
+		} finally {
+			lookup.mockRestore();
+		}
+	});
+
+	it("rechecks cross-instance references before removal", async () => {
+		const hash = "a".repeat(40);
+		const del = vi.fn();
+		const app = makeApp({
+			get: async () => ({ records: [{ ...STALLED_ITEM, downloadId: hash }] }),
+			del,
+		});
+		const libraryLookup = vi
+			.fn()
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([])
+			.mockResolvedValue([{ infoHash: hash }]);
+		Object.assign(app.prisma, {
+			libraryCache: { findMany: libraryLookup },
+			episodeFileCache: { findMany: vi.fn().mockResolvedValue([]) },
+		});
+		const result = await executeQueueCleaner(
+			app,
+			makeInstance(),
+			makeConfig({ lastSeedProtection: true }),
+		);
+		expect(result.itemsCleaned).toBe(0);
+		expect(result.skippedItems[0]?.reason).toContain("library still references");
+		expect(libraryLookup).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ instance: { userId: "user-1" } }),
+			}),
+		);
+		expect(del).not.toHaveBeenCalled();
+	});
+
+	it("rejects same-total pagination churn before a partial set can prune strikes", async () => {
+		const records = (ids: number[]) =>
+			ids.map((id) => ({ ...STALLED_ITEM, id, downloadId: `download-${id}` }));
+		const get = vi
+			.fn()
+			.mockResolvedValueOnce({ page: 1, pageSize: 2, totalRecords: 3, records: records([1, 2]) })
+			.mockResolvedValueOnce({ page: 2, pageSize: 2, totalRecords: 3, records: records([4]) })
+			.mockResolvedValueOnce({ page: 1, pageSize: 2, totalRecords: 3, records: records([2, 3]) })
+			.mockResolvedValueOnce({ page: 2, pageSize: 2, totalRecords: 3, records: records([4]) });
+		const app = makeApp({ get, del: vi.fn() });
+		await expect(
+			readCompleteQueue(app.arrClientFactory.create(makeInstance()) as never, "SONARR"),
+		).rejects.toThrow("changed");
+		expect(app.prisma.queueCleanerStrike.deleteMany).not.toHaveBeenCalled();
+	});
+
+	it("reports unavailable current-target evidence as partial, not a successful run", async () => {
+		const del = vi.fn();
+		const app = makeApp({
+			get: async () => ({ records: [STALLED_ITEM] }),
+			getById: vi.fn().mockRejectedValue(new Error("fixture read failure")),
+			del,
+		});
+		const result = await executeQueueCleaner(app, makeInstance(), makeConfig());
+		expect(result.status).toBe("partial");
+		expect(result.message).toContain("deferred");
+		expect(del).not.toHaveBeenCalled();
+	});
+
+	it("distinguishes a reference lookup outage from a verified library reference", async () => {
+		const del = vi.fn();
+		const app = makeApp({
+			get: async () => ({ records: [{ ...STALLED_ITEM, downloadId: "a".repeat(40) }] }),
+			del,
+		});
+		Object.assign(app.prisma, {
+			libraryCache: {
+				findMany: vi.fn().mockRejectedValue(new Error("fixture database unavailable")),
+			},
+			episodeFileCache: { findMany: vi.fn().mockResolvedValue([]) },
+		});
+		const result = await executeQueueCleaner(
+			app,
+			makeInstance(),
+			makeConfig({ lastSeedProtection: true }),
+		);
+		expect(result.status).toBe("partial");
+		expect(result.skippedItems[0]?.reason).toContain("reference evidence is unavailable");
+		expect(result.skippedItems[0]?.reason).not.toContain("library still references");
+		expect(del).not.toHaveBeenCalled();
+	});
 
 	it("matches a stalled queue item and calls client.queue.del (side-effect verification)", async () => {
 		const del = vi.fn().mockResolvedValue(undefined);
@@ -207,20 +875,7 @@ describe("executeQueueCleaner — integration", () => {
 			get: async () => ({ records: [{ ...STALLED_ITEM, downloadId: hash }] }),
 			del,
 		});
-		const prisma = app.prisma as unknown as {
-			serviceInstance: { findFirst: ReturnType<typeof vi.fn> };
-			libraryCache: { findMany: ReturnType<typeof vi.fn> };
-		};
-		prisma.serviceInstance = {
-			findFirst: vi.fn().mockResolvedValue({ id: "qui-1" }),
-		};
-		prisma.libraryCache = {
-			// A failed/incomplete qUI topology scan clears all three observation
-			// fields, including the freshness publication marker.
-			findMany: vi
-				.fn()
-				.mockResolvedValue([{ infoHash: hash, torrentState: null, torrentSyncedAt: null }]),
-		};
+		quiMocks.readObservation.mockResolvedValue({ status: "unavailable" });
 
 		const result = await executeQueueCleaner(
 			app,
@@ -243,23 +898,32 @@ describe("executeQueueCleaner — integration", () => {
 			get: async () => ({ records: [observedItem, missingItem] }),
 			del,
 		});
-		const prisma = app.prisma as unknown as {
-			serviceInstance: { findFirst: ReturnType<typeof vi.fn> };
-			libraryCache: { findMany: ReturnType<typeof vi.fn> };
-		};
-		prisma.serviceInstance = {
-			findFirst: vi.fn().mockResolvedValue({ id: "qui-1" }),
-		};
-		prisma.libraryCache = {
-			findMany: vi.fn().mockResolvedValue([
-				{
-					infoHash: observedHash,
-					torrentState: "seeding",
-					torrentSyncedAt: new Date(),
-				},
-			]),
-		};
 		const config = makeConfig({ quiAwareMode: true });
+		quiMocks.readObservation.mockResolvedValue({ status: "unavailable" });
+		const partial = await executeQueueCleaner(app, makeInstance(), config);
+		expect(partial.itemsCleaned).toBe(0);
+		expect(partial.skippedItems.map((i) => i.id)).toEqual([43, 44]);
+		expect(
+			partial.skippedItems.every((i) => i.reason.includes("qUI evidence is unavailable or stale")),
+		).toBe(true);
+		const partialPreview = await executeEnhancedPreview(app, makeInstance(), config);
+		expect(partialPreview.wouldRemove).toBe(0);
+		expect(partialPreview.previewItems.every((i) => i.action === "skip")).toBe(true);
+		const partialDry = await executeQueueCleaner(app, makeInstance(), {
+			...config,
+			dryRunMode: true,
+		});
+		expect(partialDry.itemsCleaned).toBe(0);
+		expect(del).not.toHaveBeenCalled();
+		quiMocks.readObservation.mockResolvedValue({
+			status: "available",
+			generation: "complete-input",
+			observedAt: new Date(),
+			rows: new Map([
+				[observedHash, { state: "seeding", ratio: 1 }],
+				[missingHash, { state: "paused", ratio: 0 }],
+			]),
+		});
 
 		const execution = await executeQueueCleaner(app, makeInstance(), config);
 
@@ -267,7 +931,7 @@ describe("executeQueueCleaner — integration", () => {
 		expect(execution.skippedItems).toEqual([
 			expect.objectContaining({
 				id: 44,
-				reason: expect.stringContaining("qUI evidence is unavailable or stale"),
+				reason: expect.stringContaining("torrent is paused or errored in qui"),
 			}),
 		]);
 		expect(del).toHaveBeenCalledOnce();
@@ -278,8 +942,18 @@ describe("executeQueueCleaner — integration", () => {
 		const previewById = new Map(preview.previewItems.map((item) => [item.id, item]));
 		expect(previewById.get(43)?.action).toBe("remove");
 		expect(previewById.get(44)).toMatchObject({ action: "skip" });
-		expect(previewById.get(44)?.reason).toContain("qUI evidence is unavailable or stale");
+		expect(previewById.get(44)?.reason).toContain("torrent is paused or errored in qui");
 		expect(preview.wouldRemove).toBe(1);
+		expect(del).not.toHaveBeenCalled();
+		quiMocks.readObservation.mockResolvedValue({
+			status: "available",
+			generation: "complete-empty-input",
+			observedAt: new Date(),
+			rows: new Map(),
+		});
+		const absent = await executeEnhancedPreview(app, makeInstance(), config);
+		expect(absent.wouldRemove).toBe(2);
+		expect(absent.previewItems.every((i) => i.action === "remove")).toBe(true);
 		expect(del).not.toHaveBeenCalled();
 	});
 
@@ -390,6 +1064,47 @@ describe("executeQueueCleaner — integration", () => {
 			}),
 		]);
 		expect(autoImportMocks.attemptAutoImport).not.toHaveBeenCalled();
+		expect(app.prisma.queueCleanerStrike.create).not.toHaveBeenCalled();
+		expect(app.prisma.queueCleanerStrike.update).not.toHaveBeenCalled();
+		expect(del).not.toHaveBeenCalled();
+	});
+
+	it("does not turn an auto-import safety failure into deletion permission", async () => {
+		autoImportMocks.attemptAutoImport.mockReset();
+		autoImportMocks.attemptAutoImport.mockResolvedValue({
+			attempted: false,
+			success: false,
+			safetyBlocked: true,
+		});
+		const del = vi.fn();
+		const app = makeApp({
+			get: async () => ({
+				records: [
+					{
+						...STALLED_ITEM,
+						trackedDownloadState: "importPending",
+						statusMessages: [],
+						errorMessage: undefined,
+					},
+				],
+			}),
+			del,
+		});
+		const result = await executeQueueCleaner(
+			app,
+			makeInstance(),
+			makeConfig({
+				stalledEnabled: false,
+				importPendingEnabled: true,
+				importPendingThresholdMins: 0,
+				autoImportEnabled: true,
+				autoImportMaxAttempts: 2,
+				autoImportCooldownMins: 0,
+				autoImportSafeOnly: false,
+			}),
+		);
+		expect(result.itemsCleaned).toBe(0);
+		expect(result.skippedItems[0]?.reason).toContain("identity or media mapping");
 		expect(app.prisma.queueCleanerStrike.create).not.toHaveBeenCalled();
 		expect(app.prisma.queueCleanerStrike.update).not.toHaveBeenCalled();
 		expect(del).not.toHaveBeenCalled();

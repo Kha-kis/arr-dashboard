@@ -10,6 +10,7 @@ import type { PlexSection } from "@arr/shared";
 export interface SectionGroupRow {
 	instanceId: string;
 	sectionId: string;
+	sectionUuid: string;
 	sectionTitle: string;
 	mediaType: string;
 }
@@ -23,6 +24,7 @@ export function mapToSections(
 ): PlexSection[] {
 	return groups.map((group) => ({
 		sectionId: group.sectionId,
+		sectionUuid: group.sectionUuid,
 		sectionTitle: group.sectionTitle,
 		mediaType: group.mediaType,
 		instanceId: group.instanceId,

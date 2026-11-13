@@ -43,12 +43,16 @@ const MATCH_TYPE_LABEL: Record<QuiCrossSeedMatch["matchType"], string> = {
 	release: "release match",
 	content_path: "content-path match",
 	name: "name match",
+	hardlink: "hardlink match",
+	reflink: "reflink match",
 };
 
 const MATCH_TYPE_HINT: Record<QuiCrossSeedMatch["matchType"], string> = {
 	release: "qui matched these by release name — highest confidence.",
 	content_path: "qui matched these by on-disk content path — the copies share a location.",
 	name: "qui matched these by torrent name. Common when cross-seeds live at different paths.",
+	hardlink: "qui matched these through a filesystem hardlink relationship.",
+	reflink: "qui matched these through a filesystem reflink relationship.",
 };
 
 // Tracker health is the page's primary signal — surfaced as a prominent badge.

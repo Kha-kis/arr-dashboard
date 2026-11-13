@@ -7,7 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { AggregationBuffer } from "../aggregation-buffer.js";
-import type { AggregationConfig } from "../aggregation-buffer.js";
+import type { AggregationConfig, AggregationScope } from "../aggregation-buffer.js";
 import type { NotificationPayload } from "../types.js";
 
 function makePayload(overrides?: Partial<NotificationPayload>): NotificationPayload {
@@ -20,7 +20,7 @@ function makePayload(overrides?: Partial<NotificationPayload>): NotificationPayl
 }
 
 describe("AggregationBuffer", () => {
-	type FlushFn = (digest: NotificationPayload) => Promise<void>;
+	type FlushFn = (digest: NotificationPayload, scope: AggregationScope) => Promise<void>;
 	let flushCallback: ReturnType<typeof vi.fn<FlushFn>>;
 	let buffer: AggregationBuffer;
 	const config: AggregationConfig = {
@@ -40,12 +40,15 @@ describe("AggregationBuffer", () => {
 	});
 
 	it("push returns true when config exists", () => {
-		const result = buffer.push(makePayload(), config);
+		const result = buffer.push(makePayload(), config, {
+			userId: "user-a",
+			recipientChannelIds: ["channel-a"],
+		});
 		expect(result).toBe(true);
 	});
 
 	it("flushes after time window expires", () => {
-		buffer.push(makePayload(), config);
+		buffer.push(makePayload(), config, { userId: "user-a", recipientChannelIds: ["channel-a"] });
 
 		expect(flushCallback).not.toHaveBeenCalled();
 
@@ -59,7 +62,10 @@ describe("AggregationBuffer", () => {
 
 	it("flushes when batch size threshold is reached", () => {
 		for (let i = 0; i < config.maxBatchSize; i++) {
-			buffer.push(makePayload({ title: `Item ${i}` }), config);
+			buffer.push(makePayload({ title: `Item ${i}` }), config, {
+				userId: "user-a",
+				recipientChannelIds: ["channel-a"],
+			});
 		}
 
 		// Should flush immediately without waiting for timer
@@ -69,9 +75,18 @@ describe("AggregationBuffer", () => {
 	});
 
 	it("digest payload contains aggregated title and count", () => {
-		buffer.push(makePayload({ title: "Alpha" }), config);
-		buffer.push(makePayload({ title: "Beta" }), config);
-		buffer.push(makePayload({ title: "Gamma" }), config);
+		buffer.push(makePayload({ title: "Alpha" }), config, {
+			userId: "user-a",
+			recipientChannelIds: ["channel-a"],
+		});
+		buffer.push(makePayload({ title: "Beta" }), config, {
+			userId: "user-a",
+			recipientChannelIds: ["channel-a"],
+		});
+		buffer.push(makePayload({ title: "Gamma" }), config, {
+			userId: "user-a",
+			recipientChannelIds: ["channel-a"],
+		});
 
 		vi.advanceTimersByTime(config.windowSeconds * 1000);
 
@@ -94,13 +109,14 @@ describe("AggregationBuffer", () => {
 			maxBatchSize: 10,
 		};
 
-		buffer.push(makePayload(), config);
+		buffer.push(makePayload(), config, { userId: "user-a", recipientChannelIds: ["channel-a"] });
 		buffer.push(
 			makePayload({
 				eventType: "BACKUP_COMPLETED" as NotificationPayload["eventType"],
 				title: "Backup done",
 			}),
 			configB,
+			{ userId: "user-a", recipientChannelIds: ["channel-a"] },
 		);
 
 		expect(flushCallback).not.toHaveBeenCalled();
@@ -117,14 +133,48 @@ describe("AggregationBuffer", () => {
 			maxBatchSize: 10,
 		};
 
-		buffer.push(makePayload(), config);
-		buffer.push(makePayload(), config);
+		buffer.push(makePayload(), config, { userId: "user-a", recipientChannelIds: ["channel-a"] });
+		buffer.push(makePayload(), config, { userId: "user-a", recipientChannelIds: ["channel-a"] });
 		buffer.push(
 			makePayload({ eventType: "BACKUP_COMPLETED" as NotificationPayload["eventType"] }),
 			configB,
+			{ userId: "user-a", recipientChannelIds: ["channel-a"] },
 		);
 
 		expect(buffer.pendingCount).toBe(3);
+	});
+
+	it("keeps same-event digests separated by owner and recipient restriction", () => {
+		buffer.push(makePayload({ title: "Owner A item" }), config, {
+			userId: "user-a",
+			recipientChannelIds: ["channel-a"],
+		});
+		buffer.push(makePayload({ title: "Owner B item" }), config, {
+			userId: "user-b",
+			recipientChannelIds: ["channel-b"],
+		});
+		buffer.push(makePayload({ title: "Owner A routed item" }), config, {
+			userId: "user-a",
+			recipientChannelIds: ["channel-a-routed"],
+		});
+
+		buffer.flushAll();
+
+		expect(flushCallback).toHaveBeenCalledTimes(3);
+		expect(flushCallback.mock.calls.map((call) => call[1])).toEqual(
+			expect.arrayContaining([
+				{ userId: "user-a", recipientChannelIds: ["channel-a"] },
+				{ userId: "user-b", recipientChannelIds: ["channel-b"] },
+				{ userId: "user-a", recipientChannelIds: ["channel-a-routed"] },
+			]),
+		);
+		expect(flushCallback.mock.calls.map((call) => call[0].title)).toEqual(
+			expect.arrayContaining([
+				"[1x] Owner A item",
+				"[1x] Owner B item",
+				"[1x] Owner A routed item",
+			]),
+		);
 	});
 
 	it("hasConfig returns matching config", () => {

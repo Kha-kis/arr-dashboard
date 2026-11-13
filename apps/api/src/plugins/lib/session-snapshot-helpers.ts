@@ -6,6 +6,8 @@
  * for testability.
  */
 
+import { normalizeSessionPlaybackDecision } from "@arr/shared";
+
 /** Minimal session shape needed for classification */
 export interface SessionInput {
 	bandwidth?: number | null;
@@ -18,6 +20,7 @@ export interface SessionClassification {
 	directPlayCount: number;
 	transcodeCount: number;
 	directStreamCount: number;
+	unknownDecisionCount: number;
 }
 
 /**
@@ -29,24 +32,33 @@ export function classifySessionDecisions(sessions: SessionInput[]): SessionClass
 	let directPlayCount = 0;
 	let transcodeCount = 0;
 	let directStreamCount = 0;
+	let unknownDecisionCount = 0;
 
 	for (const session of sessions) {
 		totalBandwidth += session.bandwidth ?? 0;
-		const videoDecision = session.videoDecision?.toLowerCase() ?? "direct play";
-		if (videoDecision === "transcode") {
-			transcodeCount++;
-		} else if (
-			videoDecision === "copy" ||
-			videoDecision === "directstream" ||
-			videoDecision === "direct stream"
-		) {
-			directStreamCount++;
-		} else {
-			directPlayCount++;
+		switch (normalizeSessionPlaybackDecision(session.videoDecision)) {
+			case "transcode":
+				transcodeCount++;
+				break;
+			case "direct_stream":
+				directStreamCount++;
+				break;
+			case "direct_play":
+				directPlayCount++;
+				break;
+			case "unknown":
+				unknownDecisionCount++;
+				break;
 		}
 	}
 
-	return { totalBandwidth, directPlayCount, transcodeCount, directStreamCount };
+	return {
+		totalBandwidth,
+		directPlayCount,
+		transcodeCount,
+		directStreamCount,
+		unknownDecisionCount,
+	};
 }
 
 /** Result of LAN/WAN bandwidth attribution */

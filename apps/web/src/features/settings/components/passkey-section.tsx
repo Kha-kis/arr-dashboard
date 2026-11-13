@@ -13,7 +13,7 @@ import {
 	Trash2,
 	X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PremiumEmptyState, PremiumSection, PremiumSkeleton } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
@@ -43,6 +43,10 @@ export const PasskeySection = () => {
 
 	const [credentials, setCredentials] = useState<PasskeyCredential[]>([]);
 	const [loading, setLoading] = useState(true);
+	const [refreshingCredentials, setRefreshingCredentials] = useState(false);
+	const [credentialsLoaded, setCredentialsLoaded] = useState(false);
+	const [credentialsError, setCredentialsError] = useState<string | null>(null);
+	const credentialsReadId = useRef(0);
 	const [error, setError] = useState<string | null>(null);
 	const [success, setSuccess] = useState<string | null>(null);
 	const [registeringPasskey, setRegisteringPasskey] = useState(false);
@@ -53,14 +57,23 @@ export const PasskeySection = () => {
 	const [editName, setEditName] = useState("");
 
 	const loadCredentials = async () => {
+		const readId = ++credentialsReadId.current;
+		setRefreshingCredentials(true);
 		try {
-			setError(null);
 			const creds = await getPasskeyCredentials();
+			if (readId !== credentialsReadId.current) return;
 			setCredentials(creds);
+			setCredentialsLoaded(true);
+			setCredentialsError(null);
 		} catch (err) {
-			setError(getErrorMessage(err, "Failed to load passkeys"));
+			if (readId === credentialsReadId.current) {
+				setCredentialsError(getErrorMessage(err, "Failed to load passkeys"));
+			}
 		} finally {
-			setLoading(false);
+			if (readId === credentialsReadId.current) {
+				setLoading(false);
+				setRefreshingCredentials(false);
+			}
 		}
 	};
 
@@ -69,6 +82,9 @@ export const PasskeySection = () => {
 			console.error("Failed to load passkey credentials:", err);
 			setError("Failed to load passkeys. Please refresh the page.");
 		});
+		return () => {
+			credentialsReadId.current += 1;
+		};
 	}, []);
 
 	const handleRegisterPasskey = async () => {
@@ -261,6 +277,24 @@ export const PasskeySection = () => {
 				{/* Existing Passkeys */}
 				<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 					<div className="space-y-4">
+						{credentialsError && (
+							<div role="alert" className="space-y-2 text-sm text-destructive">
+								<p>{credentialsError}</p>
+								{credentialsLoaded && (
+									<p className="text-muted-foreground">
+										Showing the last known passkey inventory. It may have changed.
+									</p>
+								)}
+							</div>
+						)}
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => void loadCredentials()}
+							disabled={refreshingCredentials}
+						>
+							{refreshingCredentials ? "Refreshing..." : credentialsError ? "Retry" : "Refresh"}
+						</Button>
 						<div className="flex items-center gap-3">
 							<div
 								className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
@@ -274,7 +308,9 @@ export const PasskeySection = () => {
 							<div>
 								<h3 className="font-semibold text-foreground">Your Passkeys</h3>
 								<p className="text-xs text-muted-foreground">
-									{credentials.length} passkey{credentials.length !== 1 ? "s" : ""} registered
+									{credentialsLoaded && !credentialsError
+										? `${credentials.length} passkey${credentials.length !== 1 ? "s" : ""} registered`
+										: "Passkey inventory unavailable"}
 								</p>
 							</div>
 						</div>
@@ -380,13 +416,13 @@ export const PasskeySection = () => {
 									</div>
 								))}
 							</div>
-						) : (
+						) : credentialsLoaded && !credentialsError ? (
 							<PremiumEmptyState
 								icon={Fingerprint}
 								title="No passkeys registered yet"
 								description="Add a passkey above to enable passwordless sign-in"
 							/>
-						)}
+						) : null}
 					</div>
 				</div>
 			</div>

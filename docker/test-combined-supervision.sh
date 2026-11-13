@@ -8,8 +8,10 @@
 # This script runs against the ACTUAL built image and ACTUAL /app/start.sh.
 # The mandatory api-death / web-death / graceful-stop cases use the real
 # services. Edge cases (exit code 0, simultaneous exit, SIGTERM-resistant
-# sibling) use a shim harness that replaces only the service binaries — never
-# the supervisor — so the same start.sh supervision logic is exercised.
+# sibling) replace the API child and web server with shims while retaining
+# the packaged launcher and start.sh.
+# The trash-scheduler-stop case uses real services with synthetic GitHub
+# responses in a networkless container.
 #
 # Usage:
 #   docker/test-combined-supervision.sh [image] [--case NAME] [--rootless]
@@ -49,22 +51,12 @@ SHIM_CTR="${WORK##*/}-shim"
 STARTUP_CTR="${WORK##*/}-startup"
 CONFIG_DIR="$WORK/config"
 SHIM_DIR="$WORK/shim"
-
-# Ports must not collide with anything else on the host; pick high unique ports.
-HOST_WEB_PORT=33080
-HOST_API_PORT=33081
-for i in 1 2 3 4 5 6 7 8 9 10; do
-    if ! (curl -s -o /dev/null --max-time 1 "http://localhost:$HOST_WEB_PORT" 2>/dev/null) && \
-       ! (curl -s -o /dev/null --max-time 1 "http://localhost:$HOST_API_PORT" 2>/dev/null); then
-        break
-    fi
-    HOST_WEB_PORT=$((HOST_WEB_PORT + 2))
-    HOST_API_PORT=$((HOST_API_PORT + 2))
-done
+TOOLS_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 PASS=0
 FAIL=0
 CURRENT_CASE=""
+REAL_FIXTURE_ID=""
 
 log() {
     echo ""
@@ -81,8 +73,15 @@ bad() {
     FAIL=$((FAIL + 1))
 }
 
+remove_real_fixture() {
+    [ -n "$REAL_FIXTURE_ID" ] || return 0
+    docker rm -f "$REAL_FIXTURE_ID" >/dev/null || return 1
+    REAL_FIXTURE_ID=""
+}
+
 cleanup() {
-    for c in "$API_CTR" "$WEB_CTR" "$STOP_CTR" "$SHIM_CTR" "$STARTUP_CTR"; do
+    remove_real_fixture 2>/dev/null || true
+    for c in "$SHIM_CTR" "$STARTUP_CTR"; do
         docker rm -f "$c" >/dev/null 2>&1 || true
     done
     docker rm -f "${WORK##*/}-restart" >/dev/null 2>&1 || true
@@ -100,19 +99,49 @@ fi
 # Helpers
 # ---------------------------------------------------------------------------
 
-run_base_args() {
-    # $1 = container name; remaining args passed to docker run
-    ctr_name=$1
-    shift
+fixture_port() {
+    mapping=$(docker port "$1" "$2/tcp") || return 1
+    printf '%s\n' "$mapping" | awk -F: '
+        NF == 2 && $1 == "127.0.0.1" && $2 ~ /^[0-9]+$/ && $2 > 0 && $2 <= 65535 { port = $2 }
+        END { if (NR != 1 || !port) exit 1; print port }
+    '
+}
+
+start_real_fixture() {
+    fixture_config="$WORK/$1-config"
+    if ! mkdir -p "$fixture_config"; then
+        bad "could not prepare the real-app fixture config"
+        return 1
+    fi
+
+    # The real services exercise supervision without public maintenance work.
+    set -- docker create --name "$1" -v "$fixture_config:/config" \
+        -p 127.0.0.1::3000 -p 127.0.0.1::3001 \
+        -e TRASH_UPDATE_SCHEDULER_ENABLED=false
     if [ "$ROOTLESS" = true ]; then
-        docker run -d --name "$ctr_name" --user 1000:1000 \
-            -v "$CONFIG_DIR":/config \
-            "$@"
+        chown 1000:1000 "$fixture_config" 2>/dev/null || true
+        if ! chmod 700 "$fixture_config"; then
+            bad "could not set real-app fixture config permissions"
+            return 1
+        fi
+        set -- "$@" --user 1000:1000
     else
-        docker run -d --name "$ctr_name" \
-            -v "$CONFIG_DIR":/config \
-            -e PUID=1000 -e PGID=1000 \
-            "$@"
+        set -- "$@" -e PUID=1000 -e PGID=1000
+    fi
+
+    # Retain the exact container ID even when starting or publishing fails.
+    if ! REAL_FIXTURE_ID=$("$@" "$IMAGE"); then
+        bad "Docker could not create the real-app fixture"
+        return 1
+    fi
+    if ! docker start "$REAL_FIXTURE_ID" >/dev/null; then
+        bad "Docker could not start the real-app fixture"
+        return 1
+    fi
+    if ! HOST_API_PORT=$(fixture_port "$REAL_FIXTURE_ID" 3001) ||
+        ! HOST_WEB_PORT=$(fixture_port "$REAL_FIXTURE_ID" 3000); then
+        bad "could not resolve the real-app fixture loopback ports"
+        return 1
     fi
 }
 
@@ -124,8 +153,12 @@ wait_health() {
     timeout=${4:-120}
     elapsed=0
     while [ "$elapsed" -lt "$timeout" ]; do
-        a=$(curl -sf "http://localhost:$api_port/health" 2>/dev/null || echo '')
-        w=$(curl -sf "http://localhost:$web_port/health" 2>/dev/null || echo '')
+        if ! state=$(docker inspect --format '{{.State.Status}}' "$ctr") ||
+            [ "$state" != running ]; then
+            return 1
+        fi
+        a=$(curl -sf "http://127.0.0.1:$api_port/health" 2>/dev/null || echo '')
+        w=$(curl -sf "http://127.0.0.1:$web_port/health" 2>/dev/null || echo '')
         if [ -n "$a" ] && [ -n "$w" ]; then
             return 0
         fi
@@ -237,7 +270,7 @@ assert_process_tree() {
     fi
 
     # The launcher must have exactly one inner index.js child.
-    inner_count=$(proc_count_cmdline "$ctr" "/app/api/dist/index.js")
+    inner_count=$(proc_count_cmdline "$ctr" "/app/api/providers/sqlite/dist/index.js")
     if [ "$inner_count" = "1" ]; then
         ok "launcher has exactly one inner index.js child"
     else
@@ -246,16 +279,19 @@ assert_process_tree() {
 }
 
 # ---------------------------------------------------------------------------
-# Shim harness for edge cases (service binaries only — supervisor is real)
+# Shim harness for edge cases
 # ---------------------------------------------------------------------------
 
 mkdir -p "$SHIM_DIR"
 
-cat > "$SHIM_DIR/launcher.js" <<'EOF'
+cat > "$SHIM_DIR/index.js" <<'EOF'
 import fs from "node:fs";
-const isApi = String(process.argv[1] || "").includes("launcher");
-const ctrl = isApi ? "/config/.shim-api-control" : "/config/.shim-web-control";
-const name = isApi ? "API" : "WEB";
+const ctrl = "/tmp/arr-dashboard-shim-api-control";
+const name = "API";
+if (process.env.COMBINED_TEST_STARTUP_FAILURE === "api") {
+  fs.writeSync(1, "[shim:API] exiting 3 before readiness\n");
+  process.exit(3);
+}
 let mode = "idle";
 function readCtrl() {
   try {
@@ -280,16 +316,31 @@ process.on("SIGTERM", () => {
     console.log(`[shim:${name}] ignoring SIGTERM (stubborn)`);
     return;
   }
-  console.log(`[shim:${name}] SIGTERM -> exit 0`);
+  fs.writeSync(1, `[shim:${name}] SIGTERM -> exit 0\n`);
   process.exit(0);
 });
 setInterval(() => {}, 1000);
+
+// Exercise the launcher's authenticated readiness path with synthetic settings.
+if (typeof process.send !== "function") throw new Error("API shim requires launcher IPC");
+process.send({
+  kind: "arr-combined-startup",
+  version: 1,
+  nonce: process.env.ARR_COMBINED_STARTUP_NONCE,
+  apiPort: 3001,
+  webPort: 3000,
+  listenAddress: "0.0.0.0",
+});
 EOF
 
 cat > "$SHIM_DIR/server.js" <<'EOF'
 import fs from "node:fs";
-const ctrl = "/config/.shim-web-control";
+const ctrl = "/tmp/arr-dashboard-shim-web-control";
 const name = "WEB";
+if (process.env.COMBINED_TEST_STARTUP_FAILURE === "web") {
+  fs.writeSync(1, "[shim:WEB] exiting 3 during startup\n");
+  process.exit(3);
+}
 let mode = "idle";
 function readCtrl() {
   try {
@@ -320,48 +371,53 @@ process.on("SIGTERM", () => {
 setInterval(() => {}, 1000);
 EOF
 
-# Remove all shim control files from the host config dir before each new
-# container, so a previous case's mode (exit0/exit3/ignore-term/etc.) can
-# never leak into a later case. The files may be owned by the container's
-# remapped user (uid 1000); tolerate permission errors because start.sh
-# re-chowns /config on the next container start.
-reset_shim_fixture() {
-    rm -f "$CONFIG_DIR/.shim-api-control" "$CONFIG_DIR/.shim-web-control" 2>/dev/null || true
-}
-
 start_shim_container() {
-    reset_shim_fixture
+    # Additional Docker options apply to this shim instance only.
+    # Prepare once from the unmodified image; only this disposable shim's
+    # API child hash changes. Schema/client/worker admission remains enforced.
+    if [ ! -f "$SHIM_DIR/runtime-provider.json" ]; then
+        docker run --rm --network none --user "$(id -u):$(id -g)" \
+            -v "$TOOLS_DIR/test-provider-manifest.cjs":/fixture-tools/test-provider-manifest.cjs:ro \
+            -v "$TOOLS_DIR/validate-provider-runtime.cjs":/fixture-tools/validate-provider-runtime.cjs:ro \
+            -v "$SHIM_DIR":/fixture \
+            "$IMAGE" node /fixture-tools/test-provider-manifest.cjs \
+            /app/api/providers/sqlite sqlite /fixture/runtime-provider.json \
+            dist/index.js /fixture/index.js
+    fi
     docker rm -f "$SHIM_CTR" >/dev/null 2>&1 || true
     if [ "$ROOTLESS" = true ]; then
         docker run -d --name "$SHIM_CTR" --user 1000:1000 \
             -v "$CONFIG_DIR":/config \
-            -v "$SHIM_DIR/launcher.js":/app/api/dist/launcher.js \
-            -v "$SHIM_DIR/server.js":/app/web/server.js \
-            "$IMAGE" >/dev/null
+            -v "$SHIM_DIR/index.js":/app/api/providers/sqlite/dist/index.js:ro \
+            -v "$SHIM_DIR/runtime-provider.json":/app/api/providers/sqlite/runtime-provider.json:ro \
+            -v "$SHIM_DIR/server.js":/app/web/server.js:ro \
+            "$@" "$IMAGE" >/dev/null
     else
         docker run -d --name "$SHIM_CTR" \
             -v "$CONFIG_DIR":/config \
             -e PUID=1000 -e PGID=1000 \
-            -v "$SHIM_DIR/launcher.js":/app/api/dist/launcher.js \
-            -v "$SHIM_DIR/server.js":/app/web/server.js \
-            "$IMAGE" >/dev/null
+            -v "$SHIM_DIR/index.js":/app/api/providers/sqlite/dist/index.js:ro \
+            -v "$SHIM_DIR/runtime-provider.json":/app/api/providers/sqlite/runtime-provider.json:ro \
+            -v "$SHIM_DIR/server.js":/app/web/server.js:ro \
+            "$@" "$IMAGE" >/dev/null
     fi
 }
 
 set_shim_mode() {
     # $1 = API|WEB, $2 = mode
-    file=/config/.shim-api-control
-    [ "$1" = "WEB" ] && file=/config/.shim-web-control
+    file=/tmp/arr-dashboard-shim-api-control
+    [ "$1" = "WEB" ] && file=/tmp/arr-dashboard-shim-web-control
     docker exec "$SHIM_CTR" sh -c "printf '%s' '$2' > $file"
 }
 
 wait_shim_started() {
-    # wait until both shims report started and the ready banner appeared
+    # The web shim can start only after the API readiness handoff is consumed.
     timeout=${1:-60}
     elapsed=0
     while [ "$elapsed" -lt "$timeout" ]; do
-        n=$(docker logs "$SHIM_CTR" 2>&1 | grep -c "\[shim:" || true)
-        if [ "$n" -ge 2 ]; then
+        if logs=$(docker logs "$SHIM_CTR" 2>&1) &&
+            printf '%s\n' "$logs" | grep -q '^\[shim:API\] started pid=' &&
+            printf '%s\n' "$logs" | grep -q '^\[shim:WEB\] started pid='; then
             return 0
         fi
         sleep 1
@@ -378,27 +434,25 @@ case_api_death() {
     CURRENT_CASE="api-death"
     log "API top-level service exits unexpectedly (real image)"
 
-    run_base_args "$API_CTR" \
-        -p "$HOST_WEB_PORT":3000 -p "$HOST_API_PORT":3001 \
-        "$IMAGE" >/dev/null
+    start_real_fixture "$API_CTR" || return 1
 
-    if ! wait_health "$API_CTR" "$HOST_API_PORT" "$HOST_WEB_PORT"; then
+    if ! wait_health "$REAL_FIXTURE_ID" "$HOST_API_PORT" "$HOST_WEB_PORT"; then
         bad "services did not become healthy"
-        docker logs "$API_CTR" 2>&1 | tail -30 >&2
+        docker logs "$REAL_FIXTURE_ID" 2>&1 | tail -30 >&2
         return 1
     fi
 
-    assert_process_tree "$API_CTR"
+    assert_process_tree "$REAL_FIXTURE_ID"
 
-    if ! kill_tracked "$API_CTR" "API"; then
+    if ! kill_tracked "$REAL_FIXTURE_ID" "API"; then
         bad "could not find tracked API PID in logs"
         return 1
     fi
     log "killed tracked API process; expecting container to exit non-zero"
 
-    if ! wait_container_exit "$API_CTR" 30; then
+    if ! wait_container_exit "$REAL_FIXTURE_ID" 30; then
         bad "container still running 30s after API death"
-        docker logs "$API_CTR" 2>&1 | tail -20 >&2
+        docker logs "$REAL_FIXTURE_ID" 2>&1 | tail -20 >&2
         return 1
     fi
     ok "container exited promptly"
@@ -408,7 +462,7 @@ case_api_death() {
         bad "container exit code is 0 (expected non-zero)"
     fi
 
-    logs=$(docker logs "$API_CTR" 2>&1 || true)
+    logs=$(docker logs "$REAL_FIXTURE_ID" 2>&1 || true)
     if echo "$logs" | grep -q "API service exited unexpectedly"; then
         ok "supervisor logged the fatal API exit"
     else
@@ -420,34 +474,31 @@ case_api_death() {
     else
         bad "missing sibling-termination log line"
     fi
-    docker rm -f "$API_CTR" >/dev/null 2>&1 || true
 }
 
 case_web_death() {
     CURRENT_CASE="web-death"
     log "Web top-level service exits unexpectedly (real image)"
 
-    run_base_args "$WEB_CTR" \
-        -p "$HOST_WEB_PORT":3000 -p "$HOST_API_PORT":3001 \
-        "$IMAGE" >/dev/null
+    start_real_fixture "$WEB_CTR" || return 1
 
-    if ! wait_health "$WEB_CTR" "$HOST_API_PORT" "$HOST_WEB_PORT"; then
+    if ! wait_health "$REAL_FIXTURE_ID" "$HOST_API_PORT" "$HOST_WEB_PORT"; then
         bad "services did not become healthy"
-        docker logs "$WEB_CTR" 2>&1 | tail -30 >&2
+        docker logs "$REAL_FIXTURE_ID" 2>&1 | tail -30 >&2
         return 1
     fi
 
-    assert_process_tree "$WEB_CTR"
+    assert_process_tree "$REAL_FIXTURE_ID"
 
-    if ! kill_tracked "$WEB_CTR" "Web"; then
+    if ! kill_tracked "$REAL_FIXTURE_ID" "Web"; then
         bad "could not find tracked Web PID in logs"
         return 1
     fi
     log "killed tracked Web process; expecting container to exit non-zero"
 
-    if ! wait_container_exit "$WEB_CTR" 30; then
+    if ! wait_container_exit "$REAL_FIXTURE_ID" 30; then
         bad "container still running 30s after web death"
-        docker logs "$WEB_CTR" 2>&1 | tail -20 >&2
+        docker logs "$REAL_FIXTURE_ID" 2>&1 | tail -20 >&2
         return 1
     fi
     ok "container exited promptly"
@@ -457,7 +508,7 @@ case_web_death() {
         bad "container exit code is 0 (expected non-zero)"
     fi
 
-    logs=$(docker logs "$WEB_CTR" 2>&1 || true)
+    logs=$(docker logs "$REAL_FIXTURE_ID" 2>&1 || true)
     if echo "$logs" | grep -q "Web service exited unexpectedly"; then
         ok "supervisor logged the fatal web exit"
     else
@@ -469,35 +520,36 @@ case_web_death() {
     else
         bad "missing sibling-termination log line"
     fi
-    docker rm -f "$WEB_CTR" >/dev/null 2>&1 || true
 }
 
 case_graceful_stop() {
     CURRENT_CASE="graceful-stop"
     log "Normal docker stop (SIGTERM) — expected graceful exit 0"
 
-    run_base_args "$STOP_CTR" \
-        -p "$HOST_WEB_PORT":3000 -p "$HOST_API_PORT":3001 \
-        "$IMAGE" >/dev/null
+    start_real_fixture "$STOP_CTR" || return 1
 
-    if ! wait_health "$STOP_CTR" "$HOST_API_PORT" "$HOST_WEB_PORT"; then
+    if ! wait_health "$REAL_FIXTURE_ID" "$HOST_API_PORT" "$HOST_WEB_PORT"; then
         bad "services did not become healthy"
-        docker logs "$STOP_CTR" 2>&1 | tail -30 >&2
+        docker logs "$REAL_FIXTURE_ID" 2>&1 | tail -30 >&2
         return 1
     fi
 
     log "sending docker stop"
-    docker stop --time 30 "$STOP_CTR" >/dev/null
+    if ! docker stop --time 120 "$REAL_FIXTURE_ID" >/dev/null; then
+        bad "Docker could not stop the real-app fixture"
+        docker logs "$REAL_FIXTURE_ID" 2>&1 | tail -20 >&2
+        return 1
+    fi
 
-    state=$(docker inspect "$STOP_CTR" --format '{{.State.Status}}' 2>/dev/null)
-    code=$(docker inspect "$STOP_CTR" --format '{{.State.ExitCode}}' 2>/dev/null)
+    state=$(docker inspect "$REAL_FIXTURE_ID" --format '{{.State.Status}}' 2>/dev/null)
+    code=$(docker inspect "$REAL_FIXTURE_ID" --format '{{.State.ExitCode}}' 2>/dev/null)
     if [ "$state" = "exited" ] && [ "$code" = "0" ]; then
         ok "container exited gracefully (status exited, code 0)"
     else
         bad "expected exited/0, got $state/$code"
     fi
 
-    logs=$(docker logs "$STOP_CTR" 2>&1 || true)
+    logs=$(docker logs "$REAL_FIXTURE_ID" 2>&1 || true)
     if echo "$logs" | grep -q "exited unexpectedly"; then
         bad "graceful stop was reported as a crash"
     else
@@ -508,7 +560,92 @@ case_graceful_stop() {
     else
         bad "missing 'Services stopped gracefully' message"
     fi
-    docker rm -f "$STOP_CTR" >/dev/null 2>&1 || true
+}
+
+case_trash_scheduler_stop() {
+    CURRENT_CASE="trash-scheduler-stop"
+    log "Graceful stop with the packaged TRaSH scheduler waiting on a GitHub rate limit"
+
+    trash_fixture="$TOOLS_DIR/test-trash-shutdown-fixture.cjs"
+    if [ ! -f "$trash_fixture" ] || [ ! -r "$trash_fixture" ]; then
+        bad "missing or unreadable TRaSH shutdown fixture"
+        return 1
+    fi
+
+    tmpfs_config="/config:rw,noexec,nosuid,nodev,mode=0755,size=268435456"
+    set -- docker create --pull=never --name "${WORK##*/}-trash" --network none \
+        --mount "type=bind,src=$trash_fixture,dst=/test-trash-shutdown-fixture.cjs,readonly" \
+        -e 'NODE_OPTIONS=--max-old-space-size=768 --require=/test-trash-shutdown-fixture.cjs' \
+        -e TRASH_UPDATE_SCHEDULER_ENABLED=true -e GITHUB_TOKEN= \
+        -e DISABLE_QUI_CACHE_PREWARM=true -e HEAP_AUTO_SNAPSHOT=0
+    if [ "$ROOTLESS" = true ]; then
+        set -- "$@" --user 1000:1000 --tmpfs "$tmpfs_config,uid=1000,gid=1000"
+    else
+        set -- "$@" -e PUID=12345 -e PGID=12345 --tmpfs "$tmpfs_config"
+    fi
+
+    # Use the exact ID for every assertion and for the runner's cleanup.
+    if ! REAL_FIXTURE_ID=$("$@" "$IMAGE") ||
+        ! docker start "$REAL_FIXTURE_ID" >/dev/null; then
+        bad "could not start the networkless TRaSH shutdown fixture"
+        return 1
+    fi
+
+    elapsed=0
+    waiting=false
+    while [ "$elapsed" -lt 120 ]; do
+        if ! state=$(docker inspect -f '{{.State.Status}}' "$REAL_FIXTURE_ID") ||
+            [ "$state" != running ] ||
+            ! logs=$(docker logs "$REAL_FIXTURE_ID" 2>&1); then
+            break
+        fi
+        if printf '%s\n' "$logs" | grep -Fxq 'TRaSH shutdown fixture rejected a request'; then
+            break
+        fi
+        if printf '%s\n' "$logs" | grep -q '^Web started with PID '; then
+            if ! printf '%s\n' "$logs" | grep -Fxq 'TRaSH shutdown fixture loaded in packaged API'; then
+                bad "packaged API did not load the expected TRaSH shutdown fixture"
+                return 1
+            fi
+            if printf '%s\n' "$logs" | grep -Fxq 'TRaSH shutdown fixture served the commit' &&
+                printf '%s\n' "$logs" | grep -Fxq 'TRaSH shutdown fixture set the rate limit' &&
+                printf '%s\n' "$logs" | grep -Fq 'Proactive rate limit wait:'; then
+                waiting=true
+                break
+            fi
+        fi
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+
+    if [ "$waiting" != true ]; then
+        bad "fixture did not establish a real TRaSH scheduler rate-limit wait with web started"
+        docker logs --tail 40 "$REAL_FIXTURE_ID" >&2 || true
+        return 1
+    fi
+    ok "packaged TRaSH scheduler entered the synthetic GitHub rate-limit wait"
+
+    if docker stop --time 120 "$REAL_FIXTURE_ID" >/dev/null &&
+        stop_state=$(docker inspect -f 'state={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' "$REAL_FIXTURE_ID") &&
+        [ "$stop_state" = "state=exited exit=0 oom=false" ]; then
+        ok "container stopped cleanly ($stop_state)"
+    else
+        bad "TRaSH fixture did not stop cleanly (${stop_state:-state unknown})"
+    fi
+
+    if ! logs=$(docker logs "$REAL_FIXTURE_ID" 2>&1); then
+        bad "could not read TRaSH shutdown logs"
+        return 1
+    fi
+    if printf '%s\n' "$logs" | grep -Fxq 'TRaSH shutdown fixture observed scheduler cancellation' &&
+        printf '%s\n' "$logs" | grep -F '"category":"shutdown-progress"' | grep -Fq '"phase":"complete"' &&
+        printf '%s\n' "$logs" | grep -Fxq 'Services stopped gracefully' &&
+        ! printf '%s\n' "$logs" | grep -Fxq 'TRaSH shutdown fixture rejected a request'; then
+        ok "scheduler cancelled the rate-limit wait and API shutdown completed"
+    else
+        bad "missing scheduler cancellation or graceful shutdown evidence, or fixture rejected a request"
+        printf '%s\n' "$logs" | tail -40 >&2
+    fi
 }
 
 case_exit_zero() {
@@ -538,7 +675,13 @@ case_exit_zero() {
     else
         bad "container exit code is 0 (unexpected-exit-0 must be fatal)"
     fi
-    if docker logs "$SHIM_CTR" 2>&1 | grep -q "Terminating Web service"; then
+    logs=$(docker logs "$SHIM_CTR" 2>&1 || true)
+    if printf '%s\n' "$logs" | grep -Fxq 'ERROR: API service exited unexpectedly (status: 0).'; then
+        ok "supervisor observed the launcher exit with code 0"
+    else
+        bad "missing unexpected API exit with code 0"
+    fi
+    if printf '%s\n' "$logs" | grep -q "Terminating Web service"; then
         ok "web sibling was terminated"
     else
         bad "web sibling was not terminated"
@@ -581,7 +724,7 @@ case_stubborn() {
     CURRENT_CASE="stubborn"
     log "SIGTERM-resistant web sibling escalates to SIGKILL (shim harness)"
 
-    start_shim_container
+    start_shim_container -e SHUTDOWN_GRACE=3
     set_shim_mode API idle
     set_shim_mode WEB ignore-term
     if ! wait_shim_started; then
@@ -624,9 +767,7 @@ case_startup_api_failure() {
     CURRENT_CASE="startup-api-failure"
     log "API fails during initial startup (shim harness, exits before readiness)"
 
-    start_shim_container
-    set_shim_mode API exit3
-    set_shim_mode WEB idle
+    start_shim_container -e COMBINED_TEST_STARTUP_FAILURE=api
 
     if wait_container_exit "$SHIM_CTR" 40; then
         if [ "$EXIT_CODE" -ne 0 ]; then
@@ -640,12 +781,21 @@ case_startup_api_failure() {
         return 1
     fi
 
-    logs=$(docker logs "$SHIM_CTR" 2>&1 || true)
-    if echo "$logs" | grep -q "API process (PID.*died during startup"; then
+    if ! logs=$(docker logs "$SHIM_CTR" 2>&1); then
+        bad "could not read API startup failure logs"
+        return 1
+    fi
+    if printf '%s\n' "$logs" | grep -Fxq '[shim:API] exiting 3 before readiness' &&
+        printf '%s\n' "$logs" | grep -Fxq 'ERROR: API startup handoff did not complete; web was not started'; then
         ok "startup failure was detected"
     else
         bad "missing startup-failure detection"
         echo "$logs" | tail -20 >&2
+    fi
+    if printf '%s\n' "$logs" | grep -Eq '^Web started with PID |^\[shim:WEB\]'; then
+        bad "web started despite failed API startup"
+    else
+        ok "web did not start after failed API startup"
     fi
     docker rm -f "$SHIM_CTR" >/dev/null 2>&1 || true
 }
@@ -654,9 +804,7 @@ case_startup_web_failure() {
     CURRENT_CASE="startup-web-failure"
     log "Web fails immediately after launch (shim harness)"
 
-    start_shim_container
-    set_shim_mode API idle
-    set_shim_mode WEB exit3
+    start_shim_container -e COMBINED_TEST_STARTUP_FAILURE=web
 
     if wait_container_exit "$SHIM_CTR" 40; then
         if [ "$EXIT_CODE" -ne 0 ]; then
@@ -671,10 +819,17 @@ case_startup_web_failure() {
     fi
 
     logs=$(docker logs "$SHIM_CTR" 2>&1 || true)
-    if echo "$logs" | grep -q "Terminating API service"; then
-        ok "API sibling was terminated"
+    if printf '%s\n' "$logs" | grep -Fxq '[shim:WEB] exiting 3 during startup' &&
+        printf '%s\n' "$logs" | grep -Fxq 'ERROR: Web service exited unexpectedly (status: 3).'; then
+        ok "supervisor detected the web startup exit"
     else
-        bad "API sibling was not terminated"
+        bad "missing web startup failure detection"
+    fi
+    if printf '%s\n' "$logs" | grep -q "Terminating API service" &&
+        printf '%s\n' "$logs" | grep -Fxq '[shim:API] SIGTERM -> exit 0'; then
+        ok "launcher forwarded SIGTERM to the API child"
+    else
+        bad "missing API child termination after web startup failure"
     fi
     docker rm -f "$SHIM_CTR" >/dev/null 2>&1 || true
 }
@@ -691,7 +846,17 @@ run_case() {
     fi
     echo ""
     echo "########## CASE: $name ##########"
-    if $fn; then
+    before=$FAIL
+    result=PASS
+    "$fn" || result=FAIL
+    if [ -n "$REAL_FIXTURE_ID" ]; then
+        if ! remove_real_fixture; then
+            bad "could not remove the real-app fixture before the next case"
+            exit 1
+        fi
+        [ "$FAIL" -eq "$before" ] || result=FAIL
+    fi
+    if [ "$result" = PASS ]; then
         echo "########## CASE $name: PASS ##########"
     else
         echo "########## CASE $name: FAIL ##########" >&2
@@ -701,6 +866,7 @@ run_case() {
 run_case api-death case_api_death
 run_case web-death case_web_death
 run_case graceful-stop case_graceful_stop
+run_case trash-scheduler-stop case_trash_scheduler_stop
 run_case exit-zero case_exit_zero
 run_case simultaneous case_simultaneous
 run_case stubborn case_stubborn

@@ -21,6 +21,8 @@ export const envSchema = z
 		API_RATE_LIMIT_MAX: z.coerce.number().min(1).default(200),
 		API_RATE_LIMIT_WINDOW: z.union([z.string(), z.coerce.number()]).default("1 minute"),
 		DATABASE_URL: z.string().optional(),
+		// Preserve existing SQLite databases unless an operator explicitly selects a mode.
+		SQLITE_JOURNAL_MODE: z.enum(["preserve", "wal", "delete"]).default("preserve"),
 		// Optional - will be auto-generated if not provided
 		ENCRYPTION_KEY: z.string().min(32).optional(),
 		SESSION_COOKIE_SECRET: z.string().min(32).optional(),

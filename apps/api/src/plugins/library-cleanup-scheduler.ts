@@ -30,9 +30,13 @@ const libraryCleanupSchedulerPlugin = fastifyPlugin(
 						app.arrClientFactory,
 						app.encryptor,
 						app.log,
-						(payload) => app.notificationService.notify(payload),
+						(payload, userId) =>
+							app.notificationService.notify(payload, userId ? { userId } : undefined),
 						{
-							trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.libraryCleanup, fn),
+							trackTick: (fn) =>
+								app.notificationService.runProducer(() =>
+									app.schedulerRegistry.track(JOB_ID.libraryCleanup, fn),
+								),
 							quiClientFactory: (instance) => createQuiClient(app, instance),
 							quiFileHashIndexFactory: async (instance) => {
 								const client = createQuiClient(app, instance);
@@ -51,16 +55,21 @@ const libraryCleanupSchedulerPlugin = fastifyPlugin(
 			);
 		});
 
+		app.addHook("preClose", async () => {
+			app.cleanupScheduler?.closeAdmission();
+		});
+
 		app.addHook("onClose", async () => {
 			if (app.cleanupScheduler) {
 				app.log.info("Stopping library cleanup scheduler");
-				app.cleanupScheduler.stop();
+				await app.cleanupScheduler.shutdown();
 			}
 		});
 	},
 	{
 		name: "library-cleanup-scheduler",
 		dependencies: ["prisma", "arr-client", "scheduler-registry"],
+		decorators: { fastify: ["notificationService"] },
 	},
 );
 

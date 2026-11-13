@@ -8,6 +8,7 @@
 import type { LibraryEnrichmentItem, LibraryEnrichmentResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import { withIsolatedRuntimePrismaReadClient } from "../../lib/backup/restore-runtime-client.js";
 import { requireSeerrClient } from "../../lib/seerr/seerr-client.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { runWithConcurrency } from "./lib/enrichment-helpers.js";
@@ -48,6 +49,7 @@ export async function registerLibraryEnrichmentRoutes(
 	 * tmdbIds and types are parallel arrays (same length, same order).
 	 */
 	app.get("/:instanceId", async (request, reply) => {
+		const startedAt = performance.now();
 		const { instanceId } = validateRequest(instanceIdParams, request.params);
 		const { tmdbIds: tmdbIdsRaw, types } = validateRequest(enrichmentQuery, request.query);
 
@@ -63,7 +65,10 @@ export async function registerLibraryEnrichmentRoutes(
 			return reply.status(400).send({ error: "All tmdbIds must be positive integers" });
 		}
 
-		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
+		const client = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			requireSeerrClient(app, request.currentUser!.id, instanceId, { prisma }),
+		);
+		const admissionMs = performance.now() - startedAt;
 
 		// Deduplicate items by key (same tmdbId+type may appear multiple times across instances)
 		const uniqueItems = new Map<string, { type: "movie" | "tv"; tmdbId: number }>();
@@ -76,6 +81,7 @@ export async function registerLibraryEnrichmentRoutes(
 
 		// Fetch media summaries in parallel with concurrency limit
 		const entries = [...uniqueItems.entries()];
+		const mediaSummariesStartedAt = performance.now();
 		const summaryResults = await runWithConcurrency(
 			entries.map(
 				([, { type, tmdbId }]) =>
@@ -84,8 +90,10 @@ export async function registerLibraryEnrichmentRoutes(
 			),
 			CONCURRENCY_LIMIT,
 		);
+		const mediaSummariesMs = performance.now() - mediaSummariesStartedAt;
 
 		// Fetch open issue counts (single paginated walk)
+		const issueCountsStartedAt = performance.now();
 		let issueCounts = new Map<string, number>();
 		let issueCountsAvailable = true;
 		try {
@@ -94,6 +102,7 @@ export async function registerLibraryEnrichmentRoutes(
 			issueCountsAvailable = false;
 			request.log.warn({ err }, "Failed to fetch Seerr issue counts for library enrichment");
 		}
+		const issueCountsMs = performance.now() - issueCountsStartedAt;
 
 		// Assemble response
 		const items: Record<string, LibraryEnrichmentItem> = {};
@@ -108,7 +117,7 @@ export async function registerLibraryEnrichmentRoutes(
 					voteAverage: result.value.voteAverage,
 					backdropPath: result.value.backdropPath,
 					posterPath: result.value.posterPath,
-					openIssueCount: issueCounts.get(key) ?? 0,
+					openIssueCount: issueCountsAvailable ? (issueCounts.get(key) ?? 0) : null,
 				};
 			} else {
 				enrichmentFailures++;
@@ -128,6 +137,20 @@ export async function registerLibraryEnrichmentRoutes(
 			...(!issueCountsAvailable ? { issueCountsAvailable: false } : {}),
 			...(enrichmentFailures > 0 ? { enrichmentFailures } : {}),
 		};
+		request.log.info(
+			{
+				itemCount: tmdbIds.length,
+				uniqueItemCount: entries.length,
+				admissionMs,
+				mediaSummariesMs,
+				issueCountsMs,
+				totalMs: performance.now() - startedAt,
+				enrichmentFailures,
+				issueCountsAvailable,
+				enrichmentStatus: enrichmentFailures > 0 || !issueCountsAvailable ? "partial" : "available",
+			},
+			"seerr library-enrichment: aggregate phase timing",
+		);
 		return reply.send(response);
 	});
 }

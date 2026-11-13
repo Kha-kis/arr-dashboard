@@ -4,7 +4,6 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { customFormatKeys } from "../../../lib/query-keys";
 import {
 	type CreateUserCFRequest,
 	createUserCustomFormat,
@@ -21,6 +20,7 @@ import {
 	importUserCFsFromInstance,
 	importUserCFsFromJson,
 } from "../../../lib/api-client/trash-guides";
+import { customFormatKeys } from "../../../lib/query-keys";
 
 /**
  * Hook to fetch all available custom formats from TRaSH Guides
@@ -29,7 +29,7 @@ export function useCustomFormats(serviceType?: "RADARR" | "SONARR") {
 	return useQuery({
 		queryKey: customFormatKeys.list(serviceType),
 		queryFn: () => fetchCustomFormatsList(serviceType),
-		staleTime: 5 * 60 * 1000, // 5 minutes
+		staleTime: (query) => (query.state.data?.unavailableServices?.length ? 0 : 5 * 60 * 1000),
 	});
 }
 
@@ -40,7 +40,7 @@ export function useCFDescriptions(serviceType?: "RADARR" | "SONARR") {
 	return useQuery({
 		queryKey: customFormatKeys.descriptions(serviceType),
 		queryFn: () => fetchCFDescriptionsList(serviceType),
-		staleTime: 60 * 60 * 1000, // 1 hour - descriptions change less frequently
+		staleTime: (query) => (query.state.data?.unavailableServices?.length ? 0 : 60 * 60 * 1000),
 	});
 }
 

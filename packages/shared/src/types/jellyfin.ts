@@ -4,7 +4,11 @@
  * Types for Jellyfin integration — sessions, now-playing, cache health.
  */
 
-import type { SessionAvailability } from "./session";
+import type {
+	SessionAvailability,
+	SessionBandwidthBasis,
+	SessionBandwidthCoverage,
+} from "./session";
 
 // ============================================================================
 // Now Playing / Sessions
@@ -26,6 +30,7 @@ export interface JellyfinSessionInfo {
 	bandwidth?: number;
 	videoCodec?: string;
 	audioCodec?: string;
+	videoResolution?: string;
 	thumb?: string;
 	instanceId: string;
 	instanceName: string;
@@ -33,6 +38,9 @@ export interface JellyfinSessionInfo {
 
 export interface JellyfinNowPlayingResponse {
 	sessions: JellyfinSessionInfo[];
+	/** Compatibility known subtotal; use bandwidthCoverage to determine coverage. */
 	totalBandwidth: number;
 	availability: SessionAvailability;
+	bandwidthCoverage?: SessionBandwidthCoverage;
+	bandwidthBasis?: SessionBandwidthBasis;
 }

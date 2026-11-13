@@ -68,6 +68,13 @@ discarding unmatched native items. The authenticated
 status contract is documented in [API-ROUTES.md](API-ROUTES.md).
 
 Inventory presence, ARR matching, and watch history are separate evidence.
+Jellyfin episode watch display uses two independent refresh paths: a verified
+full scan supplies row-local negative evidence, while a bounded, two-pass
+watched-only scan publishes newer positive rows on a five-minute schedule.
+Both are bound to the owned provider identity and inventory coordinates.
+Missing positive rows never imply unwatched; ambiguous or stale evidence stays
+unknown or last-known. The positive generation is display-only and cannot
+authorize cleanup or another upstream mutation.
 Positive watch-count cleanup uses target-specific Jellyfin or Tautulli/Plex
 proofs and revalidates provider identity, native item, and the positive threshold
 at execution. Generic display observations cannot substitute for that proof.
@@ -109,8 +116,12 @@ provider work; exhausted or ambiguous reads remain unknown.
 
 **Database Changes:**
 1. Edit `apps/api/prisma/schema.prisma`
-2. Run `pnpm --filter @arr/api run db:push` (syncs schema + regenerates client)
-3. No migrations — uses `db push` for multi-provider support (SQLite/PostgreSQL)
+2. Use `db:push` only on a disposable/development database, then run `db:generate` explicitly
+3. Run the offline registry authoring tool and review the generated SQLite/PostgreSQL SQL, metadata and compiled hash bindings together
+4. Test native startup against populated supported historical schemas, including failure/rollback/restart conservation; never infer upgrade safety from an empty development database
+
+Runtime startup does not use destination `db push`, runtime schema diff, arbitrary
+SQL, reset, or `--accept-data-loss`. See the native startup contract below.
 
 ## Trust & UX Correctness
 
@@ -148,11 +159,100 @@ ordinary reads:
 
 ## Database
 
-- Schema: `apps/api/prisma/schema.prisma` is the single source of truth
-- `pnpm --filter @arr/api run db:push` — sync schema to database (dev, also regenerates client)
+- Application schema: `apps/api/prisma/schema.prisma`; native migration receipts are runtime-only and are not Prisma application models
+- `pnpm --filter @arr/api run db:push` — schema synchronization for disposable/development databases only
 - `pnpm --filter @arr/api run db:generate` — regenerate Prisma client only
-- `pnpm --filter @arr/api run db:sync` — sync schema only, skip client regen (production)
 - SQLite default (`file:/config/prod.db`), PostgreSQL supported via `DATABASE_URL`
+
+### Native schema startup contract
+
+`src/schema-startup.ts` is a pre-launch actor, bundled as `dist/schema-startup.js`.
+The combined container runs it as the effective runtime UID before the API launcher
+or Web server. It dispatches to native SQLite/PostgreSQL writers and emits exactly
+`{apiPort,webPort,listenAddress}` only after the schema transaction and physical
+writer closure have been proved. A successfully read missing settings singleton
+returns nulls. A failed read, malformed schema or missing ownership evidence emits
+only a generic error category and exits nonzero, never healthy defaults.
+
+SQLite native startup requires an eligible local Linux directory volume. Local
+ZFS is eligible alongside the existing local filesystems; network and unknown
+filesystems, unproved platforms, and file-only database bind mounts remain
+refused. Eligibility does not grant ownership: canonical file/directory identity,
+destination-owned coordination, and provider-held operation locks are separate
+required checks. Keep the database and its WAL/SHM files on the same local host.
+For ZFS databases, retain synchronous-write guarantees (`sync=standard` or
+`sync=always`); do not use `sync=disabled` to improve test or refresh timings.
+
+After applying database > environment > default port precedence, startup publishes
+only the validated web port as private ephemeral metadata under
+`/tmp/arr-dashboard-runtime-health`. Docker's independent health process uses this
+port for a bounded loopback `/live` request; it never opens the database. Missing,
+corrupt or unsafe metadata fails closed, and failed publication prevents either
+service from starting. Database readiness remains the separate API `/health`
+check. Restart replaces the metadata before services start.
+
+The combined image builds complete SQLite and PostgreSQL API packages under
+`/app/api/providers/sqlite` and `/app/api/providers/postgresql`. Each keeps its
+compiled entrypoints/chunks/worker, schema, generated client, native assets and
+version metadata together, linking only to the shared production dependencies.
+Startup selects a fixed package from the connection scheme and validates its
+manifest, compiled provider and pinned Prisma version as the effective runtime
+user before opening the database. The native actor and launcher use the same
+package; there is no runtime generation, bundle rewrite or application-code chown.
+Heap diagnostics match the selected inner API process, never its launcher.
+
+`lib/backup/runtime-schema-registry.ts` loads the fixed assets under
+`prisma/runtime-schema/`. Their compiled hashes bind the normalized application
+schema, SQL bytes, metadata, dependencies and registered transitions. Native
+catalog readers preflight the entire destination before the first application
+DDL. Compatible custom columns, indexes, views and triggers survive; unknown or
+incompatible shapes require an explicit migration instead of guessed repair.
+The actual SQLite descriptor or PostgreSQL backend retains owner/exclusion
+through schema changes, the startup journal and the destination-local positive
+`ArrSchemaMigrationReceipt` transaction. Receipts are never backup payload data.
+Loss of COMMIT acknowledgement remains unknown, not asserted rollback or blind
+replay. SQLite retains DELETE/WAL mode, FK checks and original storage binding;
+an interrupted unanchored coordination namespace is not automatically deleted.
+
+SQLite startup also validates every registered application `DATETIME` value
+before creating coordination files or changing data. Under the same native
+transaction it converts exact epoch-millisecond, timezone-bearing ISO and
+SQLite UTC timestamps to fixed-width UTC ISO text with millisecond precision
+(`YYYY-MM-DDTHH:mm:ss.sss+00:00`). Non-date fields, row identities and unknown
+custom columns are preserved. Malformed, lossy, extended-year or unsafe triggered
+conversions refuse with `format-migration-required`; they never imply expiry or
+freshness. A destination-local `ArrRuntimeDataFormatReceipt` commits with the
+schema/control/binding records, is excluded from backup payloads, and must remain
+consistent on restart. It grants no Restore authority. PostgreSQL is unchanged.
+
+PostgreSQL startup and ordinary admission select the same single existing
+namespace: an explicit `schema` URL field, or the effective native role/connection
+search path when absent. Ambiguous, missing or malformed selections refuse;
+ordinary admission never creates a namespace. Each runtime pins its name and
+native namespace ID, and every control/pool connection verifies that identity.
+Prisma queries use that selected schema, not an unconditional `public` fallback.
+Changed session search paths or drop/recreate identity changes fence admission.
+Owner/operation locks remain database-wide, never split by schema name.
+
+To author registry assets, use:
+
+```bash
+pnpm --filter @arr/api exec tsx scripts/build-runtime-schema-registry.ts
+```
+
+This is an offline authoring operation, not a startup migration command. It uses
+installed public schema/dependency inputs and disposable native targets, including
+its pinned local PostgreSQL fixture; it never targets an owner database. Review
+the generated SQL/JSON and compiled bindings as one change, and validate native
+SQL/metadata equivalence plus populated compatibility before deployment.
+
+First guarded adoption requires stopping and waiting for every known older API/
+container before touching its database. An available new lock cannot establish
+legacy quiescence. Keep database snapshots and corresponding storage/coordination
+recovery evidence together; rehearse provider-supported recovery on a disposable
+target. The combined container uses database > environment > default port/address
+precedence. The standalone API's existing environment-first precedence is unchanged.
+See [Docker upgrade and rollback safety](../docker/README.md#upgrade-and-rollback-safety).
 
 ## Key Backend Patterns
 
@@ -193,6 +293,14 @@ pnpm run lint
 - Components using `useIncognitoMode()` require `<IncognitoProvider>` wrapper in tests
 - Per-package `tsc` runs can hide stale `@arr/shared` output; only the root Turbo
   typecheck after building shared matches CI
+- The full API test gate requires a running local Docker daemon. It prepares
+  current native SQLite actors inside the test task, then runs PostgreSQL
+  contracts serially with a privately generated PG client in a new loopback-only
+  disposable container. No configured application database URL is inherited.
+  Uncertain child closure retains private fixture files instead of deleting them.
+- For focused iteration, use `pnpm --filter @arr/api exec vitest run <test-file>`.
+  Native multi-process cases require the preparation performed by the full gate;
+  direct Vitest without those actors is not equivalent full-gate evidence.
 
 ## Pull request review workflow
 
@@ -208,9 +316,9 @@ Follow [`CODE-REVIEW.md`](CODE-REVIEW.md) for the finite review contract.
 
 ## Environment & Deployment
 
-**Docker** (single container): Port 3000 exposed, `/config/` volume contains `prod.db` + `secrets.json`. Startup: `docker/start-combined.sh`. Schema sync is fail-closed and never approves destructive changes automatically.
+**Docker** (single container): Port 3000 exposed, `/config/` volume contains `prod.db` + `secrets.json`. Startup: `docker/start-combined.sh` runs the native schema/settings actor before services; failure stops startup without automatic reset or destructive migration approval.
 
-**Runtime topology**: Stable 2.x supports exactly one arr-dashboard API/container per database. Multiple replicas sharing one SQLite or PostgreSQL database are unsupported. Caches, scheduler timers, event fan-out, and most runtime coordination are process-local and are not coordinated across API processes. A few library-cleanup workflows use database-backed leases, but those leases do not establish general API ownership or make a multi-API topology supported. Stable 2.x does not enforce this restriction; runtime enforcement is tracked by [#829](https://github.com/Kha-kis/arr-dashboard/issues/829).
+**Runtime topology**: Stable 2.x supports exactly one arr-dashboard API/container per database. Multiple replicas sharing one SQLite or PostgreSQL database are unsupported. Native ownership guards reject competing cooperating actors; they do not authorize replicas, older unguarded processes, or external database writers. Caches, scheduler timers and event fan-out remain process-local. Stop and wait for known legacy actors before first guarded adoption.
 
 **Key env vars**: `DATABASE_URL`, `API_PORT` (3001), `PORT` (3000), `HOST` (0.0.0.0), `PUID`/`PGID`, `SESSION_TTL_HOURS` (24), `ENCRYPTION_KEY` (auto-generated), `SESSION_COOKIE_SECRET` (auto-generated), `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGIN`.
 

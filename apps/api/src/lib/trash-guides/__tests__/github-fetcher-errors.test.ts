@@ -134,3 +134,169 @@ describe("TrashGitHubFetcher error diagnosability (issue #406 follow-up)", () =>
 		});
 	});
 });
+
+describe("strict include collection does not manufacture a complete empty result", () => {
+	afterEach(() => vi.unstubAllGlobals());
+
+	it("rejects an unavailable include listing instead of accepting it as empty", async () => {
+		vi.stubGlobal("fetch", vi.fn().mockResolvedValue(buildJsonResponse({}, 404)));
+		const fetcher = new TrashGitHubFetcher({
+			strictContent: true,
+			logger: createCapturingLogger([]) as any,
+		});
+		await expect(fetcher.fetchCFIncludes()).rejects.toThrow();
+	});
+
+	it("rejects a failed include after an earlier include succeeded", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: string) => {
+				const url = new URL(input);
+				if (url.hostname === "api.github.com")
+					return buildJsonResponse([
+						{ name: "apply-10000.md", type: "file" },
+						{ name: "note-failure.md", type: "file" },
+					]);
+				return url.pathname.endsWith("note-failure.md")
+					? buildJsonResponse({}, 404)
+					: new Response("Synthetic include content");
+			}),
+		);
+		const fetcher = new TrashGitHubFetcher({
+			strictContent: true,
+			logger: createCapturingLogger([]) as any,
+		});
+		await expect(fetcher.fetchCFIncludes()).rejects.toThrow();
+	});
+
+	it("rejects a malformed include listing", async () => {
+		vi.stubGlobal("fetch", vi.fn().mockResolvedValue(buildJsonResponse({ unexpected: true })));
+		const fetcher = new TrashGitHubFetcher({
+			strictContent: true,
+			logger: createCapturingLogger([]) as any,
+		});
+		await expect(fetcher.fetchCFIncludes()).rejects.toThrow();
+	});
+
+	it("permits a valid empty include listing", async () => {
+		vi.stubGlobal("fetch", vi.fn().mockResolvedValue(buildJsonResponse([])));
+		const fetcher = new TrashGitHubFetcher({
+			strictContent: true,
+			logger: createCapturingLogger([]) as any,
+		});
+		await expect(fetcher.fetchCFIncludes()).resolves.toEqual([]);
+	});
+
+	it("preserves explicitly lenient callers' unavailable-list compatibility", async () => {
+		vi.stubGlobal("fetch", vi.fn().mockResolvedValue(buildJsonResponse({}, 404)));
+		const fetcher = new TrashGitHubFetcher({ logger: createCapturingLogger([]) as any });
+		await expect(fetcher.fetchCFIncludes()).resolves.toEqual([]);
+	});
+});
+
+describe("commit-addressed read cancellation", () => {
+	const commitHash = "0123456789abcdef0123456789abcdef01234567";
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		vi.useRealTimers();
+	});
+
+	it.each(["call", "constructor"] as const)(
+		"honors the %s signal during a proactive GitHub rate-limit wait",
+		async (source) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(
+				new Date(source === "call" ? "2000-01-01T00:00:00Z" : "2000-01-02T00:00:00Z"),
+			);
+			const captured: CapturedLogEntry[] = [];
+			const parent = new AbortController();
+			const call = new AbortController();
+			const reason = new Error("Synthetic cancellation");
+			const fetcher = new TrashGitHubFetcher({
+				signal: parent.signal,
+				logger: createCapturingLogger(captured) as any,
+			});
+			const exhausted = buildJsonResponse([{ type: "file", name: "sample.json" }]);
+			exhausted.headers.set("X-RateLimit-Limit", "60");
+			exhausted.headers.set("X-RateLimit-Remaining", "1");
+			exhausted.headers.set("X-RateLimit-Reset", String(Math.ceil(Date.now() / 1000) + 3306));
+			const fetchSpy = vi.fn().mockResolvedValue(buildJsonResponse({}, 404));
+			fetchSpy.mockResolvedValueOnce(exhausted);
+			vi.stubGlobal("fetch", fetchSpy);
+			// A failed content GET leaves the listing's rate-limit metadata in place.
+			await expect(
+				fetcher.fetchConfigsAtCommit("RADARR", "CUSTOM_FORMATS", commitHash),
+			).rejects.toThrow("HTTP 404");
+
+			const settled = vi.fn();
+			const blocked = fetcher
+				.fetchConfigsAtCommit("SONARR", "CUSTOM_FORMATS", commitHash, { signal: call.signal })
+				.then(settled, settled);
+			try {
+				expect(
+					captured.some(({ message }) => message.startsWith("Proactive rate limit wait: 3306s")),
+				).toBe(true);
+				expect(fetchSpy).toHaveBeenCalledTimes(2);
+				(source === "call" ? call : parent).abort(reason);
+				await vi.advanceTimersByTimeAsync(0);
+				expect(settled).toHaveBeenCalledExactlyOnceWith(reason);
+				expect(fetchSpy).toHaveBeenCalledTimes(2);
+			} finally {
+				// Drain even on RED, and advance beyond the shared limit before the next case.
+				await vi.advanceTimersByTimeAsync(3_308_000);
+				await blocked;
+			}
+		},
+	);
+
+	it("joins a description GET that settles after another GET aborts", async () => {
+		const controller = new AbortController();
+		const reason = new Error("Synthetic cancellation");
+		const fetcher = new TrashGitHubFetcher();
+		let entered!: () => void;
+		const secondReadStarted = new Promise<void>((resolve) => {
+			entered = resolve;
+		});
+		let release!: () => void;
+		const held = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: string, options: RequestInit) => {
+				const url = new URL(input);
+				if (url.hostname === "api.github.com") {
+					return buildJsonResponse([
+						{ type: "file", name: "aborts.md" },
+						{ type: "file", name: "held.md" },
+					]);
+				}
+				if (url.pathname.endsWith("/aborts.md")) {
+					const signal = options.signal!;
+					return new Promise<Response>((_, reject) => {
+						signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+					});
+				}
+				entered();
+				await held;
+				return new Response("# Synthetic description");
+			}),
+		);
+
+		const settled = vi.fn();
+		const read = fetcher
+			.fetchConfigsAtCommit("RADARR", "CF_DESCRIPTIONS", commitHash, { signal: controller.signal })
+			.then(settled, settled);
+		await secondReadStarted;
+		try {
+			controller.abort(reason);
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			expect(settled).not.toHaveBeenCalled();
+		} finally {
+			release();
+			await read;
+		}
+		expect(settled).toHaveBeenCalledExactlyOnceWith(reason);
+	});
+});

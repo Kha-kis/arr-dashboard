@@ -169,6 +169,22 @@ describe("<NeedsAttentionPanel />", () => {
 		);
 	});
 
+	it("keeps a long attention action usable on narrow layouts", () => {
+		const actionLabel = "Review the unavailable cache evidence before continuing";
+		mockUsePulseQuery.mockReturnValue({
+			data: makeResponse([makeItem({ actionUrl: "/qui-activity", actionLabel })]),
+			isLoading: false,
+			isError: false,
+		});
+
+		render(<NeedsAttentionPanel />, { wrapper: createWrapper() });
+
+		const action = screen.getByRole("link", { name: actionLabel });
+		expect(action).toHaveAttribute("href", "/qui-activity");
+		expect(action.closest("li")).toHaveClass("flex-wrap");
+		expect(action).toHaveClass("w-full", "min-w-0");
+	});
+
 	it("shows the critical (error) header accent when any visible item is critical", () => {
 		// Trust-check finding #6: a warning-colored header above a critical
 		// item under-reads urgency. Verify that the header accent branches on

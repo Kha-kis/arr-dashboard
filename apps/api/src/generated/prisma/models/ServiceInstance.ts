@@ -389,6 +389,8 @@ export type ServiceInstanceWhereInput = {
   queueCleanerConfig?: Prisma.XOR<Prisma.QueueCleanerConfigNullableScalarRelationFilter, Prisma.QueueCleanerConfigWhereInput> | null
   queueCleanerLogs?: Prisma.QueueCleanerLogListRelationFilter
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeListRelationFilter
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptListRelationFilter
+  arrImportOperations?: Prisma.ArrImportOperationListRelationFilter
   libraryCache?: Prisma.LibraryCacheListRelationFilter
   episodeFileCache?: Prisma.EpisodeFileCacheListRelationFilter
   librarySyncStatus?: Prisma.XOR<Prisma.LibrarySyncStatusNullableScalarRelationFilter, Prisma.LibrarySyncStatusWhereInput> | null
@@ -398,17 +400,27 @@ export type ServiceInstanceWhereInput = {
   tautulliCaches?: Prisma.TautulliCacheListRelationFilter
   jellyfinCaches?: Prisma.JellyfinCacheListRelationFilter
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheListRelationFilter
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowListRelationFilter
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptListRelationFilter
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationListRelationFilter
+  jellyfinNativeWatchPublication?: Prisma.XOR<Prisma.JellyfinNativeWatchPublicationNullableScalarRelationFilter, Prisma.JellyfinNativeWatchPublicationWhereInput> | null
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowListRelationFilter
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowListRelationFilter
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptListRelationFilter
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusListRelationFilter
   sessionSnapshots?: Prisma.SessionSnapshotListRelationFilter
   namingConfig?: Prisma.XOR<Prisma.NamingConfigNullableScalarRelationFilter, Prisma.NamingConfigWhereInput> | null
   namingDeployHistory?: Prisma.NamingDeployHistoryListRelationFilter
   seerrActionLogs?: Prisma.SeerrActionLogListRelationFilter
   quiActionLogs?: Prisma.QuiActionLogListRelationFilter
+  quiActionClaims?: Prisma.QuiActionClaimListRelationFilter
   quiEventLogs?: Prisma.QuiEventLogListRelationFilter
   inodeIndexCache?: Prisma.XOR<Prisma.InodeIndexCacheNullableScalarRelationFilter, Prisma.InodeIndexCacheWhereInput> | null
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptListRelationFilter
   providerObservationRuns?: Prisma.ProviderObservationRunListRelationFilter
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotListRelationFilter
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunListRelationFilter
+  searchGrabClaims?: Prisma.SearchGrabClaimListRelationFilter
 }
 
 export type ServiceInstanceOrderByWithRelationInput = {
@@ -453,6 +465,8 @@ export type ServiceInstanceOrderByWithRelationInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigOrderByWithRelationInput
   queueCleanerLogs?: Prisma.QueueCleanerLogOrderByRelationAggregateInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeOrderByRelationAggregateInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptOrderByRelationAggregateInput
+  arrImportOperations?: Prisma.ArrImportOperationOrderByRelationAggregateInput
   libraryCache?: Prisma.LibraryCacheOrderByRelationAggregateInput
   episodeFileCache?: Prisma.EpisodeFileCacheOrderByRelationAggregateInput
   librarySyncStatus?: Prisma.LibrarySyncStatusOrderByWithRelationInput
@@ -462,21 +476,32 @@ export type ServiceInstanceOrderByWithRelationInput = {
   tautulliCaches?: Prisma.TautulliCacheOrderByRelationAggregateInput
   jellyfinCaches?: Prisma.JellyfinCacheOrderByRelationAggregateInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheOrderByRelationAggregateInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowOrderByRelationAggregateInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptOrderByRelationAggregateInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationOrderByRelationAggregateInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationOrderByWithRelationInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowOrderByRelationAggregateInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowOrderByRelationAggregateInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptOrderByRelationAggregateInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusOrderByRelationAggregateInput
   sessionSnapshots?: Prisma.SessionSnapshotOrderByRelationAggregateInput
   namingConfig?: Prisma.NamingConfigOrderByWithRelationInput
   namingDeployHistory?: Prisma.NamingDeployHistoryOrderByRelationAggregateInput
   seerrActionLogs?: Prisma.SeerrActionLogOrderByRelationAggregateInput
   quiActionLogs?: Prisma.QuiActionLogOrderByRelationAggregateInput
+  quiActionClaims?: Prisma.QuiActionClaimOrderByRelationAggregateInput
   quiEventLogs?: Prisma.QuiEventLogOrderByRelationAggregateInput
   inodeIndexCache?: Prisma.InodeIndexCacheOrderByWithRelationInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptOrderByRelationAggregateInput
   providerObservationRuns?: Prisma.ProviderObservationRunOrderByRelationAggregateInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotOrderByRelationAggregateInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunOrderByRelationAggregateInput
+  searchGrabClaims?: Prisma.SearchGrabClaimOrderByRelationAggregateInput
 }
 
 export type ServiceInstanceWhereUniqueInput = Prisma.AtLeast<{
   id?: string
+  id_userId?: Prisma.ServiceInstanceIdUserIdCompoundUniqueInput
   AND?: Prisma.ServiceInstanceWhereInput | Prisma.ServiceInstanceWhereInput[]
   OR?: Prisma.ServiceInstanceWhereInput[]
   NOT?: Prisma.ServiceInstanceWhereInput | Prisma.ServiceInstanceWhereInput[]
@@ -520,6 +545,8 @@ export type ServiceInstanceWhereUniqueInput = Prisma.AtLeast<{
   queueCleanerConfig?: Prisma.XOR<Prisma.QueueCleanerConfigNullableScalarRelationFilter, Prisma.QueueCleanerConfigWhereInput> | null
   queueCleanerLogs?: Prisma.QueueCleanerLogListRelationFilter
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeListRelationFilter
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptListRelationFilter
+  arrImportOperations?: Prisma.ArrImportOperationListRelationFilter
   libraryCache?: Prisma.LibraryCacheListRelationFilter
   episodeFileCache?: Prisma.EpisodeFileCacheListRelationFilter
   librarySyncStatus?: Prisma.XOR<Prisma.LibrarySyncStatusNullableScalarRelationFilter, Prisma.LibrarySyncStatusWhereInput> | null
@@ -529,18 +556,28 @@ export type ServiceInstanceWhereUniqueInput = Prisma.AtLeast<{
   tautulliCaches?: Prisma.TautulliCacheListRelationFilter
   jellyfinCaches?: Prisma.JellyfinCacheListRelationFilter
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheListRelationFilter
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowListRelationFilter
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptListRelationFilter
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationListRelationFilter
+  jellyfinNativeWatchPublication?: Prisma.XOR<Prisma.JellyfinNativeWatchPublicationNullableScalarRelationFilter, Prisma.JellyfinNativeWatchPublicationWhereInput> | null
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowListRelationFilter
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowListRelationFilter
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptListRelationFilter
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusListRelationFilter
   sessionSnapshots?: Prisma.SessionSnapshotListRelationFilter
   namingConfig?: Prisma.XOR<Prisma.NamingConfigNullableScalarRelationFilter, Prisma.NamingConfigWhereInput> | null
   namingDeployHistory?: Prisma.NamingDeployHistoryListRelationFilter
   seerrActionLogs?: Prisma.SeerrActionLogListRelationFilter
   quiActionLogs?: Prisma.QuiActionLogListRelationFilter
+  quiActionClaims?: Prisma.QuiActionClaimListRelationFilter
   quiEventLogs?: Prisma.QuiEventLogListRelationFilter
   inodeIndexCache?: Prisma.XOR<Prisma.InodeIndexCacheNullableScalarRelationFilter, Prisma.InodeIndexCacheWhereInput> | null
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptListRelationFilter
   providerObservationRuns?: Prisma.ProviderObservationRunListRelationFilter
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotListRelationFilter
-}, "id">
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunListRelationFilter
+  searchGrabClaims?: Prisma.SearchGrabClaimListRelationFilter
+}, "id" | "id_userId">
 
 export type ServiceInstanceOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
@@ -645,6 +682,8 @@ export type ServiceInstanceCreateInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -654,17 +693,27 @@ export type ServiceInstanceCreateInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateInput = {
@@ -708,6 +757,8 @@ export type ServiceInstanceUncheckedCreateInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -717,17 +768,27 @@ export type ServiceInstanceUncheckedCreateInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUpdateInput = {
@@ -771,6 +832,8 @@ export type ServiceInstanceUpdateInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -780,17 +843,27 @@ export type ServiceInstanceUpdateInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateInput = {
@@ -834,6 +907,8 @@ export type ServiceInstanceUncheckedUpdateInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -843,17 +918,27 @@ export type ServiceInstanceUncheckedUpdateInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateManyInput = {
@@ -944,6 +1029,11 @@ export type ServiceInstanceListRelationFilter = {
 
 export type ServiceInstanceOrderByRelationAggregateInput = {
   _count?: Prisma.SortOrder
+}
+
+export type ServiceInstanceIdUserIdCompoundUniqueInput = {
+  id: string
+  userId: string
 }
 
 export type ServiceInstanceCountOrderByAggregateInput = {
@@ -1383,6 +1473,36 @@ export type ServiceInstanceUpdateOneRequiredWithoutQueueCleanerStrikesNestedInpu
   update?: Prisma.XOR<Prisma.XOR<Prisma.ServiceInstanceUpdateToOneWithWhereWithoutQueueCleanerStrikesInput, Prisma.ServiceInstanceUpdateWithoutQueueCleanerStrikesInput>, Prisma.ServiceInstanceUncheckedUpdateWithoutQueueCleanerStrikesInput>
 }
 
+export type ServiceInstanceCreateNestedOneWithoutQueueCleanerImportReceiptsInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutQueueCleanerImportReceiptsInput, Prisma.ServiceInstanceUncheckedCreateWithoutQueueCleanerImportReceiptsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutQueueCleanerImportReceiptsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+}
+
+export type ServiceInstanceUpdateOneRequiredWithoutQueueCleanerImportReceiptsNestedInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutQueueCleanerImportReceiptsInput, Prisma.ServiceInstanceUncheckedCreateWithoutQueueCleanerImportReceiptsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutQueueCleanerImportReceiptsInput
+  upsert?: Prisma.ServiceInstanceUpsertWithoutQueueCleanerImportReceiptsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ServiceInstanceUpdateToOneWithWhereWithoutQueueCleanerImportReceiptsInput, Prisma.ServiceInstanceUpdateWithoutQueueCleanerImportReceiptsInput>, Prisma.ServiceInstanceUncheckedUpdateWithoutQueueCleanerImportReceiptsInput>
+}
+
+export type ServiceInstanceCreateNestedOneWithoutArrImportOperationsInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutArrImportOperationsInput, Prisma.ServiceInstanceUncheckedCreateWithoutArrImportOperationsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutArrImportOperationsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+}
+
+export type ServiceInstanceUpdateOneWithoutArrImportOperationsNestedInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutArrImportOperationsInput, Prisma.ServiceInstanceUncheckedCreateWithoutArrImportOperationsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutArrImportOperationsInput
+  upsert?: Prisma.ServiceInstanceUpsertWithoutArrImportOperationsInput
+  disconnect?: Prisma.ServiceInstanceWhereInput | boolean
+  delete?: Prisma.ServiceInstanceWhereInput | boolean
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ServiceInstanceUpdateToOneWithWhereWithoutArrImportOperationsInput, Prisma.ServiceInstanceUpdateWithoutArrImportOperationsInput>, Prisma.ServiceInstanceUncheckedUpdateWithoutArrImportOperationsInput>
+}
+
 export type ServiceInstanceCreateNestedOneWithoutPlexCachesInput = {
   create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutPlexCachesInput, Prisma.ServiceInstanceUncheckedCreateWithoutPlexCachesInput>
   connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutPlexCachesInput
@@ -1453,6 +1573,104 @@ export type ServiceInstanceUpdateOneRequiredWithoutJellyfinEpisodeCachesNestedIn
   update?: Prisma.XOR<Prisma.XOR<Prisma.ServiceInstanceUpdateToOneWithWhereWithoutJellyfinEpisodeCachesInput, Prisma.ServiceInstanceUpdateWithoutJellyfinEpisodeCachesInput>, Prisma.ServiceInstanceUncheckedUpdateWithoutJellyfinEpisodeCachesInput>
 }
 
+export type ServiceInstanceCreateNestedOneWithoutJellyfinEpisodeGenerationRowsInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinEpisodeGenerationRowsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinEpisodeGenerationRowsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutJellyfinEpisodeGenerationRowsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+}
+
+export type ServiceInstanceUpdateOneRequiredWithoutJellyfinEpisodeGenerationRowsNestedInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinEpisodeGenerationRowsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinEpisodeGenerationRowsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutJellyfinEpisodeGenerationRowsInput
+  upsert?: Prisma.ServiceInstanceUpsertWithoutJellyfinEpisodeGenerationRowsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ServiceInstanceUpdateToOneWithWhereWithoutJellyfinEpisodeGenerationRowsInput, Prisma.ServiceInstanceUpdateWithoutJellyfinEpisodeGenerationRowsInput>, Prisma.ServiceInstanceUncheckedUpdateWithoutJellyfinEpisodeGenerationRowsInput>
+}
+
+export type ServiceInstanceCreateNestedOneWithoutJellyfinEpisodeGenerationShowReceiptsInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinEpisodeGenerationShowReceiptsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinEpisodeGenerationShowReceiptsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutJellyfinEpisodeGenerationShowReceiptsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+}
+
+export type ServiceInstanceUpdateOneRequiredWithoutJellyfinEpisodeGenerationShowReceiptsNestedInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinEpisodeGenerationShowReceiptsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinEpisodeGenerationShowReceiptsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutJellyfinEpisodeGenerationShowReceiptsInput
+  upsert?: Prisma.ServiceInstanceUpsertWithoutJellyfinEpisodeGenerationShowReceiptsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ServiceInstanceUpdateToOneWithWhereWithoutJellyfinEpisodeGenerationShowReceiptsInput, Prisma.ServiceInstanceUpdateWithoutJellyfinEpisodeGenerationShowReceiptsInput>, Prisma.ServiceInstanceUncheckedUpdateWithoutJellyfinEpisodeGenerationShowReceiptsInput>
+}
+
+export type ServiceInstanceCreateNestedOneWithoutJellyfinEpisodePreparationsInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinEpisodePreparationsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinEpisodePreparationsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutJellyfinEpisodePreparationsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+}
+
+export type ServiceInstanceUpdateOneRequiredWithoutJellyfinEpisodePreparationsNestedInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinEpisodePreparationsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinEpisodePreparationsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutJellyfinEpisodePreparationsInput
+  upsert?: Prisma.ServiceInstanceUpsertWithoutJellyfinEpisodePreparationsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ServiceInstanceUpdateToOneWithWhereWithoutJellyfinEpisodePreparationsInput, Prisma.ServiceInstanceUpdateWithoutJellyfinEpisodePreparationsInput>, Prisma.ServiceInstanceUncheckedUpdateWithoutJellyfinEpisodePreparationsInput>
+}
+
+export type ServiceInstanceCreateNestedOneWithoutJellyfinNativeWatchPublicationInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinNativeWatchPublicationInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinNativeWatchPublicationInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutJellyfinNativeWatchPublicationInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+}
+
+export type ServiceInstanceUpdateOneRequiredWithoutJellyfinNativeWatchPublicationNestedInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinNativeWatchPublicationInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinNativeWatchPublicationInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutJellyfinNativeWatchPublicationInput
+  upsert?: Prisma.ServiceInstanceUpsertWithoutJellyfinNativeWatchPublicationInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ServiceInstanceUpdateToOneWithWhereWithoutJellyfinNativeWatchPublicationInput, Prisma.ServiceInstanceUpdateWithoutJellyfinNativeWatchPublicationInput>, Prisma.ServiceInstanceUncheckedUpdateWithoutJellyfinNativeWatchPublicationInput>
+}
+
+export type ServiceInstanceCreateNestedOneWithoutJellyfinNativeWatchScopeReceiptsInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinNativeWatchScopeReceiptsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinNativeWatchScopeReceiptsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutJellyfinNativeWatchScopeReceiptsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+}
+
+export type ServiceInstanceUpdateOneRequiredWithoutJellyfinNativeWatchScopeReceiptsNestedInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinNativeWatchScopeReceiptsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinNativeWatchScopeReceiptsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutJellyfinNativeWatchScopeReceiptsInput
+  upsert?: Prisma.ServiceInstanceUpsertWithoutJellyfinNativeWatchScopeReceiptsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ServiceInstanceUpdateToOneWithWhereWithoutJellyfinNativeWatchScopeReceiptsInput, Prisma.ServiceInstanceUpdateWithoutJellyfinNativeWatchScopeReceiptsInput>, Prisma.ServiceInstanceUncheckedUpdateWithoutJellyfinNativeWatchScopeReceiptsInput>
+}
+
+export type ServiceInstanceCreateNestedOneWithoutJellyfinNativeWatchRowsInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinNativeWatchRowsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinNativeWatchRowsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutJellyfinNativeWatchRowsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+}
+
+export type ServiceInstanceUpdateOneRequiredWithoutJellyfinNativeWatchRowsNestedInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinNativeWatchRowsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinNativeWatchRowsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutJellyfinNativeWatchRowsInput
+  upsert?: Prisma.ServiceInstanceUpsertWithoutJellyfinNativeWatchRowsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ServiceInstanceUpdateToOneWithWhereWithoutJellyfinNativeWatchRowsInput, Prisma.ServiceInstanceUpdateWithoutJellyfinNativeWatchRowsInput>, Prisma.ServiceInstanceUncheckedUpdateWithoutJellyfinNativeWatchRowsInput>
+}
+
+export type ServiceInstanceCreateNestedOneWithoutJellyfinPositiveWatchRowsInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinPositiveWatchRowsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinPositiveWatchRowsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutJellyfinPositiveWatchRowsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+}
+
+export type ServiceInstanceUpdateOneRequiredWithoutJellyfinPositiveWatchRowsNestedInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinPositiveWatchRowsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinPositiveWatchRowsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutJellyfinPositiveWatchRowsInput
+  upsert?: Prisma.ServiceInstanceUpsertWithoutJellyfinPositiveWatchRowsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ServiceInstanceUpdateToOneWithWhereWithoutJellyfinPositiveWatchRowsInput, Prisma.ServiceInstanceUpdateWithoutJellyfinPositiveWatchRowsInput>, Prisma.ServiceInstanceUncheckedUpdateWithoutJellyfinPositiveWatchRowsInput>
+}
+
 export type ServiceInstanceCreateNestedOneWithoutTautulliCachesInput = {
   create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutTautulliCachesInput, Prisma.ServiceInstanceUncheckedCreateWithoutTautulliCachesInput>
   connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutTautulliCachesInput
@@ -1493,6 +1711,20 @@ export type ServiceInstanceUpdateOneRequiredWithoutProviderObservationRunsNested
   upsert?: Prisma.ServiceInstanceUpsertWithoutProviderObservationRunsInput
   connect?: Prisma.ServiceInstanceWhereUniqueInput
   update?: Prisma.XOR<Prisma.XOR<Prisma.ServiceInstanceUpdateToOneWithWhereWithoutProviderObservationRunsInput, Prisma.ServiceInstanceUpdateWithoutProviderObservationRunsInput>, Prisma.ServiceInstanceUncheckedUpdateWithoutProviderObservationRunsInput>
+}
+
+export type ServiceInstanceCreateNestedOneWithoutNativeInventoryRunsInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutNativeInventoryRunsInput, Prisma.ServiceInstanceUncheckedCreateWithoutNativeInventoryRunsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutNativeInventoryRunsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+}
+
+export type ServiceInstanceUpdateOneRequiredWithoutNativeInventoryRunsNestedInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutNativeInventoryRunsInput, Prisma.ServiceInstanceUncheckedCreateWithoutNativeInventoryRunsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutNativeInventoryRunsInput
+  upsert?: Prisma.ServiceInstanceUpsertWithoutNativeInventoryRunsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ServiceInstanceUpdateToOneWithWhereWithoutNativeInventoryRunsInput, Prisma.ServiceInstanceUpdateWithoutNativeInventoryRunsInput>, Prisma.ServiceInstanceUncheckedUpdateWithoutNativeInventoryRunsInput>
 }
 
 export type ServiceInstanceCreateNestedOneWithoutNativeInventorySnapshotsInput = {
@@ -1579,6 +1811,20 @@ export type ServiceInstanceUpdateOneRequiredWithoutLabelSyncMutationAttemptsNest
   update?: Prisma.XOR<Prisma.XOR<Prisma.ServiceInstanceUpdateToOneWithWhereWithoutLabelSyncMutationAttemptsInput, Prisma.ServiceInstanceUpdateWithoutLabelSyncMutationAttemptsInput>, Prisma.ServiceInstanceUncheckedUpdateWithoutLabelSyncMutationAttemptsInput>
 }
 
+export type ServiceInstanceCreateNestedOneWithoutSearchGrabClaimsInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutSearchGrabClaimsInput, Prisma.ServiceInstanceUncheckedCreateWithoutSearchGrabClaimsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutSearchGrabClaimsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+}
+
+export type ServiceInstanceUpdateOneRequiredWithoutSearchGrabClaimsNestedInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutSearchGrabClaimsInput, Prisma.ServiceInstanceUncheckedCreateWithoutSearchGrabClaimsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutSearchGrabClaimsInput
+  upsert?: Prisma.ServiceInstanceUpsertWithoutSearchGrabClaimsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ServiceInstanceUpdateToOneWithWhereWithoutSearchGrabClaimsInput, Prisma.ServiceInstanceUpdateWithoutSearchGrabClaimsInput>, Prisma.ServiceInstanceUncheckedUpdateWithoutSearchGrabClaimsInput>
+}
+
 export type ServiceInstanceCreateNestedOneWithoutQuiActionLogsInput = {
   create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutQuiActionLogsInput, Prisma.ServiceInstanceUncheckedCreateWithoutQuiActionLogsInput>
   connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutQuiActionLogsInput
@@ -1591,6 +1837,20 @@ export type ServiceInstanceUpdateOneRequiredWithoutQuiActionLogsNestedInput = {
   upsert?: Prisma.ServiceInstanceUpsertWithoutQuiActionLogsInput
   connect?: Prisma.ServiceInstanceWhereUniqueInput
   update?: Prisma.XOR<Prisma.XOR<Prisma.ServiceInstanceUpdateToOneWithWhereWithoutQuiActionLogsInput, Prisma.ServiceInstanceUpdateWithoutQuiActionLogsInput>, Prisma.ServiceInstanceUncheckedUpdateWithoutQuiActionLogsInput>
+}
+
+export type ServiceInstanceCreateNestedOneWithoutQuiActionClaimsInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutQuiActionClaimsInput, Prisma.ServiceInstanceUncheckedCreateWithoutQuiActionClaimsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutQuiActionClaimsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+}
+
+export type ServiceInstanceUpdateOneRequiredWithoutQuiActionClaimsNestedInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutQuiActionClaimsInput, Prisma.ServiceInstanceUncheckedCreateWithoutQuiActionClaimsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutQuiActionClaimsInput
+  upsert?: Prisma.ServiceInstanceUpsertWithoutQuiActionClaimsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ServiceInstanceUpdateToOneWithWhereWithoutQuiActionClaimsInput, Prisma.ServiceInstanceUpdateWithoutQuiActionClaimsInput>, Prisma.ServiceInstanceUncheckedUpdateWithoutQuiActionClaimsInput>
 }
 
 export type ServiceInstanceCreateNestedOneWithoutQuiEventLogsInput = {
@@ -1649,6 +1909,8 @@ export type ServiceInstanceCreateWithoutUserInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -1658,17 +1920,27 @@ export type ServiceInstanceCreateWithoutUserInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutUserInput = {
@@ -1711,6 +1983,8 @@ export type ServiceInstanceUncheckedCreateWithoutUserInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -1720,17 +1994,27 @@ export type ServiceInstanceUncheckedCreateWithoutUserInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutUserInput = {
@@ -1828,6 +2112,8 @@ export type ServiceInstanceCreateWithoutHistoryObservationsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -1837,17 +2123,27 @@ export type ServiceInstanceCreateWithoutHistoryObservationsInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutHistoryObservationsInput = {
@@ -1890,6 +2186,8 @@ export type ServiceInstanceUncheckedCreateWithoutHistoryObservationsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -1899,17 +2197,27 @@ export type ServiceInstanceUncheckedCreateWithoutHistoryObservationsInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutHistoryObservationsInput = {
@@ -1968,6 +2276,8 @@ export type ServiceInstanceUpdateWithoutHistoryObservationsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -1977,17 +2287,27 @@ export type ServiceInstanceUpdateWithoutHistoryObservationsInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutHistoryObservationsInput = {
@@ -2030,6 +2350,8 @@ export type ServiceInstanceUncheckedUpdateWithoutHistoryObservationsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -2039,17 +2361,27 @@ export type ServiceInstanceUncheckedUpdateWithoutHistoryObservationsInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutHistorySourceStatusInput = {
@@ -2092,6 +2424,8 @@ export type ServiceInstanceCreateWithoutHistorySourceStatusInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -2101,17 +2435,27 @@ export type ServiceInstanceCreateWithoutHistorySourceStatusInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutHistorySourceStatusInput = {
@@ -2154,6 +2498,8 @@ export type ServiceInstanceUncheckedCreateWithoutHistorySourceStatusInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -2163,17 +2509,27 @@ export type ServiceInstanceUncheckedCreateWithoutHistorySourceStatusInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutHistorySourceStatusInput = {
@@ -2232,6 +2588,8 @@ export type ServiceInstanceUpdateWithoutHistorySourceStatusInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -2241,17 +2599,27 @@ export type ServiceInstanceUpdateWithoutHistorySourceStatusInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutHistorySourceStatusInput = {
@@ -2294,6 +2662,8 @@ export type ServiceInstanceUncheckedUpdateWithoutHistorySourceStatusInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -2303,17 +2673,27 @@ export type ServiceInstanceUncheckedUpdateWithoutHistorySourceStatusInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutInodeIndexCacheInput = {
@@ -2357,6 +2737,8 @@ export type ServiceInstanceCreateWithoutInodeIndexCacheInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -2366,16 +2748,26 @@ export type ServiceInstanceCreateWithoutInodeIndexCacheInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutInodeIndexCacheInput = {
@@ -2419,6 +2811,8 @@ export type ServiceInstanceUncheckedCreateWithoutInodeIndexCacheInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -2428,16 +2822,26 @@ export type ServiceInstanceUncheckedCreateWithoutInodeIndexCacheInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutInodeIndexCacheInput = {
@@ -2497,6 +2901,8 @@ export type ServiceInstanceUpdateWithoutInodeIndexCacheInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -2506,16 +2912,26 @@ export type ServiceInstanceUpdateWithoutInodeIndexCacheInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutInodeIndexCacheInput = {
@@ -2559,6 +2975,8 @@ export type ServiceInstanceUncheckedUpdateWithoutInodeIndexCacheInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -2568,16 +2986,26 @@ export type ServiceInstanceUncheckedUpdateWithoutInodeIndexCacheInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutTagsInput = {
@@ -2620,6 +3048,8 @@ export type ServiceInstanceCreateWithoutTagsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -2629,17 +3059,27 @@ export type ServiceInstanceCreateWithoutTagsInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutTagsInput = {
@@ -2682,6 +3122,8 @@ export type ServiceInstanceUncheckedCreateWithoutTagsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -2691,17 +3133,27 @@ export type ServiceInstanceUncheckedCreateWithoutTagsInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutTagsInput = {
@@ -2760,6 +3212,8 @@ export type ServiceInstanceUpdateWithoutTagsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -2769,17 +3223,27 @@ export type ServiceInstanceUpdateWithoutTagsInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutTagsInput = {
@@ -2822,6 +3286,8 @@ export type ServiceInstanceUncheckedUpdateWithoutTagsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -2831,17 +3297,27 @@ export type ServiceInstanceUncheckedUpdateWithoutTagsInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutTrashSyncHistoryInput = {
@@ -2884,6 +3360,8 @@ export type ServiceInstanceCreateWithoutTrashSyncHistoryInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -2893,17 +3371,27 @@ export type ServiceInstanceCreateWithoutTrashSyncHistoryInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutTrashSyncHistoryInput = {
@@ -2946,6 +3434,8 @@ export type ServiceInstanceUncheckedCreateWithoutTrashSyncHistoryInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -2955,17 +3445,27 @@ export type ServiceInstanceUncheckedCreateWithoutTrashSyncHistoryInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutTrashSyncHistoryInput = {
@@ -3024,6 +3524,8 @@ export type ServiceInstanceUpdateWithoutTrashSyncHistoryInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -3033,17 +3535,27 @@ export type ServiceInstanceUpdateWithoutTrashSyncHistoryInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutTrashSyncHistoryInput = {
@@ -3086,6 +3598,8 @@ export type ServiceInstanceUncheckedUpdateWithoutTrashSyncHistoryInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -3095,17 +3609,27 @@ export type ServiceInstanceUncheckedUpdateWithoutTrashSyncHistoryInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutTrashBackupsInput = {
@@ -3148,6 +3672,8 @@ export type ServiceInstanceCreateWithoutTrashBackupsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -3157,17 +3683,27 @@ export type ServiceInstanceCreateWithoutTrashBackupsInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutTrashBackupsInput = {
@@ -3210,6 +3746,8 @@ export type ServiceInstanceUncheckedCreateWithoutTrashBackupsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -3219,17 +3757,27 @@ export type ServiceInstanceUncheckedCreateWithoutTrashBackupsInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutTrashBackupsInput = {
@@ -3288,6 +3836,8 @@ export type ServiceInstanceUpdateWithoutTrashBackupsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -3297,17 +3847,27 @@ export type ServiceInstanceUpdateWithoutTrashBackupsInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutTrashBackupsInput = {
@@ -3350,6 +3910,8 @@ export type ServiceInstanceUncheckedUpdateWithoutTrashBackupsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -3359,17 +3921,27 @@ export type ServiceInstanceUncheckedUpdateWithoutTrashBackupsInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutTrashSchedulesInput = {
@@ -3412,6 +3984,8 @@ export type ServiceInstanceCreateWithoutTrashSchedulesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -3421,17 +3995,27 @@ export type ServiceInstanceCreateWithoutTrashSchedulesInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutTrashSchedulesInput = {
@@ -3474,6 +4058,8 @@ export type ServiceInstanceUncheckedCreateWithoutTrashSchedulesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -3483,17 +4069,27 @@ export type ServiceInstanceUncheckedCreateWithoutTrashSchedulesInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutTrashSchedulesInput = {
@@ -3552,6 +4148,8 @@ export type ServiceInstanceUpdateWithoutTrashSchedulesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -3561,17 +4159,27 @@ export type ServiceInstanceUpdateWithoutTrashSchedulesInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutTrashSchedulesInput = {
@@ -3614,6 +4222,8 @@ export type ServiceInstanceUncheckedUpdateWithoutTrashSchedulesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -3623,17 +4233,27 @@ export type ServiceInstanceUncheckedUpdateWithoutTrashSchedulesInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutQualityProfileMappingsInput = {
@@ -3676,6 +4296,8 @@ export type ServiceInstanceCreateWithoutQualityProfileMappingsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -3685,17 +4307,27 @@ export type ServiceInstanceCreateWithoutQualityProfileMappingsInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutQualityProfileMappingsInput = {
@@ -3738,6 +4370,8 @@ export type ServiceInstanceUncheckedCreateWithoutQualityProfileMappingsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -3747,17 +4381,27 @@ export type ServiceInstanceUncheckedCreateWithoutQualityProfileMappingsInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutQualityProfileMappingsInput = {
@@ -3816,6 +4460,8 @@ export type ServiceInstanceUpdateWithoutQualityProfileMappingsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -3825,17 +4471,27 @@ export type ServiceInstanceUpdateWithoutQualityProfileMappingsInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutQualityProfileMappingsInput = {
@@ -3878,6 +4534,8 @@ export type ServiceInstanceUncheckedUpdateWithoutQualityProfileMappingsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -3887,17 +4545,27 @@ export type ServiceInstanceUncheckedUpdateWithoutQualityProfileMappingsInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutQualityProfileOverridesInput = {
@@ -3940,6 +4608,8 @@ export type ServiceInstanceCreateWithoutQualityProfileOverridesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -3949,17 +4619,27 @@ export type ServiceInstanceCreateWithoutQualityProfileOverridesInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutQualityProfileOverridesInput = {
@@ -4002,6 +4682,8 @@ export type ServiceInstanceUncheckedCreateWithoutQualityProfileOverridesInput = 
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -4011,17 +4693,27 @@ export type ServiceInstanceUncheckedCreateWithoutQualityProfileOverridesInput = 
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutQualityProfileOverridesInput = {
@@ -4080,6 +4772,8 @@ export type ServiceInstanceUpdateWithoutQualityProfileOverridesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -4089,17 +4783,27 @@ export type ServiceInstanceUpdateWithoutQualityProfileOverridesInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutQualityProfileOverridesInput = {
@@ -4142,6 +4846,8 @@ export type ServiceInstanceUncheckedUpdateWithoutQualityProfileOverridesInput = 
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -4151,17 +4857,27 @@ export type ServiceInstanceUncheckedUpdateWithoutQualityProfileOverridesInput = 
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutDeploymentHistoryInput = {
@@ -4204,6 +4920,8 @@ export type ServiceInstanceCreateWithoutDeploymentHistoryInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -4213,17 +4931,27 @@ export type ServiceInstanceCreateWithoutDeploymentHistoryInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutDeploymentHistoryInput = {
@@ -4266,6 +4994,8 @@ export type ServiceInstanceUncheckedCreateWithoutDeploymentHistoryInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -4275,17 +5005,27 @@ export type ServiceInstanceUncheckedCreateWithoutDeploymentHistoryInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutDeploymentHistoryInput = {
@@ -4344,6 +5084,8 @@ export type ServiceInstanceUpdateWithoutDeploymentHistoryInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -4353,17 +5095,27 @@ export type ServiceInstanceUpdateWithoutDeploymentHistoryInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutDeploymentHistoryInput = {
@@ -4406,6 +5158,8 @@ export type ServiceInstanceUncheckedUpdateWithoutDeploymentHistoryInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -4415,17 +5169,27 @@ export type ServiceInstanceUncheckedUpdateWithoutDeploymentHistoryInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutStandaloneCFDeploymentsInput = {
@@ -4468,6 +5232,8 @@ export type ServiceInstanceCreateWithoutStandaloneCFDeploymentsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -4477,17 +5243,27 @@ export type ServiceInstanceCreateWithoutStandaloneCFDeploymentsInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutStandaloneCFDeploymentsInput = {
@@ -4530,6 +5306,8 @@ export type ServiceInstanceUncheckedCreateWithoutStandaloneCFDeploymentsInput = 
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -4539,17 +5317,27 @@ export type ServiceInstanceUncheckedCreateWithoutStandaloneCFDeploymentsInput = 
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutStandaloneCFDeploymentsInput = {
@@ -4608,6 +5396,8 @@ export type ServiceInstanceUpdateWithoutStandaloneCFDeploymentsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -4617,17 +5407,27 @@ export type ServiceInstanceUpdateWithoutStandaloneCFDeploymentsInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutStandaloneCFDeploymentsInput = {
@@ -4670,6 +5470,8 @@ export type ServiceInstanceUncheckedUpdateWithoutStandaloneCFDeploymentsInput = 
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -4679,17 +5481,27 @@ export type ServiceInstanceUncheckedUpdateWithoutStandaloneCFDeploymentsInput = 
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutQualitySizeMappingInput = {
@@ -4732,6 +5544,8 @@ export type ServiceInstanceCreateWithoutQualitySizeMappingInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -4741,17 +5555,27 @@ export type ServiceInstanceCreateWithoutQualitySizeMappingInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutQualitySizeMappingInput = {
@@ -4794,6 +5618,8 @@ export type ServiceInstanceUncheckedCreateWithoutQualitySizeMappingInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -4803,17 +5629,27 @@ export type ServiceInstanceUncheckedCreateWithoutQualitySizeMappingInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutQualitySizeMappingInput = {
@@ -4872,6 +5708,8 @@ export type ServiceInstanceUpdateWithoutQualitySizeMappingInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -4881,17 +5719,27 @@ export type ServiceInstanceUpdateWithoutQualitySizeMappingInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutQualitySizeMappingInput = {
@@ -4934,6 +5782,8 @@ export type ServiceInstanceUncheckedUpdateWithoutQualitySizeMappingInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -4943,17 +5793,27 @@ export type ServiceInstanceUncheckedUpdateWithoutQualitySizeMappingInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutHuntConfigInput = {
@@ -4996,6 +5856,8 @@ export type ServiceInstanceCreateWithoutHuntConfigInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -5005,17 +5867,27 @@ export type ServiceInstanceCreateWithoutHuntConfigInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutHuntConfigInput = {
@@ -5058,6 +5930,8 @@ export type ServiceInstanceUncheckedCreateWithoutHuntConfigInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -5067,17 +5941,27 @@ export type ServiceInstanceUncheckedCreateWithoutHuntConfigInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutHuntConfigInput = {
@@ -5136,6 +6020,8 @@ export type ServiceInstanceUpdateWithoutHuntConfigInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -5145,17 +6031,27 @@ export type ServiceInstanceUpdateWithoutHuntConfigInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutHuntConfigInput = {
@@ -5198,6 +6094,8 @@ export type ServiceInstanceUncheckedUpdateWithoutHuntConfigInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -5207,17 +6105,27 @@ export type ServiceInstanceUncheckedUpdateWithoutHuntConfigInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutHuntLogsInput = {
@@ -5260,6 +6168,8 @@ export type ServiceInstanceCreateWithoutHuntLogsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -5269,17 +6179,27 @@ export type ServiceInstanceCreateWithoutHuntLogsInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutHuntLogsInput = {
@@ -5322,6 +6242,8 @@ export type ServiceInstanceUncheckedCreateWithoutHuntLogsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -5331,17 +6253,27 @@ export type ServiceInstanceUncheckedCreateWithoutHuntLogsInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutHuntLogsInput = {
@@ -5400,6 +6332,8 @@ export type ServiceInstanceUpdateWithoutHuntLogsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -5409,17 +6343,27 @@ export type ServiceInstanceUpdateWithoutHuntLogsInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutHuntLogsInput = {
@@ -5462,6 +6406,8 @@ export type ServiceInstanceUncheckedUpdateWithoutHuntLogsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -5471,17 +6417,27 @@ export type ServiceInstanceUncheckedUpdateWithoutHuntLogsInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutLibraryCacheInput = {
@@ -5525,6 +6481,8 @@ export type ServiceInstanceCreateWithoutLibraryCacheInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
@@ -5533,17 +6491,27 @@ export type ServiceInstanceCreateWithoutLibraryCacheInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutLibraryCacheInput = {
@@ -5587,6 +6555,8 @@ export type ServiceInstanceUncheckedCreateWithoutLibraryCacheInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -5595,17 +6565,27 @@ export type ServiceInstanceUncheckedCreateWithoutLibraryCacheInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutLibraryCacheInput = {
@@ -5665,6 +6645,8 @@ export type ServiceInstanceUpdateWithoutLibraryCacheInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
@@ -5673,17 +6655,27 @@ export type ServiceInstanceUpdateWithoutLibraryCacheInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutLibraryCacheInput = {
@@ -5727,6 +6719,8 @@ export type ServiceInstanceUncheckedUpdateWithoutLibraryCacheInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -5735,17 +6729,27 @@ export type ServiceInstanceUncheckedUpdateWithoutLibraryCacheInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutEpisodeFileCacheInput = {
@@ -5789,6 +6793,8 @@ export type ServiceInstanceCreateWithoutEpisodeFileCacheInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
@@ -5797,17 +6803,27 @@ export type ServiceInstanceCreateWithoutEpisodeFileCacheInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutEpisodeFileCacheInput = {
@@ -5851,6 +6867,8 @@ export type ServiceInstanceUncheckedCreateWithoutEpisodeFileCacheInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -5859,17 +6877,27 @@ export type ServiceInstanceUncheckedCreateWithoutEpisodeFileCacheInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutEpisodeFileCacheInput = {
@@ -5929,6 +6957,8 @@ export type ServiceInstanceUpdateWithoutEpisodeFileCacheInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
@@ -5937,17 +6967,27 @@ export type ServiceInstanceUpdateWithoutEpisodeFileCacheInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutEpisodeFileCacheInput = {
@@ -5991,6 +7031,8 @@ export type ServiceInstanceUncheckedUpdateWithoutEpisodeFileCacheInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -5999,17 +7041,27 @@ export type ServiceInstanceUncheckedUpdateWithoutEpisodeFileCacheInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutLibrarySyncStatusInput = {
@@ -6053,6 +7105,8 @@ export type ServiceInstanceCreateWithoutLibrarySyncStatusInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
@@ -6061,17 +7115,27 @@ export type ServiceInstanceCreateWithoutLibrarySyncStatusInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutLibrarySyncStatusInput = {
@@ -6115,6 +7179,8 @@ export type ServiceInstanceUncheckedCreateWithoutLibrarySyncStatusInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -6123,17 +7189,27 @@ export type ServiceInstanceUncheckedCreateWithoutLibrarySyncStatusInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutLibrarySyncStatusInput = {
@@ -6193,6 +7269,8 @@ export type ServiceInstanceUpdateWithoutLibrarySyncStatusInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
@@ -6201,17 +7279,27 @@ export type ServiceInstanceUpdateWithoutLibrarySyncStatusInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutLibrarySyncStatusInput = {
@@ -6255,6 +7343,8 @@ export type ServiceInstanceUncheckedUpdateWithoutLibrarySyncStatusInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -6263,17 +7353,27 @@ export type ServiceInstanceUncheckedUpdateWithoutLibrarySyncStatusInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutQueueCleanerConfigInput = {
@@ -6316,6 +7416,8 @@ export type ServiceInstanceCreateWithoutQueueCleanerConfigInput = {
   huntLogs?: Prisma.HuntLogCreateNestedManyWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -6325,17 +7427,27 @@ export type ServiceInstanceCreateWithoutQueueCleanerConfigInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutQueueCleanerConfigInput = {
@@ -6378,6 +7490,8 @@ export type ServiceInstanceUncheckedCreateWithoutQueueCleanerConfigInput = {
   huntLogs?: Prisma.HuntLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -6387,17 +7501,27 @@ export type ServiceInstanceUncheckedCreateWithoutQueueCleanerConfigInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutQueueCleanerConfigInput = {
@@ -6456,6 +7580,8 @@ export type ServiceInstanceUpdateWithoutQueueCleanerConfigInput = {
   huntLogs?: Prisma.HuntLogUpdateManyWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -6465,17 +7591,27 @@ export type ServiceInstanceUpdateWithoutQueueCleanerConfigInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerConfigInput = {
@@ -6518,6 +7654,8 @@ export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerConfigInput = {
   huntLogs?: Prisma.HuntLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -6527,17 +7665,27 @@ export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerConfigInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutQueueCleanerLogsInput = {
@@ -6580,6 +7728,8 @@ export type ServiceInstanceCreateWithoutQueueCleanerLogsInput = {
   huntLogs?: Prisma.HuntLogCreateNestedManyWithoutInstanceInput
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -6589,17 +7739,27 @@ export type ServiceInstanceCreateWithoutQueueCleanerLogsInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutQueueCleanerLogsInput = {
@@ -6642,6 +7802,8 @@ export type ServiceInstanceUncheckedCreateWithoutQueueCleanerLogsInput = {
   huntLogs?: Prisma.HuntLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -6651,17 +7813,27 @@ export type ServiceInstanceUncheckedCreateWithoutQueueCleanerLogsInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutQueueCleanerLogsInput = {
@@ -6720,6 +7892,8 @@ export type ServiceInstanceUpdateWithoutQueueCleanerLogsInput = {
   huntLogs?: Prisma.HuntLogUpdateManyWithoutInstanceNestedInput
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -6729,17 +7903,27 @@ export type ServiceInstanceUpdateWithoutQueueCleanerLogsInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerLogsInput = {
@@ -6782,6 +7966,8 @@ export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerLogsInput = {
   huntLogs?: Prisma.HuntLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -6791,17 +7977,27 @@ export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerLogsInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutQueueCleanerStrikesInput = {
@@ -6844,6 +8040,8 @@ export type ServiceInstanceCreateWithoutQueueCleanerStrikesInput = {
   huntLogs?: Prisma.HuntLogCreateNestedManyWithoutInstanceInput
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -6853,17 +8051,27 @@ export type ServiceInstanceCreateWithoutQueueCleanerStrikesInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutQueueCleanerStrikesInput = {
@@ -6906,6 +8114,8 @@ export type ServiceInstanceUncheckedCreateWithoutQueueCleanerStrikesInput = {
   huntLogs?: Prisma.HuntLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -6915,17 +8125,27 @@ export type ServiceInstanceUncheckedCreateWithoutQueueCleanerStrikesInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutQueueCleanerStrikesInput = {
@@ -6984,6 +8204,8 @@ export type ServiceInstanceUpdateWithoutQueueCleanerStrikesInput = {
   huntLogs?: Prisma.HuntLogUpdateManyWithoutInstanceNestedInput
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -6993,17 +8215,27 @@ export type ServiceInstanceUpdateWithoutQueueCleanerStrikesInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerStrikesInput = {
@@ -7046,6 +8278,8 @@ export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerStrikesInput = {
   huntLogs?: Prisma.HuntLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -7055,17 +8289,651 @@ export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerStrikesInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceCreateWithoutQueueCleanerImportReceiptsInput = {
+  id?: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  user: Prisma.UserCreateNestedOneWithoutServiceInstancesInput
+  historyObservations?: Prisma.HistoryObservationCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
+}
+
+export type ServiceInstanceUncheckedCreateWithoutQueueCleanerImportReceiptsInput = {
+  id?: string
+  userId: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagUncheckedCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupUncheckedCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigUncheckedCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
+}
+
+export type ServiceInstanceCreateOrConnectWithoutQueueCleanerImportReceiptsInput = {
+  where: Prisma.ServiceInstanceWhereUniqueInput
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutQueueCleanerImportReceiptsInput, Prisma.ServiceInstanceUncheckedCreateWithoutQueueCleanerImportReceiptsInput>
+}
+
+export type ServiceInstanceUpsertWithoutQueueCleanerImportReceiptsInput = {
+  update: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutQueueCleanerImportReceiptsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutQueueCleanerImportReceiptsInput>
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutQueueCleanerImportReceiptsInput, Prisma.ServiceInstanceUncheckedCreateWithoutQueueCleanerImportReceiptsInput>
+  where?: Prisma.ServiceInstanceWhereInput
+}
+
+export type ServiceInstanceUpdateToOneWithWhereWithoutQueueCleanerImportReceiptsInput = {
+  where?: Prisma.ServiceInstanceWhereInput
+  data: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutQueueCleanerImportReceiptsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutQueueCleanerImportReceiptsInput>
+}
+
+export type ServiceInstanceUpdateWithoutQueueCleanerImportReceiptsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  user?: Prisma.UserUpdateOneRequiredWithoutServiceInstancesNestedInput
+  historyObservations?: Prisma.HistoryObservationUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerImportReceiptsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceCreateWithoutArrImportOperationsInput = {
+  id?: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  user: Prisma.UserCreateNestedOneWithoutServiceInstancesInput
+  historyObservations?: Prisma.HistoryObservationCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
+}
+
+export type ServiceInstanceUncheckedCreateWithoutArrImportOperationsInput = {
+  id?: string
+  userId: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagUncheckedCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupUncheckedCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigUncheckedCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
+}
+
+export type ServiceInstanceCreateOrConnectWithoutArrImportOperationsInput = {
+  where: Prisma.ServiceInstanceWhereUniqueInput
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutArrImportOperationsInput, Prisma.ServiceInstanceUncheckedCreateWithoutArrImportOperationsInput>
+}
+
+export type ServiceInstanceUpsertWithoutArrImportOperationsInput = {
+  update: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutArrImportOperationsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutArrImportOperationsInput>
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutArrImportOperationsInput, Prisma.ServiceInstanceUncheckedCreateWithoutArrImportOperationsInput>
+  where?: Prisma.ServiceInstanceWhereInput
+}
+
+export type ServiceInstanceUpdateToOneWithWhereWithoutArrImportOperationsInput = {
+  where?: Prisma.ServiceInstanceWhereInput
+  data: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutArrImportOperationsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutArrImportOperationsInput>
+}
+
+export type ServiceInstanceUpdateWithoutArrImportOperationsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  user?: Prisma.UserUpdateOneRequiredWithoutServiceInstancesNestedInput
+  historyObservations?: Prisma.HistoryObservationUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceUncheckedUpdateWithoutArrImportOperationsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutPlexCachesInput = {
@@ -7109,6 +8977,8 @@ export type ServiceInstanceCreateWithoutPlexCachesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -7117,17 +8987,27 @@ export type ServiceInstanceCreateWithoutPlexCachesInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutPlexCachesInput = {
@@ -7171,6 +9051,8 @@ export type ServiceInstanceUncheckedCreateWithoutPlexCachesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -7179,17 +9061,27 @@ export type ServiceInstanceUncheckedCreateWithoutPlexCachesInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutPlexCachesInput = {
@@ -7249,6 +9141,8 @@ export type ServiceInstanceUpdateWithoutPlexCachesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -7257,17 +9151,27 @@ export type ServiceInstanceUpdateWithoutPlexCachesInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutPlexCachesInput = {
@@ -7311,6 +9215,8 @@ export type ServiceInstanceUncheckedUpdateWithoutPlexCachesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -7319,17 +9225,27 @@ export type ServiceInstanceUncheckedUpdateWithoutPlexCachesInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutPlexGenerationTargetsInput = {
@@ -7373,6 +9289,8 @@ export type ServiceInstanceCreateWithoutPlexGenerationTargetsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -7381,17 +9299,27 @@ export type ServiceInstanceCreateWithoutPlexGenerationTargetsInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutPlexGenerationTargetsInput = {
@@ -7435,6 +9363,8 @@ export type ServiceInstanceUncheckedCreateWithoutPlexGenerationTargetsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -7443,17 +9373,27 @@ export type ServiceInstanceUncheckedCreateWithoutPlexGenerationTargetsInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutPlexGenerationTargetsInput = {
@@ -7513,6 +9453,8 @@ export type ServiceInstanceUpdateWithoutPlexGenerationTargetsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -7521,17 +9463,27 @@ export type ServiceInstanceUpdateWithoutPlexGenerationTargetsInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutPlexGenerationTargetsInput = {
@@ -7575,6 +9527,8 @@ export type ServiceInstanceUncheckedUpdateWithoutPlexGenerationTargetsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -7583,17 +9537,27 @@ export type ServiceInstanceUncheckedUpdateWithoutPlexGenerationTargetsInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutPlexEpisodeCachesInput = {
@@ -7637,6 +9601,8 @@ export type ServiceInstanceCreateWithoutPlexEpisodeCachesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -7645,17 +9611,27 @@ export type ServiceInstanceCreateWithoutPlexEpisodeCachesInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutPlexEpisodeCachesInput = {
@@ -7699,6 +9675,8 @@ export type ServiceInstanceUncheckedCreateWithoutPlexEpisodeCachesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -7707,17 +9685,27 @@ export type ServiceInstanceUncheckedCreateWithoutPlexEpisodeCachesInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutPlexEpisodeCachesInput = {
@@ -7777,6 +9765,8 @@ export type ServiceInstanceUpdateWithoutPlexEpisodeCachesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -7785,17 +9775,27 @@ export type ServiceInstanceUpdateWithoutPlexEpisodeCachesInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutPlexEpisodeCachesInput = {
@@ -7839,6 +9839,8 @@ export type ServiceInstanceUncheckedUpdateWithoutPlexEpisodeCachesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -7847,17 +9849,27 @@ export type ServiceInstanceUncheckedUpdateWithoutPlexEpisodeCachesInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutJellyfinCachesInput = {
@@ -7901,6 +9913,8 @@ export type ServiceInstanceCreateWithoutJellyfinCachesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -7909,17 +9923,27 @@ export type ServiceInstanceCreateWithoutJellyfinCachesInput = {
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutJellyfinCachesInput = {
@@ -7963,6 +9987,8 @@ export type ServiceInstanceUncheckedCreateWithoutJellyfinCachesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -7971,17 +9997,27 @@ export type ServiceInstanceUncheckedCreateWithoutJellyfinCachesInput = {
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutJellyfinCachesInput = {
@@ -8041,6 +10077,8 @@ export type ServiceInstanceUpdateWithoutJellyfinCachesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -8049,17 +10087,27 @@ export type ServiceInstanceUpdateWithoutJellyfinCachesInput = {
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutJellyfinCachesInput = {
@@ -8103,6 +10151,8 @@ export type ServiceInstanceUncheckedUpdateWithoutJellyfinCachesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -8111,17 +10161,27 @@ export type ServiceInstanceUncheckedUpdateWithoutJellyfinCachesInput = {
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutJellyfinEpisodeCachesInput = {
@@ -8165,6 +10225,8 @@ export type ServiceInstanceCreateWithoutJellyfinEpisodeCachesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -8173,17 +10235,27 @@ export type ServiceInstanceCreateWithoutJellyfinEpisodeCachesInput = {
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutJellyfinEpisodeCachesInput = {
@@ -8227,6 +10299,8 @@ export type ServiceInstanceUncheckedCreateWithoutJellyfinEpisodeCachesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -8235,17 +10309,27 @@ export type ServiceInstanceUncheckedCreateWithoutJellyfinEpisodeCachesInput = {
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutJellyfinEpisodeCachesInput = {
@@ -8305,6 +10389,8 @@ export type ServiceInstanceUpdateWithoutJellyfinEpisodeCachesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -8313,17 +10399,27 @@ export type ServiceInstanceUpdateWithoutJellyfinEpisodeCachesInput = {
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutJellyfinEpisodeCachesInput = {
@@ -8367,6 +10463,8 @@ export type ServiceInstanceUncheckedUpdateWithoutJellyfinEpisodeCachesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -8375,17 +10473,2211 @@ export type ServiceInstanceUncheckedUpdateWithoutJellyfinEpisodeCachesInput = {
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceCreateWithoutJellyfinEpisodeGenerationRowsInput = {
+  id?: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  user: Prisma.UserCreateNestedOneWithoutServiceInstancesInput
+  historyObservations?: Prisma.HistoryObservationCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
+}
+
+export type ServiceInstanceUncheckedCreateWithoutJellyfinEpisodeGenerationRowsInput = {
+  id?: string
+  userId: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagUncheckedCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupUncheckedCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigUncheckedCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
+}
+
+export type ServiceInstanceCreateOrConnectWithoutJellyfinEpisodeGenerationRowsInput = {
+  where: Prisma.ServiceInstanceWhereUniqueInput
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinEpisodeGenerationRowsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinEpisodeGenerationRowsInput>
+}
+
+export type ServiceInstanceUpsertWithoutJellyfinEpisodeGenerationRowsInput = {
+  update: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutJellyfinEpisodeGenerationRowsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutJellyfinEpisodeGenerationRowsInput>
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinEpisodeGenerationRowsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinEpisodeGenerationRowsInput>
+  where?: Prisma.ServiceInstanceWhereInput
+}
+
+export type ServiceInstanceUpdateToOneWithWhereWithoutJellyfinEpisodeGenerationRowsInput = {
+  where?: Prisma.ServiceInstanceWhereInput
+  data: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutJellyfinEpisodeGenerationRowsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutJellyfinEpisodeGenerationRowsInput>
+}
+
+export type ServiceInstanceUpdateWithoutJellyfinEpisodeGenerationRowsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  user?: Prisma.UserUpdateOneRequiredWithoutServiceInstancesNestedInput
+  historyObservations?: Prisma.HistoryObservationUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceUncheckedUpdateWithoutJellyfinEpisodeGenerationRowsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceCreateWithoutJellyfinEpisodeGenerationShowReceiptsInput = {
+  id?: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  user: Prisma.UserCreateNestedOneWithoutServiceInstancesInput
+  historyObservations?: Prisma.HistoryObservationCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
+}
+
+export type ServiceInstanceUncheckedCreateWithoutJellyfinEpisodeGenerationShowReceiptsInput = {
+  id?: string
+  userId: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagUncheckedCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupUncheckedCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigUncheckedCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
+}
+
+export type ServiceInstanceCreateOrConnectWithoutJellyfinEpisodeGenerationShowReceiptsInput = {
+  where: Prisma.ServiceInstanceWhereUniqueInput
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinEpisodeGenerationShowReceiptsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinEpisodeGenerationShowReceiptsInput>
+}
+
+export type ServiceInstanceUpsertWithoutJellyfinEpisodeGenerationShowReceiptsInput = {
+  update: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutJellyfinEpisodeGenerationShowReceiptsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutJellyfinEpisodeGenerationShowReceiptsInput>
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinEpisodeGenerationShowReceiptsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinEpisodeGenerationShowReceiptsInput>
+  where?: Prisma.ServiceInstanceWhereInput
+}
+
+export type ServiceInstanceUpdateToOneWithWhereWithoutJellyfinEpisodeGenerationShowReceiptsInput = {
+  where?: Prisma.ServiceInstanceWhereInput
+  data: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutJellyfinEpisodeGenerationShowReceiptsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutJellyfinEpisodeGenerationShowReceiptsInput>
+}
+
+export type ServiceInstanceUpdateWithoutJellyfinEpisodeGenerationShowReceiptsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  user?: Prisma.UserUpdateOneRequiredWithoutServiceInstancesNestedInput
+  historyObservations?: Prisma.HistoryObservationUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceUncheckedUpdateWithoutJellyfinEpisodeGenerationShowReceiptsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceCreateWithoutJellyfinEpisodePreparationsInput = {
+  id?: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  user: Prisma.UserCreateNestedOneWithoutServiceInstancesInput
+  historyObservations?: Prisma.HistoryObservationCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
+}
+
+export type ServiceInstanceUncheckedCreateWithoutJellyfinEpisodePreparationsInput = {
+  id?: string
+  userId: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagUncheckedCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupUncheckedCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigUncheckedCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
+}
+
+export type ServiceInstanceCreateOrConnectWithoutJellyfinEpisodePreparationsInput = {
+  where: Prisma.ServiceInstanceWhereUniqueInput
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinEpisodePreparationsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinEpisodePreparationsInput>
+}
+
+export type ServiceInstanceUpsertWithoutJellyfinEpisodePreparationsInput = {
+  update: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutJellyfinEpisodePreparationsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutJellyfinEpisodePreparationsInput>
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinEpisodePreparationsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinEpisodePreparationsInput>
+  where?: Prisma.ServiceInstanceWhereInput
+}
+
+export type ServiceInstanceUpdateToOneWithWhereWithoutJellyfinEpisodePreparationsInput = {
+  where?: Prisma.ServiceInstanceWhereInput
+  data: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutJellyfinEpisodePreparationsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutJellyfinEpisodePreparationsInput>
+}
+
+export type ServiceInstanceUpdateWithoutJellyfinEpisodePreparationsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  user?: Prisma.UserUpdateOneRequiredWithoutServiceInstancesNestedInput
+  historyObservations?: Prisma.HistoryObservationUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceUncheckedUpdateWithoutJellyfinEpisodePreparationsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceCreateWithoutJellyfinNativeWatchPublicationInput = {
+  id?: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  user: Prisma.UserCreateNestedOneWithoutServiceInstancesInput
+  historyObservations?: Prisma.HistoryObservationCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
+}
+
+export type ServiceInstanceUncheckedCreateWithoutJellyfinNativeWatchPublicationInput = {
+  id?: string
+  userId: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagUncheckedCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupUncheckedCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigUncheckedCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
+}
+
+export type ServiceInstanceCreateOrConnectWithoutJellyfinNativeWatchPublicationInput = {
+  where: Prisma.ServiceInstanceWhereUniqueInput
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinNativeWatchPublicationInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinNativeWatchPublicationInput>
+}
+
+export type ServiceInstanceUpsertWithoutJellyfinNativeWatchPublicationInput = {
+  update: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutJellyfinNativeWatchPublicationInput, Prisma.ServiceInstanceUncheckedUpdateWithoutJellyfinNativeWatchPublicationInput>
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinNativeWatchPublicationInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinNativeWatchPublicationInput>
+  where?: Prisma.ServiceInstanceWhereInput
+}
+
+export type ServiceInstanceUpdateToOneWithWhereWithoutJellyfinNativeWatchPublicationInput = {
+  where?: Prisma.ServiceInstanceWhereInput
+  data: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutJellyfinNativeWatchPublicationInput, Prisma.ServiceInstanceUncheckedUpdateWithoutJellyfinNativeWatchPublicationInput>
+}
+
+export type ServiceInstanceUpdateWithoutJellyfinNativeWatchPublicationInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  user?: Prisma.UserUpdateOneRequiredWithoutServiceInstancesNestedInput
+  historyObservations?: Prisma.HistoryObservationUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceUncheckedUpdateWithoutJellyfinNativeWatchPublicationInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceCreateWithoutJellyfinNativeWatchScopeReceiptsInput = {
+  id?: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  user: Prisma.UserCreateNestedOneWithoutServiceInstancesInput
+  historyObservations?: Prisma.HistoryObservationCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
+}
+
+export type ServiceInstanceUncheckedCreateWithoutJellyfinNativeWatchScopeReceiptsInput = {
+  id?: string
+  userId: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagUncheckedCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupUncheckedCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigUncheckedCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
+}
+
+export type ServiceInstanceCreateOrConnectWithoutJellyfinNativeWatchScopeReceiptsInput = {
+  where: Prisma.ServiceInstanceWhereUniqueInput
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinNativeWatchScopeReceiptsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinNativeWatchScopeReceiptsInput>
+}
+
+export type ServiceInstanceUpsertWithoutJellyfinNativeWatchScopeReceiptsInput = {
+  update: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutJellyfinNativeWatchScopeReceiptsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutJellyfinNativeWatchScopeReceiptsInput>
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinNativeWatchScopeReceiptsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinNativeWatchScopeReceiptsInput>
+  where?: Prisma.ServiceInstanceWhereInput
+}
+
+export type ServiceInstanceUpdateToOneWithWhereWithoutJellyfinNativeWatchScopeReceiptsInput = {
+  where?: Prisma.ServiceInstanceWhereInput
+  data: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutJellyfinNativeWatchScopeReceiptsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutJellyfinNativeWatchScopeReceiptsInput>
+}
+
+export type ServiceInstanceUpdateWithoutJellyfinNativeWatchScopeReceiptsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  user?: Prisma.UserUpdateOneRequiredWithoutServiceInstancesNestedInput
+  historyObservations?: Prisma.HistoryObservationUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceUncheckedUpdateWithoutJellyfinNativeWatchScopeReceiptsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceCreateWithoutJellyfinNativeWatchRowsInput = {
+  id?: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  user: Prisma.UserCreateNestedOneWithoutServiceInstancesInput
+  historyObservations?: Prisma.HistoryObservationCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
+}
+
+export type ServiceInstanceUncheckedCreateWithoutJellyfinNativeWatchRowsInput = {
+  id?: string
+  userId: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagUncheckedCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupUncheckedCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigUncheckedCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
+}
+
+export type ServiceInstanceCreateOrConnectWithoutJellyfinNativeWatchRowsInput = {
+  where: Prisma.ServiceInstanceWhereUniqueInput
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinNativeWatchRowsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinNativeWatchRowsInput>
+}
+
+export type ServiceInstanceUpsertWithoutJellyfinNativeWatchRowsInput = {
+  update: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutJellyfinNativeWatchRowsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutJellyfinNativeWatchRowsInput>
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinNativeWatchRowsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinNativeWatchRowsInput>
+  where?: Prisma.ServiceInstanceWhereInput
+}
+
+export type ServiceInstanceUpdateToOneWithWhereWithoutJellyfinNativeWatchRowsInput = {
+  where?: Prisma.ServiceInstanceWhereInput
+  data: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutJellyfinNativeWatchRowsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutJellyfinNativeWatchRowsInput>
+}
+
+export type ServiceInstanceUpdateWithoutJellyfinNativeWatchRowsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  user?: Prisma.UserUpdateOneRequiredWithoutServiceInstancesNestedInput
+  historyObservations?: Prisma.HistoryObservationUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceUncheckedUpdateWithoutJellyfinNativeWatchRowsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceCreateWithoutJellyfinPositiveWatchRowsInput = {
+  id?: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  user: Prisma.UserCreateNestedOneWithoutServiceInstancesInput
+  historyObservations?: Prisma.HistoryObservationCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
+}
+
+export type ServiceInstanceUncheckedCreateWithoutJellyfinPositiveWatchRowsInput = {
+  id?: string
+  userId: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagUncheckedCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupUncheckedCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigUncheckedCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
+}
+
+export type ServiceInstanceCreateOrConnectWithoutJellyfinPositiveWatchRowsInput = {
+  where: Prisma.ServiceInstanceWhereUniqueInput
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinPositiveWatchRowsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinPositiveWatchRowsInput>
+}
+
+export type ServiceInstanceUpsertWithoutJellyfinPositiveWatchRowsInput = {
+  update: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutJellyfinPositiveWatchRowsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutJellyfinPositiveWatchRowsInput>
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutJellyfinPositiveWatchRowsInput, Prisma.ServiceInstanceUncheckedCreateWithoutJellyfinPositiveWatchRowsInput>
+  where?: Prisma.ServiceInstanceWhereInput
+}
+
+export type ServiceInstanceUpdateToOneWithWhereWithoutJellyfinPositiveWatchRowsInput = {
+  where?: Prisma.ServiceInstanceWhereInput
+  data: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutJellyfinPositiveWatchRowsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutJellyfinPositiveWatchRowsInput>
+}
+
+export type ServiceInstanceUpdateWithoutJellyfinPositiveWatchRowsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  user?: Prisma.UserUpdateOneRequiredWithoutServiceInstancesNestedInput
+  historyObservations?: Prisma.HistoryObservationUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceUncheckedUpdateWithoutJellyfinPositiveWatchRowsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutTautulliCachesInput = {
@@ -8429,6 +12721,8 @@ export type ServiceInstanceCreateWithoutTautulliCachesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -8437,17 +12731,27 @@ export type ServiceInstanceCreateWithoutTautulliCachesInput = {
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutTautulliCachesInput = {
@@ -8491,6 +12795,8 @@ export type ServiceInstanceUncheckedCreateWithoutTautulliCachesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -8499,17 +12805,27 @@ export type ServiceInstanceUncheckedCreateWithoutTautulliCachesInput = {
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutTautulliCachesInput = {
@@ -8569,6 +12885,8 @@ export type ServiceInstanceUpdateWithoutTautulliCachesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -8577,17 +12895,27 @@ export type ServiceInstanceUpdateWithoutTautulliCachesInput = {
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutTautulliCachesInput = {
@@ -8631,6 +12959,8 @@ export type ServiceInstanceUncheckedUpdateWithoutTautulliCachesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -8639,17 +12969,27 @@ export type ServiceInstanceUncheckedUpdateWithoutTautulliCachesInput = {
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutCacheRefreshStatusesInput = {
@@ -8693,6 +13033,8 @@ export type ServiceInstanceCreateWithoutCacheRefreshStatusesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -8702,16 +13044,26 @@ export type ServiceInstanceCreateWithoutCacheRefreshStatusesInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutCacheRefreshStatusesInput = {
@@ -8755,6 +13107,8 @@ export type ServiceInstanceUncheckedCreateWithoutCacheRefreshStatusesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -8764,16 +13118,26 @@ export type ServiceInstanceUncheckedCreateWithoutCacheRefreshStatusesInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutCacheRefreshStatusesInput = {
@@ -8833,6 +13197,8 @@ export type ServiceInstanceUpdateWithoutCacheRefreshStatusesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -8842,16 +13208,26 @@ export type ServiceInstanceUpdateWithoutCacheRefreshStatusesInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutCacheRefreshStatusesInput = {
@@ -8895,6 +13271,8 @@ export type ServiceInstanceUncheckedUpdateWithoutCacheRefreshStatusesInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -8904,16 +13282,26 @@ export type ServiceInstanceUncheckedUpdateWithoutCacheRefreshStatusesInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutProviderObservationRunsInput = {
@@ -8957,6 +13345,8 @@ export type ServiceInstanceCreateWithoutProviderObservationRunsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -8966,16 +13356,26 @@ export type ServiceInstanceCreateWithoutProviderObservationRunsInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutProviderObservationRunsInput = {
@@ -9019,6 +13419,8 @@ export type ServiceInstanceUncheckedCreateWithoutProviderObservationRunsInput = 
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -9028,16 +13430,26 @@ export type ServiceInstanceUncheckedCreateWithoutProviderObservationRunsInput = 
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutProviderObservationRunsInput = {
@@ -9097,6 +13509,8 @@ export type ServiceInstanceUpdateWithoutProviderObservationRunsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -9106,16 +13520,26 @@ export type ServiceInstanceUpdateWithoutProviderObservationRunsInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutProviderObservationRunsInput = {
@@ -9159,6 +13583,8 @@ export type ServiceInstanceUncheckedUpdateWithoutProviderObservationRunsInput = 
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -9168,16 +13594,338 @@ export type ServiceInstanceUncheckedUpdateWithoutProviderObservationRunsInput = 
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceCreateWithoutNativeInventoryRunsInput = {
+  id?: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  user: Prisma.UserCreateNestedOneWithoutServiceInstancesInput
+  historyObservations?: Prisma.HistoryObservationCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
+}
+
+export type ServiceInstanceUncheckedCreateWithoutNativeInventoryRunsInput = {
+  id?: string
+  userId: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagUncheckedCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupUncheckedCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigUncheckedCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
+}
+
+export type ServiceInstanceCreateOrConnectWithoutNativeInventoryRunsInput = {
+  where: Prisma.ServiceInstanceWhereUniqueInput
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutNativeInventoryRunsInput, Prisma.ServiceInstanceUncheckedCreateWithoutNativeInventoryRunsInput>
+}
+
+export type ServiceInstanceUpsertWithoutNativeInventoryRunsInput = {
+  update: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutNativeInventoryRunsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutNativeInventoryRunsInput>
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutNativeInventoryRunsInput, Prisma.ServiceInstanceUncheckedCreateWithoutNativeInventoryRunsInput>
+  where?: Prisma.ServiceInstanceWhereInput
+}
+
+export type ServiceInstanceUpdateToOneWithWhereWithoutNativeInventoryRunsInput = {
+  where?: Prisma.ServiceInstanceWhereInput
+  data: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutNativeInventoryRunsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutNativeInventoryRunsInput>
+}
+
+export type ServiceInstanceUpdateWithoutNativeInventoryRunsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  user?: Prisma.UserUpdateOneRequiredWithoutServiceInstancesNestedInput
+  historyObservations?: Prisma.HistoryObservationUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceUncheckedUpdateWithoutNativeInventoryRunsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutNativeInventorySnapshotsInput = {
@@ -9221,6 +13969,8 @@ export type ServiceInstanceCreateWithoutNativeInventorySnapshotsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -9230,16 +13980,26 @@ export type ServiceInstanceCreateWithoutNativeInventorySnapshotsInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutNativeInventorySnapshotsInput = {
@@ -9283,6 +14043,8 @@ export type ServiceInstanceUncheckedCreateWithoutNativeInventorySnapshotsInput =
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -9292,16 +14054,26 @@ export type ServiceInstanceUncheckedCreateWithoutNativeInventorySnapshotsInput =
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutNativeInventorySnapshotsInput = {
@@ -9361,6 +14133,8 @@ export type ServiceInstanceUpdateWithoutNativeInventorySnapshotsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -9370,16 +14144,26 @@ export type ServiceInstanceUpdateWithoutNativeInventorySnapshotsInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutNativeInventorySnapshotsInput = {
@@ -9423,6 +14207,8 @@ export type ServiceInstanceUncheckedUpdateWithoutNativeInventorySnapshotsInput =
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -9432,16 +14218,26 @@ export type ServiceInstanceUncheckedUpdateWithoutNativeInventorySnapshotsInput =
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutSessionSnapshotsInput = {
@@ -9485,6 +14281,8 @@ export type ServiceInstanceCreateWithoutSessionSnapshotsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -9494,16 +14292,26 @@ export type ServiceInstanceCreateWithoutSessionSnapshotsInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutSessionSnapshotsInput = {
@@ -9547,6 +14355,8 @@ export type ServiceInstanceUncheckedCreateWithoutSessionSnapshotsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -9556,16 +14366,26 @@ export type ServiceInstanceUncheckedCreateWithoutSessionSnapshotsInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutSessionSnapshotsInput = {
@@ -9625,6 +14445,8 @@ export type ServiceInstanceUpdateWithoutSessionSnapshotsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -9634,16 +14456,26 @@ export type ServiceInstanceUpdateWithoutSessionSnapshotsInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutSessionSnapshotsInput = {
@@ -9687,6 +14519,8 @@ export type ServiceInstanceUncheckedUpdateWithoutSessionSnapshotsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -9696,16 +14530,26 @@ export type ServiceInstanceUncheckedUpdateWithoutSessionSnapshotsInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutNamingConfigInput = {
@@ -9749,6 +14593,8 @@ export type ServiceInstanceCreateWithoutNamingConfigInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -9758,16 +14604,26 @@ export type ServiceInstanceCreateWithoutNamingConfigInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutNamingConfigInput = {
@@ -9811,6 +14667,8 @@ export type ServiceInstanceUncheckedCreateWithoutNamingConfigInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -9820,16 +14678,26 @@ export type ServiceInstanceUncheckedCreateWithoutNamingConfigInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutNamingConfigInput = {
@@ -9889,6 +14757,8 @@ export type ServiceInstanceUpdateWithoutNamingConfigInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -9898,16 +14768,26 @@ export type ServiceInstanceUpdateWithoutNamingConfigInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutNamingConfigInput = {
@@ -9951,6 +14831,8 @@ export type ServiceInstanceUncheckedUpdateWithoutNamingConfigInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -9960,16 +14842,26 @@ export type ServiceInstanceUncheckedUpdateWithoutNamingConfigInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutNamingDeployHistoryInput = {
@@ -10013,6 +14905,8 @@ export type ServiceInstanceCreateWithoutNamingDeployHistoryInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -10022,16 +14916,26 @@ export type ServiceInstanceCreateWithoutNamingDeployHistoryInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutNamingDeployHistoryInput = {
@@ -10075,6 +14979,8 @@ export type ServiceInstanceUncheckedCreateWithoutNamingDeployHistoryInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -10084,16 +14990,26 @@ export type ServiceInstanceUncheckedCreateWithoutNamingDeployHistoryInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutNamingDeployHistoryInput = {
@@ -10153,6 +15069,8 @@ export type ServiceInstanceUpdateWithoutNamingDeployHistoryInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -10162,16 +15080,26 @@ export type ServiceInstanceUpdateWithoutNamingDeployHistoryInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutNamingDeployHistoryInput = {
@@ -10215,6 +15143,8 @@ export type ServiceInstanceUncheckedUpdateWithoutNamingDeployHistoryInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -10224,16 +15154,26 @@ export type ServiceInstanceUncheckedUpdateWithoutNamingDeployHistoryInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutSeerrActionLogsInput = {
@@ -10277,6 +15217,8 @@ export type ServiceInstanceCreateWithoutSeerrActionLogsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -10286,16 +15228,26 @@ export type ServiceInstanceCreateWithoutSeerrActionLogsInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutSeerrActionLogsInput = {
@@ -10339,6 +15291,8 @@ export type ServiceInstanceUncheckedCreateWithoutSeerrActionLogsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -10348,16 +15302,26 @@ export type ServiceInstanceUncheckedCreateWithoutSeerrActionLogsInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutSeerrActionLogsInput = {
@@ -10417,6 +15381,8 @@ export type ServiceInstanceUpdateWithoutSeerrActionLogsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -10426,16 +15392,26 @@ export type ServiceInstanceUpdateWithoutSeerrActionLogsInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutSeerrActionLogsInput = {
@@ -10479,6 +15455,8 @@ export type ServiceInstanceUncheckedUpdateWithoutSeerrActionLogsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -10488,16 +15466,26 @@ export type ServiceInstanceUncheckedUpdateWithoutSeerrActionLogsInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutLabelSyncMutationAttemptsInput = {
@@ -10541,6 +15529,8 @@ export type ServiceInstanceCreateWithoutLabelSyncMutationAttemptsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -10550,16 +15540,26 @@ export type ServiceInstanceCreateWithoutLabelSyncMutationAttemptsInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutLabelSyncMutationAttemptsInput = {
@@ -10603,6 +15603,8 @@ export type ServiceInstanceUncheckedCreateWithoutLabelSyncMutationAttemptsInput 
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -10612,16 +15614,26 @@ export type ServiceInstanceUncheckedCreateWithoutLabelSyncMutationAttemptsInput 
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutLabelSyncMutationAttemptsInput = {
@@ -10681,6 +15693,8 @@ export type ServiceInstanceUpdateWithoutLabelSyncMutationAttemptsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -10690,16 +15704,26 @@ export type ServiceInstanceUpdateWithoutLabelSyncMutationAttemptsInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutLabelSyncMutationAttemptsInput = {
@@ -10743,6 +15767,8 @@ export type ServiceInstanceUncheckedUpdateWithoutLabelSyncMutationAttemptsInput 
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -10752,16 +15778,338 @@ export type ServiceInstanceUncheckedUpdateWithoutLabelSyncMutationAttemptsInput 
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceCreateWithoutSearchGrabClaimsInput = {
+  id?: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  user: Prisma.UserCreateNestedOneWithoutServiceInstancesInput
+  historyObservations?: Prisma.HistoryObservationCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+}
+
+export type ServiceInstanceUncheckedCreateWithoutSearchGrabClaimsInput = {
+  id?: string
+  userId: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagUncheckedCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupUncheckedCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigUncheckedCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+}
+
+export type ServiceInstanceCreateOrConnectWithoutSearchGrabClaimsInput = {
+  where: Prisma.ServiceInstanceWhereUniqueInput
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutSearchGrabClaimsInput, Prisma.ServiceInstanceUncheckedCreateWithoutSearchGrabClaimsInput>
+}
+
+export type ServiceInstanceUpsertWithoutSearchGrabClaimsInput = {
+  update: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutSearchGrabClaimsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutSearchGrabClaimsInput>
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutSearchGrabClaimsInput, Prisma.ServiceInstanceUncheckedCreateWithoutSearchGrabClaimsInput>
+  where?: Prisma.ServiceInstanceWhereInput
+}
+
+export type ServiceInstanceUpdateToOneWithWhereWithoutSearchGrabClaimsInput = {
+  where?: Prisma.ServiceInstanceWhereInput
+  data: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutSearchGrabClaimsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutSearchGrabClaimsInput>
+}
+
+export type ServiceInstanceUpdateWithoutSearchGrabClaimsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  user?: Prisma.UserUpdateOneRequiredWithoutServiceInstancesNestedInput
+  historyObservations?: Prisma.HistoryObservationUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+}
+
+export type ServiceInstanceUncheckedUpdateWithoutSearchGrabClaimsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutQuiActionLogsInput = {
@@ -10805,6 +16153,8 @@ export type ServiceInstanceCreateWithoutQuiActionLogsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -10814,16 +16164,26 @@ export type ServiceInstanceCreateWithoutQuiActionLogsInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutQuiActionLogsInput = {
@@ -10867,6 +16227,8 @@ export type ServiceInstanceUncheckedCreateWithoutQuiActionLogsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -10876,16 +16238,26 @@ export type ServiceInstanceUncheckedCreateWithoutQuiActionLogsInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutQuiActionLogsInput = {
@@ -10945,6 +16317,8 @@ export type ServiceInstanceUpdateWithoutQuiActionLogsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -10954,16 +16328,26 @@ export type ServiceInstanceUpdateWithoutQuiActionLogsInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutQuiActionLogsInput = {
@@ -11007,6 +16391,8 @@ export type ServiceInstanceUncheckedUpdateWithoutQuiActionLogsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -11016,16 +16402,338 @@ export type ServiceInstanceUncheckedUpdateWithoutQuiActionLogsInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceCreateWithoutQuiActionClaimsInput = {
+  id?: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  user: Prisma.UserCreateNestedOneWithoutServiceInstancesInput
+  historyObservations?: Prisma.HistoryObservationCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
+}
+
+export type ServiceInstanceUncheckedCreateWithoutQuiActionClaimsInput = {
+  id?: string
+  userId: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedCreateNestedManyWithoutInstanceInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedCreateNestedOneWithoutInstanceInput
+  tags?: Prisma.ServiceInstanceTagUncheckedCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupUncheckedCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigUncheckedCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
+}
+
+export type ServiceInstanceCreateOrConnectWithoutQuiActionClaimsInput = {
+  where: Prisma.ServiceInstanceWhereUniqueInput
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutQuiActionClaimsInput, Prisma.ServiceInstanceUncheckedCreateWithoutQuiActionClaimsInput>
+}
+
+export type ServiceInstanceUpsertWithoutQuiActionClaimsInput = {
+  update: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutQuiActionClaimsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutQuiActionClaimsInput>
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutQuiActionClaimsInput, Prisma.ServiceInstanceUncheckedCreateWithoutQuiActionClaimsInput>
+  where?: Prisma.ServiceInstanceWhereInput
+}
+
+export type ServiceInstanceUpdateToOneWithWhereWithoutQuiActionClaimsInput = {
+  where?: Prisma.ServiceInstanceWhereInput
+  data: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutQuiActionClaimsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutQuiActionClaimsInput>
+}
+
+export type ServiceInstanceUpdateWithoutQuiActionClaimsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  user?: Prisma.UserUpdateOneRequiredWithoutServiceInstancesNestedInput
+  historyObservations?: Prisma.HistoryObservationUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
+}
+
+export type ServiceInstanceUncheckedUpdateWithoutQuiActionClaimsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  historyObservations?: Prisma.HistoryObservationUncheckedUpdateManyWithoutInstanceNestedInput
+  historySourceStatus?: Prisma.HistorySourceStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  tags?: Prisma.ServiceInstanceTagUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
+  providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateWithoutQuiEventLogsInput = {
@@ -11069,6 +16777,8 @@ export type ServiceInstanceCreateWithoutQuiEventLogsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
@@ -11078,16 +16788,26 @@ export type ServiceInstanceCreateWithoutQuiEventLogsInput = {
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceUncheckedCreateWithoutQuiEventLogsInput = {
@@ -11131,6 +16851,8 @@ export type ServiceInstanceUncheckedCreateWithoutQuiEventLogsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutInstanceInput
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
@@ -11140,16 +16862,26 @@ export type ServiceInstanceUncheckedCreateWithoutQuiEventLogsInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedCreateNestedOneWithoutInstanceInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedCreateNestedManyWithoutInstanceInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
   namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutDestinationInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedCreateNestedManyWithoutInstanceInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedCreateNestedManyWithoutInstanceInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutServiceInstanceInput
 }
 
 export type ServiceInstanceCreateOrConnectWithoutQuiEventLogsInput = {
@@ -11209,6 +16941,8 @@ export type ServiceInstanceUpdateWithoutQuiEventLogsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -11218,16 +16952,26 @@ export type ServiceInstanceUpdateWithoutQuiEventLogsInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutQuiEventLogsInput = {
@@ -11271,6 +17015,8 @@ export type ServiceInstanceUncheckedUpdateWithoutQuiEventLogsInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -11280,16 +17026,26 @@ export type ServiceInstanceUncheckedUpdateWithoutQuiEventLogsInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceCreateManyUserInput = {
@@ -11358,6 +17114,8 @@ export type ServiceInstanceUpdateWithoutUserInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
@@ -11367,17 +17125,27 @@ export type ServiceInstanceUpdateWithoutUserInput = {
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateWithoutUserInput = {
@@ -11420,6 +17188,8 @@ export type ServiceInstanceUncheckedUpdateWithoutUserInput = {
   queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
   queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
   queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerImportReceipts?: Prisma.QueueCleanerImportReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutInstanceNestedInput
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
@@ -11429,17 +17199,27 @@ export type ServiceInstanceUncheckedUpdateWithoutUserInput = {
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationRows?: Prisma.JellyfinEpisodeGenerationRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeGenerationShowReceipts?: Prisma.JellyfinEpisodeGenerationShowReceiptUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodePreparations?: Prisma.JellyfinEpisodePreparationUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchPublication?: Prisma.JellyfinNativeWatchPublicationUncheckedUpdateOneWithoutInstanceNestedInput
+  jellyfinNativeWatchRows?: Prisma.JellyfinNativeWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinPositiveWatchRows?: Prisma.JellyfinPositiveWatchRowUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinNativeWatchScopeReceipts?: Prisma.JellyfinNativeWatchScopeReceiptUncheckedUpdateManyWithoutInstanceNestedInput
   cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
   sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
   namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
   seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
   inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
   labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationNestedInput
   providerObservationRuns?: Prisma.ProviderObservationRunUncheckedUpdateManyWithoutInstanceNestedInput
   nativeInventorySnapshots?: Prisma.ProviderNativeInventorySnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  nativeInventoryRuns?: Prisma.ProviderNativeInventoryRunUncheckedUpdateManyWithoutInstanceNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutServiceInstanceNestedInput
 }
 
 export type ServiceInstanceUncheckedUpdateManyWithoutUserInput = {
@@ -11486,6 +17266,8 @@ export type ServiceInstanceCountOutputType = {
   huntLogs: number
   queueCleanerLogs: number
   queueCleanerStrikes: number
+  queueCleanerImportReceipts: number
+  arrImportOperations: number
   libraryCache: number
   episodeFileCache: number
   plexCaches: number
@@ -11494,15 +17276,24 @@ export type ServiceInstanceCountOutputType = {
   tautulliCaches: number
   jellyfinCaches: number
   jellyfinEpisodeCaches: number
+  jellyfinEpisodeGenerationRows: number
+  jellyfinEpisodeGenerationShowReceipts: number
+  jellyfinEpisodePreparations: number
+  jellyfinNativeWatchRows: number
+  jellyfinPositiveWatchRows: number
+  jellyfinNativeWatchScopeReceipts: number
   cacheRefreshStatuses: number
   sessionSnapshots: number
   namingDeployHistory: number
   seerrActionLogs: number
   quiActionLogs: number
+  quiActionClaims: number
   quiEventLogs: number
   labelSyncMutationAttempts: number
   providerObservationRuns: number
   nativeInventorySnapshots: number
+  nativeInventoryRuns: number
+  searchGrabClaims: number
 }
 
 export type ServiceInstanceCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -11518,6 +17309,8 @@ export type ServiceInstanceCountOutputTypeSelect<ExtArgs extends runtime.Types.E
   huntLogs?: boolean | ServiceInstanceCountOutputTypeCountHuntLogsArgs
   queueCleanerLogs?: boolean | ServiceInstanceCountOutputTypeCountQueueCleanerLogsArgs
   queueCleanerStrikes?: boolean | ServiceInstanceCountOutputTypeCountQueueCleanerStrikesArgs
+  queueCleanerImportReceipts?: boolean | ServiceInstanceCountOutputTypeCountQueueCleanerImportReceiptsArgs
+  arrImportOperations?: boolean | ServiceInstanceCountOutputTypeCountArrImportOperationsArgs
   libraryCache?: boolean | ServiceInstanceCountOutputTypeCountLibraryCacheArgs
   episodeFileCache?: boolean | ServiceInstanceCountOutputTypeCountEpisodeFileCacheArgs
   plexCaches?: boolean | ServiceInstanceCountOutputTypeCountPlexCachesArgs
@@ -11526,15 +17319,24 @@ export type ServiceInstanceCountOutputTypeSelect<ExtArgs extends runtime.Types.E
   tautulliCaches?: boolean | ServiceInstanceCountOutputTypeCountTautulliCachesArgs
   jellyfinCaches?: boolean | ServiceInstanceCountOutputTypeCountJellyfinCachesArgs
   jellyfinEpisodeCaches?: boolean | ServiceInstanceCountOutputTypeCountJellyfinEpisodeCachesArgs
+  jellyfinEpisodeGenerationRows?: boolean | ServiceInstanceCountOutputTypeCountJellyfinEpisodeGenerationRowsArgs
+  jellyfinEpisodeGenerationShowReceipts?: boolean | ServiceInstanceCountOutputTypeCountJellyfinEpisodeGenerationShowReceiptsArgs
+  jellyfinEpisodePreparations?: boolean | ServiceInstanceCountOutputTypeCountJellyfinEpisodePreparationsArgs
+  jellyfinNativeWatchRows?: boolean | ServiceInstanceCountOutputTypeCountJellyfinNativeWatchRowsArgs
+  jellyfinPositiveWatchRows?: boolean | ServiceInstanceCountOutputTypeCountJellyfinPositiveWatchRowsArgs
+  jellyfinNativeWatchScopeReceipts?: boolean | ServiceInstanceCountOutputTypeCountJellyfinNativeWatchScopeReceiptsArgs
   cacheRefreshStatuses?: boolean | ServiceInstanceCountOutputTypeCountCacheRefreshStatusesArgs
   sessionSnapshots?: boolean | ServiceInstanceCountOutputTypeCountSessionSnapshotsArgs
   namingDeployHistory?: boolean | ServiceInstanceCountOutputTypeCountNamingDeployHistoryArgs
   seerrActionLogs?: boolean | ServiceInstanceCountOutputTypeCountSeerrActionLogsArgs
   quiActionLogs?: boolean | ServiceInstanceCountOutputTypeCountQuiActionLogsArgs
+  quiActionClaims?: boolean | ServiceInstanceCountOutputTypeCountQuiActionClaimsArgs
   quiEventLogs?: boolean | ServiceInstanceCountOutputTypeCountQuiEventLogsArgs
   labelSyncMutationAttempts?: boolean | ServiceInstanceCountOutputTypeCountLabelSyncMutationAttemptsArgs
   providerObservationRuns?: boolean | ServiceInstanceCountOutputTypeCountProviderObservationRunsArgs
   nativeInventorySnapshots?: boolean | ServiceInstanceCountOutputTypeCountNativeInventorySnapshotsArgs
+  nativeInventoryRuns?: boolean | ServiceInstanceCountOutputTypeCountNativeInventoryRunsArgs
+  searchGrabClaims?: boolean | ServiceInstanceCountOutputTypeCountSearchGrabClaimsArgs
 }
 
 /**
@@ -11634,6 +17436,20 @@ export type ServiceInstanceCountOutputTypeCountQueueCleanerStrikesArgs<ExtArgs e
 /**
  * ServiceInstanceCountOutputType without action
  */
+export type ServiceInstanceCountOutputTypeCountQueueCleanerImportReceiptsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.QueueCleanerImportReceiptWhereInput
+}
+
+/**
+ * ServiceInstanceCountOutputType without action
+ */
+export type ServiceInstanceCountOutputTypeCountArrImportOperationsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ArrImportOperationWhereInput
+}
+
+/**
+ * ServiceInstanceCountOutputType without action
+ */
 export type ServiceInstanceCountOutputTypeCountLibraryCacheArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   where?: Prisma.LibraryCacheWhereInput
 }
@@ -11690,6 +17506,48 @@ export type ServiceInstanceCountOutputTypeCountJellyfinEpisodeCachesArgs<ExtArgs
 /**
  * ServiceInstanceCountOutputType without action
  */
+export type ServiceInstanceCountOutputTypeCountJellyfinEpisodeGenerationRowsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.JellyfinEpisodeGenerationRowWhereInput
+}
+
+/**
+ * ServiceInstanceCountOutputType without action
+ */
+export type ServiceInstanceCountOutputTypeCountJellyfinEpisodeGenerationShowReceiptsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.JellyfinEpisodeGenerationShowReceiptWhereInput
+}
+
+/**
+ * ServiceInstanceCountOutputType without action
+ */
+export type ServiceInstanceCountOutputTypeCountJellyfinEpisodePreparationsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.JellyfinEpisodePreparationWhereInput
+}
+
+/**
+ * ServiceInstanceCountOutputType without action
+ */
+export type ServiceInstanceCountOutputTypeCountJellyfinNativeWatchRowsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.JellyfinNativeWatchRowWhereInput
+}
+
+/**
+ * ServiceInstanceCountOutputType without action
+ */
+export type ServiceInstanceCountOutputTypeCountJellyfinPositiveWatchRowsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.JellyfinPositiveWatchRowWhereInput
+}
+
+/**
+ * ServiceInstanceCountOutputType without action
+ */
+export type ServiceInstanceCountOutputTypeCountJellyfinNativeWatchScopeReceiptsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.JellyfinNativeWatchScopeReceiptWhereInput
+}
+
+/**
+ * ServiceInstanceCountOutputType without action
+ */
 export type ServiceInstanceCountOutputTypeCountCacheRefreshStatusesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   where?: Prisma.CacheRefreshStatusWhereInput
 }
@@ -11725,6 +17583,13 @@ export type ServiceInstanceCountOutputTypeCountQuiActionLogsArgs<ExtArgs extends
 /**
  * ServiceInstanceCountOutputType without action
  */
+export type ServiceInstanceCountOutputTypeCountQuiActionClaimsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.QuiActionClaimWhereInput
+}
+
+/**
+ * ServiceInstanceCountOutputType without action
+ */
 export type ServiceInstanceCountOutputTypeCountQuiEventLogsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   where?: Prisma.QuiEventLogWhereInput
 }
@@ -11748,6 +17613,20 @@ export type ServiceInstanceCountOutputTypeCountProviderObservationRunsArgs<ExtAr
  */
 export type ServiceInstanceCountOutputTypeCountNativeInventorySnapshotsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   where?: Prisma.ProviderNativeInventorySnapshotWhereInput
+}
+
+/**
+ * ServiceInstanceCountOutputType without action
+ */
+export type ServiceInstanceCountOutputTypeCountNativeInventoryRunsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ProviderNativeInventoryRunWhereInput
+}
+
+/**
+ * ServiceInstanceCountOutputType without action
+ */
+export type ServiceInstanceCountOutputTypeCountSearchGrabClaimsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.SearchGrabClaimWhereInput
 }
 
 
@@ -11793,6 +17672,8 @@ export type ServiceInstanceSelect<ExtArgs extends runtime.Types.Extensions.Inter
   queueCleanerConfig?: boolean | Prisma.ServiceInstance$queueCleanerConfigArgs<ExtArgs>
   queueCleanerLogs?: boolean | Prisma.ServiceInstance$queueCleanerLogsArgs<ExtArgs>
   queueCleanerStrikes?: boolean | Prisma.ServiceInstance$queueCleanerStrikesArgs<ExtArgs>
+  queueCleanerImportReceipts?: boolean | Prisma.ServiceInstance$queueCleanerImportReceiptsArgs<ExtArgs>
+  arrImportOperations?: boolean | Prisma.ServiceInstance$arrImportOperationsArgs<ExtArgs>
   libraryCache?: boolean | Prisma.ServiceInstance$libraryCacheArgs<ExtArgs>
   episodeFileCache?: boolean | Prisma.ServiceInstance$episodeFileCacheArgs<ExtArgs>
   librarySyncStatus?: boolean | Prisma.ServiceInstance$librarySyncStatusArgs<ExtArgs>
@@ -11802,17 +17683,27 @@ export type ServiceInstanceSelect<ExtArgs extends runtime.Types.Extensions.Inter
   tautulliCaches?: boolean | Prisma.ServiceInstance$tautulliCachesArgs<ExtArgs>
   jellyfinCaches?: boolean | Prisma.ServiceInstance$jellyfinCachesArgs<ExtArgs>
   jellyfinEpisodeCaches?: boolean | Prisma.ServiceInstance$jellyfinEpisodeCachesArgs<ExtArgs>
+  jellyfinEpisodeGenerationRows?: boolean | Prisma.ServiceInstance$jellyfinEpisodeGenerationRowsArgs<ExtArgs>
+  jellyfinEpisodeGenerationShowReceipts?: boolean | Prisma.ServiceInstance$jellyfinEpisodeGenerationShowReceiptsArgs<ExtArgs>
+  jellyfinEpisodePreparations?: boolean | Prisma.ServiceInstance$jellyfinEpisodePreparationsArgs<ExtArgs>
+  jellyfinNativeWatchPublication?: boolean | Prisma.ServiceInstance$jellyfinNativeWatchPublicationArgs<ExtArgs>
+  jellyfinNativeWatchRows?: boolean | Prisma.ServiceInstance$jellyfinNativeWatchRowsArgs<ExtArgs>
+  jellyfinPositiveWatchRows?: boolean | Prisma.ServiceInstance$jellyfinPositiveWatchRowsArgs<ExtArgs>
+  jellyfinNativeWatchScopeReceipts?: boolean | Prisma.ServiceInstance$jellyfinNativeWatchScopeReceiptsArgs<ExtArgs>
   cacheRefreshStatuses?: boolean | Prisma.ServiceInstance$cacheRefreshStatusesArgs<ExtArgs>
   sessionSnapshots?: boolean | Prisma.ServiceInstance$sessionSnapshotsArgs<ExtArgs>
   namingConfig?: boolean | Prisma.ServiceInstance$namingConfigArgs<ExtArgs>
   namingDeployHistory?: boolean | Prisma.ServiceInstance$namingDeployHistoryArgs<ExtArgs>
   seerrActionLogs?: boolean | Prisma.ServiceInstance$seerrActionLogsArgs<ExtArgs>
   quiActionLogs?: boolean | Prisma.ServiceInstance$quiActionLogsArgs<ExtArgs>
+  quiActionClaims?: boolean | Prisma.ServiceInstance$quiActionClaimsArgs<ExtArgs>
   quiEventLogs?: boolean | Prisma.ServiceInstance$quiEventLogsArgs<ExtArgs>
   inodeIndexCache?: boolean | Prisma.ServiceInstance$inodeIndexCacheArgs<ExtArgs>
   labelSyncMutationAttempts?: boolean | Prisma.ServiceInstance$labelSyncMutationAttemptsArgs<ExtArgs>
   providerObservationRuns?: boolean | Prisma.ServiceInstance$providerObservationRunsArgs<ExtArgs>
   nativeInventorySnapshots?: boolean | Prisma.ServiceInstance$nativeInventorySnapshotsArgs<ExtArgs>
+  nativeInventoryRuns?: boolean | Prisma.ServiceInstance$nativeInventoryRunsArgs<ExtArgs>
+  searchGrabClaims?: boolean | Prisma.ServiceInstance$searchGrabClaimsArgs<ExtArgs>
   _count?: boolean | Prisma.ServiceInstanceCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["serviceInstance"]>
 
@@ -11918,6 +17809,8 @@ export type ServiceInstanceInclude<ExtArgs extends runtime.Types.Extensions.Inte
   queueCleanerConfig?: boolean | Prisma.ServiceInstance$queueCleanerConfigArgs<ExtArgs>
   queueCleanerLogs?: boolean | Prisma.ServiceInstance$queueCleanerLogsArgs<ExtArgs>
   queueCleanerStrikes?: boolean | Prisma.ServiceInstance$queueCleanerStrikesArgs<ExtArgs>
+  queueCleanerImportReceipts?: boolean | Prisma.ServiceInstance$queueCleanerImportReceiptsArgs<ExtArgs>
+  arrImportOperations?: boolean | Prisma.ServiceInstance$arrImportOperationsArgs<ExtArgs>
   libraryCache?: boolean | Prisma.ServiceInstance$libraryCacheArgs<ExtArgs>
   episodeFileCache?: boolean | Prisma.ServiceInstance$episodeFileCacheArgs<ExtArgs>
   librarySyncStatus?: boolean | Prisma.ServiceInstance$librarySyncStatusArgs<ExtArgs>
@@ -11927,17 +17820,27 @@ export type ServiceInstanceInclude<ExtArgs extends runtime.Types.Extensions.Inte
   tautulliCaches?: boolean | Prisma.ServiceInstance$tautulliCachesArgs<ExtArgs>
   jellyfinCaches?: boolean | Prisma.ServiceInstance$jellyfinCachesArgs<ExtArgs>
   jellyfinEpisodeCaches?: boolean | Prisma.ServiceInstance$jellyfinEpisodeCachesArgs<ExtArgs>
+  jellyfinEpisodeGenerationRows?: boolean | Prisma.ServiceInstance$jellyfinEpisodeGenerationRowsArgs<ExtArgs>
+  jellyfinEpisodeGenerationShowReceipts?: boolean | Prisma.ServiceInstance$jellyfinEpisodeGenerationShowReceiptsArgs<ExtArgs>
+  jellyfinEpisodePreparations?: boolean | Prisma.ServiceInstance$jellyfinEpisodePreparationsArgs<ExtArgs>
+  jellyfinNativeWatchPublication?: boolean | Prisma.ServiceInstance$jellyfinNativeWatchPublicationArgs<ExtArgs>
+  jellyfinNativeWatchRows?: boolean | Prisma.ServiceInstance$jellyfinNativeWatchRowsArgs<ExtArgs>
+  jellyfinPositiveWatchRows?: boolean | Prisma.ServiceInstance$jellyfinPositiveWatchRowsArgs<ExtArgs>
+  jellyfinNativeWatchScopeReceipts?: boolean | Prisma.ServiceInstance$jellyfinNativeWatchScopeReceiptsArgs<ExtArgs>
   cacheRefreshStatuses?: boolean | Prisma.ServiceInstance$cacheRefreshStatusesArgs<ExtArgs>
   sessionSnapshots?: boolean | Prisma.ServiceInstance$sessionSnapshotsArgs<ExtArgs>
   namingConfig?: boolean | Prisma.ServiceInstance$namingConfigArgs<ExtArgs>
   namingDeployHistory?: boolean | Prisma.ServiceInstance$namingDeployHistoryArgs<ExtArgs>
   seerrActionLogs?: boolean | Prisma.ServiceInstance$seerrActionLogsArgs<ExtArgs>
   quiActionLogs?: boolean | Prisma.ServiceInstance$quiActionLogsArgs<ExtArgs>
+  quiActionClaims?: boolean | Prisma.ServiceInstance$quiActionClaimsArgs<ExtArgs>
   quiEventLogs?: boolean | Prisma.ServiceInstance$quiEventLogsArgs<ExtArgs>
   inodeIndexCache?: boolean | Prisma.ServiceInstance$inodeIndexCacheArgs<ExtArgs>
   labelSyncMutationAttempts?: boolean | Prisma.ServiceInstance$labelSyncMutationAttemptsArgs<ExtArgs>
   providerObservationRuns?: boolean | Prisma.ServiceInstance$providerObservationRunsArgs<ExtArgs>
   nativeInventorySnapshots?: boolean | Prisma.ServiceInstance$nativeInventorySnapshotsArgs<ExtArgs>
+  nativeInventoryRuns?: boolean | Prisma.ServiceInstance$nativeInventoryRunsArgs<ExtArgs>
+  searchGrabClaims?: boolean | Prisma.ServiceInstance$searchGrabClaimsArgs<ExtArgs>
   _count?: boolean | Prisma.ServiceInstanceCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type ServiceInstanceIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -11967,6 +17870,8 @@ export type $ServiceInstancePayload<ExtArgs extends runtime.Types.Extensions.Int
     queueCleanerConfig: Prisma.$QueueCleanerConfigPayload<ExtArgs> | null
     queueCleanerLogs: Prisma.$QueueCleanerLogPayload<ExtArgs>[]
     queueCleanerStrikes: Prisma.$QueueCleanerStrikePayload<ExtArgs>[]
+    queueCleanerImportReceipts: Prisma.$QueueCleanerImportReceiptPayload<ExtArgs>[]
+    arrImportOperations: Prisma.$ArrImportOperationPayload<ExtArgs>[]
     libraryCache: Prisma.$LibraryCachePayload<ExtArgs>[]
     episodeFileCache: Prisma.$EpisodeFileCachePayload<ExtArgs>[]
     librarySyncStatus: Prisma.$LibrarySyncStatusPayload<ExtArgs> | null
@@ -11976,17 +17881,27 @@ export type $ServiceInstancePayload<ExtArgs extends runtime.Types.Extensions.Int
     tautulliCaches: Prisma.$TautulliCachePayload<ExtArgs>[]
     jellyfinCaches: Prisma.$JellyfinCachePayload<ExtArgs>[]
     jellyfinEpisodeCaches: Prisma.$JellyfinEpisodeCachePayload<ExtArgs>[]
+    jellyfinEpisodeGenerationRows: Prisma.$JellyfinEpisodeGenerationRowPayload<ExtArgs>[]
+    jellyfinEpisodeGenerationShowReceipts: Prisma.$JellyfinEpisodeGenerationShowReceiptPayload<ExtArgs>[]
+    jellyfinEpisodePreparations: Prisma.$JellyfinEpisodePreparationPayload<ExtArgs>[]
+    jellyfinNativeWatchPublication: Prisma.$JellyfinNativeWatchPublicationPayload<ExtArgs> | null
+    jellyfinNativeWatchRows: Prisma.$JellyfinNativeWatchRowPayload<ExtArgs>[]
+    jellyfinPositiveWatchRows: Prisma.$JellyfinPositiveWatchRowPayload<ExtArgs>[]
+    jellyfinNativeWatchScopeReceipts: Prisma.$JellyfinNativeWatchScopeReceiptPayload<ExtArgs>[]
     cacheRefreshStatuses: Prisma.$CacheRefreshStatusPayload<ExtArgs>[]
     sessionSnapshots: Prisma.$SessionSnapshotPayload<ExtArgs>[]
     namingConfig: Prisma.$NamingConfigPayload<ExtArgs> | null
     namingDeployHistory: Prisma.$NamingDeployHistoryPayload<ExtArgs>[]
     seerrActionLogs: Prisma.$SeerrActionLogPayload<ExtArgs>[]
     quiActionLogs: Prisma.$QuiActionLogPayload<ExtArgs>[]
+    quiActionClaims: Prisma.$QuiActionClaimPayload<ExtArgs>[]
     quiEventLogs: Prisma.$QuiEventLogPayload<ExtArgs>[]
     inodeIndexCache: Prisma.$InodeIndexCachePayload<ExtArgs> | null
     labelSyncMutationAttempts: Prisma.$LabelSyncMutationAttemptPayload<ExtArgs>[]
     providerObservationRuns: Prisma.$ProviderObservationRunPayload<ExtArgs>[]
     nativeInventorySnapshots: Prisma.$ProviderNativeInventorySnapshotPayload<ExtArgs>[]
+    nativeInventoryRuns: Prisma.$ProviderNativeInventoryRunPayload<ExtArgs>[]
+    searchGrabClaims: Prisma.$SearchGrabClaimPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -12424,6 +18339,8 @@ export interface Prisma__ServiceInstanceClient<T, Null = never, ExtArgs extends 
   queueCleanerConfig<T extends Prisma.ServiceInstance$queueCleanerConfigArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$queueCleanerConfigArgs<ExtArgs>>): Prisma.Prisma__QueueCleanerConfigClient<runtime.Types.Result.GetResult<Prisma.$QueueCleanerConfigPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   queueCleanerLogs<T extends Prisma.ServiceInstance$queueCleanerLogsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$queueCleanerLogsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QueueCleanerLogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   queueCleanerStrikes<T extends Prisma.ServiceInstance$queueCleanerStrikesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$queueCleanerStrikesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QueueCleanerStrikePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  queueCleanerImportReceipts<T extends Prisma.ServiceInstance$queueCleanerImportReceiptsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$queueCleanerImportReceiptsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QueueCleanerImportReceiptPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  arrImportOperations<T extends Prisma.ServiceInstance$arrImportOperationsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$arrImportOperationsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ArrImportOperationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   libraryCache<T extends Prisma.ServiceInstance$libraryCacheArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$libraryCacheArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LibraryCachePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   episodeFileCache<T extends Prisma.ServiceInstance$episodeFileCacheArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$episodeFileCacheArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$EpisodeFileCachePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   librarySyncStatus<T extends Prisma.ServiceInstance$librarySyncStatusArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$librarySyncStatusArgs<ExtArgs>>): Prisma.Prisma__LibrarySyncStatusClient<runtime.Types.Result.GetResult<Prisma.$LibrarySyncStatusPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
@@ -12433,17 +18350,27 @@ export interface Prisma__ServiceInstanceClient<T, Null = never, ExtArgs extends 
   tautulliCaches<T extends Prisma.ServiceInstance$tautulliCachesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$tautulliCachesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$TautulliCachePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   jellyfinCaches<T extends Prisma.ServiceInstance$jellyfinCachesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$jellyfinCachesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$JellyfinCachePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   jellyfinEpisodeCaches<T extends Prisma.ServiceInstance$jellyfinEpisodeCachesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$jellyfinEpisodeCachesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$JellyfinEpisodeCachePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  jellyfinEpisodeGenerationRows<T extends Prisma.ServiceInstance$jellyfinEpisodeGenerationRowsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$jellyfinEpisodeGenerationRowsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$JellyfinEpisodeGenerationRowPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  jellyfinEpisodeGenerationShowReceipts<T extends Prisma.ServiceInstance$jellyfinEpisodeGenerationShowReceiptsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$jellyfinEpisodeGenerationShowReceiptsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$JellyfinEpisodeGenerationShowReceiptPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  jellyfinEpisodePreparations<T extends Prisma.ServiceInstance$jellyfinEpisodePreparationsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$jellyfinEpisodePreparationsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$JellyfinEpisodePreparationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  jellyfinNativeWatchPublication<T extends Prisma.ServiceInstance$jellyfinNativeWatchPublicationArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$jellyfinNativeWatchPublicationArgs<ExtArgs>>): Prisma.Prisma__JellyfinNativeWatchPublicationClient<runtime.Types.Result.GetResult<Prisma.$JellyfinNativeWatchPublicationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+  jellyfinNativeWatchRows<T extends Prisma.ServiceInstance$jellyfinNativeWatchRowsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$jellyfinNativeWatchRowsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$JellyfinNativeWatchRowPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  jellyfinPositiveWatchRows<T extends Prisma.ServiceInstance$jellyfinPositiveWatchRowsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$jellyfinPositiveWatchRowsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$JellyfinPositiveWatchRowPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  jellyfinNativeWatchScopeReceipts<T extends Prisma.ServiceInstance$jellyfinNativeWatchScopeReceiptsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$jellyfinNativeWatchScopeReceiptsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$JellyfinNativeWatchScopeReceiptPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   cacheRefreshStatuses<T extends Prisma.ServiceInstance$cacheRefreshStatusesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$cacheRefreshStatusesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$CacheRefreshStatusPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   sessionSnapshots<T extends Prisma.ServiceInstance$sessionSnapshotsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$sessionSnapshotsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$SessionSnapshotPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   namingConfig<T extends Prisma.ServiceInstance$namingConfigArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$namingConfigArgs<ExtArgs>>): Prisma.Prisma__NamingConfigClient<runtime.Types.Result.GetResult<Prisma.$NamingConfigPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   namingDeployHistory<T extends Prisma.ServiceInstance$namingDeployHistoryArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$namingDeployHistoryArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$NamingDeployHistoryPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   seerrActionLogs<T extends Prisma.ServiceInstance$seerrActionLogsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$seerrActionLogsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$SeerrActionLogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   quiActionLogs<T extends Prisma.ServiceInstance$quiActionLogsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$quiActionLogsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QuiActionLogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  quiActionClaims<T extends Prisma.ServiceInstance$quiActionClaimsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$quiActionClaimsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QuiActionClaimPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   quiEventLogs<T extends Prisma.ServiceInstance$quiEventLogsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$quiEventLogsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QuiEventLogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   inodeIndexCache<T extends Prisma.ServiceInstance$inodeIndexCacheArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$inodeIndexCacheArgs<ExtArgs>>): Prisma.Prisma__InodeIndexCacheClient<runtime.Types.Result.GetResult<Prisma.$InodeIndexCachePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   labelSyncMutationAttempts<T extends Prisma.ServiceInstance$labelSyncMutationAttemptsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$labelSyncMutationAttemptsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LabelSyncMutationAttemptPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   providerObservationRuns<T extends Prisma.ServiceInstance$providerObservationRunsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$providerObservationRunsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ProviderObservationRunPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   nativeInventorySnapshots<T extends Prisma.ServiceInstance$nativeInventorySnapshotsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$nativeInventorySnapshotsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ProviderNativeInventorySnapshotPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  nativeInventoryRuns<T extends Prisma.ServiceInstance$nativeInventoryRunsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$nativeInventoryRunsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ProviderNativeInventoryRunPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  searchGrabClaims<T extends Prisma.ServiceInstance$searchGrabClaimsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$searchGrabClaimsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$SearchGrabClaimPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -13260,6 +19187,54 @@ export type ServiceInstance$queueCleanerStrikesArgs<ExtArgs extends runtime.Type
 }
 
 /**
+ * ServiceInstance.queueCleanerImportReceipts
+ */
+export type ServiceInstance$queueCleanerImportReceiptsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the QueueCleanerImportReceipt
+   */
+  select?: Prisma.QueueCleanerImportReceiptSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the QueueCleanerImportReceipt
+   */
+  omit?: Prisma.QueueCleanerImportReceiptOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.QueueCleanerImportReceiptInclude<ExtArgs> | null
+  where?: Prisma.QueueCleanerImportReceiptWhereInput
+  orderBy?: Prisma.QueueCleanerImportReceiptOrderByWithRelationInput | Prisma.QueueCleanerImportReceiptOrderByWithRelationInput[]
+  cursor?: Prisma.QueueCleanerImportReceiptWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.QueueCleanerImportReceiptScalarFieldEnum | Prisma.QueueCleanerImportReceiptScalarFieldEnum[]
+}
+
+/**
+ * ServiceInstance.arrImportOperations
+ */
+export type ServiceInstance$arrImportOperationsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ArrImportOperation
+   */
+  select?: Prisma.ArrImportOperationSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the ArrImportOperation
+   */
+  omit?: Prisma.ArrImportOperationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ArrImportOperationInclude<ExtArgs> | null
+  where?: Prisma.ArrImportOperationWhereInput
+  orderBy?: Prisma.ArrImportOperationOrderByWithRelationInput | Prisma.ArrImportOperationOrderByWithRelationInput[]
+  cursor?: Prisma.ArrImportOperationWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ArrImportOperationScalarFieldEnum | Prisma.ArrImportOperationScalarFieldEnum[]
+}
+
+/**
  * ServiceInstance.libraryCache
  */
 export type ServiceInstance$libraryCacheArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -13471,6 +19446,169 @@ export type ServiceInstance$jellyfinEpisodeCachesArgs<ExtArgs extends runtime.Ty
 }
 
 /**
+ * ServiceInstance.jellyfinEpisodeGenerationRows
+ */
+export type ServiceInstance$jellyfinEpisodeGenerationRowsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the JellyfinEpisodeGenerationRow
+   */
+  select?: Prisma.JellyfinEpisodeGenerationRowSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the JellyfinEpisodeGenerationRow
+   */
+  omit?: Prisma.JellyfinEpisodeGenerationRowOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.JellyfinEpisodeGenerationRowInclude<ExtArgs> | null
+  where?: Prisma.JellyfinEpisodeGenerationRowWhereInput
+  orderBy?: Prisma.JellyfinEpisodeGenerationRowOrderByWithRelationInput | Prisma.JellyfinEpisodeGenerationRowOrderByWithRelationInput[]
+  cursor?: Prisma.JellyfinEpisodeGenerationRowWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.JellyfinEpisodeGenerationRowScalarFieldEnum | Prisma.JellyfinEpisodeGenerationRowScalarFieldEnum[]
+}
+
+/**
+ * ServiceInstance.jellyfinEpisodeGenerationShowReceipts
+ */
+export type ServiceInstance$jellyfinEpisodeGenerationShowReceiptsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the JellyfinEpisodeGenerationShowReceipt
+   */
+  select?: Prisma.JellyfinEpisodeGenerationShowReceiptSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the JellyfinEpisodeGenerationShowReceipt
+   */
+  omit?: Prisma.JellyfinEpisodeGenerationShowReceiptOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.JellyfinEpisodeGenerationShowReceiptInclude<ExtArgs> | null
+  where?: Prisma.JellyfinEpisodeGenerationShowReceiptWhereInput
+  orderBy?: Prisma.JellyfinEpisodeGenerationShowReceiptOrderByWithRelationInput | Prisma.JellyfinEpisodeGenerationShowReceiptOrderByWithRelationInput[]
+  cursor?: Prisma.JellyfinEpisodeGenerationShowReceiptWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.JellyfinEpisodeGenerationShowReceiptScalarFieldEnum | Prisma.JellyfinEpisodeGenerationShowReceiptScalarFieldEnum[]
+}
+
+/**
+ * ServiceInstance.jellyfinEpisodePreparations
+ */
+export type ServiceInstance$jellyfinEpisodePreparationsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the JellyfinEpisodePreparation
+   */
+  select?: Prisma.JellyfinEpisodePreparationSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the JellyfinEpisodePreparation
+   */
+  omit?: Prisma.JellyfinEpisodePreparationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.JellyfinEpisodePreparationInclude<ExtArgs> | null
+  where?: Prisma.JellyfinEpisodePreparationWhereInput
+  orderBy?: Prisma.JellyfinEpisodePreparationOrderByWithRelationInput | Prisma.JellyfinEpisodePreparationOrderByWithRelationInput[]
+  cursor?: Prisma.JellyfinEpisodePreparationWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.JellyfinEpisodePreparationScalarFieldEnum | Prisma.JellyfinEpisodePreparationScalarFieldEnum[]
+}
+
+/**
+ * ServiceInstance.jellyfinNativeWatchPublication
+ */
+export type ServiceInstance$jellyfinNativeWatchPublicationArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the JellyfinNativeWatchPublication
+   */
+  select?: Prisma.JellyfinNativeWatchPublicationSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the JellyfinNativeWatchPublication
+   */
+  omit?: Prisma.JellyfinNativeWatchPublicationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.JellyfinNativeWatchPublicationInclude<ExtArgs> | null
+  where?: Prisma.JellyfinNativeWatchPublicationWhereInput
+}
+
+/**
+ * ServiceInstance.jellyfinNativeWatchRows
+ */
+export type ServiceInstance$jellyfinNativeWatchRowsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the JellyfinNativeWatchRow
+   */
+  select?: Prisma.JellyfinNativeWatchRowSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the JellyfinNativeWatchRow
+   */
+  omit?: Prisma.JellyfinNativeWatchRowOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.JellyfinNativeWatchRowInclude<ExtArgs> | null
+  where?: Prisma.JellyfinNativeWatchRowWhereInput
+  orderBy?: Prisma.JellyfinNativeWatchRowOrderByWithRelationInput | Prisma.JellyfinNativeWatchRowOrderByWithRelationInput[]
+  cursor?: Prisma.JellyfinNativeWatchRowWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.JellyfinNativeWatchRowScalarFieldEnum | Prisma.JellyfinNativeWatchRowScalarFieldEnum[]
+}
+
+/**
+ * ServiceInstance.jellyfinPositiveWatchRows
+ */
+export type ServiceInstance$jellyfinPositiveWatchRowsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the JellyfinPositiveWatchRow
+   */
+  select?: Prisma.JellyfinPositiveWatchRowSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the JellyfinPositiveWatchRow
+   */
+  omit?: Prisma.JellyfinPositiveWatchRowOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.JellyfinPositiveWatchRowInclude<ExtArgs> | null
+  where?: Prisma.JellyfinPositiveWatchRowWhereInput
+  orderBy?: Prisma.JellyfinPositiveWatchRowOrderByWithRelationInput | Prisma.JellyfinPositiveWatchRowOrderByWithRelationInput[]
+  cursor?: Prisma.JellyfinPositiveWatchRowWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.JellyfinPositiveWatchRowScalarFieldEnum | Prisma.JellyfinPositiveWatchRowScalarFieldEnum[]
+}
+
+/**
+ * ServiceInstance.jellyfinNativeWatchScopeReceipts
+ */
+export type ServiceInstance$jellyfinNativeWatchScopeReceiptsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the JellyfinNativeWatchScopeReceipt
+   */
+  select?: Prisma.JellyfinNativeWatchScopeReceiptSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the JellyfinNativeWatchScopeReceipt
+   */
+  omit?: Prisma.JellyfinNativeWatchScopeReceiptOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.JellyfinNativeWatchScopeReceiptInclude<ExtArgs> | null
+  where?: Prisma.JellyfinNativeWatchScopeReceiptWhereInput
+  orderBy?: Prisma.JellyfinNativeWatchScopeReceiptOrderByWithRelationInput | Prisma.JellyfinNativeWatchScopeReceiptOrderByWithRelationInput[]
+  cursor?: Prisma.JellyfinNativeWatchScopeReceiptWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.JellyfinNativeWatchScopeReceiptScalarFieldEnum | Prisma.JellyfinNativeWatchScopeReceiptScalarFieldEnum[]
+}
+
+/**
  * ServiceInstance.cacheRefreshStatuses
  */
 export type ServiceInstance$cacheRefreshStatusesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -13610,6 +19748,30 @@ export type ServiceInstance$quiActionLogsArgs<ExtArgs extends runtime.Types.Exte
 }
 
 /**
+ * ServiceInstance.quiActionClaims
+ */
+export type ServiceInstance$quiActionClaimsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the QuiActionClaim
+   */
+  select?: Prisma.QuiActionClaimSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the QuiActionClaim
+   */
+  omit?: Prisma.QuiActionClaimOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.QuiActionClaimInclude<ExtArgs> | null
+  where?: Prisma.QuiActionClaimWhereInput
+  orderBy?: Prisma.QuiActionClaimOrderByWithRelationInput | Prisma.QuiActionClaimOrderByWithRelationInput[]
+  cursor?: Prisma.QuiActionClaimWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.QuiActionClaimScalarFieldEnum | Prisma.QuiActionClaimScalarFieldEnum[]
+}
+
+/**
  * ServiceInstance.quiEventLogs
  */
 export type ServiceInstance$quiEventLogsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -13722,6 +19884,54 @@ export type ServiceInstance$nativeInventorySnapshotsArgs<ExtArgs extends runtime
   take?: number
   skip?: number
   distinct?: Prisma.ProviderNativeInventorySnapshotScalarFieldEnum | Prisma.ProviderNativeInventorySnapshotScalarFieldEnum[]
+}
+
+/**
+ * ServiceInstance.nativeInventoryRuns
+ */
+export type ServiceInstance$nativeInventoryRunsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ProviderNativeInventoryRun
+   */
+  select?: Prisma.ProviderNativeInventoryRunSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the ProviderNativeInventoryRun
+   */
+  omit?: Prisma.ProviderNativeInventoryRunOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ProviderNativeInventoryRunInclude<ExtArgs> | null
+  where?: Prisma.ProviderNativeInventoryRunWhereInput
+  orderBy?: Prisma.ProviderNativeInventoryRunOrderByWithRelationInput | Prisma.ProviderNativeInventoryRunOrderByWithRelationInput[]
+  cursor?: Prisma.ProviderNativeInventoryRunWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ProviderNativeInventoryRunScalarFieldEnum | Prisma.ProviderNativeInventoryRunScalarFieldEnum[]
+}
+
+/**
+ * ServiceInstance.searchGrabClaims
+ */
+export type ServiceInstance$searchGrabClaimsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the SearchGrabClaim
+   */
+  select?: Prisma.SearchGrabClaimSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the SearchGrabClaim
+   */
+  omit?: Prisma.SearchGrabClaimOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.SearchGrabClaimInclude<ExtArgs> | null
+  where?: Prisma.SearchGrabClaimWhereInput
+  orderBy?: Prisma.SearchGrabClaimOrderByWithRelationInput | Prisma.SearchGrabClaimOrderByWithRelationInput[]
+  cursor?: Prisma.SearchGrabClaimWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.SearchGrabClaimScalarFieldEnum | Prisma.SearchGrabClaimScalarFieldEnum[]
 }
 
 /**

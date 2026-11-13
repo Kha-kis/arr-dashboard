@@ -24,7 +24,7 @@ import { withQuiObservationTopologyGuard } from "../qui/observation-topology-gua
  * (NZB, magnet variants) that we deliberately reject so they don't pollute
  * `LibraryCache.infoHash`.
  */
-const HASH_RE = /^[a-f0-9]{40,64}$/;
+const HASH_RE = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 
 function looksLikeInfoHash(value: unknown): value is string {
 	return typeof value === "string" && HASH_RE.test(value.toLowerCase());
@@ -184,9 +184,21 @@ export async function backfillInfoHashForRow(args: {
 
 	const arrService = itemType === "movie" ? "RADARR" : "SONARR";
 	const arrInstance = await app.prisma.serviceInstance.findFirst({
-		where: { id: arrInstanceId, userId, service: arrService },
+		where: { id: arrInstanceId, userId, service: arrService, enabled: true },
 	});
 	if (!arrInstance) return null;
+	const prior = await app.prisma.libraryCache.findFirst({
+		where: {
+			id: cacheRowId,
+			instanceId: arrInstanceId,
+			itemType,
+			arrItemId,
+			infoHash: null,
+			instance: { userId, service: arrService, enabled: true },
+		},
+		select: { data: true },
+	});
+	if (!prior) return null;
 
 	const hash = await fetchInfoHashFromArrHistory({
 		app,
@@ -197,9 +209,29 @@ export async function backfillInfoHashForRow(args: {
 	});
 	if (!hash) return null;
 
-	await withQuiObservationTopologyGuard(userId, () =>
-		app.prisma.libraryCache.update({
-			where: { id: cacheRowId },
+	const updated = await withQuiObservationTopologyGuard(userId, () =>
+		app.prisma.libraryCache.updateMany({
+			where: {
+				id: cacheRowId,
+				instanceId: arrInstanceId,
+				itemType,
+				arrItemId,
+				data: prior.data,
+				infoHash: null,
+				instance: {
+					id: arrInstanceId,
+					userId,
+					service: arrService,
+					enabled: true,
+					baseUrl: arrInstance.baseUrl,
+					connectionGeneration: arrInstance.connectionGeneration,
+					identityGeneration: arrInstance.identityGeneration,
+					encryptedApiKey: arrInstance.encryptedApiKey,
+					encryptionIv: arrInstance.encryptionIv,
+					encryptedHttpAuthCredentials: arrInstance.encryptedHttpAuthCredentials,
+					httpAuthEncryptionIv: arrInstance.httpAuthEncryptionIv,
+				},
+			},
 			data: {
 				infoHash: hash,
 				torrentState: null,
@@ -208,7 +240,7 @@ export async function backfillInfoHashForRow(args: {
 			},
 		}),
 	);
-	return hash;
+	return updated.count === 1 ? hash : null;
 }
 
 /**
@@ -368,18 +400,86 @@ export async function runInfoHashBackfillSweep({
  * scheduler's fast-path to decide whether to fire the next tick early.
  */
 export async function countBackfillCandidates(app: FastifyInstance): Promise<number> {
+	const userIds = await getQuiUserIds(app);
+	if (userIds.length === 0) return 0;
+	const now = new Date();
+	const [libraryRows, episodeRows] = await Promise.all([
+		app.prisma.libraryCache.count({
+			where: {
+				infoHash: null,
+				instance: { userId: { in: userIds } },
+				OR: [
+					{ itemType: "series" },
+					{
+						itemType: "movie",
+						OR: [{ pathBackfillRetryAfter: null }, { pathBackfillRetryAfter: { lte: now } }],
+					},
+				],
+			},
+		}),
+		app.prisma.episodeFileCache.count({
+			where: {
+				infoHash: null,
+				instance: { userId: { in: userIds }, service: "SONARR" },
+				OR: [{ inodeBackfillRetryAfter: null }, { inodeBackfillRetryAfter: { lte: now } }],
+			},
+		}),
+	]);
+	return libraryRows + episodeRows;
+}
+
+async function getQuiUserIds(app: FastifyInstance): Promise<string[]> {
 	const usersWithQui = await app.prisma.serviceInstance.findMany({
 		where: { service: "QUI", enabled: true },
 		select: { userId: true },
 		distinct: ["userId"],
 	});
-	if (usersWithQui.length === 0) return 0;
-	const userIds = usersWithQui.map((u) => u.userId);
-	return app.prisma.libraryCache.count({
-		where: {
-			infoHash: null,
-			itemType: { in: ["movie", "series"] },
-			instance: { userId: { in: userIds } },
-		},
-	});
+	return usersWithQui.map((u) => u.userId);
+}
+
+/** All unresolved rows, including misses temporarily deferred from a sweep. */
+export async function countOutstandingBackfillCandidates(app: FastifyInstance): Promise<number> {
+	const userIds = await getQuiUserIds(app);
+	if (userIds.length === 0) return 0;
+	const [libraryRows, episodeRows] = await Promise.all([
+		app.prisma.libraryCache.count({
+			where: {
+				infoHash: null,
+				itemType: { in: ["movie", "series"] },
+				instance: { userId: { in: userIds } },
+			},
+		}),
+		app.prisma.episodeFileCache.count({
+			where: {
+				infoHash: null,
+				instance: { userId: { in: userIds }, service: "SONARR" },
+			},
+		}),
+	]);
+	return libraryRows + episodeRows;
+}
+
+/** Due retry rows only; the five-minute probe need not re-fetch *arr history. */
+export async function countDueDeferredCorrelationCandidates(app: FastifyInstance): Promise<number> {
+	const userIds = await getQuiUserIds(app);
+	if (userIds.length === 0) return 0;
+	const now = new Date();
+	const [libraryRows, episodeRows] = await Promise.all([
+		app.prisma.libraryCache.count({
+			where: {
+				infoHash: null,
+				itemType: "movie",
+				pathBackfillRetryAfter: { lte: now },
+				instance: { userId: { in: userIds }, service: "RADARR" },
+			},
+		}),
+		app.prisma.episodeFileCache.count({
+			where: {
+				infoHash: null,
+				inodeBackfillRetryAfter: { lte: now },
+				instance: { userId: { in: userIds }, service: "SONARR" },
+			},
+		}),
+	]);
+	return libraryRows + episodeRows;
 }

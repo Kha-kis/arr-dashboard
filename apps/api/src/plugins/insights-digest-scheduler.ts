@@ -32,8 +32,13 @@ const insightsDigestSchedulerPlugin = fastifyPlugin(
 						app.log,
 						app.arrClientFactory,
 						app.encryptor,
-						(payload) => app.notificationService.notify(payload),
-						{ trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.insightsDigest, fn) },
+						(payload, userId) => app.notificationService.notify(payload, { userId }),
+						{
+							trackTick: (fn) =>
+								app.schedulerRegistry.track(JOB_ID.insightsDigest, () =>
+									app.notificationService.runProducer(fn),
+								),
+						},
 					);
 
 					app.decorate("insightsDigestScheduler", scheduler);
@@ -43,16 +48,20 @@ const insightsDigestSchedulerPlugin = fastifyPlugin(
 			);
 		});
 
+		app.addHook("preClose", async () => {
+			app.insightsDigestScheduler?.closeAdmission();
+		});
+
 		app.addHook("onClose", async () => {
 			if (app.insightsDigestScheduler) {
 				app.log.info("Stopping insights digest scheduler");
-				app.insightsDigestScheduler.stop();
+				await app.insightsDigestScheduler.shutdown();
 			}
 		});
 	},
 	{
 		name: "insights-digest-scheduler",
-		dependencies: ["prisma", "scheduler-registry"],
+		dependencies: ["prisma", "scheduler-registry", "notification-service"],
 	},
 );
 

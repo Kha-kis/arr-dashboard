@@ -1,9 +1,12 @@
 import type { FastifyBaseLogger } from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const native = vi.hoisted(() => ({ refresh: vi.fn(), getUsers: vi.fn() }));
+const native = vi.hoisted(() => ({ refresh: vi.fn(), request: vi.fn(), getUsers: vi.fn() }));
 vi.mock("../../provider-observation/native-inventory-refresh.js", () => ({
 	refreshNativeInventory: native.refresh,
+}));
+vi.mock("../../provider-observation/native-inventory-job-orchestration.js", () => ({
+	requestNativeInventoryRefresh: native.request,
 }));
 vi.mock("../jellyfin-client.js", () => ({
 	JellyfinClient: class {
@@ -54,6 +57,7 @@ const attempt = {
 beforeEach(() => {
 	vi.clearAllMocks();
 	native.refresh.mockReset().mockResolvedValue({ status: "published" });
+	native.request.mockReset().mockResolvedValue({ status: "accepted" });
 	native.getUsers.mockRejectedValue(new Error("watch source unavailable"));
 	coordinator.runProviderObservationAttempt.mockResolvedValue({
 		complete: true,
@@ -70,6 +74,23 @@ beforeEach(() => {
 });
 
 describe("Jellyfin owned refresh attempt adapters", () => {
+	it("settles canonical collection when the former native collector never resolves", async () => {
+		native.refresh.mockImplementation(() => new Promise(() => undefined));
+		coordinator.runProviderObservationAttempt.mockImplementation(async (input) =>
+			input.collect(input.prepare(), attempt),
+		);
+		const outcome = await Promise.race([
+			refreshOwnedJellyfinCache(context).then((value) => value.nativeInventoryStatus),
+			new Promise<"timed-out">((resolve) => setTimeout(() => resolve("timed-out"), 100)),
+		]);
+		expect(outcome).toBe("scheduled");
+		expect(native.request).toHaveBeenCalledWith(
+			context.prisma,
+			expect.objectContaining({ id: instance.id }),
+			["library", "episode"],
+			{ mode: "automatic" },
+		);
+	});
 	it("uses the shared claim-and-run entry point for legacy callers", async () => {
 		await refreshOwnedJellyfinCache(context);
 
@@ -93,43 +114,39 @@ describe("Jellyfin owned refresh attempt adapters", () => {
 	});
 });
 
-it("collects both native domains independently even when canonical watch collection fails", async () => {
+it("schedules both native domains independently even when canonical watch collection fails", async () => {
 	coordinator.runProviderObservationAttempt.mockImplementation(async (input) =>
 		input.collect(input.prepare(), attempt),
 	);
 	const result = await refreshOwnedJellyfinCache(context);
-	expect(native.refresh).toHaveBeenCalledWith(
-		expect.objectContaining({ cacheType: "jellyfin", attempt, domains: ["library"] }),
+	expect(native.request).toHaveBeenCalledWith(
+		context.prisma,
+		expect.objectContaining({ id: instance.id }),
+		["library", "episode"],
+		{ mode: "automatic" },
 	);
-	expect(native.refresh).toHaveBeenCalledWith(
-		expect.objectContaining({ cacheType: "jellyfin", attempt, domains: ["episode"] }),
-	);
-	expect(native.refresh).toHaveBeenCalledTimes(2);
-	expect(native.refresh.mock.invocationCallOrder[0]).toBeLessThan(
+	expect(native.refresh).not.toHaveBeenCalled();
+	expect(native.request.mock.invocationCallOrder[0]).toBeLessThan(
 		native.getUsers.mock.invocationCallOrder[0]!,
 	);
-	expect(result).toMatchObject({ complete: false, nativeInventoryStatus: "published" });
+	expect(result).toMatchObject({ complete: false, nativeInventoryStatus: "scheduled" });
 });
 
 it.each([
-	["published", "failed", "failed"],
-	["failed", "published", "failed"],
-	["published", "superseded", "superseded"],
-	["superseded", "published", "superseded"],
+	["accepted", "scheduled"],
+	["coalesced", "coalesced"],
+	["current", "current"],
+	["superseded", "superseded"],
+	["retryable", "failed"],
 ] as const)(
-	"retains independent library=%s and episode=%s outcomes for recovery",
-	async (library, episode, expected) => {
-		native.refresh
-			.mockResolvedValueOnce({ status: library })
-			.mockResolvedValueOnce({ status: episode });
+	"reports durable native admission %s as %s without claiming publication",
+	async (admission, expected) => {
+		native.request.mockResolvedValue({ status: admission });
 		coordinator.runProviderObservationAttempt.mockImplementation(async (input) =>
 			input.collect(input.prepare(), attempt),
 		);
 		const result = await refreshOwnedJellyfinCache(context);
 		expect(result).toMatchObject({ complete: false, nativeInventoryStatus: expected });
-		expect(native.refresh.mock.calls.map(([input]) => input.domains)).toEqual([
-			["library"],
-			["episode"],
-		]);
+		expect(native.request).toHaveBeenCalledTimes(1);
 	},
 );

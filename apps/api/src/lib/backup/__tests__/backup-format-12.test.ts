@@ -42,6 +42,17 @@ const COMPLETE_V1_2_PAYLOAD_KEYS = [
 	...DURABLE_CONFIG_KEYS,
 ] as const;
 
+// Legacy configuration cases start without Grab or notification outbox state.
+// Nonempty conservation is exercised on native databases in format-1.5/1.6 tests.
+function emptyGrabDelegates() {
+	return {
+		searchGrabAttempt: { count: vi.fn().mockResolvedValue(0) },
+		searchGrabClaim: { count: vi.fn().mockResolvedValue(0) },
+		notificationOutboxEvent: { count: vi.fn().mockResolvedValue(0) },
+		notificationOutboxDelivery: { count: vi.fn().mockResolvedValue(0) },
+	};
+}
+
 function baseBackup(data: Record<string, unknown> = {}) {
 	return {
 		version: "1.2",
@@ -228,6 +239,16 @@ describe("backup format 1.2", () => {
 			"libraryCleanupMediaServerScan",
 			"librarySyncStatus",
 			"labelSyncMutationAttempt",
+			"arrImportOperation",
+			"arrImportFileProof",
+			"arrImportSourceClaim",
+			"queueCleanerImportReceipt",
+			"quiActionClaim",
+			"quiActionLog",
+			"searchGrabAttempt",
+			"searchGrabClaim",
+			"notificationOutboxEvent",
+			"notificationOutboxDelivery",
 			...DURABLE_CONFIG_KEYS.filter(
 				(key) => key !== "backupSettings" && key !== "vapidKeys" && key !== "librarySyncSettings",
 			),
@@ -389,6 +410,7 @@ describe("backup format 1.2", () => {
 
 	it("rejects legacy omission of an older relational config collection", async () => {
 		const prisma = {
+			...emptyGrabDelegates(),
 			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			trashTemplate: { count: vi.fn().mockResolvedValue(1) },
 		} as unknown as PrismaClient;
@@ -402,6 +424,7 @@ describe("backup format 1.2", () => {
 
 	it("rejects an incomplete legacy payload over a populated durable-config target", async () => {
 		const prisma = {
+			...emptyGrabDelegates(),
 			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			notificationChannel: { count: vi.fn().mockResolvedValue(1) },
 		} as unknown as PrismaClient;
@@ -416,6 +439,7 @@ describe("backup format 1.2", () => {
 	it("rejects legacy omission over non-default library polling settings", async () => {
 		const findMany = vi.fn().mockResolvedValue([{ instanceId: "instance-1" }]);
 		const prisma = {
+			...emptyGrabDelegates(),
 			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			librarySyncStatus: { findMany },
 		} as unknown as PrismaClient;
@@ -435,6 +459,7 @@ describe("backup format 1.2", () => {
 
 	it("allows legacy omission when library polling settings are defaults", async () => {
 		const prisma = {
+			...emptyGrabDelegates(),
 			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			librarySyncStatus: { findMany: vi.fn().mockResolvedValue([]) },
 		} as unknown as PrismaClient;
@@ -487,6 +512,7 @@ describe("backup format 1.2", () => {
 
 	it("rejects incomplete legacy coverage over partial stored backup-password state", async () => {
 		const prisma = {
+			...emptyGrabDelegates(),
 			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			backupSettings: {
 				findFirst: vi.fn().mockResolvedValue({
@@ -506,6 +532,7 @@ describe("backup format 1.2", () => {
 
 	it("rejects incomplete legacy coverage over stored VAPID private-key state", async () => {
 		const prisma = {
+			...emptyGrabDelegates(),
 			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			backupSettings: {
 				findFirst: vi.fn().mockResolvedValue({ encryptedPassword: null, passwordIv: null }),
@@ -527,6 +554,7 @@ describe("backup format 1.2", () => {
 
 	it("allows incomplete legacy coverage over default non-secret backup settings", async () => {
 		const prisma = {
+			...emptyGrabDelegates(),
 			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			notificationChannel: { count: vi.fn().mockResolvedValue(0) },
 			backupSettings: {
@@ -550,6 +578,7 @@ describe("backup format 1.2", () => {
 			privateKeyIv: "target-vapid-iv",
 		});
 		const prisma = {
+			...emptyGrabDelegates(),
 			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			notificationChannel: { count: vi.fn().mockResolvedValue(0) },
 			backupSettings: { findFirst: backupSettingsFindFirst },
@@ -565,6 +594,7 @@ describe("backup format 1.2", () => {
 
 	it("rejects legacy omission of current OIDC provider state", async () => {
 		const prisma = {
+			...emptyGrabDelegates(),
 			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			oIDCProvider: { count: vi.fn().mockResolvedValue(1) },
 		} as unknown as PrismaClient;
@@ -578,6 +608,7 @@ describe("backup format 1.2", () => {
 
 	it("allows legacy omission when the only naming history is terminal audit", async () => {
 		const prisma = {
+			...emptyGrabDelegates(),
 			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			namingDeployHistory: {
 				count: vi.fn().mockResolvedValue(1),
@@ -592,6 +623,7 @@ describe("backup format 1.2", () => {
 
 	it("allows legacy omission when the only naming history is rolled back", async () => {
 		const prisma = {
+			...emptyGrabDelegates(),
 			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			namingDeployHistory: {
 				count: vi.fn().mockResolvedValue(1),
@@ -606,6 +638,7 @@ describe("backup format 1.2", () => {
 
 	it("rejects legacy omission when active naming recovery is populated", async () => {
 		const prisma = {
+			...emptyGrabDelegates(),
 			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			namingDeployHistory: {
 				count: vi.fn().mockResolvedValue(1),
@@ -625,11 +658,13 @@ describe("backup format 1.2", () => {
 	it("rechecks compatibility inside the transaction before the first delete", async () => {
 		const firstDelete = vi.fn();
 		const tx = {
+			...emptyGrabDelegates(),
 			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			notificationChannel: { count: vi.fn().mockResolvedValue(1) },
 			huntSearchHistory: { deleteMany: firstDelete },
 		};
 		const prisma = {
+			...emptyGrabDelegates(),
 			labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 			$transaction: vi.fn(async (operation: (value: unknown) => Promise<void>) => operation(tx)),
 		} as unknown as PrismaClient;

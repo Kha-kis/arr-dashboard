@@ -51,6 +51,8 @@ export const AnyNull = runtime.AnyNull
 
 
 export const ModelName = {
+  RestoreRuntimeControl: 'RestoreRuntimeControl',
+  SqliteRestoreStorageBinding: 'SqliteRestoreStorageBinding',
   User: 'User',
   Session: 'Session',
   ServiceTag: 'ServiceTag',
@@ -82,10 +84,15 @@ export const ModelName = {
   LibraryCache: 'LibraryCache',
   EpisodeFileCache: 'EpisodeFileCache',
   LibrarySyncStatus: 'LibrarySyncStatus',
+  DashboardStatisticsSnapshot: 'DashboardStatisticsSnapshot',
   UserCustomFormat: 'UserCustomFormat',
   QueueCleanerConfig: 'QueueCleanerConfig',
   QueueCleanerLog: 'QueueCleanerLog',
   QueueCleanerStrike: 'QueueCleanerStrike',
+  QueueCleanerImportReceipt: 'QueueCleanerImportReceipt',
+  ArrImportOperation: 'ArrImportOperation',
+  ArrImportFileProof: 'ArrImportFileProof',
+  ArrImportSourceClaim: 'ArrImportSourceClaim',
   LibraryCleanupConfig: 'LibraryCleanupConfig',
   LibraryCleanupRule: 'LibraryCleanupRule',
   LibraryCleanupApproval: 'LibraryCleanupApproval',
@@ -96,6 +103,8 @@ export const ModelName = {
   NotificationChannel: 'NotificationChannel',
   NotificationSubscription: 'NotificationSubscription',
   NotificationLog: 'NotificationLog',
+  NotificationOutboxEvent: 'NotificationOutboxEvent',
+  NotificationOutboxDelivery: 'NotificationOutboxDelivery',
   VapidKeys: 'VapidKeys',
   NotificationRule: 'NotificationRule',
   NotificationAggregationConfig: 'NotificationAggregationConfig',
@@ -104,9 +113,21 @@ export const ModelName = {
   PlexEpisodeCache: 'PlexEpisodeCache',
   JellyfinCache: 'JellyfinCache',
   JellyfinEpisodeCache: 'JellyfinEpisodeCache',
+  JellyfinEpisodeGenerationRow: 'JellyfinEpisodeGenerationRow',
+  JellyfinEpisodeGenerationShowReceipt: 'JellyfinEpisodeGenerationShowReceipt',
+  JellyfinEpisodePreparation: 'JellyfinEpisodePreparation',
+  JellyfinNativeWatchPublication: 'JellyfinNativeWatchPublication',
+  JellyfinNativeWatchScopeReceipt: 'JellyfinNativeWatchScopeReceipt',
+  JellyfinNativeWatchRow: 'JellyfinNativeWatchRow',
+  JellyfinPositiveWatchRow: 'JellyfinPositiveWatchRow',
   TautulliCache: 'TautulliCache',
   CacheRefreshStatus: 'CacheRefreshStatus',
   ProviderObservationRun: 'ProviderObservationRun',
+  ProviderNativeInventoryRun: 'ProviderNativeInventoryRun',
+  ProviderNativeInventoryPass: 'ProviderNativeInventoryPass',
+  ProviderNativeInventoryPageReceipt: 'ProviderNativeInventoryPageReceipt',
+  ProviderNativeInventorySeenItem: 'ProviderNativeInventorySeenItem',
+  ProviderNativeInventoryStageItem: 'ProviderNativeInventoryStageItem',
   ProviderNativeInventorySnapshot: 'ProviderNativeInventorySnapshot',
   ProviderNativeInventoryItem: 'ProviderNativeInventoryItem',
   ProviderObservationUnit: 'ProviderObservationUnit',
@@ -123,8 +144,13 @@ export const ModelName = {
   TmdbListCache: 'TmdbListCache',
   TraktListCache: 'TraktListCache',
   ListCacheRefreshStatus: 'ListCacheRefreshStatus',
+  QuiObservationPublication: 'QuiObservationPublication',
+  QuiTorrentObservation: 'QuiTorrentObservation',
   QuiActivityLog: 'QuiActivityLog',
+  SearchGrabAttempt: 'SearchGrabAttempt',
+  SearchGrabClaim: 'SearchGrabClaim',
   QuiActionLog: 'QuiActionLog',
+  QuiActionClaim: 'QuiActionClaim',
   QuiEventLog: 'QuiEventLog'
 } as const
 
@@ -139,6 +165,39 @@ export const TransactionIsolationLevel = runtime.makeStrictEnum({
 } as const)
 
 export type TransactionIsolationLevel = (typeof TransactionIsolationLevel)[keyof typeof TransactionIsolationLevel]
+
+
+export const RestoreRuntimeControlScalarFieldEnum = {
+  id: 'id',
+  protocolVersion: 'protocolVersion',
+  phase: 'phase',
+  runtimeEpoch: 'runtimeEpoch',
+  ownerBackendPid: 'ownerBackendPid',
+  activeRestoreId: 'activeRestoreId',
+  lastCommittedRestoreId: 'lastCommittedRestoreId',
+  lastCommittedAt: 'lastCommittedAt',
+  destinationInstallationId: 'destinationInstallationId'
+} as const
+
+export type RestoreRuntimeControlScalarFieldEnum = (typeof RestoreRuntimeControlScalarFieldEnum)[keyof typeof RestoreRuntimeControlScalarFieldEnum]
+
+
+export const SqliteRestoreStorageBindingScalarFieldEnum = {
+  id: 'id',
+  protocolVersion: 'protocolVersion',
+  databaseDevice: 'databaseDevice',
+  databaseInode: 'databaseInode',
+  directoryDevice: 'directoryDevice',
+  directoryInode: 'directoryInode',
+  coordinationDevice: 'coordinationDevice',
+  coordinationInode: 'coordinationInode',
+  ownerDevice: 'ownerDevice',
+  ownerInode: 'ownerInode',
+  operationsDevice: 'operationsDevice',
+  operationsInode: 'operationsInode'
+} as const
+
+export type SqliteRestoreStorageBindingScalarFieldEnum = (typeof SqliteRestoreStorageBindingScalarFieldEnum)[keyof typeof SqliteRestoreStorageBindingScalarFieldEnum]
 
 
 export const UserScalarFieldEnum = {
@@ -671,10 +730,14 @@ export const LibraryCacheScalarFieldEnum = {
   cutoffUnmet: 'cutoffUnmet',
   infoHash: 'infoHash',
   infoHashSource: 'infoHashSource',
+  pathBackfillRetryAfter: 'pathBackfillRetryAfter',
   torrentState: 'torrentState',
   torrentRatio: 'torrentRatio',
   torrentSyncedAt: 'torrentSyncedAt',
   data: 'data',
+  episodeFileInventoryReceipt: 'episodeFileInventoryReceipt',
+  episodeFileInventoryAttemptedAt: 'episodeFileInventoryAttemptedAt',
+  episodeFileInventoryAttemptToken: 'episodeFileInventoryAttemptToken',
   arrAddedAt: 'arrAddedAt',
   arrUpdatedAt: 'arrUpdatedAt',
   cachedAt: 'cachedAt',
@@ -697,6 +760,7 @@ export const EpisodeFileCacheScalarFieldEnum = {
   releaseGroup: 'releaseGroup',
   infoHash: 'infoHash',
   infoHashSource: 'infoHashSource',
+  inodeBackfillRetryAfter: 'inodeBackfillRetryAfter',
   torrentState: 'torrentState',
   torrentRatio: 'torrentRatio',
   torrentSyncedAt: 'torrentSyncedAt',
@@ -723,6 +787,25 @@ export const LibrarySyncStatusScalarFieldEnum = {
 } as const
 
 export type LibrarySyncStatusScalarFieldEnum = (typeof LibrarySyncStatusScalarFieldEnum)[keyof typeof LibrarySyncStatusScalarFieldEnum]
+
+
+export const DashboardStatisticsSnapshotScalarFieldEnum = {
+  userId: 'userId',
+  sourceFingerprint: 'sourceFingerprint',
+  payload: 'payload',
+  result: 'result',
+  observedAt: 'observedAt',
+  claimFingerprint: 'claimFingerprint',
+  claimToken: 'claimToken',
+  leaseUntil: 'leaseUntil',
+  retryAt: 'retryAt',
+  retryFingerprint: 'retryFingerprint',
+  lastFailureCategory: 'lastFailureCategory',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type DashboardStatisticsSnapshotScalarFieldEnum = (typeof DashboardStatisticsSnapshotScalarFieldEnum)[keyof typeof DashboardStatisticsSnapshotScalarFieldEnum]
 
 
 export const UserCustomFormatScalarFieldEnum = {
@@ -830,6 +913,7 @@ export const QueueCleanerStrikeScalarFieldEnum = {
   downloadId: 'downloadId',
   downloadTitle: 'downloadTitle',
   downloadHash: 'downloadHash',
+  downloadFingerprint: 'downloadFingerprint',
   strikeCount: 'strikeCount',
   lastRule: 'lastRule',
   lastReason: 'lastReason',
@@ -841,6 +925,86 @@ export const QueueCleanerStrikeScalarFieldEnum = {
 } as const
 
 export type QueueCleanerStrikeScalarFieldEnum = (typeof QueueCleanerStrikeScalarFieldEnum)[keyof typeof QueueCleanerStrikeScalarFieldEnum]
+
+
+export const QueueCleanerImportReceiptScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  downloadKey: 'downloadKey',
+  queueId: 'queueId',
+  downloadTitle: 'downloadTitle',
+  connectionFingerprint: 'connectionFingerprint',
+  commandFingerprint: 'commandFingerprint',
+  commandId: 'commandId',
+  state: 'state',
+  lastAttemptAt: 'lastAttemptAt',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type QueueCleanerImportReceiptScalarFieldEnum = (typeof QueueCleanerImportReceiptScalarFieldEnum)[keyof typeof QueueCleanerImportReceiptScalarFieldEnum]
+
+
+export const ArrImportOperationScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  instanceId: 'instanceId',
+  originalInstanceId: 'originalInstanceId',
+  connectionFingerprint: 'connectionFingerprint',
+  service: 'service',
+  origin: 'origin',
+  mode: 'mode',
+  idempotencyKey: 'idempotencyKey',
+  requestFingerprint: 'requestFingerprint',
+  commandFingerprint: 'commandFingerprint',
+  encryptedSources: 'encryptedSources',
+  sourcesEncryptionIv: 'sourcesEncryptionIv',
+  legacyReceiptId: 'legacyReceiptId',
+  state: 'state',
+  reason: 'reason',
+  commandId: 'commandId',
+  commandState: 'commandState',
+  commandTerminal: 'commandTerminal',
+  selectedFileCount: 'selectedFileCount',
+  verifiedFileCount: 'verifiedFileCount',
+  preparationExpiresAt: 'preparationExpiresAt',
+  submissionStartedAt: 'submissionStartedAt',
+  lastCheckedAt: 'lastCheckedAt',
+  nextCheckAt: 'nextCheckAt',
+  reconcileToken: 'reconcileToken',
+  reconcileExpiresAt: 'reconcileExpiresAt',
+  reconcileCursor: 'reconcileCursor',
+  revision: 'revision',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type ArrImportOperationScalarFieldEnum = (typeof ArrImportOperationScalarFieldEnum)[keyof typeof ArrImportOperationScalarFieldEnum]
+
+
+export const ArrImportFileProofScalarFieldEnum = {
+  id: 'id',
+  operationId: 'operationId',
+  fileFingerprint: 'fileFingerprint',
+  downloadKey: 'downloadKey',
+  identityJson: 'identityJson',
+  verifiedAt: 'verifiedAt',
+  createdAt: 'createdAt'
+} as const
+
+export type ArrImportFileProofScalarFieldEnum = (typeof ArrImportFileProofScalarFieldEnum)[keyof typeof ArrImportFileProofScalarFieldEnum]
+
+
+export const ArrImportSourceClaimScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  downloadKey: 'downloadKey',
+  activeOperationId: 'activeOperationId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type ArrImportSourceClaimScalarFieldEnum = (typeof ArrImportSourceClaimScalarFieldEnum)[keyof typeof ArrImportSourceClaimScalarFieldEnum]
 
 
 export const LibraryCleanupConfigScalarFieldEnum = {
@@ -1063,6 +1227,51 @@ export const NotificationLogScalarFieldEnum = {
 export type NotificationLogScalarFieldEnum = (typeof NotificationLogScalarFieldEnum)[keyof typeof NotificationLogScalarFieldEnum]
 
 
+export const NotificationOutboxEventScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  eventType: 'eventType',
+  encryptedPayload: 'encryptedPayload',
+  payloadIv: 'payloadIv',
+  dedupFingerprint: 'dedupFingerprint',
+  scopeFingerprint: 'scopeFingerprint',
+  stage: 'stage',
+  dueAt: 'dueAt',
+  aggregationWindowSeconds: 'aggregationWindowSeconds',
+  maxBatchSize: 'maxBatchSize',
+  aggregateParentId: 'aggregateParentId',
+  destinationInstallationId: 'destinationInstallationId',
+  restoreCommitId: 'restoreCommitId',
+  acceptedAt: 'acceptedAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type NotificationOutboxEventScalarFieldEnum = (typeof NotificationOutboxEventScalarFieldEnum)[keyof typeof NotificationOutboxEventScalarFieldEnum]
+
+
+export const NotificationOutboxDeliveryScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  eventId: 'eventId',
+  channelId: 'channelId',
+  channelType: 'channelType',
+  subscriptionEventType: 'subscriptionEventType',
+  state: 'state',
+  attemptOrdinal: 'attemptOrdinal',
+  nextAttemptAt: 'nextAttemptAt',
+  attemptToken: 'attemptToken',
+  workerEpoch: 'workerEpoch',
+  attemptConfigFingerprint: 'attemptConfigFingerprint',
+  dispatchedAt: 'dispatchedAt',
+  outcomeCategory: 'outcomeCategory',
+  completedAt: 'completedAt',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type NotificationOutboxDeliveryScalarFieldEnum = (typeof NotificationOutboxDeliveryScalarFieldEnum)[keyof typeof NotificationOutboxDeliveryScalarFieldEnum]
+
+
 export const VapidKeysScalarFieldEnum = {
   id: 'id',
   publicKey: 'publicKey',
@@ -1208,6 +1417,132 @@ export const JellyfinEpisodeCacheScalarFieldEnum = {
 export type JellyfinEpisodeCacheScalarFieldEnum = (typeof JellyfinEpisodeCacheScalarFieldEnum)[keyof typeof JellyfinEpisodeCacheScalarFieldEnum]
 
 
+export const JellyfinEpisodeGenerationRowScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  generationId: 'generationId',
+  showTmdbId: 'showTmdbId',
+  seasonNumber: 'seasonNumber',
+  episodeNumber: 'episodeNumber',
+  jellyfinId: 'jellyfinId',
+  title: 'title',
+  watched: 'watched',
+  watchedByUsers: 'watchedByUsers',
+  lastWatchedAt: 'lastWatchedAt',
+  connectionGeneration: 'connectionGeneration',
+  identityGeneration: 'identityGeneration'
+} as const
+
+export type JellyfinEpisodeGenerationRowScalarFieldEnum = (typeof JellyfinEpisodeGenerationRowScalarFieldEnum)[keyof typeof JellyfinEpisodeGenerationRowScalarFieldEnum]
+
+
+export const JellyfinEpisodeGenerationShowReceiptScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  generationId: 'generationId',
+  showTmdbId: 'showTmdbId',
+  rowCount: 'rowCount',
+  contentFingerprint: 'contentFingerprint',
+  mappedProgressJson: 'mappedProgressJson'
+} as const
+
+export type JellyfinEpisodeGenerationShowReceiptScalarFieldEnum = (typeof JellyfinEpisodeGenerationShowReceiptScalarFieldEnum)[keyof typeof JellyfinEpisodeGenerationShowReceiptScalarFieldEnum]
+
+
+export const JellyfinEpisodePreparationScalarFieldEnum = {
+  runId: 'runId',
+  instanceId: 'instanceId',
+  generationId: 'generationId',
+  token: 'token',
+  leaseExpiresAt: 'leaseExpiresAt',
+  state: 'state',
+  expectedRowCount: 'expectedRowCount',
+  expectedReceiptCount: 'expectedReceiptCount',
+  contentFingerprint: 'contentFingerprint',
+  observedAt: 'observedAt',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type JellyfinEpisodePreparationScalarFieldEnum = (typeof JellyfinEpisodePreparationScalarFieldEnum)[keyof typeof JellyfinEpisodePreparationScalarFieldEnum]
+
+
+export const JellyfinNativeWatchPublicationScalarFieldEnum = {
+  instanceId: 'instanceId',
+  activeRunId: 'activeRunId',
+  activeCacheGenerationId: 'activeCacheGenerationId',
+  activeObservedAt: 'activeObservedAt',
+  activeExpectedScopeCount: 'activeExpectedScopeCount',
+  previousRunId: 'previousRunId',
+  previousObservedAt: 'previousObservedAt',
+  previousExpectedScopeCount: 'previousExpectedScopeCount',
+  connectionGeneration: 'connectionGeneration',
+  identityGeneration: 'identityGeneration'
+} as const
+
+export type JellyfinNativeWatchPublicationScalarFieldEnum = (typeof JellyfinNativeWatchPublicationScalarFieldEnum)[keyof typeof JellyfinNativeWatchPublicationScalarFieldEnum]
+
+
+export const JellyfinNativeWatchScopeReceiptScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  runId: 'runId',
+  userKeyDigest: 'userKeyDigest',
+  libraryId: 'libraryId',
+  expectedRawCount: 'expectedRawCount',
+  observedRawCount: 'observedRawCount',
+  exact: 'exact',
+  contentFingerprint: 'contentFingerprint',
+  diagnosticsJson: 'diagnosticsJson',
+  observedAt: 'observedAt',
+  connectionGeneration: 'connectionGeneration',
+  identityGeneration: 'identityGeneration'
+} as const
+
+export type JellyfinNativeWatchScopeReceiptScalarFieldEnum = (typeof JellyfinNativeWatchScopeReceiptScalarFieldEnum)[keyof typeof JellyfinNativeWatchScopeReceiptScalarFieldEnum]
+
+
+export const JellyfinNativeWatchRowScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  runId: 'runId',
+  userKeyDigest: 'userKeyDigest',
+  libraryId: 'libraryId',
+  jellyfinId: 'jellyfinId',
+  seriesId: 'seriesId',
+  seasonNumber: 'seasonNumber',
+  episodeNumber: 'episodeNumber',
+  played: 'played',
+  playCount: 'playCount',
+  lastPlayedAt: 'lastPlayedAt',
+  observedAt: 'observedAt',
+  connectionGeneration: 'connectionGeneration',
+  identityGeneration: 'identityGeneration'
+} as const
+
+export type JellyfinNativeWatchRowScalarFieldEnum = (typeof JellyfinNativeWatchRowScalarFieldEnum)[keyof typeof JellyfinNativeWatchRowScalarFieldEnum]
+
+
+export const JellyfinPositiveWatchRowScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  generationId: 'generationId',
+  userKeyDigest: 'userKeyDigest',
+  libraryId: 'libraryId',
+  jellyfinId: 'jellyfinId',
+  seriesId: 'seriesId',
+  seasonNumber: 'seasonNumber',
+  episodeNumber: 'episodeNumber',
+  playCount: 'playCount',
+  lastPlayedAt: 'lastPlayedAt',
+  observedAt: 'observedAt',
+  connectionGeneration: 'connectionGeneration',
+  identityGeneration: 'identityGeneration'
+} as const
+
+export type JellyfinPositiveWatchRowScalarFieldEnum = (typeof JellyfinPositiveWatchRowScalarFieldEnum)[keyof typeof JellyfinPositiveWatchRowScalarFieldEnum]
+
+
 export const TautulliCacheScalarFieldEnum = {
   id: 'id',
   instanceId: 'instanceId',
@@ -1270,6 +1605,94 @@ export const ProviderObservationRunScalarFieldEnum = {
 export type ProviderObservationRunScalarFieldEnum = (typeof ProviderObservationRunScalarFieldEnum)[keyof typeof ProviderObservationRunScalarFieldEnum]
 
 
+export const ProviderNativeInventoryRunScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  workKey: 'workKey',
+  connectionGeneration: 'connectionGeneration',
+  identityGeneration: 'identityGeneration',
+  state: 'state',
+  activeSlotKey: 'activeSlotKey',
+  passOrdinal: 'passOrdinal',
+  claimToken: 'claimToken',
+  leaseUntil: 'leaseUntil',
+  nextAttemptAt: 'nextAttemptAt',
+  lastFailureCategory: 'lastFailureCategory',
+  failureCount: 'failureCount',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type ProviderNativeInventoryRunScalarFieldEnum = (typeof ProviderNativeInventoryRunScalarFieldEnum)[keyof typeof ProviderNativeInventoryRunScalarFieldEnum]
+
+
+export const ProviderNativeInventoryPassScalarFieldEnum = {
+  id: 'id',
+  runId: 'runId',
+  ordinal: 'ordinal',
+  state: 'state',
+  scopeManifest: 'scopeManifest',
+  scopeDigest: 'scopeDigest',
+  comparisonDigest: 'comparisonDigest',
+  libraryItemCount: 'libraryItemCount',
+  episodeItemCount: 'episodeItemCount',
+  pageRevision: 'pageRevision',
+  completedAt: 'completedAt',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type ProviderNativeInventoryPassScalarFieldEnum = (typeof ProviderNativeInventoryPassScalarFieldEnum)[keyof typeof ProviderNativeInventoryPassScalarFieldEnum]
+
+
+export const ProviderNativeInventoryPageReceiptScalarFieldEnum = {
+  id: 'id',
+  passId: 'passId',
+  domain: 'domain',
+  scopeKey: 'scopeKey',
+  pageKey: 'pageKey',
+  startIndex: 'startIndex',
+  nextCursor: 'nextCursor',
+  isLast: 'isLast',
+  expectedRawCount: 'expectedRawCount',
+  rawCount: 'rawCount',
+  rowCount: 'rowCount',
+  contentHash: 'contentHash',
+  createdAt: 'createdAt'
+} as const
+
+export type ProviderNativeInventoryPageReceiptScalarFieldEnum = (typeof ProviderNativeInventoryPageReceiptScalarFieldEnum)[keyof typeof ProviderNativeInventoryPageReceiptScalarFieldEnum]
+
+
+export const ProviderNativeInventorySeenItemScalarFieldEnum = {
+  id: 'id',
+  passId: 'passId',
+  domain: 'domain',
+  scopeKey: 'scopeKey',
+  nativeId: 'nativeId',
+  comparisonKey: 'comparisonKey'
+} as const
+
+export type ProviderNativeInventorySeenItemScalarFieldEnum = (typeof ProviderNativeInventorySeenItemScalarFieldEnum)[keyof typeof ProviderNativeInventorySeenItemScalarFieldEnum]
+
+
+export const ProviderNativeInventoryStageItemScalarFieldEnum = {
+  id: 'id',
+  passId: 'passId',
+  domain: 'domain',
+  nativeId: 'nativeId',
+  mediaType: 'mediaType',
+  libraryIds: 'libraryIds',
+  parentNativeId: 'parentNativeId',
+  seasonNumber: 'seasonNumber',
+  episodeNumber: 'episodeNumber',
+  title: 'title',
+  externalIds: 'externalIds'
+} as const
+
+export type ProviderNativeInventoryStageItemScalarFieldEnum = (typeof ProviderNativeInventoryStageItemScalarFieldEnum)[keyof typeof ProviderNativeInventoryStageItemScalarFieldEnum]
+
+
 export const ProviderNativeInventorySnapshotScalarFieldEnum = {
   id: 'id',
   instanceId: 'instanceId',
@@ -1285,7 +1708,8 @@ export const ProviderNativeInventorySnapshotScalarFieldEnum = {
   lastAttemptAt: 'lastAttemptAt',
   lastAttemptToken: 'lastAttemptToken',
   lastAttemptResult: 'lastAttemptResult',
-  lastAttemptReason: 'lastAttemptReason'
+  lastAttemptReason: 'lastAttemptReason',
+  publishedPassId: 'publishedPassId'
 } as const
 
 export type ProviderNativeInventorySnapshotScalarFieldEnum = (typeof ProviderNativeInventorySnapshotScalarFieldEnum)[keyof typeof ProviderNativeInventorySnapshotScalarFieldEnum]
@@ -1319,6 +1743,7 @@ export const ProviderObservationUnitScalarFieldEnum = {
   cursor: 'cursor',
   expectedRawCount: 'expectedRawCount',
   observedRawCount: 'observedRawCount',
+  completedPages: 'completedPages',
   state: 'state',
   claimToken: 'claimToken',
   attemptCount: 'attemptCount',
@@ -1397,7 +1822,8 @@ export const SessionSnapshotScalarFieldEnum = {
   directPlayCount: 'directPlayCount',
   transcodeCount: 'transcodeCount',
   directStreamCount: 'directStreamCount',
-  sessionsJson: 'sessionsJson'
+  sessionsJson: 'sessionsJson',
+  measurementJson: 'measurementJson'
 } as const
 
 export type SessionSnapshotScalarFieldEnum = (typeof SessionSnapshotScalarFieldEnum)[keyof typeof SessionSnapshotScalarFieldEnum]
@@ -1501,6 +1927,7 @@ export const LabelSyncMutationAttemptScalarFieldEnum = {
   completedAt: 'completedAt',
   status: 'status',
   reasonCode: 'reasonCode',
+  restoreEvidence: 'restoreEvidence',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
@@ -1579,6 +2006,29 @@ export const ListCacheRefreshStatusScalarFieldEnum = {
 export type ListCacheRefreshStatusScalarFieldEnum = (typeof ListCacheRefreshStatusScalarFieldEnum)[keyof typeof ListCacheRefreshStatusScalarFieldEnum]
 
 
+export const QuiObservationPublicationScalarFieldEnum = {
+  userId: 'userId',
+  generation: 'generation',
+  topologyDigest: 'topologyDigest',
+  observedAt: 'observedAt',
+  rowCount: 'rowCount',
+  complete: 'complete'
+} as const
+
+export type QuiObservationPublicationScalarFieldEnum = (typeof QuiObservationPublicationScalarFieldEnum)[keyof typeof QuiObservationPublicationScalarFieldEnum]
+
+
+export const QuiTorrentObservationScalarFieldEnum = {
+  userId: 'userId',
+  generation: 'generation',
+  infoHash: 'infoHash',
+  state: 'state',
+  ratio: 'ratio'
+} as const
+
+export type QuiTorrentObservationScalarFieldEnum = (typeof QuiTorrentObservationScalarFieldEnum)[keyof typeof QuiTorrentObservationScalarFieldEnum]
+
+
 export const QuiActivityLogScalarFieldEnum = {
   id: 'id',
   userId: 'userId',
@@ -1591,6 +2041,39 @@ export const QuiActivityLogScalarFieldEnum = {
 export type QuiActivityLogScalarFieldEnum = (typeof QuiActivityLogScalarFieldEnum)[keyof typeof QuiActivityLogScalarFieldEnum]
 
 
+export const SearchGrabAttemptScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  intentId: 'intentId',
+  serviceInstanceId: 'serviceInstanceId',
+  connectionFingerprint: 'connectionFingerprint',
+  targetHash: 'targetHash',
+  encryptedTarget: 'encryptedTarget',
+  targetIv: 'targetIv',
+  state: 'state',
+  outcomeCategory: 'outcomeCategory',
+  workerEpoch: 'workerEpoch',
+  predecessorId: 'predecessorId',
+  requestedAt: 'requestedAt',
+  updatedAt: 'updatedAt',
+  dispatchedAt: 'dispatchedAt',
+  completedAt: 'completedAt'
+} as const
+
+export type SearchGrabAttemptScalarFieldEnum = (typeof SearchGrabAttemptScalarFieldEnum)[keyof typeof SearchGrabAttemptScalarFieldEnum]
+
+
+export const SearchGrabClaimScalarFieldEnum = {
+  userId: 'userId',
+  serviceInstanceId: 'serviceInstanceId',
+  targetHash: 'targetHash',
+  attemptId: 'attemptId',
+  createdAt: 'createdAt'
+} as const
+
+export type SearchGrabClaimScalarFieldEnum = (typeof SearchGrabClaimScalarFieldEnum)[keyof typeof SearchGrabClaimScalarFieldEnum]
+
+
 export const QuiActionLogScalarFieldEnum = {
   id: 'id',
   userId: 'userId',
@@ -1601,11 +2084,24 @@ export const QuiActionLogScalarFieldEnum = {
   payload: 'payload',
   status: 'status',
   error: 'error',
+  attemptId: 'attemptId',
   requestedAt: 'requestedAt',
   completedAt: 'completedAt'
 } as const
 
 export type QuiActionLogScalarFieldEnum = (typeof QuiActionLogScalarFieldEnum)[keyof typeof QuiActionLogScalarFieldEnum]
+
+
+export const QuiActionClaimScalarFieldEnum = {
+  userId: 'userId',
+  serviceInstanceId: 'serviceInstanceId',
+  qbitInstanceId: 'qbitInstanceId',
+  torrentHash: 'torrentHash',
+  attemptId: 'attemptId',
+  createdAt: 'createdAt'
+} as const
+
+export type QuiActionClaimScalarFieldEnum = (typeof QuiActionClaimScalarFieldEnum)[keyof typeof QuiActionClaimScalarFieldEnum]
 
 
 export const QuiEventLogScalarFieldEnum = {
@@ -1629,10 +2125,42 @@ export const SortOrder = {
 export type SortOrder = (typeof SortOrder)[keyof typeof SortOrder]
 
 
+export const NullableJsonNullValueInput = {
+  DbNull: DbNull,
+  JsonNull: JsonNull
+} as const
+
+export type NullableJsonNullValueInput = (typeof NullableJsonNullValueInput)[keyof typeof NullableJsonNullValueInput]
+
+
+export const JsonNullValueInput = {
+  JsonNull: JsonNull
+} as const
+
+export type JsonNullValueInput = (typeof JsonNullValueInput)[keyof typeof JsonNullValueInput]
+
+
 export const NullsOrder = {
   first: 'first',
   last: 'last'
 } as const
 
 export type NullsOrder = (typeof NullsOrder)[keyof typeof NullsOrder]
+
+
+export const JsonNullValueFilter = {
+  DbNull: DbNull,
+  JsonNull: JsonNull,
+  AnyNull: AnyNull
+} as const
+
+export type JsonNullValueFilter = (typeof JsonNullValueFilter)[keyof typeof JsonNullValueFilter]
+
+
+export const QueryMode = {
+  default: 'default',
+  insensitive: 'insensitive'
+} as const
+
+export type QueryMode = (typeof QueryMode)[keyof typeof QueryMode]
 

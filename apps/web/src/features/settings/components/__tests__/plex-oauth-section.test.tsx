@@ -41,8 +41,8 @@ vi.mock("../../../../lib/theme-gradients", () => ({
 
 // Import after mock declarations
 import { usePlexOAuth } from "../../../../hooks/api/usePlexOAuth";
-import { getLinuxInstanceName, getLinuxUrl, useIncognitoMode } from "../../../../lib/incognito";
 import { retrievePlexToken } from "../../../../lib/api-client/plex";
+import { getLinuxInstanceName, getLinuxUrl, useIncognitoMode } from "../../../../lib/incognito";
 import { PlexOAuthSection } from "../plex-oauth-section";
 
 // ---------------------------------------------------------------------------
@@ -70,15 +70,11 @@ function createWrapper() {
 	);
 }
 
-function renderSection(
-	onServerSelected = vi.fn(),
-	mode: "add" | "edit" = "add",
-	onTestConnection = vi.fn(),
-) {
+function renderSection(onServerSelected = vi.fn(), mode: "add" | "edit" = "add") {
 	return render(
 		<PlexOAuthSection
 			onServerSelected={onServerSelected}
-			onTestConnection={onTestConnection}
+			isCurrentDraft={() => true}
 			mode={mode}
 		/>,
 		{

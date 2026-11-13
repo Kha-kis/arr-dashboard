@@ -26,6 +26,7 @@ WORK="/tmp/test-stop-timing-$$"
 PREFIX="test-stop-timing-$$-"
 SHIM_DIR="$WORK/shim"
 PORT_LEDGER="$WORK/ports"
+FORCED_STOP_MESSAGE="ERROR: Services required forced or failed termination"
 PASS=0
 FAIL=0
 HOST_IDENTITY=$(stop_timing_host_identity) || exit 2
@@ -129,11 +130,22 @@ container_logs() {
     docker logs "$1" 2>&1
 }
 
+capture_log_streams() (
+    stop_timing_require_present "$1" || return 1
+    umask 077
+    docker logs "$1" > "$WORK/log.stdout" 2> "$WORK/log.stderr"
+)
+
+log_lines_after() {
+    awk -v cursor="$2" 'NR > cursor' "$WORK/log.$1"
+}
+
 wait_stubborn_ready() {
     container_name=$1
+    readiness_cursor=${2:-0}
     elapsed=0
     while [ "$elapsed" -lt 60 ]; do
-        logs=$(container_logs "$container_name") || return 1
+        logs=$(appended_logs "$container_name" "$readiness_cursor") || return 1
         if printf '%s\n' "$logs" | grep -q '^\[stubborn-web\] started, ignoring SIGTERM$'; then
             return 0
         fi
@@ -147,19 +159,21 @@ capture_supervisor_epoch() {
     API_PID=invalid
     WEB_PID=invalid
     LOG_CURSOR=invalid
-    logs=$(container_logs "$1") || return 1
+    ERROR_LOG_CURSOR=invalid
+    capture_log_streams "$1" || return 1
+    logs=$(log_lines_after stdout "${2:-0}") || return 1
     API_PID=$(printf '%s\n' "$logs" | sed -n 's/.*API started with PID \([0-9][0-9]*\).*/\1/p' | tail -1)
     WEB_PID=$(printf '%s\n' "$logs" | sed -n 's/.*Web started with PID \([0-9][0-9]*\).*/\1/p' | tail -1)
     case "$API_PID:$WEB_PID" in
-        *[!0-9:]*|:*) return 1 ;;
+        *[!0-9:]*|:*|*:) return 1 ;;
     esac
     [ "$API_PID" != "$WEB_PID" ] || return 1
-    LOG_CURSOR=$(printf '%s\n' "$logs" | awk 'END { print NR }')
+    LOG_CURSOR=$(awk 'END { print NR }' "$WORK/log.stdout") || return 1
+    ERROR_LOG_CURSOR=$(awk 'END { print NR }' "$WORK/log.stderr")
 }
 
 appended_logs() {
-    logs=$(container_logs "$1") || return 1
-    printf '%s\n' "$logs" | awk -v cursor="$2" 'NR > cursor'
+    capture_log_streams "$1" && log_lines_after stdout "$2"
 }
 
 wait_event() {
@@ -194,6 +208,24 @@ assert_epoch_reaped() {
         terminal_line=$(printf '%s\n' "$segment" | awk -v text="$terminal" 'index($0, text) { line = NR } END { if (!line) exit 1; print line }') || return 1
         [ "$api_line" -lt "$terminal_line" ] && [ "$web_line" -lt "$terminal_line" ] || return 1
     fi
+}
+
+assert_forced_stop() {
+    if ! assert_epoch_reaped "$1" || [ "$WEB_WAIT_STATUS" != 137 ]; then
+        echo "    exact wait evidence failed (api_wait=$API_WAIT_STATUS web_wait=$WEB_WAIT_STATUS)" >&2
+        return 1
+    fi
+    # Docker streams stdout (waits) and stderr (failure) independently.
+    printf '%s\n' "$2" | awk -v marker="$FORCED_STOP_MESSAGE" '
+        $0 == marker { forced++ }
+        /^  Web did not stop within [0-9]+s - sending SIGKILL$/ { sigkill++ }
+        END {
+            if (forced != 1 || sigkill != 1) {
+                printf "    shutdown markers: forced=%d web_sigkill=%d\n", forced, sigkill
+                exit 1
+            }
+        }
+    ' >&2
 }
 
 measure() {
@@ -266,7 +298,7 @@ case_green_stubborn() {
         while [ "$i" -le "$runs" ]; do
             ctr="${PREFIX}green-$mode-$i"
             owner=$ctr
-            if ! start_container "$ctr" "$mode" stubborn "" "$owner"; then
+            if ! start_container "$ctr" "$mode" stubborn 7 "$owner"; then
                 all_pass=false
                 strict_remove "$ctr" "$owner" || true
                 break
@@ -276,17 +308,30 @@ case_green_stubborn() {
                 strict_remove "$ctr" "$owner" || true
                 break
             fi
-            if ! measure stubborn docker stop --time 10 "$ctr"; then all_pass=false; fi
+            if ! measure stubborn docker stop --time 10 "$ctr"; then
+                echo "    stop command or timing gate failed" >&2
+                all_pass=false
+            fi
             [ "${ELAPSED_MS:-999999}" -gt "$max_ms" ] && max_ms=${ELAPSED_MS:-999999}
             code=$(stop_timing_exit_code "$ctr") || all_pass=false
             oom=$(stop_timing_oom_killed "$ctr") || all_pass=false
             state=$(stop_timing_runtime_state "$ctr") || all_pass=false
-            segment=$(appended_logs "$ctr" "$LOG_CURSOR") || all_pass=false
-            if ! assert_epoch_reaped "$segment" "Services stopped gracefully"; then all_pass=false; fi
-            sigkill=$(printf '%s\n' "$segment" | awk '/sending SIGKILL/ { count++ } END { print count + 0 }')
-            [ "$code" = 0 ] && [ "$oom" = false ] && [ "$state" = exited ] && [ "$sigkill" -ge 1 ] || all_pass=false
+            if capture_log_streams "$ctr" &&
+                segment=$(log_lines_after stdout "$LOG_CURSOR") &&
+                errors=$(log_lines_after stderr "$ERROR_LOG_CURSOR"); then
+                assert_forced_stop "$segment" "$errors" || all_pass=false
+            else
+                echo "    failed to read stopped log streams" >&2
+                API_WAIT_STATUS=missing
+                WEB_WAIT_STATUS=missing
+                all_pass=false
+            fi
+            [ "$code" = 1 ] && [ "$oom" = false ] && [ "$state" = exited ] || all_pass=false
             echo "  $mode run $i: ${ELAPSED_MS}ms exit=$code oom=$oom state=$state api_wait=$API_WAIT_STATUS web_wait=$WEB_WAIT_STATUS"
-            strict_remove "$ctr" "$owner" || all_pass=false
+            if ! strict_remove "$ctr" "$owner"; then
+                echo "    container or port cleanup was not proven" >&2
+                all_pass=false
+            fi
             i=$((i + 1))
         done
         if [ "$all_pass" = true ]; then
@@ -298,27 +343,107 @@ case_green_stubborn() {
     done
 }
 
+report_normal_stop_failure() (
+    elapsed_ms=${ELAPSED_MS:-unknown}
+    case "$elapsed_ms" in *[!0-9]*) elapsed_ms=unknown ;; esac
+    snapshot=$(timeout -k 1s 5s docker inspect --type container \
+        --format '{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}}' "$ctr" 2>/dev/null) || snapshot=
+    state=$(printf '%s\n' "$snapshot" | awk 'NR == 1 && NF == 3 &&
+            $1 ~ /^(created|running|paused|restarting|removing|exited|dead)$/ &&
+            $2 ~ /^[0-9]+$/ && $2 <= 255 && $3 ~ /^(true|false)$/ {
+                result = "state=" $1 " exit=" $2 " oom=" $3
+            }
+            END { if (NR == 1 && result != "") print result }')
+    printf '  %s normal stop diagnostic stage=%s elapsed_ms=%s %s\n' \
+        "$mode" "$stage" "$elapsed_ms" "${state:-state=unknown exit=unknown oom=unknown}" >&2
+
+    # Keep only exact supervisor markers and the exit statuses of the captured
+    # children. This runs before the fixture is removed and emits no raw logs.
+    if ! logs=$(timeout -k 1s 5s docker logs --tail 120 "$ctr" 2>&1); then
+        printf '  %s normal stop markers unavailable\n' "$mode" >&2
+        return
+    fi
+    printf '%s\n' "$logs" | awk -v mode="$mode" -v api="$API_PID" -v web="$WEB_PID" '
+        $0 == "Shutting down services..." { shutdown++ }
+        $0 == "Services stopped gracefully" { graceful++ }
+        $0 == "ERROR: Services required forced or failed termination" { failed++ }
+        /^  API did not stop within [0-9]+s - sending SIGKILL$/ { api_kill++ }
+        /^  Web did not stop within [0-9]+s - sending SIGKILL$/ { web_kill++ }
+        $0 == "{\"category\":\"launcher-shutdown-failure\",\"reason\":\"forced-child-termination\"}" { launcher_kill++ }
+        $0 == "{\"category\":\"launcher-shutdown-failure\",\"reason\":\"handoff-revocation-failed\"}" { launcher_revoke++ }
+        $0 == "{\"category\":\"launcher-shutdown-failure\",\"reason\":\"combined-handoff-rejected\"}" { launcher_reject++ }
+        /^SUPERVISOR_WAIT_COMPLETED pid=[0-9]+ status=[0-9]+$/ {
+            if ($2 == "pid=" api) { api_wait = substr($3, 8); api_count++ }
+            if ($2 == "pid=" web) { web_wait = substr($3, 8); web_count++ }
+        }
+        END {
+            printf "  %s normal stop markers shutdown=%d graceful=%d failed=%d", mode, shutdown, graceful, failed
+            printf " api_wait=%s web_wait=%s api_sigkill=%d web_sigkill=%d\n",
+                api_count == 1 && api_wait + 0 <= 255 ? api_wait : "unknown",
+                web_count == 1 && web_wait + 0 <= 255 ? web_wait : "unknown", api_kill, web_kill
+            printf "  %s normal stop launcher forced_child=%d handoff_revocation_failed=%d handoff_rejected=%d\n",
+                mode, launcher_kill, launcher_revoke, launcher_reject
+        }
+    ' >&2
+    if progress=$(printf '%s\n' "$logs" |
+        node "$SCRIPT_DIR/shutdown-progress-diagnostics.cjs" 2>/dev/null); then
+        printf '  %s normal stop API progress: %s\n' "$mode" "$progress" >&2
+    else
+        printf '  %s normal stop API progress unavailable\n' "$mode" >&2
+    fi
+)
+
 case_default_normal() {
     echo ""
     echo "=== [default-normal] normal-child stop ==="
     for mode in rootful rootless; do
         ctr="${PREFIX}normal-$mode"
         owner=$ctr
+        API_PID=invalid
+        WEB_PID=invalid
+        ELAPSED_MS=
         pass=true
+        stage=start
         start_container "$ctr" "$mode" normal "" "$owner" || pass=false
-        if [ "$pass" = true ]; then wait_health false && capture_supervisor_epoch "$ctr" || pass=false; fi
-        if [ "$pass" = true ]; then measure_unchecked docker stop --time 10 "$ctr" || pass=false; fi
         if [ "$pass" = true ]; then
-            code=$(stop_timing_exit_code "$ctr") || pass=false
-            oom=$(stop_timing_oom_killed "$ctr") || pass=false
-            state=$(stop_timing_runtime_state "$ctr") || pass=false
+            stage=readiness
+            wait_health false || pass=false
+        fi
+        if [ "$pass" = true ]; then
+            stage=supervisor-epoch
+            if ! capture_supervisor_epoch "$ctr"; then
+                API_PID=invalid
+                WEB_PID=invalid
+                pass=false
+            fi
+        fi
+        if [ "$pass" = true ]; then
+            stage=docker-stop
+            measure_unchecked docker stop --time 120 "$ctr" || pass=false
+        fi
+        if [ "$pass" = true ]; then
+            stage=docker-state
+            code=$(stop_timing_exit_code "$ctr") &&
+                oom=$(stop_timing_oom_killed "$ctr") &&
+                state=$(stop_timing_runtime_state "$ctr") || pass=false
+        fi
+        if [ "$pass" = true ]; then
+            stage=log-capture
             segment=$(appended_logs "$ctr" "$LOG_CURSOR") || pass=false
+        fi
+        if [ "$pass" = true ]; then
+            stage=reaping
             assert_epoch_reaped "$segment" "Services stopped gracefully" || pass=false
         fi
-        if [ "$pass" = true ] && [ "$code" = 0 ] && [ "$oom" = false ] && [ "$state" = exited ]; then
+        if [ "$pass" = true ]; then
+            stage=container-exit
+            [ "$code" = 0 ] && [ "$oom" = false ] && [ "$state" = exited ] || pass=false
+        fi
+        if [ "$pass" = true ]; then
             ok "$mode normal stop: ${ELAPSED_MS}ms, exact old PIDs reaped"
         else
             bad "$mode normal stop failed binding-faithful assertions"
+            report_normal_stop_failure || true
         fi
         strict_remove "$ctr" "$owner" || bad "$mode normal container removal was not proven"
     done
@@ -331,7 +456,7 @@ case_docker_restart() {
     old_owner="${ctr}-generation-1"
     new_owner="${ctr}-generation-2"
     cleanup_owner=$old_owner
-    start_container "$ctr" rootful stubborn "" "$old_owner" || {
+    start_container "$ctr" rootful stubborn 7 "$old_owner" || {
         bad "restart container failed to start"
         strict_remove "$ctr" "$old_owner" || true
         return
@@ -344,30 +469,38 @@ case_docker_restart() {
     old_api=$API_PID
     old_web=$WEB_PID
     old_cursor=$LOG_CURSOR
+    old_error_cursor=$ERROR_LOG_CURSOR
     if measure restart docker restart --time 10 "$ctr"; then
         ok "restart completed within Docker's 10s window (${ELAPSED_MS}ms)"
     else
         bad "restart exceeded Docker's 10s window (${ELAPSED_MS:-unknown}ms)"
     fi
-    appended=$(appended_logs "$ctr" "$old_cursor") || appended=""
-    old_segment=$(printf '%s\n' "$appended" | awk '/API started with PID [0-9]+/ { exit } { print }')
     API_PID=$old_api
     WEB_PID=$old_web
     old_epoch_reaped=false
-    if assert_epoch_reaped "$old_segment" "Services stopped gracefully" && printf '%s\n' "$old_segment" | grep -q 'sending SIGKILL'; then
-        old_epoch_reaped=true
-        ok "old restart PIDs were reaped inside the old log epoch"
+    # Bound the old stdout at the new supervisor banner. The restarted
+    # supervisor has not received a stop signal when we collect stderr.
+    if capture_log_streams "$ctr" &&
+        appended=$(log_lines_after stdout "$old_cursor") &&
+        errors=$(log_lines_after stderr "$old_error_cursor"); then
+        old_segment=$(printf '%s\n' "$appended" | awk '$0 == "Arr Dashboard - Combined Container" { exit } { print }')
+        if assert_forced_stop "$old_segment" "$errors"; then
+            old_epoch_reaped=true
+            ok "old restart PIDs were reaped inside the old log epoch"
+        else
+            bad "old restart PIDs lack bounded old-epoch reaping evidence"
+        fi
     else
-        bad "old restart PIDs lack bounded old-epoch reaping evidence"
+        bad "failed to read restart log streams"
     fi
     restart_healthy=false
     if [ "$old_epoch_reaped" = true ] && stop_timing_release_ports "$PORT_LEDGER" "$old_owner" "$ctr" running; then
         cleanup_owner=$new_owner
         API_PORT=$(published_port "$ctr" "$new_owner" 3001) || { bad "restarted API port query failed"; API_PORT=invalid; }
         WEB_PORT=$(published_port "$ctr" "$new_owner" 3000) || { bad "restarted Web port query failed"; WEB_PORT=invalid; }
-        if wait_health true; then restart_healthy=true; fi
+        if wait_health true && wait_stubborn_ready "$ctr" "$old_cursor"; then restart_healthy=true; fi
     fi
-    if [ "$restart_healthy" = true ] && capture_supervisor_epoch "$ctr" && [ "$LOG_CURSOR" -gt "$old_cursor" ]; then
+    if [ "$restart_healthy" = true ] && capture_supervisor_epoch "$ctr" "$old_cursor" && [ "$LOG_CURSOR" -gt "$old_cursor" ]; then
         ok "new supervisor epoch became healthy after the shutdown boundary"
     else
         bad "new supervisor epoch was not isolated and healthy"
@@ -393,10 +526,15 @@ case_prompt_exit() {
                 code=$(stop_timing_exit_code "$ctr") || pass=false
                 oom=$(stop_timing_oom_killed "$ctr") || pass=false
                 state=$(stop_timing_runtime_state "$ctr") || pass=false
-                segment=$(appended_logs "$ctr" "$LOG_CURSOR") || pass=false
-                assert_epoch_reaped "$segment" || pass=false
-                fatal_count=$(printf '%s\n' "$segment" | awk -v service="$service" 'index($0, "ERROR: " service " service exited unexpectedly") { count++ } END { print count + 0 }')
-                term_count=$(printf '%s\n' "$segment" | awk '/Terminating (API|Web) service/ { count++ } END { print count + 0 }')
+                if capture_log_streams "$ctr" &&
+                    segment=$(log_lines_after stdout "$LOG_CURSOR") &&
+                    errors=$(log_lines_after stderr "$ERROR_LOG_CURSOR"); then
+                    assert_epoch_reaped "$segment" || pass=false
+                    fatal_count=$(printf '%s\n' "$errors" | awk -v service="$service" 'index($0, "ERROR: " service " service exited unexpectedly") { count++ } END { print count + 0 }')
+                    term_count=$(printf '%s\n' "$errors" | awk '/Terminating (API|Web) service/ { count++ } END { print count + 0 }')
+                else
+                    pass=false
+                fi
             fi
             if [ "$pass" = true ] && [ "$code" -ne 0 ] && [ "$oom" = false ] && [ "$state" = exited ] && [ "$fatal_count" -eq 1 ] && [ "$term_count" -eq 1 ]; then
                 ok "$mode $service death: ${ELAPSED_MS}ms, nonzero exit, both old PIDs reaped"

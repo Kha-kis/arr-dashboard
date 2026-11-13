@@ -8,7 +8,7 @@
  * - Refresh functionality
  */
 
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { ROUTES, TIMEOUTS, waitForLoadingComplete } from "./utils/test-helpers";
 
 test.describe("Calendar - Page Load", () => {
@@ -208,10 +208,14 @@ test.describe("Calendar - Timezone Bucketing", () => {
 							instanceName: "Sonarr",
 							service: "sonarr",
 							data: [item],
+							availability: "available",
+							reason: null,
+							rejectedItemCount: 0,
 						},
 					],
 					aggregated: [item],
 					totalCount: 1,
+					availability: "available",
 				}),
 			});
 		});
@@ -272,10 +276,14 @@ test.describe("Calendar - Timezone Bucketing", () => {
 							instanceName: "Sonarr",
 							service: "sonarr",
 							data: [boundaryItem, paddingOnlyItem],
+							availability: "available",
+							reason: null,
+							rejectedItemCount: 0,
 						},
 					],
 					aggregated: [boundaryItem, paddingOnlyItem],
 					totalCount: 2,
+					availability: "available",
 				}),
 			});
 		});

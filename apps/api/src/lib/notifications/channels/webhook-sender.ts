@@ -7,6 +7,12 @@
 
 import { createHmac } from "node:crypto";
 import type { WebhookConfig } from "@arr/shared";
+import {
+	httpFailureCategory,
+	networkFailureCategory,
+	notificationFailure,
+	NotificationFailureError,
+} from "../failure-diagnostics.js";
 import type { ChannelPlugin, ChannelSender, NotificationPayload, SendResult } from "../types.js";
 
 const WEBHOOK_TIMEOUT_MS = 10000;
@@ -60,36 +66,20 @@ export const webhookSender: ChannelSender = {
 			if (response.ok) {
 				return { success: true, retryable: false };
 			}
+			await response.body?.cancel().catch(() => {});
 
 			if (response.status === 429) {
 				const retryAfter = response.headers.get("Retry-After");
 				const retryAfterMs = retryAfter ? Number(retryAfter) * 1000 : undefined;
-				return {
-					success: false,
-					retryable: true,
-					retryAfterMs: retryAfterMs && !Number.isNaN(retryAfterMs) ? retryAfterMs : undefined,
-					error: "Rate limited (429)",
-				};
+				return notificationFailure(
+					"rate-limited",
+					true,
+					retryAfterMs && !Number.isNaN(retryAfterMs) ? retryAfterMs : undefined,
+				);
 			}
-
-			if (response.status >= 500) {
-				return { success: false, retryable: true, error: `Server error (${response.status})` };
-			}
-
-			return {
-				success: false,
-				retryable: false,
-				error: `HTTP ${response.status}: ${response.statusText}`,
-			};
+			return notificationFailure(httpFailureCategory(response.status), response.status >= 500);
 		} catch (err) {
-			if (err instanceof Error && err.name === "TimeoutError") {
-				return { success: false, retryable: true, error: "Request timed out" };
-			}
-			return {
-				success: false,
-				retryable: true,
-				error: err instanceof Error ? err.message : String(err),
-			};
+			return notificationFailure(networkFailureCategory(err), true);
 		}
 	},
 
@@ -100,7 +90,7 @@ export const webhookSender: ChannelSender = {
 			body: "This is a test notification from Arr Dashboard.",
 		});
 		if (!result.success) {
-			throw new Error(result.error ?? "Webhook test failed");
+			throw new NotificationFailureError(result.failureCategory ?? "unknown");
 		}
 	},
 };
@@ -114,6 +104,7 @@ export const webhookPlugin: ChannelPlugin = {
 		{ key: "url", label: "Webhook URL", type: "url", required: true },
 		{ key: "method", label: "HTTP Method", type: "text", placeholder: "POST" },
 		{ key: "secret", label: "Signing Secret", type: "password" },
+		{ key: "headers", label: "Custom Headers", type: "headers" },
 	],
 	sender: webhookSender,
 };

@@ -3,6 +3,7 @@ import type {
 	ProviderObservationDomain,
 	ProviderObservationStatus,
 	ProviderObservationStatusEnvelope,
+	ProviderObservationSourceCacheType,
 	ProviderUiCondition,
 } from "@arr/shared";
 import { aggregateProviderObservationUi } from "@arr/shared";
@@ -15,6 +16,9 @@ export type ProviderObservationNoticeProps = {
 		| ProviderObservationStatusEnvelope
 		| readonly (ProviderObservationStatus | ProviderObservationStatusEnvelope | undefined)[];
 	requiredDomains?: readonly (readonly ProviderObservationDomain[] | undefined)[];
+	requiredDomainsByCacheType?: Partial<
+		Record<ProviderObservationSourceCacheType, readonly ProviderObservationDomain[]>
+	>;
 	isError?: boolean;
 	label?: string;
 };
@@ -53,7 +57,7 @@ export function resolveProviderObservationAvailability(
 const noticeCopy = {
 	"informational-gap": {
 		heading: "Showing current mapped data",
-		detail: "Some unsupported items were excluded.",
+		detail: "Some observations were not verified.",
 	},
 	collecting: {
 		heading: "Media-server data is being collected",
@@ -90,6 +94,7 @@ type ProviderObservationNoticeSource = {
 function sourcesForUi(
 	providerStatus: ProviderObservationNoticeProps["providerStatus"],
 	requiredDomains: ProviderObservationNoticeProps["requiredDomains"] = [],
+	requiredDomainsByCacheType: ProviderObservationNoticeProps["requiredDomainsByCacheType"] = {},
 ): ProviderObservationNoticeSource[] {
 	const values = Array.isArray(providerStatus) ? providerStatus : [providerStatus];
 	return values.flatMap((value, valueIndex) => {
@@ -99,7 +104,7 @@ function sourcesForUi(
 			return value.sources.map((source: ProviderObservationStatusEnvelope["sources"][number]) => ({
 				key: `${source.instanceId}:${source.cacheType}`,
 				status: source.status,
-				requiredDomains: domains,
+				requiredDomains: requiredDomainsByCacheType[source.cacheType] ?? domains,
 			}));
 		return [{ key: `direct:${valueIndex}`, status: value, requiredDomains: domains }];
 	});
@@ -109,8 +114,9 @@ export function resolveProviderObservationUiCondition(
 	providerStatus: ProviderObservationNoticeProps["providerStatus"],
 	isError = false,
 	requiredDomains: ProviderObservationNoticeProps["requiredDomains"] = [],
+	requiredDomainsByCacheType: ProviderObservationNoticeProps["requiredDomainsByCacheType"] = {},
 ): ProviderUiCondition | undefined {
-	const statuses = sourcesForUi(providerStatus, requiredDomains).map(
+	const statuses = sourcesForUi(providerStatus, requiredDomains, requiredDomainsByCacheType).map(
 		({ status, requiredDomains: sourceDomains }) => ({
 			status,
 			requiredDomains: sourceDomains,
@@ -126,12 +132,18 @@ export function resolveProviderObservationUiCondition(
 export function ProviderObservationNotice({
 	providerStatus,
 	requiredDomains,
+	requiredDomainsByCacheType,
 	isError = false,
 	label,
 }: ProviderObservationNoticeProps) {
 	const availability = resolveProviderObservationAvailability(providerStatus, isError);
-	const condition = resolveProviderObservationUiCondition(providerStatus, isError, requiredDomains);
-	const sources = sourcesForUi(providerStatus, requiredDomains);
+	const condition = resolveProviderObservationUiCondition(
+		providerStatus,
+		isError,
+		requiredDomains,
+		requiredDomainsByCacheType,
+	);
+	const sources = sourcesForUi(providerStatus, requiredDomains, requiredDomainsByCacheType);
 	if (!condition || condition === "current") return null;
 
 	const copy =

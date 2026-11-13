@@ -36,6 +36,11 @@ class HuntingScheduler {
 	private running = false;
 	private intervalId: NodeJS.Timeout | null = null;
 	private trackTick: TickWrapper = passthroughTickWrapper;
+	private trackHunt: TickWrapper = passthroughTickWrapper;
+	private shuttingDown = false;
+	private shutdownComplete = false;
+	private shutdownPromise: Promise<void> | null = null;
+	private pendingWork = new Set<Promise<unknown>>();
 	// Tracks an in-flight scheduler tick so a new tick (fired by setInterval)
 	// is suppressed while the prior one is still paginating. Slow ARR services
 	// can make a single tick span many minutes; without this, hunt rounds stack
@@ -53,6 +58,11 @@ class HuntingScheduler {
 	setTrackTick(trackTick: TickWrapper): void {
 		this.trackTick = trackTick;
 	}
+
+	/** Wire accepted hunt lifetime after initialization, including manual hunts. */
+	setTrackHunt(trackHunt: TickWrapper): void {
+		this.trackHunt = trackHunt;
+	}
 	// In-memory cooldown tracking (supplements database timestamps)
 	private instanceHuntTimes: Map<string, InstanceHuntTimes> = new Map();
 
@@ -60,13 +70,23 @@ class HuntingScheduler {
 	 * Initialize the scheduler with the app instance
 	 * This must be called before any hunts can run (manual or scheduled)
 	 */
-	initialize(app: FastifyInstance): void {
+	initialize(app: FastifyInstance): Promise<void> {
+		if (this.shuttingDown && !this.shutdownComplete) {
+			throw new Error("Hunting scheduler is shutting down");
+		}
+		this.shuttingDown = false;
+		this.shutdownComplete = false;
+		this.shutdownPromise = null;
 		this.app = app;
+		// A new lifecycle must not retain a producer bound to the previous app.
+		this.trackHunt = passthroughTickWrapper;
 
-		// Clean up any stuck hunts from previous runs
-		withIndependentCleanupOperationGuard(() => this.cleanupStuckHunts()).catch((error) => {
-			log.error({ err: error }, "Failed to cleanup stuck hunts on init");
-		});
+		// Join startup cleanup before activation closes starting admission.
+		return this.trackWork(
+			withIndependentCleanupOperationGuard(() => this.cleanupStuckHunts()).catch((error) => {
+				log.error({ err: error }, "Failed to cleanup stuck hunts on init");
+			}),
+		);
 	}
 
 	/**
@@ -100,7 +120,7 @@ class HuntingScheduler {
 	 * Start the hunting scheduler (automatic/scheduled hunts)
 	 */
 	start(app: FastifyInstance): void {
-		if (this.running) {
+		if (this.running || this.shuttingDown) {
 			return;
 		}
 
@@ -131,6 +151,7 @@ class HuntingScheduler {
 	 * busy tick finally completes.
 	 */
 	private runTickIfIdle(): void {
+		if (this.shuttingDown) return;
 		if (this.inFlightTick) {
 			this.skippedTicksWhileBusy += 1;
 			log.warn(
@@ -140,22 +161,24 @@ class HuntingScheduler {
 			return;
 		}
 
-		this.inFlightTick = (async () => {
-			try {
-				await this.trackTick(() => this.tick());
-			} catch (error) {
-				log.error({ err: error }, "Scheduler tick failed");
-			} finally {
-				if (this.skippedTicksWhileBusy > 0) {
-					log.info(
-						{ skippedSinceLastRun: this.skippedTicksWhileBusy },
-						"Hunt scheduler tick completed; resuming normal cadence",
-					);
-					this.skippedTicksWhileBusy = 0;
+		this.inFlightTick = this.trackWork(
+			(async () => {
+				try {
+					await this.trackTick(() => (this.shuttingDown ? Promise.resolve() : this.tick()));
+				} catch (error) {
+					log.error({ err: error }, "Scheduler tick failed");
+				} finally {
+					if (this.skippedTicksWhileBusy > 0) {
+						log.info(
+							{ skippedSinceLastRun: this.skippedTicksWhileBusy },
+							"Hunt scheduler tick completed; resuming normal cadence",
+						);
+						this.skippedTicksWhileBusy = 0;
+					}
+					this.inFlightTick = null;
 				}
-				this.inFlightTick = null;
-			}
-		})();
+			})(),
+		);
 	}
 
 	/**
@@ -176,6 +199,31 @@ class HuntingScheduler {
 		// Keep app reference so manual hunts still work
 	}
 
+	/** Terminal drain, distinct from pausing automatic scheduling with stop(). */
+	shutdown(): Promise<void> {
+		if (this.shutdownPromise) return this.shutdownPromise;
+		this.shuttingDown = true;
+		this.stop();
+		this.shutdownPromise = (async () => {
+			// Admitted work may register a raw executor after an asynchronous lookup.
+			// Re-snapshot until both outer bookkeeping and uncancelled work settle.
+			while (this.pendingWork.size > 0) {
+				await Promise.allSettled([...this.pendingWork]);
+			}
+			this.shutdownComplete = true;
+		})();
+		return this.shutdownPromise;
+	}
+
+	private trackWork<T>(work: Promise<T>): Promise<T> {
+		this.pendingWork.add(work);
+		void work.then(
+			() => this.pendingWork.delete(work),
+			() => this.pendingWork.delete(work),
+		);
+		return work;
+	}
+
 	/**
 	 * Check if scheduler is running
 	 */
@@ -191,6 +239,9 @@ class HuntingScheduler {
 		instanceId: string,
 		type: "missing" | "upgrade",
 	): { queued: boolean; message: string } {
+		if (this.shuttingDown) {
+			return { queued: false, message: "Hunting scheduler is shutting down" };
+		}
 		if (this.activeHuntExecutions.has(instanceId)) {
 			return { queued: false, message: "Hunt already in progress for this instance" };
 		}
@@ -208,9 +259,11 @@ class HuntingScheduler {
 		this.updateHuntTimes(instanceId, type);
 
 		// Run hunt immediately in background (don't await - let API return quickly)
-		this.runHunt(instanceId, type, true).catch((error) => {
-			log.error({ err: error, instanceId }, "Manual hunt failed");
-		});
+		this.trackWork(
+			this.runHunt(instanceId, type, true).catch((error) => {
+				log.error({ err: error, instanceId }, "Manual hunt failed");
+			}),
+		);
 
 		return { queued: true, message: `${type} hunt started` };
 	}
@@ -298,7 +351,7 @@ class HuntingScheduler {
 	 * Check and process scheduled hunts
 	 */
 	private async processScheduledHunts(): Promise<void> {
-		if (!this.app) return;
+		if (!this.app || this.shuttingDown) return;
 
 		const now = new Date();
 		const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -312,6 +365,7 @@ class HuntingScheduler {
 			select: { id: true, apiCallsResetAt: true },
 		});
 		for (const ec of expiredConfigs) {
+			if (this.shuttingDown) return;
 			// Advance from the original resetAt to avoid drift
 			let nextReset = ec.apiCallsResetAt
 				? new Date(ec.apiCallsResetAt.getTime() + ONE_HOUR_MS)
@@ -326,6 +380,7 @@ class HuntingScheduler {
 		}
 
 		// Get all enabled hunt configs (after reset, so counts are fresh)
+		if (this.shuttingDown) return;
 		const configs = await this.app.prisma.huntConfig.findMany({
 			where: {
 				OR: [{ huntMissingEnabled: true }, { huntUpgradesEnabled: true }],
@@ -336,6 +391,7 @@ class HuntingScheduler {
 		});
 
 		for (const config of configs) {
+			if (this.shuttingDown) return;
 			// Check if we're over API cap
 			if (config.apiCallsThisHour >= config.hourlyApiCap) {
 				continue;
@@ -374,7 +430,16 @@ class HuntingScheduler {
 	/**
 	 * Execute a hunt for an instance
 	 */
-	private async runHunt(
+	private runHunt(
+		instanceId: string,
+		type: "missing" | "upgrade",
+		isManual = false,
+	): Promise<void> {
+		if (this.shuttingDown) return Promise.resolve();
+		return this.trackWork(this.trackHunt(() => this.runHuntWork(instanceId, type, isManual)));
+	}
+
+	private async runHuntWork(
 		instanceId: string,
 		type: "missing" | "upgrade",
 		isManual = false,
@@ -432,8 +497,10 @@ class HuntingScheduler {
 
 				try {
 					// Execute the actual hunt using hunt-executor with timeout protection
-					const execution = withIndependentCleanupOperationGuard(() =>
-						executeHuntWithSdk(this.app!, config.instance, config, type),
+					const execution = this.trackWork(
+						withIndependentCleanupOperationGuard(() =>
+							executeHuntWithSdk(this.app!, config.instance, config, type),
+						),
 					);
 					executionStarted = true;
 					void execution
@@ -494,13 +561,16 @@ class HuntingScheduler {
 					};
 					if (result.itemsGrabbed > 0) {
 						await this.app.notificationService
-							?.notify({
-								eventType: "HUNT_CONTENT_FOUND",
-								title: `Hunt found ${result.itemsGrabbed} item(s) on ${config.instance.label}`,
-								body: result.message,
-								url: "/hunting",
-								metadata: huntMeta,
-							})
+							?.notify(
+								{
+									eventType: "HUNT_CONTENT_FOUND",
+									title: `Hunt found ${result.itemsGrabbed} item(s) on ${config.instance.label}`,
+									body: result.message,
+									url: "/hunting",
+									metadata: huntMeta,
+								},
+								{ userId: config.instance.userId },
+							)
 							.catch((err) => {
 								log.warn(
 									{ err, instanceLabel: config.instance.label },
@@ -509,13 +579,16 @@ class HuntingScheduler {
 							});
 					} else if (result.status === "completed") {
 						await this.app.notificationService
-							?.notify({
-								eventType: "HUNT_COMPLETED",
-								title: `Hunt completed on ${config.instance.label}`,
-								body: result.message,
-								url: "/hunting",
-								metadata: huntMeta,
-							})
+							?.notify(
+								{
+									eventType: "HUNT_COMPLETED",
+									title: `Hunt completed on ${config.instance.label}`,
+									body: result.message,
+									url: "/hunting",
+									metadata: huntMeta,
+								},
+								{ userId: config.instance.userId },
+							)
 							.catch((err) => {
 								log.warn(
 									{ err, instanceLabel: config.instance.label },
@@ -528,13 +601,16 @@ class HuntingScheduler {
 						// Surface it explicitly so an offline instance doesn't silently
 						// stop hunting. (Issue #438 follow-up.)
 						await this.app.notificationService
-							?.notify({
-								eventType: "HUNT_FAILED",
-								title: `Hunt failed on ${config.instance.label}`,
-								body: result.message,
-								url: "/hunting",
-								metadata: huntMeta,
-							})
+							?.notify(
+								{
+									eventType: "HUNT_FAILED",
+									title: `Hunt failed on ${config.instance.label}`,
+									body: result.message,
+									url: "/hunting",
+									metadata: huntMeta,
+								},
+								{ userId: config.instance.userId },
+							)
 							.catch((err) => {
 								log.warn(
 									{ err, instanceLabel: config.instance.label },
@@ -582,18 +658,21 @@ class HuntingScheduler {
 
 					// Fire-and-forget notification for hunt failure
 					await this.app.notificationService
-						?.notify({
-							eventType: "HUNT_FAILED",
-							title: `Hunt failed on ${config.instance.label}`,
-							body: message,
-							url: "/hunting",
-							metadata: {
-								instance: config.instance.label,
-								service: config.instance.service,
-								huntType: type,
-								durationMs,
+						?.notify(
+							{
+								eventType: "HUNT_FAILED",
+								title: `Hunt failed on ${config.instance.label}`,
+								body: message,
+								url: "/hunting",
+								metadata: {
+									instance: config.instance.label,
+									service: config.instance.service,
+									huntType: type,
+									durationMs,
+								},
 							},
-						})
+							{ userId: config.instance.userId },
+						)
 						.catch((err) => {
 							log.warn(
 								{ err, instanceLabel: config.instance.label },

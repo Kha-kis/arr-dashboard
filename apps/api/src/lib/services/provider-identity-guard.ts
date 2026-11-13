@@ -1,6 +1,11 @@
 import type { FastifyBaseLogger } from "fastify";
+import {
+	withIsolatedRuntimePrismaReadTransaction,
+	withIsolatedRuntimePrismaTransaction,
+} from "../backup/restore-runtime-client.js";
 import type { Prisma, PrismaClient, ServiceInstance } from "../prisma.js";
 import { invalidateObservationRunsInTransaction } from "../provider-observation/observation-run-repository.js";
+import { withSqliteTransactionWriteIntent } from "../sqlite-transaction-intent.js";
 import {
 	type DecryptedOwnedServiceSnapshot,
 	type ProviderIdentityObservation,
@@ -9,7 +14,9 @@ import {
 } from "./service-identity.js";
 
 type GuardPrisma = Pick<PrismaClient, "$transaction">;
-type PublicationAuthorityResult<T> = { matched: true; value: T } | { matched: false };
+type PublicationAuthorityResult<T> =
+	| { matched: true; value: T }
+	| { matched: false; reason?: "cleanup-authority-unavailable" };
 
 /** Exact stored authority from an ownership-scoped service row; contains no plaintext credentials. */
 export type ProviderPublicationAuthority = {
@@ -81,6 +88,7 @@ export type ProviderIdentityGuardCode =
 	| "IDENTITY_UNVERIFIED"
 	| "IDENTITY_UNAVAILABLE"
 	| "IDENTITY_MISMATCH"
+	| "PUBLICATION_CANCELLED"
 	| "PUBLICATION_SUPERSEDED";
 
 /** A safe boundary error: it intentionally contains no endpoint, credential, or raw identity. */
@@ -94,13 +102,85 @@ export class ProviderIdentityGuardError extends Error {
 	}
 }
 
+export type ProviderPublicationStage =
+	| "before-identity-read"
+	| "collection"
+	| "after-identity-read"
+	| "collection-read-admission"
+	| "publication-admission"
+	| "transaction-publisher-entered"
+	| "failure-recording";
+
 export type ProviderIdentityGuardOptions = {
+	/** Optional diagnostics only; observer failures cannot affect publication. */
+	onStage?: (stage: ProviderPublicationStage) => void;
+	/** Cancels read/prepublication admission, never an executing publisher. */
+	signal?: AbortSignal;
 	/** Internal cleanup lease owner; omitted publications require no active cleanup run. */
 	cleanupRunClaimToken?: string;
 	now?: () => Date;
 	maxWait?: number;
 	timeout?: number;
 };
+
+/**
+ * Validate collected input without reserving the database writer for a no-op
+ * publication. This returns no publication authority: the caller must still
+ * stage/publish under its own current-generation and claim fences. The normal
+ * refresh-attempt admission must already have created its cleanup config.
+ */
+export async function withGuardedProviderCollection<TSnapshot>(
+	prisma: GuardPrisma,
+	instance: OwnedProviderPublicationSnapshot,
+	log: FastifyBaseLogger,
+	collect: () => Promise<TSnapshot>,
+	options: ProviderIdentityGuardOptions = {},
+): Promise<TSnapshot> {
+	assertVerified(instance);
+	assertPublicationNotCancelled(options.signal);
+	observePublicationStage(options, "before-identity-read");
+	const before = await observeIdentity(instance, log, options.signal);
+	assertPublicationNotCancelled(options.signal);
+	await ensureExpectedIdentity(prisma, instance, before, options);
+	assertPublicationNotCancelled(options.signal);
+	observePublicationStage(options, "collection");
+	const snapshot = await collect().catch((error: unknown) => {
+		assertPublicationNotCancelled(options.signal);
+		throw error;
+	});
+	assertPublicationNotCancelled(options.signal);
+	observePublicationStage(options, "after-identity-read");
+	const after = await observeIdentity(instance, log, options.signal);
+	assertPublicationNotCancelled(options.signal);
+	await ensureExpectedIdentity(prisma, instance, after, options);
+	assertPublicationNotCancelled(options.signal);
+	observePublicationStage(options, "collection-read-admission");
+	const matched = await withIsolatedRuntimePrismaReadTransaction(
+		prisma,
+		async (tx) => {
+			assertPublicationNotCancelled(options.signal);
+			const cleanup = await tx.libraryCleanupConfig.findUnique({
+				where: { userId: instance.userId },
+				select: { runClaimToken: true },
+			});
+			if (!cleanup || cleanup.runClaimToken !== (options.cleanupRunClaimToken ?? null))
+				return false;
+			const current = await tx.serviceInstance.findFirst({
+				where: providerPublicationPredicate(instance),
+				select: { id: true },
+			});
+			assertPublicationNotCancelled(options.signal);
+			return current !== null;
+		},
+		{ isolationLevel: "Serializable", ...transactionOptions(options) },
+	);
+	if (!matched)
+		throw new ProviderIdentityGuardError(
+			"PUBLICATION_SUPERSEDED",
+			"Provider collection was superseded by a service or cleanup change.",
+		);
+	return snapshot;
+}
 
 /**
  * Collect upstream data and publish it only while the exact owned, verified
@@ -117,17 +197,36 @@ export async function withGuardedProviderPublication<TSnapshot, TResult>(
 	options: ProviderIdentityGuardOptions = {},
 ): Promise<TResult> {
 	assertVerified(instance);
-	const before = await observeIdentity(instance, log);
+	assertPublicationNotCancelled(options.signal);
+	observePublicationStage(options, "before-identity-read");
+	const before = await observeIdentity(instance, log, options.signal);
+	assertPublicationNotCancelled(options.signal);
 	await ensureExpectedIdentity(prisma, instance, before, options);
 
-	const snapshot = await collect();
-	const after = await observeIdentity(instance, log);
+	assertPublicationNotCancelled(options.signal);
+	observePublicationStage(options, "collection");
+	const snapshot = await collect().catch((error: unknown) => {
+		assertPublicationNotCancelled(options.signal);
+		throw error;
+	});
+	assertPublicationNotCancelled(options.signal);
+	observePublicationStage(options, "after-identity-read");
+	const after = await observeIdentity(instance, log, options.signal);
+	assertPublicationNotCancelled(options.signal);
 	await ensureExpectedIdentity(prisma, instance, after, options);
 
+	assertPublicationNotCancelled(options.signal);
+	observePublicationStage(options, "publication-admission");
 	const publication = await withCurrentProviderPublicationAuthority(
 		prisma,
 		instance,
-		async (tx) => await publish(tx, snapshot),
+		async (tx) => {
+			// Admission and authority reads may have waited. Once entered, the
+			// publisher/transaction must be joined and retain its actual result.
+			assertPublicationNotCancelled(options.signal);
+			observePublicationStage(options, "transaction-publisher-entered");
+			return await publish(tx, snapshot);
+		},
 		options,
 	);
 	if (!publication.matched) {
@@ -137,6 +236,44 @@ export async function withGuardedProviderPublication<TSnapshot, TResult>(
 		);
 	}
 	return publication.value;
+}
+
+function observePublicationStage(
+	options: ProviderIdentityGuardOptions,
+	stage: ProviderPublicationStage,
+): void {
+	try {
+		options.onStage?.(stage);
+	} catch {
+		// Diagnostics cannot change identity checks, transaction joining, or results.
+	}
+}
+
+/** Fence a bounded background slice against a live provider replacement. */
+export async function verifyLiveProviderIdentity(
+	prisma: GuardPrisma,
+	instance: ProviderPublicationAuthority,
+	readRawIdentity: () => Promise<string>,
+	options: ProviderIdentityGuardOptions = {},
+): Promise<void> {
+	assertVerified(instance);
+	let rawIdentity: string;
+	try {
+		const observed = await readRawIdentity();
+		if (typeof observed !== "string" || !observed.trim()) throw new Error("identity unavailable");
+		rawIdentity = observed.trim();
+	} catch {
+		throw new ProviderIdentityGuardError(
+			"IDENTITY_UNAVAILABLE",
+			"Provider identity could not be read; cache publication was not attempted.",
+		);
+	}
+	await ensureExpectedIdentity(
+		prisma,
+		instance,
+		{ service: instance.service, rawIdentity },
+		options,
+	);
 }
 
 /**
@@ -152,43 +289,46 @@ export async function withCurrentProviderPublicationAuthority<T>(
 ): Promise<PublicationAuthorityResult<T>> {
 	assertVerified(instance);
 	const postgresql = isPostgresqlDatabase();
-	return await prisma.$transaction(
-		async (tx) => {
-			const cleanupConfig = await tx.libraryCleanupConfig.upsert({
-				where: { userId: instance.userId },
-				update: {},
-				create: { userId: instance.userId },
-				select: { id: true },
-			});
-			if (postgresql) {
-				await tx.$queryRawUnsafe(
-					'SELECT "id" FROM "library_cleanup_configs" WHERE "id" = $1 FOR UPDATE',
-					cleanupConfig.id,
-				);
-			}
-			const cleanupAuthority = await tx.libraryCleanupConfig.findUnique({
-				where: { id: cleanupConfig.id },
-				select: { runClaimToken: true },
-			});
-			const expectedRunClaimToken = options.cleanupRunClaimToken ?? null;
-			if (!cleanupAuthority || cleanupAuthority.runClaimToken !== expectedRunClaimToken) {
-				return { matched: false };
-			}
-			if (postgresql) {
-				await tx.$queryRawUnsafe(
-					'SELECT "id" FROM "ServiceInstance" WHERE "id" = $1 FOR UPDATE',
-					instance.id,
-				);
-			}
-			const current = await tx.serviceInstance.findFirst({
-				where: providerPublicationPredicate(instance),
-			});
-			if (!current) return { matched: false };
-			return { matched: true, value: await action(tx) };
-		},
-		postgresql
-			? transactionOptions(options)
-			: { isolationLevel: "Serializable", ...transactionOptions(options) },
+	return await withSqliteTransactionWriteIntent(() =>
+		withIsolatedRuntimePrismaTransaction(
+			prisma,
+			async (tx) => {
+				const cleanupConfig = await tx.libraryCleanupConfig.upsert({
+					where: { userId: instance.userId },
+					update: {},
+					create: { userId: instance.userId },
+					select: { id: true },
+				});
+				if (postgresql) {
+					await tx.$queryRawUnsafe(
+						'SELECT "id" FROM "library_cleanup_configs" WHERE "id" = $1 FOR UPDATE',
+						cleanupConfig.id,
+					);
+				}
+				const cleanupAuthority = await tx.libraryCleanupConfig.findUnique({
+					where: { id: cleanupConfig.id },
+					select: { runClaimToken: true },
+				});
+				const expectedRunClaimToken = options.cleanupRunClaimToken ?? null;
+				if (!cleanupAuthority || cleanupAuthority.runClaimToken !== expectedRunClaimToken) {
+					return { matched: false, reason: "cleanup-authority-unavailable" };
+				}
+				if (postgresql) {
+					await tx.$queryRawUnsafe(
+						'SELECT "id" FROM "ServiceInstance" WHERE "id" = $1 FOR UPDATE',
+						instance.id,
+					);
+				}
+				const current = await tx.serviceInstance.findFirst({
+					where: providerPublicationPredicate(instance),
+				});
+				if (!current) return { matched: false };
+				return { matched: true, value: await action(tx) };
+			},
+			postgresql
+				? transactionOptions(options)
+				: { isolationLevel: "Serializable", ...transactionOptions(options) },
+		),
 	);
 }
 
@@ -232,10 +372,12 @@ function assertVerified(instance: ProviderPublicationAuthority): void {
 async function observeIdentity(
 	instance: OwnedProviderPublicationSnapshot,
 	log: FastifyBaseLogger,
+	signal?: AbortSignal,
 ): Promise<ProviderIdentityObservation> {
 	try {
-		return await readProviderIdentity(instance, log);
+		return await readProviderIdentity(instance, log, signal);
 	} catch {
+		assertPublicationNotCancelled(signal);
 		throw new ProviderIdentityGuardError(
 			"IDENTITY_UNAVAILABLE",
 			"Provider identity could not be read; cache publication was not attempted.",
@@ -243,10 +385,18 @@ async function observeIdentity(
 	}
 }
 
+function assertPublicationNotCancelled(signal?: AbortSignal): void {
+	if (signal?.aborted)
+		throw new ProviderIdentityGuardError(
+			"PUBLICATION_CANCELLED",
+			"Provider cache publication cancelled.",
+		);
+}
+
 async function ensureExpectedIdentity(
 	prisma: GuardPrisma,
-	instance: OwnedProviderPublicationSnapshot,
-	observation: ProviderIdentityObservation,
+	instance: ProviderPublicationAuthority,
+	observation: Pick<ProviderIdentityObservation, "service" | "rawIdentity">,
 	options: ProviderIdentityGuardOptions,
 ): Promise<void> {
 	if (
@@ -260,6 +410,21 @@ async function ensureExpectedIdentity(
 		instance,
 		async (tx) => {
 			await invalidateObservationRunsInTransaction(tx, { instanceId: instance.id });
+			await tx.providerNativeInventoryRun.updateMany({
+				where: {
+					instanceId: instance.id,
+					connectionGeneration: instance.connectionGeneration,
+					identityGeneration: instance.identityGeneration,
+					activeSlotKey: { not: null },
+				},
+				data: {
+					state: "superseded",
+					activeSlotKey: null,
+					claimToken: null,
+					leaseUntil: null,
+					nextAttemptAt: null,
+				},
+			});
 			await tx.cacheRefreshStatus.updateMany({
 				where: {
 					instanceId: instance.id,

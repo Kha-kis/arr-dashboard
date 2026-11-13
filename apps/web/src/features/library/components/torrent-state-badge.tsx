@@ -4,7 +4,7 @@ import { describeQuiState } from "../lib/qui-display";
 
 interface Props {
 	state: string;
-	ratio: number;
+	ratio: number | null;
 }
 
 /**
@@ -27,16 +27,21 @@ interface Props {
  */
 export const TorrentStateBadge = ({ state, ratio }: Props) => {
 	const { shortLabel, tone } = describeQuiState(state);
-	const ratioText = Number.isFinite(ratio) ? ratio.toFixed(2) : "—";
+	const knownRatio = ratio !== null && Number.isFinite(ratio);
+	const ratioText = knownRatio ? ratio.toFixed(2) : "unknown";
 
 	return (
 		<span
+			role="img"
 			className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider ${tone}`}
 			aria-label={`Torrent: ${shortLabel}, ratio ${ratioText}`}
 		>
 			<span>{shortLabel}</span>
 			<span aria-hidden="true">·</span>
-			<span className="tabular-nums">{ratioText}×</span>
+			<span className="tabular-nums">
+				{ratioText}
+				{knownRatio ? "×" : ""}
+			</span>
 		</span>
 	);
 };

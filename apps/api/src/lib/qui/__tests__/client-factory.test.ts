@@ -1,8 +1,10 @@
+import { type QuiAction, quiActionSchema } from "@arr/shared";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QuiApiError, QuiInstanceUnreachableError } from "../../errors.js";
 import type { ServiceInstance } from "../../prisma.js";
 import { createQuiClient } from "../client-factory.js";
+import { readProviderContentPath } from "../torrent-content-path.js";
 
 const fakeLog: FastifyBaseLogger = {
 	info: vi.fn(),
@@ -116,6 +118,177 @@ describe("createQuiClient", () => {
 		expect(fetchSpy).toHaveBeenCalledOnce();
 		const headers = fetchSpy.mock.calls[0]?.[1]?.headers as Record<string, string>;
 		expect(headers["X-API-Key"]).toBe("test-api-key");
+	});
+
+	it("rejects action extras that would override verified action and hashes", async () => {
+		const client = createQuiClient(buildApp(), buildInstance());
+		await expect(
+			client.bulkAction({
+				qbitInstanceId: 3,
+				hashes: ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+				action: "pause",
+				extras: {
+					action: "deleteWithFiles",
+					hashes: ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+				},
+			}),
+		).rejects.toThrow();
+		expect(fetchSpy).not.toHaveBeenCalled();
+	});
+
+	describe("action wire contracts", () => {
+		type WireCase = {
+			action: QuiAction;
+			extras?: Record<string, unknown>;
+			wireFields: Record<string, unknown>;
+		};
+		// These expected wire fields are hand-derived from qUI's BulkActionRequest,
+		// not computed with our production schema or serializer.
+		const cases: WireCase[] = [
+			{ action: "pause", wireFields: { action: "pause" } },
+			{ action: "resume", wireFields: { action: "resume" } },
+			{ action: "recheck", wireFields: { action: "recheck" } },
+			{ action: "reannounce", wireFields: { action: "reannounce" } },
+			{ action: "forceStart", wireFields: { action: "forceStart", enable: true } },
+			{ action: "topPriority", wireFields: { action: "topPriority" } },
+			{ action: "bottomPriority", wireFields: { action: "bottomPriority" } },
+			{ action: "increasePriority", wireFields: { action: "increasePriority" } },
+			{ action: "decreasePriority", wireFields: { action: "decreasePriority" } },
+			{ action: "toggleSequentialDownload", wireFields: { action: "toggleSequentialDownload" } },
+			{
+				action: "setTags",
+				extras: { tags: "test,seed" },
+				wireFields: { action: "setTags", tags: "test,seed" },
+			},
+			{
+				action: "setCategory",
+				extras: { category: "" },
+				wireFields: { action: "setCategory", category: "" },
+			},
+			{
+				action: "toggleAutoTMM",
+				extras: { enable: false },
+				wireFields: { action: "toggleAutoTMM", enable: false },
+			},
+			{
+				action: "setUploadLimit",
+				extras: { uploadLimit: 0 },
+				wireFields: { action: "setUploadLimit", uploadLimit: 0 },
+			},
+			{
+				action: "setDownloadLimit",
+				extras: { downloadLimit: 0 },
+				wireFields: { action: "setDownloadLimit", downloadLimit: 0 },
+			},
+			{
+				action: "setShareLimit",
+				extras: { ratioLimit: -1, seedingTimeLimit: -2 },
+				wireFields: { action: "setShareLimit", ratioLimit: -1, seedingTimeLimit: -2 },
+			},
+			{
+				action: "setLocation",
+				extras: { location: "/synthetic/media" },
+				wireFields: { action: "setLocation", location: "/synthetic/media" },
+			},
+			{
+				action: "delete",
+				extras: { deleteFiles: false },
+				wireFields: { action: "delete", deleteFiles: false },
+			},
+		];
+		const variants: WireCase[] = [
+			{ action: "setTags", extras: { tags: "" }, wireFields: { action: "setTags", tags: "" } },
+			{
+				action: "toggleAutoTMM",
+				extras: { enable: true },
+				wireFields: { action: "toggleAutoTMM", enable: true },
+			},
+			{
+				action: "setShareLimit",
+				extras: { ratioLimit: 1.5, seedingTimeLimit: 30, inactiveSeedingTimeLimit: 0 },
+				wireFields: {
+					action: "setShareLimit",
+					ratioLimit: 1.5,
+					seedingTimeLimit: 30,
+					inactiveSeedingTimeLimit: 0,
+				},
+			},
+		];
+		const hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+		it("has independently specified wire fields for every supported action", () => {
+			expect(cases.map(({ action }) => action).sort()).toEqual([...quiActionSchema.options].sort());
+		});
+
+		for (const hashes of [[hash], [hash, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]]) {
+			describe(`${hashes.length} selected hashes`, () => {
+				it.each([...cases, ...variants])(
+					"serializes $action with $extras without losing target or parameter values",
+					async ({ action, extras, wireFields }) => {
+						fetchSpy.mockResolvedValueOnce(
+							new Response(JSON.stringify({ message: "Bulk action completed successfully" }), {
+								status: 200,
+							}),
+						);
+						const client = createQuiClient(buildApp(), buildInstance());
+						await expect(
+							client.bulkAction({ qbitInstanceId: 3, hashes, action, extras }),
+						).resolves.toBeUndefined();
+						expect(fetchSpy).toHaveBeenCalledOnce();
+						const [url, init] = fetchSpy.mock.calls[0]!;
+						expect(url).toBe("http://qui.test/api/instances/3/torrents/bulk-action");
+						expect(init?.method).toBe("POST");
+						expect(JSON.parse(init?.body as string)).toEqual({ ...wireFields, hashes });
+					},
+				);
+			});
+		}
+
+		it.each([
+			{ extras: { enable: false } },
+			{ extras: { action: "delete" } },
+			{ extras: { hashes: ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"] } },
+			{ extras: { selectAll: true } },
+		])(
+			"rejects caller-supplied Force Start controls $extras before transport",
+			async ({ extras }) => {
+				const client = createQuiClient(buildApp(), buildInstance());
+				await expect(
+					client.bulkAction({ qbitInstanceId: 3, hashes: [hash], action: "forceStart", extras }),
+				).rejects.toThrow();
+				expect(fetchSpy).not.toHaveBeenCalled();
+			},
+		);
+
+		it.each([
+			{ status: 400, text: '{"error":"synthetic rejection"}' },
+			{ status: 401, text: '{"error":"synthetic unauthorized"}' },
+			{ status: 409, text: '{"error":"synthetic conflict"}' },
+			{ status: 500, text: '{"error":"synthetic provider failure"}' },
+			{ status: 200, text: "" },
+			{ status: 204, text: null },
+			{ status: 200, text: "<html>synthetic login page</html>" },
+			{ status: 200, text: "{malformed" },
+		])(
+			"rejects an unverified status $status response $text without retrying",
+			async ({ status, text }) => {
+				fetchSpy.mockResolvedValueOnce(new Response(text, { status }));
+				const client = createQuiClient(buildApp(), buildInstance());
+				await expect(
+					client.bulkAction({ qbitInstanceId: 3, hashes: [hash], action: "pause" }),
+				).rejects.toBeInstanceOf(QuiApiError);
+				expect(fetchSpy).toHaveBeenCalledOnce();
+			},
+		);
+
+		it("does not replay a mutation after a timeout", async () => {
+			fetchSpy.mockRejectedValueOnce(new DOMException("synthetic timeout", "TimeoutError"));
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.bulkAction({ qbitInstanceId: 3, hashes: [hash], action: "pause" }),
+			).rejects.toBeInstanceOf(QuiInstanceUnreachableError);
+			expect(fetchSpy).toHaveBeenCalledOnce();
+		});
 	});
 
 	it("sends stored reverse-proxy Basic Auth alongside the qui API key", async () => {
@@ -496,6 +669,19 @@ describe("createQuiClient", () => {
 		expect(fetchSpy).toHaveBeenCalledTimes(1);
 	});
 
+	it("preserves an optional provider content path for filesystem diagnostics", async () => {
+		fetchSpy.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify(wireTorrentPage([wireTorrent({ content_path: "/x/actual-content" })])),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			),
+		);
+		const client = createQuiClient(buildApp(), buildInstance());
+		const inventory = await client.listTorrentInventory();
+		expect(readProviderContentPath(inventory.torrents[0]!)).toBe("/x/actual-content");
+		expect(JSON.stringify(inventory.torrents[0])).not.toContain("actual-content");
+	});
+
 	it("reports whether the read-only torrent inventory proves completeness", async () => {
 		fetchSpy
 			.mockResolvedValueOnce(
@@ -771,6 +957,283 @@ describe("createQuiClient", () => {
 		expect(trackers[0]?.numLeeches).toBe(0);
 	});
 
+	it.each([
+		{
+			format: "JSON message",
+			body: JSON.stringify({
+				message: "Private Tracker Title https://tracker.test/announce?passkey=synthetic-private",
+			}),
+		},
+		{
+			format: "JSON error",
+			body: JSON.stringify({
+				error: "Private Tracker Title https://tracker.test/announce?passkey=synthetic-private",
+			}),
+		},
+		{
+			format: "plaintext",
+			body: "Private Tracker Title https://tracker.test/announce?passkey=synthetic-private",
+		},
+		{
+			format: "HTML title",
+			body: "<!doctype html><html><title>Private Tracker Title synthetic-private</title></html>",
+		},
+	])("redacts $format tracker lookup error text before logging and throwing", async ({ body }) => {
+		fetchSpy.mockResolvedValueOnce(new Response(body, { status: 503 }));
+		const client = createQuiClient(buildApp(), buildInstance());
+		let thrown: unknown;
+		try {
+			await client.getTrackers(3, "abc123");
+		} catch (error) {
+			thrown = error;
+		}
+
+		expect(thrown).toBeInstanceOf(QuiApiError);
+		expect((thrown as Error).message).toContain("qUI tracker lookup failed");
+		expect((thrown as Error).message).not.toContain("Private Tracker Title");
+		expect((thrown as Error).message).not.toContain("synthetic-private");
+		expect((thrown as QuiApiError).upstreamStatus).toBe(503);
+		expect(fakeLog.warn).toHaveBeenCalledOnce();
+		const warnCalls = JSON.stringify(vi.mocked(fakeLog.warn).mock.calls);
+		expect(warnCalls).toContain("qUI tracker lookup failed");
+		expect(warnCalls).not.toContain("Private Tracker Title");
+		expect(warnCalls).not.toContain("synthetic-private");
+		expect(fetchSpy).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		{
+			operation: "bulkAction",
+			acknowledgement: { message: "Bulk action completed successfully" },
+			path: "/api/instances/7/torrents/bulk-action",
+			method: "POST",
+			invoke: (client: ReturnType<typeof createQuiClient>) =>
+				client.bulkAction({ qbitInstanceId: 7, hashes: ["abc123"], action: "pause" }),
+		},
+		{
+			operation: "renameTorrent",
+			acknowledgement: { message: "Torrent renamed successfully" },
+			path: "/api/instances/3/torrents/abc123/rename",
+			method: "POST",
+			invoke: (client: ReturnType<typeof createQuiClient>) =>
+				client.renameTorrent(3, "abc123", "Private Torrent Title"),
+		},
+		{
+			operation: "addTrackers",
+			acknowledgement: { status: "success" },
+			path: "/api/instances/3/torrents/abc123/trackers",
+			method: "POST",
+			invoke: (client: ReturnType<typeof createQuiClient>) =>
+				client.addTrackers(3, "abc123", ["https://private.test/announce/key"]),
+		},
+		{
+			operation: "removeTrackers",
+			acknowledgement: { status: "success" },
+			path: "/api/instances/3/torrents/abc123/trackers",
+			method: "DELETE",
+			invoke: (client: ReturnType<typeof createQuiClient>) =>
+				client.removeTrackers(3, "abc123", ["https://private.test/announce?key=secret"]),
+		},
+		{
+			operation: "editTracker",
+			acknowledgement: { status: "success" },
+			path: "/api/instances/3/torrents/abc123/trackers",
+			method: "PUT",
+			invoke: (client: ReturnType<typeof createQuiClient>) =>
+				client.editTracker(
+					3,
+					"abc123",
+					"https://private.test/announce?key=old",
+					"https://private.test/announce?key=new",
+				),
+		},
+	])(
+		"accepts only qUI's documented $operation acknowledgement",
+		async ({ acknowledgement, path, method, invoke }) => {
+			fetchSpy.mockImplementation(async (input, init) => {
+				const url = new URL(String(input));
+				if (url.pathname !== path || init?.method !== method) {
+					throw new Error("unmatched synthetic fetch");
+				}
+				return new Response(JSON.stringify(acknowledgement), { status: 200 });
+			});
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(invoke(client)).resolves.toBeUndefined();
+			expect(fetchSpy).toHaveBeenCalledOnce();
+		},
+	);
+
+	const invalidMutationAcknowledgements = [
+		{ name: "absent body", body: "" },
+		{ name: "null", body: "null" },
+		{ name: "string", body: JSON.stringify("success") },
+		{ name: "number", body: "200" },
+		{ name: "array", body: "[]" },
+		{ name: "empty object", body: "{}" },
+		{ name: "unrelated object", body: JSON.stringify({ result: "success" }) },
+		{ name: "error object", body: JSON.stringify({ error: "synthetic rejection" }) },
+		{ name: "failure status", body: JSON.stringify({ status: "failed" }) },
+	];
+
+	it.each([
+		{
+			operation: "bulkAction",
+			acknowledgement: { message: "Bulk action completed successfully" },
+			path: "/api/instances/7/torrents/bulk-action",
+			method: "POST",
+			invoke: (client: ReturnType<typeof createQuiClient>) =>
+				client.bulkAction({ qbitInstanceId: 7, hashes: ["abc123"], action: "pause" }),
+		},
+		{
+			operation: "renameTorrent",
+			acknowledgement: { message: "Torrent renamed successfully" },
+			path: "/api/instances/3/torrents/abc123/rename",
+			method: "POST",
+			invoke: (client: ReturnType<typeof createQuiClient>) =>
+				client.renameTorrent(3, "abc123", "Private Torrent Title"),
+		},
+		{
+			operation: "addTrackers",
+			acknowledgement: { status: "success" },
+			path: "/api/instances/3/torrents/abc123/trackers",
+			method: "POST",
+			invoke: (client: ReturnType<typeof createQuiClient>) =>
+				client.addTrackers(3, "abc123", ["https://private.test/announce/key"]),
+		},
+		{
+			operation: "removeTrackers",
+			acknowledgement: { status: "success" },
+			path: "/api/instances/3/torrents/abc123/trackers",
+			method: "DELETE",
+			invoke: (client: ReturnType<typeof createQuiClient>) =>
+				client.removeTrackers(3, "abc123", ["https://private.test/announce?key=secret"]),
+		},
+		{
+			operation: "editTracker",
+			acknowledgement: { status: "success" },
+			path: "/api/instances/3/torrents/abc123/trackers",
+			method: "PUT",
+			invoke: (client: ReturnType<typeof createQuiClient>) =>
+				client.editTracker(
+					3,
+					"abc123",
+					"https://private.test/announce?key=old",
+					"https://private.test/announce?key=new",
+				),
+		},
+	])(
+		"rejects invalid $operation acknowledgements without replay",
+		async ({ acknowledgement, path, method, invoke }) => {
+			const invalidCases = [
+				...invalidMutationAcknowledgements,
+				{
+					name: "contradictory acknowledgement with private key and value",
+					body: JSON.stringify({
+						...acknowledgement,
+						error: "synthetic rejection",
+						"synthetic-private-key": "synthetic-private-value",
+					}),
+				},
+			];
+			for (const { name, body } of invalidCases) {
+				fetchSpy.mockReset();
+				fetchSpy.mockImplementation(async (input, init) => {
+					const url = new URL(String(input));
+					if (url.pathname !== path || init?.method !== method) {
+						throw new Error("unmatched synthetic fetch");
+					}
+					return new Response(body, {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					});
+				});
+				const client = createQuiClient(buildApp(), buildInstance());
+				let thrown: unknown;
+				try {
+					await invoke(client);
+				} catch (error) {
+					thrown = error;
+				}
+				expect(thrown, name).toBeInstanceOf(Error);
+				expect((thrown as Error).message, name).not.toContain("synthetic-private-key");
+				expect((thrown as Error).message, name).not.toContain("synthetic-private-value");
+				expect(fetchSpy, name).toHaveBeenCalledOnce();
+				const logged = JSON.stringify(vi.mocked(fakeLog.warn).mock.calls);
+				expect(logged, name).not.toContain("synthetic-private-key");
+				expect(logged, name).not.toContain("synthetic-private-value");
+			}
+		},
+	);
+
+	it.each([
+		{
+			operation: "renameTorrent",
+			privateValues: ["Private Torrent Title"],
+			message: "qUI rename failed",
+			invoke: (client: ReturnType<typeof createQuiClient>) =>
+				client.renameTorrent(3, "abc123", "Private Torrent Title"),
+		},
+		{
+			operation: "addTrackers",
+			privateValues: ["https://private.test/announce/secret-passkey"],
+			message: "qUI add trackers failed",
+			invoke: (client: ReturnType<typeof createQuiClient>) =>
+				client.addTrackers(3, "abc123", ["https://private.test/announce/secret-passkey"]),
+		},
+		{
+			operation: "removeTrackers",
+			privateValues: ["https://private.test/announce?passkey=secret-value"],
+			message: "qUI remove trackers failed",
+			invoke: (client: ReturnType<typeof createQuiClient>) =>
+				client.removeTrackers(3, "abc123", ["https://private.test/announce?passkey=secret-value"]),
+		},
+		{
+			operation: "editTracker",
+			privateValues: [
+				"https://private.test/announce?passkey=old-secret",
+				"https://replacement.test/announce/new-secret",
+			],
+			message: "qUI edit tracker failed",
+			invoke: (client: ReturnType<typeof createQuiClient>) =>
+				client.editTracker(
+					3,
+					"abc123",
+					"https://private.test/announce?passkey=old-secret",
+					"https://replacement.test/announce/new-secret",
+				),
+		},
+	])(
+		"redacts echoed request values from $operation errors and logs",
+		async ({ privateValues, message, invoke }) => {
+			fetchSpy.mockResolvedValueOnce(
+				new Response(JSON.stringify({ message: `upstream rejected ${privateValues.join(" ")}` }), {
+					status: 422,
+					headers: { "content-type": "application/json" },
+				}),
+			);
+			const client = createQuiClient(buildApp(), buildInstance());
+			let thrown: unknown;
+			try {
+				await invoke(client);
+			} catch (error) {
+				thrown = error;
+			}
+
+			expect(thrown).toBeInstanceOf(QuiApiError);
+			expect((thrown as Error).message).toContain(message);
+			for (const value of privateValues) {
+				expect((thrown as Error).message).not.toContain(value);
+			}
+			expect(fakeLog.warn).toHaveBeenCalledOnce();
+			const warnCalls = vi.mocked(fakeLog.warn).mock.calls;
+			expect(JSON.stringify(warnCalls)).toContain(message);
+			for (const value of privateValues) {
+				expect(JSON.stringify(warnCalls)).not.toContain(value);
+			}
+			expect(JSON.stringify(warnCalls)).not.toContain("secret-");
+		},
+	);
+
 	it("getCrossSeedMatches normalizes matches:null to []", async () => {
 		fetchSpy.mockResolvedValueOnce(
 			new Response(JSON.stringify({ matches: null }), {
@@ -783,6 +1246,23 @@ describe("createQuiClient", () => {
 		const matches = await client.getCrossSeedMatches(1, "abc123");
 		expect(matches).toEqual([]);
 	});
+
+	it.each(["hardlink", "reflink"] as const)(
+		"getCrossSeedMatches accepts qUI %s provenance without discarding siblings",
+		async (matchType) => {
+			fetchSpy.mockResolvedValueOnce(
+				new Response(JSON.stringify({ matches: [wireCrossSeedMatch({ match_type: matchType })] }), {
+					status: 200,
+					headers: { "content-type": "application/json" },
+				}),
+			);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			const matches = await client.getCrossSeedMatches(1, "abc123");
+			expect(matches).toHaveLength(1);
+			expect(matches[0]?.matchType).toBe(matchType);
+		},
+	);
 
 	it("getCrossSeedMatches strips tracker passkeys down to the hostname", async () => {
 		fetchSpy.mockResolvedValueOnce(

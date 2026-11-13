@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
 
 /*
  * Focused wiring tests for NotificationRulesTab.
@@ -46,7 +47,11 @@ function wrapper({ children }: { children: ReactNode }) {
 	const client = new QueryClient({
 		defaultOptions: { queries: { retry: false } },
 	});
-	return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+	return (
+		<QueryClientProvider client={client}>
+			<IncognitoProvider>{children}</IncognitoProvider>
+		</QueryClientProvider>
+	);
 }
 
 describe("NotificationRulesTab — AsyncStateView wiring", () => {

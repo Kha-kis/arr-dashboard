@@ -1,5 +1,9 @@
 import type { ProviderCoverageReceipt, ProviderCoverageReceiptV1 } from "@arr/shared";
-import { evidenceFingerprint } from "../evidence-fingerprint.js";
+import { measureJellyfinDisplayReadPhase } from "./jellyfin-display-read-timing.js";
+import {
+	createEvidenceFingerprintArrayAccumulator,
+	evidenceFingerprint,
+} from "../evidence-fingerprint.js";
 import {
 	evaluateProviderCoverageReceipt,
 	evaluateProviderDomainCoverageMap,
@@ -8,6 +12,10 @@ import {
 	decodeJellyfinEpisodeCatalogProvenance,
 	type JellyfinEpisodeCatalogProvenance,
 } from "./jellyfin-episode-catalog-provenance.js";
+import {
+	createJellyfinDisplayCheckpoint,
+	sortJellyfinDisplayRows,
+} from "./jellyfin-display-work.js";
 
 interface JellyfinLibraryGenerationMetadataBaseV1 {
 	version: 1;
@@ -110,10 +118,21 @@ interface JellyfinEpisodeGenerationMetadataBaseV3 {
 
 export type JellyfinEpisodeGenerationMetadataV3 = JellyfinEpisodeGenerationMetadataBaseV3;
 
+export type JellyfinEpisodeGenerationMetadataV4 = Omit<
+	JellyfinEpisodeGenerationMetadataBaseV2,
+	"version"
+> & {
+	version: 4;
+	storage: "generation-scoped";
+	sourceVersion: 1 | 2 | 3;
+	catalogProvenance?: JellyfinEpisodeCatalogProvenance;
+};
+
 export type JellyfinEpisodeGenerationMetadata =
 	| JellyfinEpisodeGenerationMetadataV1
 	| JellyfinEpisodeGenerationMetadataV2
-	| JellyfinEpisodeGenerationMetadataV3;
+	| JellyfinEpisodeGenerationMetadataV3
+	| JellyfinEpisodeGenerationMetadataV4;
 
 export type JellyfinGenerationMetadataV1 =
 	| JellyfinLibraryGenerationMetadataV1
@@ -197,6 +216,10 @@ const EPISODE_V3_KEYS = [
 	"contentFingerprint",
 	"coverageReceipt",
 ] as const;
+
+const EPISODE_V4_KEYS = [...EPISODE_V2_KEYS, "storage", "sourceVersion"] as const;
+
+const EPISODE_V4_CATALOG_KEYS = [...EPISODE_V4_KEYS, "catalogProvenance"] as const;
 
 const LIBRARY_RECEIPT_DOMAINS = [
 	"library-inventory",
@@ -421,15 +444,19 @@ function decodeBase(
 	| ({
 			provider: JellyfinProvider;
 			itemCount: number;
-			version: 1 | 2 | 3;
+			version: 1 | 2 | 3 | 4;
 	  } & JellyfinLibraryDiscriminator)
 	| null {
 	const expectedKeys = episode
-		? value.version === 3
-			? EPISODE_V3_KEYS
-			: value.version === 2
-				? EPISODE_V2_KEYS
-				: EPISODE_KEYS
+		? value.version === 4
+			? value.sourceVersion === 3 && value.publicationLevel === "positive-only"
+				? EPISODE_V4_CATALOG_KEYS
+				: EPISODE_V4_KEYS
+			: value.version === 3
+				? EPISODE_V3_KEYS
+				: value.version === 2
+					? EPISODE_V2_KEYS
+					: EPISODE_KEYS
 		: LIBRARY_KEYS;
 	if (!hasExactKeys(value, expectedKeys)) return null;
 	const validDiscriminator = episode
@@ -439,7 +466,14 @@ function decodeBase(
 			(value.publicationLevel === "positive-only" && value.completeness === "partial");
 	if (
 		(!episode && value.version !== 1) ||
-		(episode && value.version !== 1 && value.version !== 2 && value.version !== 3) ||
+		(episode &&
+			value.version !== 1 &&
+			value.version !== 2 &&
+			value.version !== 3 &&
+			value.version !== 4) ||
+		(value.version === 4 &&
+			(value.storage !== "generation-scoped" ||
+				(value.sourceVersion !== 1 && value.sourceVersion !== 2 && value.sourceVersion !== 3))) ||
 		!isProvider(value.provider) ||
 		value.cacheType !== (episode ? "jellyfin_episode" : "jellyfin") ||
 		!validDiscriminator ||
@@ -459,14 +493,14 @@ function decodeBase(
 			value.parentLibraryGenerationId.includes("\0") ||
 			value.parentLibraryGenerationId.length > 500 ||
 			!isFingerprint(value.parentLibraryMetadataFingerprint) ||
-			((value.version === 2 || value.version === 3) &&
+			((value.version === 2 || value.version === 3 || value.version === 4) &&
 				!isFingerprint(value.parentLibraryDependencyFingerprint))
 		) {
 			return null;
 		}
 	}
 	return {
-		version: value.version as 1 | 2 | 3,
+		version: value.version as 1 | 2 | 3 | 4,
 		provider: value.provider,
 		itemCount: value.itemCount,
 		publicationLevel: value.publicationLevel,
@@ -474,7 +508,7 @@ function decodeBase(
 	} as {
 		provider: JellyfinProvider;
 		itemCount: number;
-		version: 1 | 2 | 3;
+		version: 1 | 2 | 3 | 4;
 	} & JellyfinLibraryDiscriminator;
 }
 
@@ -513,7 +547,7 @@ export function decodeJellyfinEpisodeGenerationMetadata(
 		true,
 		base.itemCount,
 		base.publicationLevel === "authoritative",
-		base.version === 3,
+		base.version === 3 || (base.version === 4 && value.sourceVersion === 3),
 	);
 	if (!coverageReceipt) return { ok: false };
 	if (base.version === 3) {
@@ -528,6 +562,24 @@ export function decodeJellyfinEpisodeGenerationMetadata(
 				coverageReceipt,
 				catalogProvenance,
 			} as JellyfinEpisodeGenerationMetadataV3,
+		};
+	}
+	if (base.version === 4) {
+		if (value.sourceVersion === 3 && base.publicationLevel === "positive-only") {
+			const catalogProvenance = decodeJellyfinEpisodeCatalogProvenance(value.catalogProvenance);
+			if (!catalogProvenance) return { ok: false };
+			return {
+				ok: true,
+				metadata: {
+					...value,
+					coverageReceipt,
+					catalogProvenance,
+				} as JellyfinEpisodeGenerationMetadataV4,
+			};
+		}
+		return {
+			ok: true,
+			metadata: { ...value, coverageReceipt } as JellyfinEpisodeGenerationMetadataV4,
 		};
 	}
 	return {
@@ -633,14 +685,59 @@ export function fingerprintJellyfinLibraryRows(
 ): string {
 	const projected = rows.map(projectJellyfinLibraryRow);
 	const decorated = projected.map((row) => ({ row, tieBreaker: evidenceFingerprint(row) }));
-	decorated.sort(
-		(left, right) =>
-			left.row.mediaType.localeCompare(right.row.mediaType) ||
-			left.row.tmdbId - right.row.tmdbId ||
-			left.row.libraryId.localeCompare(right.row.libraryId) ||
-			left.tieBreaker.localeCompare(right.tieBreaker),
-	);
+	decorated.sort(compareLibraryRows);
 	return evidenceFingerprint(decorated.map(({ row }) => row));
+}
+
+type DecoratedRow<T> = { row: T; tieBreaker?: string };
+
+function sortingTieBreaker<T>(decorated: DecoratedRow<T>): string {
+	decorated.tieBreaker ??= evidenceFingerprint(decorated.row);
+	return decorated.tieBreaker;
+}
+
+function compareLibraryRows(
+	left: DecoratedRow<CanonicalJellyfinLibraryRow>,
+	right: DecoratedRow<CanonicalJellyfinLibraryRow>,
+): number {
+	return (
+		left.row.mediaType.localeCompare(right.row.mediaType) ||
+		left.row.tmdbId - right.row.tmdbId ||
+		left.row.libraryId.localeCompare(right.row.libraryId) ||
+		sortingTieBreaker(left).localeCompare(sortingTieBreaker(right))
+	);
+}
+
+async function fingerprintDisplayRows<Input, Canonical>(
+	rows: readonly Input[],
+	project: (row: Input) => Canonical,
+	compare: (left: DecoratedRow<Canonical>, right: DecoratedRow<Canonical>) => number,
+): Promise<string> {
+	const checkpoint = createJellyfinDisplayCheckpoint();
+	const decorated: DecoratedRow<Canonical>[] = [];
+	for (const input of rows) {
+		const row = project(input);
+		decorated.push({ row });
+		const pause = checkpoint();
+		if (pause) await pause;
+	}
+	const sorted = await sortJellyfinDisplayRows(decorated, compare, checkpoint);
+	const fingerprint = createEvidenceFingerprintArrayAccumulator();
+	for (const { row } of sorted) {
+		fingerprint.append(row);
+		const pause = checkpoint();
+		if (pause) await pause;
+	}
+	return fingerprint.digest();
+}
+
+/** Full-generation proof with unchanged canonical bytes; no display-authority shortcut. */
+export function fingerprintJellyfinLibraryDisplayRows(
+	rows: readonly JellyfinLibraryRowFingerprintInput[],
+): Promise<string> {
+	return measureJellyfinDisplayReadPhase("fingerprint", () =>
+		fingerprintDisplayRows(rows, projectJellyfinLibraryRow, compareLibraryRows),
+	);
 }
 
 export interface JellyfinEpisodeRowFingerprintInput {
@@ -689,7 +786,7 @@ function canonicalEpisodeDate(value: Date | string | null): string | null {
 			: value;
 }
 
-function projectJellyfinEpisodeRow(
+export function projectJellyfinEpisodeRow(
 	row: JellyfinEpisodeRowFingerprintInput,
 ): CanonicalJellyfinEpisodeRow {
 	return {
@@ -709,12 +806,25 @@ export function fingerprintJellyfinEpisodeRows(
 ): string {
 	const projected = rows.map(projectJellyfinEpisodeRow);
 	const decorated = projected.map((row) => ({ row, tieBreaker: evidenceFingerprint(row) }));
-	decorated.sort(
-		(left, right) =>
-			left.row.showTmdbId - right.row.showTmdbId ||
-			left.row.seasonNumber - right.row.seasonNumber ||
-			left.row.episodeNumber - right.row.episodeNumber ||
-			left.tieBreaker.localeCompare(right.tieBreaker),
-	);
+	decorated.sort(compareEpisodeRows);
 	return evidenceFingerprint(decorated.map(({ row }) => row));
+}
+
+function compareEpisodeRows(
+	left: DecoratedRow<CanonicalJellyfinEpisodeRow>,
+	right: DecoratedRow<CanonicalJellyfinEpisodeRow>,
+): number {
+	return (
+		left.row.showTmdbId - right.row.showTmdbId ||
+		left.row.seasonNumber - right.row.seasonNumber ||
+		left.row.episodeNumber - right.row.episodeNumber ||
+		sortingTieBreaker(left).localeCompare(sortingTieBreaker(right))
+	);
+}
+
+/** Display scheduling only; mutation/publication callers keep the synchronous API. */
+export function fingerprintJellyfinEpisodeDisplayRows(
+	rows: readonly JellyfinEpisodeRowFingerprintInput[],
+): Promise<string> {
+	return fingerprintDisplayRows(rows, projectJellyfinEpisodeRow, compareEpisodeRows);
 }

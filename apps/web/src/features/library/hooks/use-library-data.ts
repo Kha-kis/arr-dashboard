@@ -3,6 +3,8 @@
 import {
 	LIBRARY_SERVICES,
 	type LibraryItem,
+	type LibraryFilters,
+	type QuiObservationStatus,
 	type LibraryService,
 	type Pagination,
 	type ServiceInstanceSummary,
@@ -63,6 +65,10 @@ export interface SyncStatus {
 }
 
 export interface LibraryData {
+	/** Validated qUI publication evidence; absent on legacy responses, never implied available. */
+	quiObservationStatus?: QuiObservationStatus;
+	/** Actual server filters, including explicit unavailable-qUI fallback. */
+	appliedFilters?: LibraryFilters;
 	/** Per-state counts for the Torrent state dropdown (only present when qui is configured) */
 	torrentStateCounts?: TorrentStateCounts;
 	/** All items from the current page */
@@ -90,6 +96,8 @@ export interface LibraryData {
 	error: Error | undefined;
 	/** Whether the cache is being populated (initial sync) */
 	isSyncing: boolean;
+	/** Whether sync status is unavailable or an instance reported a sync error */
+	hasSyncError: boolean;
 }
 
 /**
@@ -181,11 +189,20 @@ export function useLibraryData(params: LibraryDataParams): LibraryData {
 		};
 	}, [libraryQuery.data?.syncStatus]);
 
-	// Check if any instance is currently syncing
+	// Use the newest successful status projection; either polling query can lag the other.
 	const isSyncing = useMemo(() => {
-		if (syncStatus?.syncInProgress) return true;
-		return syncStatusQuery.data?.instances.some((inst) => inst.syncStatus.syncInProgress) ?? false;
-	}, [syncStatus, syncStatusQuery.data]);
+		const libraryActive = syncStatus?.syncInProgress ?? false;
+		const statusActive =
+			syncStatusQuery.data?.instances.some((inst) => inst.syncStatus.syncInProgress) ?? false;
+		if (!syncStatusQuery.data) return libraryActive;
+		if (!syncStatus) return statusActive;
+		if (syncStatusQuery.dataUpdatedAt > libraryQuery.dataUpdatedAt) return statusActive;
+		if (libraryQuery.dataUpdatedAt > syncStatusQuery.dataUpdatedAt) return libraryActive;
+		return libraryActive || statusActive;
+	}, [syncStatus, syncStatusQuery.data, syncStatusQuery.dataUpdatedAt, libraryQuery.dataUpdatedAt]);
+	const hasSyncError =
+		syncStatusQuery.isError ||
+		(syncStatusQuery.data?.instances.some((inst) => Boolean(inst.syncStatus.lastError)) ?? false);
 
 	// Create service lookup map for external links
 	const serviceLookup = useMemo<Record<string, ServiceInstanceSummary>>(() => {
@@ -222,6 +239,8 @@ export function useLibraryData(params: LibraryDataParams): LibraryData {
 	}, [servicesQuery.data]);
 
 	return {
+		quiObservationStatus: libraryQuery.data?.quiObservationStatus,
+		appliedFilters: libraryQuery.data?.appliedFilters,
 		items,
 		grouped,
 		pagination,
@@ -233,5 +252,6 @@ export function useLibraryData(params: LibraryDataParams): LibraryData {
 		isError: libraryQuery.isError,
 		error: libraryQuery.error as Error | undefined,
 		isSyncing,
+		hasSyncError,
 	};
 }

@@ -36,6 +36,11 @@ import {
 	readOwnedJellyfinObservationInTransaction,
 } from "../jellyfin/jellyfin-evidence-repository.js";
 import { buildLibraryItem } from "../library/library-item-builder.js";
+import { isMonitoringResourceForTarget } from "../library/monitoring-confirmation.js";
+import {
+	captureUnmonitorCachePreimage,
+	publishConfirmedUnmonitor,
+} from "./unmonitor-cache-publication.js";
 import type {
 	AvailablePlexInstanceEvidence,
 	AvailablePlexPolicyEvidence,
@@ -85,6 +90,7 @@ import {
 	withTargetWatchReadBudget,
 } from "./additional-target-watch-policy.js";
 import { arrPolicyEvidenceFromRaw } from "./arr-policy-evidence.js";
+import { publishSonarrEpisodeDeletion } from "./episode-cache-publication.js";
 import {
 	approvalRecordToAuditSnapshot,
 	cleanupAuditEnabled,
@@ -351,12 +357,17 @@ function cleanupPlexAuthority(
 	});
 }
 
-function jellyfinReaderFromTransaction(tx: Prisma.TransactionClient): JellyfinTransactionReader {
+/** @internal Keep cleanup's execution-time reader in parity with the direct evidence reader. */
+export function jellyfinReaderFromTransaction(
+	tx: Prisma.TransactionClient,
+): JellyfinTransactionReader {
 	return {
 		serviceInstance: tx.serviceInstance,
 		cacheRefreshStatus: tx.cacheRefreshStatus,
 		jellyfinCache: tx.jellyfinCache,
 		jellyfinEpisodeCache: tx.jellyfinEpisodeCache,
+		jellyfinEpisodeGenerationRow: tx.jellyfinEpisodeGenerationRow,
+		jellyfinEpisodePreparation: tx.jellyfinEpisodePreparation,
 	} as unknown as JellyfinTransactionReader;
 }
 
@@ -1358,6 +1369,15 @@ function isSonarrEpisodeUnmonitorConfirmedRecovery(message: string | null): bool
 		message === SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE ||
 		message === SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE
 	);
+}
+
+class ParentUnmonitorOutcomeUnknownError extends Error {
+	constructor(cause: unknown) {
+		super(
+			"The monitoring change could not be confirmed. Review the ARR instance and explicitly retry this cleanup item; its outcome remains unknown.",
+			{ cause },
+		);
+	}
 }
 
 class SonarrEpisodeUnmonitorPartialError extends Error {
@@ -3287,6 +3307,7 @@ interface QueuedCleanupExecutionResult {
 	errors: string[];
 	expiredIds: string[];
 	recordingFailureIds: string[];
+	completedRecordingFailureWarnings?: Record<string, string>;
 	reconciledIds: string[];
 	unclaimedIds: string[];
 	mutationBudgetConsumedIds: string[];
@@ -3305,7 +3326,12 @@ async function retryTargetRecordIsAbsent(
 	arrItemId: number,
 	safetySnapshot: unknown,
 	action: RuleAction,
-): Promise<"record_absent" | "episode_action_complete" | "series_action_complete" | false> {
+): Promise<
+	| "record_absent"
+	| "episode_action_complete"
+	| { kind: "series_action_complete"; observation: unknown }
+	| false
+> {
 	const plan = parseExecutableSafetyPlan(safetySnapshot);
 	if (!plan || plan.target.serviceFingerprint !== createArrServiceFingerprint(instance)) {
 		return false;
@@ -3322,7 +3348,9 @@ async function retryTargetRecordIsAbsent(
 			if (action === "unmonitor") {
 				if (plan.kind !== "verified_arr_target") return false;
 				assertVerifiedArrTargetUnchanged(instance, movie.tmdbId, movie.path, plan.target);
-				return movie.monitored === false ? "series_action_complete" : false;
+				return isMonitoringResourceForTarget(movie, arrItemId) && movie.monitored === false
+					? { kind: "series_action_complete", observation: movie }
+					: false;
 			}
 		} catch (error) {
 			if (isNotFoundError(error)) return "record_absent";
@@ -3381,7 +3409,9 @@ async function retryTargetRecordIsAbsent(
 		if (action === "unmonitor") {
 			if (plan.kind !== "verified_arr_target") return false;
 			assertVerifiedArrTargetUnchanged(instance, series.tvdbId, series.path, plan.target);
-			return series.monitored === false ? "series_action_complete" : false;
+			return isMonitoringResourceForTarget(series, arrItemId) && series.monitored === false
+				? { kind: "series_action_complete", observation: series }
+				: false;
 		}
 		return false;
 	}
@@ -4824,6 +4854,14 @@ async function executeQueuedCleanupItems(
 				if (!correlationId) continue;
 				const auditApproval = approvalRecordToAuditSnapshot(approval);
 				if (result.expiredIds.includes(approval.id)) auditApproval.status = "expired";
+				const recordingFailureWarning = result.completedRecordingFailureWarnings?.[approval.id];
+				if (
+					recordingFailureWarning &&
+					result.recordingFailureIds.includes(approval.id) &&
+					approval.status !== "executed"
+				) {
+					auditApproval.lastExecutionError = recordingFailureWarning;
+				}
 				const terminalEventType = await recordApprovalExecutionOutcome(
 					deps.prisma,
 					{
@@ -4913,6 +4951,7 @@ async function executeQueuedCleanupItemsCore(
 	},
 ): Promise<QueuedCleanupExecutionResult> {
 	const { prisma, arrClientFactory, log } = deps;
+	const publicationWarnings: string[] = [];
 	const currentConfig = await prisma.libraryCleanupConfig.findUnique({
 		where: { userId },
 		select: {
@@ -5039,11 +5078,13 @@ async function executeQueuedCleanupItemsCore(
 		const rescanApprovalIds = new Set<string>();
 		const expiredIds: string[] = [];
 		const recordingFailureIds: string[] = [];
+		const completedRecordingFailureWarnings: Record<string, string> = {};
 		const reconciledIds: string[] = [];
 		const sharedPlexSafetyContext = createSharedPlexSafetyContext();
 		let providerAuthorityFailed = false;
 
 		for (const approval of approvals) {
+			const publicationWarningStart = publicationWarnings.length;
 			const claimedExecutionToken = claimedApprovalTokens.get(approval.id);
 			if (!claimedExecutionToken) {
 				unclaimedIds.push(approval.id);
@@ -5236,10 +5277,21 @@ async function executeQueuedCleanupItemsCore(
 				sharedPlexBlock =
 					"Skipped for safety: the approved Plex episode evidence expired; run cleanup again and review a new approval.";
 			}
+			const unmonitorPreimage =
+				action === "unmonitor" && approvedPlan?.kind === "verified_arr_target"
+					? await captureUnmonitorCachePreimage({
+							prisma,
+							userId,
+							instance,
+							arrItemId: approval.arrItemId,
+							itemType: approval.itemType,
+							plan: approvedPlan,
+						})
+					: undefined;
 			let retryTargetAlreadyAbsent:
 				| "record_absent"
 				| "episode_action_complete"
-				| "series_action_complete"
+				| { kind: "series_action_complete"; observation: unknown }
 				| false = false;
 			if (!sharedPlexBlock && recoveringInterruptedMutation) {
 				try {
@@ -5672,38 +5724,38 @@ async function executeQueuedCleanupItemsCore(
 				if (retryTargetAlreadyAbsent) {
 					executionCompleted = true;
 					reconciledWithoutMutation = true;
-					if (retryTargetAlreadyAbsent === "series_action_complete") {
-						await prisma.libraryCache
-							.updateMany({
-								where: {
-									instanceId: approval.instanceId,
-									arrItemId: approval.arrItemId,
-									itemType: approval.itemType,
-								},
-								data: { monitored: false },
-							})
-							.catch((cacheErr) => {
-								log.error(
-									{ err: cacheErr, approvalId: approval.id },
-									"Completed unmonitor retry but its cache update failed",
-								);
-							});
+					if (typeof retryTargetAlreadyAbsent === "object") {
+						const publication = await publishConfirmedUnmonitor({
+							prisma,
+							preimage: unmonitorPreimage,
+							observation: retryTargetAlreadyAbsent.observation,
+						});
+						if (!publication.published) publicationWarnings.push(publication.warning);
 					} else {
 						if (
 							retryTargetAlreadyAbsent === "record_absent" ||
 							action !== "unmonitor" ||
 							safetyPlan!.kind !== "verified_sonarr_episode"
 						) {
-							await reconcileSonarrEpisodeFileCache(
-								prisma,
-								mutationInstance,
-								approval.arrItemId,
-								log,
-								retryTargetAlreadyAbsent !== "record_absent" &&
-									safetyPlan!.kind === "verified_sonarr_episode"
-									? safetyPlan!.selectedFile.episodeFileId
-									: undefined,
-							);
+							if (
+								safetyPlan!.kind === "verified_sonarr_episode" &&
+								action !== "unmonitor" &&
+								retryTargetAlreadyAbsent !== "record_absent"
+							) {
+								await publishEpisodeCache(
+									deps,
+									mutationInstance,
+									approval.arrItemId,
+									safetyPlan!,
+									publicationWarnings,
+								);
+							} else
+								await reconcileSonarrEpisodeFileCache(
+									prisma,
+									mutationInstance,
+									approval.arrItemId,
+									log,
+								);
 						}
 						if (
 							retryTargetAlreadyAbsent === "record_absent" ||
@@ -5725,7 +5777,7 @@ async function executeQueuedCleanupItemsCore(
 								});
 					}
 				} else if (action === "unmonitor") {
-					await unmonitorInArr(
+					const observation = await unmonitorInArr(
 						arrClientFactory,
 						mutationInstance,
 						approval.arrItemId,
@@ -5734,22 +5786,14 @@ async function executeQueuedCleanupItemsCore(
 						mutationAuditBoundary,
 					);
 					executionCompleted = true;
-					if (safetyPlan!.kind !== "verified_sonarr_episode")
-						await prisma.libraryCache
-							.updateMany({
-								where: {
-									instanceId: approval.instanceId,
-									arrItemId: approval.arrItemId,
-									itemType: approval.itemType,
-								},
-								data: { monitored: false },
-							})
-							.catch((cacheErr) => {
-								log.error(
-									{ err: cacheErr, approvalId: approval.id },
-									"Approved cleanup action succeeded but its cache update failed",
-								);
-							});
+					if (safetyPlan!.kind !== "verified_sonarr_episode") {
+						const publication = await publishConfirmedUnmonitor({
+							prisma,
+							preimage: unmonitorPreimage,
+							observation,
+						});
+						if (!publication.published) publicationWarnings.push(publication.warning);
+					}
 				} else if (action === "delete_files") {
 					const deletedFiles = await withQuiPhysicalMutationGuard(
 						userId,
@@ -5766,15 +5810,21 @@ async function executeQueuedCleanupItemsCore(
 					);
 					executionCompleted = true;
 					reconciledWithoutMutation = !deletedFiles;
-					await reconcileSonarrEpisodeFileCache(
-						prisma,
-						mutationInstance,
-						approval.arrItemId,
-						log,
-						safetyPlan!.kind === "verified_sonarr_episode"
-							? safetyPlan!.selectedFile.episodeFileId
-							: undefined,
-					);
+					if (safetyPlan!.kind === "verified_sonarr_episode") {
+						await publishEpisodeCache(
+							deps,
+							mutationInstance,
+							approval.arrItemId,
+							safetyPlan!,
+							publicationWarnings,
+						);
+					} else
+						await reconcileSonarrEpisodeFileCache(
+							prisma,
+							mutationInstance,
+							approval.arrItemId,
+							log,
+						);
 					if (safetyPlan!.kind !== "verified_sonarr_episode")
 						await prisma.libraryCache
 							.updateMany({
@@ -5806,15 +5856,21 @@ async function executeQueuedCleanupItemsCore(
 							),
 					);
 					executionCompleted = true;
-					await reconcileSonarrEpisodeFileCache(
-						prisma,
-						mutationInstance,
-						approval.arrItemId,
-						log,
-						safetyPlan!.kind === "verified_sonarr_episode"
-							? safetyPlan!.selectedFile.episodeFileId
-							: undefined,
-					);
+					if (safetyPlan!.kind === "verified_sonarr_episode") {
+						await publishEpisodeCache(
+							deps,
+							mutationInstance,
+							approval.arrItemId,
+							safetyPlan!,
+							publicationWarnings,
+						);
+					} else
+						await reconcileSonarrEpisodeFileCache(
+							prisma,
+							mutationInstance,
+							approval.arrItemId,
+							log,
+						);
 					if (safetyPlan!.kind !== "verified_sonarr_episode")
 						await prisma.libraryCache
 							.deleteMany({
@@ -5843,7 +5899,7 @@ async function executeQueuedCleanupItemsCore(
 						executionToken: null,
 						reconciledWithoutMutation,
 						executedAt: new Date(),
-						lastExecutionError: null,
+						lastExecutionError: publicationWarnings[publicationWarningStart] ?? null,
 					},
 				);
 				if (
@@ -5910,7 +5966,7 @@ async function executeQueuedCleanupItemsCore(
 								executionToken: null,
 								reconciledWithoutMutation,
 								executedAt: new Date(),
-								lastExecutionError: null,
+								lastExecutionError: publicationWarnings[publicationWarningStart] ?? null,
 							},
 						);
 						if (reconciledWithoutMutation) reconciledIds.push(approval.id);
@@ -5921,6 +5977,11 @@ async function executeQueuedCleanupItemsCore(
 						failed++;
 						errors.push(recordingError);
 						recordingFailureIds.push(approval.id);
+						const publicationWarning = publicationWarnings[publicationWarningStart];
+						if (publicationWarning) {
+							completedRecordingFailureWarnings[approval.id] =
+								`${recordingError} ${publicationWarning}`;
+						}
 						log.error(
 							{ err: retryError, approvalId: approval.id, instanceId: approval.instanceId },
 							"Approved cleanup action completed but its executed status could not be recorded",
@@ -5944,7 +6005,8 @@ async function executeQueuedCleanupItemsCore(
 								error instanceof SonarrEpisodeUnmonitorOutcomeUnknownError) ||
 							error instanceof SonarrEpisodeUnmonitorConfirmationPersistenceError
 						? SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE
-						: error instanceof ArrFileChangedDuringSafetyCheckError ||
+						: error instanceof ParentUnmonitorOutcomeUnknownError ||
+								error instanceof ArrFileChangedDuringSafetyCheckError ||
 								error instanceof ArrDeletePartialError ||
 								error instanceof SonarrEpisodeUnmonitorPartialError ||
 								error instanceof SonarrEpisodeUnmonitorOutcomeUnknownError ||
@@ -5986,6 +6048,7 @@ async function executeQueuedCleanupItemsCore(
 						claimedExecutionToken,
 						{
 							status:
+								error instanceof ParentUnmonitorOutcomeUnknownError ||
 								error instanceof SonarrEpisodeUnmonitorPartialError ||
 								error instanceof SonarrEpisodeUnmonitorOutcomeUnknownError ||
 								error instanceof SonarrEpisodeUnmonitorStartPersistenceError ||
@@ -6014,32 +6077,44 @@ async function executeQueuedCleanupItemsCore(
 					);
 				}
 				if (error instanceof ArrDeletePartialError && retryStatePersisted) {
-					await reconcilePartialFileDeletion(
-						prisma,
-						instance,
-						approval.arrItemId,
-						approval.itemType,
-						error,
-						log,
-					);
-					await prisma.libraryCache
-						.updateMany({
-							where: {
-								instanceId: approval.instanceId,
-								arrItemId: approval.arrItemId,
-								itemType: approval.itemType,
-							},
-							data: {
-								hasFile: error.hasRemainingFiles,
-								sizeOnDisk: error.remainingSize,
-							},
-						})
-						.catch((cacheErr) => {
-							log.error(
-								{ err: cacheErr, approvalId: approval.id },
-								"Cleanup partial ARR delete could not update the cache",
+					if (safetyPlan?.kind === "verified_sonarr_episode") {
+						if (error.deletedFileIds.length > 0)
+							await publishEpisodeCache(
+								deps,
+								instance,
+								approval.arrItemId,
+								safetyPlan,
+								publicationWarnings,
+								error.deletedFileIds,
 							);
-						});
+					} else {
+						await reconcilePartialFileDeletion(
+							prisma,
+							instance,
+							approval.arrItemId,
+							approval.itemType,
+							error,
+							log,
+						);
+						await prisma.libraryCache
+							.updateMany({
+								where: {
+									instanceId: approval.instanceId,
+									arrItemId: approval.arrItemId,
+									itemType: approval.itemType,
+								},
+								data: {
+									hasFile: error.hasRemainingFiles,
+									sizeOnDisk: error.remainingSize,
+								},
+							})
+							.catch((cacheErr) => {
+								log.error(
+									{ err: cacheErr, approvalId: approval.id },
+									"Cleanup partial ARR delete could not update the cache",
+								);
+							});
+					}
 				}
 				if (
 					error instanceof SonarrEpisodeUnmonitorPartialError &&
@@ -6056,6 +6131,9 @@ async function executeQueuedCleanupItemsCore(
 			errors,
 			expiredIds,
 			recordingFailureIds,
+			...(Object.keys(completedRecordingFailureWarnings).length
+				? { completedRecordingFailureWarnings }
+				: {}),
 			reconciledIds,
 			unclaimedIds,
 			mutationBudgetConsumedIds: [...mutationBudgetConsumedIds],
@@ -6065,6 +6143,7 @@ async function executeQueuedCleanupItemsCore(
 			mutationAttemptedIds: [...mutationAttemptedApprovalIds],
 			rescanApprovalIds: [...rescanApprovalIds],
 			providerAuthorityFailed,
+			...(publicationWarnings.length ? { warnings: [...new Set(publicationWarnings)] } : {}),
 		};
 	} finally {
 		for (const [approvalId, executionToken] of claimedApprovalTokens) {
@@ -7451,7 +7530,7 @@ async function evaluateAllItems(
 
 	// Prefetch Plex episode data if episode completion rule is active
 	const hasEpisodeCompletionRules = activeTypes.has("plex_episode_completion");
-	const needsPlexEpisodeEvidence = hasEpisodeCompletionRules || episodeRules.length > 0;
+	const needsPlexEpisodeEvidence = hasEpisodeCompletionRules;
 	const plexEpisodeSnapshot = needsPlexEpisodeEvidence
 		? await loadPlexEpisodeDataSnapshot(deps, config.userId)
 		: undefined;
@@ -7468,15 +7547,28 @@ async function evaluateAllItems(
 		needsTmdb || needsTrakt
 			? await refreshListMutationEvidence(deps, config.userId, seriesRules)
 			: {};
+	let episodeWatchAvailable = false;
+	const freshEpisodeWatchMap =
+		episodeRules.length > 0
+			? await prefetchFreshPlexEpisodeWatchData(deps, instances, now, warnings, {
+					availabilitySink: (available) => {
+						episodeWatchAvailable = available;
+					},
+				})
+			: new Map<string, EpisodePlexWatchEvidence[]>();
 
 	// Build prefetch health status
 	const prefetchHealth: PrefetchResults = {
 		seerr: hasSeerrRules ? (seerrMap ? "ok" : "failed") : "skipped",
 		tautulli: hasTautulliRules ? (tautulliMap ? "ok" : "failed") : "skipped",
 		plex:
-			hasPlexRules || needsPlexEpisodeEvidence || needsPlexSectionInventory
+			hasPlexRules ||
+			needsPlexEpisodeEvidence ||
+			needsPlexSectionInventory ||
+			episodeRules.length > 0
 				? (!hasPlexRules || plexSnapshot) &&
 					(!needsPlexEpisodeEvidence || plexEpisodeSnapshot) &&
+					(episodeRules.length === 0 || episodeWatchAvailable) &&
 					(!needsPlexSectionInventory || publishedPlexEvidence)
 					? "ok"
 					: "failed"
@@ -7553,10 +7645,6 @@ async function evaluateAllItems(
 	const flagged: FlaggedItem[] = [];
 	let totalEvaluated = 0;
 	let cursor: string | undefined;
-	const freshEpisodeWatchMap =
-		episodeRules.length > 0
-			? await prefetchFreshPlexEpisodeWatchData(deps, instances, now, warnings)
-			: new Map<string, EpisodePlexWatchEvidence[]>();
 	const watchedEpisodeSeriesTmdbIds = new Set(
 		[...freshEpisodeWatchMap.keys()].map((key) => Number.parseInt(key.split(":", 1)[0]!, 10)),
 	);
@@ -7742,6 +7830,8 @@ export async function prefetchFreshPlexEpisodeWatchData(
 	options: {
 		includeUnwatched?: boolean;
 		evidenceSink?: (evidence: SanitizedProviderEvidence) => void;
+		/** Diagnostic requested-capability health only; never mutation authority. */
+		availabilitySink?: (available: boolean) => void;
 		coordinate?: {
 			showTmdbId: number;
 			seasonNumber: number;
@@ -7749,6 +7839,7 @@ export async function prefetchFreshPlexEpisodeWatchData(
 		};
 	} = {},
 ): Promise<Map<string, EpisodePlexWatchEvidence[]>> {
+	options.availabilitySink?.(false);
 	const positiveResult = new Map<string, EpisodePlexWatchEvidence[]>();
 	const plexInstanceIds = instances
 		.filter((instance) => instance.service === "PLEX" && instance.enabled)
@@ -7794,13 +7885,28 @@ export async function prefetchFreshPlexEpisodeWatchData(
 			}
 			const sourceFingerprint = plexFingerprintById.get(instance.id);
 			const observedAt = new Date(positive.provenance.publishedAt);
-			if (!sourceFingerprint || !Number.isFinite(observedAt.getTime())) continue;
-			positiveEvidenceInstanceIds.add(instance.id);
+			if (
+				!sourceFingerprint ||
+				!Number.isFinite(observedAt.getTime()) ||
+				observedAt.getTime() < now.getTime() - PLEX_EPISODE_FRESHNESS_MS
+			)
+				continue;
+			const validPositiveRow = (row: (typeof positive.rows)[number]) =>
+				row.sourceFingerprint === sourceFingerprint &&
+				Number.isSafeInteger(row.lowerBound) &&
+				row.lowerBound > 0 &&
+				typeof row.ratingKey === "string" &&
+				row.ratingKey.trim().length > 0 &&
+				Number.isSafeInteger(row.showTmdbId) &&
+				row.showTmdbId > 0 &&
+				Number.isSafeInteger(row.seasonNumber) &&
+				row.seasonNumber >= 0 &&
+				Number.isSafeInteger(row.episodeNumber) &&
+				row.episodeNumber > 0;
+			if (positive.rows.every(validPositiveRow)) positiveEvidenceInstanceIds.add(instance.id);
 			for (const row of positive.rows) {
 				if (
-					row.sourceFingerprint !== sourceFingerprint ||
-					!Number.isSafeInteger(row.lowerBound) ||
-					row.lowerBound <= 0 ||
+					!validPositiveRow(row) ||
 					(options.coordinate &&
 						(row.showTmdbId !== options.coordinate.showTmdbId ||
 							row.seasonNumber !== options.coordinate.seasonNumber ||
@@ -7840,7 +7946,10 @@ export async function prefetchFreshPlexEpisodeWatchData(
 		const authoritativeInstances = plexInstances.filter(
 			(instance) => !positiveEvidenceInstanceIds.has(instance.id),
 		);
-		if (authoritativeInstances.length === 0) return positiveResult;
+		if (authoritativeInstances.length === 0) {
+			options.availabilitySink?.(true);
+			return positiveResult;
+		}
 		const generations = await loadCompleteCacheGenerations(
 			deps,
 			authoritativeInstances,
@@ -7871,8 +7980,8 @@ export async function prefetchFreshPlexEpisodeWatchData(
 			);
 			return positiveResult;
 		}
-		const rows = repositoryEvidence
-			.flatMap((entry) => (entry.available ? entry.rows : []))
+		const allRows = repositoryEvidence.flatMap((entry) => (entry.available ? entry.rows : []));
+		const rows = allRows
 			.filter((row) => options.includeUnwatched || (row.watchCount ?? 0) > 0)
 			.filter(
 				(row) =>
@@ -7965,6 +8074,32 @@ export async function prefetchFreshPlexEpisodeWatchData(
 			return positiveResult;
 		}
 		options.evidenceSink?.(snapshot.evidence);
+		options.availabilitySink?.(
+			allRows.every((row) => {
+				const generation = generations.get(row.instanceId);
+				return (
+					generation !== undefined &&
+					row.sourceFingerprint === plexFingerprintById.get(row.instanceId) &&
+					row.connectionGeneration === generation.connectionGeneration &&
+					row.identityGeneration === generation.identityGeneration &&
+					row.refreshedAt instanceof Date &&
+					Number.isFinite(row.refreshedAt.getTime()) &&
+					row.refreshedAt.getTime() === generation.completedAt.getTime() &&
+					row.refreshedAt.getTime() >= freshnessThreshold &&
+					Number.isSafeInteger(row.showTmdbId) &&
+					row.showTmdbId > 0 &&
+					Number.isSafeInteger(row.seasonNumber) &&
+					row.seasonNumber >= 0 &&
+					Number.isSafeInteger(row.episodeNumber) &&
+					row.episodeNumber > 0 &&
+					Number.isSafeInteger(row.watchCount) &&
+					row.watchCount !== null &&
+					row.watchCount >= 0 &&
+					typeof row.ratingKey === "string" &&
+					row.ratingKey.trim().length > 0
+				);
+			}),
+		);
 		for (const [key, exactEvidence] of result) {
 			const merged = [...(positiveResult.get(key) ?? []), ...exactEvidence];
 			merged.sort(
@@ -8942,6 +9077,7 @@ export async function executeDirectRemoval(
 
 		const targetKey = cleanupDeleteTargetKey(flaggedDeleteTarget(item));
 		let sharedPlexBlock = sharedPlexBlocks.get(targetKey);
+		const publicationWarningStart = mediaServerRescanWarnings.length;
 		let safetyPlan: SharedMediaSafetyPlan | undefined;
 		try {
 			const freshBlocks = await findSharedPlexDeleteBlocks(
@@ -9306,7 +9442,15 @@ export async function executeDirectRemoval(
 			}
 
 			if (ruleAction === "unmonitor") {
-				await unmonitorInArr(
+				const preimage = await captureUnmonitorCachePreimage({
+					prisma,
+					userId,
+					instance: mutationInstance,
+					arrItemId: item.cacheItem.arrItemId,
+					itemType: item.cacheItem.itemType,
+					plan: safetyPlan!,
+				});
+				const observation = await unmonitorInArr(
 					arrClientFactory,
 					mutationInstance,
 					item.cacheItem.arrItemId,
@@ -9314,23 +9458,19 @@ export async function executeDirectRemoval(
 					assertMutationAuthority,
 					mutationAuditBoundary,
 				);
-				if (safetyPlan!.kind !== "verified_sonarr_episode")
-					try {
-						await prisma.libraryCache.updateMany({
-							where: {
-								instanceId: item.cacheItem.instanceId,
-								arrItemId: item.cacheItem.arrItemId,
-								itemType: item.cacheItem.itemType,
-							},
-							data: { monitored: false },
-						});
-					} catch (cacheErr) {
-						log.error(
-							{ err: cacheErr, title: item.cacheItem.title, instanceId: instance.id },
-							"Cleanup: ARR action succeeded but cache update failed — cache is now stale",
-						);
-					}
-				details.push(buildDetail(item, "unmonitored", undefined, directIdentity));
+				if (safetyPlan!.kind !== "verified_sonarr_episode") {
+					const publication = await publishConfirmedUnmonitor({ prisma, preimage, observation });
+					if (!publication.published) mediaServerRescanWarnings.push(publication.warning);
+				}
+
+				details.push(
+					buildDetail(
+						item,
+						"unmonitored",
+						mediaServerRescanWarnings[publicationWarningStart],
+						directIdentity,
+					),
+				);
 				unmonitored++;
 				consecutiveFailures = 0; // Reset on success
 				log.info(
@@ -9351,15 +9491,21 @@ export async function executeDirectRemoval(
 							mutationAuditBoundary,
 						),
 				);
-				await reconcileSonarrEpisodeFileCache(
-					prisma,
-					mutationInstance,
-					item.cacheItem.arrItemId,
-					log,
-					safetyPlan!.kind === "verified_sonarr_episode"
-						? safetyPlan!.selectedFile.episodeFileId
-						: undefined,
-				);
+				if (safetyPlan!.kind === "verified_sonarr_episode") {
+					await publishEpisodeCache(
+						deps,
+						mutationInstance,
+						item.cacheItem.arrItemId,
+						safetyPlan!,
+						mediaServerRescanWarnings,
+					);
+				} else
+					await reconcileSonarrEpisodeFileCache(
+						prisma,
+						mutationInstance,
+						item.cacheItem.arrItemId,
+						log,
+					);
 				if (safetyPlan!.kind !== "verified_sonarr_episode")
 					try {
 						await prisma.libraryCache.updateMany({
@@ -9406,15 +9552,21 @@ export async function executeDirectRemoval(
 						mutationAuditBoundary,
 					),
 				);
-				await reconcileSonarrEpisodeFileCache(
-					prisma,
-					mutationInstance,
-					item.cacheItem.arrItemId,
-					log,
-					safetyPlan!.kind === "verified_sonarr_episode"
-						? safetyPlan!.selectedFile.episodeFileId
-						: undefined,
-				);
+				if (safetyPlan!.kind === "verified_sonarr_episode") {
+					await publishEpisodeCache(
+						deps,
+						mutationInstance,
+						item.cacheItem.arrItemId,
+						safetyPlan!,
+						mediaServerRescanWarnings,
+					);
+				} else
+					await reconcileSonarrEpisodeFileCache(
+						prisma,
+						mutationInstance,
+						item.cacheItem.arrItemId,
+						log,
+					);
 				if (safetyPlan!.kind !== "verified_sonarr_episode")
 					try {
 						await prisma.libraryCache.deleteMany({
@@ -9450,7 +9602,7 @@ export async function executeDirectRemoval(
 					executionToken: null,
 					reconciledWithoutMutation: !directIdentity.mutationAttempted,
 					executedAt: new Date(),
-					lastExecutionError: null,
+					lastExecutionError: mediaServerRescanWarnings[publicationWarningStart] ?? null,
 				},
 			).catch((persistError) => {
 				directStateRecorded = false;
@@ -9459,7 +9611,10 @@ export async function executeDirectRemoval(
 				if (recordedDetail) {
 					recordedDetail.durableStateRecordingFailed = true;
 					recordedDetail.reason =
-						"The upstream action completed, but its durable mutation intent status could not be confirmed.";
+						"The upstream action completed, but its durable mutation intent status could not be confirmed." +
+						(mediaServerRescanWarnings[publicationWarningStart]
+							? ` ${mediaServerRescanWarnings[publicationWarningStart]}`
+							: "");
 				}
 				directRetryPersistenceFailures++;
 				log.error(
@@ -9479,7 +9634,7 @@ export async function executeDirectRemoval(
 										...directRescanApproval,
 										status: "executed",
 										executionToken: null,
-										lastExecutionError: null,
+										lastExecutionError: mediaServerRescanWarnings[publicationWarningStart] ?? null,
 									}),
 									correlationId: directMutationExecutionToken,
 									trigger: directAuditTrigger,
@@ -9633,32 +9788,44 @@ export async function executeDirectRemoval(
 					);
 				}
 				if (retryPersistenceSucceeded) {
-					await reconcilePartialFileDeletion(
-						prisma,
-						instance,
-						item.cacheItem.arrItemId,
-						item.cacheItem.itemType,
-						error,
-						log,
-					);
-					await prisma.libraryCache
-						.updateMany({
-							where: {
-								instanceId: item.cacheItem.instanceId,
-								arrItemId: item.cacheItem.arrItemId,
-								itemType: item.cacheItem.itemType,
-							},
-							data: {
-								hasFile: error.hasRemainingFiles,
-								sizeOnDisk: error.remainingSize,
-							},
-						})
-						.catch((cacheErr) => {
-							log.error(
-								{ err: cacheErr, title: item.cacheItem.title, instanceId: instance.id },
-								"Cleanup partial ARR delete could not update the cache",
+					if (safetyPlan?.kind === "verified_sonarr_episode") {
+						if (error.deletedFileIds.length > 0)
+							await publishEpisodeCache(
+								deps,
+								instance,
+								item.cacheItem.arrItemId,
+								safetyPlan,
+								mediaServerRescanWarnings,
+								error.deletedFileIds,
 							);
-						});
+					} else {
+						await reconcilePartialFileDeletion(
+							prisma,
+							instance,
+							item.cacheItem.arrItemId,
+							item.cacheItem.itemType,
+							error,
+							log,
+						);
+						await prisma.libraryCache
+							.updateMany({
+								where: {
+									instanceId: item.cacheItem.instanceId,
+									arrItemId: item.cacheItem.arrItemId,
+									itemType: item.cacheItem.itemType,
+								},
+								data: {
+									hasFile: error.hasRemainingFiles,
+									sizeOnDisk: error.remainingSize,
+								},
+							})
+							.catch((cacheErr) => {
+								log.error(
+									{ err: cacheErr, title: item.cacheItem.title, instanceId: instance.id },
+									"Cleanup partial ARR delete could not update the cache",
+								);
+							});
+					}
 				}
 				details.push(
 					buildDetail(
@@ -10394,6 +10561,24 @@ async function deleteSonarrRecordWithoutFiles(
 	});
 }
 
+async function publishEpisodeCache(
+	deps: CleanupExecutorDeps,
+	instance: ServiceInstance,
+	arrItemId: number,
+	plan: Extract<SharedMediaSafetyPlan, { kind: "verified_sonarr_episode" }>,
+	warnings: string[],
+	deletedFileIds = [plan.selectedFile.episodeFileId],
+): Promise<void> {
+	const result = await publishSonarrEpisodeDeletion({
+		...deps,
+		instance,
+		arrItemId,
+		plan,
+		deletedFileIds,
+	});
+	if (!result.published) warnings.push(result.warning);
+}
+
 async function reconcileSonarrEpisodeFileCache(
 	prisma: CleanupExecutorDeps["prisma"],
 	instance: ServiceInstance,
@@ -10673,7 +10858,7 @@ async function unmonitorInArr(
 	safetyPlan: SharedMediaSafetyPlan,
 	assertMutationAuthority?: MutationAuthorityCheck,
 	mutationAudit?: MutationAuditBoundary,
-): Promise<void> {
+): Promise<unknown> {
 	if (safetyPlan.kind !== "verified_arr_target" && safetyPlan.kind !== "verified_sonarr_episode") {
 		throw new Error("A verified ARR target identity is required before unmonitoring");
 	}
@@ -10687,20 +10872,30 @@ async function unmonitorInArr(
 			const movie = await radarr.movie.getById(arrItemId);
 			assertVerifiedArrTargetUnchanged(instance, movie.tmdbId, movie.path, safetyPlan.target);
 			await assertMutationAuthority?.({ seriesTransition: "unchanged" });
+			if (!isMonitoringResourceForTarget(movie, arrItemId) || typeof movie.monitored !== "boolean")
+				throw new ParentUnmonitorOutcomeUnknownError(new Error("Invalid current monitoring state"));
 			mutationAudit?.attempted(step);
+			let writeError: unknown;
 			try {
 				await radarr.movie.update(arrItemId, { ...movie, id: arrItemId, monitored: false });
 			} catch (error) {
-				let current: Awaited<ReturnType<typeof radarr.movie.getById>>;
-				try {
-					current = await radarr.movie.getById(arrItemId);
-				} catch {
-					throw error;
-				}
-				assertVerifiedArrTargetUnchanged(instance, current.tmdbId, current.path, safetyPlan.target);
-				if (current.monitored !== false) throw error;
+				writeError = error;
 			}
-			break;
+			let current: Awaited<ReturnType<typeof radarr.movie.getById>>;
+			try {
+				current = await radarr.movie.getById(arrItemId);
+			} catch (error) {
+				throw new ParentUnmonitorOutcomeUnknownError(error);
+			}
+			if (
+				!isMonitoringResourceForTarget(current, arrItemId) ||
+				typeof current.monitored !== "boolean"
+			)
+				throw new ParentUnmonitorOutcomeUnknownError(new Error("Invalid monitoring readback"));
+			assertVerifiedArrTargetUnchanged(instance, current.tmdbId, current.path, safetyPlan.target);
+			if (current.monitored !== false)
+				throw writeError ?? new Error("Radarr did not apply the selected unmonitor");
+			return current;
 		}
 		case "SONARR": {
 			const sonarr = client as InstanceType<typeof SonarrClient>;
@@ -10721,6 +10916,15 @@ async function unmonitorInArr(
 						throw new SonarrEpisodeUnmonitorOutcomeUnknownError(error);
 					}
 				}
+				const unmonitored = await sonarrEpisodeRemainsUnmonitored(sonarr, arrItemId, safetyPlan);
+				if (unmonitored === false) {
+					throw new Error("Sonarr did not apply the approved episode unmonitor");
+				}
+				if (unmonitored === null) {
+					throw new SonarrEpisodeUnmonitorOutcomeUnknownError(
+						new Error("Sonarr episode unmonitor readback was unavailable"),
+					);
+				}
 				break;
 			}
 			const step = "sonarr_series_unmonitor";
@@ -10728,7 +10932,13 @@ async function unmonitorInArr(
 			const series = await sonarr.series.getById(arrItemId);
 			assertVerifiedArrTargetUnchanged(instance, series.tvdbId, series.path, safetyPlan.target);
 			await assertMutationAuthority?.({ seriesTransition: "unchanged" });
+			if (
+				!isMonitoringResourceForTarget(series, arrItemId) ||
+				typeof series.monitored !== "boolean"
+			)
+				throw new ParentUnmonitorOutcomeUnknownError(new Error("Invalid current monitoring state"));
 			mutationAudit?.attempted(step);
+			let writeError: unknown;
 			try {
 				await sonarr.series.update(arrItemId, {
 					...series,
@@ -10736,16 +10946,23 @@ async function unmonitorInArr(
 					monitored: false,
 				} as Parameters<typeof sonarr.series.update>[1]);
 			} catch (error) {
-				let current: Awaited<ReturnType<typeof sonarr.series.getById>>;
-				try {
-					current = await sonarr.series.getById(arrItemId);
-				} catch {
-					throw error;
-				}
-				assertVerifiedArrTargetUnchanged(instance, current.tvdbId, current.path, safetyPlan.target);
-				if (current.monitored !== false) throw error;
+				writeError = error;
 			}
-			break;
+			let current: Awaited<ReturnType<typeof sonarr.series.getById>>;
+			try {
+				current = await sonarr.series.getById(arrItemId);
+			} catch (error) {
+				throw new ParentUnmonitorOutcomeUnknownError(error);
+			}
+			if (
+				!isMonitoringResourceForTarget(current, arrItemId) ||
+				typeof current.monitored !== "boolean"
+			)
+				throw new ParentUnmonitorOutcomeUnknownError(new Error("Invalid monitoring readback"));
+			assertVerifiedArrTargetUnchanged(instance, current.tvdbId, current.path, safetyPlan.target);
+			if (current.monitored !== false)
+				throw writeError ?? new Error("Sonarr did not apply the selected unmonitor");
+			return current;
 		}
 		default:
 			throw new Error(`Unsupported service type for unmonitor: ${instance.service}`);
@@ -11359,6 +11576,9 @@ async function _refreshJellyfinMutationEvidence(
 						() =>
 							refreshOwnedJellyfinEpisodeCache({
 								prisma: deps.prisma,
+								...(typeof process.env.DATABASE_URL === "string"
+									? { databaseUrl: process.env.DATABASE_URL }
+									: {}),
 								encryptor,
 								instance,
 								log: deps.log,

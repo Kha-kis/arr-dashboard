@@ -61,7 +61,7 @@ export const DeploymentPreviewModal = ({
 	const { gradient: themeGradient } = useThemeGradient();
 	const [incognitoMode] = useIncognitoMode();
 	const displayTemplateName = incognitoMode ? "TRaSH template" : templateName;
-	const { data, isLoading, error } = useDeploymentPreview(templateId, instanceId);
+	const { data, isLoading, isFetching, error } = useDeploymentPreview(templateId, instanceId);
 	const [expandedConflicts, setExpandedConflicts] = useState<Set<string>>(new Set());
 	const [showOverrideEditor, setShowOverrideEditor] = useState(false);
 	const [syncStrategy, setSyncStrategy] = useState<"auto" | "manual" | "notify">("notify");
@@ -195,7 +195,18 @@ export const DeploymentPreviewModal = ({
 	const deploymentMutation = useExecuteDeployment();
 
 	const handleDeploy = () => {
-		if (!templateId || !instanceId || !data?.data.executionToken) return;
+		if (
+			!templateId ||
+			!instanceId ||
+			isFetching ||
+			error ||
+			deploymentMutation.isPending ||
+			!data?.data.canDeploy ||
+			!data.data.executionToken ||
+			data.data.templateId !== templateId ||
+			data.data.instanceId !== instanceId
+		)
+			return;
 
 		deploymentMutation.mutate(
 			{
@@ -862,6 +873,11 @@ export const DeploymentPreviewModal = ({
 					onClick={handleDeploy}
 					disabled={
 						!data?.data ||
+						isFetching ||
+						Boolean(error) ||
+						!data.data.executionToken ||
+						data.data.templateId !== templateId ||
+						data.data.instanceId !== instanceId ||
 						!data.data.canDeploy ||
 						!hasDeployableChanges ||
 						deploymentMutation.isPending

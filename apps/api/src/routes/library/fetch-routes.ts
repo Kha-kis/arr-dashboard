@@ -28,10 +28,23 @@ import {
 	isReadarrClient,
 	isSonarrClient,
 } from "../../lib/arr/client-helpers.js";
+import { withIsolatedRuntimePrismaReadClient } from "../../lib/backup/restore-runtime-client.js";
 import { normalizeAlbum } from "../../lib/library/album-normalizer.js";
 import { normalizeBook } from "../../lib/library/book-normalizer.js";
 import { normalizeEpisode } from "../../lib/library/episode-normalizer.js";
 import { buildMovieFile } from "../../lib/library/movie-normalizer.js";
+import { libraryPosterUrl } from "../../lib/library/poster-delivery.js";
+import {
+	effectiveLibraryQuery,
+	type LibraryQuiView,
+	libraryQuiCounts,
+	libraryQuiStatus,
+	readLibraryQuiPage,
+	readLibraryQuiView,
+	sameLibraryQuiView,
+	unavailableLibraryQuiView,
+	verifiedLibraryProjection,
+} from "../../lib/library/qui-observation-view.js";
 import { normalizeTrack } from "../../lib/library/track-normalizer.js";
 import { libraryQuerySchema } from "../../lib/library/validation-schemas.js";
 import { getLibrarySyncScheduler } from "../../lib/library-sync/index.js";
@@ -48,363 +61,318 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 	 * GET /library
 	 * Fetches library items from cache with server-side pagination, search, and filtering
 	 */
-	app.get("/library", async (request, reply) => {
-		const parsed = validateRequest(libraryQuerySchema, request.query ?? {});
-		const userId = request.currentUser!.id;
+	app.get("/library", async (request, reply) =>
+		withIsolatedRuntimePrismaReadClient(app.prisma, async (prisma) => {
+			const query = validateRequest(libraryQuerySchema, request.query ?? {});
+			const userId = request.currentUser!.id;
+			const initialView = await readLibraryQuiView(prisma, userId);
+			const queryView = async (view: LibraryQuiView) => {
+				const parsed = effectiveLibraryQuery(query, view);
 
-		// Get user's instances to filter cache by
-		const userInstances = await app.prisma.serviceInstance.findMany({
-			where: {
-				userId,
-				enabled: true,
-				service: { in: [...LIBRARY_SERVICES_UPPER] },
-			},
-			select: { id: true },
-		});
-
-		const userInstanceIds = userInstances.map((i) => i.id);
-
-		if (userInstanceIds.length === 0) {
-			// No instances configured
-			return paginatedLibraryResponseSchema.parse({
-				items: [],
-				pagination: {
-					page: parsed.page,
-					limit: parsed.limit,
-					totalItems: 0,
-					totalPages: 0,
-				},
-				appliedFilters: {
-					search: parsed.search,
-					service: parsed.service,
-					instanceId: parsed.instanceId,
-					monitored: parsed.monitored,
-					hasFile: parsed.hasFile,
-					cutoffUnmet: parsed.cutoffUnmet,
-					torrentState: parsed.torrentState,
-					status: parsed.status,
-					qualityProfileId: parsed.qualityProfileId,
-					yearMin: parsed.yearMin,
-					yearMax: parsed.yearMax,
-					sortBy: parsed.sortBy,
-					sortOrder: parsed.sortOrder,
-				},
-			});
-		}
-
-		// Check if we have any cached items
-		const cachedCount = await app.prisma.libraryCache.count({
-			where: { instanceId: { in: userInstanceIds } },
-		});
-
-		// If no cached items, trigger background sync for all instances
-		if (cachedCount === 0) {
-			request.log.info("No cached library items found, triggering initial sync");
-			const scheduler = getLibrarySyncScheduler();
-			for (const instance of userInstances) {
-				scheduler.triggerSync(instance.id).catch((err) => {
-					request.log.error({ err, instanceId: instance.id }, "Failed to trigger sync");
+				// Get user's instances to filter cache by
+				const userInstances = await prisma.serviceInstance.findMany({
+					where: {
+						userId,
+						enabled: true,
+						service: { in: [...LIBRARY_SERVICES_UPPER] },
+					},
+					select: { id: true },
 				});
-			}
 
-			// Return empty response - frontend will show loading state
-			return paginatedLibraryResponseSchema.parse({
-				items: [],
-				pagination: {
-					page: parsed.page,
-					limit: parsed.limit,
-					totalItems: 0,
-					totalPages: 0,
-				},
-				appliedFilters: {
-					search: parsed.search,
-					service: parsed.service,
-					instanceId: parsed.instanceId,
-					monitored: parsed.monitored,
-					hasFile: parsed.hasFile,
-					cutoffUnmet: parsed.cutoffUnmet,
-					torrentState: parsed.torrentState,
-					status: parsed.status,
-					qualityProfileId: parsed.qualityProfileId,
-					yearMin: parsed.yearMin,
-					yearMax: parsed.yearMax,
-					sortBy: parsed.sortBy,
-					sortOrder: parsed.sortOrder,
-				},
-				syncStatus: {
-					isCached: false,
-					lastSync: null,
-					syncInProgress: true,
-					totalCachedItems: 0,
-				},
-			});
-		}
+				const userInstanceIds = userInstances.map((i) => i.id);
 
-		// Build Prisma where clause
-		const where: Prisma.LibraryCacheWhereInput = {
-			instanceId: { in: userInstanceIds },
-		};
+				if (userInstanceIds.length === 0) {
+					// No instances configured
+					return paginatedLibraryResponseSchema.parse({
+						quiObservationStatus: libraryQuiStatus(view),
+						items: [],
+						pagination: {
+							page: parsed.page,
+							limit: parsed.limit,
+							totalItems: 0,
+							totalPages: 0,
+						},
+						appliedFilters: {
+							search: parsed.search,
+							service: parsed.service,
+							instanceId: parsed.instanceId,
+							monitored: parsed.monitored,
+							hasFile: parsed.hasFile,
+							cutoffUnmet: parsed.cutoffUnmet,
+							torrentState: parsed.torrentState,
+							status: parsed.status,
+							qualityProfileId: parsed.qualityProfileId,
+							yearMin: parsed.yearMin,
+							yearMax: parsed.yearMax,
+							sortBy: parsed.sortBy,
+							sortOrder: parsed.sortOrder,
+						},
+					});
+				}
 
-		// Instance filter
-		if (parsed.instanceId) {
-			// Verify user owns this instance
-			if (!userInstanceIds.includes(parsed.instanceId)) {
-				return reply.status(403).send({ error: "Instance not found" });
-			}
-			where.instanceId = parsed.instanceId;
-		}
+				// Check if we have any cached items
+				const cachedCount = await prisma.libraryCache.count({
+					where: { instanceId: { in: userInstanceIds } },
+				});
 
-		// Service filter (sonarr = series, radarr = movie, lidarr = artist, readarr = author)
-		if (parsed.service) {
-			const serviceToItemType: Record<LibraryService, PrismaLibraryItemType> = {
-				sonarr: "series",
-				radarr: "movie",
-				lidarr: "artist",
-				readarr: "author",
-			};
-			where.itemType = serviceToItemType[parsed.service];
-		}
+				// If no cached items, trigger background sync for all instances
+				if (cachedCount === 0) {
+					const emptyStatuses = await prisma.librarySyncStatus.findMany({
+						where: { instanceId: { in: userInstanceIds } },
+						select: {
+							instanceId: true,
+							lastFullSync: true,
+							itemCount: true,
+						},
+					});
+					const completedEmpty =
+						emptyStatuses.length === userInstanceIds.length &&
+						emptyStatuses.every((status) => status.lastFullSync !== null && status.itemCount === 0);
+					const scheduler = getLibrarySyncScheduler();
+					if (!completedEmpty) {
+						request.log.info("No cached library items found, triggering initial sync");
+						for (const instance of userInstances) {
+							scheduler.triggerSync(instance.id).catch((err) => {
+								request.log.error({ err, instanceId: instance.id }, "Failed to trigger sync");
+							});
+						}
+					}
+					const lastEmptySync = completedEmpty
+						? emptyStatuses
+								.map((status) => status.lastFullSync)
+								.filter((date): date is Date => date !== null)
+								.sort((a, b) => b.getTime() - a.getTime())[0]
+						: null;
 
-		// Search filter (case-insensitive title search)
-		// SQLite LIKE is already case-insensitive; PostgreSQL needs explicit mode: "insensitive" for ILIKE.
-		if (parsed.search) {
-			where.title =
-				app.dbProvider === "postgresql"
-					? ({
-							contains: parsed.search,
-							mode: "insensitive",
-						} as unknown as Prisma.StringFilter<"LibraryCache">)
-					: { contains: parsed.search };
-		}
+					// Return empty response - frontend will show loading state
+					return paginatedLibraryResponseSchema.parse({
+						quiObservationStatus: libraryQuiStatus(view),
+						items: [],
+						pagination: {
+							page: parsed.page,
+							limit: parsed.limit,
+							totalItems: 0,
+							totalPages: 0,
+						},
+						appliedFilters: {
+							search: parsed.search,
+							service: parsed.service,
+							instanceId: parsed.instanceId,
+							monitored: parsed.monitored,
+							hasFile: parsed.hasFile,
+							cutoffUnmet: parsed.cutoffUnmet,
+							torrentState: parsed.torrentState,
+							status: parsed.status,
+							qualityProfileId: parsed.qualityProfileId,
+							yearMin: parsed.yearMin,
+							yearMax: parsed.yearMax,
+							sortBy: parsed.sortBy,
+							sortOrder: parsed.sortOrder,
+						},
+						syncStatus: {
+							isCached: completedEmpty,
+							lastSync: lastEmptySync?.toISOString() ?? null,
+							syncInProgress: userInstances.some((instance) =>
+								scheduler.isInstanceSyncing(instance.id),
+							),
+							totalCachedItems: 0,
+						},
+					});
+				}
 
-		// Monitored filter
-		if (parsed.monitored !== "all") {
-			where.monitored = parsed.monitored === "true";
-		}
-
-		// Has file filter
-		if (parsed.hasFile !== "all") {
-			where.hasFile = parsed.hasFile === "true";
-		}
-
-		// Cutoff unmet filter
-		if (parsed.cutoffUnmet !== "all") {
-			where.cutoffUnmet = parsed.cutoffUnmet === "true";
-		}
-
-		// Snapshot `where` BEFORE applying the torrentState filter — used for
-		// the per-state counts query so the Torrent state dropdown can show
-		// "Seeding (150)" etc. honoring every OTHER filter but pivoting
-		// between torrent-state buckets. If we counted post-filter, picking
-		// `seeding` would zero out the other buckets and break the dropdown.
-		const whereWithoutTorrentState: Prisma.LibraryCacheWhereInput = { ...where };
-
-		// qui torrent-state filter. `none` matches NULL (rows without qui data
-		// yet — e.g. no qui configured, no infoHash backfilled, or no torrent
-		// in qui for the cached infoHash). Any other value matches the
-		// normalized vocabulary exactly.
-		if (parsed.torrentState !== "all") {
-			if (parsed.torrentState === "none") {
-				where.torrentState = null;
-			} else {
-				where.torrentState = parsed.torrentState;
-			}
-		}
-
-		// Status filter
-		if (parsed.status) {
-			where.status = parsed.status;
-		}
-
-		// Quality profile filter
-		if (parsed.qualityProfileId) {
-			where.qualityProfileId = parsed.qualityProfileId;
-		}
-
-		// Year range filter
-		if (parsed.yearMin !== undefined || parsed.yearMax !== undefined) {
-			where.year = {};
-			if (parsed.yearMin !== undefined) {
-				where.year.gte = parsed.yearMin;
-			}
-			if (parsed.yearMax !== undefined) {
-				where.year.lte = parsed.yearMax;
-			}
-		}
-
-		// Get total count for pagination
-		const totalItems = await app.prisma.libraryCache.count({ where });
-
-		// Build order by
-		const orderBy: Prisma.LibraryCacheOrderByWithRelationInput = {};
-		switch (parsed.sortBy) {
-			case "title":
-				orderBy.title = parsed.sortOrder;
-				break;
-			case "sortTitle":
-				orderBy.sortTitle = parsed.sortOrder;
-				break;
-			case "year":
-				orderBy.year = parsed.sortOrder;
-				break;
-			case "sizeOnDisk":
-				orderBy.sizeOnDisk = parsed.sortOrder;
-				break;
-			case "added":
-				orderBy.arrAddedAt = parsed.sortOrder;
-				break;
-			case "torrentRatio":
-				// NULLs LAST regardless of asc/desc — without this, "lowest ratio
-				// first" (asc) would put thousands of uncorrelated rows ahead of
-				// the actual lowest-ratio seeders, defeating the sort.
-				orderBy.torrentRatio = { sort: parsed.sortOrder, nulls: "last" };
-				break;
-			default:
-				orderBy.sortTitle = "asc";
-		}
-
-		// Schema enforces `limit >= 1`; an earlier `limit=0` "fetch all" path
-		// existed for an internal hook that has since been removed (issue #427
-		// follow-up — the unbounded read trivially OOM'd big libraries).
-		const cachedItems = await app.prisma.libraryCache.findMany({
-			where,
-			orderBy,
-			skip: (parsed.page - 1) * parsed.limit,
-			take: parsed.limit,
-		});
-
-		// Parse JSON data back to LibraryItem, injecting cache-only fields
-		const items: LibraryItem[] = cachedItems.map((item) => {
-			try {
-				const parsed = JSON.parse(item.data) as LibraryItem;
-				parsed.cutoffUnmet = item.cutoffUnmet;
-				// qui torrent state (Phase 2.1) — surface the cached column on each
-				// item so the per-card badge can render from this single page query
-				// instead of N parallel /qui/library-item/torrent-state polls.
-				// Cast safely: torrentState is a String? in Prisma, schema enforces enum.
-				parsed.torrentState = (item.torrentState as LibraryItem["torrentState"]) ?? null;
-				parsed.torrentRatio = item.torrentRatio ?? null;
-				return parsed;
-			} catch (parseError) {
-				// Log parsing failure for debugging
-				request.log.warn(
-					{ err: parseError, itemId: item.id, arrItemId: item.arrItemId },
-					"Failed to parse cached library item - returning minimal fallback",
-				);
-				// Fallback if JSON parsing fails
-				const itemTypeToService: Record<string, LibraryService> = {
-					series: "sonarr",
-					movie: "radarr",
-					artist: "lidarr",
-					author: "readarr",
+				// Build Prisma where clause
+				const where: Prisma.LibraryCacheWhereInput = {
+					instanceId: { in: userInstanceIds },
 				};
-				return {
-					id: item.arrItemId,
-					instanceId: item.instanceId,
-					instanceName: "",
-					service: itemTypeToService[item.itemType] ?? "sonarr",
-					type: item.itemType as "movie" | "series" | "artist" | "author",
-					title: item.title,
-					titleSlug: item.titleSlug ?? undefined,
-					sortTitle: item.sortTitle ?? undefined,
-					year: item.year ?? undefined,
-					monitored: item.monitored,
-					hasFile: item.hasFile,
-					status: item.status ?? undefined,
-					qualityProfileId: item.qualityProfileId ?? undefined,
-					qualityProfileName: item.qualityProfileName ?? undefined,
-					sizeOnDisk: Number(item.sizeOnDisk),
-				} as LibraryItem;
-			}
-		});
 
-		// Get sync status
-		const syncStatuses = await app.prisma.librarySyncStatus.findMany({
-			where: { instanceId: { in: userInstanceIds } },
-			select: {
-				lastFullSync: true,
-				syncInProgress: true,
-				itemCount: true,
-			},
-		});
+				// Instance filter
+				if (parsed.instanceId) {
+					// Verify user owns this instance
+					if (!userInstanceIds.includes(parsed.instanceId)) {
+						return reply.status(403).send({ error: "Instance not found" });
+					}
+					where.instanceId = parsed.instanceId;
+				}
 
-		const mostRecentSync = syncStatuses
-			.map((s) => s.lastFullSync)
-			.filter((d): d is Date => d !== null)
-			.sort((a, b) => b.getTime() - a.getTime())[0];
+				// Service filter (sonarr = series, radarr = movie, lidarr = artist, readarr = author)
+				if (parsed.service) {
+					const serviceToItemType: Record<LibraryService, PrismaLibraryItemType> = {
+						sonarr: "series",
+						radarr: "movie",
+						lidarr: "artist",
+						readarr: "author",
+					};
+					where.itemType = serviceToItemType[parsed.service];
+				}
 
-		const anySyncInProgress = syncStatuses.some((s) => s.syncInProgress);
+				// Search filter (case-insensitive title search)
+				// SQLite LIKE is already case-insensitive; PostgreSQL needs explicit mode: "insensitive" for ILIKE.
+				if (parsed.search) {
+					where.title =
+						app.dbProvider === "postgresql"
+							? ({
+									contains: parsed.search,
+									mode: "insensitive",
+								} as unknown as Prisma.StringFilter<"LibraryCache">)
+							: { contains: parsed.search };
+				}
 
-		// Per-state counts for the Torrent state dropdown — only computed when
-		// the user has at least one enabled qui instance. Uses the where clause
-		// BEFORE the torrentState filter was applied, so picking one bucket
-		// from the dropdown doesn't zero out the others.
-		let torrentStateCounts: PaginatedLibraryResponse["torrentStateCounts"];
-		const userHasQui = await app.prisma.serviceInstance.count({
-			where: { userId, service: "QUI", enabled: true },
-		});
-		if (userHasQui > 0) {
-			const grouped = await app.prisma.libraryCache.groupBy({
-				by: ["torrentState"],
-				where: whereWithoutTorrentState,
-				_count: { _all: true },
-			});
-			const totalForCounts = await app.prisma.libraryCache.count({
-				where: whereWithoutTorrentState,
-			});
-			const byState: Record<string, number> = {};
-			for (const row of grouped) {
-				const key = row.torrentState ?? "none";
-				byState[key] = row._count._all;
-			}
-			torrentStateCounts = {
-				all: totalForCounts,
-				none: byState.none ?? 0,
-				seeding: byState.seeding ?? 0,
-				downloading: byState.downloading ?? 0,
-				stalled_dl: byState.stalled_dl ?? 0,
-				paused: byState.paused ?? 0,
-				queued: byState.queued ?? 0,
-				checking: byState.checking ?? 0,
-				moving: byState.moving ?? 0,
-				error: byState.error ?? 0,
-				unknown: byState.unknown ?? 0,
+				// Monitored filter
+				if (parsed.monitored !== "all") {
+					where.monitored = parsed.monitored === "true";
+				}
+
+				// Has file filter
+				if (parsed.hasFile !== "all") {
+					where.hasFile = parsed.hasFile === "true";
+				}
+
+				// Cutoff unmet filter
+				if (parsed.cutoffUnmet !== "all") {
+					where.cutoffUnmet = parsed.cutoffUnmet === "true";
+				}
+
+				// Status filter
+				if (parsed.status) {
+					where.status = parsed.status;
+				}
+
+				// Quality profile filter
+				if (parsed.qualityProfileId) {
+					where.qualityProfileId = parsed.qualityProfileId;
+				}
+
+				// Year range filter
+				if (parsed.yearMin !== undefined || parsed.yearMax !== undefined) {
+					where.year = {};
+					if (parsed.yearMin !== undefined) {
+						where.year.gte = parsed.yearMin;
+					}
+					if (parsed.yearMax !== undefined) {
+						where.year.lte = parsed.yearMax;
+					}
+				}
+
+				// Snapshot after EVERY non-qUI filter; counts pivot only on torrent state.
+				const whereWithoutTorrentState: Prisma.LibraryCacheWhereInput = { ...where };
+				const { totalItems, cachedItems } = await readLibraryQuiPage(prisma, where, view, parsed);
+
+				// Parse JSON data back to LibraryItem, injecting cache-only fields
+				const items: LibraryItem[] = cachedItems.map((item) => {
+					try {
+						const parsed = JSON.parse(item.data) as LibraryItem;
+						parsed.poster = libraryPosterUrl(item, parsed.poster);
+						parsed.cutoffUnmet = item.cutoffUnmet;
+						// qui torrent state (Phase 2.1) — surface the cached column on each
+						// item so the per-card badge can render from this single page query
+						// instead of N parallel /qui/library-item/torrent-state polls.
+						// Cast safely: torrentState is a String? in Prisma, schema enforces enum.
+						const projection = verifiedLibraryProjection(item, view);
+						parsed.torrentState = projection.torrentState as LibraryItem["torrentState"];
+						parsed.torrentRatio = projection.torrentRatio;
+						return parsed;
+					} catch (parseError) {
+						// Log parsing failure for debugging
+						request.log.warn(
+							{ err: parseError, itemId: item.id, arrItemId: item.arrItemId },
+							"Failed to parse cached library item - returning minimal fallback",
+						);
+						// Fallback if JSON parsing fails
+						const itemTypeToService: Record<string, LibraryService> = {
+							series: "sonarr",
+							movie: "radarr",
+							artist: "lidarr",
+							author: "readarr",
+						};
+						return {
+							id: item.arrItemId,
+							instanceId: item.instanceId,
+							instanceName: "",
+							service: itemTypeToService[item.itemType] ?? "sonarr",
+							type: item.itemType as "movie" | "series" | "artist" | "author",
+							title: item.title,
+							titleSlug: item.titleSlug ?? undefined,
+							sortTitle: item.sortTitle ?? undefined,
+							year: item.year ?? undefined,
+							monitored: item.monitored,
+							hasFile: item.hasFile,
+							status: item.status ?? undefined,
+							qualityProfileId: item.qualityProfileId ?? undefined,
+							qualityProfileName: item.qualityProfileName ?? undefined,
+							sizeOnDisk: Number(item.sizeOnDisk),
+							torrentState: verifiedLibraryProjection(item, view).torrentState,
+							torrentRatio: verifiedLibraryProjection(item, view).torrentRatio,
+						} as LibraryItem;
+					}
+				});
+
+				// Get sync status
+				const syncStatuses = await prisma.librarySyncStatus.findMany({
+					where: { instanceId: { in: userInstanceIds } },
+					select: {
+						lastFullSync: true,
+					},
+				});
+
+				const mostRecentSync = syncStatuses
+					.map((s) => s.lastFullSync)
+					.filter((d): d is Date => d !== null)
+					.sort((a, b) => b.getTime() - a.getTime())[0];
+
+				const scheduler = getLibrarySyncScheduler();
+				const anySyncInProgress = userInstanceIds.some((instanceId) =>
+					scheduler.isInstanceSyncing(instanceId),
+				);
+
+				const torrentStateCounts = await libraryQuiCounts(prisma, whereWithoutTorrentState, view);
+
+				const response: PaginatedLibraryResponse = {
+					quiObservationStatus: libraryQuiStatus(view),
+					items,
+					pagination: {
+						page: parsed.page,
+						limit: parsed.limit,
+						totalItems,
+						totalPages: Math.ceil(totalItems / parsed.limit),
+					},
+					appliedFilters: {
+						search: parsed.search,
+						service: parsed.service,
+						instanceId: parsed.instanceId,
+						monitored: parsed.monitored,
+						hasFile: parsed.hasFile,
+						torrentState: parsed.torrentState,
+						status: parsed.status,
+						qualityProfileId: parsed.qualityProfileId,
+						yearMin: parsed.yearMin,
+						yearMax: parsed.yearMax,
+						sortBy: parsed.sortBy,
+						sortOrder: parsed.sortOrder,
+					},
+					syncStatus: {
+						isCached: true,
+						lastSync: mostRecentSync?.toISOString() ?? null,
+						syncInProgress: anySyncInProgress,
+						totalCachedItems: totalItems,
+					},
+					torrentStateCounts,
+				};
+
+				return paginatedLibraryResponseSchema.parse(response);
 			};
-		}
-
-		const response: PaginatedLibraryResponse = {
-			items,
-			pagination: {
-				page: parsed.page,
-				limit: parsed.limit,
-				totalItems,
-				totalPages: Math.ceil(totalItems / parsed.limit),
-			},
-			appliedFilters: {
-				search: parsed.search,
-				service: parsed.service,
-				instanceId: parsed.instanceId,
-				monitored: parsed.monitored,
-				hasFile: parsed.hasFile,
-				torrentState: parsed.torrentState,
-				status: parsed.status,
-				qualityProfileId: parsed.qualityProfileId,
-				yearMin: parsed.yearMin,
-				yearMax: parsed.yearMax,
-				sortBy: parsed.sortBy,
-				sortOrder: parsed.sortOrder,
-			},
-			syncStatus: {
-				isCached: true,
-				lastSync: mostRecentSync?.toISOString() ?? null,
-				syncInProgress: anySyncInProgress,
-				totalCachedItems: totalItems,
-			},
-			torrentStateCounts,
-		};
-
-		return paginatedLibraryResponseSchema.parse(response);
-	});
+			const response = await queryView(initialView);
+			if (reply.sent) return response;
+			if (
+				initialView.status === "available" &&
+				!sameLibraryQuiView(initialView, await readLibraryQuiView(prisma, userId))
+			) {
+				// Discard all projected values, counts and qUI query semantics once.
+				// The base fallback carries no qUI authority and needs no retry loop.
+				return queryView(unavailableLibraryQuiView());
+			}
+			return response;
+		}),
+	);
 
 	/**
 	 * GET /library/by-tmdb/:tmdbId
@@ -433,8 +401,15 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 				? Prisma.sql`CAST("data"::json->'remoteIds'->>'tmdbId' AS INTEGER) = ${tmdbId}`
 				: Prisma.sql`CAST(json_extract(data, '$.remoteIds.tmdbId') AS INTEGER) = ${tmdbId}`;
 
-		const rows = await app.prisma.$queryRaw<Array<{ data: string }>>(
-			Prisma.sql`SELECT data FROM library_cache WHERE "instanceId" IN (${Prisma.join(instanceIds)}) AND ${jsonExtract} LIMIT 1`,
+		const rows = await app.prisma.$queryRaw<
+			Array<{
+				data: string;
+				instanceId: string;
+				arrItemId: number;
+				itemType: PrismaLibraryItemType;
+			}>
+		>(
+			Prisma.sql`SELECT data, "instanceId", "arrItemId", "itemType" FROM library_cache WHERE "instanceId" IN (${Prisma.join(instanceIds)}) AND ${jsonExtract} LIMIT 1`,
 		);
 
 		if (!rows[0]) {
@@ -442,6 +417,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 		}
 
 		const item = JSON.parse(rows[0].data) as LibraryItem;
+		item.poster = libraryPosterUrl(rows[0], item.poster);
 		return reply.send({ item });
 	});
 

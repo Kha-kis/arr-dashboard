@@ -24,15 +24,16 @@ export function useDiskWasteInsights(params?: {
 	limit?: number;
 	enabled?: boolean;
 }) {
+	const { enabled = true, ...queryParams } = params ?? {};
 	return useQuery<DiskWasteResponse>({
-		queryKey: ["library", "insights", "disk-waste", params],
+		queryKey: ["library", "insights", "disk-waste", params ? queryParams : undefined],
 		queryFn: () =>
 			fetchDiskWaste({
 				minSizeGb: params?.minSizeGb,
 				minAgeDays: params?.minAgeDays,
 				limit: params?.limit,
 			}),
-		enabled: params?.enabled ?? true,
+		enabled,
 		staleTime: 5 * 60 * 1000,
 	});
 }

@@ -1,16 +1,18 @@
 "use client";
 
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Menu } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useCurrentUser, useLogoutMutation } from "../../hooks/api/useAuth";
+import { navigateToSignedOutPage } from "../../lib/auth-navigation";
 import { getLinuxUsername, useIncognitoMode } from "../../lib/incognito";
 import { Button } from "../ui/button";
+import { DialogTrigger } from "../ui/dialog";
+import { toast } from "../ui/toast";
 
 export const TopBar = () => {
 	const { data: user } = useCurrentUser();
 	const pathname = usePathname();
-	const router = useRouter();
 	const logoutMutation = useLogoutMutation();
 	const [incognitoMode, setIncognitoMode] = useIncognitoMode();
 
@@ -23,14 +25,21 @@ export const TopBar = () => {
 	const handleLogout = async () => {
 		try {
 			await logoutMutation.mutateAsync();
-			router.replace("/login");
-		} catch (error) {
-			console.error("Logout failed", error);
+			navigateToSignedOutPage();
+		} catch {
+			toast.error("Sign out could not be confirmed. Please try again.", {
+				position: "bottom-right",
+			});
 		}
 	};
 
 	return (
-		<header className="flex min-w-0 items-center justify-end border-b border-border/30 bg-background/80 py-3 pl-16 pr-3 shadow-sm backdrop-blur-xl sm:px-6 sm:py-4 sm:pl-16 lg:justify-between lg:pl-6">
+		<header className="flex min-w-0 items-center justify-between gap-2 border-b border-border/30 bg-background/80 px-3 py-3 shadow-sm backdrop-blur-xl sm:px-6 sm:py-4">
+			<DialogTrigger asChild>
+				<Button variant="ghost" size="icon" className="shrink-0 lg:hidden" aria-label="Open menu">
+					<Menu className="h-5 w-5" />
+				</Button>
+			</DialogTrigger>
 			<div className="hidden min-w-0 lg:block">
 				<h2 className="text-lg font-semibold text-foreground">Arr Control Center</h2>
 				<p className="text-sm text-muted-foreground">

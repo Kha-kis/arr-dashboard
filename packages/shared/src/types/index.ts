@@ -14,6 +14,7 @@ export * from "./oidc-provider";
 export * from "./password";
 export * from "./plex";
 export * from "./provider-native-inventory";
+export * from "./native-watch-coverage";
 export * from "./provider-observation";
 export * from "./pulse";
 export * from "./queue-cleaner";

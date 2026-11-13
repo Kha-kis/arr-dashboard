@@ -72,24 +72,14 @@ export async function fetchLibrary(
 
 	const path = search.size > 0 ? `/api/library?${search.toString()}` : "/api/library";
 
-	try {
-		return await apiRequest<PaginatedLibraryResponse>(path);
-	} catch (error) {
-		if (error instanceof UnauthorizedError) {
-			return {
-				items: [],
-				pagination: { page: 1, limit: 50, totalItems: 0, totalPages: 0 },
-				appliedFilters: {},
-			};
-		}
-		throw error;
-	}
+	return await apiRequest<PaginatedLibraryResponse>(path);
 }
 
 export async function toggleLibraryMonitoring(payload: LibraryToggleMonitorRequest): Promise<void> {
 	await apiRequest<void>("/api/library/monitor", {
 		method: "POST",
 		json: payload,
+		expectedSuccessStatus: 204,
 	});
 }
 
@@ -150,6 +140,7 @@ export async function toggleEpisodeMonitoring(
 	await apiRequest<void>("/api/library/episode/monitor", {
 		method: "POST",
 		json: payload,
+		expectedSuccessStatus: 204,
 	});
 }
 
@@ -193,6 +184,7 @@ export async function toggleAlbumMonitoring(payload: LibraryAlbumMonitorRequest)
 	await apiRequest<void>("/api/library/album/monitor", {
 		method: "POST",
 		json: payload,
+		expectedSuccessStatus: 204,
 	});
 }
 
@@ -227,6 +219,7 @@ export async function toggleBookMonitoring(payload: LibraryBookMonitorRequest): 
 	await apiRequest<void>("/api/library/book/monitor", {
 		method: "POST",
 		json: payload,
+		expectedSuccessStatus: 204,
 	});
 }
 
@@ -261,7 +254,8 @@ export async function fetchLibraryItemByTmdbId(tmdbId: number): Promise<LibraryI
 	try {
 		const result = await apiRequest<{ item: LibraryItem }>(`/api/library/by-tmdb/${tmdbId}`);
 		return result.item;
-	} catch {
+	} catch (error) {
+		if (error instanceof UnauthorizedError) throw error;
 		return null;
 	}
 }

@@ -174,9 +174,19 @@ export interface SeerrUser {
 	userType: number;
 }
 
+interface SeerrMediaQuota {
+	used: number;
+	/** Seerr can omit this field when the limit is zero (unlimited). */
+	remaining?: number;
+	/** Whether the user has exhausted this quota. */
+	restricted: boolean;
+	limit: number;
+	days: number;
+}
+
 export interface SeerrQuota {
-	movie: { used: number; remaining: number; restricted: boolean; limit: number; days: number };
-	tv: { used: number; remaining: number; restricted: boolean; limit: number; days: number };
+	movie: SeerrMediaQuota;
+	tv: SeerrMediaQuota;
 }
 
 export interface SeerrIssue {
@@ -209,6 +219,13 @@ export interface SeerrNotificationAgent {
 	/** Bitmask of notification event types */
 	types: number;
 	options: Record<string, unknown>;
+}
+
+export interface SeerrNotificationAgentsResponse {
+	agents: SeerrNotificationAgent[];
+	coverage: "complete" | "partial" | "unavailable";
+	/** Known public agent identities whose configuration could not be verified. */
+	unavailableAgents: Array<{ id: string; name: string }>;
 }
 
 export interface SeerrStatus {
@@ -495,6 +512,10 @@ export interface SeerrServerWithDetails {
 /** Combined request options for the request dialog */
 export interface SeerrRequestOptions {
 	servers: SeerrServerWithDetails[];
+	/** Coverage of configured servers, not whether a requested mode has a server. */
+	coverage: "complete" | "partial" | "unavailable";
+	configuredServerCount: number;
+	unavailableServerCount: number;
 }
 
 /** Params for discover endpoints */
@@ -679,22 +700,23 @@ export const seerrIssueSchema = z.looseObject({
 	}),
 });
 
+const seerrMediaQuotaSchema = z
+	.looseObject({
+		used: z.number(),
+		remaining: z.number().optional(),
+		restricted: z.boolean(),
+		limit: z.number(),
+		days: z.number(),
+	})
+	.refine(({ limit, remaining }) => limit === 0 || remaining !== undefined, {
+		path: ["remaining"],
+		message: "Remaining is required when the quota limit is nonzero",
+	});
+
 /** Mirrors SeerrQuota */
 export const seerrQuotaSchema = z.looseObject({
-	movie: z.looseObject({
-		used: z.number(),
-		remaining: z.number(),
-		restricted: z.boolean(),
-		limit: z.number(),
-		days: z.number(),
-	}),
-	tv: z.looseObject({
-		used: z.number(),
-		remaining: z.number(),
-		restricted: z.boolean(),
-		limit: z.number(),
-		days: z.number(),
-	}),
+	movie: seerrMediaQuotaSchema,
+	tv: seerrMediaQuotaSchema,
 });
 
 /** Mirrors SeerrGenre */
@@ -902,7 +924,8 @@ export interface LibraryEnrichmentItem {
 	voteAverage: number | null;
 	backdropPath: string | null;
 	posterPath: string | null;
-	openIssueCount: number;
+	/** Null when the issue-count read failed; zero is reserved for a verified empty count. */
+	openIssueCount: number | null;
 }
 
 /** Batch enrichment response keyed by "movie:{tmdbId}" or "tv:{tmdbId}" */

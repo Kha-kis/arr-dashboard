@@ -4,6 +4,7 @@ import type { SeerrDiscoverResult } from "@arr/shared";
 import { SEERR_MEDIA_STATUS } from "@arr/shared";
 import { Calendar, Clock, Film, Layers, Loader2, Send, Star, Tv, X } from "lucide-react";
 import { useCallback } from "react";
+import { Alert, AlertDescription, Button } from "../../../components/ui";
 import { useSeerrMovieDetails, useSeerrTvDetails } from "../../../hooks/api/useSeerr";
 import { useFocusTrap } from "../../../hooks/useFocusTrap";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -43,8 +44,9 @@ export const DiscoverDetailModal: React.FC<DiscoverDetailModalProps> = ({
 	const movieQuery = useSeerrMovieDetails(instanceId, isMovie ? item.id : 0);
 	const tvQuery = useSeerrTvDetails(instanceId, !isMovie ? item.id : 0);
 
-	const details = isMovie ? movieQuery.data : tvQuery.data;
-	const isDetailsLoading = isMovie ? movieQuery.isLoading : tvQuery.isLoading;
+	const selectedQuery = isMovie ? movieQuery : tvQuery;
+	const details = selectedQuery.data;
+	const isDetailsLoading = selectedQuery.isLoading;
 
 	const rawTitle = details
 		? isMovie
@@ -281,13 +283,31 @@ export const DiscoverDetailModal: React.FC<DiscoverDetailModalProps> = ({
 						</div>
 					)}
 
+					{selectedQuery.isError && (
+						<Alert variant="danger">
+							<AlertDescription>
+								Details unavailable.{" "}
+								{details ? "Showing last-known details." : "Showing list summary."}
+								<Button
+									variant="secondary"
+									disabled={selectedQuery.isFetching}
+									onClick={() => void selectedQuery.refetch()}
+								>
+									Retry
+								</Button>
+							</AlertDescription>
+						</Alert>
+					)}
+
 					{/* Overview */}
-					{details?.overview && !incognitoMode && (
+					{(details?.overview ?? item.overview) && !incognitoMode && (
 						<div className="space-y-2">
 							<h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
 								Overview
 							</h3>
-							<p className="text-sm text-foreground/80 leading-relaxed">{details.overview}</p>
+							<p className="text-sm text-foreground/80 leading-relaxed">
+								{details?.overview ?? item.overview}
+							</p>
 						</div>
 					)}
 

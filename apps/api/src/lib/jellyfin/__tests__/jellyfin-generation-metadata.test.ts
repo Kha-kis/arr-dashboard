@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { setImmediate as turn } from "node:timers/promises";
+import { describe, expect, it, vi } from "vitest";
+import * as fingerprints from "../../evidence-fingerprint.js";
 import { evaluateProviderDomainCoverageMap } from "../../provider-observation/coverage-receipt.js";
+import {
+	createJellyfinDisplayCheckpoint,
+	sortJellyfinDisplayRows,
+} from "../jellyfin-display-work.js";
 import type {
 	JellyfinEpisodeGenerationMetadataV1,
 	JellyfinEpisodeGenerationMetadataV3,
@@ -10,7 +16,9 @@ import {
 	decodeJellyfinLibraryGenerationMetadata,
 	encodeJellyfinEpisodeGenerationMetadata,
 	encodeJellyfinLibraryGenerationMetadata,
+	fingerprintJellyfinEpisodeDisplayRows,
 	fingerprintJellyfinEpisodeRows,
+	fingerprintJellyfinLibraryDisplayRows,
 	fingerprintJellyfinLibraryGenerationMetadata,
 	fingerprintJellyfinLibraryRows,
 } from "../jellyfin-generation-metadata.js";
@@ -393,6 +401,290 @@ describe("Jellyfin and Emby generation metadata", () => {
 		};
 	}
 
+	function librarySortRows() {
+		const first = row();
+		return {
+			unique: [
+				first,
+				row({ tmdbId: 7, title: "Movie B", jellyfinId: "item-b", onDeck: true }),
+				row({ mediaType: "series", title: "Series C", jellyfinId: "series-c" }),
+				row({ libraryId: "library-b", title: "Movie D", watchCount: 2 }),
+			],
+			tied: [
+				first,
+				row({ title: "Conflicting movie", jellyfinId: "item-conflict", watchCount: 3 }),
+				first,
+				row({
+					lastWatchedAt: "2026-01-01T00:00:00.000Z",
+					addedAt: "2025-01-01T00:00:00.000Z",
+				}),
+				row({ tmdbId: 84, title: "Untied movie" }),
+			],
+		};
+	}
+
+	function episodeSortRows() {
+		const first = episodeRow();
+		return {
+			unique: [
+				first,
+				episodeRow({ showTmdbId: 7, title: "Episode B", jellyfinId: "episode-b" }),
+				episodeRow({ seasonNumber: 2, title: "Episode C", jellyfinId: "episode-c" }),
+				episodeRow({ episodeNumber: 3, title: "Episode D", jellyfinId: "episode-d" }),
+			],
+			tied: [
+				first,
+				episodeRow({
+					title: "Conflicting episode",
+					jellyfinId: "episode-conflict",
+					watched: false,
+				}),
+				first,
+				episodeRow({
+					watchedByUsers: '["Alice","Bob","Bob"]',
+					lastWatchedAt: "2026-01-01T01:00:00+01:00",
+				}),
+				episodeRow({ showTmdbId: 84, title: "Untied episode" }),
+			],
+		};
+	}
+
+	async function expectDisplayHashWork<Input>(
+		rows: readonly Input[],
+		fingerprint: (input: readonly Input[]) => Promise<string>,
+		expectedTieHashes: number,
+	) {
+		const original = structuredClone(rows);
+		const tieHashes = vi.spyOn(fingerprints, "evidenceFingerprint");
+		const create = fingerprints.createEvidenceFingerprintArrayAccumulator;
+		let appended = 0;
+		const accumulator = vi
+			.spyOn(fingerprints, "createEvidenceFingerprintArrayAccumulator")
+			.mockImplementation(() => {
+				const actual = create();
+				return {
+					append(value) {
+						appended++;
+						actual.append(value);
+					},
+					digest: () => actual.digest(),
+				};
+			});
+		try {
+			for (let invocation = 0; invocation < 2; invocation++) {
+				tieHashes.mockClear();
+				appended = 0;
+				await fingerprint(rows);
+				expect(tieHashes).toHaveBeenCalledTimes(expectedTieHashes);
+				expect(new Set(tieHashes.mock.calls.map(([value]) => value)).size).toBe(expectedTieHashes);
+				expect(appended).toBe(rows.length);
+				expect(rows).toEqual(original);
+			}
+		} finally {
+			accumulator.mockRestore();
+			tieHashes.mockRestore();
+		}
+	}
+
+	it.each(["library", "episode"] as const)(
+		"skips sorting-only hashes for unique %s display keys while hashing every final row",
+		async (kind) => {
+			if (kind === "library")
+				await expectDisplayHashWork(
+					librarySortRows().unique,
+					fingerprintJellyfinLibraryDisplayRows,
+					0,
+				);
+			else
+				await expectDisplayHashWork(
+					episodeSortRows().unique,
+					fingerprintJellyfinEpisodeDisplayRows,
+					0,
+				);
+		},
+	);
+
+	it.each(["library", "episode"] as const)(
+		"hashes each tied %s display row once per invocation without hashing untied rows",
+		async (kind) => {
+			if (kind === "library")
+				await expectDisplayHashWork(
+					librarySortRows().tied,
+					fingerprintJellyfinLibraryDisplayRows,
+					4,
+				);
+			else
+				await expectDisplayHashWork(
+					episodeSortRows().tied,
+					fingerprintJellyfinEpisodeDisplayRows,
+					4,
+				);
+		},
+	);
+
+	it.each(["unique", "tied"] as const)(
+		"preserves legacy library bytes for %s keys across permutations and Date/string inputs",
+		async (kind) => {
+			const rows = librarySortRows()[kind];
+			// Captured from the eager implementation before the sorting optimization.
+			const expected = {
+				unique: "9baee094b8fe3a7045c016c912b97ba80c6baec43b68e28193738a5edc67c9a5",
+				tied: "5e5f3bdf989eea4c84a2205dec8dd3045ca2a919ac3822b95072becf43b575ff",
+			}[kind];
+			for (const input of [
+				rows,
+				[...rows].reverse(),
+				[...rows.slice(1), rows[0]!],
+				rows.map((input) => ({
+					...input,
+					lastWatchedAt: new Date("2026-01-01T00:00:00.000Z"),
+					addedAt: "2025-01-01T00:00:00.000Z",
+				})),
+			]) {
+				expect(fingerprintJellyfinLibraryRows(input)).toBe(expected);
+				await expect(fingerprintJellyfinLibraryDisplayRows(input)).resolves.toBe(expected);
+			}
+		},
+	);
+
+	it.each(["unique", "tied"] as const)(
+		"preserves legacy episode bytes for %s keys across permutations and Date/string inputs",
+		async (kind) => {
+			const rows = episodeSortRows()[kind];
+			// Captured from the eager implementation before the sorting optimization.
+			const expected = {
+				unique: "164648cf0f737d226463b6d755de2a88e5a618aa8fb24f22251c56582d8f9740",
+				tied: "507eaf955e3efb38dbc2ecd9f65bd340fe2b199b30c75e2ae2b9fc92a03dd3d6",
+			}[kind];
+			for (const input of [
+				rows,
+				[...rows].reverse(),
+				[...rows.slice(1), rows[0]!],
+				rows.map((input) => ({
+					...input,
+					lastWatchedAt: "2026-01-01T00:00:00.000Z",
+				})),
+			]) {
+				expect(fingerprintJellyfinEpisodeRows(input)).toBe(expected);
+				await expect(fingerprintJellyfinEpisodeDisplayRows(input)).resolves.toBe(expected);
+			}
+		},
+	);
+
+	it("preserves fixed canonical fingerprint vectors for display reads", async () => {
+		// Hand-ordered canonical JSON vectors, independent of the production builders.
+		await expect(fingerprintJellyfinLibraryDisplayRows([])).resolves.toBe(
+			"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+		);
+		await expect(fingerprintJellyfinEpisodeDisplayRows([])).resolves.toBe(
+			"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+		);
+		await expect(fingerprintJellyfinLibraryDisplayRows([row()])).resolves.toBe(
+			"454f7d2039c6fcd90b9b95b09a858a16975654783e8bb08185f1993e2d31d839",
+		);
+		await expect(fingerprintJellyfinEpisodeDisplayRows([episodeRow()])).resolves.toBe(
+			"2fa5f29cbdcedd3351d5f6a7607416b6308555a7fbaaade0fe6c6a267cf7864e",
+		);
+	});
+
+	it("keeps full library fingerprint parity across chunk boundaries, ties and Unicode", async () => {
+		const rows = Array.from({ length: 1201 }, (_, index) =>
+			row({
+				tmdbId: index % 19,
+				mediaType: index % 2 ? "movie" : "series",
+				libraryId: ["é", "a", "Å"][index % 3],
+				title: `Synthetic ${index % 13}`,
+				lastWatchedAt: index % 2 ? null : "2026-01-01T00:00:00.000Z",
+				addedAt: index % 3 ? null : new Date("2025-01-01T00:00:00.000Z"),
+			}),
+		).reverse();
+		await expect(fingerprintJellyfinLibraryDisplayRows(rows)).resolves.toBe(
+			fingerprintJellyfinLibraryRows(rows),
+		);
+	});
+
+	it("keeps full episode fingerprint parity across coordinates, dates and user normalization", async () => {
+		const rows = Array.from({ length: 1201 }, (_, index) =>
+			episodeRow({
+				showTmdbId: index % 13,
+				seasonNumber: index % 3,
+				episodeNumber: index % 7,
+				title: `Épisode ${index % 17}`,
+				watchedByUsers: index % 2 ? '["Bob","Alice","Bob"]' : "malformed",
+				lastWatchedAt: index % 2 ? null : "2026-01-01T01:00:00+01:00",
+			}),
+		).reverse();
+		await expect(fingerprintJellyfinEpisodeDisplayRows(rows)).resolves.toBe(
+			fingerprintJellyfinEpisodeRows(rows),
+		);
+	});
+
+	it("services queued work while stably sorting owned display rows", async () => {
+		let now = 0;
+		const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+		const rows = Array.from({ length: 1201 }, (_, index) => ({ key: index % 7, index })).reverse();
+		const original = [...rows];
+		let completed = false;
+		let completedAtTurn: boolean | undefined;
+		const serviced = turn().then(() => {
+			completedAtTurn = completed;
+		});
+		try {
+			const sorted = await sortJellyfinDisplayRows(
+				rows,
+				(a, b) => {
+					now = 4;
+					return a.key - b.key;
+				},
+				createJellyfinDisplayCheckpoint(),
+			);
+			completed = true;
+			await serviced;
+			expect(completedAtTurn).toBe(false);
+			expect(sorted).toEqual(original.sort((a, b) => a.key - b.key));
+		} finally {
+			clock.mockRestore();
+		}
+	});
+
+	it("services queued work during the complete canonical array hash", async () => {
+		let now = 0;
+		const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+		const create = fingerprints.createEvidenceFingerprintArrayAccumulator;
+		let appended = 0;
+		let appendedAtTurn: number | undefined;
+		let serviced: Promise<void> | undefined;
+		const spy = vi
+			.spyOn(fingerprints, "createEvidenceFingerprintArrayAccumulator")
+			.mockImplementation(() => {
+				const actual = create();
+				return {
+					append(value) {
+						if (++appended === 1) {
+							now = 4;
+							serviced = turn().then(() => {
+								appendedAtTurn = appended;
+							});
+						}
+						actual.append(value);
+					},
+					digest: () => actual.digest(),
+				};
+			});
+		try {
+			const rows = Array.from({ length: 1201 }, (_, index) => row({ tmdbId: index + 1 }));
+			const result = await fingerprintJellyfinLibraryDisplayRows(rows);
+			await serviced;
+			expect(result).toBe(fingerprintJellyfinLibraryRows(rows));
+			expect(appended).toBe(1201);
+			expect(appendedAtTurn).toBeGreaterThan(0);
+			expect(appendedAtTurn).toBeLessThan(1201);
+		} finally {
+			spy.mockRestore();
+			clock.mockRestore();
+		}
+	});
+
 	it("fingerprints canonical rows independently of row order and instance ownership", () => {
 		const first = row();
 		const second = row({ tmdbId: 84, libraryId: "library-b", title: "Movie B" });
@@ -643,6 +935,41 @@ describe("Jellyfin and Emby generation metadata", () => {
 		const encoded = encodeJellyfinEpisodeGenerationMetadata(input);
 
 		expect(decodeJellyfinEpisodeGenerationMetadata(encoded)).toEqual({ ok: true, metadata: input });
+	});
+
+	it("round-trips generation-scoped V4 exact and positive episode envelopes only with an explicit storage discriminator", () => {
+		const exact = {
+			...episodeMetadataV2(),
+			version: 4,
+			storage: "generation-scoped",
+			sourceVersion: 3,
+		};
+		const positive = {
+			...episodeMetadataV3(),
+			version: 4,
+			storage: "generation-scoped",
+			sourceVersion: 3,
+		};
+		expect(
+			decodeJellyfinEpisodeGenerationMetadata(encodeJellyfinEpisodeGenerationMetadata(exact)),
+		).toEqual({
+			ok: true,
+			metadata: exact,
+		});
+		expect(
+			decodeJellyfinEpisodeGenerationMetadata(encodeJellyfinEpisodeGenerationMetadata(positive)),
+		).toEqual({
+			ok: true,
+			metadata: positive,
+		});
+		expect(
+			decodeJellyfinEpisodeGenerationMetadata(
+				JSON.stringify({
+					...exact,
+					storage: "legacy",
+				}),
+			),
+		).toEqual({ ok: false });
 	});
 
 	it.each([

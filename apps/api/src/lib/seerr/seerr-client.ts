@@ -22,6 +22,7 @@ import {
 	type SeerrIssueParams,
 	type SeerrMovieDetails,
 	type SeerrNotificationAgent,
+	type SeerrNotificationAgentsResponse,
 	type SeerrPageResult,
 	type SeerrQuota,
 	type SeerrRequest,
@@ -57,8 +58,8 @@ import {
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { ArrClientFactory, ClientInstanceData } from "../arr/client-factory.js";
-import { requireInstance } from "../arr/instance-helpers.js";
-import { AppValidationError, SeerrApiError } from "../errors.js";
+import { requireEnabledInstance, requireInstance } from "../arr/instance-helpers.js";
+import { AppValidationError, SeerrApiError, SeerrMutationOutcomeUnknownError } from "../errors.js";
 import { parseUpstreamOrThrow } from "../validation/parse-upstream.js";
 import {
 	GENRE_TTL_MS,
@@ -82,6 +83,19 @@ const TIMEOUT_ACTION = 10_000;
 
 /** TMDB media detail lookups */
 const TIMEOUT_MEDIA_DETAIL = 10_000;
+
+function classifyMutationFailure(error: unknown): unknown {
+	if (
+		error instanceof SeerrApiError &&
+		error.seerrStatus > 0 &&
+		error.seerrStatus < 500 &&
+		error.seerrStatus !== 408 &&
+		error.seerrStatus !== 429
+	) {
+		return error;
+	}
+	return new SeerrMutationOutcomeUnknownError();
+}
 
 // ============================================================================
 // Known Notification Agents
@@ -170,6 +184,15 @@ export class SeerrClient {
 		return parseUpstreamOrThrow(raw, schema, { integration: "seerr", category }) as T;
 	}
 
+	/** A successful write with an unreadable response may already have changed Seerr. */
+	private parseMutationAndRecord<T>(raw: unknown, schema: z.ZodType, category: string): T {
+		try {
+			return this.parseAndRecord<T>(raw, schema, category);
+		} catch {
+			throw new SeerrMutationOutcomeUnknownError();
+		}
+	}
+
 	// --- Private HTTP helpers ---
 
 	/** Read error body (truncated) for inclusion in error messages */
@@ -218,6 +241,29 @@ export class SeerrClient {
 				method: "GET",
 				timeout: TIMEOUT_INTERACTIVE,
 			});
+
+			const contentType = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
+			if (
+				!response.ok ||
+				response.redirected ||
+				!contentType ||
+				!/^application\/(?:json|[a-z0-9!#$%&'*+.^_`|~-]+\+json)$/.test(contentType)
+			) {
+				this.log.debug("Seerr: rejected CSRF bootstrap response");
+				return null;
+			}
+
+			let status: unknown;
+			try {
+				status = await response.json();
+			} catch {
+				this.log.debug("Seerr: unreadable CSRF bootstrap status");
+				return null;
+			}
+			if (!seerrStatusSchema.safeParse(status).success) {
+				this.log.debug("Seerr: invalid CSRF bootstrap status");
+				return null;
+			}
 
 			// Collect all Set-Cookie headers
 			const setCookies = response.headers.getSetCookie?.() ?? [];
@@ -355,7 +401,8 @@ export class SeerrClient {
 		};
 
 		try {
-			const result = await withSeerrRetry(execute);
+			// A lost write response is ambiguous; only idempotent reads may be replayed.
+			const result = isMutating ? await execute() : await withSeerrRetry(execute);
 			this.circuitBreaker?.reportSuccess(instanceId);
 			return result;
 		} catch (error) {
@@ -376,7 +423,7 @@ export class SeerrClient {
 						} else if (!(retryError instanceof SeerrApiError)) {
 							this.circuitBreaker?.reportFailure(instanceId);
 						}
-						throw retryError;
+						throw classifyMutationFailure(retryError);
 					}
 				}
 			}
@@ -390,7 +437,7 @@ export class SeerrClient {
 				// Unknown error type (not classified as SeerrApiError) — treat as failure
 				this.circuitBreaker?.reportFailure(instanceId);
 			}
-			throw error;
+			throw isMutating ? classifyMutationFailure(error) : error;
 		}
 	}
 
@@ -437,7 +484,7 @@ export class SeerrClient {
 
 	async approveRequest(requestId: number): Promise<SeerrRequest> {
 		const raw = await this.post(`/api/v1/request/${requestId}/approve`, undefined, TIMEOUT_ACTION);
-		return this.parseAndRecord(raw, seerrRequestSchema, "approveRequest");
+		return this.parseMutationAndRecord(raw, seerrRequestSchema, "approveRequest");
 	}
 
 	/**
@@ -453,12 +500,12 @@ export class SeerrClient {
 		payload: SeerrUpdateRequestPayload,
 	): Promise<SeerrRequest> {
 		const raw = await this.put(`/api/v1/request/${requestId}`, payload, TIMEOUT_ACTION);
-		return this.parseAndRecord(raw, seerrRequestSchema, "updateRequest");
+		return this.parseMutationAndRecord(raw, seerrRequestSchema, "updateRequest");
 	}
 
 	async declineRequest(requestId: number): Promise<SeerrRequest> {
 		const raw = await this.post(`/api/v1/request/${requestId}/decline`, undefined, TIMEOUT_ACTION);
-		return this.parseAndRecord(raw, seerrRequestSchema, "declineRequest");
+		return this.parseMutationAndRecord(raw, seerrRequestSchema, "declineRequest");
 	}
 
 	async deleteRequest(requestId: number): Promise<void> {
@@ -467,7 +514,7 @@ export class SeerrClient {
 
 	async retryRequest(requestId: number): Promise<SeerrRequest> {
 		const raw = await this.post(`/api/v1/request/${requestId}/retry`, undefined, TIMEOUT_ACTION);
-		return this.parseAndRecord(raw, seerrRequestSchema, "retryRequest");
+		return this.parseMutationAndRecord(raw, seerrRequestSchema, "retryRequest");
 	}
 
 	// --- Users ---
@@ -488,7 +535,7 @@ export class SeerrClient {
 
 	async updateUser(userId: number, data: SeerrUserUpdateData): Promise<SeerrUser> {
 		const raw = await this.put(`/api/v1/user/${userId}`, data, TIMEOUT_ACTION);
-		return this.parseAndRecord(raw, seerrUserSchema, "updateUser");
+		return this.parseMutationAndRecord(raw, seerrUserSchema, "updateUser");
 	}
 
 	// --- Issues ---
@@ -501,20 +548,30 @@ export class SeerrClient {
 
 	async addIssueComment(issueId: number, message: string): Promise<SeerrIssueComment> {
 		const raw = await this.post(`/api/v1/issue/${issueId}/comment`, { message }, TIMEOUT_ACTION);
-		return this.parseAndRecord(raw, seerrIssueCommentSchema, "addIssueComment");
+		return this.parseMutationAndRecord(raw, seerrIssueCommentSchema, "addIssueComment");
 	}
 
 	async updateIssueStatus(issueId: number, status: "open" | "resolved"): Promise<SeerrIssue> {
-		const raw = await this.post(`/api/v1/issue/${issueId}/${status}`, undefined, TIMEOUT_ACTION);
-		return this.parseAndRecord(raw, seerrIssueSchema, "updateIssueStatus");
+		const cacheKey = issueCountCacheKey(this.instance.id);
+		const raw = await this.post(
+			`/api/v1/issue/${issueId}/${status}`,
+			undefined,
+			TIMEOUT_ACTION,
+		).catch((error: unknown) => {
+			if (error instanceof SeerrMutationOutcomeUnknownError) this.cache?.invalidate(cacheKey);
+			throw error;
+		});
+		// An accepted or uncertain status change invalidates exact cached counts.
+		this.cache?.invalidate(cacheKey);
+		return this.parseMutationAndRecord(raw, seerrIssueSchema, "updateIssueStatus");
 	}
 
 	// --- Notifications ---
 
-	async getNotificationAgents(): Promise<SeerrNotificationAgent[]> {
+	async getNotificationAgents(): Promise<SeerrNotificationAgentsResponse> {
 		// Cache notification agents — config changes very rarely
 		const cacheKey = `notification-agents:${this.instance.id}`;
-		const cached = this.cache?.get<SeerrNotificationAgent[]>(cacheKey);
+		const cached = this.cache?.get<SeerrNotificationAgentsResponse>(cacheKey);
 		if (cached) return cached;
 
 		const settled = await Promise.allSettled(
@@ -533,6 +590,7 @@ export class SeerrClient {
 		);
 
 		const agents: SeerrNotificationAgent[] = [];
+		const unavailableAgents: SeerrNotificationAgentsResponse["unavailableAgents"] = [];
 		for (let i = 0; i < settled.length; i++) {
 			const result = settled[i]!;
 			if (result.status === "fulfilled") {
@@ -541,7 +599,8 @@ export class SeerrClient {
 				// 404 = agent not supported by this Seerr version, skip silently
 				const is404 = result.reason instanceof SeerrApiError && result.reason.seerrStatus === 404;
 				if (!is404) {
-					const agentName = KNOWN_NOTIFICATION_AGENTS[i]!.name;
+					const { id, name: agentName } = KNOWN_NOTIFICATION_AGENTS[i]!;
+					unavailableAgents.push({ id, name: agentName });
 					this.log.warn(
 						{ err: result.reason },
 						`Seerr: failed to fetch notification agent "${agentName}"`,
@@ -556,28 +615,37 @@ export class SeerrClient {
 				"Seerr: notification agents loaded (some may be unsupported or failed)",
 			);
 		}
-		this.cache?.set(cacheKey, agents, 5 * 60 * 1000); // 5-minute TTL
-		return agents;
+		const result: SeerrNotificationAgentsResponse = {
+			agents,
+			coverage:
+				unavailableAgents.length === 0 ? "complete" : agents.length > 0 ? "partial" : "unavailable",
+			unavailableAgents,
+		};
+		if (result.coverage === "complete") this.cache?.set(cacheKey, result, 5 * 60 * 1000);
+		return result;
 	}
 
 	async updateNotificationAgent(
 		agentId: string,
 		config: Partial<SeerrNotificationAgent>,
 	): Promise<SeerrNotificationAgent> {
+		const cacheKey = `notification-agents:${this.instance.id}`;
 		const raw = await this.post<unknown>(
 			`/api/v1/settings/notifications/${agentId}`,
 			config,
 			TIMEOUT_ACTION,
-		);
-		const data = this.parseAndRecord<{
+		).catch((error: unknown) => {
+			if (error instanceof SeerrMutationOutcomeUnknownError) this.cache?.invalidate(cacheKey);
+			throw error;
+		});
+		// Invalidate even if the provider accepted the write but changed its response shape.
+		this.cache?.invalidate(cacheKey);
+		const data = this.parseMutationAndRecord<{
 			enabled: boolean;
 			types: number;
 			options: Record<string, unknown>;
 		}>(raw, seerrNotificationAgentRawSchema, "updateNotificationAgent");
 		// Inject the known id/name back since the API only returns enabled/types/options
-		// Invalidate cached agent list so next read reflects the update
-		const cacheKey = `notification-agents:${this.instance.id}`;
-		this.cache?.invalidate(cacheKey);
 
 		const agent = KNOWN_NOTIFICATION_AGENTS.find((a) => a.id === agentId);
 		return { id: agentId, name: agent?.name ?? agentId, ...data };
@@ -798,7 +866,7 @@ export class SeerrClient {
 
 	async createRequest(payload: SeerrCreateRequestPayload): Promise<SeerrCreateRequestResponse> {
 		const raw = await this.post("/api/v1/request", payload, TIMEOUT_ACTION);
-		return this.parseAndRecord<SeerrCreateRequestResponse>(
+		return this.parseMutationAndRecord<SeerrCreateRequestResponse>(
 			raw,
 			seerrCreateRequestResponseSchema,
 			"createRequest",
@@ -831,6 +899,10 @@ export class SeerrClient {
 	async getRequestOptions(mediaType: "movie" | "tv"): Promise<SeerrRequestOptions> {
 		const serviceType = mediaType === "movie" ? "radarr" : "sonarr";
 		const servers = await this.getServiceServers(serviceType);
+		const identityCounts = new Map<number, number>();
+		for (const server of servers) {
+			identityCounts.set(server.id, (identityCounts.get(server.id) ?? 0) + 1);
+		}
 
 		// Fetch full details (profiles, rootFolders, tags) for each server in parallel
 		const settled = await Promise.allSettled(
@@ -840,17 +912,36 @@ export class SeerrClient {
 		const results: SeerrServerWithDetails[] = [];
 		for (let i = 0; i < settled.length; i++) {
 			const outcome = settled[i]!;
-			if (outcome.status === "fulfilled") {
+			const configured = servers[i]!;
+			if (
+				outcome.status === "fulfilled" &&
+				identityCounts.get(configured.id) === 1 &&
+				outcome.value.server.id === configured.id &&
+				outcome.value.server.is4k === configured.is4k &&
+				outcome.value.server.isDefault === configured.isDefault
+			) {
 				results.push(outcome.value);
-			} else {
-				this.log.warn(
-					{ err: outcome.reason },
-					`Seerr: failed to fetch details for ${serviceType} server ${servers[i]!.id}`,
-				);
 			}
 		}
 
-		return { servers: results };
+		const unavailableServerCount = servers.length - results.length;
+		if (unavailableServerCount > 0) {
+			this.log.warn(
+				{
+					category: "request-options",
+					configuredServerCount: servers.length,
+					unavailableServerCount,
+				},
+				"Seerr: some request options could not be verified",
+			);
+		}
+		return {
+			servers: results,
+			coverage:
+				unavailableServerCount === 0 ? "complete" : results.length > 0 ? "partial" : "unavailable",
+			configuredServerCount: servers.length,
+			unavailableServerCount,
+		};
 	}
 
 	// --- Library Enrichment ---
@@ -897,6 +988,7 @@ export class SeerrClient {
 		const take = 100;
 		let skip = 0;
 		const maxPages = 5;
+		let complete = false;
 
 		for (let page = 0; page < maxPages; page++) {
 			const result = await this.getIssues({ filter: "open", take, skip });
@@ -907,10 +999,22 @@ export class SeerrClient {
 				const key = `${mediaType}:${issue.media.tmdbId}`;
 				counts.set(key, (counts.get(key) ?? 0) + 1);
 			}
-			// Stop if we got fewer than requested (last page)
-			if (result.results.length < take) break;
+			const fetched = skip + result.results.length;
+			// A short page alone is not proof of completion. Seerr reports the
+			// filtered total; never cache a prefix as an exact zero/count.
+			if (fetched > result.pageInfo.results) {
+				throw new Error("Seerr issue count pagination incomplete");
+			}
+			if (fetched === result.pageInfo.results) {
+				complete = true;
+				break;
+			}
+			if (result.results.length < take) {
+				throw new Error("Seerr issue count pagination incomplete");
+			}
 			skip += take;
 		}
+		if (!complete) throw new Error("Seerr issue count pagination incomplete");
 
 		this.cache?.set(cacheKey, counts, ISSUE_COUNT_TTL_MS);
 		return counts;
@@ -945,15 +1049,18 @@ function buildQueryString(params?: object): string {
 }
 
 /**
- * Validate instance is a Seerr service and return a ready-to-use client.
- * Replaces the repeated requireInstance() + service check + createSeerrClient() pattern in routes.
+ * Validate an owned Seerr instance; upstream mutations also require it to be enabled.
  */
 export async function requireSeerrClient(
 	app: FastifyInstance,
 	userId: string,
 	instanceId: string,
+	options: { requireEnabled?: boolean; prisma?: FastifyInstance["prisma"] } = {},
 ): Promise<SeerrClient> {
-	const instance = await requireInstance(app, userId, instanceId);
+	const lookup = options.prisma ? { prisma: options.prisma } : app;
+	const instance = options.requireEnabled
+		? await requireEnabledInstance(lookup, userId, instanceId)
+		: await requireInstance(lookup, userId, instanceId);
 	if (instance.service !== "SEERR") {
 		throw new AppValidationError("Instance is not a Seerr service");
 	}

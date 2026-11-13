@@ -11,7 +11,7 @@
 
 import type { CompleteQualityProfile } from "@arr/shared";
 import { AlertCircle, CheckCircle, ChevronRight, Download, Info } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
 	Alert,
 	AlertDescription,
@@ -37,6 +37,8 @@ export function QualityProfileImporter({
 	const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
 	const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null);
 	const [importedProfile, setImportedProfile] = useState<CompleteQualityProfile | null>(null);
+	const [importError, setImportError] = useState<string | null>(null);
+	const selectionGeneration = useRef(0);
 
 	// Fetch instances and filter by service type (compare case-insensitively)
 	const { data: allInstances, isLoading: loadingInstances } = useServicesQuery();
@@ -50,29 +52,40 @@ export function QualityProfileImporter({
 
 	// Handle instance selection
 	const handleInstanceSelect = (instanceId: string) => {
+		selectionGeneration.current += 1;
 		setSelectedInstanceId(instanceId);
 		setSelectedProfileId(null);
 		setImportedProfile(null);
+		setImportError(null);
 	};
 
 	// Handle profile selection
 	const handleProfileSelect = (profileId: number) => {
+		selectionGeneration.current += 1;
 		setSelectedProfileId(profileId);
 		setImportedProfile(null);
+		setImportError(null);
 	};
 
 	// Import profile
 	const handleImport = async () => {
 		if (!selectedInstanceId || selectedProfileId === null) return;
+		// A selection can change away and back while this request is still pending.
+		const requestGeneration = selectionGeneration.current;
+		setImportError(null);
 
 		try {
 			const result = await importMutation.mutateAsync({
 				instanceId: selectedInstanceId,
 				profileId: selectedProfileId,
 			});
-			setImportedProfile(result.profile);
-		} catch (_error) {
-			// error surfaced through mutation state
+			if (requestGeneration === selectionGeneration.current) {
+				setImportedProfile(result.profile);
+			}
+		} catch (error) {
+			if (requestGeneration === selectionGeneration.current) {
+				setImportError(getErrorMessage(error, "Failed to import profile"));
+			}
 		}
 	};
 
@@ -183,12 +196,10 @@ export function QualityProfileImporter({
 			)}
 
 			{/* Import Error */}
-			{importMutation.isError && (
+			{importError && (
 				<Alert variant="danger">
 					<AlertCircle className="h-4 w-4" />
-					<AlertDescription className="text-xs">
-						{getErrorMessage(importMutation.error, "Failed to import profile")}
-					</AlertDescription>
+					<AlertDescription className="text-xs">{importError}</AlertDescription>
 				</Alert>
 			)}
 

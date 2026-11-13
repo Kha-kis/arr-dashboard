@@ -1,6 +1,14 @@
+import { createHash } from "node:crypto";
 import type { EmailConfig } from "@arr/shared";
-import nodemailer from "nodemailer";
-import type { ChannelPlugin, ChannelSender, NotificationPayload, SendResult } from "../types.js";
+import nodemailer, { type Transporter } from "nodemailer";
+import { notificationFailure, NotificationFailureError } from "../failure-diagnostics.js";
+import type {
+	ChannelPlugin,
+	ChannelSender,
+	NotificationFailureCategory,
+	NotificationPayload,
+	SendResult,
+} from "../types.js";
 import { extractMetadataFields } from "./format-metadata.js";
 
 /** Connection errors that are worth retrying */
@@ -12,14 +20,64 @@ const RETRYABLE_CODES = new Set([
 	"ECONNRESET",
 ]);
 
-/** Pooled transporter cache keyed by host:port:user */
-const transportPool = new Map<string, nodemailer.Transporter>();
+function smtpErrorCode(err: unknown): string | undefined {
+	if (typeof err !== "object" || err === null || !("code" in err)) return undefined;
+	return typeof err.code === "string" ? err.code : undefined;
+}
 
-function getOrCreateTransporter(config: EmailConfig): nodemailer.Transporter {
-	const key = `${config.host}:${config.port}:${config.user}`;
-	let transporter = transportPool.get(key);
-	if (!transporter) {
-		transporter = nodemailer.createTransport({
+function smtpFailureCategory(err: unknown): NotificationFailureCategory {
+	const code = smtpErrorCode(err);
+	if (code === "EAUTH") return "authentication";
+	if (code === "ETIMEDOUT") return "timeout";
+	if (code === "ETLS") return "transport";
+	if (
+		(code === "EENVELOPE" || code === "EMESSAGE") &&
+		typeof err === "object" &&
+		err !== null &&
+		"responseCode" in err
+	) {
+		const responseCode = err.responseCode;
+		if (
+			typeof responseCode === "number" &&
+			Number.isInteger(responseCode) &&
+			responseCode >= 400 &&
+			responseCode <= 599
+		) {
+			return "rejected";
+		}
+	}
+	return code && RETRYABLE_CODES.has(code) ? "transport" : "unknown";
+}
+
+type TransportEntry = {
+	transporter: Transporter;
+	fingerprint: string;
+	active: number;
+	retired: boolean;
+	closed: boolean;
+};
+
+/** Current connection per endpoint; replaced entries drain accepted work before closing. */
+const transportPool = new Map<string, TransportEntry>();
+const allTransports = new Set<TransportEntry>();
+
+function closeTransport(entry: TransportEntry): void {
+	if (entry.closed) return;
+	entry.closed = true;
+	allTransports.delete(entry);
+	entry.transporter.close();
+}
+
+function acquireTransport(config: EmailConfig): TransportEntry {
+	const key = JSON.stringify([config.host, config.port, config.user]);
+	// Do not retain plaintext credentials in an extra cache key or diagnostic.
+	const fingerprint = createHash("sha256")
+		.update(JSON.stringify([config.host, config.port, config.user, config.password, config.secure]))
+		.digest("hex");
+	let entry = transportPool.get(key);
+	if (!entry || entry.fingerprint !== fingerprint) {
+		// Construct before retiring the previous entry: a failed replacement leaves it usable.
+		const transporter = nodemailer.createTransport({
 			host: config.host,
 			port: config.port,
 			secure: config.secure,
@@ -35,15 +93,28 @@ function getOrCreateTransporter(config: EmailConfig): nodemailer.Transporter {
 			greetingTimeout: 10000,
 			socketTimeout: 10000,
 		});
-		transportPool.set(key, transporter);
+		const previous = entry;
+		entry = { transporter, fingerprint, active: 0, retired: false, closed: false };
+		transportPool.set(key, entry);
+		allTransports.add(entry);
+		if (previous) {
+			previous.retired = true;
+			if (previous.active === 0) closeTransport(previous);
+		}
 	}
-	return transporter;
+	entry.active += 1;
+	return entry;
+}
+
+function releaseTransport(entry: TransportEntry): void {
+	entry.active -= 1;
+	if (entry.retired && entry.active === 0) closeTransport(entry);
 }
 
 /** Close all pooled transports (for graceful shutdown). */
 export function closeAllTransports(): void {
-	for (const [, transport] of transportPool) {
-		transport.close();
+	for (const entry of allTransports) {
+		closeTransport(entry);
 	}
 	transportPool.clear();
 }
@@ -51,9 +122,10 @@ export function closeAllTransports(): void {
 export const emailSender: ChannelSender = {
 	async send(config: Record<string, unknown>, payload: NotificationPayload): Promise<SendResult> {
 		const emailConfig = config as EmailConfig;
+		let entry: TransportEntry | undefined;
 
 		try {
-			const transporter = getOrCreateTransporter(emailConfig);
+			entry = acquireTransport(emailConfig);
 
 			let html = `<h2>${escapeHtml(payload.title)}</h2><p>${escapeHtml(payload.body)}</p>`;
 
@@ -82,7 +154,7 @@ export const emailSender: ChannelSender = {
 				text += `\n\n${payload.url}`;
 			}
 
-			await transporter.sendMail({
+			await entry.transporter.sendMail({
 				from: emailConfig.from,
 				to: emailConfig.to,
 				subject: payload.title,
@@ -92,24 +164,32 @@ export const emailSender: ChannelSender = {
 
 			return { success: true, retryable: false };
 		} catch (err) {
-			const error = err instanceof Error ? err.message : String(err);
-			const code = (err as { code?: string }).code;
+			const code = smtpErrorCode(err);
 			const retryable = code ? RETRYABLE_CODES.has(code) : false;
-			return { success: false, retryable, error: `Email send failed: ${error}` };
+			return notificationFailure(smtpFailureCategory(err), retryable);
+		} finally {
+			if (entry) releaseTransport(entry);
 		}
 	},
 
 	async test(config: Record<string, unknown>): Promise<void> {
 		const emailConfig = config as EmailConfig;
-		const transporter = getOrCreateTransporter(emailConfig);
+		let entry: TransportEntry | undefined;
+		try {
+			entry = acquireTransport(emailConfig);
 
-		await transporter.sendMail({
-			from: emailConfig.from,
-			to: emailConfig.to,
-			subject: "Arr Dashboard - Test Notification",
-			html: "<h2>Test Notification</h2><p>Arr Dashboard email notification channel is working!</p>",
-			text: "Test Notification\n\nArr Dashboard email notification channel is working!",
-		});
+			await entry.transporter.sendMail({
+				from: emailConfig.from,
+				to: emailConfig.to,
+				subject: "Arr Dashboard - Test Notification",
+				html: "<h2>Test Notification</h2><p>Arr Dashboard email notification channel is working!</p>",
+				text: "Test Notification\n\nArr Dashboard email notification channel is working!",
+			});
+		} catch (err) {
+			throw new NotificationFailureError(smtpFailureCategory(err));
+		} finally {
+			if (entry) releaseTransport(entry);
+		}
 	},
 };
 

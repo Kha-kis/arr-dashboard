@@ -1,5 +1,13 @@
 import fp from "fastify-plugin";
-import { PrismaClient } from "../generated/prisma/client.js";
+import {
+	getRestoreRuntimeClientContext,
+	openRestoreRuntime,
+	RestoreRuntimeAdmissionError,
+	type RestoreRuntime,
+} from "../lib/backup/restore-runtime-admission.js";
+import { createRuntimePrismaClient } from "../lib/backup/restore-runtime-client.js";
+import { resolveSqliteRestoreStorage } from "../lib/backup/restore-runtime-sqlite-storage.js";
+import { configureSqliteJournalMode } from "../lib/sqlite-journal-mode.js";
 
 type DbProvider = "sqlite" | "postgresql";
 
@@ -12,70 +20,71 @@ function detectDbProvider(url: string): DbProvider {
 	return /^postgres(ql)?:\/\//i.test(url) ? "postgresql" : "sqlite";
 }
 
-/**
- * Parse SQLite URL to file path for better-sqlite3 adapter.
- * The adapter accepts the path directly (without 'file:' prefix).
- * Supports formats:
- * - file:./dev.db -> ./dev.db
- * - file:/app/data/prod.db -> /app/data/prod.db
- * - ./dev.db -> ./dev.db (raw path passthrough)
- */
-function parseSqliteUrl(url: string): string {
-	if (url.startsWith("file:")) {
-		return url.slice(5);
-	}
-	return url;
-}
-
 export const prismaPlugin = fp(
 	async (app) => {
 		const databaseUrl = app.config.DATABASE_URL!;
 		const provider = detectDbProvider(databaseUrl);
-
-		let adapter: ConstructorParameters<typeof PrismaClient>[0] extends { adapter?: infer A }
-			? A
-			: never;
-		let pgPool: import("pg").Pool | null = null;
-
-		if (provider === "postgresql") {
-			let PrismaPg: Awaited<typeof import("@prisma/adapter-pg")>["PrismaPg"];
-			let pg: Awaited<typeof import("pg")>;
-			try {
-				({ PrismaPg } = await import("@prisma/adapter-pg"));
-				pg = await import("pg");
-			} catch {
-				throw new Error(
-					"PostgreSQL was detected from DATABASE_URL but the required packages " +
-						"(@prisma/adapter-pg, pg) are not installed. " +
-						"Install them with: pnpm add @prisma/adapter-pg pg",
-				);
-			}
-			pgPool = new pg.default.Pool({ connectionString: databaseUrl });
-			// biome-ignore lint/suspicious/noExplicitAny: @types/pg@8.20.0 Pool type incompatible with @prisma/adapter-pg's bundled @types/pg@8.11.11
-			adapter = new PrismaPg(pgPool as any);
-		} else {
-			const { createRecoverableSqliteAdapter } = await import("../lib/sqlite-adapter.js");
-			const dbPath = parseSqliteUrl(databaseUrl);
-			adapter = createRecoverableSqliteAdapter({ url: dbPath });
+		const supplied = app.hasDecorator("restoreRuntime");
+		const runtime = supplied
+			? app.getDecorator<RestoreRuntime>("restoreRuntime")
+			: await openRestoreRuntime({
+					databaseUrl,
+					onUnavailable: () => {
+						queueMicrotask(() => {
+							const shutdown = app.hasDecorator("lifecycle")
+								? app.lifecycle.shutdown()
+								: app.close();
+							void shutdown.catch(() => app.log.error("Database runtime shutdown failed"));
+						});
+					},
+				});
+		let native!: ReturnType<typeof createRuntimePrismaClient>;
+		let clientRegistered = false;
+		try {
+			const context = getRestoreRuntimeClientContext(runtime);
+			const configured =
+				provider === "postgresql"
+					? databaseUrl
+					: `file:${resolveSqliteRestoreStorage(databaseUrl).databasePath}`;
+			if (context.databaseUrl !== configured) throw new RestoreRuntimeAdmissionError();
+			native = createRuntimePrismaClient(runtime);
+			clientRegistered = true;
+			await runtime.runStarting(async () => {
+				await native.prisma.$connect();
+				if (provider === "sqlite") {
+					const journalMode = await configureSqliteJournalMode(
+						native.prisma,
+						app.config.SQLITE_JOURNAL_MODE,
+					);
+					app.log.info({ sqliteJournalMode: journalMode }, "SQLite journal mode verified");
+				}
+			});
+		} catch (error) {
+			// A rejected foreign/forged runtime is not ours to close. Once a
+			// client is registered, the actual runtime owns its joined cleanup.
+			if (!supplied || clientRegistered) await runtime.close();
+			throw error;
 		}
-
-		const prisma = new PrismaClient({ adapter });
-
-		await prisma.$connect();
-
-		app.decorate("prisma", prisma);
+		if (!supplied) app.decorate("restoreRuntime", runtime);
+		app.decorate("prisma", native.prisma);
 		app.decorate("dbProvider", provider);
-
 		app.log.info({ dbProvider: provider }, "Database connected");
-
-		app.addHook("onClose", async (server) => {
-			await server.prisma.$disconnect();
-			if (pgPool) {
-				await pgPool.end();
-			}
+		app.addHook("preClose", async () => {
+			runtime.closeAdmission();
+		});
+		app.addHook("onClose", async () => {
+			// Drain accepted work before the runtime disconnects registered
+			// native clients and releases its owner; socket closure is not drain.
+			await runtime.close();
 		});
 	},
 	{
 		name: "prisma",
 	},
 );
+
+declare module "fastify" {
+	interface FastifyInstance {
+		restoreRuntime: RestoreRuntime;
+	}
+}

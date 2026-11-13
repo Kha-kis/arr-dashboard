@@ -11,6 +11,7 @@ import { LIBRARY_SERVICES_UPPER } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
+import { withIsolatedRuntimePrismaReadClient } from "../../lib/backup/restore-runtime-client.js";
 import { getLibrarySyncScheduler } from "../../lib/library-sync/index.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
@@ -39,22 +40,25 @@ export const registerSyncRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	app.get("/library/sync/status", async (request, _reply) => {
 		const userId = request.currentUser!.id;
 
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: {
-				userId,
-				enabled: true,
-				service: { in: [...LIBRARY_SERVICES_UPPER] },
-			},
-			include: {
-				librarySyncStatus: true,
-			},
-			orderBy: { label: "asc" },
-		});
+		const instances = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			prisma.serviceInstance.findMany({
+				where: {
+					userId,
+					enabled: true,
+					service: { in: [...LIBRARY_SERVICES_UPPER] },
+				},
+				include: {
+					librarySyncStatus: true,
+				},
+				orderBy: { label: "asc" },
+			}),
+		);
 
 		const scheduler = getLibrarySyncScheduler();
 
 		const statuses = instances.map((instance) => {
 			const status = instance.librarySyncStatus;
+			const syncInProgress = scheduler.isInstanceSyncing(instance.id);
 			return {
 				instanceId: instance.id,
 				instanceName: instance.label,
@@ -63,8 +67,11 @@ export const registerSyncRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					? {
 							lastFullSync: status.lastFullSync?.toISOString() ?? null,
 							lastSyncDurationMs: status.lastSyncDurationMs,
-							syncInProgress: status.syncInProgress || scheduler.isInstanceSyncing(instance.id),
-							lastError: status.lastError,
+							syncInProgress,
+							lastError:
+								status.syncInProgress && !syncInProgress
+									? "Previous library sync was interrupted; cached data is last known."
+									: status.lastError,
 							itemCount: status.itemCount,
 							pollingEnabled: status.pollingEnabled,
 							pollingIntervalMins: status.pollingIntervalMins,
@@ -72,7 +79,7 @@ export const registerSyncRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					: {
 							lastFullSync: null,
 							lastSyncDurationMs: null,
-							syncInProgress: scheduler.isInstanceSyncing(instance.id),
+							syncInProgress,
 							lastError: null,
 							itemCount: 0,
 							pollingEnabled: true,

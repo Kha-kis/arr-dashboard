@@ -11,7 +11,12 @@ import {
 	createEvidenceFingerprintArrayAccumulator,
 	type EvidenceFingerprintArrayAccumulator,
 } from "../evidence-fingerprint.js";
-import type { PlexCache, PlexEpisodeCache, PrismaClientInstance } from "../prisma.js";
+import type {
+	PlexCache,
+	PlexEpisodeCache,
+	PrismaClientInstance,
+	ServiceInstance,
+} from "../prisma.js";
 import { authorizeTargetScopedWatchCountMutation } from "../provider-observation/evidence-capabilities.js";
 import {
 	countPlexCacheRows,
@@ -41,10 +46,12 @@ import {
 	readPlexGenerationTargetsForSelection,
 	verifyPersistedPlexGenerationTargets,
 } from "./plex-generation-target-ledger.js";
+import { isCurrentPlexPositiveEpisodeParentProof } from "./plex-positive-episode-display-proof.js";
 import {
 	decodePlexPositiveEpisodeGenerationMetadata,
 	type PlexPositiveEpisodeGenerationMetadata,
 } from "./plex-positive-episode-generation-metadata.js";
+import { plexConnectionFingerprint } from "./service-instance-fingerprint.js";
 
 type PlexAuthoritativeGenerationMetadataV5 = Extract<
 	PlexGenerationMetadataV5,
@@ -77,7 +84,21 @@ type PlexEvidencePrisma = Pick<
 	| "plexGenerationTarget"
 >;
 
-export type PlexEvidenceInstance = {
+type PlexParentObservationPrisma = Pick<PlexEvidencePrisma, "cacheRefreshStatus" | "plexCache">;
+export type PlexParentObservationRead = <T>(
+	operation: (prisma: PlexParentObservationPrisma) => Promise<T>,
+) => Promise<T>;
+
+export type PlexEvidenceInstance = Partial<
+	Pick<
+		ServiceInstance,
+		| "baseUrl"
+		| "encryptedApiKey"
+		| "encryptionIv"
+		| "encryptedHttpAuthCredentials"
+		| "httpAuthEncryptionIv"
+	>
+> & {
 	id: string;
 	userId: string;
 	service: string;
@@ -220,6 +241,12 @@ export type AvailablePositivePlexEpisodeEvidence = {
 		| Extract<PlexGenerationMetadataV5, { publicationLevel: "positive-only" }>
 		| PlexAuthoritativeGenerationMetadataV6
 		| PlexPositiveGenerationMetadataV6;
+	/** Current head remains independently verified even when display uses archived parent proof. */
+	currentParent?: {
+		generationId: string;
+		metadata: AvailablePositivePlexEpisodeEvidence["parentMetadata"];
+		generationStatus: AvailablePlexInstanceEvidence["generationStatus"];
+	};
 	rows: PlexEpisodeCache[];
 	generationStatus: AvailablePlexInstanceEvidence["generationStatus"];
 	evidence: PlexEvidenceSummary;
@@ -329,6 +356,7 @@ function hasCurrentEpisodeParentReaderAuthority(evidence: {
 		(evidence.metadata.version === 6 &&
 			evidence.metadata.publicationLevel === "positive-only" &&
 			evidence.metadata.completeness === "partial" &&
+			evidence.metadata.ambiguousTmdbCandidates !== null &&
 			evidence.evidence.availability === "current" &&
 			evidence.evidence.authority === "positive-only" &&
 			evidence.metadata.capabilities.length === 1 &&
@@ -391,6 +419,7 @@ function hasCurrentPositiveEpisodeReaderParentAuthority(
 			currentOrDisplayable &&
 			((metadata.publicationLevel === "positive-only" &&
 				(evidence.evidence.authority === "positive-only" || displayableLastKnown) &&
+				metadata.ambiguousTmdbCandidates !== null &&
 				metadata.capabilities.length === 1 &&
 				metadata.capabilities[0].domain === "episode-parents" &&
 				metadata.capabilities[0].field === "membership" &&
@@ -571,6 +600,29 @@ function publishedGenerationsMatch(
 		after.evidence.reasonCodes.join("\u0000") !== before.evidence.reasonCodes.join("\u0000")
 	) {
 		return "generation_changed";
+	}
+	if (JSON.stringify(after.metadata) !== JSON.stringify(before.metadata)) {
+		return "generation_changed";
+	}
+	return null;
+}
+
+/** Display rows bind to the publication; latest-attempt provenance may advance during the read. */
+function selectedDisplayPublicationsMatch(
+	before: Pick<
+		AvailablePlexInstanceEvidence,
+		"generationId" | "publishedAt" | "itemCount" | "metadata"
+	>,
+	after: Pick<
+		AvailablePlexInstanceEvidence,
+		"generationId" | "publishedAt" | "itemCount" | "metadata"
+	>,
+): PlexCoverageReasonCode | null {
+	if (after.generationId !== before.generationId || after.itemCount !== before.itemCount) {
+		return "generation_changed";
+	}
+	if (after.publishedAt.getTime() !== before.publishedAt.getTime()) {
+		return "published_timestamp_changed";
 	}
 	if (JSON.stringify(after.metadata) !== JSON.stringify(before.metadata)) {
 		return "generation_changed";
@@ -1404,8 +1456,21 @@ export async function loadTargetScopedPlexWatchCountMutationEvidenceBatch(
 			sectionTitle: string;
 			observedValue: number;
 		}>;
+		if (
+			published.metadata.publicationLevel === "positive-only" &&
+			published.metadata.ambiguousTmdbCandidates === null
+		)
+			return { available: false };
+		const ambiguousTmdbCandidates = new Set(
+			published.metadata.publicationLevel === "positive-only"
+				? (published.metadata.ambiguousTmdbCandidates ?? []).map(
+						(candidate) => `${candidate.mediaType}:${candidate.tmdbId}`,
+					)
+				: [],
+		);
 		for (const requestedTarget of requested) {
 			const key = `${requestedTarget.mediaType}:${requestedTarget.tmdbId}`;
+			if (ambiguousTmdbCandidates.has(key)) continue;
 			const targets = targetsByMediaTypeAndTmdbId.get(key) ?? [];
 			const matchingRows = rowsByMediaTypeAndTmdbId.get(key) ?? [];
 			if (targets.length !== 1 || matchingRows.length !== 1) continue;
@@ -1524,6 +1589,7 @@ async function loadOwnedSelectedEvidence(
 	instance: PlexEvidenceInstance,
 	selection: PlexCacheRowSelection,
 	options: { now?: Date; maxAgeMs?: number },
+	mode: "strict" | "display" = "strict",
 ): Promise<SelectedPlexEvidence> {
 	if (!instance.enabled) return unavailable("disabled_instance");
 	if (!isCurrentVerifiedPlexInstance(instance)) return unavailable("identity_generation_mismatch");
@@ -1551,7 +1617,10 @@ async function loadOwnedSelectedEvidence(
 		if (!publishedAfter.available) return publishedAfter;
 		const afterBinding = validateExplicitStatusGenerationBinding(instance, after!);
 		if (afterBinding) return unavailableForBinding(afterBinding, after, publishedAfter.metadata);
-		const generationMismatch = publishedGenerationsMatch(publishedBefore, publishedAfter);
+		const generationMismatch =
+			mode === "display"
+				? selectedDisplayPublicationsMatch(publishedBefore, publishedAfter)
+				: publishedGenerationsMatch(publishedBefore, publishedAfter);
 		if (generationMismatch)
 			return unavailableAfterPublication(generationMismatch, providerStatus, "rows-inconsistent");
 		if (totalCount !== publishedBefore.itemCount || boundCount !== totalCount) {
@@ -1577,6 +1646,8 @@ async function loadOwnedSelectedEvidence(
 			}
 		}
 
+		const finalStatus = mode === "display" ? after! : before!;
+		const finalPublished = mode === "display" ? publishedAfter : publishedBefore;
 		return {
 			available: true,
 			instanceId: instance.id,
@@ -1588,29 +1659,24 @@ async function loadOwnedSelectedEvidence(
 			identityGeneration: instance.identityGeneration,
 			metadata: publishedBefore.metadata,
 			generationStatus: {
-				instanceId: before!.instanceId,
-				lastRefreshedAt: before!.lastRefreshedAt,
-				lastResult: before!.lastResult,
-				lastErrorMessage: before!.lastErrorMessage,
-				lastAttemptAt: before!.lastAttemptAt,
-				lastAttemptResult: before!.lastAttemptResult,
-				lastAttemptErrorMessage: before!.lastAttemptErrorMessage,
-				itemCount: before!.itemCount,
-				connectionGeneration: before!.connectionGeneration,
-				identityGeneration: before!.identityGeneration,
-				generationId: before!.generationId,
-				generationMetadata: before!.generationMetadata,
+				instanceId: finalStatus.instanceId,
+				lastRefreshedAt: finalStatus.lastRefreshedAt,
+				lastResult: finalStatus.lastResult,
+				lastErrorMessage: finalStatus.lastErrorMessage,
+				lastAttemptAt: finalStatus.lastAttemptAt,
+				lastAttemptResult: finalStatus.lastAttemptResult,
+				lastAttemptErrorMessage: finalStatus.lastAttemptErrorMessage,
+				itemCount: finalStatus.itemCount,
+				connectionGeneration: finalStatus.connectionGeneration,
+				identityGeneration: finalStatus.identityGeneration,
+				generationId: finalStatus.generationId,
+				generationMetadata: finalStatus.generationMetadata,
 			},
 			sections: publishedBefore.metadata.sections,
-			providerStatus: projectPlexProviderObservationStatus({
-				status: before,
-				metadata: publishedBefore.metadata,
-				now: options.now,
-				maxAgeMs: options.maxAgeMs,
-			}),
+			providerStatus: finalPublished.providerStatus,
 			rows,
 			selection,
-			evidence: publishedBefore.evidence,
+			evidence: finalPublished.evidence,
 		};
 	} catch {
 		return providerStatus
@@ -1661,9 +1727,10 @@ export async function loadInstanceSelectedMutationEvidence(
 		: mutationUnavailable(evidence);
 }
 
-export async function loadUserSelectedEvidence(
+async function loadUserSelectedEvidenceForMode(
 	prisma: PlexEvidencePrisma,
 	input: { userId: string; selection: PlexCacheRowSelection; now?: Date; maxAgeMs?: number },
+	mode: "strict" | "display" = "strict",
 ): Promise<SelectedPlexEvidence[]> {
 	try {
 		const instances = (await prisma.serviceInstance.findMany({
@@ -1677,6 +1744,7 @@ export async function loadUserSelectedEvidence(
 				instance,
 				input.selection,
 				withDefaultFreshness(input),
+				mode,
 			);
 			evidence.push(entry.available ? entry : { ...entry, instanceId: instance.id });
 		}
@@ -1684,6 +1752,21 @@ export async function loadUserSelectedEvidence(
 	} catch {
 		return [unavailable("query_failed")];
 	}
+}
+
+export async function loadUserSelectedEvidence(
+	prisma: PlexEvidencePrisma,
+	input: { userId: string; selection: PlexCacheRowSelection; now?: Date; maxAgeMs?: number },
+): Promise<SelectedPlexEvidence[]> {
+	return loadUserSelectedEvidenceForMode(prisma, input);
+}
+
+/** Published rows for display only; settlement and mutation callers must use the strict APIs. */
+export async function loadUserSelectedDisplayEvidence(
+	prisma: PlexEvidencePrisma,
+	input: { userId: string; selection: PlexCacheRowSelection; now?: Date; maxAgeMs?: number },
+): Promise<SelectedPlexEvidence[]> {
+	return loadUserSelectedEvidenceForMode(prisma, input, "display");
 }
 
 export function hasAuthoritativeSelectedPlexEvidence(
@@ -1818,6 +1901,7 @@ async function loadOwnedPublishedGenerationObservation(
 	prisma: PlexEvidencePrisma,
 	instance: PlexEvidenceInstance,
 	options: { now?: Date; maxAgeMs?: number },
+	readParentObservation?: PlexParentObservationRead,
 ): Promise<
 	| {
 			available: true;
@@ -1840,24 +1924,40 @@ async function loadOwnedPublishedGenerationObservation(
 	if (!isCurrentVerifiedPlexInstance(instance)) return unavailable("identity_generation_mismatch");
 	let providerStatus: ProviderObservationStatus | undefined;
 	try {
-		const before = await readPlexGenerationStatus(prisma, instance.id);
+		return await (readParentObservation ? readParentObservation(observe) : observe(prisma));
+	} catch {
+		return providerStatus
+			? unavailableAfterPublication("query_failed", providerStatus, "unknown-failure")
+			: unavailable("query_failed");
+	}
+
+	async function observe(client: PlexParentObservationPrisma) {
+		const before = await readPlexGenerationStatus(client, instance.id);
 		const publishedBefore = evaluatePublishedPlexGeneration(before, options);
 		if (!publishedBefore.available) return publishedBefore;
 		const binding = validateExplicitStatusGenerationBinding(instance, before!);
 		if (binding) return unavailableForBinding(binding, before, publishedBefore.metadata);
 		providerStatus = publishedBefore.providerStatus;
-		const [totalCount, boundCount] = await Promise.all([
-			countPlexCacheRows(prisma, { instanceId: instance.id }),
-			countPlexCacheRows(prisma, {
+		const counts = [
+			countPlexCacheRows(client, { instanceId: instance.id }),
+			countPlexCacheRows(client, {
 				instanceId: instance.id,
 				connectionGeneration: instance.connectionGeneration,
 				identityGeneration: instance.identityGeneration,
 			}),
-		]);
+		] as const;
+		const countResults = Promise.all(counts);
+		const [totalCount, boundCount] = readParentObservation
+			? await countResults.catch(async (error: unknown) => {
+					// Keep the borrowed client until the other count settles.
+					await Promise.allSettled(counts);
+					throw error;
+				})
+			: await countResults;
 		if (totalCount !== publishedBefore.itemCount || boundCount !== totalCount) {
 			return unavailableAfterPublication("row_count_mismatch", providerStatus, "rows-inconsistent");
 		}
-		const after = await readPlexGenerationStatus(prisma, instance.id);
+		const after = await readPlexGenerationStatus(client, instance.id);
 		const publishedAfter = evaluatePublishedPlexGeneration(after, options);
 		if (!publishedAfter.available) return publishedAfter;
 		const afterBinding = validateExplicitStatusGenerationBinding(instance, after!);
@@ -1866,7 +1966,7 @@ async function loadOwnedPublishedGenerationObservation(
 		if (generationMismatch)
 			return unavailableAfterPublication(generationMismatch, providerStatus, "rows-inconsistent");
 		return {
-			available: true,
+			available: true as const,
 			instanceId: instance.id,
 			instanceName: instance.label,
 			generationId: publishedBefore.generationId,
@@ -1898,10 +1998,6 @@ async function loadOwnedPublishedGenerationObservation(
 			},
 			evidence: publishedBefore.evidence,
 		};
-	} catch {
-		return providerStatus
-			? unavailableAfterPublication("query_failed", providerStatus, "unknown-failure")
-			: unavailable("query_failed");
 	}
 }
 
@@ -2038,6 +2134,7 @@ async function loadPositiveEpisodeEvidenceInternal(
 		maxAgeMs?: number;
 	},
 	mode: { allowLastKnownAttempt: boolean },
+	readParentObservation?: PlexParentObservationRead,
 ): Promise<PositivePlexEpisodeEvidence> {
 	let parentProviderStatus: ProviderObservationStatus | undefined;
 	try {
@@ -2049,7 +2146,12 @@ async function loadPositiveEpisodeEvidenceInternal(
 			})) as PlexEvidenceInstance | null);
 		if (!instance) return unavailable("missing_status");
 
-		const parentBefore = await loadOwnedPublishedGenerationObservation(prisma, instance, options);
+		const parentBefore = await loadOwnedPublishedGenerationObservation(
+			prisma,
+			instance,
+			options,
+			readParentObservation,
+		);
 		if (!parentBefore.available) return parentBefore;
 		parentProviderStatus = parentBefore.providerStatus;
 		const parentPublishedAt = parentBefore.publishedAt.getTime();
@@ -2097,16 +2199,46 @@ async function loadPositiveEpisodeEvidenceInternal(
 		if (!decoded.ok) return parentUnavailable("malformed_metadata");
 		const metadata = decoded.metadata;
 		if (metadata.itemCount !== before.itemCount) return parentUnavailable("row_count_mismatch");
+		const changedParent = metadata.parentPlexGenerationId !== parentBefore.generationId;
+		let displayParentMetadata = parentBefore.metadata;
+		if (metadata.version === 6) {
+			const sourceFingerprint =
+				typeof instance.baseUrl === "string" &&
+				typeof instance.encryptedApiKey === "string" &&
+				typeof instance.encryptionIv === "string"
+					? plexConnectionFingerprint({
+							...instance,
+							baseUrl: instance.baseUrl,
+							encryptedApiKey: instance.encryptedApiKey,
+							encryptionIv: instance.encryptionIv,
+						})
+					: null;
+			if (
+				!isCurrentPlexPositiveEpisodeParentProof(metadata.parentProof, {
+					instanceId: instance.id,
+					connectionGeneration: instance.connectionGeneration,
+					identityGeneration: instance.identityGeneration,
+					providerIdentity: instance.expectedIdentity,
+					sourceFingerprint,
+					episodePublishedAt: before.lastRefreshedAt,
+					now,
+					maxAgeMs: options.maxAgeMs,
+				}) ||
+				Date.parse(metadata.coverageReceipt.observedAt) !== episodePublishedAt
+			)
+				return parentUnavailable("metadata_invalid");
+			if (changedParent && mode.allowLastKnownAttempt && parentPublishedAt >= episodePublishedAt) {
+				displayParentMetadata = metadata.parentProof.metadata;
+			}
+		}
 		if (
-			metadata.parentPlexGenerationId !== parentBefore.generationId ||
-			metadata.parentMetadataVersion !== parentBefore.metadata.version ||
-			metadata.parentPublicationLevel !== parentBefore.metadata.publicationLevel ||
-			(parentBefore.metadata.publicationLevel !== "positive-only" &&
-				parentBefore.metadata.publicationLevel !== "authoritative")
+			(changedParent && displayParentMetadata === parentBefore.metadata) ||
+			metadata.parentMetadataVersion !== displayParentMetadata.version ||
+			metadata.parentPublicationLevel !== displayParentMetadata.publicationLevel
 		) {
 			return parentUnavailable("parent_generation_unavailable");
 		}
-		if (metadata.parentTargetDigest !== parentBefore.metadata.targetDigest) {
+		if (metadata.parentTargetDigest !== displayParentMetadata.targetDigest) {
 			return parentUnavailable("target_digest_mismatch");
 		}
 		if (
@@ -2149,7 +2281,12 @@ async function loadPositiveEpisodeEvidenceInternal(
 		}
 		const afterBinding = validateExplicitStatusGenerationBinding(instance, after);
 		if (afterBinding) return unavailable(afterBinding, parentBefore.providerStatus);
-		const parentAfter = await loadOwnedPublishedGenerationObservation(prisma, instance, options);
+		const parentAfter = await loadOwnedPublishedGenerationObservation(
+			prisma,
+			instance,
+			options,
+			readParentObservation,
+		);
 		const parentAfterPublishedAt = parentAfter.available ? parentAfter.publishedAt.getTime() : NaN;
 		if (
 			!parentAfter.available ||
@@ -2165,7 +2302,8 @@ async function loadPositiveEpisodeEvidenceInternal(
 		}
 		const displayLastKnown =
 			mode.allowLastKnownAttempt &&
-			(parentBefore.evidence.attemptState === "in_progress" ||
+			(changedParent ||
+				parentBefore.evidence.attemptState === "in_progress" ||
 				parentBefore.evidence.attemptState === "error" ||
 				parentBefore.evidence.reasonCodes.includes("latest_attempt_in_progress") ||
 				parentBefore.evidence.reasonCodes.includes("latest_attempt_failed") ||
@@ -2197,7 +2335,16 @@ async function loadPositiveEpisodeEvidenceInternal(
 			connectionGeneration: instance.connectionGeneration,
 			identityGeneration: instance.identityGeneration,
 			metadata,
-			parentMetadata: parentBefore.metadata,
+			parentMetadata: displayParentMetadata,
+			...(metadata.version === 6
+				? {
+						currentParent: {
+							generationId: parentBefore.generationId,
+							metadata: parentBefore.metadata,
+							generationStatus: parentBefore.generationStatus,
+						},
+					}
+				: {}),
 			rows,
 			generationStatus: {
 				instanceId: before.instanceId,
@@ -2264,8 +2411,14 @@ export async function loadPositiveEpisodeDisplayEvidence(
 		now?: Date;
 		maxAgeMs?: number;
 	},
+	readParentObservation?: PlexParentObservationRead,
 ): Promise<PositivePlexEpisodeEvidence> {
-	return loadPositiveEpisodeEvidenceInternal(prisma, input, { allowLastKnownAttempt: true });
+	return loadPositiveEpisodeEvidenceInternal(
+		prisma,
+		input,
+		{ allowLastKnownAttempt: true },
+		readParentObservation,
+	);
 }
 
 export async function loadInstanceEpisodeEvidence(
@@ -2430,6 +2583,7 @@ export async function loadInstanceSelectedEpisodeEvidence(
 		now?: Date;
 		maxAgeMs?: number;
 	},
+	readParentObservation?: PlexParentObservationRead,
 ): Promise<SelectedPlexEpisodeEvidence> {
 	let parentProviderStatus: ProviderObservationStatus | undefined;
 	try {
@@ -2440,7 +2594,12 @@ export async function loadInstanceSelectedEpisodeEvidence(
 				where: { id: input.instanceId, userId: input.userId, service: "PLEX" },
 			})) as PlexEvidenceInstance | null);
 		if (!instance) return unavailable("missing_status");
-		const parentBefore = await loadOwnedPublishedGenerationObservation(prisma, instance, options);
+		const parentBefore = await loadOwnedPublishedGenerationObservation(
+			prisma,
+			instance,
+			options,
+			readParentObservation,
+		);
 		if (!parentBefore.available) return parentBefore;
 		parentProviderStatus = parentBefore.providerStatus;
 		if (!hasCurrentPlexMutationAuthority(parentBefore, options)) {
@@ -2529,7 +2688,12 @@ export async function loadInstanceSelectedEpisodeEvidence(
 		}
 		const afterBinding = validateExplicitStatusGenerationBinding(instance, after);
 		if (afterBinding) return unavailable(afterBinding, parentBefore.providerStatus);
-		const parentAfter = await loadOwnedPublishedGenerationObservation(prisma, instance, options);
+		const parentAfter = await loadOwnedPublishedGenerationObservation(
+			prisma,
+			instance,
+			options,
+			readParentObservation,
+		);
 		if (
 			!parentAfter.available ||
 			!hasCurrentPlexMutationAuthority(parentAfter, options) ||

@@ -1166,6 +1166,26 @@ describe("GET /auth/oidc/callback", () => {
 		expect(JSON.parse(res.payload).error).toContain("Invalid callback parameters");
 	});
 
+	it.each([
+		"/auth/oidc/callback?error=access_denied&error_description=provider-detail",
+		"/auth/oidc/callback?code=private-code&state=invalid-state-value",
+	])("shows a safe return action for a failed browser callback %s", async (url) => {
+		const res = await app.inject({
+			method: "GET",
+			url,
+			headers: { "sec-fetch-mode": "navigate", "sec-fetch-dest": "document" },
+		});
+
+		expect(res.statusCode).toBe(400);
+		expect(res.headers["content-type"]).toContain("text/html");
+		expect(res.headers["cache-control"]).toBe("no-store");
+		expect(res.headers["referrer-policy"]).toBe("no-referrer");
+		expect(res.payload).toContain("Sign-in could not be completed");
+		expect(res.payload).toContain('<a href="/">Return to Arr Dashboard</a>');
+		expect(res.payload).not.toMatch(/provider-detail|private-code|invalid-state-value/);
+		expect(mockSessionService.createSession).not.toHaveBeenCalled();
+	});
+
 	it("returns 400 when provider returns an error", async () => {
 		const res = await app.inject({
 			method: "GET",

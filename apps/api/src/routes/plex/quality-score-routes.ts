@@ -5,11 +5,11 @@
  * resolution distribution, and transcode percentage.
  */
 
-import type { QualityScoreAnalytics } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
+import { readSessionSnapshotPages } from "../../lib/statistics/session-snapshot-pages.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { analyticsQuery } from "./analytics-schemas.js";
-import { computeQualityScore } from "./lib/quality-score-helpers.js";
+import { createQualityScoreAccumulator } from "./lib/quality-score-helpers.js";
 
 export async function registerQualityScoreRoutes(
 	app: FastifyInstance,
@@ -19,42 +19,28 @@ export async function registerQualityScoreRoutes(
 		const { days } = validateRequest(analyticsQuery, request.query);
 		const userId = request.currentUser!.id;
 
-		const plexInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "PLEX", enabled: true },
-			select: { id: true },
-		});
-
-		if (plexInstances.length === 0) {
-			const response: QualityScoreAnalytics = {
-				overallScore: 0,
-				breakdown: { directPlayScore: 0, resolutionScore: 0, transcodeScore: 0 },
-				trend: [],
-				perUser: [],
-			};
-			return reply.send(response);
-		}
-
-		const instanceIds = plexInstances.map((i) => i.id);
 		const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-
-		const snapshots = await app.prisma.sessionSnapshot.findMany({
-			where: {
-				instanceId: { in: instanceIds },
-				capturedAt: { gte: cutoff },
-			},
-			select: { capturedAt: true, sessionsJson: true },
-			orderBy: { capturedAt: "asc" },
-			take: 20000,
+		const accumulator = createQualityScoreAccumulator();
+		const read = await readSessionSnapshotPages(app.prisma, {
+			userId,
+			services: ["PLEX"],
+			cutoff,
+			includeCollectionByDate: true,
+			onPage: (page) => accumulator.addBatch(page),
 		});
-
-		const { parseFailures, totalSnapshots, failedPreviews, ...analytics } =
-			computeQualityScore(snapshots);
+		const { parseFailures, totalSnapshots, ...analytics } = accumulator.getResult(
+			read.collection,
+			read.collectionByDate,
+		);
 		if (parseFailures > 0) {
 			request.log.warn(
-				{ parseFailures, totalSnapshots, failedPreviews, route: "quality-score" },
+				{ parseFailures, totalSnapshots, route: "quality-score" },
 				"Session snapshot JSON parse failures detected",
 			);
 		}
-		return reply.send(analytics);
+		return reply.send({
+			...analytics,
+			measurement: { ...analytics.measurement, configuredSources: read.instanceCount },
+		});
 	});
 }

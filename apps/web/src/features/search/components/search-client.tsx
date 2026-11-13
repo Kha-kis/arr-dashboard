@@ -6,8 +6,10 @@ import { PremiumCard, PremiumSkeleton } from "../../../components/layout";
 import { Alert, AlertDescription, AlertTitle, Button, Pagination } from "../../../components/ui";
 import { useSearchIndexersQuery } from "../../../hooks/api/useSearch";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { useIncognitoMode } from "../../../lib/incognito";
 import { useSearchActions } from "../hooks/use-search-actions";
 import { useSearchData } from "../hooks/use-search-data";
+import { useSearchGrabRecovery } from "../hooks/use-search-grab-recovery";
 import { useSearchIndexers } from "../hooks/use-search-indexers";
 import { useSearchPagination } from "../hooks/use-search-pagination";
 import { useSearchState } from "../hooks/use-search-state";
@@ -15,6 +17,7 @@ import { FilterControls } from "./filter-controls";
 import { IndexerSelector } from "./indexer-selector";
 import { ResultsSummary } from "./results-summary";
 import { SearchForm } from "./search-form";
+import { SearchGrabConfirmation } from "./search-grab-confirmation";
 import { SearchResultsTable } from "./search-results-table";
 import { SortControls } from "./sort-controls";
 
@@ -23,6 +26,7 @@ import { SortControls } from "./sort-controls";
  */
 export const SearchClient = () => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 
 	// Search state management
 	const searchState = useSearchState();
@@ -48,9 +52,11 @@ export const SearchClient = () => {
 	// Search and action handlers
 	const {
 		results,
+		failedInstanceCount,
+		coverageIncomplete,
+		coverageWarning,
 		handleSearch: _handleSearch,
 		handleSubmit,
-		handleGrab,
 		handleCopyMagnet,
 		handleOpenInfo,
 		isSearching,
@@ -66,6 +72,7 @@ export const SearchClient = () => {
 	const { page, pageSize, paginatedResults, setPage, setPageSize } = useSearchPagination(
 		processed.results,
 	);
+	const grabRecovery = useSearchGrabRecovery(paginatedResults, actions);
 
 	// Loading skeleton
 	if (indexersQuery.isLoading) {
@@ -106,14 +113,31 @@ export const SearchClient = () => {
 		);
 	}
 
+	const indexerFailedCount = indexersQuery.data?.failedInstanceCount ?? 0;
+	const configuredInstanceCount = indexersQuery.data?.instances.length ?? 0;
+	if (configuredInstanceCount > 0 && indexerFailedCount === configuredInstanceCount) {
+		return (
+			<Alert variant="danger">
+				<AlertTitle>Prowlarr indexers unavailable</AlertTitle>
+				<AlertDescription>
+					All configured Prowlarr indexer reads failed. Check the connections and retry.
+				</AlertDescription>
+			</Alert>
+		);
+	}
+
 	const noIndexers = !indexersQuery.data || indexersQuery.data.totalCount === 0;
 	const emptyMessage = !hasSearched
 		? "Submit a manual search to see results across your indexers."
-		: results.length === 0
-			? "No results returned from your indexers for that query."
-			: processed.filtersActive
-				? "No results match the current filters. Adjust them to see more releases."
-				: "No results to display.";
+		: failedInstanceCount > 0 && results.length === 0
+			? "Search coverage is incomplete; results from unavailable instances are unknown."
+			: coverageIncomplete && results.length === 0
+				? "Search coverage is incomplete; available results may be missing. Check Prowlarr and search again."
+				: results.length === 0
+					? "No results returned from your indexers for that query."
+					: processed.filtersActive
+						? "No results match the current filters. Adjust them to see more releases."
+						: "No results to display.";
 
 	return (
 		<>
@@ -154,15 +178,32 @@ export const SearchClient = () => {
 			</header>
 
 			{/* Alerts */}
-			{feedback && (
+			{hasSearched && coverageWarning && (
+				<Alert variant="warning">
+					<AlertDescription>{coverageWarning}</AlertDescription>
+				</Alert>
+			)}
+
+			{feedback && feedback.message !== coverageWarning && (
 				<Alert variant={feedback.type === "success" ? "success" : "danger"}>
-					<AlertDescription>{feedback.message}</AlertDescription>
+					<AlertDescription>
+						{incognitoMode ? feedback.incognitoMessage : feedback.message}
+					</AlertDescription>
 				</Alert>
 			)}
 
 			{validationError && (
 				<Alert variant="warning">
 					<AlertDescription>{validationError}</AlertDescription>
+				</Alert>
+			)}
+
+			{indexerFailedCount > 0 && (
+				<Alert variant="warning">
+					<AlertDescription>
+						Indexer list incomplete: {indexerFailedCount} Prowlarr instance
+						{indexerFailedCount === 1 ? "" : "s"} unavailable.
+					</AlertDescription>
 				</Alert>
 			)}
 
@@ -180,10 +221,15 @@ export const SearchClient = () => {
 					>
 						<Globe className="h-8 w-8" style={{ color: themeGradient.from }} />
 					</div>
-					<h3 className="text-xl font-semibold mb-2">Prowlarr Configuration Required</h3>
+					<h3 className="text-xl font-semibold mb-2">
+						{configuredInstanceCount === 0
+							? "Prowlarr Configuration Required"
+							: "No indexers available"}
+					</h3>
 					<p className="text-muted-foreground mb-6 max-w-md mx-auto">
-						Add at least one Prowlarr instance in Settings to enable manual searches across your
-						indexers.
+						{configuredInstanceCount === 0
+							? "Add at least one Prowlarr instance in Settings to enable manual searches across your indexers."
+							: "No usable indexers were returned by the available Prowlarr instances. Check their settings and connection status."}
 					</p>
 					<Button asChild>
 						<Link href="/settings" className="gap-2">
@@ -285,7 +331,8 @@ export const SearchClient = () => {
 						<SearchResultsTable
 							results={paginatedResults}
 							loading={isSearching}
-							onGrab={handleGrab}
+							onGrab={grabRecovery.handleGrab}
+							getGrabState={grabRecovery.getRowState}
 							grabbingKey={grabbingKey}
 							onCopyMagnet={handleCopyMagnet}
 							onOpenInfo={handleOpenInfo}
@@ -306,6 +353,7 @@ export const SearchClient = () => {
 					)}
 				</>
 			)}
+			<SearchGrabConfirmation recovery={grabRecovery} />
 		</>
 	);
 };

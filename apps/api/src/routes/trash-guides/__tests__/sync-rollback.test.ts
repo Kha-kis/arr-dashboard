@@ -6,17 +6,21 @@
  * - Only deleting CFs that were created by sync (not user-created ones)
  * - Handling different backup data formats
  *
- * Note: These are unit tests that don't require database access.
- * Integration tests with database are skipped unless TEST_DB=true.
+ * State integration tests use a fresh full-schema SQLite database per test.
+ * They do not execute an upstream rollback.
  */
 
-import type { PrismaClient } from "../../../lib/prisma.js";
-import { createTestPrismaClient } from "../../../lib/__tests__/test-prisma.js";
+import { execFile } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createTestPrismaClient } from "../../../lib/__tests__/test-prisma.js";
+import type { PrismaClient } from "../../../lib/prisma.js";
 import { getCreatedCustomFormatNamesForRollback } from "../sync-routes.js";
 
-// Check if we should run integration tests (requires writable test database)
-const RUN_DB_TESTS = process.env.TEST_DB === "true";
+const execFileAsync = promisify(execFile);
 
 describe("Sync Rollback Logic Tests", () => {
 	describe("Backup Data Format Parsing", () => {
@@ -178,16 +182,41 @@ describe("Sync Rollback Logic Tests", () => {
 		});
 	});
 
-	// Database integration tests - only run with TEST_DB=true
-	(RUN_DB_TESTS ? describe : describe.skip)("Rollback State Management (Integration)", () => {
+	describe("Rollback State Management (Integration)", () => {
 		let prisma: PrismaClient;
+		let directory: string | undefined;
 
-		beforeEach(() => {
-			prisma = createTestPrismaClient();
-		});
+		beforeEach(async () => {
+			directory = await mkdtemp(join(tmpdir(), "sync-rollback-state-"));
+			const databasePath = join(directory, "state.db");
+			await execFileAsync(
+				"pnpm",
+				[
+					"exec",
+					"prisma",
+					"db",
+					"push",
+					"--schema",
+					"prisma/schema.prisma",
+					"--url",
+					`file:${databasePath}`,
+				],
+				{
+					cwd: resolve(import.meta.dirname, "../../../.."),
+					env: { ...process.env, DATABASE_URL: `file:${databasePath}` },
+					timeout: 60_000,
+				},
+			);
+			prisma = createTestPrismaClient(databasePath);
+		}, 120_000);
 
 		afterEach(async () => {
-			await prisma.$disconnect();
+			try {
+				await prisma?.$disconnect();
+			} finally {
+				if (directory) await rm(directory, { recursive: true, force: true });
+				directory = undefined;
+			}
 		});
 
 		it("should create sync history record with correct structure", async () => {

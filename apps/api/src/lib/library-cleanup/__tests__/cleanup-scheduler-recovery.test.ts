@@ -1,4 +1,10 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import Database from "better-sqlite3";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { PrismaClient } from "../../../generated/prisma/client.js";
 
 const executorMocks = vi.hoisted(() => ({ executeCleanupRun: vi.fn() }));
 const rescanMocks = vi.hoisted(() => ({
@@ -36,9 +42,87 @@ describe("library cleanup scheduler recovery", () => {
 		vi.clearAllMocks();
 	});
 
+	it("skips approval recovery writes when there are no approval rows", async () => {
+		const approvalUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
+		const configFindFirst = vi.fn().mockResolvedValue(null);
+		const prisma = {
+			libraryCleanupApproval: {
+				findFirst: vi.fn().mockResolvedValue(null),
+				updateMany: approvalUpdateMany,
+			},
+			libraryCleanupConfig: { findFirst: configFindFirst },
+		};
+		const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+		const scheduler = new CleanupScheduler(prisma as never, {} as never, {} as never, log as never);
+
+		await (scheduler as unknown as { checkAndRun: () => Promise<void> }).checkAndRun();
+
+		expect(approvalUpdateMany).not.toHaveBeenCalled();
+		expect(configFindFirst).toHaveBeenCalledOnce();
+		expect(rescanMocks.recoverAllPendingTerminalAudits).toHaveBeenCalledOnce();
+		expect(rescanMocks.retryAllPendingMediaServerRescans).toHaveBeenCalledOnce();
+	});
+
+	it("does not contend with a writer when only terminal approvals are retained", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "cleanup-terminal-"));
+		const databasePath = join(directory, "scheduler.db");
+		const writer = new Database(databasePath);
+		let client: PrismaClient | undefined;
+		try {
+			writer.exec(`
+				CREATE TABLE "library_cleanup_configs" (
+					"id" TEXT PRIMARY KEY, "runClaimToken" TEXT, "runClaimedAt" DATETIME
+				);
+				CREATE TABLE "library_cleanup_approvals" (
+					"id" TEXT PRIMARY KEY, "configId" TEXT NOT NULL, "status" TEXT NOT NULL,
+					"reviewedAt" DATETIME, "expiresAt" DATETIME NOT NULL,
+					"lastExecutionError" TEXT, "executionToken" TEXT
+				);
+				INSERT INTO "library_cleanup_configs" ("id") VALUES ('config-1');
+				INSERT INTO "library_cleanup_approvals" ("id", "configId", "status", "expiresAt")
+				VALUES ('terminal-1', 'config-1', 'executed', '2027-01-01 00:00:00');
+			`);
+			client = new PrismaClient({
+				adapter: new PrismaBetterSqlite3({ url: databasePath, timeout: 25 }),
+			});
+			await client.$connect();
+			const configFindFirst = vi.fn().mockResolvedValue(null);
+			const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+			const scheduler = new CleanupScheduler(
+				{
+					libraryCleanupApproval: client.libraryCleanupApproval,
+					libraryCleanupConfig: { findFirst: configFindFirst },
+				} as never,
+				{} as never,
+				{} as never,
+				log as never,
+			);
+			writer.exec("BEGIN IMMEDIATE");
+
+			await (scheduler as unknown as { checkAndRun: () => Promise<void> }).checkAndRun();
+
+			expect(log.warn).not.toHaveBeenCalled();
+			expect(log.error).not.toHaveBeenCalled();
+			expect(configFindFirst).toHaveBeenCalledOnce();
+			expect(
+				writer.prepare('SELECT COUNT(*) AS count FROM "library_cleanup_approvals"').get(),
+			).toEqual({
+				count: 1,
+			});
+		} finally {
+			if (writer.inTransaction) writer.exec("ROLLBACK");
+			await client?.$disconnect();
+			writer.close();
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+
 	it("retries durable media-server scans even when cleanup is disabled or not due", async () => {
 		const prisma = {
-			libraryCleanupApproval: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+			libraryCleanupApproval: {
+				findFirst: vi.fn().mockResolvedValue({ id: "existing" }),
+				updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
 			libraryCleanupConfig: { findFirst: vi.fn().mockResolvedValue(null) },
 		};
 		const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -60,7 +144,10 @@ describe("library cleanup scheduler recovery", () => {
 			new Error("approval query unavailable"),
 		);
 		const prisma = {
-			libraryCleanupApproval: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+			libraryCleanupApproval: {
+				findFirst: vi.fn().mockResolvedValue({ id: "existing" }),
+				updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
 			libraryCleanupConfig: { findFirst: vi.fn().mockResolvedValue(null) },
 		};
 		const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -91,7 +178,10 @@ describe("library cleanup scheduler recovery", () => {
 			durationMs: 1,
 		});
 		const prisma = {
-			libraryCleanupApproval: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+			libraryCleanupApproval: {
+				findFirst: vi.fn().mockResolvedValue({ id: "existing" }),
+				updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
 			libraryCleanupConfig: {
 				findFirst: vi.fn().mockResolvedValue({
 					id: "config-1",
@@ -195,7 +285,10 @@ describe("library cleanup scheduler recovery", () => {
 			},
 		);
 		const prisma = {
-			libraryCleanupApproval: { updateMany: approvalUpdateMany },
+			libraryCleanupApproval: {
+				findFirst: vi.fn().mockResolvedValue({ id: "existing" }),
+				updateMany: approvalUpdateMany,
+			},
 			libraryCleanupConfig: { findFirst: vi.fn().mockResolvedValue(null) },
 		};
 		const log = {
@@ -277,7 +370,10 @@ describe("library cleanup scheduler recovery", () => {
 			},
 		);
 		const prisma = {
-			libraryCleanupApproval: { updateMany },
+			libraryCleanupApproval: {
+				findFirst: vi.fn().mockResolvedValue({ id: "existing" }),
+				updateMany,
+			},
 			libraryCleanupConfig: { findFirst: vi.fn().mockResolvedValue(null) },
 		};
 		const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -383,6 +479,7 @@ describe("library cleanup scheduler recovery", () => {
 		const prisma = {
 			libraryCleanupAuditEvent: { create: auditCreate },
 			libraryCleanupApproval: {
+				findFirst: vi.fn().mockResolvedValue({ id: "existing" }),
 				findMany: approvalFindMany,
 				updateMany: approvalUpdateMany,
 			},
@@ -439,7 +536,10 @@ describe("library cleanup scheduler recovery", () => {
 		};
 		const scheduler = new CleanupScheduler(
 			{
-				libraryCleanupApproval: { updateMany },
+				libraryCleanupApproval: {
+					findFirst: vi.fn().mockResolvedValue({ id: "existing" }),
+					updateMany,
+				},
 				libraryCleanupConfig: { findFirst },
 			} as never,
 			{} as never,
@@ -486,7 +586,10 @@ describe("library cleanup scheduler recovery", () => {
 		const notify = vi.fn(() => notificationBlocked);
 		const scheduler = new CleanupScheduler(
 			{
-				libraryCleanupApproval: { updateMany },
+				libraryCleanupApproval: {
+					findFirst: vi.fn().mockResolvedValue({ id: "existing" }),
+					updateMany,
+				},
 				libraryCleanupConfig: { findFirst },
 			} as never,
 			{} as never,

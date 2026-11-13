@@ -1,16 +1,20 @@
-import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { SqliteSchemaFixture } from "../../__tests__/sqlite-schema-fixture.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
+import { claimProviderCacheRefreshAttempt } from "../../services/provider-cache-status.js";
+import { createProviderPublicationAuthority } from "../../services/provider-identity-guard.js";
 import {
 	advanceObservationUnit,
 	canSettleAutomaticObservationRenewalDeferred,
+	claimJellyfinObservationBatch,
 	claimObservationUnit,
 	completeObservationUnit,
 	createOrLoadObservationRun,
 	failObservationUnit,
+	failOwnedJellyfinObservationBatch,
 	getAutomaticObservationRenewalDeadline,
 	hasExhaustedObservationRunRetries,
 	invalidateObservationRuns,
@@ -26,6 +30,10 @@ import {
 
 const databases: Array<{ directory: string; prisma: ReturnType<typeof createTestPrismaClient> }> =
 	[];
+const sqliteSchema = new SqliteSchemaFixture();
+
+beforeAll(() => sqliteSchema.initialize(), 60_000);
+
 const authority: ObservationRunAuthority = {
 	provider: "plex_episode",
 	cacheType: "plex_episode",
@@ -87,14 +95,26 @@ const renewalUnits: ObservationRunUnitSeed[] = [
 	},
 ];
 
+const batchUnits: ObservationRunUnitSeed[] = (["collect", "verify"] as const).flatMap(
+	(phase, phaseIndex) =>
+		["provider-a", "provider-a", "provider-b"].map((userId, index) => {
+			const libraryId = `library-${index}`;
+			const ordinal = phaseIndex * 3 + index;
+			return {
+				ordinal,
+				scopeKey: `${phase}:${userId}:${libraryId}`,
+				scopePayload: JSON.stringify({ userId, userName: userId, libraryId }),
+				scopeDigest: (ordinal + 1).toString(16).repeat(64),
+				phase,
+				expectedTargets: phase === "collect" ? 1 : 0,
+			};
+		}),
+);
+
 async function database() {
 	const directory = mkdtempSync(join(tmpdir(), "provider-observation-run-"));
 	const dbPath = join(directory, "test.db");
-	execFileSync("pnpm", ["exec", "prisma", "db", "push", "--schema", "prisma/schema.prisma"], {
-		cwd: process.cwd(),
-		env: { ...process.env, DATABASE_URL: `file:${dbPath}` },
-		stdio: "ignore",
-	});
+	sqliteSchema.copyTo(dbPath);
 	const prisma = createTestPrismaClient(dbPath);
 	databases.push({ directory, prisma });
 	await prisma.user.create({
@@ -123,6 +143,38 @@ async function renewalDatabase() {
 		data: { service: "JELLYFIN", identityStatus: "VERIFIED" },
 	});
 	return prisma;
+}
+
+async function claimedJellyfinBatch() {
+	const prisma = await renewalDatabase();
+	const instance = await prisma.serviceInstance.update({
+		where: { id: renewalAuthority.instanceId },
+		data: { expectedIdentity: "synthetic-provider" },
+	});
+	const authority = createProviderPublicationAuthority(instance);
+	const now = new Date("2026-09-06T00:00:00.000Z");
+	const outer = await claimProviderCacheRefreshAttempt(prisma, "jellyfin_episode", authority, {
+		now: () => now,
+	});
+	if (outer.status !== "acquired") throw new Error("Expected an owned refresh attempt");
+	const run = await createOrLoadObservationRun(prisma, {
+		authority: renewalAuthority,
+		units: batchUnits,
+	});
+	const claims = await claimJellyfinObservationBatch(prisma, { runId: run.id, now });
+	const [first, second] = claims;
+	if (!first || !second) throw new Error("Expected two Jellyfin claims");
+	const failure = (claim: typeof first) => ({
+		claim,
+		now,
+		reasonCode: "provider-unavailable" as const,
+	});
+	const failures = [failure(first), failure(second)] as const;
+	return {
+		prisma,
+		run,
+		input: { authority, authorityKey: run.authorityKey, attempt: outer.attempt, failures, now },
+	};
 }
 
 async function exhaustedRenewalRun(prisma: Awaited<ReturnType<typeof renewalDatabase>>) {
@@ -171,6 +223,10 @@ afterEach(async () => {
 		await entry.prisma.$disconnect();
 		rmSync(entry.directory, { recursive: true, force: true });
 	}
+});
+
+afterAll(() => {
+	sqliteSchema.dispose();
 });
 
 describe("provider observation run repository SQLite lifecycle", { timeout: 30_000 }, () => {
@@ -384,6 +440,155 @@ describe("provider observation run repository SQLite lifecycle", { timeout: 30_0
 		]);
 		expect(results.sort()).toEqual(["deferred", "renewed"]);
 	});
+
+	it("claims one Jellyfin unit per provider user and waits for the entire collect phase", async () => {
+		const prisma = await renewalDatabase();
+		const run = await createOrLoadObservationRun(prisma, {
+			authority: renewalAuthority,
+			units: batchUnits,
+		});
+		const now = new Date("2026-09-06T00:00:00.000Z");
+		const input = { runId: run.id, now };
+		const claims = await Promise.all([
+			claimJellyfinObservationBatch(prisma, input),
+			claimJellyfinObservationBatch(prisma, input),
+		]);
+		expect(claims.map((batch) => batch.length).sort()).toEqual([0, 2]);
+		const batch = claims.flat();
+		expect(batch.map((claim) => claim.scopeKey)).toEqual([
+			"collect:provider-a:library-0",
+			"collect:provider-b:library-2",
+		]);
+		expect(new Set(batch.map((claim) => claim.claimToken)).size).toBe(2);
+		expect(await claimObservationUnit(prisma, input)).toBeNull();
+		for (const claim of batch) {
+			expect(
+				await completeObservationUnit(prisma, {
+					claim,
+					expectedRawCount: 0,
+					observedRawCount: 0,
+				}),
+			).toBe(true);
+		}
+		const remaining = await claimJellyfinObservationBatch(prisma, input);
+		expect(remaining.map((claim) => claim.scopeKey)).toEqual(["collect:provider-a:library-1"]);
+		expect(await claimJellyfinObservationBatch(prisma, input)).toEqual([]);
+		expect(
+			await completeObservationUnit(prisma, {
+				claim: remaining[0]!,
+				expectedRawCount: 0,
+				observedRawCount: 0,
+			}),
+		).toBe(true);
+		const verification = await claimJellyfinObservationBatch(prisma, input);
+		expect(verification.map((claim) => claim.scopeKey)).toEqual([
+			"verify:provider-a:library-0",
+			"verify:provider-b:library-2",
+		]);
+	});
+
+	it("rolls back the first Jellyfin claim when reservation of its peer fails", async () => {
+		const prisma = await renewalDatabase();
+		const run = await createOrLoadObservationRun(prisma, {
+			authority: renewalAuthority,
+			units: batchUnits,
+		});
+		await prisma.$executeRaw`
+			CREATE TRIGGER reject_synthetic_peer_claim BEFORE UPDATE OF "state"
+			ON "provider_observation_units"
+			WHEN NEW."scopeKey" = 'collect:provider-b:library-2' AND NEW."state" = 'running'
+			BEGIN SELECT RAISE(ABORT, 'synthetic peer claim refusal'); END
+		`;
+		const now = new Date("2026-09-06T00:00:00.000Z");
+		await expect(claimJellyfinObservationBatch(prisma, { runId: run.id, now })).rejects.toThrow();
+		expect(
+			await prisma.providerObservationUnit.count({
+				where: { runId: run.id, state: "running" },
+			}),
+		).toBe(0);
+	});
+
+	it("settles both owned Jellyfin failures and the outer attempt exactly once", async () => {
+		const { prisma, run, input } = await claimedJellyfinBatch();
+		const deadline = new Date(input.now.getTime() + 30_000);
+		await expect(failOwnedJellyfinObservationBatch(prisma, input)).resolves.toMatchObject({
+			status: "recorded",
+			progress: { state: "failed", reasonCode: "provider-unavailable" },
+			renewalDeadline: null,
+		});
+		await expect(failOwnedJellyfinObservationBatch(prisma, input)).resolves.toEqual({
+			status: "superseded",
+		});
+		const failed = await prisma.providerObservationUnit.findMany({
+			where: { runId: run.id, state: "failed" },
+			select: { attemptCount: true, claimToken: true, nextAttemptAt: true },
+		});
+		expect(failed).toEqual(
+			Array(2).fill({
+				attemptCount: 1,
+				claimToken: null,
+				nextAttemptAt: deadline,
+			}),
+		);
+		await expect(
+			prisma.providerObservationRun.findUnique({ where: { id: run.id } }),
+		).resolves.toMatchObject({ state: "failed", nextAttemptAt: deadline });
+		await expect(
+			prisma.cacheRefreshStatus.findFirst({ where: { instanceId: input.authority.id } }),
+		).resolves.toMatchObject({
+			lastAttemptResult: "error",
+			lastAttemptErrorMessage: "collection-deferred",
+		});
+	});
+
+	it.each(["stale claim", "stale attempt", "failed write"] as const)(
+		"preserves both Jellyfin claims and the outer attempt on %s",
+		async (kind) => {
+			const { prisma, run, input } = await claimedJellyfinBatch();
+			const [first, second] = input.failures;
+			const readRunningClaims = () =>
+				prisma.providerObservationUnit.findMany({
+					where: { runId: run.id, state: "running" },
+					orderBy: { ordinal: "asc" },
+					select: { attemptCount: true, claimToken: true, nextAttemptAt: true },
+				});
+			const readRun = () => prisma.providerObservationRun.findUnique({ where: { id: run.id } });
+			const originalClaims = await readRunningClaims();
+			const originalRun = await readRun();
+			expect(originalClaims.map(({ claimToken }) => claimToken)).toEqual([
+				first.claim.claimToken,
+				second.claim.claimToken,
+			]);
+			if (kind === "failed write") {
+				await prisma.$executeRaw`
+					CREATE TRIGGER reject_synthetic_peer_failure BEFORE UPDATE OF "state"
+					ON "provider_observation_units"
+					WHEN NEW."scopeKey" = 'collect:provider-b:library-2' AND NEW."state" = 'failed'
+					BEGIN SELECT RAISE(ABORT, 'synthetic peer failure refusal'); END
+				`;
+				await expect(failOwnedJellyfinObservationBatch(prisma, input)).rejects.toThrow();
+			} else {
+				await expect(
+					failOwnedJellyfinObservationBatch(prisma, {
+						...input,
+						attempt:
+							kind === "stale attempt"
+								? { ...input.attempt, resultMarker: "in_progress:superseded" }
+								: input.attempt,
+						failures:
+							kind === "stale claim"
+								? [first, { ...second, claim: { ...second.claim, claimToken: "stale" } }]
+								: input.failures,
+					}),
+				).resolves.toEqual({ status: "superseded" });
+			}
+			await expect(readRunningClaims()).resolves.toEqual(originalClaims);
+			await expect(readRun()).resolves.toEqual(originalRun);
+			await expect(
+				prisma.cacheRefreshStatus.findFirst({ where: { instanceId: input.authority.id } }),
+			).resolves.toMatchObject({ lastAttemptResult: input.attempt.resultMarker });
+		},
+	);
 
 	it("allows one concurrent claim and rejects stale-token writes", async () => {
 		const prisma = await database();
@@ -872,12 +1077,22 @@ describe("provider observation run repository SQLite lifecycle", { timeout: 30_0
 				observedRawCount: 7,
 			}),
 		).toBe(true);
+		await prisma.providerObservationUnit.update({
+			where: { id: first!.unitId },
+			data: { completedPages: 3 },
+		});
 		const second = await prisma.providerObservationUnit.findFirst({
 			where: { runId: run.id, ordinal: 1 },
 		});
 		await prisma.providerObservationUnit.update({
 			where: { id: second!.id },
-			data: { state: "complete", cursor: 1, expectedRawCount: 1, observedRawCount: 1 },
+			data: {
+				state: "complete",
+				cursor: 1,
+				expectedRawCount: 1,
+				observedRawCount: 1,
+				completedPages: 4,
+			},
 		});
 		await prisma.providerObservationRun.update({
 			where: { id: run.id },
@@ -947,6 +1162,7 @@ describe("provider observation run repository SQLite lifecycle", { timeout: 30_0
 			cursor: 0,
 			expectedRawCount: null,
 			observedRawCount: 0,
+			completedPages: 0,
 			attemptCount: 1,
 			nextAttemptAt: retryAt,
 			lastReasonCode: "coverage-incomplete",
@@ -965,7 +1181,13 @@ describe("provider observation run repository SQLite lifecycle", { timeout: 30_0
 		expect(remainingExclusions[0]?.unitId).toBe(second!.id);
 		expect(
 			await prisma.providerObservationUnit.findUnique({ where: { id: second!.id } }),
-		).toMatchObject({ state: "complete", cursor: 1, expectedRawCount: 1, observedRawCount: 1 });
+		).toMatchObject({
+			state: "complete",
+			cursor: 1,
+			expectedRawCount: 1,
+			observedRawCount: 1,
+			completedPages: 4,
+		});
 
 		const reclaimed = await claimObservationUnit(prisma, { runId: run.id, now: retryAt });
 		expect(reclaimed).not.toBeNull();

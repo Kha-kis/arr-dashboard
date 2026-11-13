@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
 	nativeRefresh: vi.fn(),
+	requestNative: vi.fn(),
 	beginAttempt: vi.fn(),
 	finishAttempt: vi.fn(),
 	createSnapshot: vi.fn(),
@@ -23,6 +24,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../provider-observation/native-inventory-refresh.js", () => ({
 	refreshNativeInventory: mocks.nativeRefresh,
+}));
+vi.mock("../provider-observation/native-inventory-job-orchestration.js", () => ({
+	requestNativeInventoryRefresh: mocks.requestNative,
 }));
 
 vi.mock("../services/provider-cache-status.js", () => ({
@@ -139,6 +143,7 @@ let latestRunAuthorityKey = "uninitialized";
 
 beforeEach(() => {
 	mocks.nativeRefresh.mockReset().mockResolvedValue({ status: "published" });
+	mocks.requestNative.mockReset().mockResolvedValue({ status: "accepted" });
 	mocks.beginAttempt.mockReset().mockResolvedValue(attempt);
 	mocks.finishAttempt.mockReset().mockResolvedValue("recorded");
 	mocks.createSnapshot.mockReset().mockReturnValue(snapshot);
@@ -246,6 +251,23 @@ beforeEach(() => {
 });
 
 describe("Plex refresh preparation authority", () => {
+	it.each([
+		["claimAttempt", "attempt-claim"],
+		["readParents", "parent-read"],
+		["createRun", "run-open"],
+		["claimUnit", "unit-claim"],
+	] as const)(
+		"retains the exact error and generic stage when %s throws",
+		async (fault, expected) => {
+			const error = new Error("private-provider-detail-must-not-be-logged");
+			mocks[fault].mockRejectedValueOnce(error);
+			const diagnostics = { stage: "not-started" as const };
+			await expect(runNextPlexEpisodeWorkItem({ ...context, diagnostics })).rejects.toBe(error);
+			expect(diagnostics.stage).toBe(expected);
+			expect(Object.keys(diagnostics)).toEqual(["stage"]);
+		},
+	);
+
 	it.each([["Plex", "plex", refreshOwnedPlexCache]] as const)(
 		"revokes %s authority before a credential-preparation failure and records only safe diagnostics",
 		async (_label, cacheType, refresh) => {
@@ -295,6 +317,7 @@ describe("Plex refresh preparation authority", () => {
 				prisma: context.prisma,
 				instance: snapshot,
 				log: context.log,
+				nativeInventoryMode: "automatic",
 			},
 			attempt,
 		);
@@ -316,6 +339,7 @@ describe("Plex refresh preparation authority", () => {
 					prisma: context.prisma,
 					instance: snapshot,
 					log: context.log,
+					nativeInventoryMode: "automatic",
 				},
 				callerAttempt,
 			);
@@ -395,6 +419,79 @@ describe("Plex episode durable orchestration", () => {
 		expect(mocks.stage.mock.calls[0]?.[0]).toEqual({ transaction: true });
 		expect(result).toMatchObject({ continuationAttempt: attempt });
 	});
+
+	it("settles the exact claimed unit when a post-claim database read throws", async () => {
+		mocks.readUnit.mockRejectedValueOnce(new Error("transient read failure"));
+		const prisma = {
+			providerObservationUnit: { findFirst: mocks.readUnit },
+			providerObservationRun: {
+				findUnique: vi.fn().mockResolvedValue({
+					state: "failed",
+					completedUnits: 0,
+					totalUnits: 1,
+					completedWork: 0,
+					totalWork: 1,
+					lastReasonCode: "provider-unavailable",
+				}),
+			},
+		};
+
+		const result = await runNextPlexEpisodeWorkItem({ ...context, prisma: prisma as never });
+
+		expect(mocks.failUnit).toHaveBeenCalledOnce();
+		expect(mocks.failUnit).toHaveBeenCalledWith(
+			prisma,
+			expect.objectContaining({
+				claim: expect.objectContaining({ runId: "run", unitId: "unit", claimToken: "claim" }),
+				reasonCode: "provider-unavailable",
+			}),
+		);
+		expect(mocks.collect).not.toHaveBeenCalled();
+		expect(result).toMatchObject({ state: "failed", continuationAttempt: attempt });
+	});
+
+	it.each(["parent reproof", "owned-service read"])(
+		"settles the exact claimed unit when the %s throws",
+		async (phase) => {
+			const serviceRead = vi.fn().mockResolvedValue(instance);
+			if (phase === "parent reproof") {
+				const firstParents = await mocks.readParents({});
+				mocks.readParents
+					.mockReset()
+					.mockResolvedValueOnce(firstParents)
+					.mockRejectedValueOnce(new Error("transient reproof failure"));
+			} else {
+				serviceRead.mockRejectedValueOnce(new Error("transient owned-service failure"));
+			}
+			const prisma = {
+				serviceInstance: { findFirst: serviceRead },
+				providerObservationUnit: { findFirst: mocks.readUnit },
+				providerObservationRun: {
+					findUnique: vi.fn().mockResolvedValue({
+						state: "failed",
+						completedUnits: 0,
+						totalUnits: 1,
+						completedWork: 0,
+						totalWork: 1,
+						lastReasonCode: "provider-unavailable",
+					}),
+				},
+			};
+
+			const result = await runNextPlexEpisodeWorkItem({ ...context, prisma: prisma as never });
+
+			expect(mocks.failUnit).toHaveBeenCalledOnce();
+			expect(mocks.failUnit).toHaveBeenCalledWith(
+				prisma,
+				expect.objectContaining({
+					claim: expect.objectContaining({ runId: "run", unitId: "unit", claimToken: "claim" }),
+					reasonCode: "provider-unavailable",
+				}),
+			);
+			expect(mocks.collect).not.toHaveBeenCalled();
+			expect(result).toMatchObject({ state: "failed", continuationAttempt: attempt });
+		},
+	);
 
 	it("does not finish a foreign attempt when its borrowed run has exhausted retries", async () => {
 		mocks.claimAttempt.mockResolvedValue({ status: "already-running", attempt });
@@ -916,8 +1013,24 @@ describe("Plex episode durable orchestration", () => {
 	});
 });
 
-describe("native Plex inventory companion", () => {
-	it("publishes presence before an unavailable canonical watch refresh", async () => {
+describe("durable native Plex inventory admission", () => {
+	it("settles canonical refresh when the former native collector never resolves", async () => {
+		mocks.nativeRefresh.mockImplementation(() => new Promise(() => undefined));
+		const outcome = await Promise.race([
+			refreshOwnedPlexCacheWithAttempt(context, attempt).then(
+				(value) => value.nativeInventoryStatus,
+			),
+			new Promise<"timed-out">((resolve) => setTimeout(() => resolve("timed-out"), 100)),
+		]);
+		expect(outcome).toBe("scheduled");
+		expect(mocks.requestNative).toHaveBeenCalledWith(
+			context.prisma,
+			expect.objectContaining({ id: instance.id }),
+			["paired"],
+			{ mode: "automatic" },
+		);
+	});
+	it("schedules paired presence work before an unavailable canonical watch refresh", async () => {
 		mocks.refreshCacheWithAttempt.mockResolvedValue({
 			complete: false,
 			upserted: 0,
@@ -925,21 +1038,17 @@ describe("native Plex inventory companion", () => {
 			errorMessages: ["provider-unavailable"],
 		});
 		const result = await refreshOwnedPlexCacheWithAttempt(context, attempt);
-		expect(result).toMatchObject({ complete: false, nativeInventoryStatus: "published" });
-		expect(mocks.nativeRefresh).toHaveBeenCalledWith(
-			expect.objectContaining({
-				instance: snapshot,
-				cacheType: "plex",
-				attempt,
-				domains: ["library", "episode"],
-			}),
-		);
-		expect(mocks.nativeRefresh.mock.invocationCallOrder[0]).toBeLessThan(
+		expect(result).toMatchObject({ complete: false, nativeInventoryStatus: "scheduled" });
+		expect(mocks.requestNative).toHaveBeenCalledWith(context.prisma, snapshot, ["paired"], {
+			mode: "automatic",
+		});
+		expect(mocks.nativeRefresh).not.toHaveBeenCalled();
+		expect(mocks.requestNative.mock.invocationCallOrder[0]).toBeLessThan(
 			mocks.refreshCacheWithAttempt.mock.invocationCallOrder[0]!,
 		);
 	});
-	it("retains canonical success while exposing a native failure for recovery", async () => {
-		mocks.nativeRefresh.mockResolvedValue({ status: "failed" });
+	it("retains canonical success while exposing an admission failure for recovery", async () => {
+		mocks.requestNative.mockResolvedValue({ status: "retryable" });
 		expect(await refreshOwnedPlexCache(context)).toMatchObject({
 			complete: true,
 			upserted: 1,

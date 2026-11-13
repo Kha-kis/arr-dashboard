@@ -26,6 +26,7 @@ import {
 } from "../../../hooks/api/useSeerr";
 import { getLinuxIsoName, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { notifySeerrActionError } from "../lib/seerr-action-error";
 import {
 	formatRelativeTime,
 	getIssueStatusLabel,
@@ -108,7 +109,9 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 	const handleLoadMore = useCallback(() => setTake((prev) => prev + PAGE_SIZE), []);
 	const updateStatusMutation = useUpdateSeerrIssueStatus();
 	const addCommentMutation = useAddSeerrIssueComment();
-	const [commentInput, setCommentInput] = useState<Record<number, string>>({});
+	const [commentInput, setCommentInput] = useState<Record<string, Record<number, string>>>({});
+	const commentInFlight = useRef(false);
+	const instanceDrafts = commentInput[instanceId];
 
 	if (isLoading) {
 		return (
@@ -136,17 +139,25 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 			? allIssues
 			: allIssues.filter((i) => i.issueType === (Number(typeFilter) as SeerrIssueType));
 
-	const handleSubmitComment = (issueId: number) => {
-		const message = commentInput[issueId]?.trim();
-		if (!message) return;
-		addCommentMutation.mutate(
-			{ instanceId, issueId, message },
-			{
-				onSuccess: () => toast.success("Comment added"),
-				onError: () => toast.error("Failed to add comment"),
-			},
-		);
-		setCommentInput((prev) => ({ ...prev, [issueId]: "" }));
+	const handleSubmitComment = async (issueId: number) => {
+		const draft = instanceDrafts?.[issueId];
+		const message = draft?.trim();
+		if (!message || commentInFlight.current || addCommentMutation.isPending) return;
+
+		commentInFlight.current = true;
+		try {
+			await addCommentMutation.mutateAsync({ instanceId, issueId, message });
+			setCommentInput((previous) => {
+				const drafts = previous[instanceId];
+				if (drafts?.[issueId] !== draft) return previous;
+				return { ...previous, [instanceId]: { ...drafts, [issueId]: "" } };
+			});
+			toast.success("Comment added");
+		} catch (error) {
+			notifySeerrActionError(error, "Failed to add comment");
+		} finally {
+			commentInFlight.current = false;
+		}
 	};
 
 	return (
@@ -331,19 +342,25 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 												<input
 													type="text"
 													placeholder="Add a comment..."
-													value={commentInput[issue.id] ?? ""}
-													onChange={(e) =>
-														setCommentInput((prev) => ({ ...prev, [issue.id]: e.target.value }))
-													}
+													value={instanceDrafts?.[issue.id] ?? ""}
+													onChange={(e) => {
+														const value = e.target.value;
+														setCommentInput((previous) => ({
+															...previous,
+															[instanceId]: { ...previous[instanceId], [issue.id]: value },
+														}));
+													}}
 													className="h-7 flex-1 rounded-md border border-border/30 bg-white/[0.03] px-2 text-xs text-foreground placeholder:text-muted-foreground/30 focus:outline-hidden focus:border-border/50"
 													onKeyDown={(e) => {
-														if (e.key === "Enter") handleSubmitComment(issue.id);
+														if (e.key === "Enter") void handleSubmitComment(issue.id);
 													}}
 												/>
 												<button
 													type="button"
-													onClick={() => handleSubmitComment(issue.id)}
-													disabled={!commentInput[issue.id]?.trim() || addCommentMutation.isPending}
+													onClick={() => void handleSubmitComment(issue.id)}
+													disabled={
+														!instanceDrafts?.[issue.id]?.trim() || addCommentMutation.isPending
+													}
 													className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/30 bg-white/[0.03] text-muted-foreground/40 transition-colors hover:bg-white/[0.06] hover:text-foreground disabled:opacity-40 disabled:pointer-events-none"
 													title="Send comment"
 												>
@@ -365,7 +382,8 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 														{ instanceId, issueId: issue.id, status: "resolved" },
 														{
 															onSuccess: () => toast.success("Issue resolved"),
-															onError: () => toast.error("Failed to resolve issue"),
+															onError: (error) =>
+																notifySeerrActionError(error, "Failed to resolve issue"),
 														},
 													)
 												}
@@ -384,7 +402,8 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 														{ instanceId, issueId: issue.id, status: "open" },
 														{
 															onSuccess: () => toast.success("Issue reopened"),
-															onError: () => toast.error("Failed to reopen issue"),
+															onError: (error) =>
+																notifySeerrActionError(error, "Failed to reopen issue"),
 														},
 													)
 												}

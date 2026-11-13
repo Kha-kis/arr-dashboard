@@ -1,9 +1,10 @@
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useMultiInstanceHistoryQuery } from "./useDashboard";
+import { useDashboardStatisticsQuery, useMultiInstanceHistoryQuery } from "./useDashboard";
 
 vi.mock("@tanstack/react-query", () => ({
 	useInfiniteQuery: vi.fn(),
+	useQuery: vi.fn(),
 }));
 
 vi.mock("../../lib/api-client/dashboard", () => ({
@@ -62,5 +63,23 @@ describe("useMultiInstanceHistoryQuery", () => {
 		expect(
 			options.getNextPageParam({ pageInfo: { hasNextPage: false, nextCursor: "ignored" } }),
 		).toBe(undefined);
+	});
+});
+
+describe("useDashboardStatisticsQuery", () => {
+	it("polls collecting and unavailable states at ten seconds, current at two minutes", () => {
+		useDashboardStatisticsQuery();
+		const options = vi.mocked(useQuery).mock.calls.at(-1)?.[0] as unknown as {
+			refetchInterval: (query: {
+				state: { data?: { availability: string }; error?: Error | null };
+			}) => number;
+		};
+		expect(options.refetchInterval({ state: { data: { availability: "collecting" } } })).toBe(
+			10_000,
+		);
+		expect(options.refetchInterval({ state: { data: { availability: "unavailable" } } })).toBe(
+			10_000,
+		);
+		expect(options.refetchInterval({ state: { data: { availability: "current" } } })).toBe(120_000);
 	});
 });

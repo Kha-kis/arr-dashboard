@@ -31,6 +31,7 @@ import {
 import { getLinuxIsoName, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { RequestStatusTimeline } from "../../seerr/components/request-status-timeline";
+import { notifySeerrActionError } from "../../seerr/lib/seerr-action-error";
 import { formatDuration, formatRelativeTime, getPosterUrl } from "../../seerr/lib/seerr-utils";
 
 interface SeerrRequestsWidgetProps {
@@ -52,7 +53,7 @@ export const SeerrRequestsWidget = ({
 		take: 1,
 		sort: "added",
 	});
-	const { data: attentionData } = useSeerrAttention(instanceId);
+	const { data: attentionData, isError: isAttentionError } = useSeerrAttention(instanceId);
 	const pendingRequest = pendingData?.results?.[0];
 	const attentionItems = attentionData?.items ?? [];
 	const attentionTotal = attentionData?.total ?? 0;
@@ -129,7 +130,7 @@ export const SeerrRequestsWidget = ({
 				className="block cursor-pointer"
 				onClick={() => router.push("/requests")}
 				onKeyDown={(e) => {
-					if (e.key === "Enter") router.push("/requests");
+					if (e.key === "Enter" && e.target === e.currentTarget) router.push("/requests");
 				}}
 			>
 				<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10 group transition-all hover:border-border/80">
@@ -173,13 +174,20 @@ export const SeerrRequestsWidget = ({
 						)}
 
 						{/* Needs attention section */}
-						{attentionItems.length > 0 && (
+						{isAttentionError ? (
+							<div
+								role="status"
+								className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300"
+							>
+								Attention status unavailable
+							</div>
+						) : attentionItems.length > 0 ? (
 							<NeedsAttentionSection
 								items={attentionItems}
 								total={attentionTotal}
 								instanceId={instanceId}
 							/>
-						)}
+						) : null}
 
 						{/* Status stats row */}
 						<div className="mt-3 flex items-center gap-4">
@@ -265,8 +273,8 @@ function AttentionItemRow({ item, instanceId }: { item: SeerrAttentionItem; inst
 						toast.success("Request retried");
 						setIsRetrying(false);
 					},
-					onError: () => {
-						toast.error("Failed to retry request");
+					onError: (error) => {
+						notifySeerrActionError(error, "Failed to retry request");
 						setIsRetrying(false);
 					},
 				},
@@ -368,8 +376,8 @@ function PendingRequestCard({
 						toast.success("Request approved");
 						setIsApproving(false);
 					},
-					onError: () => {
-						toast.error("Failed to approve request");
+					onError: (error) => {
+						notifySeerrActionError(error, "Failed to approve request");
 						setIsApproving(false);
 					},
 				},

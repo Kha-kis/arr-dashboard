@@ -4,11 +4,13 @@ import {
 	LABEL_SYNC_MUTATION_REASON_CODES,
 	LABEL_SYNC_MUTATION_STATUSES,
 	LABEL_SYNC_MUTATION_TERMINAL_STATUSES,
+	LABEL_SYNC_MUTATION_UNRESOLVED_STATUSES,
 	type LabelSyncMutationAttemptRecord,
 	type LabelSyncMutationReasonCode,
 	type LabelSyncMutationStatus,
 	MAX_LABEL_SYNC_MUTATION_ATTEMPTS,
 	parseLabelSyncMutationAttempt,
+	parseLabelSyncRestoreEvidence,
 	validateLabelSyncMutationAttemptLifecycle,
 	validateLabelSyncMutationTerminalEvidence,
 } from "./jellyfin-mutation-state.js";
@@ -44,6 +46,13 @@ export type MutationClaimResult =
 	| { kind: "acquired"; id: string; claimToken: string; activeOperationKey: string }
 	| { kind: "already-active"; id: string; status: "claimed" | "sending" }
 	| {
+			kind: "existing-held";
+			id: string;
+			status: "restored-held";
+			activeOperationKey: string;
+			snapshot: StoredMutationSnapshot;
+	  }
+	| {
 			kind: "existing-unknown";
 			id: string;
 			status: "unknown";
@@ -74,14 +83,24 @@ export type StoredMutationSnapshot = {
 	requestStartedAt: Date | null;
 	lastObservedAt: Date | null;
 	completedAt: Date | null;
-	status: "claimed" | "sending" | "unknown" | "verified" | "noop" | "failed" | "blocked";
+	status: LabelSyncMutationStatus;
 	reasonCode: LabelSyncMutationReasonCode | null;
+	/** Legacy constructors may omit this; repository snapshots always normalize null. */
+	restoreEvidence?: string | null;
 };
 
 export type MutationTransitionResult =
 	| {
 			kind: "applied";
-			status: "sending" | "verified" | "noop" | "failed" | "blocked" | "unknown";
+			status:
+				| "sending"
+				| "verified"
+				| "noop"
+				| "failed"
+				| "blocked"
+				| "unknown"
+				| "restored-held"
+				| "reconciled";
 			sendAttemptCount?: number;
 	  }
 	| { kind: "superseded" };
@@ -281,6 +300,7 @@ function snapshotOf(attempt: LabelSyncMutationAttemptRecord): StoredMutationSnap
 		completedAt: attempt.completedAt,
 		status: attempt.status,
 		reasonCode: attempt.reasonCode,
+		restoreEvidence: attempt.restoreEvidence ?? null,
 	};
 }
 
@@ -609,6 +629,14 @@ export class JellyfinMutationRepository {
 						activeOperationKey,
 						snapshot: snapshotOf(existing),
 					};
+				if (existing.status === "restored-held")
+					return {
+						kind: "existing-held",
+						id: existing.id,
+						status: "restored-held",
+						activeOperationKey,
+						snapshot: snapshotOf(existing),
+					};
 				if (existing.status === "claimed" || existing.status === "sending")
 					return { kind: "already-active", id: existing.id, status: existing.status };
 				throw new MutationRepositoryError("invalid-state");
@@ -623,7 +651,7 @@ export class JellyfinMutationRepository {
 					where: {
 						provider: input.provider,
 						targetItemId: input.targetItemId,
-						status: { in: ["claimed", "sending", "unknown"] },
+						status: { in: [...LABEL_SYNC_MUTATION_UNRESOLVED_STATUSES] },
 						destination: { expectedIdentity: expectedServerIdentity },
 					},
 				});
@@ -934,11 +962,51 @@ export class JellyfinMutationRepository {
 	}): Promise<ReconciliationAcquireResult> {
 		return await this.transaction(async (tx) => {
 			const current = await tx.labelSyncMutationAttempt.findFirst({
-				where: { ...this.identityWhere(input), status: "unknown" },
+				where: { ...this.identityWhere(input), status: { in: ["unknown", "restored-held"] } },
 			});
 			if (!current) return { kind: "not-reconcilable" };
 			const parsed = row(current);
 			if (parsed.claimToken !== null) return { kind: "already-owned" };
+			if (parsed.status === "restored-held") {
+				if (deriveStoredKey(parsed) !== parsed.activeOperationKey)
+					throw new MutationRepositoryError("invalid-state");
+				const original = parseLabelSyncRestoreEvidence(parsed.restoreEvidence);
+				if (parsed.reconcileAttemptCount === MAX_LABEL_SYNC_MUTATION_ATTEMPTS) {
+					// An imported exhausted counter has not acquired a new observation.
+					// Preserve its original reason instead of fabricating fresh evidence.
+					const reasonCode =
+						parsed.reconcileAttemptCount > original.originalReconcileAttemptCount
+							? "attempt_limit"
+							: parsed.reasonCode;
+					const ok = await this.cas(tx, recoveryWhere(parsed), {
+						reasonCode,
+						updatedAt: now(this.clock),
+					});
+					return ok
+						? {
+								kind: "attempt-limit",
+								id: parsed.id,
+								reconcileAttemptCount: parsed.reconcileAttemptCount,
+								snapshot: { ...snapshotOf(parsed), reasonCode },
+							}
+						: { kind: "not-reconcilable" };
+				}
+				const token = this.token();
+				const next = parsed.reconcileAttemptCount + 1;
+				const ok = await this.cas(tx, recoveryWhere(parsed), {
+					claimToken: token,
+					reconcileAttemptCount: next,
+				});
+				return ok
+					? {
+							kind: "acquired",
+							id: parsed.id,
+							claimToken: token,
+							reconcileAttemptCount: next,
+							snapshot: { ...snapshotOf(parsed), reconcileAttemptCount: next },
+						}
+					: { kind: "already-owned" };
+			}
 			if (parsed.reconcileAttemptCount === MAX_LABEL_SYNC_MUTATION_ATTEMPTS) {
 				const ok = await this.cas(
 					tx,
@@ -1016,6 +1084,8 @@ export class JellyfinMutationRepository {
 		claimToken: string;
 		reconcileAttemptCount: number;
 		outcome: ReconciliationOutcome;
+		/** Required for held work: binds the provider read to the acquired evidence. */
+		snapshot?: StoredMutationSnapshot;
 		lastObservedAt?: Date;
 		completedAt?: Date;
 	}): Promise<MutationTransitionResult> {
@@ -1028,6 +1098,7 @@ export class JellyfinMutationRepository {
 			"claimToken",
 			"reconcileAttemptCount",
 			"outcome",
+			"snapshot",
 			"lastObservedAt",
 			"completedAt",
 		]);
@@ -1050,30 +1121,67 @@ export class JellyfinMutationRepository {
 				requestStartedAt: new Date(0),
 				lastObservedAt: observedAt ?? null,
 			});
-		const ok = await this.transaction(
-			async (tx) =>
-				await this.cas(
-					tx,
-					{
-						...envelope,
-						status: "unknown",
-						claimToken: text(input.claimToken),
-						reconcileAttemptCount: exactReconcileCount,
-						sendAttemptCount: 1,
-						requestStartedAt: { not: null },
-						completedAt: null,
-					},
-					{
-						status: outcome.status,
-						reasonCode,
-						claimToken: null,
-						completedAt,
-						...(outcome.status === "unknown" ? {} : { activeOperationKey: null }),
-						...(observedAt ? { lastObservedAt: observedAt } : {}),
-					},
-				),
-		);
-		return ok ? { kind: "applied", status: outcome.status } : { kind: "superseded" };
+		return await this.transaction(async (tx) => {
+			const heldRaw = await tx.labelSyncMutationAttempt.findFirst({
+				where: {
+					...envelope,
+					status: "restored-held",
+					reconcileAttemptCount: exactReconcileCount,
+				},
+			});
+			if (heldRaw?.status === "restored-held") {
+				const held = row(heldRaw);
+				if (!input.snapshot || JSON.stringify(input.snapshot) !== JSON.stringify(snapshotOf(held)))
+					return { kind: "superseded" };
+				if (outcome.status === "failed") throw new MutationRepositoryError("invalid-input");
+				const desiredObserved = outcome.status === "verified";
+				const next = {
+					...held,
+					status: desiredObserved ? ("reconciled" as const) : ("restored-held" as const),
+					reasonCode: desiredObserved ? ("desired_state_observed" as const) : reasonCode,
+					claimToken: null,
+					completedAt,
+					activeOperationKey: desiredObserved ? null : held.activeOperationKey,
+					lastObservedAt: observedAt ?? held.lastObservedAt,
+				};
+				// Validate actual original send markers, not an invented acknowledgement.
+				try {
+					parseLabelSyncMutationAttempt(next);
+				} catch {
+					throw new MutationRepositoryError("invalid-input");
+				}
+				const ok = await this.cas(tx, recoveryWhere(held), {
+					status: next.status,
+					reasonCode: next.reasonCode,
+					claimToken: null,
+					completedAt,
+					activeOperationKey: next.activeOperationKey,
+					lastObservedAt: next.lastObservedAt,
+				});
+				return ok ? { kind: "applied", status: next.status } : { kind: "superseded" };
+			}
+			const ok = await this.cas(
+				tx,
+				{
+					...envelope,
+					status: "unknown",
+					claimToken: text(input.claimToken),
+					reconcileAttemptCount: exactReconcileCount,
+					sendAttemptCount: 1,
+					requestStartedAt: { not: null },
+					completedAt: null,
+				},
+				{
+					status: outcome.status,
+					reasonCode,
+					claimToken: null,
+					completedAt,
+					...(outcome.status === "unknown" ? {} : { activeOperationKey: null }),
+					...(observedAt ? { lastObservedAt: observedAt } : {}),
+				},
+			);
+			return ok ? { kind: "applied", status: outcome.status } : { kind: "superseded" };
+		});
 	}
 
 	private async terminalIds(
@@ -1090,7 +1198,7 @@ export class JellyfinMutationRepository {
 			} catch {
 				throw new MutationRepositoryError("conflict");
 			}
-			if (["claimed", "sending", "unknown"].includes(parsed.status))
+			if ((LABEL_SYNC_MUTATION_UNRESOLVED_STATUSES as readonly string[]).includes(parsed.status))
 				throw new MutationRepositoryError("conflict");
 			ids.push(parsed.id);
 		}
@@ -1305,7 +1413,7 @@ export class JellyfinMutationRepository {
 				throw new MutationRepositoryError("conflict");
 			await this.blockers(tx, input.userId, {});
 			await tx.labelSyncMutationAttempt.deleteMany({
-				where: { userId: input.userId, status: { in: ["verified", "noop", "failed", "blocked"] } },
+				where: { userId: input.userId, status: { in: [...LABEL_SYNC_MUTATION_TERMINAL_STATUSES] } },
 			});
 			return await callback(tx);
 		});
@@ -1418,7 +1526,10 @@ export async function recoverLabelSyncMutationAttempts(
 						});
 						if (result?.count !== 1) throw new MutationRepositoryError("dependency-failure");
 						changed += 1;
-					} else if (parsed.status === "unknown" && parsed.claimToken !== null) {
+					} else if (
+						(parsed.status === "unknown" || parsed.status === "restored-held") &&
+						parsed.claimToken !== null
+					) {
 						const result = await tx.labelSyncMutationAttempt.updateMany({
 							where: recoveryWhere(parsed),
 							data: { claimToken: null },

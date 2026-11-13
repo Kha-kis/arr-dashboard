@@ -30,6 +30,7 @@ const librarySyncSchedulerPlugin = fastifyPlugin(
 
 					const scheduler = getLibrarySyncScheduler();
 					scheduler.setTrackTick((fn) => app.schedulerRegistry.track(JOB_ID.librarySync, fn));
+					scheduler.setTrackProducer((fn) => app.notificationService.runProducer(fn));
 					app.decorate("librarySyncScheduler", scheduler);
 
 					// Start the scheduler
@@ -39,17 +40,22 @@ const librarySyncSchedulerPlugin = fastifyPlugin(
 			);
 		});
 
-		// Stop scheduler on server close
+		app.addHook("preClose", async () => {
+			app.librarySyncScheduler?.closeAdmission();
+		});
+
+		// Retain accepted lookups and their child syncs before infrastructure closes.
 		app.addHook("onClose", async () => {
 			if (app.librarySyncScheduler) {
 				app.log.info("Stopping library sync scheduler");
-				app.librarySyncScheduler.stop();
+				await app.librarySyncScheduler.shutdown();
 			}
 		});
 	},
 	{
 		name: "library-sync-scheduler",
 		dependencies: ["prisma", "arr-client", "scheduler-registry"],
+		decorators: { fastify: ["notificationService"] },
 	},
 );
 

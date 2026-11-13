@@ -432,6 +432,7 @@ describe("Pulse actionability — cache.refresh end-to-end", () => {
 				encryptor: app.encryptor,
 				instance: expect.objectContaining({ id: "inst-plex", service: "PLEX" }),
 				log: expect.anything(),
+				nativeInventoryMode: "force",
 			},
 			expect.objectContaining({ resultMarker: expect.stringMatching(/^in_progress:/) }),
 		);
@@ -520,6 +521,7 @@ describe("Pulse actionability — cache.refresh end-to-end", () => {
 		expect(refreshOwnedJellyfinCache).toHaveBeenCalledWith(
 			expect.objectContaining({
 				prisma: app.prisma,
+				nativeInventoryMode: "force",
 				instance: expect.objectContaining({
 					id: "inst-jellyfin",
 					service: "JELLYFIN",
@@ -564,13 +566,14 @@ describe("Pulse actionability — cache.refresh end-to-end", () => {
 
 	it("ownership failure returns 404 (InstanceNotFoundError convention)", async () => {
 		cacheStatuses = [makeStaleRow()];
-		findPlexInstance.mockResolvedValueOnce(null);
 
 		const listing = await injectGet("/pulse");
 		const staleItem = JSON.parse(listing.payload).items.find(
 			(i: { id: string }) => i.id === "cache-stale-plex-row",
 		);
 
+		// The instance disappears after listing, before the action resolves ownership.
+		findPlexInstance.mockResolvedValueOnce(null);
 		const actionRes = await injectPost(
 			`/pulse/${encodeURIComponent(staleItem.id)}/action`,
 			staleItem.action,

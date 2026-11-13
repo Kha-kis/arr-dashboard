@@ -14,22 +14,29 @@ import { z } from "zod";
 import { executeOnTautulliInstances } from "../../lib/tautulli/tautulli-helpers.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
-const historyQuery = z.object({
-	length: z
-		.string()
-		.optional()
-		.transform((val) => {
-			const n = Number(val);
-			return Number.isFinite(n) && n > 0 && n <= 100 ? n : 25;
-		}),
-	start: z
-		.string()
-		.optional()
-		.transform((val) => {
-			const n = Number(val);
-			return Number.isFinite(n) && n >= 0 ? n : 0;
-		}),
-});
+const MAX_HISTORY_MERGE_WINDOW = 500;
+const historyQuery = z
+	.object({
+		length: z
+			.string()
+			.optional()
+			.transform((val) => {
+				const n = Number(val);
+				return Number.isSafeInteger(n) && n > 0 && n <= 100 ? n : 25;
+			}),
+		start: z
+			.string()
+			.optional()
+			.transform((val) => {
+				const n = Number(val);
+				return Number.isFinite(n) && n >= 0 ? n : 0;
+			}),
+	})
+	.refine(
+		({ length, start }) =>
+			Number.isSafeInteger(start) && start + length <= MAX_HISTORY_MERGE_WINDOW,
+		{ message: "Requested history window exceeds supported limit", path: ["start"] },
+	);
 
 export async function registerHistoryRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	/**
@@ -46,7 +53,7 @@ export async function registerHistoryRoutes(app: FastifyInstance, _opts: Fastify
 		});
 
 		const result = await executeOnTautulliInstances(app, userId, async (client) => {
-			return client.getHistory({ length, start, include_activity: 0 });
+			return client.getHistory({ length: start + length, start: 0, include_activity: 0 });
 		});
 		const configuredIds = new Set(configured.map(({ id }) => id));
 		const acceptedInstances = result.instances.filter(

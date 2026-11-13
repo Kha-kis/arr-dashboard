@@ -49,6 +49,22 @@ export const manualImportBookSchema = z.object({
 	foreignBookId: z.string().optional(),
 });
 
+export const manualImportTrackIdsSchema = z
+	.array(z.number().int().positive().max(Number.MAX_SAFE_INTEGER))
+	.min(1)
+	.max(1000)
+	.refine((ids) => new Set(ids).size === ids.length);
+export const manualImportForeignEditionIdSchema = z
+	.string()
+	.min(1)
+	.max(1024)
+	.refine((value) => value === value.trim());
+const manualImportTracksSchema = z
+	.array(z.object({ id: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }))
+	.min(1)
+	.max(1000)
+	.refine((tracks) => new Set(tracks.map((track) => track.id)).size === tracks.length);
+
 const manualImportBaseCandidateSchema = z.object({
 	id: z.union([z.string(), z.number()]),
 	path: z.string(),
@@ -85,13 +101,15 @@ export const manualImportLidarrCandidateSchema = manualImportBaseCandidateSchema
 	service: z.literal("lidarr"),
 	artist: manualImportArtistSchema.optional(),
 	album: manualImportAlbumSchema.optional(),
-	albumReleaseId: z.number().optional(),
+	albumReleaseId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+	tracks: manualImportTracksSchema.optional(),
 });
 
 export const manualImportReadarrCandidateSchema = manualImportBaseCandidateSchema.extend({
 	service: z.literal("readarr"),
 	author: manualImportAuthorSchema.optional(),
 	book: manualImportBookSchema.optional(),
+	foreignEditionId: manualImportForeignEditionIdSchema.optional(),
 });
 
 // Using discriminatedUnion for better error messages and faster validation
@@ -148,7 +166,7 @@ export const manualImportLidarrSubmissionFileSchema = manualImportSubmissionFile
 	artistId: z.number(),
 	albumId: z.number(),
 	albumReleaseId: z.number().optional(),
-	trackIds: z.array(z.number()).optional(),
+	trackIds: manualImportTrackIdsSchema.optional(),
 	trackFileId: z.number().optional(),
 });
 
@@ -157,6 +175,7 @@ export const manualImportReadarrSubmissionFileSchema = manualImportSubmissionFil
 	authorId: z.number(),
 	bookId: z.number(),
 	bookFileId: z.number().optional(),
+	foreignEditionId: manualImportForeignEditionIdSchema.optional(),
 });
 
 // Legacy schema for backward compatibility - accepts any combination
@@ -182,6 +201,7 @@ export const manualImportSubmissionFileSchema = z.object({
 	authorId: z.number().optional(),
 	bookId: z.number().optional(),
 	bookFileId: z.number().optional(),
+	foreignEditionId: manualImportForeignEditionIdSchema.optional(),
 	// Common fields
 	quality: z.unknown().optional(),
 	languages: z.array(z.unknown()).optional(),
@@ -194,9 +214,137 @@ export const manualImportSubmissionFileSchema = z.object({
 export const manualImportServiceSchema = z.enum(["sonarr", "radarr", "lidarr", "readarr"]);
 export type ManualImportServiceType = z.infer<typeof manualImportServiceSchema>;
 
+export const manualImportOperationStateSchema = z.enum([
+	"preparing",
+	"submitting",
+	"pending",
+	"unknown",
+	"partial",
+	"completed",
+	"failed",
+	"not-submitted",
+]);
+export const manualImportOperationReasonSchema = z.enum([
+	"evidence-unavailable",
+	"coverage-incomplete",
+	"budget-yield",
+	"connection-changed",
+	"not-submitted",
+]);
+export const manualImportOperationStatusSchema = z
+	.object({
+		operationId: z.string().min(1).max(128),
+		state: manualImportOperationStateSchema,
+		reason: manualImportOperationReasonSchema.nullable(),
+		selectedFileCount: z.number().int().min(1).max(1000),
+		verifiedFileCount: z.number().int().min(0).max(1000),
+		// A UI hint only: a new submission still needs current target/source authorization.
+		canConsiderNewAttempt: z.boolean(),
+	})
+	.strict()
+	.refine(
+		(status) =>
+			status.verifiedFileCount <= status.selectedFileCount &&
+			(status.state !== "completed" || status.verifiedFileCount === status.selectedFileCount) &&
+			(status.state !== "partial" ||
+				(status.verifiedFileCount > 0 && status.verifiedFileCount < status.selectedFileCount)) &&
+			(!["failed", "not-submitted"].includes(status.state) || status.verifiedFileCount === 0) &&
+			(!status.canConsiderNewAttempt ||
+				(["partial", "unknown", "failed", "not-submitted"].includes(status.state) &&
+					status.verifiedFileCount < status.selectedFileCount)),
+		{ message: "Import progress is inconsistent." },
+	);
+export type ManualImportOperationStatus = z.infer<typeof manualImportOperationStatusSchema>;
+
+export const manualImportLegacyQuerySchema = z
+	.object({
+		instanceId: z.string().min(1).max(128),
+		service: manualImportServiceSchema,
+		downloadId: z
+			.string()
+			.min(1)
+			.max(1024)
+			.refine((value) => value === value.trim()),
+	})
+	.strict();
+export const manualImportLegacyStatusSchema = z.discriminatedUnion("kind", [
+	z.object({ kind: z.literal("none") }).strict(),
+	z.object({ kind: z.literal("unavailable"), reason: z.literal("evidence-unavailable") }).strict(),
+	z.object({ kind: z.literal("observed"), operation: manualImportOperationStatusSchema }).strict(),
+]);
+export type ManualImportLegacyStatus = z.infer<typeof manualImportLegacyStatusSchema>;
+export type ManualImportLegacyQuery = z.infer<typeof manualImportLegacyQuerySchema>;
+
+export const manualImportRemainderParamsSchema = z
+	.object({
+		operationId: z
+			.string()
+			.min(1)
+			.max(128)
+			.refine((value) => value === value.trim()),
+	})
+	.strict();
+/** Fresh review candidates are not submission or cleanup permission. */
+export const manualImportRemainderReviewSchema = z
+	.object({
+		operation: manualImportOperationStatusSchema,
+		importMode: z.enum(["move", "copy"]),
+		sourceFileCount: z.number().int().min(1).max(1000),
+		sourceVerifiedFileCount: z.number().int().min(0).max(1000),
+		verifiedEpisodeCount: z.number().int().min(0).max(10000),
+		unavailableFileCount: z.number().int().min(0).max(1000),
+		candidates: manualImportCandidateListSchema.max(1000),
+	})
+	.strict()
+	.refine(
+		(review) =>
+			review.operation.canConsiderNewAttempt &&
+			["unknown", "partial", "failed"].includes(review.operation.state) &&
+			review.sourceFileCount <= review.operation.selectedFileCount &&
+			review.sourceVerifiedFileCount <= review.operation.verifiedFileCount &&
+			review.sourceFileCount ===
+				review.sourceVerifiedFileCount + review.unavailableFileCount + review.candidates.length &&
+			new Set(review.candidates.map((candidate) => candidate.path)).size ===
+				review.candidates.length,
+		{ message: "Remaining import review is inconsistent." },
+	);
+export type ManualImportRemainderReview = z.infer<typeof manualImportRemainderReviewSchema>;
+
+export const manualImportSourceQuerySchema = manualImportLegacyQuerySchema.extend({
+	cursor: z.string().min(1).max(128).optional(),
+});
+// Ordering history never establishes a current attempt or mutation permission.
+export const manualImportSourceStatusSchema = z.discriminatedUnion("kind", [
+	...manualImportLegacyStatusSchema.options,
+	z
+		.object({
+			kind: z.literal("history"),
+			operations: z.array(manualImportOperationStatusSchema).max(20),
+			nextCursor: z.string().min(1).max(128).nullable(),
+		})
+		.strict()
+		.refine(
+			(page) =>
+				new Set(page.operations.map((operation) => operation.operationId)).size ===
+					page.operations.length &&
+				(page.nextCursor === null || page.nextCursor === page.operations.at(-1)?.operationId),
+			{ message: "Import history page is inconsistent." },
+		),
+]);
+export type ManualImportSourceQuery = z.infer<typeof manualImportSourceQuerySchema>;
+export type ManualImportSourceStatus = z.infer<typeof manualImportSourceStatusSchema>;
+
 // Type-safe submission schemas per service
+const manualImportAttemptKeySchema = z
+	.string()
+	.min(1)
+	.max(128)
+	.regex(/^[A-Za-z0-9][A-Za-z0-9:_-]*$/)
+	.optional();
+
 export const manualImportSonarrSubmissionSchema = z.object({
 	instanceId: z.string(),
+	idempotencyKey: manualImportAttemptKeySchema,
 	service: z.literal("sonarr"),
 	importMode: z.enum(["auto", "move", "copy"]).default("auto"),
 	files: z.array(manualImportSonarrSubmissionFileSchema).min(1),
@@ -204,6 +352,7 @@ export const manualImportSonarrSubmissionSchema = z.object({
 
 export const manualImportRadarrSubmissionSchema = z.object({
 	instanceId: z.string(),
+	idempotencyKey: manualImportAttemptKeySchema,
 	service: z.literal("radarr"),
 	importMode: z.enum(["auto", "move", "copy"]).default("auto"),
 	files: z.array(manualImportRadarrSubmissionFileSchema).min(1),
@@ -211,6 +360,7 @@ export const manualImportRadarrSubmissionSchema = z.object({
 
 export const manualImportLidarrSubmissionSchema = z.object({
 	instanceId: z.string(),
+	idempotencyKey: manualImportAttemptKeySchema,
 	service: z.literal("lidarr"),
 	importMode: z.enum(["auto", "move", "copy"]).default("auto"),
 	files: z.array(manualImportLidarrSubmissionFileSchema).min(1),
@@ -218,19 +368,25 @@ export const manualImportLidarrSubmissionSchema = z.object({
 
 export const manualImportReadarrSubmissionSchema = z.object({
 	instanceId: z.string(),
+	idempotencyKey: manualImportAttemptKeySchema,
 	service: z.literal("readarr"),
 	importMode: z.enum(["auto", "move", "copy"]).default("auto"),
 	files: z.array(manualImportReadarrSubmissionFileSchema).min(1),
 });
 
-// Legacy submission schema - used by API routes for backward compatibility
-// Runtime validation in buildCommandFiles ensures correct fields per service
-export const manualImportSubmissionSchema = z.object({
-	instanceId: z.string(),
-	service: manualImportServiceSchema,
-	importMode: z.enum(["auto", "move", "copy"]).default("auto"),
-	files: z.array(manualImportSubmissionFileSchema).min(1),
-});
+// Compatibility request shape; execution verifies mappings against current candidates.
+export const manualImportSubmissionSchema = z
+	.object({
+		instanceId: z.string(),
+		idempotencyKey: manualImportAttemptKeySchema,
+		remainderOf: manualImportRemainderParamsSchema.shape.operationId.optional(),
+		service: manualImportServiceSchema,
+		importMode: z.enum(["auto", "move", "copy"]).default("auto"),
+		files: z.array(manualImportSubmissionFileSchema).min(1),
+	})
+	.refine((request) => request.remainderOf === undefined || request.idempotencyKey !== undefined, {
+		message: "A remaining-file intention requires its explicit attempt key.",
+	});
 
 // Type exports
 export type ManualImportSubmissionFile = z.infer<typeof manualImportSubmissionFileSchema>;
@@ -257,7 +413,10 @@ export const manualImportFetchQuerySchema = z.object({
 	folder: z.string().optional(),
 	seriesId: z.coerce.number().optional(),
 	seasonNumber: z.coerce.number().optional(),
-	filterExistingFiles: z.coerce.boolean().optional(),
+	filterExistingFiles: z
+		.union([z.boolean(), z.literal("true"), z.literal("false")])
+		.transform((value) => value === true || value === "true")
+		.optional(),
 });
 
 export type ManualImportFetchQuery = z.infer<typeof manualImportFetchQuerySchema>;

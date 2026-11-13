@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createJellyfinClient } from "../jellyfin/jellyfin-client.js";
 import { createPlexClient } from "../plex/plex-client.js";
 import type { LibraryCleanupApproval, ServiceInstance } from "../prisma.js";
+import { SQLITE_DATETIME_SQL_FORMAT, SQLITE_NOW_SQL } from "../sqlite-datetime.js";
 import {
 	approvalRecordToAuditSnapshot,
 	cleanupAuditEnabled,
@@ -385,9 +386,10 @@ async function recordDatabaseRequestStart(
 		.map((_, index) => (usesPostgres() ? `$${index + 1}` : "?"))
 		.join(", ");
 	const tokenPlaceholder = usesPostgres() ? `$${targetIds.length + 1}` : "?";
+	const clock = usesPostgres() ? "CURRENT_TIMESTAMP" : SQLITE_NOW_SQL;
 	return await executeRaw.call(
 		deps.prisma,
-		`UPDATE "library_cleanup_media_server_scans" SET "requestStartedAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" IN (${idPlaceholders}) AND "status" = 'triggering' AND "executionToken" = ${tokenPlaceholder}`,
+		`UPDATE "library_cleanup_media_server_scans" SET "requestStartedAt" = ${clock}, "updatedAt" = ${clock} WHERE "id" IN (${idPlaceholders}) AND "status" = 'triggering' AND "executionToken" = ${tokenPlaceholder}`,
 		...targetIds,
 		executionToken,
 	);
@@ -430,7 +432,7 @@ async function recordDatabaseScanFailure(
 	const idPlaceholders = targetIds.map(() => "?").join(", ");
 	return await executeRaw.call(
 		deps.prisma,
-		`UPDATE "library_cleanup_media_server_scans" SET "status" = 'failed', "executionToken" = NULL, "lastError" = ?, "nextAttemptAt" = datetime('now', '+' || (? / 1000.0) || ' seconds'), "updatedAt" = CURRENT_TIMESTAMP WHERE "id" IN (${idPlaceholders}) AND "status" = 'triggering' AND "executionToken" = ?`,
+		`UPDATE "library_cleanup_media_server_scans" SET "status" = 'failed', "executionToken" = NULL, "lastError" = ?, "nextAttemptAt" = strftime(${SQLITE_DATETIME_SQL_FORMAT}, 'now', '+' || (? / 1000.0) || ' seconds'), "updatedAt" = ${SQLITE_NOW_SQL} WHERE "id" IN (${idPlaceholders}) AND "status" = 'triggering' AND "executionToken" = ?`,
 		message,
 		delayMs,
 		...targetIds,
@@ -458,7 +460,7 @@ async function acquireRescanOperationLease(
 				)
 			: await executeRaw.call(
 					deps.prisma,
-					'INSERT OR IGNORE INTO "library_cleanup_media_server_scan_leases" ("operationKey", "userId", "executionToken", "createdAt", "updatedAt") VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)',
+					`INSERT OR IGNORE INTO "library_cleanup_media_server_scan_leases" ("operationKey", "userId", "executionToken", "createdAt", "updatedAt") VALUES (?, ?, ?, ${SQLITE_NOW_SQL}, ${SQLITE_NOW_SQL})`,
 					operationKey,
 					userId,
 					executionToken,
@@ -474,7 +476,7 @@ async function acquireRescanOperationLease(
 				)
 			: await executeRaw.call(
 					deps.prisma,
-					'UPDATE "library_cleanup_media_server_scan_leases" SET "userId" = ?, "executionToken" = ?, "updatedAt" = CURRENT_TIMESTAMP WHERE "operationKey" = ? AND julianday("updatedAt") < julianday(\'now\', \'-10 minutes\')',
+					`UPDATE "library_cleanup_media_server_scan_leases" SET "userId" = ?, "executionToken" = ?, "updatedAt" = ${SQLITE_NOW_SQL} WHERE "operationKey" = ? AND julianday("updatedAt") < julianday('now', '-10 minutes')`,
 					userId,
 					executionToken,
 					operationKey,
@@ -512,7 +514,7 @@ async function assertRescanOperationLease(
 				)
 			: await executeRaw.call(
 					deps.prisma,
-					'UPDATE "library_cleanup_media_server_scan_leases" SET "updatedAt" = CURRENT_TIMESTAMP WHERE "operationKey" = ? AND "userId" = ? AND "executionToken" = ?',
+					`UPDATE "library_cleanup_media_server_scan_leases" SET "updatedAt" = ${SQLITE_NOW_SQL} WHERE "operationKey" = ? AND "userId" = ? AND "executionToken" = ?`,
 					operationKey,
 					userId,
 					executionToken,

@@ -51,13 +51,22 @@ const tautulliCacheSchedulerPlugin = fastifyPlugin(
 		let intervalHandle: ReturnType<typeof setInterval> | null = null;
 		let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
 		let isRunning = false;
+		let closing = false;
+		const pendingRounds = new Set<Promise<void>>();
 
 		async function refreshAllTautulliCaches() {
+			if (closing) return;
 			if (isRunning) {
 				app.log.warn("Tautulli cache refresh already running, skipping");
 				return;
 			}
 			isRunning = true;
+			let finish!: () => void;
+			const completion = new Promise<void>((resolve) => {
+				finish = resolve;
+			});
+			// Own the lookup and every selected instance until the registry releases its guard.
+			pendingRounds.add(completion);
 			try {
 				await app.schedulerRegistry.track(JOB_ID.tautulliCache, async () => {
 					const instances = await app.prisma.serviceInstance.findMany({
@@ -82,22 +91,27 @@ const tautulliCacheSchedulerPlugin = fastifyPlugin(
 				);
 			} finally {
 				isRunning = false;
+				pendingRounds.delete(completion);
+				finish();
 			}
 		}
 
 		app.addHook("onReady", async () => {
+			if (closing) return;
 			app.log.info(
 				{ intervalMs: INTERVAL_MS, startupDelayMs: STARTUP_DELAY_MS },
 				"Tautulli observation scheduler initialized",
 			);
 
 			timeoutHandle = setTimeout(() => {
+				if (closing) return;
 				refreshAllTautulliCaches().catch(() => {
 					app.log.error(
 						{ provider: "tautulli", reasonCode: "startup_tick_failed" },
 						"Tautulli observation scheduler failed",
 					);
 				});
+				if (closing) return;
 				intervalHandle = setInterval(() => {
 					refreshAllTautulliCaches().catch(() => {
 						app.log.error(
@@ -109,9 +123,21 @@ const tautulliCacheSchedulerPlugin = fastifyPlugin(
 			}, STARTUP_DELAY_MS);
 		});
 
+		function closeAdmission() {
+			closing = true;
+			if (timeoutHandle) {
+				clearTimeout(timeoutHandle);
+				timeoutHandle = null;
+			}
+			if (intervalHandle) {
+				clearInterval(intervalHandle);
+				intervalHandle = null;
+			}
+		}
+		app.addHook("preClose", async () => closeAdmission());
 		app.addHook("onClose", async () => {
-			if (timeoutHandle) clearTimeout(timeoutHandle);
-			if (intervalHandle) clearInterval(intervalHandle);
+			closeAdmission();
+			while (pendingRounds.size > 0) await Promise.all([...pendingRounds]);
 			app.log.info("Tautulli observation scheduler stopped");
 		});
 	},

@@ -1,6 +1,10 @@
 "use client";
 
-import type { ProwlarrIndexer, ProwlarrIndexerDetails } from "@arr/shared";
+import type {
+	ProwlarrIndexer,
+	SearchIndexerUpdateChanges,
+	SearchIndexerUpdateOutcome,
+} from "@arr/shared";
 import {
 	AlertCircle,
 	CheckCircle2,
@@ -22,6 +26,7 @@ import {
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { computeStats } from "../lib/indexers-utils";
 import { EmptyIndexersCard } from "./empty-indexers-card";
@@ -63,6 +68,7 @@ const FEEDBACK_AUTO_DISMISS_MS = 5000;
 
 export const IndexersClient = () => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 
 	const { data, isLoading, error, refetch, isFetching } = useSearchIndexersQuery();
 	const { data: services } = useServicesQuery();
@@ -83,7 +89,7 @@ export const IndexersClient = () => {
 	// UI state
 	const [testingKey, setTestingKey] = useState<string | null>(null);
 	const [feedback, setFeedback] = useState<{
-		type: "success" | "error";
+		type: "success" | "warning" | "error";
 		message: string;
 	} | null>(null);
 	const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -110,17 +116,24 @@ export const IndexersClient = () => {
 
 	// Auto-dismiss feedback
 	const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const feedbackMountedRef = useRef(false);
 	const setFeedbackWithAutoDismiss = useCallback(
-		(fb: { type: "success" | "error"; message: string }) => {
+		(fb: { type: "success" | "warning" | "error"; message: string }, autoDismiss = true) => {
+			if (!feedbackMountedRef.current) return;
 			if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
 			setFeedback(fb);
-			feedbackTimerRef.current = setTimeout(() => setFeedback(null), FEEDBACK_AUTO_DISMISS_MS);
+			feedbackTimerRef.current = autoDismiss
+				? setTimeout(() => setFeedback(null), FEEDBACK_AUTO_DISMISS_MS)
+				: null;
 		},
 		[],
 	);
 	useEffect(() => {
+		feedbackMountedRef.current = true;
 		return () => {
+			feedbackMountedRef.current = false;
 			if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
+			feedbackTimerRef.current = null;
 		};
 	}, []);
 
@@ -146,15 +159,38 @@ export const IndexersClient = () => {
 	// Data
 	const aggregated = useMemo(() => data?.aggregated ?? [], [data?.aggregated]);
 	const instances = useMemo(() => data?.instances ?? [], [data?.instances]);
-	const noInstances = !isLoading && instances.length === 0;
+	const noInstances = !isLoading && !error && data !== undefined && instances.length === 0;
+	const failedInstanceCount = data?.failedInstanceCount ?? 0;
+	const successfulInstanceCount = instances.length - failedInstanceCount;
+	const allInstancesFailed = failedInstanceCount > 0 && successfulInstanceCount === 0;
+	const selectedInstance = instances.find((inst) => inst.instanceId === instanceFilter);
+	const selectedInstanceFailed = selectedInstance?.success === false;
+	const resultsUnavailable = allInstancesFailed || selectedInstanceFailed;
+	const coverageColor = resultsUnavailable ? SEMANTIC_COLORS.error : SEMANTIC_COLORS.warning;
+
+	const hasIndexersInScope = (selectedInstance?.data.length ?? aggregated.length) > 0;
+	const incompleteScope = instanceFilter === "all" && failedInstanceCount > 0;
+	let emptyMessage = hasIndexersInScope
+		? "No indexers match your filters"
+		: "No indexers configured";
+	if (error) {
+		emptyMessage = "No indexers from the last successful response match your filters";
+	} else if (incompleteScope) {
+		emptyMessage = hasIndexersInScope
+			? "No available indexers match your filters"
+			: "No indexers returned by available instances";
+	}
 
 	const instanceOptions = useMemo(() => {
 		const opts = [{ value: "all", label: "All instances" }];
 		for (const inst of instances) {
-			opts.push({ value: inst.instanceId, label: inst.instanceName });
+			opts.push({
+				value: inst.instanceId,
+				label: incognitoMode ? getLinuxInstanceName(inst.instanceName) : inst.instanceName,
+			});
 		}
 		return opts;
-	}, [instances]);
+	}, [instances, incognitoMode]);
 
 	// Filter + sort
 	const filtered = useMemo(() => {
@@ -196,6 +232,8 @@ export const IndexersClient = () => {
 	const stats = useMemo(() => computeStats(aggregated), [aggregated]);
 
 	const resetPage = useCallback(() => setPage(1), []);
+	const lastPage = Math.max(1, Math.ceil(filtered.length / pageSize));
+	if (data !== undefined && page > lastPage) setPage(lastPage);
 
 	const paginatedIndexers = useMemo(() => {
 		const start = (page - 1) * pageSize;
@@ -239,13 +277,15 @@ export const IndexersClient = () => {
 		try {
 			const result = await testMutation.mutateAsync({ instanceId, indexerId });
 			setFeedbackWithAutoDismiss({
-				type: "success",
-				message: result.message ?? "Indexer test passed",
+				type: result.success ? "success" : "error",
+				message: result.success
+					? "Indexer test passed"
+					: "Indexer test failed. Check Prowlarr before retrying.",
 			});
-		} catch (err) {
+		} catch {
 			setFeedbackWithAutoDismiss({
 				type: "error",
-				message: getErrorMessage(err, "Indexer test failed"),
+				message: "Unable to confirm indexer test. Check Prowlarr before retrying.",
 			});
 		} finally {
 			setTestingKey(null);
@@ -278,7 +318,7 @@ export const IndexersClient = () => {
 			);
 			for (const result of results) {
 				progress.completed++;
-				if (result.status === "fulfilled") {
+				if (result.status === "fulfilled" && result.value.success === true) {
 					progress.passed++;
 				} else {
 					progress.failed++;
@@ -294,23 +334,35 @@ export const IndexersClient = () => {
 			message:
 				progress.failed === 0
 					? `All ${progress.passed} indexers passed`
-					: `${progress.passed} passed, ${progress.failed} failed out of ${progress.total} indexers`,
+					: `${progress.passed} passed, ${progress.failed} not passed out of ${progress.total} indexers`,
 		});
 	};
 
 	const handleUpdate = async (
 		updateInstanceId: string,
 		indexerId: number,
-		payload: ProwlarrIndexerDetails,
-	) => {
+		changes: SearchIndexerUpdateChanges,
+	): Promise<SearchIndexerUpdateOutcome> => {
 		setFeedback(null);
 		try {
 			const result = await updateMutation.mutateAsync({
 				instanceId: updateInstanceId,
 				indexerId,
-				indexer: payload,
+				changes,
 			});
-			setFeedbackWithAutoDismiss({ type: "success", message: "Indexer changes saved" });
+			const verified = result.status === "verified";
+			setFeedbackWithAutoDismiss(
+				verified
+					? { type: "success", message: "Indexer changes saved and verified" }
+					: {
+							type: "warning",
+							message:
+								result.status === "applied-unverified"
+									? "Update sent, but verification is unavailable. Check Prowlarr before retrying."
+									: "Update outcome is unknown. Check Prowlarr before retrying.",
+						},
+				verified,
+			);
 			void refetch();
 			return result;
 		} catch (err) {
@@ -362,14 +414,14 @@ export const IndexersClient = () => {
 					<h1 className="text-2xl font-bold text-foreground">Indexers</h1>
 					<p className="text-sm text-muted-foreground/70 mt-0.5">
 						{aggregated.length > 0
-							? `${aggregated.length} indexers across ${instances.length} ${instances.length === 1 ? "instance" : "instances"}`
+							? `${aggregated.length} ${aggregated.length === 1 ? "indexer" : "indexers"} across ${successfulInstanceCount} ${successfulInstanceCount === 1 ? "instance" : "instances"}`
 							: "Manage your Prowlarr indexers"}
 					</p>
 				</div>
 
 				<div className="flex items-center gap-2 shrink-0">
 					{/* Test All */}
-					{!noInstances && aggregated.length > 0 && (
+					{!resultsUnavailable && aggregated.length > 0 && (
 						<button
 							type="button"
 							onClick={handleTestAll}
@@ -385,6 +437,7 @@ export const IndexersClient = () => {
 					<button
 						type="button"
 						onClick={() => void refetch()}
+						aria-label={isFetching ? "Refreshing" : "Refresh"}
 						disabled={isFetching}
 						className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
 						style={{
@@ -414,8 +467,30 @@ export const IndexersClient = () => {
 						/>
 						<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
 							Unable to load indexers. Check your Prowlarr settings.
+							{aggregated.length > 0 && " Indexer data is from the last successful response."}
 						</p>
 					</div>
+				</div>
+			)}
+
+			{failedInstanceCount > 0 && (
+				<div
+					role="status"
+					className="flex items-center gap-3 rounded-lg border p-3"
+					style={{ backgroundColor: coverageColor.bg, borderColor: coverageColor.border }}
+				>
+					<AlertCircle className="h-4 w-4 shrink-0" style={{ color: coverageColor.from }} />
+					<p className="text-sm font-medium" style={{ color: coverageColor.text }}>
+						{error && "In the last successful response, "}
+						{failedInstanceCount} Prowlarr {failedInstanceCount === 1 ? "instance" : "instances"}{" "}
+						failed to load.
+						{!error &&
+							(allInstancesFailed
+								? " Indexers are unavailable. Refresh to retry."
+								: selectedInstanceFailed
+									? " Indexers for the selected instance are unavailable. Refresh to retry."
+									: " Showing indexers from available instances.")}
+					</p>
 				</div>
 			)}
 
@@ -423,12 +498,8 @@ export const IndexersClient = () => {
 				<div
 					className="rounded-lg border p-3 animate-in fade-in slide-in-from-top-2 duration-200"
 					style={{
-						backgroundColor:
-							feedback.type === "success" ? SEMANTIC_COLORS.success.bg : SEMANTIC_COLORS.error.bg,
-						borderColor:
-							feedback.type === "success"
-								? SEMANTIC_COLORS.success.border
-								: SEMANTIC_COLORS.error.border,
+						backgroundColor: SEMANTIC_COLORS[feedback.type].bg,
+						borderColor: SEMANTIC_COLORS[feedback.type].border,
 					}}
 				>
 					<div className="flex items-center justify-between gap-2">
@@ -437,6 +508,11 @@ export const IndexersClient = () => {
 								<CheckCircle2
 									className="h-4 w-4 shrink-0"
 									style={{ color: SEMANTIC_COLORS.success.from }}
+								/>
+							) : feedback.type === "warning" ? (
+								<AlertCircle
+									className="h-4 w-4 shrink-0"
+									style={{ color: SEMANTIC_COLORS.warning.from }}
 								/>
 							) : (
 								<XCircle
@@ -447,10 +523,7 @@ export const IndexersClient = () => {
 							<p
 								className="text-sm font-medium"
 								style={{
-									color:
-										feedback.type === "success"
-											? SEMANTIC_COLORS.success.text
-											: SEMANTIC_COLORS.error.text,
+									color: SEMANTIC_COLORS[feedback.type].text,
 								}}
 							>
 								{feedback.message}
@@ -483,7 +556,7 @@ export const IndexersClient = () => {
 							</span>
 							<span className="text-muted-foreground">
 								{testAllProgress.passed} passed
-								{testAllProgress.failed > 0 && `, ${testAllProgress.failed} failed`}
+								{testAllProgress.failed > 0 && `, ${testAllProgress.failed} not passed`}
 							</span>
 						</div>
 						<div className="h-1.5 rounded-full bg-muted/20 overflow-hidden">
@@ -504,10 +577,10 @@ export const IndexersClient = () => {
 
 			{noInstances ? (
 				<EmptyIndexersCard />
-			) : (
+			) : data !== undefined && !allInstancesFailed && (!error || aggregated.length > 0) ? (
 				<>
 					{/* Stats Ribbon */}
-					<IndexerStatsGrid stats={stats} />
+					{!resultsUnavailable && <IndexerStatsGrid stats={stats} />}
 
 					{/* Search + Filter Bar — integrated, minimal */}
 					<div className="flex flex-col gap-3">
@@ -612,9 +685,11 @@ export const IndexersClient = () => {
 						{/* Active filter summary */}
 						{activeFilterCount > 0 && (
 							<div className="flex items-center justify-between text-[11px] text-muted-foreground/60">
-								<span>
-									{filtered.length} of {aggregated.length} indexers
-								</span>
+								{!resultsUnavailable && (
+									<span>
+										{filtered.length} of {aggregated.length} indexers
+									</span>
+								)}
 								<button
 									type="button"
 									onClick={() => {
@@ -623,7 +698,7 @@ export const IndexersClient = () => {
 										setStatusFilter("all");
 										setInstanceFilter("all");
 									}}
-									className="hover:text-foreground transition-colors"
+									className="ms-auto hover:text-foreground transition-colors"
 									style={{ color: themeGradient.from }}
 								>
 									Clear all
@@ -675,12 +750,12 @@ export const IndexersClient = () => {
 								</div>
 							))}
 						</div>
-					) : (
+					) : !resultsUnavailable ? (
 						<div className="text-center py-16">
 							<Search className="h-6 w-6 mx-auto mb-2 text-muted-foreground/45" />
-							<p className="text-xs text-muted-foreground/50">No indexers match your filters</p>
+							<p className="text-xs text-muted-foreground/50">{emptyMessage}</p>
 						</div>
-					)}
+					) : null}
 
 					{/* Bottom Pagination */}
 					{filtered.length > pageSize && (
@@ -697,7 +772,7 @@ export const IndexersClient = () => {
 						/>
 					)}
 				</>
-			)}
+			) : null}
 		</section>
 	);
 };

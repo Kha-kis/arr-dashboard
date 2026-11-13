@@ -5,32 +5,86 @@ import {
 	createBackupRequestSchema,
 	type ListBackupsResponse,
 	type RestoreBackupResponse,
+	RESTORE_UPLOAD_BODY_LIMIT,
 	restoreBackupFromFileRequestSchema,
 	restoreBackupRequestSchema,
+	restoreStatusResponseSchema,
 	updateBackupSettingsRequestSchema,
 } from "@arr/shared";
-import type { FastifyPluginCallback } from "fastify";
+import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
+import { BackupPasswordConfigurationError, BackupService } from "../lib/backup/backup-service.js";
+import { decodeRestoreUpload } from "../lib/backup/backup-restore-input.js";
 import {
-	BackupPasswordConfigurationError,
-	BackupRestoreUnavailableError,
-	BackupService,
-} from "../lib/backup/backup-service.js";
-import { BackupCompatibilityError } from "../lib/errors.js";
+	RestoreHttpRejectionError,
+	runRestoreHttpController,
+} from "../lib/backup/restore-http-controller.js";
+import { readRestoreRuntimeControl } from "../lib/backup/restore-runtime-repository.js";
 import { CleanupMaintenanceConflictError } from "../lib/library-cleanup/cleanup-maintenance-gate.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { resolveSecretsPath } from "../lib/utils/secrets-path.js";
-import { validateRequest } from "../lib/utils/validate.js";
+import { validateRequest, ZodValidationError } from "../lib/utils/validate.js";
 import { getAppVersion } from "../lib/utils/version.js";
 
 const idParams = z.object({ id: z.string().min(1) });
 
 const BACKUP_RATE_LIMIT = { max: 3, timeWindow: "5 minutes" };
-const RESTORE_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };
+class RestoreRateLimitError extends Error {
+	readonly statusCode = 429;
+	constructor(readonly retryAfterSeconds: number) {
+		super("Restore request rejected");
+	}
+}
+
+const RESTORE_RATE_LIMIT = {
+	max: 2,
+	timeWindow: "5 minutes",
+	errorResponseBuilder: (
+		_request: FastifyRequest,
+		context: { statusCode: number; ban: boolean; max: number; ttl: number },
+	) => {
+		if (
+			context.statusCode !== 429 ||
+			context.ban ||
+			context.max !== 2 ||
+			!Number.isFinite(context.ttl) ||
+			context.ttl <= 0 ||
+			context.ttl > 300_000
+		) {
+			// An unexpected limiter result must not become pre-publication proof.
+			return Object.assign(new Error("Restore request rejected"), {
+				statusCode: context.statusCode,
+			});
+		}
+		return new RestoreRateLimitError(Math.ceil(context.ttl / 1000));
+	},
+};
 const DELETE_RATE_LIMIT = { max: 5, timeWindow: "5 minutes" };
 
-function refuseBackupRestore(): void {
-	throw new BackupRestoreUnavailableError();
+function restoreRateLimitErrorHandler(error: Error, request: FastifyRequest, reply: FastifyReply) {
+	if (!(error instanceof RestoreRateLimitError)) throw error;
+	// Route-local proof: the limiter refused this request before body/preparation.
+	// The parent handler intentionally does not serialize arbitrary error fields.
+	request.log.warn({ category: "restore-rate-limited" }, "Restore request rejected");
+	return reply.code(429).send({
+		error: "Restore request rejected",
+		category: "restore-rate-limited",
+		retryAfterSeconds: error.retryAfterSeconds,
+	});
+}
+
+function sendRestoreRejection(error: unknown, request: FastifyRequest, reply: FastifyReply) {
+	if (error instanceof ZodValidationError) {
+		return reply.code(400).send({ error: "Restore request rejected", category: "invalid-backup" });
+	}
+	const rejection =
+		error instanceof RestoreHttpRejectionError
+			? error
+			: new RestoreHttpRejectionError(503, "publication-unconfirmed");
+	request.log.warn({ category: rejection.category }, "Restore request unavailable");
+	return reply
+		.code(rejection.statusCode)
+		.send({ error: "Restore request rejected", category: rejection.category });
 }
 
 const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
@@ -41,6 +95,22 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const secretsPath = resolveSecretsPath(databaseUrl);
 		return new BackupService(app.prisma, secretsPath, app.encryptor, app.secretsSynchronized);
 	};
+	const authenticateBeforeRestoreBody = async (request: FastifyRequest, reply: FastifyReply) => {
+		try {
+			const resolved = await app.restoreRuntime.runIndependentOperation(() =>
+				app.sessionService.validateRequest(request),
+			);
+			if (!resolved) return reply.code(401).send({ error: "Authentication required" });
+		} catch {
+			return reply
+				.code(503)
+				.send({ error: "Restore authentication unavailable", category: "destination-unavailable" });
+		}
+	};
+	const sendRestoreResult = (result: RestoreBackupResponse, reply: FastifyReply) =>
+		reply
+			.code(result.outcome === "committed" ? 200 : result.outcome === "not-committed" ? 409 : 503)
+			.send(result);
 
 	/**
 	 * GET /backup
@@ -118,9 +188,9 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			if (errorMessage.includes("Failed to read secrets file")) {
 				return reply.status(500).send({
-					error: "Secrets file not found",
+					error: "Application secrets unavailable",
 					details:
-						"The application secrets file is missing. This may indicate a configuration issue.",
+						"The application secrets file is missing, unreadable, or invalid. Check the deployment configuration before retrying; no backup was created.",
 				});
 			}
 
@@ -132,74 +202,30 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * POST /backup/restore
 	 * Restore from a backup (uploaded file)
 	 */
-	app.post("/restore", { config: { rateLimit: RESTORE_RATE_LIMIT } }, async (request, reply) => {
-		try {
-			refuseBackupRestore();
-			const { backupData } = validateRequest(restoreBackupRequestSchema, request.body);
-			const backupService = getBackupService();
-			request.log.info("Restoring backup from upload");
-
-			// Decode base64-encoded backup data from client
-			const backupJson = Buffer.from(backupData, "base64").toString("utf-8");
-
-			const metadata = await backupService.restoreBackup(backupJson);
-
-			request.log.info(
-				{
-					backupTimestamp: metadata.timestamp,
-					backupVersion: metadata.version,
-					backupAppVersion: metadata.appVersion,
-				},
-				"Backup restored successfully (from upload)",
-			);
-
-			const response: RestoreBackupResponse = {
-				success: true,
-				message: `Backup restored successfully. ${app.lifecycle?.getRestartMessage?.() || "Please restart the application manually for changes to take effect."}`,
-				restoredAt: new Date().toISOString(),
-				metadata,
-			};
-
-			// Send response
-			await reply.send(response);
-
-			// Initiate restart if lifecycle service is available and configured
-			if (app.lifecycle?.isRestartRequired?.()) {
-				await app.lifecycle.restart("backup-restore");
-			}
-		} catch (error) {
-			if (error instanceof BackupRestoreUnavailableError) {
-				request.log.warn("Backup restore refused by fail-closed safety containment");
-				return reply.status(error.statusCode).send({
-					error: "Backup restore is temporarily unavailable",
-					details: error.message,
-				});
-			}
-
-			if (error instanceof BackupCompatibilityError) {
-				request.log.warn(
-					{ code: error.code },
-					"Backup restore rejected because configuration or recovery coverage is incomplete",
+	app.post(
+		"/restore",
+		{
+			config: { rateLimit: RESTORE_RATE_LIMIT, runtimeRestoreController: true },
+			errorHandler: restoreRateLimitErrorHandler,
+			bodyLimit: RESTORE_UPLOAD_BODY_LIMIT,
+			onRequest: authenticateBeforeRestoreBody,
+		},
+		async (request, reply) => {
+			try {
+				const { backupData, password } = validateRequest(restoreBackupRequestSchema, request.body);
+				const result = await runRestoreHttpController(app, request, (destination) =>
+					getBackupService().prepareBackupRestore(
+						decodeRestoreUpload(backupData),
+						password,
+						destination,
+					),
 				);
-				return reply.status(409).send({ error: error.message });
+				return sendRestoreResult(result, reply);
+			} catch (error) {
+				return sendRestoreRejection(error, request, reply);
 			}
-
-			if (error instanceof CleanupMaintenanceConflictError) {
-				request.log.warn({ err: error }, "Backup restore blocked by active cleanup maintenance");
-				return reply.status(409).send({ error: error.message });
-			}
-
-			request.log.error({ err: error }, "Failed to restore backup");
-			const errorMessage = getErrorMessage(error);
-
-			// Check for specific error types
-			if (errorMessage.includes("Invalid backup format") || errorMessage.includes("version")) {
-				return reply.status(400).send({ error: "Invalid backup format or version mismatch" });
-			}
-
-			return reply.status(500).send({ error: "Failed to restore backup" });
-		}
-	});
+		},
+	);
 
 	/**
 	 * POST /backup/restore-from-file
@@ -207,82 +233,39 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.post(
 		"/restore-from-file",
-		{ config: { rateLimit: RESTORE_RATE_LIMIT } },
+		{
+			config: { rateLimit: RESTORE_RATE_LIMIT, runtimeRestoreController: true },
+			errorHandler: restoreRateLimitErrorHandler,
+			onRequest: authenticateBeforeRestoreBody,
+		},
 		async (request, reply) => {
 			try {
-				refuseBackupRestore();
-				const { id: backupId } = validateRequest(restoreBackupFromFileRequestSchema, request.body);
-				const backupService = getBackupService();
-				request.log.info({ backupId }, "Restoring backup from file");
-
-				// Restore backup from filesystem
-				const metadata = await backupService.restoreBackupFromFile(backupId);
-
-				request.log.info(
-					{
-						backupId,
-						backupTimestamp: metadata.timestamp,
-						backupVersion: metadata.version,
-						backupAppVersion: metadata.appVersion,
-					},
-					"Backup restored successfully (from filesystem)",
+				const { id, password } = validateRequest(restoreBackupFromFileRequestSchema, request.body);
+				const result = await runRestoreHttpController(app, request, (destination) =>
+					getBackupService().prepareBackupRestoreFromFile(id, password, destination),
 				);
-
-				const response: RestoreBackupResponse = {
-					success: true,
-					message: `Backup restored successfully. ${app.lifecycle?.getRestartMessage?.() || "Please restart the application manually for changes to take effect."}`,
-					restoredAt: new Date().toISOString(),
-					metadata,
-				};
-
-				// Send response
-				await reply.send(response);
-
-				// Initiate restart if lifecycle service is available and configured
-				if (app.lifecycle?.isRestartRequired?.()) {
-					await app.lifecycle.restart("backup-restore");
-				}
+				return sendRestoreResult(result, reply);
 			} catch (error) {
-				if (error instanceof BackupRestoreUnavailableError) {
-					request.log.warn("Backup restore from file refused by fail-closed safety containment");
-					return reply.status(error.statusCode).send({
-						error: "Backup restore is temporarily unavailable",
-						details: error.message,
-					});
-				}
-
-				if (error instanceof BackupCompatibilityError) {
-					request.log.warn(
-						{ code: error.code },
-						"Backup restore from file rejected because configuration or recovery coverage is incomplete",
-					);
-					return reply.status(409).send({ error: error.message });
-				}
-
-				if (error instanceof CleanupMaintenanceConflictError) {
-					request.log.warn(
-						{ err: error },
-						"Backup restore from file blocked by active cleanup maintenance",
-					);
-					return reply.status(409).send({ error: error.message });
-				}
-
-				request.log.error({ err: error }, "Failed to restore backup from file");
-				const errorMessage = getErrorMessage(error);
-
-				// Check for specific error types
-				if (errorMessage.includes("not found")) {
-					return reply.status(404).send({ error: "Backup not found" });
-				}
-
-				if (errorMessage.includes("Invalid backup format") || errorMessage.includes("version")) {
-					return reply.status(400).send({ error: "Invalid backup format or version mismatch" });
-				}
-
-				return reply.status(500).send({ error: "Failed to restore backup" });
+				return sendRestoreRejection(error, request, reply);
 			}
 		},
 	);
+
+	/** Protected latest-positive evidence after fresh runtime recovery/sign-in. */
+	app.get("/restore/status", async (_request, reply) => {
+		const record = await readRestoreRuntimeControl(app.prisma);
+		return reply.send(
+			restoreStatusResponseSchema.parse({
+				latestCommitted:
+					record.lastCommittedRestoreId === null
+						? null
+						: {
+								restoreId: record.lastCommittedRestoreId,
+								committedAt: record.lastCommittedAt,
+							},
+			}),
+		);
+	});
 
 	/**
 	 * GET /backup/:id/download

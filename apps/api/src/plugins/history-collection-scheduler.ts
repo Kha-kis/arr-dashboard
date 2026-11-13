@@ -166,6 +166,15 @@ const historyCollectionSchedulerPlugin = fastifyPlugin(
 		let intervalHandle: ReturnType<typeof setInterval> | null = null;
 		let stopping = false;
 		let isRunning = false;
+		let pendingTick: Promise<void> | null = null;
+
+		const closeAdmission = () => {
+			stopping = true;
+			if (timeoutHandle !== null) clearTimeout(timeoutHandle);
+			if (intervalHandle !== null) clearInterval(intervalHandle);
+			timeoutHandle = null;
+			intervalHandle = null;
+		};
 
 		const runTick = async (): Promise<void> => {
 			const startedAt = Date.now();
@@ -249,11 +258,12 @@ const historyCollectionSchedulerPlugin = fastifyPlugin(
 				return;
 			}
 			isRunning = true;
-			void app.schedulerRegistry
+			pendingTick = app.schedulerRegistry
 				.track(JOB_ID.historyCollection, runTick)
 				.catch(() => undefined)
 				.finally(() => {
 					isRunning = false;
+					pendingTick = null;
 				});
 		};
 
@@ -276,12 +286,15 @@ const historyCollectionSchedulerPlugin = fastifyPlugin(
 			}, HISTORY_COLLECTION_STARTUP_DELAY_MS);
 		});
 
+		app.addHook("preClose", async () => {
+			// Stop admission without blocking other plugins' preClose hooks.
+			closeAdmission();
+		});
+
 		app.addHook("onClose", async () => {
-			stopping = true;
-			if (timeoutHandle !== null) clearTimeout(timeoutHandle);
-			if (intervalHandle !== null) clearInterval(intervalHandle);
-			timeoutHandle = null;
-			intervalHandle = null;
+			closeAdmission();
+			// Keep dependencies alive through the accepted owner's publication/lease work.
+			await pendingTick;
 			app.log.info(
 				{ provider: "history", reasonCode: "stopped" },
 				"History observation scheduler stopped",

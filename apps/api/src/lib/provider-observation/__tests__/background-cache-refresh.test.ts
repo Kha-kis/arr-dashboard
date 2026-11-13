@@ -14,6 +14,22 @@ const attempt = {
 	resultMarker: "in_progress:00000000-0000-4000-8000-000000000001",
 };
 
+const authority = {
+	id: "plex-1",
+	userId: "user-1",
+	service: "PLEX" as const,
+	baseUrl: "https://plex.invalid",
+	enabled: true,
+	encryptedApiKey: "encrypted",
+	encryptionIv: "iv",
+	encryptedHttpAuthCredentials: null,
+	httpAuthEncryptionIv: null,
+	expectedIdentity: "server",
+	identityStatus: "VERIFIED" as const,
+	connectionGeneration: 1,
+	identityGeneration: 1,
+};
+
 function logger() {
 	return {
 		info: vi.fn(),
@@ -30,12 +46,17 @@ describe.sequential("claim-first provider cache background refresh", () => {
 		const admission = await startProviderCacheRefreshInBackground({
 			cacheType: "plex",
 			claim: async () => ({ status: "acquired" as const, attempt }),
-			produce: async () => ({ complete: true, nativeInventoryStatus: "failed" as const }),
+			produce: async () => ({
+				complete: true,
+				completedAt: attempt.attemptedAt,
+				nativeInventoryStatus: "failed" as const,
+			}),
 			log: logger(),
 			recovery: {
 				provider: "plex" as const,
 				userId: "user-1",
 				instanceId: "plex-1",
+				authority,
 				handoff: recovery,
 			},
 		});
@@ -45,13 +66,16 @@ describe.sequential("claim-first provider cache background refresh", () => {
 			provider: "plex",
 			userId: "user-1",
 			instanceId: "plex-1",
+			authority,
 			attempt,
 		});
 		expect(recovery.arm).toHaveBeenCalledWith({
 			provider: "plex",
 			userId: "user-1",
 			instanceId: "plex-1",
+			authority,
 			attempt,
+			publishedAt: attempt.attemptedAt,
 		});
 	});
 
@@ -66,6 +90,7 @@ describe.sequential("claim-first provider cache background refresh", () => {
 				provider: "jellyfin" as const,
 				userId: "user-1",
 				instanceId: "jellyfin-1",
+				authority: { ...authority, id: "jellyfin-1", service: "JELLYFIN" },
 				handoff: recovery,
 			},
 		});
@@ -73,6 +98,32 @@ describe.sequential("claim-first provider cache background refresh", () => {
 		await admission.backgroundTask;
 		expect(recovery.admit).toHaveBeenCalledOnce();
 		expect(recovery.arm).not.toHaveBeenCalled();
+	});
+
+	it("never hands off a producer that has not settled", async () => {
+		let finish!: (value: { complete: false; errors: number }) => void;
+		const producer = new Promise<{ complete: false; errors: number }>((resolve) => {
+			finish = resolve;
+		});
+		const recovery = { admit: vi.fn(), arm: vi.fn().mockResolvedValue({ status: "accepted" }) };
+		const admission = await startProviderCacheRefreshInBackground({
+			cacheType: "plex",
+			claim: async () => ({ status: "acquired", attempt }),
+			produce: () => producer,
+			log: logger(),
+			recovery: {
+				provider: "plex",
+				userId: authority.userId,
+				instanceId: authority.id,
+				authority,
+				handoff: recovery,
+			},
+		});
+		await Promise.resolve();
+		expect(recovery.arm).not.toHaveBeenCalled();
+		finish({ complete: false, errors: 1 });
+		await admission.backgroundTask;
+		expect(recovery.arm).toHaveBeenCalledOnce();
 	});
 
 	it("arms recovery when the deferred producer throws", async () => {
@@ -91,6 +142,7 @@ describe.sequential("claim-first provider cache background refresh", () => {
 				provider: "jellyfin" as const,
 				userId: "user-1",
 				instanceId: "jellyfin-1",
+				authority: { ...authority, id: "jellyfin-1", service: "JELLYFIN" },
 				handoff: recovery,
 			},
 		});

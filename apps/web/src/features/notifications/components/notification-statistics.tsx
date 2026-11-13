@@ -2,9 +2,10 @@
 
 import { BarChart3, Inbox } from "lucide-react";
 import { useState } from "react";
-import { AsyncStateView } from "@/components/layout/premium-components";
+import { AsyncErrorCard, AsyncStateView } from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import { useNotificationStatistics } from "../../../hooks/api/useNotifications";
+import { NotificationQueueStatus } from "./notification-queue-status";
 
 const PERIOD_OPTIONS = [
 	{ days: 7, label: "7d" },
@@ -49,10 +50,14 @@ const EVENT_LABELS: Record<string, string> = {
 export function NotificationStatistics() {
 	const { gradient } = useThemeGradient();
 	const [days, setDays] = useState(30);
-	const { data: stats, isLoading, isError, error, refetch } = useNotificationStatistics(days);
+	const { data: stats, isLoading, isError, isFetching, refetch } = useNotificationStatistics(days);
 
-	const trendMax = stats ? Math.max(...stats.dailyTrend.map((d) => d.sent + d.failed), 1) : 1;
-	const channelMax = stats ? Math.max(...stats.perChannel.map((c) => c.sent + c.failed), 1) : 1;
+	const trendMax = stats
+		? Math.max(...stats.dailyTrend.map((d) => d.sent + d.failed + (d.unclassified ?? 0)), 1)
+		: 1;
+	const channelMax = stats
+		? Math.max(...stats.perChannel.map((c) => c.sent + c.failed + (c.unclassified ?? 0)), 1)
+		: 1;
 
 	return (
 		<div className="space-y-5">
@@ -80,12 +85,39 @@ export function NotificationStatistics() {
 				</div>
 			</div>
 
+			<NotificationQueueStatus
+				queue={stats?.queue}
+				isLoading={isLoading}
+				isFetching={isFetching}
+				isError={isError}
+				onRead={() => void refetch()}
+			/>
+
+			{stats && isFetching && (
+				<p
+					role="status"
+					aria-label="Notification statistics refresh"
+					aria-live="polite"
+					aria-busy="true"
+					className="text-sm text-muted-foreground"
+				>
+					Showing last-known statistics while refreshing.
+				</p>
+			)}
+			{stats && isError && !isFetching && (
+				<AsyncErrorCard
+					title="Couldn't refresh notification statistics"
+					description="Showing last-known statistics. Refresh failed. Try again to read current statistics."
+					onRetry={() => void refetch()}
+				/>
+			)}
+
 			<AsyncStateView
 				isLoading={isLoading}
-				isError={isError}
-				error={error}
+				isError={!stats && isError}
+				errorDescription="Statistics are unavailable. Please try again."
 				isEmpty={!stats}
-				onRetry={() => refetch()}
+				onRetry={isFetching ? undefined : () => void refetch()}
 				errorTitle="Couldn't load notification statistics"
 				emptyState={{
 					icon: Inbox,
@@ -115,54 +147,102 @@ interface StatisticsContentProps {
 
 function StatisticsContent({ stats, trendMax, channelMax, gradient }: StatisticsContentProps) {
 	const { totals, perChannel, perEventType, dailyTrend } = stats;
+	const classificationVerified = totals.unclassified !== undefined;
+	const classified = totals.sent + totals.failed + totals.deadLetter;
+	const rateLabel =
+		classified === 0
+			? "Not measured"
+			: classificationVerified
+				? `${totals.successRate.toFixed(1)}%`
+				: "Not verified";
 
 	return (
 		<div className="space-y-5">
 			{/* Summary cards */}
-			<div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+			{classificationVerified ? (
+				<p className="text-sm text-muted-foreground">
+					{totals.total} records including unclassified. Success rates are among classified
+					outcomes.
+				</p>
+			) : (
+				<p className="text-sm text-muted-foreground">
+					Classification unverified: historical counts are available, but unclassified counts,
+					success rates and all-record event shares are not verified.
+				</p>
+			)}
+			<div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
 				<SummaryCard label="Total Sent" value={totals.sent} color="text-emerald-400" />
 				<SummaryCard label="Failed" value={totals.failed} color="text-red-400" />
 				<SummaryCard label="Dead Letter" value={totals.deadLetter} color="text-amber-400" />
 				<SummaryCard
+					label="Unclassified"
+					value={totals.unclassified ?? "Not verified"}
+					color="text-muted-foreground"
+				/>
+				<SummaryCard
 					label="Success Rate"
-					value={`${totals.successRate.toFixed(1)}%`}
-					color={totals.successRate >= 90 ? "text-emerald-400" : "text-amber-400"}
+					value={rateLabel}
+					color={
+						classified === 0 || !classificationVerified
+							? "text-muted-foreground"
+							: totals.successRate >= 90
+								? "text-emerald-400"
+								: "text-amber-400"
+					}
 				/>
 			</div>
 
 			{/* Daily trend */}
 			{dailyTrend.length > 0 && (
 				<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
-					<div className="flex items-center gap-2 mb-4">
+					<div className="flex flex-wrap items-center gap-2 mb-4">
 						<BarChart3 className="h-4 w-4" style={{ color: gradient.from }} />
-						<h3 className="font-semibold text-sm">Daily Trend</h3>
-						<div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
+						<h3 className="font-semibold text-sm">Daily Trend (UTC)</h3>
+						<div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
 							<span className="flex items-center gap-1.5">
 								<span className="inline-block h-2 w-2 rounded-sm bg-emerald-400" />
 								Sent
 							</span>
 							<span className="flex items-center gap-1.5">
 								<span className="inline-block h-2 w-2 rounded-sm bg-red-400" />
-								Failed
+								Failed (including dead letters)
+							</span>
+							<span className="flex items-center gap-1.5">
+								<span className="inline-block h-2 w-2 rounded-sm bg-muted-foreground" />
+								Unclassified
 							</span>
 						</div>
 					</div>
 					<div className="flex items-end gap-1 h-32 overflow-x-auto pb-1">
 						{dailyTrend.map((day) => {
-							const total = day.sent + day.failed;
+							const total = day.sent + day.failed + (day.unclassified ?? 0);
 							const sentPct = total > 0 ? (day.sent / trendMax) * 100 : 0;
 							const failedPct = total > 0 ? (day.failed / trendMax) * 100 : 0;
+							const unclassifiedPct =
+								day.unclassified !== undefined ? (day.unclassified / trendMax) * 100 : 0;
+							const outcomeLabel = `${day.date}: ${day.sent} sent, ${day.failed} failed including dead letters, ${day.unclassified ?? "not verified"} unclassified`;
 							const dateLabel = new Date(day.date).toLocaleDateString(undefined, {
 								month: "numeric",
 								day: "numeric",
+								timeZone: "UTC",
 							});
 							return (
 								<div
 									key={day.date}
+									role="img"
+									aria-label={outcomeLabel}
 									className="flex flex-col items-center gap-1 flex-1 min-w-[28px]"
 									title={`${day.date}: ${day.sent} sent, ${day.failed} failed`}
 								>
 									<div className="w-full flex flex-col justify-end gap-0.5" style={{ height: 96 }}>
+										{unclassifiedPct > 0 && (
+											<div
+												role="img"
+												aria-label={`${day.date}: ${day.unclassified} unclassified`}
+												className="w-full rounded-t-sm bg-muted-foreground/70 transition-all"
+												style={{ height: `${unclassifiedPct}%`, minHeight: 2 }}
+											/>
+										)}
 										{day.failed > 0 && (
 											<div
 												className="w-full rounded-t-sm bg-red-400/70 transition-all"
@@ -175,7 +255,7 @@ function StatisticsContent({ stats, trendMax, channelMax, gradient }: Statistics
 												style={{
 													height: `${sentPct}%`,
 													minHeight: sentPct > 0 ? 2 : 0,
-													borderRadius: day.failed > 0 ? "0" : "2px 2px 0 0",
+													borderRadius: day.failed > 0 || unclassifiedPct > 0 ? "0" : "2px 2px 0 0",
 												}}
 											/>
 										)}
@@ -197,20 +277,40 @@ function StatisticsContent({ stats, trendMax, channelMax, gradient }: Statistics
 			{perChannel.length > 0 && (
 				<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 					<h3 className="font-semibold text-sm mb-4">Channel Health</h3>
+					<p className="text-xs text-muted-foreground mb-3">
+						Sent · Failed (including dead letters) · Unclassified
+					</p>
 					<div className="space-y-3">
 						{perChannel.map((ch) => {
-							const total = ch.sent + ch.failed;
+							const classifiedCount = ch.sent + ch.failed;
+							const total = classifiedCount + (ch.unclassified ?? 0);
 							const sentWidth = total > 0 ? (ch.sent / channelMax) * 100 : 0;
 							const failedWidth = total > 0 ? (ch.failed / channelMax) * 100 : 0;
+							const unclassifiedWidth =
+								ch.unclassified !== undefined ? (ch.unclassified / channelMax) * 100 : 0;
+							const channelRate =
+								classifiedCount === 0
+									? "Not measured"
+									: classificationVerified
+										? `${ch.successRate.toFixed(1)}% among classified outcomes`
+										: "Not verified";
 							return (
 								<div key={ch.channelId} className="space-y-1">
-									<div className="flex items-center justify-between text-sm">
+									<div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm">
 										<span className="text-muted-foreground">{ch.channelType}</span>
 										<span className="text-xs text-muted-foreground">
-											{ch.sent}/{total} sent ({ch.successRate.toFixed(0)}%)
+											{ch.sent}/{total} sent ({channelRate})
 										</span>
 									</div>
-									<div className="flex h-2 gap-0.5 rounded-full overflow-hidden bg-border/20">
+									<p className="text-xs text-muted-foreground">
+										Failed (including dead letters): {ch.failed} · Unclassified:{" "}
+										{ch.unclassified ?? "Not verified"}
+									</p>
+									<div
+										role="img"
+										aria-label={`${ch.channelType}: ${ch.sent} sent, ${ch.failed} failed including dead letters, ${ch.unclassified ?? "not verified"} unclassified`}
+										className="flex h-2 gap-0.5 rounded-full overflow-hidden bg-border/20"
+									>
 										{sentWidth > 0 && (
 											<div
 												className="bg-emerald-400/70 transition-all"
@@ -221,6 +321,14 @@ function StatisticsContent({ stats, trendMax, channelMax, gradient }: Statistics
 											<div
 												className="bg-red-400/70 transition-all"
 												style={{ width: `${failedWidth}%` }}
+											/>
+										)}
+										{unclassifiedWidth > 0 && (
+											<div
+												role="img"
+												aria-label={`${ch.channelType}: ${ch.unclassified} unclassified`}
+												className="bg-muted-foreground/70 transition-all"
+												style={{ width: `${unclassifiedWidth}%` }}
 											/>
 										)}
 									</div>
@@ -248,13 +356,17 @@ function StatisticsContent({ stats, trendMax, channelMax, gradient }: Statistics
 										Count
 									</th>
 									<th className="px-4 py-2.5 text-left text-xs text-muted-foreground font-medium min-w-[120px]">
-										Share
+										Share of all records
 									</th>
 								</tr>
 							</thead>
 							<tbody>
 								{perEventType.map((row) => {
-									const share = totals.total > 0 ? (row.count / totals.total) * 100 : 0;
+									const share = classificationVerified
+										? totals.total > 0
+											? (row.count / totals.total) * 100
+											: 0
+										: undefined;
 									return (
 										<tr key={row.eventType} className="border-b border-border/10 hover:bg-card/20">
 											<td className="px-4 py-2.5">
@@ -262,20 +374,24 @@ function StatisticsContent({ stats, trendMax, channelMax, gradient }: Statistics
 											</td>
 											<td className="px-4 py-2.5 text-right tabular-nums">{row.count}</td>
 											<td className="px-4 py-2.5">
-												<div className="flex items-center gap-2">
-													<div className="flex-1 h-1.5 bg-border/20 rounded-full overflow-hidden">
-														<div
-															className="h-full rounded-full transition-all"
-															style={{
-																width: `${share}%`,
-																backgroundColor: gradient.from,
-															}}
-														/>
+												{share === undefined ? (
+													<span className="text-xs text-muted-foreground">Not verified</span>
+												) : (
+													<div className="flex items-center gap-2">
+														<div className="flex-1 h-1.5 bg-border/20 rounded-full overflow-hidden">
+															<div
+																className="h-full rounded-full transition-all"
+																style={{
+																	width: `${share}%`,
+																	backgroundColor: gradient.from,
+																}}
+															/>
+														</div>
+														<span className="text-xs text-muted-foreground w-10 text-right">
+															{share.toFixed(0)}%
+														</span>
 													</div>
-													<span className="text-xs text-muted-foreground w-10 text-right">
-														{share.toFixed(0)}%
-													</span>
-												</div>
+												)}
 											</td>
 										</tr>
 									);
@@ -301,7 +417,11 @@ function SummaryCard({
 	return (
 		<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 			<p className="text-xs text-muted-foreground mb-1">{label}</p>
-			<p className={`text-2xl font-bold ${color}`}>{value}</p>
+			<p
+				className={`break-words ${typeof value === "string" && value.includes(" ") ? "text-base font-semibold" : "text-2xl font-bold"} ${color}`}
+			>
+				{value}
+			</p>
 		</div>
 	);
 }

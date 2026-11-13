@@ -1,6 +1,10 @@
 "use client";
 
-import type { ProwlarrIndexer, ProwlarrIndexerDetails } from "@arr/shared";
+import type {
+	ProwlarrIndexer,
+	SearchIndexerUpdateChanges,
+	SearchIndexerUpdateOutcome,
+} from "@arr/shared";
 import {
 	Activity,
 	ChevronRight,
@@ -202,8 +206,8 @@ export const IndexerRow = ({
 	onUpdate: (
 		instanceId: string,
 		indexerId: number,
-		payload: ProwlarrIndexerDetails,
-	) => Promise<ProwlarrIndexerDetails>;
+		changes: SearchIndexerUpdateChanges,
+	) => Promise<SearchIndexerUpdateOutcome>;
 	testing: boolean;
 	expanded: boolean;
 	onToggleDetails: () => void;

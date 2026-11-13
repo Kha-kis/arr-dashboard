@@ -326,7 +326,9 @@ function assertIntendedCustomFormatWritableState(
 		assertIntendedWritableState(actual, intended, resourceLabel);
 		return;
 	} catch (error) {
-		if (!(error instanceof ConflictError) || service !== "SONARR") throw error;
+		if (!(error instanceof ConflictError) || (service !== "SONARR" && service !== "RADARR")) {
+			throw error;
+		}
 	}
 
 	assertIntendedWritableState(

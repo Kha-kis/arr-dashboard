@@ -1,16 +1,9 @@
 import type { CreateTagResponse, ServiceTagResponse, TagsResponse } from "@arr/shared";
-import { apiRequest, UnauthorizedError } from "./base";
+import { apiRequest } from "./base";
 
 export async function fetchTags(): Promise<ServiceTagResponse[]> {
-	try {
-		const data = await apiRequest<TagsResponse>("/api/tags");
-		return data.tags;
-	} catch (error) {
-		if (error instanceof UnauthorizedError) {
-			return [];
-		}
-		throw error;
-	}
+	const data = await apiRequest<TagsResponse>("/api/tags");
+	return data.tags;
 }
 
 export async function createTag(name: string): Promise<ServiceTagResponse> {

@@ -13,10 +13,13 @@ import type { ArrClientFactory } from "../arr/client-factory.js";
 import { streamLibraryItems as defaultStreamLibraryItems } from "../arr/library-stream.js";
 import { createArrServiceFingerprint } from "../arr/service-fingerprint.js";
 import type { Encryptor } from "../auth/encryption.js";
+import { withIsolatedRuntimePrismaTransaction } from "../backup/restore-runtime-client.js";
 import { triggerLabelSyncForItem } from "../label-sync/trigger-for-item.js";
 import { buildLibraryItem } from "../library/library-item-builder.js";
 import { arrPolicyEvidenceFromRaw } from "../library-cleanup/arr-policy-evidence.js";
+import { withSqliteTransactionWriteIntent } from "../sqlite-transaction-intent.js";
 import { getErrorMessage } from "../utils/error-message.js";
+import { movieCorrelationInputChanged } from "./infohash-backfill-by-path.js";
 
 // ============================================================================
 // Types
@@ -224,6 +227,22 @@ function logMemoryPhase(log: FastifyBaseLogger, instanceId: string, phase: strin
 	);
 }
 
+function isTransientStatusWriteError(error: unknown): boolean {
+	if (!error || typeof error !== "object") return false;
+	const { code, cause } = error as { code?: unknown; cause?: unknown };
+	if (
+		code === "P1008" ||
+		code === "SQLITE_BUSY" ||
+		code === "SQLITE_BUSY_TIMEOUT" ||
+		code === "SQLITE_LOCKED"
+	) {
+		return true;
+	}
+	if (!cause || typeof cause !== "object") return false;
+	const { originalCode } = cause as { originalCode?: unknown };
+	return originalCode === "SQLITE_BUSY" || originalCode === "SQLITE_LOCKED";
+}
+
 // ============================================================================
 // Sync Executor
 // ============================================================================
@@ -414,88 +433,118 @@ export async function syncInstance(
 		// final partial-batch case below.
 		const processBatch = async (batch: Array<Record<string, unknown>>): Promise<void> => {
 			if (batch.length === 0) return;
-			await prisma.$transaction(async (tx) => {
-				for (const raw of batch) {
-					const item = buildLibraryItem(instance, service, raw);
-					const arrItemId = typeof item.id === "string" ? Number.parseInt(item.id, 10) : item.id;
-					const key = `${arrItemId}-${item.type}`;
-					seenKeys.add(key);
+			const effects = await withSqliteTransactionWriteIntent(() =>
+				withIsolatedRuntimePrismaTransaction(prisma, async (tx) => {
+					const batchEffects = {
+						itemsProcessed: 0,
+						itemsAdded: 0,
+						itemsUpdated: 0,
+						newDownloads: [] as NewDownloadItem[],
+						tagDeltas: [] as TagDelta[],
+						seenKeys: new Set<string>(),
+					};
+					for (const raw of batch) {
+						const item = buildLibraryItem(instance, service, raw);
+						const arrItemId = typeof item.id === "string" ? Number.parseInt(item.id, 10) : item.id;
+						const key = `${arrItemId}-${item.type}`;
+						batchEffects.seenKeys.add(key);
 
-					const existing = existingMap.get(key);
-					const fields = extractCacheFields(item, cutoffUnmetIds);
-					const serializedItem = serializeCacheItem(item, raw, service, sourceServiceFingerprint);
+						const existing = existingMap.get(key);
+						const fields = extractCacheFields(item, cutoffUnmetIds);
+						const serializedItem = serializeCacheItem(item, raw, service, sourceServiceFingerprint);
 
-					if (existing) {
-						const updateData: Prisma.LibraryCacheUpdateInput = {
-							...fields,
-							data: serializedItem,
-							cachedAt: sourceCapturedAt,
-							updatedAt: new Date(),
-						};
+						if (existing) {
+							const updateData: Prisma.LibraryCacheUpdateInput = {
+								...fields,
+								data: serializedItem,
+								cachedAt: sourceCapturedAt,
+								updatedAt: new Date(),
+							};
+							if (
+								service === "radarr" &&
+								item.type === "movie" &&
+								movieCorrelationInputChanged(existing.data, serializedItem)
+							) {
+								updateData.infoHash = null;
+								updateData.infoHashSource = null;
+								updateData.pathBackfillRetryAfter = null;
+								updateData.torrentState = null;
+								updateData.torrentRatio = null;
+								updateData.torrentSyncedAt = null;
+							}
 
-						await tx.libraryCache.update({
-							where: { id: existing.id },
-							data: updateData,
-						});
-						result.itemsUpdated++;
+							await tx.libraryCache.update({
+								where: { id: existing.id },
+								data: updateData,
+							});
+							batchEffects.itemsUpdated++;
 
-						if (!existing.hasFile && fields.hasFile) {
-							result.newDownloads.push({ title: item.title, itemType: item.type });
-						}
+							if (!existing.hasFile && fields.hasFile) {
+								batchEffects.newDownloads.push({ title: item.title, itemType: item.type });
+							}
 
-						if (tagIdToName.size > 0) {
-							const oldTags = parseTagsFromCacheData(existing.data);
-							const newTags = coerceTagIds((item.tags as unknown) ?? []);
-							const { added, removed } = diffTags(oldTags, newTags);
-							if (added.length > 0 || removed.length > 0) {
-								const itemAny = item as {
-									tmdbId?: unknown;
-									remoteIds?: { tmdbId?: unknown } | null;
-								};
-								const tmdbCandidates: unknown[] = [itemAny.remoteIds?.tmdbId, itemAny.tmdbId];
-								let tmdbId: number | null = null;
-								for (const v of tmdbCandidates) {
-									if (typeof v === "number" && v > 0) {
-										tmdbId = v;
-										break;
+							if (tagIdToName.size > 0) {
+								const oldTags = parseTagsFromCacheData(existing.data);
+								const newTags = coerceTagIds((item.tags as unknown) ?? []);
+								const { added, removed } = diffTags(oldTags, newTags);
+								if (added.length > 0 || removed.length > 0) {
+									const itemAny = item as {
+										tmdbId?: unknown;
+										remoteIds?: { tmdbId?: unknown } | null;
+									};
+									const tmdbCandidates: unknown[] = [itemAny.remoteIds?.tmdbId, itemAny.tmdbId];
+									let tmdbId: number | null = null;
+									for (const v of tmdbCandidates) {
+										if (typeof v === "number" && v > 0) {
+											tmdbId = v;
+											break;
+										}
 									}
+									batchEffects.tagDeltas.push({
+										arrItemId,
+										itemType: item.type,
+										tmdbId,
+										addedTagIds: added,
+										removedTagIds: removed,
+									});
 								}
-								tagDeltas.push({
-									arrItemId,
-									itemType: item.type,
-									tmdbId,
-									addedTagIds: added,
-									removedTagIds: removed,
-								});
+							}
+						} else {
+							await tx.libraryCache.create({
+								data: {
+									...buildCacheCreate(instance.id, item, serializedItem),
+									cachedAt: sourceCapturedAt,
+								},
+							});
+							batchEffects.itemsAdded++;
+
+							// A complete add + import can happen between polling ticks. In that
+							// case there is no cached hasFile=false row to transition from, so
+							// recognize a newly added ARR item that already has a file. Require a
+							// completed baseline sync and an ARR added timestamp newer than that
+							// baseline; this prevents first-sync floods and stale-row reappearance
+							// from masquerading as new downloads.
+							if (
+								fields.hasFile &&
+								previousFullSync &&
+								fields.arrAddedAt &&
+								fields.arrAddedAt > previousFullSync
+							) {
+								batchEffects.newDownloads.push({ title: item.title, itemType: item.type });
 							}
 						}
-					} else {
-						await tx.libraryCache.create({
-							data: {
-								...buildCacheCreate(instance.id, item, serializedItem),
-								cachedAt: sourceCapturedAt,
-							},
-						});
-						result.itemsAdded++;
-
-						// A complete add + import can happen between polling ticks. In that
-						// case there is no cached hasFile=false row to transition from, so
-						// recognize a newly added ARR item that already has a file. Require a
-						// completed baseline sync and an ARR added timestamp newer than that
-						// baseline; this prevents first-sync floods and stale-row reappearance
-						// from masquerading as new downloads.
-						if (
-							fields.hasFile &&
-							previousFullSync &&
-							fields.arrAddedAt &&
-							fields.arrAddedAt > previousFullSync
-						) {
-							result.newDownloads.push({ title: item.title, itemType: item.type });
-						}
+						batchEffects.itemsProcessed++;
 					}
-					result.itemsProcessed++;
-				}
-			});
+					return batchEffects;
+				}),
+			);
+			// Only committed rows may affect counts, notifications or deletion input.
+			result.itemsProcessed += effects.itemsProcessed;
+			result.itemsAdded += effects.itemsAdded;
+			result.itemsUpdated += effects.itemsUpdated;
+			result.newDownloads.push(...effects.newDownloads);
+			tagDeltas.push(...effects.tagDeltas);
+			for (const key of effects.seenKeys) seenKeys.add(key);
 		};
 
 		for await (const raw of itemStream) {
@@ -623,17 +672,24 @@ export async function syncInstance(
 		result.durationMs = durationMs;
 		result.error = errorMessage;
 
-		await prisma.librarySyncStatus
-			.update({
-				where: { instanceId: instance.id },
-				data: {
-					syncInProgress: false,
-					lastError: errorMessage,
-				},
-			})
-			.catch((updateError) => {
-				log.error({ err: updateError }, "Failed to update sync status with error");
-			});
+		for (let attempt = 0; attempt < 5; attempt++) {
+			try {
+				await prisma.librarySyncStatus.update({
+					where: { instanceId: instance.id },
+					data: {
+						syncInProgress: false,
+						lastError: errorMessage,
+					},
+				});
+				break;
+			} catch (updateError) {
+				if (!isTransientStatusWriteError(updateError) || attempt === 4) {
+					log.error({ err: updateError }, "Failed to update sync status with error");
+					break;
+				}
+				await new Promise<void>((resolve) => setTimeout(resolve, 50 * 2 ** attempt));
+			}
+		}
 
 		log.error(
 			{ err: error, instanceId: instance.id, instanceName: instance.label },

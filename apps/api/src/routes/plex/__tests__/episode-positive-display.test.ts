@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInjectAuthenticated, setupAuthInjection } from "../../__tests__/test-helpers.js";
 
 const mocks = vi.hoisted(() => ({
-	readInstanceSelectedEpisodes: vi.fn(),
+	readInstanceSelectedEpisodeDisplay: vi.fn(),
 	readPositiveEpisodeDisplayEvidence: vi.fn(),
 }));
 
@@ -13,7 +13,7 @@ vi.mock("../../../lib/plex/plex-authority-service.js", async (importOriginal) =>
 	return {
 		...actual,
 		PlexAuthorityService: class {
-			readInstanceSelectedEpisodes = mocks.readInstanceSelectedEpisodes;
+			readInstanceSelectedEpisodeDisplay = mocks.readInstanceSelectedEpisodeDisplay;
 			readPositiveEpisodeDisplayEvidence = mocks.readPositiveEpisodeDisplayEvidence;
 		},
 	};
@@ -110,7 +110,7 @@ describe("Plex episode positive display route", () => {
 		app.decorate("prisma", {} as never);
 		await app.register(registerEpisodeRoutes, { prefix: "/api/plex/episodes" });
 		await app.ready();
-		mocks.readInstanceSelectedEpisodes.mockReset();
+		mocks.readInstanceSelectedEpisodeDisplay.mockReset();
 		mocks.readPositiveEpisodeDisplayEvidence.mockReset();
 	});
 
@@ -119,7 +119,7 @@ describe("Plex episode positive display route", () => {
 	});
 
 	it("returns current positive rows as read-only display data", async () => {
-		mocks.readInstanceSelectedEpisodes.mockResolvedValue(unavailableExact);
+		mocks.readInstanceSelectedEpisodeDisplay.mockResolvedValue(unavailableExact);
 		mocks.readPositiveEpisodeDisplayEvidence.mockResolvedValue(positiveEvidence);
 
 		const response = await createInjectAuthenticated(app)(
@@ -162,7 +162,7 @@ describe("Plex episode positive display route", () => {
 	] as const)(
 		"returns retained positive rows with honest %s evidence",
 		async (attemptState, reasonCode) => {
-			mocks.readInstanceSelectedEpisodes.mockResolvedValue(unavailableExact);
+			mocks.readInstanceSelectedEpisodeDisplay.mockResolvedValue(unavailableExact);
 			mocks.readPositiveEpisodeDisplayEvidence.mockResolvedValue({
 				...positiveEvidence,
 				evidence: {
@@ -230,7 +230,7 @@ describe("Plex episode positive display route", () => {
 				reasonCodes: [],
 			},
 		};
-		mocks.readInstanceSelectedEpisodes.mockResolvedValue(exact);
+		mocks.readInstanceSelectedEpisodeDisplay.mockResolvedValue(exact);
 
 		const response = await createInjectAuthenticated(app)(
 			"GET",
@@ -252,7 +252,7 @@ describe("Plex episode positive display route", () => {
 	});
 
 	it("withholds values when positive evidence is unavailable", async () => {
-		mocks.readInstanceSelectedEpisodes.mockResolvedValue(unavailableExact);
+		mocks.readInstanceSelectedEpisodeDisplay.mockResolvedValue(unavailableExact);
 		mocks.readPositiveEpisodeDisplayEvidence.mockResolvedValue({
 			available: false,
 			instanceId: "plex-1",

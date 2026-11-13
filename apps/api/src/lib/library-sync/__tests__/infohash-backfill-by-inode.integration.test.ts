@@ -18,7 +18,7 @@
  * value via NumberOfLinks but ino may be zeroed on some volumes).
  */
 
-import { linkSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { linkSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { QuiTorrent } from "@arr/shared";
@@ -31,8 +31,18 @@ import {
 
 const isPosix = process.platform !== "win32";
 
-function makeFakeClient(torrents: QuiTorrent[]) {
-	return { listAllTorrents: async () => torrents };
+function makeFakeClient(torrents: QuiTorrent[], files: Array<{ name: string; size: number }> = []) {
+	return {
+		listAllTorrents: async () => torrents,
+		getTorrentFiles: async () =>
+			files.map((file, index) => ({
+				index,
+				name: file.name,
+				size: file.size,
+				progress: 1,
+				priority: 1,
+			})),
+	};
 }
 
 function makeQuiTorrent(o: {
@@ -40,12 +50,14 @@ function makeQuiTorrent(o: {
 	name: string;
 	savePath: string;
 	size: number;
+	instanceId?: number;
 }): QuiTorrent {
 	return {
 		hash: o.hash,
 		name: o.name,
 		savePath: o.savePath,
 		size: o.size,
+		instanceId: o.instanceId,
 		state: "uploading",
 		ratio: 1,
 		progress: 1,
@@ -63,7 +75,12 @@ function makeQuiTorrent(o: {
 	};
 }
 
-const QUI_INSTANCE = { id: "qui-integ", label: "qui-integ", pathPrefix: null as string | null };
+const QUI_INSTANCE = {
+	id: "qui-integ",
+	label: "qui-integ",
+	pathPrefix: null as string | null,
+	connectionGeneration: 0,
+};
 
 describe.skipIf(!isPosix)("inode backfill — real filesystem", () => {
 	let root: string;
@@ -121,6 +138,82 @@ describe.skipIf(!isPosix)("inode backfill — real filesystem", () => {
 		// directory — only the inode connects them.
 		const match = await matchLibraryByFileId(libraryPath, index);
 		expect(match).toEqual({ hash: "real-hash-1", source: "inode" });
+	});
+
+	it("does not attribute a symlink target outside a fallback save directory", async () => {
+		const outsidePath = join(mediaDir, "outside.mkv");
+		writeFileSync(outsidePath, "not a torrent file");
+		linkSync(outsidePath, join(mediaDir, "outside-hardlink.mkv"));
+		const linkedPath = join(torrentDir, "linked.mkv");
+		symlinkSync(outsidePath, linkedPath);
+		const client = makeFakeClient(
+			[
+				makeQuiTorrent({
+					hash: "unsafe-fallback",
+					name: "missing-content-root",
+					savePath: torrentDir,
+					size: statSync(outsidePath).size,
+					instanceId: 7,
+				}),
+			],
+			[{ name: "linked.mkv", size: statSync(outsidePath).size }],
+		);
+		const index = await buildFileIdIndex(client as never, QUI_INSTANCE);
+		expect(index.byFileId.size).toBe(0);
+		expect(index.incompleteDirectoryWalks).toBe(1);
+	});
+
+	it("matches only a declared fallback file in a shared real directory", async () => {
+		const ownedPath = join(torrentDir, "owned.mkv");
+		const siblingPath = join(torrentDir, "unrelated.mkv");
+		writeFileSync(ownedPath, "owned bytes");
+		writeFileSync(siblingPath, "unrelated bytes");
+		const ownedLibraryPath = join(mediaDir, "owned-library.mkv");
+		const siblingLibraryPath = join(mediaDir, "sibling-library.mkv");
+		linkSync(ownedPath, ownedLibraryPath);
+		linkSync(siblingPath, siblingLibraryPath);
+		const client = makeFakeClient(
+			[
+				makeQuiTorrent({
+					hash: "owned-hash",
+					name: "missing-content-root",
+					savePath: torrentDir,
+					size: statSync(ownedPath).size,
+					instanceId: 7,
+				}),
+			],
+			[{ name: "owned.mkv", size: statSync(ownedPath).size }],
+		);
+		const index = await buildFileIdIndex(client as never, QUI_INSTANCE);
+		expect(index.incompleteDirectoryWalks).toBe(0);
+		expect(await matchLibraryByFileId(ownedLibraryPath, index)).toEqual({
+			hash: "owned-hash",
+			source: "inode",
+		});
+		expect(await matchLibraryByFileId(siblingLibraryPath, index)).toBeNull();
+	});
+
+	it("does not follow a symlinked fallback save directory", async () => {
+		const outsidePath = join(mediaDir, "outside.mkv");
+		writeFileSync(outsidePath, "not a torrent file");
+		linkSync(outsidePath, join(mediaDir, "outside-hardlink.mkv"));
+		const linkedDirectory = join(torrentDir, "linked-directory");
+		symlinkSync(mediaDir, linkedDirectory);
+		const client = makeFakeClient(
+			[
+				makeQuiTorrent({
+					hash: "unsafe-root",
+					name: "missing-content-root",
+					savePath: linkedDirectory,
+					size: statSync(outsidePath).size,
+					instanceId: 7,
+				}),
+			],
+			[{ name: "outside.mkv", size: statSync(outsidePath).size }],
+		);
+		const index = await buildFileIdIndex(client as never, QUI_INSTANCE);
+		expect(index.byFileId.size).toBe(0);
+		expect(index.incompleteDirectoryWalks).toBe(1);
 	});
 
 	it("does not match when the library file is a COPY (different inode) of the torrent file", async () => {

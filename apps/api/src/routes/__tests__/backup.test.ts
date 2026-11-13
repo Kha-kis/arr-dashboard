@@ -8,9 +8,8 @@ import {
 import { registerBackupRoutes } from "../backup.js";
 import { registerTestErrorHandler } from "./test-helpers.js";
 
-const { mockCreateBackup, mockRestoreBackup } = vi.hoisted(() => ({
+const { mockCreateBackup } = vi.hoisted(() => ({
 	mockCreateBackup: vi.fn(),
-	mockRestoreBackup: vi.fn(),
 }));
 
 vi.mock("../../lib/backup/backup-service.js", async (importOriginal) => {
@@ -20,12 +19,6 @@ vi.mock("../../lib/backup/backup-service.js", async (importOriginal) => {
 		BackupService: class {
 			createBackup(...args: unknown[]) {
 				return mockCreateBackup(...args);
-			}
-			restoreBackup(...args: unknown[]) {
-				return mockRestoreBackup(...args);
-			}
-			restoreBackupFromFile(...args: unknown[]) {
-				return mockRestoreBackup(...args);
 			}
 		},
 	};
@@ -159,6 +152,21 @@ describe("POST /api/backup/create", () => {
 		});
 	});
 
+	it("reports unavailable or invalid secrets without claiming they are absent", async () => {
+		mockCreateBackup.mockRejectedValue(
+			new Error("Failed to read secrets file: unavailable or invalid cryptographic fields"),
+		);
+
+		const response = await createBackup(app);
+
+		expect(response.statusCode).toBe(500);
+		expect(JSON.parse(response.payload)).toEqual({
+			error: "Application secrets unavailable",
+			details:
+				"The application secrets file is missing, unreadable, or invalid. Check the deployment configuration before retrying; no backup was created.",
+		});
+	});
+
 	it("preserves the generic error mapping", async () => {
 		mockCreateBackup.mockRejectedValue(new Error("disk unavailable"));
 
@@ -185,76 +193,5 @@ describe("POST /api/backup/create", () => {
 		expect(response.statusCode).toBe(401);
 		expect(JSON.parse(response.payload)).toEqual({ error: "Authentication required" });
 		expect(mockCreateBackup).not.toHaveBeenCalled();
-	});
-
-	it("returns bounded 503 before validating an uploaded restore", async () => {
-		const response = await app.inject({
-			method: "POST",
-			url: "/api/backup/restore",
-			headers: { "x-test-auth": "1" },
-			payload: {},
-		});
-
-		expect(response.statusCode).toBe(503);
-		expect(JSON.parse(response.payload)).toEqual({
-			error: "Backup restore is temporarily unavailable",
-			details:
-				"Restore is disabled because this version cannot yet guarantee crash-safe database and secrets recovery. No data was changed.",
-		});
-		expect(mockRestoreBackup).not.toHaveBeenCalled();
-	});
-
-	it("returns bounded 503 when restore is fail-closed", async () => {
-		const { BackupRestoreUnavailableError } = await import("../../lib/backup/backup-service.js");
-		expect(new BackupRestoreUnavailableError().statusCode).toBe(503);
-
-		const response = await app.inject({
-			method: "POST",
-			url: "/api/backup/restore",
-			headers: { "x-test-auth": "1" },
-			payload: { backupData: Buffer.from("current-backup").toString("base64") },
-		});
-
-		expect(response.statusCode).toBe(503);
-		expect(JSON.parse(response.payload)).toEqual({
-			error: "Backup restore is temporarily unavailable",
-			details:
-				"Restore is disabled because this version cannot yet guarantee crash-safe database and secrets recovery. No data was changed.",
-		});
-		expect(mockRestoreBackup).not.toHaveBeenCalled();
-	});
-
-	it("returns bounded 503 for stored-file restore containment", async () => {
-		const response = await app.inject({
-			method: "POST",
-			url: "/api/backup/restore-from-file",
-			headers: { "x-test-auth": "1" },
-			payload: { id: "backup-1" },
-		});
-
-		expect(response.statusCode).toBe(503);
-		expect(JSON.parse(response.payload)).toEqual({
-			error: "Backup restore is temporarily unavailable",
-			details:
-				"Restore is disabled because this version cannot yet guarantee crash-safe database and secrets recovery. No data was changed.",
-		});
-		expect(mockRestoreBackup).not.toHaveBeenCalled();
-	});
-
-	it("returns bounded 503 before validating a stored-file restore", async () => {
-		const response = await app.inject({
-			method: "POST",
-			url: "/api/backup/restore-from-file",
-			headers: { "x-test-auth": "1" },
-			payload: {},
-		});
-
-		expect(response.statusCode).toBe(503);
-		expect(JSON.parse(response.payload)).toEqual({
-			error: "Backup restore is temporarily unavailable",
-			details:
-				"Restore is disabled because this version cannot yet guarantee crash-safe database and secrets recovery. No data was changed.",
-		});
-		expect(mockRestoreBackup).not.toHaveBeenCalled();
 	});
 });

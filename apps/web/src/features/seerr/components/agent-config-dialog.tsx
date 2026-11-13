@@ -2,7 +2,7 @@
 
 import type { SeerrNotificationAgent } from "@arr/shared";
 import { Loader2, Settings } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 import { GradientButton } from "../../../components/layout/premium-components";
 import {
@@ -19,6 +19,7 @@ import {
 import { SimpleFormField } from "../../../components/ui/simple-form-field";
 import { useUpdateSeerrNotification } from "../../../hooks/api/useSeerr";
 import { AGENT_FIELDS, type AgentField } from "../lib/notification-agent-fields";
+import { notifySeerrActionError } from "../lib/seerr-action-error";
 
 interface AgentConfigDialogProps {
 	agent: SeerrNotificationAgent | null;
@@ -35,14 +36,24 @@ export const AgentConfigDialog = ({
 }: AgentConfigDialogProps) => {
 	const formId = useId();
 	const [draft, setDraft] = useState<Record<string, unknown>>({});
+	const editingSession = useRef<{ instanceId: string; agentId: string } | null>(null);
 	const updateMutation = useUpdateSeerrNotification();
 
-	// Sync draft from agent options when the dialog opens with a new agent
+	// Current agent properties may refresh while options are being edited.
+	// Initialize only for a new verified editing session, not each readback.
 	useEffect(() => {
-		if (open && agent) {
-			setDraft({ ...agent.options });
+		if (!open || !agent) {
+			editingSession.current = null;
+			return;
 		}
-	}, [open, agent]);
+		if (
+			editingSession.current?.instanceId !== instanceId ||
+			editingSession.current?.agentId !== agent.id
+		) {
+			setDraft({ ...agent.options });
+			editingSession.current = { instanceId, agentId: agent.id };
+		}
+	}, [open, agent, instanceId]);
 
 	if (!agent) return null;
 
@@ -63,7 +74,8 @@ export const AgentConfigDialog = ({
 					toast.success(`${agent.name} configuration saved`);
 					onOpenChange(false);
 				},
-				onError: () => toast.error(`Failed to save ${agent.name} configuration`),
+				onError: (error) =>
+					notifySeerrActionError(error, `Failed to save ${agent.name} configuration`),
 			},
 		);
 	};
@@ -73,8 +85,11 @@ export const AgentConfigDialog = ({
 			{ instanceId, agentId: String(agent.id), config: { enabled: !agent.enabled } },
 			{
 				onSuccess: () => toast.success(`${agent.name} ${agent.enabled ? "disabled" : "enabled"}`),
-				onError: () =>
-					toast.error(`Failed to ${agent.enabled ? "disable" : "enable"} ${agent.name}`),
+				onError: (error) =>
+					notifySeerrActionError(
+						error,
+						`Failed to ${agent.enabled ? "disable" : "enable"} ${agent.name}`,
+					),
 			},
 		);
 	};

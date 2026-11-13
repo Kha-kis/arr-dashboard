@@ -1,6 +1,10 @@
 "use client";
 
-import type { ProwlarrIndexer, ProwlarrIndexerDetails } from "@arr/shared";
+import type {
+	ProwlarrIndexer,
+	SearchIndexerUpdateChanges,
+	SearchIndexerUpdateOutcome,
+} from "@arr/shared";
 import { ExternalLink, Globe, Server } from "lucide-react";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
@@ -37,8 +41,8 @@ export const IndexerInstanceCard = ({
 	onUpdate: (
 		instanceId: string,
 		indexerId: number,
-		payload: ProwlarrIndexerDetails,
-	) => Promise<ProwlarrIndexerDetails>;
+		changes: SearchIndexerUpdateChanges,
+	) => Promise<SearchIndexerUpdateOutcome>;
 	testingKey: string | null;
 	isPending: boolean;
 	expandedKey: string | null;
