@@ -757,7 +757,14 @@ describe("guarded Jellyfin SQLite snapshot recovery", () => {
 				prepareNativeWatchGeneration(native.prisma, input, undefined, (event) => {
 					if (event.kind === "row-chunk" && event.phase === "callback-entered") calls += 1;
 				}),
-			).rejects.toMatchObject({ code: "P2002" });
+			).rejects.toMatchObject({
+				code: "P2010",
+				meta: {
+					driverAdapterError: {
+						cause: { originalCode: "SQLITE_CONSTRAINT_UNIQUE", kind: "UniqueConstraintViolation" },
+					},
+				},
+			});
 			expect(calls).toBe(1);
 			expect(
 				await native.prisma.jellyfinNativeWatchRow.count({ where: { runId: "new-run" } }),
