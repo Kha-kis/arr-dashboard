@@ -18,6 +18,7 @@ const ROW_WRITE_CHUNK_SIZE = 250;
 const CLEANUP_BATCH_SIZE = 5_000;
 const LEASE_CHECKPOINT_CHUNKS = 10;
 const ADMISSION_RETRY_DELAYS_MS = [10, 20, 40] as const;
+const VERIFICATION_CHECKPOINT_RETRY_DELAYS_MS = [...ADMISSION_RETRY_DELAYS_MS, 250, 500, 1_000];
 const PREPARATION_TRANSACTION_MAX_WAIT_MS = 5_000;
 
 function isBusyAdmission(error: unknown): boolean {
@@ -70,6 +71,8 @@ async function preparationTransaction(
 	kind: NativeWatchPreparationTransactionKind,
 	observer: NativeWatchTransactionObserver | undefined,
 	operation: (tx: Prisma.TransactionClient) => Promise<void>,
+	retryDelays: readonly number[] = ADMISSION_RETRY_DELAYS_MS,
+	checkCancellation?: () => void | Promise<void>,
 ): Promise<void> {
 	const observe = (phase: Parameters<NativeWatchTransactionObserver>[0]["phase"]) => {
 		try {
@@ -99,12 +102,14 @@ async function preparationTransaction(
 				return;
 			} catch (error) {
 				observe("failed");
-				const wait = ADMISSION_RETRY_DELAYS_MS[admissionRetries];
+				const wait = retryDelays[admissionRetries];
 				// Only a refused start can replay the pending batch. Never replay a
 				// callback failure or an uncertain commit/acknowledgement.
 				if (callbackEntered || wait === undefined || !isBusyAdmission(error)) throw error;
 				admissionRetries++;
+				await checkCancellation?.();
 				await delay(wait);
+				await checkCancellation?.();
 			}
 		}
 	});
@@ -198,10 +203,16 @@ async function checkpointPreparationLease(
 	input: OwnedNativeWatchPreparation,
 	observer?: NativeWatchPreparationObserver,
 	transactionObserver?: NativeWatchTransactionObserver,
+	verificationRetry?: { checkCancellation: (() => void | Promise<void>) | undefined },
 ): Promise<void> {
 	observePreparation(observer, "lease-checkpoint");
-	await preparationTransaction(prisma, "lease-checkpoint", transactionObserver, (tx) =>
-		renewOwnedPreparationLease(tx, input, observer),
+	await preparationTransaction(
+		prisma,
+		"lease-checkpoint",
+		transactionObserver,
+		(tx) => renewOwnedPreparationLease(tx, input, observer),
+		verificationRetry ? VERIFICATION_CHECKPOINT_RETRY_DELAYS_MS : undefined,
+		verificationRetry?.checkCancellation,
 	);
 }
 
@@ -489,7 +500,12 @@ export async function prepareNativeWatchGeneration(
 	await verifyPreparedNativeWatchGeneration(
 		prisma,
 		input,
-		() => checkpointPreparationLease(prisma, input, observer, transactionObserver),
+		// The ordered rows and receipts have already been staged. A proven refused
+		// start gets a short extra budget here before the worker must give up.
+		() =>
+			checkpointPreparationLease(prisma, input, observer, transactionObserver, {
+				checkCancellation,
+			}),
 		observer,
 		checkCancellation,
 	);

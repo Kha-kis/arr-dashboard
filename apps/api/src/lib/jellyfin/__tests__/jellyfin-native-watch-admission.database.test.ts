@@ -8,7 +8,10 @@ import {
 	recordScopedWriteEvidence,
 	snapshotProtectedRows,
 } from "../../__tests__/scoped-write-intent-fixture.js";
-import { prepareNativeWatchGeneration } from "../jellyfin-native-watch-repository.js";
+import {
+	JellyfinNativeWatchLeaseLostError,
+	prepareNativeWatchGeneration,
+} from "../jellyfin-native-watch-repository.js";
 
 afterEach(closeScopedWriteFixtures);
 
@@ -110,6 +113,91 @@ async function createNativeWatchAdmissionFixture() {
 }
 
 describe("native-watch admission on guarded WAL SQLite", { timeout: 30_000 }, () => {
+	it.each(["recovered", "revoked", "cancelled"] as const)(
+		"retains staging at a contended verification checkpoint when %s",
+		async (outcome) => {
+			const { f, input, pointer } = await createNativeWatchAdmissionFixture();
+			const before = snapshotProtectedRows(f);
+			await f.runtime.runOperation(() => f.client.prisma.$connect());
+			const competition = interceptScopedWriteCompetition(f);
+			const stagedRows = f.writer.prepare(
+				'SELECT count(*) AS count FROM "jellyfin_native_watch_rows" WHERE "instanceId"=? AND "runId"=?',
+			);
+			let checkpointHeld = false;
+			let resets = 0;
+			let refused = 0;
+			let verificationCallbacks = 0;
+			let enteredWhileHeld = false;
+			let cancelled = false;
+			const cancellation = new Error("synthetic cancellation");
+			const conserved: number[] = [];
+			const unsettled: boolean[] = [];
+			const releaseAt = outcome === "cancelled" ? 1 : 4;
+			const result = f.runtime.runOperation(() =>
+				prepareNativeWatchGeneration(
+					f.client.prisma,
+					input,
+					({ stage }) => {
+						if (stage === "own-row-reset") resets++;
+						if (stage !== "lease-checkpoint" || checkpointHeld) return;
+						const rows = stagedRows.get(input.instanceId, input.runId) as { count: number };
+						if (rows.count === input.candidates.length) {
+							f.writer.exec("BEGIN IMMEDIATE");
+							checkpointHeld = true;
+						}
+					},
+					({ kind, phase }) => {
+						if (kind !== "lease-checkpoint" || !checkpointHeld) return;
+						if (phase === "callback-entered") verificationCallbacks++;
+						if (!f.writer.inTransaction) return;
+						if (phase === "callback-entered") enteredWhileHeld = true;
+						if (phase !== "failed") return;
+						const { count } = stagedRows.get(input.instanceId, input.runId) as { count: number };
+						conserved.push(count);
+						unsettled.push([...f.applications].some((db) => db.inTransaction));
+						if (++refused !== releaseAt) return;
+						if (outcome === "revoked") {
+							f.writer
+								.prepare('UPDATE "jellyfin_episode_preparations" SET "token"=? WHERE "runId"=?')
+								.run("synthetic-replacement-owner", input.runId);
+							f.writer.exec("COMMIT");
+						} else {
+							f.writer.exec("ROLLBACK");
+							cancelled = outcome === "cancelled";
+						}
+					},
+					() => {
+						if (cancelled) throw cancellation;
+					},
+				),
+			);
+			if (outcome === "recovered") await result;
+			else if (outcome === "revoked")
+				await expect(result).rejects.toBeInstanceOf(JellyfinNativeWatchLeaseLostError);
+			else await expect(result).rejects.toBe(cancellation);
+			expect(refused).toBe(releaseAt);
+			expect(verificationCallbacks).toBe({ recovered: 2, revoked: 1, cancelled: 0 }[outcome]);
+			expect(enteredWhileHeld).toBe(false);
+			expect(conserved).toEqual(Array.from({ length: releaseAt }, () => 501));
+			expect(unsettled).toEqual(Array.from({ length: releaseAt }, () => false));
+			expect(resets).toBe(1);
+			expect(competition.nativeErrors).toContain("SQLITE_BUSY");
+			expect(stagedRows.get(input.instanceId, input.runId)).toEqual({ count: 501 });
+			expect(
+				await f.plain.jellyfinNativeWatchScopeReceipt.count({
+					where: { instanceId: input.instanceId, runId: input.runId },
+				}),
+			).toBe(1);
+			expect(
+				await f.plain.jellyfinNativeWatchPublication.findUnique({
+					where: { instanceId: input.instanceId },
+				}),
+			).toEqual(pointer);
+			expect(snapshotProtectedRows(f)).toEqual(before);
+			expect(f.losses).toEqual([]);
+		},
+	);
+
 	it.each([
 		{ admissionDelayMs: 2_200, expires: false },
 		{ admissionDelayMs: 5_200, expires: true },
