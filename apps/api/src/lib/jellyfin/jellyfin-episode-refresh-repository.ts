@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
 	withIsolatedRuntimePrismaReadTransaction,
 	withIsolatedRuntimePrismaTransaction,
@@ -102,6 +102,14 @@ export {
 } from "./jellyfin-episode-refresh-policy.js";
 export const MAX_JELLYFIN_FINALIZER_STAGE_ROWS = 600_000;
 const JELLYFIN_FINALIZER_STAGE_READ_PAGE_SIZE = 1_000;
+const JELLYFIN_EPISODE_STAGE_INSERT_ROWS = 500;
+const STAGE_INSERT_DRIVER_CODES = new Map([
+	["DatabaseNotReachable", "P1001"],
+	["SocketTimeout", "P1008"],
+	["ConnectionClosed", "P1017"],
+	["UniqueConstraintViolation", "P2002"],
+	["TransactionWriteConflict", "P2034"],
+]);
 
 // Uses the existing run-scoped staging sidecar and its cleanup lifecycle.
 function parseRepeatedEpisode(reason: string) {
@@ -724,6 +732,56 @@ function reportPageRejection(
 	return false;
 }
 
+async function insertJellyfinEpisodeStageRows(
+	tx: Prisma.TransactionClient,
+	rows: Prisma.JellyfinEpisodeObservationStageCreateManyInput[],
+): Promise<void> {
+	if (!rows.length) return;
+	if (rows.length < JELLYFIN_EPISODE_STAGE_INSERT_ROWS) {
+		await tx.jellyfinEpisodeObservationStage.createMany({ data: rows });
+		return;
+	}
+	// Keep the whole page atomic. These batches stay below both bind limits.
+	for (let start = 0; start < rows.length; start += JELLYFIN_EPISODE_STAGE_INSERT_ROWS) {
+		const chunk = rows.slice(start, start + JELLYFIN_EPISODE_STAGE_INSERT_ROWS);
+		const values = chunk.map(
+			(row) => Prisma.sql`(
+				${randomUUID()}, ${row.runId}, ${row.unitId}, ${row.userKeyDigest}, ${row.pass},
+				${row.jellyfinId}, ${row.seriesId}, ${row.seasonNumber}, ${row.episodeNumber},
+				${row.title}, ${row.played}, ${row.playCount ?? null},
+				${row.lastPlayedAt ?? null}, ${row.userName}
+			)`,
+		);
+		let inserted: number;
+		try {
+			inserted = await tx.$executeRaw(Prisma.sql`
+				INSERT INTO "jellyfin_episode_observation_stage" (
+					"id", "runId", "unitId", "userKeyDigest", "pass", "jellyfinId", "seriesId",
+					"seasonNumber", "episodeNumber", "title", "played", "playCount", "lastPlayedAt", "userName"
+				) VALUES ${Prisma.join(values)}
+			`);
+		} catch (error) {
+			if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2010")
+				throw error;
+			// Raw Prisma statements wrap these driver kinds in P2010. Retain
+			// the model-operation categories used by the existing stage retry
+			// and claim settlement, without making arbitrary raw errors retryable.
+			const adapter = error.meta?.driverAdapterError;
+			const cause = adapter && typeof adapter === "object" ? Reflect.get(adapter, "cause") : null;
+			const kind = cause && typeof cause === "object" ? Reflect.get(cause, "kind") : null;
+			const code = typeof kind === "string" ? STAGE_INSERT_DRIVER_CODES.get(kind) : undefined;
+			if (!code) throw error;
+			throw new Prisma.PrismaClientKnownRequestError("Jellyfin episode stage insert failed", {
+				code,
+				clientVersion: error.clientVersion,
+				meta: error.meta,
+			});
+		}
+		if (inserted !== chunk.length)
+			throw new Error("Jellyfin episode page stage insert was incomplete");
+	}
+}
+
 /**
  * The only durable continuation transition. Provider data has already been
  * decoded before this transaction begins; this transaction re-proves the
@@ -920,27 +978,25 @@ export async function stageJellyfinEpisodePage(
 						});
 				}
 			}
-			if (newItems.length) {
-				await tx.jellyfinEpisodeObservationStage.createMany({
-					data: newItems.map((item) => ({
-						runId: run.id,
-						unitId: unit.id,
-						userKeyDigest,
-						pass: claim.phase,
-						jellyfinId: item.id,
-						seriesId: item.seriesId!,
-						seasonNumber: item.seasonNumber!,
-						episodeNumber: item.episodeNumber!,
-						title: item.name,
-						played: item.played,
-						playCount: item.playCount ?? null,
-						lastPlayedAt: item.lastPlayedDate ? new Date(item.lastPlayedDate) : null,
-						// The legacy stage schema requires this column, but usernames are
-						// display data rather than durable observation authority.
-						userName: "",
-					})),
-				});
-			}
+			await insertJellyfinEpisodeStageRows(
+				tx,
+				newItems.map((item) => ({
+					runId: run.id,
+					unitId: unit.id,
+					userKeyDigest,
+					pass: claim.phase,
+					jellyfinId: item.id,
+					seriesId: item.seriesId!,
+					seasonNumber: item.seasonNumber!,
+					episodeNumber: item.episodeNumber!,
+					title: item.name,
+					played: item.played,
+					playCount: item.playCount ?? null,
+					lastPlayedAt: item.lastPlayedDate ? new Date(item.lastPlayedDate) : null,
+					// The legacy schema requires this field. It is not evidence.
+					userName: "",
+				})),
+			);
 		}
 		const complete = page.totalRecordCount !== null && nextCursor === expectedRawCount;
 		const updated = await tx.providerObservationUnit.updateMany({

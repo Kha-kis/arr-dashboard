@@ -3711,6 +3711,113 @@ describe("full-watch counted checkpoints", () => {
 		}));
 	}
 
+	it.each(["success", "late-constraint", "late-unique", "busy"] as const)(
+		"bounds native stage inserts and rolls back failed pages: %s",
+		async (scenario) => {
+			const fail = scenario !== "success";
+			const { prisma, seed, instance } = await fixture(2_000);
+			if (scenario === "late-constraint") {
+				await prisma.$executeRaw`
+				CREATE TRIGGER reject_later_episode BEFORE INSERT ON jellyfin_episode_observation_stage
+				WHEN NEW.jellyfinId = 'episode-501'
+				BEGIN SELECT RAISE(ABORT, 'synthetic-late-batch'); END
+			`;
+			}
+			if (scenario === "late-unique") {
+				await prisma.$executeRaw`
+					CREATE UNIQUE INDEX fixture_stage_unique ON jellyfin_episode_observation_stage (title)
+					WHERE episodeNumber IN (501, 502)
+				`;
+			}
+			const claim = (await claimObservationUnit(prisma, {
+				runId: seed.run.id,
+				now: seed.attempt.attemptedAt,
+			}))!;
+			const prepare = Database.prototype.prepare;
+			let inserts = 0;
+			const observe = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+				this: Database.Database,
+				sql,
+			) {
+				if (
+					/^\s*INSERT\s+INTO\s+(?:(?:["`]?main["`]?)\.)?["`]?jellyfin_episode_observation_stage\b/i.test(
+						sql,
+					)
+				) {
+					inserts++;
+					if (scenario === "busy" && inserts === 2)
+						throw new Database.SqliteError("synthetic-stage-contention", "SQLITE_BUSY");
+				}
+				return prepare.call(this, sql);
+			});
+			const date = "2026-01-02T03:04:05.678Z";
+			const items = episodes(2_000).map((item, index) =>
+				index === 0 ? { ...item, played: false, playCount: 0, lastPlayedDate: date } : item,
+			);
+			const stage = () =>
+				stageJellyfinEpisodePage(
+					prisma,
+					claim,
+					seed.scopes[0]!,
+					{ startIndex: 0, totalRecordCount: items.length, items },
+					seed.attempt.attemptedAt,
+					undefined,
+					{ authority: createProviderPublicationAuthority(instance), attempt: seed.attempt },
+				);
+			try {
+				if (scenario === "busy")
+					await expect(stage()).rejects.toMatchObject({
+						code: "P1008",
+						meta: { driverAdapterError: { cause: { originalCode: "SQLITE_BUSY" } } },
+					});
+				else if (scenario === "late-unique")
+					await expect(stage()).rejects.toMatchObject({ code: "P2002" });
+				else if (fail) await expect(stage()).rejects.toThrow();
+				else await expect(stage()).resolves.toBe(true);
+			} finally {
+				observe.mockRestore();
+			}
+			const staged = await prisma.jellyfinEpisodeObservationStage.findMany({
+				where: { runId: seed.run.id, unitId: claim.unitId, pass: claim.phase },
+				orderBy: { episodeNumber: "asc" },
+			});
+			if (fail) {
+				expect(inserts).toBeGreaterThan(1);
+				expect(staged).toHaveLength(0);
+				expect(
+					await prisma.providerObservationUnit.findUniqueOrThrow({
+						where: { id: claim.unitId },
+					}),
+				).toMatchObject({ state: "running", cursor: 0, observedRawCount: 0 });
+				if (scenario === "busy") {
+					await expect(stage()).resolves.toBe(true);
+					expect(
+						await prisma.jellyfinEpisodeObservationStage.count({
+							where: { runId: seed.run.id, unitId: claim.unitId },
+						}),
+					).toBe(2_000);
+				}
+				return;
+			}
+			expect(staged.map(({ jellyfinId, episodeNumber }) => [jellyfinId, episodeNumber])).toEqual(
+				items.map(({ id, episodeNumber }) => [id, episodeNumber]),
+			);
+			expect(staged[0]).toMatchObject({
+				played: false,
+				playCount: 0,
+				lastPlayedAt: new Date(date),
+				userName: "",
+			});
+			expect(
+				await prisma.providerObservationUnit.findUniqueOrThrow({
+					where: { id: claim.unitId },
+				}),
+			).toMatchObject({ state: "complete", cursor: 2_000, observedRawCount: 2_000 });
+			expect(inserts).toBeGreaterThan(0);
+			expect(inserts).toBeLessThanOrEqual(4);
+		},
+	);
+
 	async function batchFixture() {
 		const { prisma, seed, instance } = await fixture();
 		const scopes = [
