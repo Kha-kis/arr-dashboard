@@ -14,6 +14,7 @@ import {
 import { KNOWN_JOBS } from "../scheduler-registry/job-definitions.js";
 import { SchedulerRegistry } from "../scheduler-registry/scheduler-registry.js";
 import type { FastifyWithEpisodeRefreshScheduler } from "../services/episode-refresh-scheduler-bridge.js";
+import { claimProviderCacheRefreshAttempt } from "../services/provider-cache-status.js";
 import { ProviderIdentityGuardError } from "../services/provider-identity-guard.js";
 import { UpstreamValidationError } from "../validation/parse-upstream.js";
 import type { JellyfinClient } from "./jellyfin-client.js";
@@ -410,6 +411,8 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			.map((line) => JSON.parse(line) as Record<string, unknown>)
 			.filter((line) => line.category === "jellyfin-episode-work-stage");
 		expect(stages.map((line) => [line.stage, line.state])).toEqual([
+			["outer-attempt-claim", "entered"],
+			["outer-attempt-claim", "succeeded"],
 			["unit-claim", "entered"],
 			["unit-claim", "succeeded"],
 			["guarded-read", "entered"],
@@ -493,10 +496,12 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 				.map((line) => JSON.parse(line) as Record<string, unknown>)
 				.filter((line) => line.category === "jellyfin-episode-work-stage");
 			expect(stages.map((line) => [line.stage, line.state])).toEqual([
+				["outer-attempt-claim", "entered"],
+				["outer-attempt-claim", "succeeded"],
 				["unit-claim", "entered"],
 				["unit-claim", "failed"],
 			]);
-			expect(stages[1]).toEqual({
+			expect(stages.at(-1)).toEqual({
 				level: 30,
 				msg: "Jellyfin episode work stage",
 				category: "jellyfin-episode-work-stage",
@@ -2771,6 +2776,64 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			vi.useRealTimers();
 		}
 	});
+
+	it.each([
+		"proven",
+		"proven-p2028",
+		"unproven",
+		"manual",
+		"cleanup",
+		"emby",
+		"cancelled",
+	] as const)(
+		"uses short outer-attempt recovery only after an eligible unentered refusal (%s)",
+		async (mode) => {
+			const state = ownedFixture(mode === "emby" ? "EMBY" : "JELLYFIN", { v3: true });
+			configureDurableRun(state);
+			const refusal =
+				mode === "proven-p2028"
+					? new Prisma.PrismaClientKnownRequestError("synthetic start timeout", {
+							code: "P2028",
+							clientVersion: "test",
+						})
+					: new RestoreRuntimeAdmissionError();
+			const retryable = mode === "proven" || mode === "proven-p2028";
+			const cancellation = new AbortController();
+			vi.mocked(claimProviderCacheRefreshAttempt).mockImplementationOnce(async () => {
+				if (mode === "cancelled") cancellation.abort();
+				throw refusal;
+			});
+			const proof = vi
+				.spyOn(runtimeClient, "isRetryableSqlitePublicationStartRefusal")
+				.mockImplementation((error) => mode !== "unproven" && error === refusal);
+			try {
+				const result = refreshOwnedJellyfinEpisodeCache({
+					prisma: state.prisma,
+					encryptor: { decrypt: vi.fn() },
+					instance: state.instance,
+					log,
+					signal: cancellation.signal,
+					automaticRenewal: mode === "manual" ? undefined : "provider-unavailable-cooldown",
+					cleanupRunClaimToken: mode === "cleanup" ? "synthetic-cleanup" : undefined,
+				});
+				if (mode === "cancelled")
+					await expect(result).rejects.toMatchObject({ code: "PUBLICATION_CANCELLED" });
+				else
+					await expect(result).resolves.toMatchObject({
+						errors: 1,
+						progressed: false,
+						...(retryable ? { retryableOuterAttemptContention: true } : {}),
+					});
+				if (!retryable && mode !== "cancelled")
+					expect((await result).retryableOuterAttemptContention).toBeUndefined();
+				expect(durable.finishFailure).not.toHaveBeenCalled();
+				expect(durable.claimUnit).not.toHaveBeenCalled();
+				expect(pageWorker.run).not.toHaveBeenCalled();
+			} finally {
+				proof.mockRestore();
+			}
+		},
+	);
 
 	it.each([
 		{ code: "P1008", sqliteCode: "SQLITE_BUSY", classified: true },

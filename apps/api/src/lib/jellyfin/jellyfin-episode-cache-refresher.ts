@@ -126,6 +126,7 @@ export type JellyfinEpisodeRefreshResult = {
 	retryablePreRenewalFailure?: true;
 	/** A scheduled Jellyfin unit claim hit SQLite contention before returning a claim. */
 	retryableClaimContention?: true;
+	retryableOuterAttemptContention?: true;
 	/** A valid current parent library refresh owns admission temporarily. */
 	parentRefreshPending?: true;
 };
@@ -177,6 +178,7 @@ type JellyfinEpisodeWorkProgress = ObservationRunProgress & {
 	publishedItemCount?: number;
 	retryableDependencyFailure?: true;
 	retryableClaimContention?: true;
+	retryableOuterAttemptContention?: true;
 	replanRequired?: true;
 	superseded?: true;
 	renewalDeferred?: true;
@@ -367,6 +369,7 @@ export async function refreshOwnedJellyfinEpisodeCache(
 		errors:
 			progress.retryableDependencyFailure ||
 			progress.retryableClaimContention ||
+			progress.retryableOuterAttemptContention ||
 			progress.replanRequired ||
 			progress.state === "failed" ||
 			progress.state === "invalidated"
@@ -381,6 +384,9 @@ export async function refreshOwnedJellyfinEpisodeCache(
 		...(progress.renewalDeadline ? { renewalDeadline: progress.renewalDeadline } : {}),
 		...(progress.retryablePreRenewalFailure ? { retryablePreRenewalFailure: true as const } : {}),
 		...(progress.retryableClaimContention ? { retryableClaimContention: true as const } : {}),
+		...(progress.retryableOuterAttemptContention
+			? { retryableOuterAttemptContention: true as const }
+			: {}),
 		...(progress.parentRefreshPending ? { parentRefreshPending: true as const } : {}),
 		...(complete ? { completedAt: context.now ?? new Date() } : {}),
 	};
@@ -637,6 +643,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 		const workItemStartedAt = performance.now();
 		async function observeWorkStage<T>(
 			stage:
+				| "outer-attempt-claim"
 				| "unit-claim"
 				| "guarded-read"
 				| "provider-read"
@@ -762,13 +769,30 @@ export function createJellyfinEpisodeWorkItemRunner(
 		}
 		let outer: Awaited<ReturnType<typeof claimProviderCacheRefreshAttempt>>;
 		try {
-			outer = await claimProviderCacheRefreshAttempt(
-				context.prisma,
-				"jellyfin_episode",
-				authority,
-				guardOptions,
+			outer = await observeWorkStage("outer-attempt-claim", () =>
+				claimProviderCacheRefreshAttempt(
+					context.prisma,
+					"jellyfin_episode",
+					authority,
+					guardOptions,
+				),
 			);
 		} catch (error) {
+			if (
+				context.automaticRenewal === "provider-unavailable-cooldown" &&
+				context.cleanupRunClaimToken === undefined &&
+				authority.service === "JELLYFIN" &&
+				isRetryableSqlitePublicationStartRefusal(error)
+			) {
+				checkEpisodeCancellation(context.signal);
+				// No attempt is adopted here. The scheduler must read durable
+				// state, and the next slice must re-enter the original claim.
+				return {
+					...emptyEpisodeProgress(),
+					state: "running",
+					retryableOuterAttemptContention: true,
+				};
+			}
 			if (isTransientEpisodeDatabaseFailure(error)) throw error;
 			logJellyfinEpisodePrePageFailure(context.log, "current-authority-failed");
 			return emptyEpisodeProgress();

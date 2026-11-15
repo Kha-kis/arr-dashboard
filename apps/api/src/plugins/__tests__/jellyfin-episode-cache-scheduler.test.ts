@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as runtimeClient from "../../lib/backup/restore-runtime-client.js";
 import {
 	JELLYFIN_EPISODE_PARENT_REFRESH_CONTINUATION_DELAY_MS,
 	JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS,
@@ -999,6 +1000,102 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 		expect(mocks.refresh).toHaveBeenCalledTimes(2);
 		await vi.advanceTimersByTimeAsync(600_000);
 		expect(mocks.refresh).toHaveBeenCalledTimes(2);
+	});
+
+	it.each(["missing", "exhausted", "due", "future", "running"] as const)(
+		"bounds proven outer refusal recovery against a %s durable run",
+		async (state) => {
+			findInstances.mockResolvedValue([instance("JELLYFIN")]);
+			const initial = 6 * 60_000;
+			const deadline = new Date(Date.now() + initial + (state === "future" ? 45_000 : -1));
+			findFailedRun.mockResolvedValue(
+				state === "missing"
+					? null
+					: {
+							state: state === "running" ? "running" : "failed",
+							nextAttemptAt: state === "exhausted" || state === "running" ? null : deadline,
+						},
+			);
+			mocks.refresh.mockResolvedValue({
+				complete: false,
+				upserted: 0,
+				errors: 1,
+				progressed: false,
+				retryableOuterAttemptContention: true,
+			});
+			await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+			await app.ready();
+
+			await vi.advanceTimersByTimeAsync(initial + 1);
+			expect(mocks.refresh).toHaveBeenCalledOnce();
+			const delays =
+				state === "running"
+					? [10_000, 10_000, 10_000]
+					: [...(state === "future" ? [45_000] : []), 30_000, 120_000, 600_000];
+			for (const [index, delay] of delays.entries()) {
+				await vi.advanceTimersByTimeAsync(delay - (index === 0 ? 2 : 1));
+				expect(mocks.refresh).toHaveBeenCalledTimes(index + 1);
+				await vi.advanceTimersByTimeAsync(1);
+				expect(mocks.refresh).toHaveBeenCalledTimes(index + 2);
+			}
+			await vi.advanceTimersByTimeAsync(600_000);
+			expect(mocks.refresh).toHaveBeenCalledTimes(1 + delays.length);
+		},
+	);
+
+	it("retains automatic renewal when the deadline read fails after an outer refusal", async () => {
+		findInstances.mockResolvedValue([instance("JELLYFIN")]);
+		findFailedRun.mockRejectedValue(new Error("deadline read unavailable"));
+		mocks.refresh
+			.mockResolvedValueOnce({
+				complete: false,
+				upserted: 0,
+				errors: 1,
+				retryableOuterAttemptContention: true,
+			})
+			.mockResolvedValue({ complete: true, upserted: 0, errors: 0 });
+		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+		await app.ready();
+
+		await vi.advanceTimersByTimeAsync(6 * 60_000 + 29_999);
+		expect(mocks.refresh).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(1);
+		expect(mocks.refresh).toHaveBeenCalledTimes(2);
+		expect(mocks.refresh.mock.calls[1]![0]).toMatchObject({
+			resumeFailed: false,
+			automaticRenewal: "provider-unavailable-cooldown",
+		});
+	});
+
+	it("reads the durable retry deadline when the ordinary connection is unavailable", async () => {
+		findInstances.mockResolvedValue([instance("JELLYFIN")]);
+		findFailedRun.mockRejectedValue(new Error("ordinary read unavailable"));
+		mocks.refresh
+			.mockResolvedValueOnce({ complete: false, upserted: 0, errors: 1, progressed: false })
+			.mockResolvedValue({ complete: true, upserted: 0, errors: 0, progressed: false });
+		const read = vi.spyOn(runtimeClient, "withIsolatedRuntimePrismaReadClient").mockImplementation(
+			async (prisma, operation) =>
+				await operation({
+					...prisma,
+					providerObservationRun: {
+						findFirst: async () => ({
+							state: "failed",
+							nextAttemptAt: new Date(Date.now() + 45_000),
+						}),
+					},
+				} as typeof prisma),
+		);
+		try {
+			await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+			await app.ready();
+			await vi.advanceTimersByTimeAsync(6 * 60_000 + 44_999);
+			expect(mocks.refresh).toHaveBeenCalledOnce();
+			await vi.advanceTimersByTimeAsync(1);
+			expect(mocks.refresh).toHaveBeenCalledTimes(2);
+			expect(findFailedRun).not.toHaveBeenCalled();
+		} finally {
+			read.mockRestore();
+		}
 	});
 
 	it("bounds a continuation-state query failure without an unhandled rejection", async () => {
