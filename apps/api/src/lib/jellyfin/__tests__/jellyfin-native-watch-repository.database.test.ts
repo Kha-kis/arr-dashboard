@@ -428,11 +428,11 @@ describe("native watch publication", { timeout: 30_000 }, () => {
 	});
 
 	it.each([
-		["jellyfin_native_watch_rows", "row-chunk-write"],
-		["jellyfin_native_watch_scope_receipts", "receipt-chunk-write"],
+		["jellyfin_native_watch_rows", "row-chunk-write", "P2010"],
+		["jellyfin_native_watch_scope_receipts", "receipt-chunk-write", "P2003"],
 	] as const)(
 		"locates a real rejected write to %s and preserves the prior publication",
-		async (table, stage) => {
+		async (table, stage, errorCode) => {
 			const prisma = await database();
 			await seedCompletedRun(prisma, "old-run", "old-generation");
 			await prisma.$transaction((tx) =>
@@ -451,7 +451,7 @@ describe("native watch publication", { timeout: 30_000 }, () => {
 						throw new Error("synthetic observer failure");
 					},
 				),
-			).rejects.toMatchObject({ code: "P2003" });
+			).rejects.toMatchObject({ code: errorCode });
 			expect(current).toEqual({ stage, count: 1 });
 			expect(
 				await prisma.jellyfinNativeWatchPublication.findUnique({

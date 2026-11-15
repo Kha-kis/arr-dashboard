@@ -49,6 +49,7 @@ function fixture(
 		],
 	};
 	const trace: string[] = [];
+	const boundRowInserts: unknown[][] = [];
 	const rows: object[] = [];
 	const receipts: object[] = [];
 	const readSizes: number[] = [];
@@ -65,8 +66,38 @@ function fixture(
 				return { count: 1 };
 			},
 		},
-		$executeRaw: async (strings: TemplateStringsArray) => {
-			const sql = strings.join("?");
+		$executeRaw: async (query: TemplateStringsArray | { sql: string; values: unknown[] }) => {
+			const sql = "sql" in query ? query.sql : query.join("?");
+			if ("sql" in query && sql.includes('INSERT INTO "jellyfin_native_watch_rows"')) {
+				trace.push("row-insert");
+				boundRowInserts.push(query.values);
+				const fields = [
+					"id",
+					"instanceId",
+					"runId",
+					"userKeyDigest",
+					"libraryId",
+					"jellyfinId",
+					"seriesId",
+					"seasonNumber",
+					"episodeNumber",
+					"played",
+					"playCount",
+					"lastPlayedAt",
+					"observedAt",
+					"connectionGeneration",
+					"identityGeneration",
+				];
+				expect(query.values.length % fields.length).toBe(0);
+				for (let offset = 0; offset < query.values.length; offset += fields.length) {
+					rows.push(
+						Object.fromEntries(
+							fields.map((field, column) => [field, query.values[offset + column]]),
+						),
+					);
+				}
+				return query.values.length / fields.length;
+			}
 			if (sql.includes('DELETE FROM "jellyfin_native_watch_rows"')) {
 				trace.push("row-delete");
 				return rowDeletes++ < (options.cleanupBatches ?? 0) ? 1 : 0;
@@ -77,12 +108,6 @@ function fixture(
 			}
 			trace.push("write-intent");
 			return 1;
-		},
-		jellyfinNativeWatchRow: {
-			createMany: async ({ data }: { data: object[] }) => {
-				trace.push("row-insert");
-				rows.push(...data);
-			},
 		},
 		jellyfinNativeWatchScopeReceipt: {
 			createMany: async ({ data }: { data: object[] }) => {
@@ -128,7 +153,7 @@ function fixture(
 			if (index === options.failAt && options.failPhase === "commit") throw error;
 		},
 	};
-	return { db, input, trace, error, rows, receipts, readSizes, renewalRows };
+	return { db, input, trace, error, rows, receipts, readSizes, renewalRows, boundRowInserts };
 }
 
 function busyAdmission() {
@@ -137,6 +162,19 @@ function busyAdmission() {
 		meta: { driverAdapterError: { cause: { originalCode: "SQLITE_BUSY" } } },
 	};
 }
+
+it("binds one native-watch insert per bounded row transaction", async () => {
+	const f = fixture();
+	f.input.candidates = Array.from({ length: 251 }, (_, index) => ({
+		...f.input.candidates[0]!,
+		jellyfinId: `episode-${String(index).padStart(3, "0")}`,
+	}));
+	f.input.receipts[0]!.expectedRawCount = 251;
+	f.input.receipts[0]!.observedRawCount = 251;
+	await prepareNativeWatchGeneration(f.db as never, f.input);
+	expect(f.boundRowInserts.map((values) => values.length)).toEqual([250 * 15, 15]);
+	expect(f.rows).toHaveLength(251);
+});
 
 describe("native-watch busy-start recovery", () => {
 	it.each([
@@ -438,7 +476,7 @@ describe("native-watch preparation transaction observation", () => {
 		expect(observed.trace.filter((entry) => entry === "write-intent")).toHaveLength(5);
 		expect(observed.trace.filter((entry) => entry === "row-insert")).toHaveLength(1);
 		expect(observed.trace.filter((entry) => entry === "receipt-insert")).toHaveLength(1);
-		expect(observed.rows).toEqual(baseline.rows);
+		expect(observed.rows).toEqual(baseline.rows.map((row) => ({ ...row, id: expect.any(String) })));
 		expect(observed.receipts).toEqual(baseline.receipts);
 	});
 

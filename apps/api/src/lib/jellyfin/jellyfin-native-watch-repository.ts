@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { type JellyfinNativeWatchRow, Prisma, type PrismaClient } from "../prisma.js";
 import { JELLYFIN_EPISODE_PREPARATION_LEASE_MS } from "./jellyfin-episode-generation-repository.js";
@@ -432,16 +433,25 @@ export async function prepareNativeWatchGeneration(
 			else await acquireNativeWatchStagingWriteIntent(tx, input, observer);
 			await assertUnpublishedRunningRun(tx, input, observer);
 			observePreparation(observer, "row-chunk-write", chunk.length);
-			await tx.jellyfinNativeWatchRow.createMany({
-				data: chunk.map((candidate) => ({
-					instanceId: input.instanceId,
-					runId: input.runId,
-					...candidate,
-					observedAt: input.observedAt,
-					connectionGeneration: input.connectionGeneration,
-					identityGeneration: input.identityGeneration,
-				})),
-			});
+			// Single bound insert inside the existing fenced SQLite write.
+			const values = chunk.map(
+				(candidate) => Prisma.sql`(
+					${randomUUID()}, ${input.instanceId}, ${input.runId}, ${candidate.userKeyDigest},
+					${candidate.libraryId}, ${candidate.jellyfinId}, ${candidate.seriesId},
+					${candidate.seasonNumber}, ${candidate.episodeNumber}, ${candidate.played},
+					${candidate.playCount}, ${candidate.lastPlayedAt}, ${input.observedAt},
+					${input.connectionGeneration}, ${input.identityGeneration}
+				)`,
+			);
+			const inserted = await tx.$executeRaw(Prisma.sql`
+				INSERT INTO "jellyfin_native_watch_rows" (
+					"id", "instanceId", "runId", "userKeyDigest", "libraryId", "jellyfinId", "seriesId",
+					"seasonNumber", "episodeNumber", "played", "playCount", "lastPlayedAt", "observedAt",
+					"connectionGeneration", "identityGeneration"
+				) VALUES ${Prisma.join(values)}
+			`);
+			if (inserted !== chunk.length)
+				throw new Error("Native watch preparation row insert was incomplete");
 			await assertUnpublishedRunningRun(tx, input, observer);
 			// The transaction's commit is part of this chunk's write phase.
 			observePreparation(observer, "row-chunk-write", chunk.length);
