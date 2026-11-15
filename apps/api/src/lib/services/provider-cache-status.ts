@@ -261,6 +261,7 @@ export async function claimProviderCacheRefreshAttempt(
 	cacheType: WatchProviderCacheRefreshType,
 	instance: ProviderPublicationAuthority,
 	options: ProviderIdentityGuardOptions = {},
+	precondition?: (tx: Prisma.TransactionClient) => Promise<boolean>,
 ): Promise<ProviderCacheRefreshClaim> {
 	if (!supportsCacheType(instance.service, cacheType)) {
 		throw new Error("Provider cache type does not match publication service");
@@ -282,6 +283,7 @@ export async function claimProviderCacheRefreshAttempt(
 			prisma,
 			instance,
 			async (tx) => {
+				if (precondition && !(await precondition(tx))) return { status: "superseded" } as const;
 				const status = await tx.cacheRefreshStatus.findUnique({
 					where: { instanceId_cacheType: { instanceId: instance.id, cacheType } },
 					select: {

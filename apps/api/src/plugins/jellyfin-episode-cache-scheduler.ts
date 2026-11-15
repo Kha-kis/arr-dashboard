@@ -37,6 +37,9 @@ const STARTUP_DELAY_MS = 6 * 60 * 1000; // 6 minutes (after jellyfin-cache popul
 const TRANSIENT_IDENTITY_RETRY_DELAYS_MS = [30_000, 120_000, 600_000] as const;
 const UNIT_CLAIM_CONTENTION_RETRY_DELAY_MS = 10_000;
 const MAX_CATALOG_REPLANS_PER_CHAIN = 1;
+const COMPLETED_RUN_RETRY_DELAYS_MS = [30_000, 60_000, 120_000] as const;
+
+type CompletedRunRetry = { runId: string; index: number };
 
 export async function refreshScheduledJellyfinEpisodeCacheInstance(
 	app: Pick<FastifyInstance, "encryptor" | "prisma" | "log" | "config">,
@@ -44,6 +47,7 @@ export async function refreshScheduledJellyfinEpisodeCacheInstance(
 	resumeFailed = true,
 	automaticRenewal: AutomaticObservationRenewalMode | "none" = "none",
 	signal?: AbortSignal,
+	expectedCompletedRunId?: string,
 ): Promise<Awaited<ReturnType<typeof refreshOwnedJellyfinEpisodeCache>> | null> {
 	try {
 		const authority = createProviderPublicationAuthority(instance);
@@ -62,6 +66,7 @@ export async function refreshScheduledJellyfinEpisodeCacheInstance(
 					log: app.log,
 					resumeFailed,
 					...(automaticRenewal !== "none" ? { automaticRenewal } : {}),
+					...(expectedCompletedRunId ? { expectedCompletedRunId } : {}),
 				}),
 		);
 		app.log.info(
@@ -131,6 +136,7 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			transientIdentityRetry = 0,
 			catalogReplans = 0,
 			automaticRenewal: AutomaticObservationRenewalMode | "none" = "none",
+			completedRunRetry?: CompletedRunRetry,
 		) {
 			if (closing || runningInstances.has(instance.id) || pendingInstanceIds.has(instance.id))
 				return;
@@ -149,8 +155,32 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 					resumeFailed,
 					automaticRenewal,
 					cancellation.signal,
+					completedRunRetry?.runId,
 				);
 				if (closing) return;
+				if (completedRunRetry) {
+					const index = completedRunRetry.index + 1;
+					const delay = COMPLETED_RUN_RETRY_DELAYS_MS[index];
+					if (
+						delay !== undefined &&
+						(result?.retryableOuterAttemptContention ||
+							result?.retryableDependencyFailure ||
+							result?.retryableClaimContention ||
+							result?.retryablePreRenewalFailure ||
+							result?.parentRefreshPending)
+					) {
+						scheduleContinuation(
+							instance,
+							delay,
+							transientIdentityRetry,
+							catalogReplans,
+							automaticRenewal,
+							false,
+							{ runId: completedRunRetry.runId, index },
+						);
+					}
+					return;
+				}
 				if (!result) {
 					const transientDelay = TRANSIENT_IDENTITY_RETRY_DELAYS_MS[transientIdentityRetry];
 					if (transientDelay === undefined) return;
@@ -236,7 +266,45 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 							// Consume the finite retry budget instead of scheduling at zero.
 							const retryCount = effectiveTransientIdentityRetry;
 							const transientDelay = TRANSIENT_IDENTITY_RETRY_DELAYS_MS[retryCount];
-							if (transientDelay === undefined) return;
+							if (transientDelay === undefined) {
+								// The page work is done. Give this exact generation a bounded
+								// chance to reenter the ordinary, fenced publication path.
+								if (!retryAfterOuterRefusal || activeRun?.state !== "running") return;
+								const completedRun = await withIsolatedRuntimePrismaReadClient(
+									app.prisma,
+									(reader) =>
+										reader.providerObservationRun.findFirst({
+											where: {
+												instanceId: instance.id,
+												provider: "jellyfin_episode",
+												cacheType: "jellyfin_episode",
+												state: "running",
+												activeSlotKey: { not: null },
+												connectionGeneration: instance.connectionGeneration,
+												identityGeneration: instance.identityGeneration,
+												totalUnits: { gt: 0 },
+											},
+											select: { id: true, totalUnits: true, completedUnits: true },
+										}),
+									{ maxWait: 5_000, signal: cancellation.signal },
+								);
+								if (
+									completedRun &&
+									completedRun.totalUnits > 0 &&
+									completedRun.completedUnits === completedRun.totalUnits
+								) {
+									scheduleContinuation(
+										instance,
+										COMPLETED_RUN_RETRY_DELAYS_MS[0],
+										retryCount,
+										catalogReplans,
+										automaticRenewal,
+										false,
+										{ runId: completedRun.id, index: 0 },
+									);
+								}
+								return;
+							}
 							delay =
 								result.retryableClaimContention ||
 								(retryAfterOuterRefusal && activeRun?.state === "running")
@@ -299,6 +367,7 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			catalogReplans: number,
 			automaticRenewal: AutomaticObservationRenewalMode | "none" = "none",
 			resumeFailed = false,
+			completedRunRetry?: CompletedRunRetry,
 		) {
 			if (closing || pendingInstanceIds.has(instance.id)) return;
 			pendingInstanceIds.add(instance.id);
@@ -312,6 +381,8 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 					catalogReplans,
 					automaticRenewal,
 					delay,
+					"detached",
+					completedRunRetry,
 				);
 			}, delay);
 			continuationHandles.add(handle);
@@ -325,6 +396,7 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			automaticRenewal: AutomaticObservationRenewalMode | "none" = "none",
 			admissionRetryDelay: number = TRANSIENT_IDENTITY_RETRY_DELAYS_MS[0],
 			observation: "detached" | "covered-by-round" = "detached",
+			completedRunRetry?: CompletedRunRetry,
 		): Promise<void> {
 			if (closing || runningInstances.has(instance.id) || pendingInstanceIds.has(instance.id))
 				return;
@@ -337,6 +409,7 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 							transientIdentityRetry,
 							catalogReplans,
 							automaticRenewal,
+							completedRunRetry,
 						);
 					return observation === "covered-by-round"
 						? refresh()
@@ -352,6 +425,7 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 					catalogReplans,
 					automaticRenewal,
 					resumeFailed,
+					completedRunRetry,
 				);
 				app.log.debug("Jellyfin episode cache page paused for database maintenance");
 			}

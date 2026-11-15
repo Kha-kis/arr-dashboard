@@ -124,6 +124,7 @@ export type JellyfinEpisodeRefreshResult = {
 	renewalDeferred?: true;
 	renewalDeadline?: Date;
 	retryablePreRenewalFailure?: true;
+	retryableDependencyFailure?: true;
 	/** A scheduled Jellyfin unit claim hit SQLite contention before returning a claim. */
 	retryableClaimContention?: true;
 	retryableOuterAttemptContention?: true;
@@ -142,6 +143,8 @@ export type JellyfinEpisodePublicationContext = {
 	cleanupRunClaimToken?: string;
 	resumeFailed?: boolean;
 	automaticRenewal?: AutomaticObservationRenewalMode;
+	/** A delayed publication retry may resume only this fully staged run. */
+	expectedCompletedRunId?: string;
 	now?: Date;
 };
 
@@ -383,6 +386,7 @@ export async function refreshOwnedJellyfinEpisodeCache(
 		...(progress.renewalDeferred ? { renewalDeferred: true as const } : {}),
 		...(progress.renewalDeadline ? { renewalDeadline: progress.renewalDeadline } : {}),
 		...(progress.retryablePreRenewalFailure ? { retryablePreRenewalFailure: true as const } : {}),
+		...(progress.retryableDependencyFailure ? { retryableDependencyFailure: true as const } : {}),
 		...(progress.retryableClaimContention ? { retryableClaimContention: true as const } : {}),
 		...(progress.retryableOuterAttemptContention
 			? { retryableOuterAttemptContention: true as const }
@@ -768,6 +772,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 			// Preserve the existing admission path when this advisory early check is
 			// unavailable; it still performs the authoritative parent read below.
 		}
+		const expectedRunId = context.expectedCompletedRunId;
 		let outer: Awaited<ReturnType<typeof claimProviderCacheRefreshAttempt>>;
 		try {
 			outer = await observeWorkStage("outer-attempt-claim", () =>
@@ -776,6 +781,25 @@ export function createJellyfinEpisodeWorkItemRunner(
 					"jellyfin_episode",
 					authority,
 					guardOptions,
+					expectedRunId
+						? async (tx) => {
+								const run = await tx.providerObservationRun.findFirst({
+									where: {
+										id: expectedRunId,
+										instanceId: authority.id,
+										provider: "jellyfin_episode",
+										cacheType: "jellyfin_episode",
+										connectionGeneration: authority.connectionGeneration,
+										identityGeneration: authority.identityGeneration,
+										state: "running",
+										activeSlotKey: { not: null },
+										totalUnits: { gt: 0 },
+									},
+									select: { totalUnits: true, completedUnits: true },
+								});
+								return run !== null && run.completedUnits === run.totalUnits;
+							}
+						: undefined,
 				),
 			);
 		} catch (error) {
@@ -798,7 +822,11 @@ export function createJellyfinEpisodeWorkItemRunner(
 			logJellyfinEpisodePrePageFailure(context.log, "current-authority-failed");
 			return emptyEpisodeProgress();
 		}
-		if (outer.status === "superseded") return emptyEpisodeProgress();
+		if (outer.status === "superseded") {
+			return expectedRunId
+				? { ...emptyEpisodeProgress(), superseded: true }
+				: emptyEpisodeProgress();
+		}
 		const attempt = outer.attempt;
 		cancellation.attempt = attempt;
 		const canFinishAttempt = outer.status === "acquired";
@@ -964,6 +992,18 @@ export function createJellyfinEpisodeWorkItemRunner(
 		if (savedPlan?.kind === "unavailable") {
 			logJellyfinEpisodePrePageFailure(context.log, "run-admission-failed");
 			return await retryPreRenewal();
+		}
+		// The outer claim protects the cache marker, but the run may have
+		// settled or changed while the parent catalog and saved plan were read.
+		if (
+			expectedRunId &&
+			(savedPlan?.kind !== "valid" ||
+				savedPlan.run.id !== expectedRunId ||
+				savedPlan.run.state !== "running" ||
+				savedPlan.run.completedUnits !== savedPlan.run.totalUnits)
+		) {
+			await preRenewal.settle();
+			return { ...emptyEpisodeProgress(), superseded: true };
 		}
 		if (savedPlan?.kind === "invalid") {
 			markAdmissionStarted();
@@ -1226,6 +1266,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 		let claims: ObservationUnitClaim[];
 		try {
 			claims = await observeWorkStage("unit-claim", async () => {
+				if (expectedRunId) return [];
 				const input = { runId: run.id, now };
 				if (activeCatalog && runOwnsAttempt && authority.service === "JELLYFIN")
 					return await claimJellyfinObservationBatch(context.prisma, input);
@@ -1251,6 +1292,15 @@ export function createJellyfinEpisodeWorkItemRunner(
 		checkEpisodeCancellation(context.signal);
 		if (!claim) {
 			const progress = await runProgress(context.prisma, run.id);
+			if (
+				expectedRunId &&
+				(progress.state !== "running" ||
+					progress.totalUnits <= 0 ||
+					progress.completedUnits !== progress.totalUnits)
+			) {
+				await preRenewal.settle();
+				return { ...progress, superseded: true };
+			}
 			if (progress.completedUnits !== progress.totalUnits) {
 				const deferred = progress.state === "failed" ? await finishAttemptIfRetryDeferred() : null;
 				const settlement =
@@ -1946,6 +1996,11 @@ export function createJellyfinEpisodeWorkItemRunner(
 		const cancellation: EpisodeClaimState = {};
 		try {
 			const pendingRelease = pendingReleases.get(context.prisma)?.get(context.instance.id);
+			const pendingFailure = pendingFailures.get(context.prisma)?.get(context.instance.id);
+			// A publication-only retry must not settle page work queued by a
+			// later generation. Leave those obligations to ordinary admission.
+			if (context.expectedCompletedRunId && (pendingRelease || pendingFailure))
+				return { ...emptyEpisodeProgress(), superseded: true };
 			if (pendingRelease) {
 				const release = await settlePendingRelease(context, pendingRelease);
 				const failure = pendingFailures.get(context.prisma)?.get(context.instance.id);
@@ -1953,7 +2008,6 @@ export function createJellyfinEpisodeWorkItemRunner(
 					return await settlePendingFailure(context, failure);
 				return release;
 			}
-			const pendingFailure = pendingFailures.get(context.prisma)?.get(context.instance.id);
 			if (pendingFailure) return await settlePendingFailure(context, pendingFailure);
 			return await runNextJellyfinEpisodeWorkItemCore(
 				context,

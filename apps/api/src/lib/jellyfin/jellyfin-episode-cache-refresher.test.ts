@@ -3027,6 +3027,12 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		await expect(run({ ...context, signal: AbortSignal.abort() })).rejects.toMatchObject({
 			code: "PUBLICATION_CANCELLED",
 		});
+		await expect(
+			run({ ...context, expectedCompletedRunId: "older-completed-run" }),
+		).resolves.toMatchObject({
+			superseded: true,
+			progressed: false,
+		});
 		expect(durable.releaseUnit).toHaveBeenCalledOnce();
 		await run(context);
 		expect(durable.units[0]).toMatchObject({ state: "pending", claimToken: null, cursor: 0 });

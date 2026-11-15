@@ -4173,6 +4173,22 @@ describe("full-watch counted checkpoints", () => {
 			progressed: false,
 		});
 		blocked = false;
+		const before = await prisma.providerObservationUnit.findMany({
+			where: { runId: run.id },
+			orderBy: { ordinal: "asc" },
+		});
+		await expect(
+			runner({ ...context, expectedCompletedRunId: "older-completed-run" }),
+		).resolves.toMatchObject({
+			superseded: true,
+			progressed: false,
+		});
+		expect(
+			await prisma.providerObservationUnit.findMany({
+				where: { runId: run.id },
+				orderBy: { ordinal: "asc" },
+			}),
+		).toEqual(before);
 		await expect(runner(context)).resolves.toMatchObject({ state: "failed", progressed: false });
 		expect(reads).toBe(2);
 		await expect(
@@ -8529,44 +8545,57 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 		expect(await prisma.jellyfinEpisodeCache.findMany()).toEqual(before.rows);
 	});
 
-	it("requires fresh scope discovery before publishing a completed V2 run", async () => {
-		const prisma = await database();
-		const seed = await completeFinalizerFixture(prisma);
-		await bindV2Fixture(prisma, seed.run.id, seed.scopes);
-		await prisma.serviceInstance.update({
-			where: { id: "jellyfin-1" },
-			data: { expectedIdentity: "verified-provider", identityStatus: "VERIFIED" },
-		});
-		const instance = await prisma.serviceInstance.findUniqueOrThrow({
-			where: { id: "jellyfin-1" },
-		});
-		identityModuleMocks.readProviderIdentity.mockResolvedValue({
-			service: "JELLYFIN",
-			identityKind: "jellyfin-server-id",
-			rawIdentity: "verified-provider",
-			confirmationDigest: "a".repeat(64),
-			fingerprint: "a".repeat(12),
-		});
-		const users = vi.fn(async () => [{ id: "user-1", name: "Fresh User Name" }]);
-		const libraries = vi.fn(async () => [{ id: "library-1" }]);
-		const runner = createJellyfinEpisodeWorkItemRunner({
-			createClient: () =>
-				({
-					getUsers: users,
-					getLibraries: libraries,
-				}) as never,
-		});
-		const result = await runner({
-			prisma,
-			encryptor: { decrypt: () => "plaintext" },
-			instance,
-			log: { error: () => undefined } as never,
-			now: new Date("2026-09-07T12:00:00.000Z"),
-		});
-		expect(result).toMatchObject({ state: "complete", completedUnits: 2, publishedItemCount: 1 });
-		expect(users).toHaveBeenCalledOnce();
-		expect(libraries).toHaveBeenCalledOnce();
-	});
+	it.each(["ordinary", "same run", "replacement", "incomplete"] as const)(
+		"checks the %s run before publishing a completed V2 plan",
+		async (mode) => {
+			const prisma = await database();
+			const seed = await completeFinalizerFixture(prisma);
+			await bindV2Fixture(prisma, seed.run.id, seed.scopes);
+			await prisma.serviceInstance.update({
+				where: { id: "jellyfin-1" },
+				data: { expectedIdentity: "verified-provider", identityStatus: "VERIFIED" },
+			});
+			const instance = await prisma.serviceInstance.findUniqueOrThrow({
+				where: { id: "jellyfin-1" },
+			});
+			identityModuleMocks.readProviderIdentity.mockResolvedValue({
+				service: "JELLYFIN",
+				identityKind: "jellyfin-server-id",
+				rawIdentity: "verified-provider",
+				confirmationDigest: "a".repeat(64),
+				fingerprint: "a".repeat(12),
+			});
+			if (mode === "incomplete") {
+				await prisma.providerObservationRun.update({
+					where: { id: seed.run.id },
+					data: { completedUnits: 1 },
+				});
+			}
+			const before = await finalizerState(prisma, seed.run.id);
+			const users = vi.fn(async () => [{ id: "user-1", name: "Fresh User Name" }]);
+			const libraries = vi.fn(async () => [{ id: "library-1" }]);
+			const createClient = vi.fn(() => ({ getUsers: users, getLibraries: libraries }) as never);
+			const runner = createJellyfinEpisodeWorkItemRunner({ createClient });
+			const result = await runner({
+				prisma,
+				encryptor: { decrypt: () => "plaintext" },
+				instance,
+				log: { error: () => undefined } as never,
+				now: new Date("2026-09-07T12:00:00.000Z"),
+				expectedCompletedRunId:
+					mode === "ordinary" ? undefined : mode === "replacement" ? "old-run" : seed.run.id,
+			});
+			if (mode === "replacement" || mode === "incomplete") {
+				expect(result).toMatchObject({ superseded: true, progressed: false });
+				expect(createClient).not.toHaveBeenCalled();
+				expect(await finalizerState(prisma, seed.run.id)).toEqual(before);
+				return;
+			}
+			expect(result).toMatchObject({ state: "complete", completedUnits: 2, publishedItemCount: 1 });
+			expect(users).toHaveBeenCalledOnce();
+			expect(libraries).toHaveBeenCalledOnce();
+		},
+	);
 
 	it("does not invalidate completed staged work when a newer outer attempt supersedes runner finalization", async () => {
 		const prisma = await database();

@@ -1043,6 +1043,65 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 		},
 	);
 
+	it.each(["recovered", "still refused", "finalizer deferred"] as const)(
+		"bounds delayed publication recovery when the claim is %s",
+		async (outcome) => {
+			findInstances.mockResolvedValue([instance("JELLYFIN")]);
+			findFailedRun.mockResolvedValue({
+				id: "staged-run",
+				state: "running",
+				nextAttemptAt: null,
+				totalUnits: 16,
+				completedUnits: 16,
+			});
+			const refusal = {
+				complete: false,
+				upserted: 0,
+				errors: 1,
+				progressed: false,
+				retryableOuterAttemptContention: true,
+			};
+			mocks.refresh
+				.mockResolvedValueOnce(refusal)
+				.mockResolvedValueOnce(refusal)
+				.mockResolvedValueOnce(refusal)
+				.mockResolvedValueOnce(refusal);
+			if (outcome === "finalizer deferred") {
+				mocks.refresh.mockResolvedValueOnce({
+					complete: false,
+					upserted: 0,
+					errors: 1,
+					progressed: false,
+					retryableDependencyFailure: true,
+				});
+			}
+			mocks.refresh.mockResolvedValue(
+				outcome === "still refused" ? refusal : { complete: true, upserted: 24, errors: 0 },
+			);
+			await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+			await app.ready();
+
+			await vi.advanceTimersByTimeAsync(6 * 60_000 + 30_000);
+			expect(mocks.refresh).toHaveBeenCalledTimes(4);
+			await vi.advanceTimersByTimeAsync(29_999);
+			expect(mocks.refresh).toHaveBeenCalledTimes(4);
+			await vi.advanceTimersByTimeAsync(1);
+			expect(mocks.refresh).toHaveBeenCalledTimes(5);
+			expect(mocks.refresh.mock.lastCall?.[0]).toMatchObject({
+				resumeFailed: false,
+				automaticRenewal: "provider-unavailable-cooldown",
+				expectedCompletedRunId: "staged-run",
+			});
+			await vi.advanceTimersByTimeAsync(600_000);
+			expect(mocks.refresh).toHaveBeenCalledTimes(
+				outcome === "still refused" ? 7 : outcome === "finalizer deferred" ? 6 : 5,
+			);
+			for (const [context] of mocks.refresh.mock.calls.slice(4)) {
+				expect(context).toMatchObject({ expectedCompletedRunId: "staged-run" });
+			}
+		},
+	);
+
 	it("retains automatic renewal when the deadline read fails after an outer refusal", async () => {
 		findInstances.mockResolvedValue([instance("JELLYFIN")]);
 		findFailedRun.mockRejectedValue(new Error("deadline read unavailable"));
