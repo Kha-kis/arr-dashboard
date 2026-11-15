@@ -226,17 +226,15 @@ The probes are unauthenticated and have different purposes:
 commit with `status: "ok"` only when the API database probe succeeds. A Docker
 `healthy` status alone is not a full application-readiness result.
 
-The image allows a **16-minute startup grace** because populated databases can
-require several minutes of native validation before the web/API start. The
-application allows up to 15 minutes for the API handoff. Failed
-probes during this grace leave the container `starting`, not `healthy`. A real
-successful probe marks it healthy immediately and ends the grace; subsequent
-failures use the normal 30-second interval, 10-second timeout and three retries.
-A genuinely hung initial startup can remain `starting` for up to 16 minutes
-before failed probes begin counting toward `unhealthy`.
+The image allows a **31-minute startup grace** for populated databases that need
+extended native validation before the Web and API start. The supervisor bounds
+the API handoff to 30 minutes. During the grace, failed probes leave the
+container `starting`. The first successful probe marks it `healthy` and ends
+the grace. Subsequent failures use the 30-second interval, 10-second timeout
+and three retries.
 
 Compose and other orchestrators can override the image's health policy. If you
-provide a Compose `healthcheck`, retain `start_period: 16m` (and the liveness
+provide a Compose `healthcheck`, retain `start_period: 31m` (and the liveness
 probe) rather than restoring a short initialization budget. Do not skip native
 validation, treat `starting` as ready, or disable recovery to accommodate it.
 

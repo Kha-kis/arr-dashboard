@@ -39,7 +39,8 @@ type SettingsInput = Readonly<{
 }>;
 type Environment = Readonly<Record<string, string | undefined>>;
 
-const COMBINED_STARTUP_DEADLINE_NS = 900_000_000_000n;
+// Leave time for web startup within the image's 31-minute health grace.
+const COMBINED_STARTUP_DEADLINE_NS = 1_800_000_000_000n;
 
 function requireValue(condition: unknown): asserts condition {
 	if (!condition) throw new Error("Combined startup handoff is unavailable.");

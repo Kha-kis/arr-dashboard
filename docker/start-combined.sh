@@ -441,7 +441,7 @@ API_PID=$!
 echo "API started with PID $API_PID"
 
 # Bind the tracked process's birth identity. Short reads keep shell traps live;
-# the shared parser enforces a 15-minute monotonic deadline from preparation.
+# the shared parser enforces the monotonic handoff deadline from preparation.
 if ! run_as_user node "$API_RUNTIME_DIR/dist/combined-startup.js" bind "$API_PID" "$$"; then
     startup_failure
 fi

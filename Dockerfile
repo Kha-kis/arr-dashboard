@@ -180,7 +180,7 @@ ENV DATABASE_URL="file:/config/prod.db" \
 
 # Populated databases may need several minutes of pre-launch validation. Keep
 # them starting until a real probe succeeds rather than prematurely unhealthy.
-HEALTHCHECK --interval=30s --timeout=10s --start-period=16m --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=31m --retries=3 \
     CMD node /app/runtime-health.cjs check
 
 # Signal for graceful shutdown (tini forwards to child processes)

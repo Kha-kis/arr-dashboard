@@ -129,30 +129,32 @@ it("does not accept a published result after the bound launcher exits", async ()
 	await a.closed;
 	expect(() => api.readCombinedStartupStatus(c)).toThrow();
 });
-it("accepts a valid populated startup handoff after ten minutes", async () => {
+it("accepts a valid populated startup handoff after fifteen minutes", async () => {
 	const api = implementation(),
 		c = context(),
 		a = await actor();
 	api.bindCombinedStartupLauncher(c, a.pid, process.pid);
 	const request = JSON.parse(readFileSync(join(c.directory, "request.json"), "utf8"));
 	const clock = vi.spyOn(process.hrtime, "bigint");
-	clock.mockReturnValue(BigInt(request.startedAtNs) + 639_642_000_000n);
+	clock.mockReturnValue(BigInt(request.startedAtNs) + 951_000_000_000n);
 	expect(api.readCombinedStartupStatus(c)).toBeNull();
 	startup.publishCombinedStartupResult(c, message(c.nonce));
 	expect(api.readCombinedStartupStatus(c)).toEqual(message(c.nonce));
 	startup.consumeCombinedStartupChannel(c);
 	expect(existsSync(c.directory)).toBe(false);
 });
-it("enforces the exact 15-minute monotonic deadline", async () => {
+it("refuses both pending and published handoffs at the 30-minute deadline", async () => {
 	const api = implementation(),
 		c = context(),
 		a = await actor();
 	api.bindCombinedStartupLauncher(c, a.pid, process.pid);
 	const request = JSON.parse(readFileSync(join(c.directory, "request.json"), "utf8"));
 	const clock = vi.spyOn(process.hrtime, "bigint");
-	clock.mockReturnValue(BigInt(request.startedAtNs) + 899_999_999_999n);
+	clock.mockReturnValue(BigInt(request.startedAtNs) + 1_799_999_999_999n);
 	expect(api.readCombinedStartupStatus(c)).toBeNull();
-	clock.mockReturnValue(BigInt(request.startedAtNs) + 900_000_000_000n);
+	clock.mockReturnValue(BigInt(request.startedAtNs) + 1_800_000_000_000n);
+	expect(() => api.readCombinedStartupStatus(c)).toThrow();
+	startup.publishCombinedStartupResult(c, message(c.nonce));
 	expect(() => api.readCombinedStartupStatus(c)).toThrow();
 });
 
