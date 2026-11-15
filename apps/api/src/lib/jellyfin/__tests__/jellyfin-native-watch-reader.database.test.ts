@@ -233,6 +233,49 @@ async function seedPositive(
 }
 
 describe("native episode watch page", { timeout: 30_000 }, () => {
+	it("indexes the real watch result once across a page of distinct episodes", async () => {
+		await seedPublication();
+		await seedScope();
+		const episodeRows = Array.from({ length: 24 }, (_, index) => ({
+			...inventory(`episode-${index}`),
+			episodeNumber: index + 1,
+		}));
+		for (const row of episodeRows) {
+			await seedWatch({
+				jellyfinId: row.nativeId,
+				episodeNumber: row.episodeNumber,
+				played: row.episodeNumber % 2 === 0,
+			});
+		}
+		let inspectedIds = 0;
+		const observed = prisma.$extends({
+			query: {
+				jellyfinNativeWatchRow: {
+					async findMany({ args, query }) {
+						const rows = await query(args);
+						return rows.map(({ jellyfinId, ...row }) => ({
+							...row,
+							get jellyfinId() {
+								inspectedIds++;
+								return jellyfinId;
+							},
+						}));
+					},
+				},
+			},
+		});
+		const result = await readNativeEpisodeWatchPage(observed as unknown as typeof prisma, {
+			userId: "owner",
+			instanceId: "jellyfin-instance",
+			rows: episodeRows,
+			now,
+		});
+		expect(episodeRows.map(({ nativeId }) => result.get(nativeId)?.state)).toEqual(
+			episodeRows.map(({ episodeNumber }) => (episodeNumber % 2 === 0 ? "watched" : "unwatched")),
+		);
+		expect(inspectedIds).toBe(episodeRows.length);
+	});
+
 	it.each([null, "{", '{"forged":"private"}', " ".repeat(2049)])(
 		"keeps valid values and freshness independent of unavailable diagnostics %#",
 		async (diagnosticsJson) => {

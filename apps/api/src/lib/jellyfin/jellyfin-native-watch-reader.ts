@@ -136,6 +136,7 @@ export async function readNativeEpisodeWatchPage(
 					take: MAX_JOINED_WATCH_ROWS + 1,
 				});
 				if (rows.length !== count) break base;
+				const rowsByEpisode = groupByEpisode(rows);
 				const current =
 					status.lastAttemptResult === "success" &&
 					status.lastRefreshedAt.getTime() === pointer.activeObservedAt.getTime() &&
@@ -148,7 +149,7 @@ export async function readNativeEpisodeWatchPage(
 						observedAt: pointer.activeObservedAt,
 						expectedScopeCount: pointer.activeExpectedScopeCount,
 						receipts,
-						rows,
+						rows: rowsByEpisode.get(inventory.nativeId) ?? [],
 						connectionGeneration: instance.connectionGeneration,
 						identityGeneration: instance.identityGeneration,
 					});
@@ -170,7 +171,7 @@ export async function readNativeEpisodeWatchPage(
 						observedAt: pointer.previousObservedAt,
 						expectedScopeCount: pointer.previousExpectedScopeCount ?? 0,
 						receipts,
-						rows,
+						rows: rowsByEpisode.get(inventory.nativeId) ?? [],
 						connectionGeneration: instance.connectionGeneration,
 						identityGeneration: instance.identityGeneration,
 					});
@@ -211,10 +212,11 @@ export async function readNativeEpisodeWatchPage(
 						take: MAX_JOINED_WATCH_ROWS + 1,
 					});
 					if (positiveRows.length === positiveCount) {
+						const rowsByEpisode = groupByEpisode(positiveRows);
 						for (const inventory of input.rows) {
 							if (conflicts.has(inventory.nativeId)) continue;
-							const matching = positiveRows.filter((row) => row.jellyfinId === inventory.nativeId);
-							if (matching.length === 0) continue;
+							const matching = rowsByEpisode.get(inventory.nativeId);
+							if (!matching) continue;
 							if (
 								inventory.parentNativeId === null ||
 								inventory.seasonNumber === null ||
@@ -256,6 +258,17 @@ export async function readNativeEpisodeWatchPage(
 	);
 }
 
+function groupByEpisode<T extends { jellyfinId: string }>(rows: readonly T[]): Map<string, T[]> {
+	const byEpisode = new Map<string, T[]>();
+	for (const row of rows) {
+		const { jellyfinId } = row;
+		const matches = byEpisode.get(jellyfinId);
+		if (matches) matches.push(row);
+		else byEpisode.set(jellyfinId, [row]);
+	}
+	return byEpisode;
+}
+
 function withinDisplayAge(observedAt: Date, now: Date): boolean {
 	const age = now.getTime() - observedAt.getTime();
 	return Number.isFinite(age) && age >= 0 && age <= MAX_DISPLAY_AGE_MS;
@@ -277,7 +290,6 @@ type WatchRow = {
 	runId: string;
 	userKeyDigest: string;
 	libraryId: string;
-	jellyfinId: string;
 	seriesId: string;
 	seasonNumber: number;
 	episodeNumber: number;
@@ -317,9 +329,7 @@ function classifyGeneration(input: {
 		input.inventory.libraryIds.includes(receipt.libraryId),
 	);
 	if (relevant.length === 0) return { kind: "absent" };
-	const matchingRows = input.rows.filter(
-		(row) => row.runId === input.runId && row.jellyfinId === input.inventory.nativeId,
-	);
+	const matchingRows = input.rows.filter((row) => row.runId === input.runId);
 	if (
 		input.inventory.parentNativeId === null ||
 		input.inventory.seasonNumber === null ||
