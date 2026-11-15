@@ -4,6 +4,7 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 import jellyfinEpisodeCacheSchedulerPlugin from "../../plugins/jellyfin-episode-cache-scheduler.js";
 import { RestoreRuntimeAdmissionError } from "../backup/restore-runtime-admission.js";
+import * as runtimeClient from "../backup/restore-runtime-client.js";
 import { Prisma, type PrismaClient, type ServiceInstance } from "../prisma.js";
 import {
 	buildObservationActiveSlotKey,
@@ -2401,6 +2402,63 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		expect(durable.claimUnit).toHaveBeenCalledOnce();
 		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledOnce();
 	});
+
+	it.each([1, 2])(
+		"reads acknowledged progress on an isolated lane for %i page(s)",
+		async (width) => {
+			const state = ownedFixture("JELLYFIN", { v3: true });
+			const client = configureDurableRun(state, 2_001);
+			durable.claimBatchWidth = width;
+			client.getUsers.mockResolvedValue([
+				{ id: "user-1", name: "Synthetic" },
+				{ id: "user-2", name: "Synthetic" },
+			]);
+			const stage = durable.stage.getMockImplementation()!;
+			const ordinaryRead = vi.mocked(state.prisma.providerObservationRun.findUnique);
+			const originalRead = ordinaryRead.getMockImplementation()!;
+			const isolatedRead = vi.fn(originalRead);
+			const lane = {
+				...state.prisma,
+				providerObservationRun: {
+					...state.prisma.providerObservationRun,
+					findUnique: isolatedRead,
+				},
+			};
+			let acknowledged = 0;
+			durable.stage.mockImplementation(async (...args) => {
+				const staged = await stage(...args);
+				if (staged && ++acknowledged === width)
+					ordinaryRead.mockRejectedValue(new RestoreRuntimeAdmissionError());
+				return staged;
+			});
+			const borrow = vi
+				.spyOn(runtimeClient, "withIsolatedRuntimePrismaReadClient")
+				.mockImplementation((prisma, operation) => {
+					expect(prisma).toBe(state.prisma);
+					expect(acknowledged).toBe(width);
+				return operation(lane as unknown as typeof prisma);
+				});
+			try {
+				await expect(
+					createJellyfinEpisodeWorkItemRunner()({
+						prisma: state.prisma,
+						encryptor: { decrypt: vi.fn() },
+						instance: state.instance,
+						log,
+					}),
+				).resolves.toMatchObject({ progressed: true });
+				expect(borrow).toHaveBeenCalledOnce();
+				expect(isolatedRead).toHaveBeenCalledOnce();
+				expect(durable.stage).toHaveBeenCalledTimes(width);
+				expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledTimes(width);
+				expect(durable.units.filter((unit) => unit.cursor === 1_000)).toHaveLength(width);
+				expect(durable.releaseUnit).not.toHaveBeenCalled();
+				expect(durable.failUnit).not.toHaveBeenCalled();
+			} finally {
+				borrow.mockRestore();
+			}
+		},
+	);
 
 	it.each([
 		{ code: "SQLITE_BUSY", failures: 1, recovers: true, expectedReads: 2 },

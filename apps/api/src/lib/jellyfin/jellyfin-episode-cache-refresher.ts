@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import type { Encryptor } from "../auth/encryption.js";
 import { RestoreRuntimeAdmissionError } from "../backup/restore-runtime-admission.js";
+import { withIsolatedRuntimePrismaReadClient } from "../backup/restore-runtime-client.js";
 import { Prisma, type PrismaClient, type ServiceInstance } from "../prisma.js";
 import { evaluateProviderCoverageReceipt } from "../provider-observation/coverage-receipt.js";
 import type { AutomaticObservationRenewalMode } from "../provider-observation/observation-run-repository.js";
@@ -680,6 +681,14 @@ export function createJellyfinEpisodeWorkItemRunner(
 				record(state, failure);
 			}
 		}
+		const readStagedProgress = (runId: string) =>
+			observeWorkStage("run-progress", () =>
+				withIsolatedRuntimePrismaReadClient(
+					context.prisma,
+					(reader) => runProgress(reader, runId),
+					{ maxWait: 5_000 },
+				),
+			);
 		const now = context.now ?? new Date();
 		const guardOptions = {
 			signal: context.signal,
@@ -1760,8 +1769,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 						return { ...release, progressed };
 				}
 				if (pendingFailure) return await settlePendingFailure(context, pendingFailure);
-				const readProgress = () =>
-					observeWorkStage("run-progress", () => runProgress(context.prisma, run.id));
+				const readProgress = () => readStagedProgress(run.id);
 				let progress: JellyfinEpisodeWorkProgress;
 				try {
 					progress = await readProgress();
@@ -1813,10 +1821,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 				if (failed && runOwnsAttempt) await finishAttemptIfExhausted();
 				return { ...(await runProgress(context.prisma, run.id)), progressed: false };
 			}
-			const progress = await observeWorkStage(
-				"run-progress",
-				async () => await runProgress(context.prisma, run.id),
-			);
+			const progress = await readStagedProgress(run.id);
 			if (progress.state === "failed" && runOwnsAttempt) {
 				const deferred = await finishAttemptIfRetryDeferred();
 				const settled = deferred !== "recorded" && (await finishAttemptIfExhausted());

@@ -8,6 +8,8 @@ import {
 	recordScopedWriteEvidence,
 	snapshotProtectedRows,
 } from "../../__tests__/scoped-write-intent-fixture.js";
+import { RestoreRuntimeAdmissionError } from "../../backup/restore-runtime-admission.js";
+import { withIsolatedRuntimePrismaReadClient } from "../../backup/restore-runtime-client.js";
 import { readCompletedJellyfinEpisodePublication } from "../jellyfin-episode-refresh-repository.js";
 import {
 	JellyfinNativeWatchLeaseLostError,
@@ -114,6 +116,43 @@ async function createNativeWatchAdmissionFixture() {
 }
 
 describe("native-watch admission on guarded WAL SQLite", { timeout: 30_000 }, () => {
+	it("reads persisted progress on a guarded lane while the ordinary client has an open transaction", async () => {
+		const { f, input } = await createNativeWatchAdmissionFixture();
+		const before = snapshotProtectedRows(f);
+		let release!: () => void;
+		const released = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		let entered = false;
+		const transaction = f.runtime.runOperation(() =>
+			f.client.prisma.$transaction(
+				async () => {
+					entered = true;
+					await released;
+				},
+				{ timeout: 15_000 },
+			),
+		);
+		const query = { where: { id: input.runId }, select: { state: true, completedUnits: true } };
+		try {
+			await vi.waitFor(() => expect(entered).toBe(true), { timeout: 2_000 });
+			await expect(
+				f.runtime.runOperation(() => f.client.prisma.providerObservationRun.findUnique(query)),
+			).rejects.toBeInstanceOf(RestoreRuntimeAdmissionError);
+			await expect(
+				f.runtime.runOperation(() =>
+					withIsolatedRuntimePrismaReadClient(f.client.prisma, (reader) =>
+						reader.providerObservationRun.findUnique(query),
+					),
+				),
+			).resolves.toEqual({ state: "running", completedUnits: 2 });
+		} finally {
+			release();
+			await transaction;
+		}
+		expect(snapshotProtectedRows(f)).toEqual(before);
+	});
+
 	it("checks for committed publication while a competing WAL writer holds the writer slot", async () => {
 		const { f, input, pointer } = await createNativeWatchAdmissionFixture();
 		const before = snapshotProtectedRows(f);

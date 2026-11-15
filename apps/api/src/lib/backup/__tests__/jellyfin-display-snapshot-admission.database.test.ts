@@ -40,7 +40,8 @@ function signal() {
 	return { promise, resolve };
 }
 
-async function seed(f: ScopedWriteFixture, mixedScope = false) {
+async function seed(f: ScopedWriteFixture, receiptedShowIds?: readonly number[]) {
+	const mixedScope = receiptedShowIds !== undefined;
 	const observedAt = new Date("2026-09-02T12:00:00.000Z");
 	const rows: (JellyfinLibraryRow & { mediaType: "series" })[] = [
 		{
@@ -216,22 +217,23 @@ async function seed(f: ScopedWriteFixture, mixedScope = false) {
 				activeRunId: "synthetic-episodes",
 				activeCacheGenerationId: "synthetic-episodes",
 				activeObservedAt: observedAt,
-				activeExpectedScopeCount: 1,
+				activeExpectedScopeCount: receiptedShowIds.length,
 				connectionGeneration: 1,
 				identityGeneration: 1,
 			},
 		});
 		await f.plain.jellyfinEpisodeGenerationRow.createMany({ data: episodeRows });
-		await f.plain.jellyfinEpisodeGenerationShowReceipt.create({
-			data: {
-				instanceId: common.instanceId,
-				generationId: "synthetic-episodes",
-				showTmdbId: 42,
-				rowCount: 2,
-				contentFingerprint: fingerprintJellyfinEpisodeRows(
-					episodeRows.filter((row) => row.showTmdbId === 42),
-				),
-			},
+		await f.plain.jellyfinEpisodeGenerationShowReceipt.createMany({
+			data: receiptedShowIds.map((showTmdbId) => {
+				const showRows = episodeRows.filter((row) => row.showTmdbId === showTmdbId);
+				return {
+					instanceId: common.instanceId,
+					generationId: "synthetic-episodes",
+					showTmdbId,
+					rowCount: showRows.length,
+					contentFingerprint: fingerprintJellyfinEpisodeRows(showRows),
+				};
+			}),
 		});
 	}
 	return observedAt;
@@ -286,7 +288,7 @@ describe("Jellyfin display snapshot admission", { timeout: 20_000 }, () => {
 
 	it("preserves exact progress for a receipted show beside an unrelated missing receipt", async () => {
 		const f = await createScopedWriteFixture();
-		const observedAt = await seed(f, true);
+		const observedAt = await seed(f, [42]);
 		const instances = [
 			{ id: "synthetic-jellyfin", label: "Synthetic", service: "JELLYFIN" as const },
 		];
@@ -378,6 +380,70 @@ describe("Jellyfin display snapshot admission", { timeout: 20_000 }, () => {
 			),
 		);
 		expect(f.losses).toEqual([]);
+	});
+
+	it("reads canonical rows for multiple receipted shows in one guarded SQLite query", async () => {
+		const f = await createScopedWriteFixture();
+		const now = await seed(f, [42, 43]);
+		const currentRow = await f.plain.jellyfinEpisodeGenerationRow.findFirstOrThrow({
+			where: { generationId: "synthetic-episodes", showTmdbId: 42 },
+		});
+		await f.plain.jellyfinEpisodeGenerationRow.create({
+			data: {
+				...currentRow,
+				id: "synthetic-older-row",
+				generationId: "synthetic-older-generation",
+			},
+		});
+
+		let rowSelects = 0;
+		const prepare = Database.prototype.prepare;
+		vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+			this: Database.Database,
+			sql,
+		) {
+			if (
+				this.name === f.path &&
+				/^\s*SELECT\b/i.test(sql) &&
+				/\bjellyfin_episode_generation_rows\b/i.test(sql)
+			)
+				rowSelects++;
+			return prepare.call(this, sql);
+		});
+		const result = await f.runtime.runOperation(() =>
+			withIsolatedRuntimePrismaBulkReadClient(
+				f.client.prisma,
+				(prisma) =>
+					readOwnedGenerationScopedEpisodeDisplay({
+						prisma,
+						userId: "synthetic-user",
+						instanceId: "synthetic-jellyfin",
+						showTmdbIds: [43, 42],
+						now,
+					}),
+				{ lease: "phase" },
+			),
+		);
+
+		expect(result).toMatchObject({
+			available: true,
+			mutationAvailable: false,
+			authority: null,
+			providerStatus: { availability: "current", evidence: "complete" },
+		});
+		expect(result?.rows.map(({ showTmdbId }) => showTmdbId)).toEqual([43, 42, 42]);
+		expect(
+			result?.rows
+				.slice()
+				.sort((a, b) => a.showTmdbId - b.showTmdbId || a.episodeNumber - b.episodeNumber)
+				.map(({ showTmdbId, episodeNumber, watched }) => [showTmdbId, episodeNumber, watched]),
+		).toEqual([
+			[42, 1, true],
+			[42, 2, false],
+			[43, 1, true],
+		]);
+		expect(f.losses).toEqual([]);
+		expect(rowSelects).toBe(1);
 	});
 
 	it("batches 200 missing show receipts through the guarded SQLite reader", async () => {

@@ -418,56 +418,102 @@ describe("generation-scoped episode display freshness", () => {
 		},
 	);
 
-	it("retains requested order and partial valid rows despite missing scopes and reversed receipts", async () => {
-		const f = fixture("JELLYFIN", [42, 43]);
-		const otherRows = f.rows.map((row) => ({ ...row, showTmdbId: 43 }));
-		f.tx.jellyfinEpisodeGenerationShowReceipt.findMany.mockResolvedValue([
-			f.showReceipt,
-			{
-				...f.showReceipt,
-				showTmdbId: 43,
-				contentFingerprint: fingerprintJellyfinEpisodeRows(otherRows),
-			},
-		]);
-		f.tx.jellyfinEpisodeGenerationRow.findMany.mockImplementation(async (...args: unknown[]) => {
-			const query = args[0] as { where: { showTmdbId: number } };
-			return query.where.showTmdbId === 43 ? otherRows : f.rows;
-		});
-		const result = await readOwnedGenerationScopedEpisodeDisplay({
-			prisma: f.prisma,
-			userId: "owner-1",
-			instanceId: f.instance.id,
-			showTmdbIds: [43, 999, 42, 43],
-			now,
-			maxAgeMs,
-		});
-		expect(result?.rows.map((row) => [row.showTmdbId, row.episodeNumber, row.watched])).toEqual([
-			[43, 1, true],
-			[42, 1, true],
-		]);
-		expect(result).toMatchObject({
-			available: true,
-			mutationAvailable: false,
-			authority: null,
-			providerStatus: { availability: "partial", evidence: "positive-only" },
-		});
-		expect(f.tx.jellyfinEpisodeGenerationShowReceipt.findMany).toHaveBeenCalledWith({
-			where: {
-				instanceId: "instance-1",
-				generationId: "episode-generation",
-				showTmdbId: { in: [43, 42] },
-				instance: { userId: "owner-1", enabled: true },
-			},
-			select: {
-				instanceId: true,
-				generationId: true,
-				showTmdbId: true,
-				rowCount: true,
-				contentFingerprint: true,
-			},
-			take: 2,
-		});
-	});
+	it.each([
+		{ returnedRows: 2, expectedShows: [43, 42], expectedQueries: 1 },
+		{ returnedRows: 1, expectedShows: [43], expectedQueries: 1 },
+		{ returnedRows: 5, expectedShows: [43], expectedQueries: 3 },
+	])(
+		"preserves partial display with canonical row count $returnedRows for a two-row receipt",
+		async ({ returnedRows, expectedShows, expectedQueries }) => {
+			const f = fixture("JELLYFIN", [42, 43, 44]);
+			const otherRows = f.rows.map((row) => ({ ...row, showTmdbId: 43 }));
+			const unexpectedProofOnlyRow = { ...f.rows[0]!, showTmdbId: 44 };
+			const firstShowRows = Array.from(
+				{ length: returnedRows },
+				(_, index) => f.rows[index] ?? { ...f.rows[0]!, episodeNumber: index + 1 },
+			);
+			f.tx.jellyfinEpisodeGenerationShowReceipt.findMany.mockResolvedValue([
+				f.showReceipt,
+				{
+					...f.showReceipt,
+					showTmdbId: 43,
+					contentFingerprint: fingerprintJellyfinEpisodeRows(otherRows),
+				},
+				{
+					...f.showReceipt,
+					showTmdbId: 44,
+					rowCount: 0,
+					contentFingerprint: fingerprintJellyfinEpisodeRows([]),
+				},
+			]);
+			const rowReads = f.tx.jellyfinEpisodeGenerationRow.findMany;
+			rowReads.mockImplementation(async (...args: unknown[]) => {
+				const query = args[0] as { where: { showTmdbId: number | { in: number[] } }; take: number };
+				const scope = query.where.showTmdbId;
+				const rows = [unexpectedProofOnlyRow, ...firstShowRows, ...otherRows].filter((row) =>
+					typeof scope === "number" ? row.showTmdbId === scope : scope.in.includes(row.showTmdbId),
+				);
+				return rows.slice(0, query.take);
+			});
+			const result = await readOwnedGenerationScopedEpisodeDisplay({
+				prisma: f.prisma,
+				userId: "owner-1",
+				instanceId: f.instance.id,
+				showTmdbIds: [43, 999, 44, 42, 43],
+				now,
+				maxAgeMs,
+			});
+			expect(result?.rows.map((row) => [row.showTmdbId, row.episodeNumber, row.watched])).toEqual(
+				expectedShows.map((showTmdbId) => [showTmdbId, 1, true]),
+			);
+			expect(result).toMatchObject({
+				available: true,
+				mutationAvailable: false,
+				authority: null,
+				providerStatus: { availability: "partial", evidence: "positive-only" },
+			});
+			expect(rowReads).toHaveBeenCalledTimes(expectedQueries);
+			expect(rowReads).toHaveBeenNthCalledWith(
+				1,
+				expect.objectContaining({
+					where: {
+						instanceId: "instance-1",
+						generationId: "episode-generation",
+						showTmdbId: { in: expect.arrayContaining([43, 42]) },
+						instance: { userId: "owner-1", enabled: true },
+					},
+					take: 5,
+				}),
+			);
+			if (expectedQueries === 3) {
+				for (const [index, showTmdbId] of [43, 42].entries()) {
+					expect(rowReads).toHaveBeenNthCalledWith(
+						index + 2,
+						expect.objectContaining({
+							where: expect.objectContaining({ showTmdbId }),
+							take: 100_001,
+						}),
+					);
+				}
+			}
+			expect(f.tx.jellyfinEpisodeGenerationShowReceipt.findMany).toHaveBeenCalledWith({
+				where: {
+					instanceId: "instance-1",
+					generationId: "episode-generation",
+					showTmdbId: { in: [43, 44, 42] },
+					instance: { userId: "owner-1", enabled: true },
+				},
+				select: {
+					instanceId: true,
+					generationId: true,
+					showTmdbId: true,
+					rowCount: true,
+					contentFingerprint: true,
+				},
+				take: 3,
+			});
+		},
+	);
 
 	it.each(["instance", "generation", "unrequested", "duplicate"] as const)(
 		"fails closed on %s receipt identity",
@@ -601,57 +647,59 @@ describe("generation-scoped episode display freshness", () => {
 		},
 	);
 
-	it.each(["malformed", "oversized"] as const)(
-		"discards %s and later oversized scopes while retaining a later valid show",
-		async (first) => {
-			const f = fixture();
-			const metadata = JSON.parse(f.status.generationMetadata);
-			metadata.sourceVersion = 2;
-			delete metadata.catalogProvenance;
-			f.status.generationMetadata = encodeJellyfinEpisodeGenerationMetadata(metadata);
-			const valid = f.rows.map((row) => ({ ...row, showTmdbId: 44 }));
-			const oversized = new Array<JellyfinEpisodeRow>(100_001).fill(f.rows[0]!);
-			const scopes = new Map([
-				[42, first === "malformed" ? [{ ...f.rows[0]!, jellyfinId: "" }] : oversized],
-				[43, oversized],
-				[44, valid],
-			]);
-			f.tx.jellyfinEpisodeGenerationShowReceipt.findMany.mockResolvedValue(
-				[42, 43, 44].map((id) => ({
-					...f.showReceipt,
-					showTmdbId: id,
-					rowCount: scopes.get(id)!.length,
-					contentFingerprint: id === 44 ? fingerprintJellyfinEpisodeRows(valid) : "invalid-digest",
-				})),
-			);
-			f.tx.jellyfinEpisodeGenerationRow.findMany.mockImplementation(async (...args: unknown[]) => {
-				const query = args[0] as { where: { showTmdbId: number }; take: number };
-				expect(query.take).toBe(100_001);
-				return scopes.get(query.where.showTmdbId)!;
-			});
-			const result = await readOwnedGenerationScopedEpisodeDisplay({
-				prisma: f.prisma,
-				userId: "owner-1",
-				instanceId: f.instance.id,
-				showTmdbIds: [42, 43, 44],
-				now,
-				maxAgeMs,
-			});
-			expect(result).toMatchObject({
-				available: true,
-				mutationAvailable: false,
-				authority: null,
-				providerStatus: {
-					availability: "partial",
-					evidence: "positive-only",
-					reasonCodes: ["positive-only", "coverage-incomplete"],
-				},
-			});
-			expect(result?.rows.map((row) => [row.showTmdbId, row.episodeNumber, row.watched])).toEqual([
-				[44, 1, true],
-			]);
-		},
-	);
+	it.each([
+		{ scenario: "an individually oversized count", counts: [1, 100_001, 2] },
+		{ scenario: "multiple individually oversized counts", counts: [100_001, 100_001, 2] },
+		{ scenario: "counts that exceed the cap in aggregate", counts: [50_000, 50_000, 2] },
+		{ scenario: "a negative count", counts: [-1, 1, 2] },
+	])("preserves the valid show when $scenario makes batching ineligible", async ({ counts }) => {
+		const f = fixture();
+		const metadata = JSON.parse(f.status.generationMetadata);
+		metadata.sourceVersion = 2;
+		delete metadata.catalogProvenance;
+		f.status.generationMetadata = encodeJellyfinEpisodeGenerationMetadata(metadata);
+		const valid = f.rows.map((row) => ({ ...row, showTmdbId: 44 }));
+		const oversized = new Array<JellyfinEpisodeRow>(100_001).fill(f.rows[0]!);
+		const scopes = new Map([
+			[42, counts[0] === 100_001 ? oversized : [{ ...f.rows[0]!, jellyfinId: "" }]],
+			[43, oversized],
+			[44, valid],
+		]);
+		f.tx.jellyfinEpisodeGenerationShowReceipt.findMany.mockResolvedValue(
+			[42, 43, 44].map((id, index) => ({
+				...f.showReceipt,
+				showTmdbId: id,
+				rowCount: counts[index]!,
+				contentFingerprint: id === 44 ? fingerprintJellyfinEpisodeRows(valid) : "invalid-digest",
+			})),
+		);
+		f.tx.jellyfinEpisodeGenerationRow.findMany.mockImplementation(async (...args: unknown[]) => {
+			const query = args[0] as { where: { showTmdbId: number }; take: number };
+			expect(query.take).toBe(100_001);
+			return scopes.get(query.where.showTmdbId)!;
+		});
+		const result = await readOwnedGenerationScopedEpisodeDisplay({
+			prisma: f.prisma,
+			userId: "owner-1",
+			instanceId: f.instance.id,
+			showTmdbIds: [42, 43, 44],
+			now,
+			maxAgeMs,
+		});
+		expect(result).toMatchObject({
+			available: true,
+			mutationAvailable: false,
+			authority: null,
+			providerStatus: {
+				availability: "partial",
+				evidence: "positive-only",
+				reasonCodes: ["positive-only", "coverage-incomplete"],
+			},
+		});
+		expect(result?.rows.map((row) => [row.showTmdbId, row.episodeNumber, row.watched])).toEqual([
+			[44, 1, true],
+		]);
+	});
 
 	it.each([{ requested: [] }, { requested: [42] }])(
 		"validates the complete parent display snapshot after outer transaction settlement for $requested",

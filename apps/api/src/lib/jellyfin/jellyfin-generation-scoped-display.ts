@@ -431,8 +431,39 @@ async function readGenerationScopedDisplay(
 		const mappedPayloads = new Map(
 			payloads.map(({ showTmdbId, payload }) => [showTmdbId, payload]),
 		);
-		// Validate and discard each requested scope here to retain the existing
-		// accepted-row cap plus one fetched scope, rather than retaining all scopes.
+		const rowReceipts = receipts.filter(
+			({ showTmdbId, rowCount }) =>
+				!originalCatalogIds || rowCount !== 0 || Boolean(mappedPayloads.get(showTmdbId)),
+		);
+		const expectedRows = rowReceipts.reduce((total, { rowCount }) => total + rowCount, 0);
+		let batchedRowsByShow: Map<number, JellyfinEpisodeRow[]> | undefined;
+		if (
+			rowReceipts.length > 1 &&
+			expectedRows <= MAX_SCOPED_EPISODE_ROWS &&
+			rowReceipts.every(({ rowCount }) => Number.isSafeInteger(rowCount) && rowCount >= 0)
+		) {
+			const take = expectedRows + 1;
+			const batch = await tx.jellyfinEpisodeGenerationRow.findMany({
+				where: {
+					instanceId: instance.id,
+					generationId: status.generationId,
+					showTmdbId: { in: rowReceipts.map(({ showTmdbId }) => showTmdbId) },
+					instance: { userId: input.userId, enabled: true },
+				},
+				select: episodeRowSelection,
+				take,
+			});
+			// A full batch can hide rows for other shows. In that case re-read
+			// each show independently in this snapshot to retain valid scopes.
+			if (batch.length < take) {
+				batchedRowsByShow = new Map();
+				for (const row of batch) {
+					const showRows = batchedRowsByShow.get(row.showTmdbId);
+					if (showRows) showRows.push(row);
+					else batchedRowsByShow.set(row.showTmdbId, [row]);
+				}
+			}
+		}
 		const rows: JellyfinEpisodeRow[] = [];
 		const receiptedShows: number[] = [];
 		const mappedReceipts: Array<{
@@ -459,11 +490,14 @@ async function readGenerationScopedDisplay(
 				incompleteRequestedScope = true;
 				if (!payload) continue;
 			}
-			const showRows = await tx.jellyfinEpisodeGenerationRow.findMany({
-				where: { instanceId: instance.id, generationId: status.generationId, showTmdbId },
-				select: episodeRowSelection,
-				take: MAX_SCOPED_EPISODE_ROWS + 1,
-			});
+			const showRows = batchedRowsByShow
+				? (batchedRowsByShow.get(showTmdbId) ?? [])
+				: await tx.jellyfinEpisodeGenerationRow.findMany({
+						where: { instanceId: instance.id, generationId: status.generationId, showTmdbId },
+						select: episodeRowSelection,
+						take: MAX_SCOPED_EPISODE_ROWS + 1,
+					});
+			batchedRowsByShow?.delete(showTmdbId);
 			if (
 				showRows.length !== receipt.rowCount ||
 				showRows.length + rows.length > MAX_SCOPED_EPISODE_ROWS ||
