@@ -497,7 +497,7 @@ describe("native watch publication", { timeout: 30_000 }, () => {
 		).toBe(1);
 	});
 
-	it("stages a thousand-row generation in at most five bounded transactions without publishing it", async () => {
+	it("stages 1001 rows in three bounded transactions without publishing them", async () => {
 		const prisma = await database();
 		await seedCompletedRun(prisma, "old-run", "old-generation");
 		await prisma.$transaction((tx) =>
@@ -531,10 +531,9 @@ describe("native watch publication", { timeout: 30_000 }, () => {
 				if (event.kind === "row-chunk" && event.phase === "succeeded") transactions++;
 			},
 		);
-		// Bound repeated fenced commits without wall-clock assertions or a larger
-		// slow-write/cancellation unit. The existing loaded-write test caps cost.
-		expect(transactions).toBeLessThanOrEqual(5);
-		expect(largestChunk).toBeLessThanOrEqual(250);
+		// The loaded-write and cancellation fixtures separately cap chunk cost.
+		expect(transactions).toBe(3);
+		expect(largestChunk).toBe(500);
 		expect(await prisma.jellyfinNativeWatchRow.count({ where: { runId: input.runId } })).toBe(
 			1_001,
 		);

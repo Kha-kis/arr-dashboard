@@ -168,16 +168,16 @@ function busyAdmission() {
 
 it("orders native-watch UUIDs across bounded row transactions", async () => {
 	const f = fixture();
-	f.input.candidates = Array.from({ length: 251 }, (_, index) => ({
+	f.input.candidates = Array.from({ length: 501 }, (_, index) => ({
 		...f.input.candidates[0]!,
 		jellyfinId: `episode-${String(index).padStart(3, "0")}`,
 	}));
-	f.input.receipts[0]!.expectedRawCount = 251;
-	f.input.receipts[0]!.observedRawCount = 251;
+	f.input.receipts[0]!.expectedRawCount = 501;
+	f.input.receipts[0]!.observedRawCount = 501;
 	const generatedIds = Array.from(
-		{ length: 251 },
+		{ length: 501 },
 		(_, index): ReturnType<typeof randomUUID> =>
-			`00000000-0000-4000-8000-${String(251 - index).padStart(12, "0")}`,
+			`00000000-0000-4000-8000-${String(501 - index).padStart(12, "0")}`,
 	);
 	const generator = vi.mocked(randomUUID);
 	let nextId = 0;
@@ -187,7 +187,7 @@ it("orders native-watch UUIDs across bounded row transactions", async () => {
 	} finally {
 		generator.mockRestore();
 	}
-	expect(f.boundRowInserts.map((values) => values.length)).toEqual([250 * 15, 15]);
+	expect(f.boundRowInserts.map((values) => values.length)).toEqual([500 * 15, 15]);
 	expect(f.rows.map((row) => Reflect.get(row, "id"))).toEqual(generatedIds.slice().reverse());
 	expect(f.rows.map((row) => Reflect.get(row, "jellyfinId"))).toEqual(
 		f.input.candidates.map((candidate) => candidate.jellyfinId),
@@ -220,7 +220,7 @@ describe("native-watch busy-start recovery", () => {
 		},
 	);
 
-	it("resumes the pending batch after 250 committed rows without resetting or duplicating prior work", async () => {
+	it("resumes the pending batch after 500 committed rows without resetting or duplicating prior work", async () => {
 		const f = fixture({ failAt: 3, failPhase: "request", failError: busyAdmission() });
 		f.input.candidates = Array.from({ length: 501 }, (_, index) => ({
 			...f.input.candidates[0]!,
@@ -232,13 +232,13 @@ describe("native-watch busy-start recovery", () => {
 		await prepareNativeWatchGeneration(f.db as never, f.input, undefined, (event) => {
 			if (event.phase === "failed") failedRows.push(f.rows.length);
 		});
-		expect(failedRows).toEqual([250]);
+		expect(failedRows).toEqual([500]);
 		expect(f.rows).toHaveLength(501);
 		expect(new Set(f.rows.map((row) => Reflect.get(row, "jellyfinId"))).size).toBe(501);
 		expect(f.receipts).toHaveLength(1);
 		expect(f.trace.filter((entry) => entry === "row-delete")).toHaveLength(1);
 		expect(f.trace.filter((entry) => entry === "receipt-delete")).toHaveLength(1);
-		expect(f.trace.filter((entry) => entry === "row-insert")).toHaveLength(3);
+		expect(f.trace.filter((entry) => entry === "row-insert")).toHaveLength(2);
 	});
 
 	it("exhausts three admission retries and retains the actual final error and completed batch", async () => {
@@ -250,7 +250,7 @@ describe("native-watch busy-start recovery", () => {
 		const transaction = f.db.$transaction;
 		const failures: unknown[] = [];
 		f.db.$transaction = async (...args) => {
-			if (f.rows.length === 250) {
+			if (f.rows.length === 500) {
 				const error = busyAdmission();
 				failures.push(error);
 				throw error;
@@ -262,7 +262,7 @@ describe("native-watch busy-start recovery", () => {
 		);
 		expect(failures).toHaveLength(4);
 		expect(result).toBe(failures[3]);
-		expect(f.rows).toHaveLength(250);
+		expect(f.rows).toHaveLength(500);
 		expect(f.receipts).toHaveLength(0);
 		expect(f.trace.filter((entry) => entry === "row-delete")).toHaveLength(1);
 	});
@@ -528,14 +528,13 @@ describe("native-watch preparation transaction observation", () => {
 			"lease-checkpoint",
 			"row-chunk",
 			"row-chunk",
-			"row-chunk",
 			"receipt-chunk",
 			"receipt-chunk",
 			"lease-checkpoint",
 			"lease-checkpoint",
 		]);
 		expect(writes).toEqual([
-			...Array.from({ length: 6 }, () => ({ stage: "row-chunk-write", count: 250 })),
+			...Array.from({ length: 3 }, () => ({ stage: "row-chunk-write", count: 500 })),
 			{ stage: "row-chunk-write", count: 1 },
 			{ stage: "row-chunk-write", count: 1 },
 			{ stage: "row-chunk-write", count: 1 },

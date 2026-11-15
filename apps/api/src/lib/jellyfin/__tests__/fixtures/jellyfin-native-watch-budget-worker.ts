@@ -99,8 +99,7 @@ try {
 			receipts: await prisma.jellyfinNativeWatchScopeReceipt.count({ where: { runId } }),
 			pointers: await prisma.jellyfinNativeWatchPublication.count(),
 		});
-		// Keep the synthetic CPU work per transaction at the original fixture's
-		// 100 × 150,000 iterations with the current 250-row write chunks.
+		// Keep the same CPU cost per row used by the 250-row characterization.
 		await prisma.$executeRawUnsafe(`CREATE TRIGGER synthetic_native_watch_row_cost
 			AFTER INSERT ON jellyfin_native_watch_rows BEGIN
 				SELECT (WITH RECURSIVE synthetic_cost(x) AS (
@@ -121,7 +120,7 @@ try {
 		const rejected = await inputFor("rejected", 550);
 		await prisma.$executeRawUnsafe(`CREATE TRIGGER reject_later_native_watch_row
 			BEFORE INSERT ON jellyfin_native_watch_rows
-			WHEN NEW.runId = 'rejected' AND NEW.jellyfinId = 'episode-00350'
+			WHEN NEW.runId = 'rejected' AND NEW.jellyfinId = 'episode-00503'
 			BEGIN SELECT RAISE(ABORT, 'synthetic later chunk rejection'); END`);
 		let rejectedWrite = false;
 		try {

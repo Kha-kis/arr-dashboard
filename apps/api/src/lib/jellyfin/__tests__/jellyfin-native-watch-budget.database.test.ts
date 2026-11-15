@@ -220,7 +220,7 @@ it.each(["pre-aborted", "row-chunk", "verification", "diagnostic-only"] as const
 				if (mode === "row-chunk") {
 					expect.soft(rowChunks).toBe(1);
 					expect.soft(rowRequests).toBe(1);
-					expect.soft(staged).toBe(250);
+					expect.soft(staged).toBe(500);
 					expect.soft(messageDelivered).toBe(true);
 				}
 				if (mode === "verification") {
@@ -373,7 +373,7 @@ it("fully verifies loaded native row staging within unchanged transaction defaul
 			loaded: { rows: 500, receipts: 1, pointers: 0 },
 			rejectedWrite: true,
 			rejectedVerification: true,
-			rejected: { rows: 250, receipts: 0, pointers: 0 },
+			rejected: { rows: 500, receipts: 0, pointers: 0 },
 			recovered: { rows: 550, receipts: 1, pointers: 0 },
 		},
 	});

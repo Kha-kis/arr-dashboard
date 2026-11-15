@@ -337,7 +337,7 @@ describe("native-watch admission on guarded WAL SQLite", { timeout: 30_000 }, ()
 						},
 						(event) => {
 							if (event.kind !== "row-chunk") return;
-							if (event.phase === "requested" && committedRows() === 250) armed = true;
+							if (event.phase === "requested" && committedRows() === 500) armed = true;
 							rowPhases.push(event.phase);
 						},
 					);
@@ -395,13 +395,10 @@ describe("native-watch admission on guarded WAL SQLite", { timeout: 30_000 }, ()
 					"requested",
 					"callback-entered",
 					"succeeded",
-					"requested",
-					"callback-entered",
-					"succeeded",
 				]);
 			}
 			expect(rowResets).toBe(1);
-			expect(committedRows()).toBe(expires ? 250 : 501);
+			expect(committedRows()).toBe(expires ? 500 : 501);
 			expect(
 				await f.plain.jellyfinNativeWatchScopeReceipt.count({
 					where: { instanceId: input.instanceId, runId: input.runId },
@@ -440,7 +437,7 @@ describe("native-watch admission on guarded WAL SQLite", { timeout: 30_000 }, ()
 					if (event.stage === "own-row-reset") rowResets++;
 					// Stage callbacks inside the first transaction see zero committed rows;
 					// only the following batch can arm the real, separate WAL writer.
-					if (event.stage === "row-chunk-write" && !held && committedRows() === 250) {
+					if (event.stage === "row-chunk-write" && !held && committedRows() === 500) {
 						f.writer.exec("BEGIN IMMEDIATE");
 						held = true;
 					}
@@ -459,7 +456,7 @@ describe("native-watch admission on guarded WAL SQLite", { timeout: 30_000 }, ()
 				},
 			),
 		);
-		expect(failures).toEqual([{ committedRows: 250, released: true, rollbackSettled: true }]);
+		expect(failures).toEqual([{ committedRows: 500, released: true, rollbackSettled: true }]);
 		expect(phases.slice(0, 5)).toEqual([
 			"requested",
 			"failed",

@@ -12,9 +12,8 @@ function diagnosticJson(value: string | null | undefined): string | null {
 }
 
 const PUBLICATION_CHUNK_SIZE = 500;
-// Amortize fenced commits without the slow-write cost of a full 500-row page.
-// Keep this divisor of the 5,000-row lease checkpoint and cancellation bounded.
-const ROW_WRITE_CHUNK_SIZE = 250;
+// Bound each fenced insert and divide the 5,000-row lease checkpoint evenly.
+const ROW_WRITE_CHUNK_SIZE = 500;
 const CLEANUP_BATCH_SIZE = 5_000;
 const LEASE_CHECKPOINT_CHUNKS = 10;
 const ADMISSION_RETRY_DELAYS_MS = [10, 20, 40] as const;
