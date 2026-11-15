@@ -4,7 +4,10 @@ import { createHash } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import type { Encryptor } from "../auth/encryption.js";
 import { RestoreRuntimeAdmissionError } from "../backup/restore-runtime-admission.js";
-import { withIsolatedRuntimePrismaReadClient } from "../backup/restore-runtime-client.js";
+import {
+	isRetryableSqlitePublicationStartRefusal,
+	withIsolatedRuntimePrismaReadClient,
+} from "../backup/restore-runtime-client.js";
 import { Prisma, type PrismaClient, type ServiceInstance } from "../prisma.js";
 import { evaluateProviderCoverageReceipt } from "../provider-observation/coverage-receipt.js";
 import type { AutomaticObservationRenewalMode } from "../provider-observation/observation-run-repository.js";
@@ -1196,7 +1199,8 @@ export function createJellyfinEpisodeWorkItemRunner(
 				authority.service !== "JELLYFIN" ||
 				!runOwnsAttempt ||
 				run.state !== "running" ||
-				!isJellyfinEpisodeSqliteBusyTimeout(error)
+				(!isJellyfinEpisodeSqliteBusyTimeout(error) &&
+					!isRetryableSqlitePublicationStartRefusal(error))
 			)
 				throw error;
 			checkEpisodeCancellation(context.signal);
@@ -1752,7 +1756,11 @@ export function createJellyfinEpisodeWorkItemRunner(
 						}
 					} catch (error) {
 						if (isEpisodeCancellation(error)) throw error;
-						if (isTransientEpisodeDatabaseFailure(error)) uncertain.push(page.claim);
+						if (
+							isRetryableSqlitePublicationStartRefusal(error) ||
+							isTransientEpisodeDatabaseFailure(error)
+						)
+							uncertain.push(page.claim);
 						else failures.push({ claim: page.claim, reasonCode: "provider-unavailable", now });
 						continue;
 					}
@@ -1872,7 +1880,8 @@ export function createJellyfinEpisodeWorkItemRunner(
 			}
 			if (
 				stagingPage &&
-				(isJellyfinEpisodeStageBusy(error) ||
+				(isRetryableSqlitePublicationStartRefusal(error) ||
+					isJellyfinEpisodeStageBusy(error) ||
 					(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028"))
 			) {
 				// Local contention/transaction expiry after a joined read is not a
@@ -2003,15 +2012,19 @@ async function retryJellyfinEpisodePageStaging<T>(
 	context: Pick<JellyfinEpisodePublicationContext, "signal" | "log">,
 	operation: () => Promise<T>,
 ): Promise<T> {
-	// Only a known BUSY rollback retries the identical atomic page transaction.
-	// Its claim/identity fences run again; provider collection is not repeated.
+	// Retry the identical page after a known BUSY rollback or a settled,
+	// unentered SQLite start. The claim and identity fences run again.
 	for (let attempt = 0; ; attempt++) {
 		checkEpisodeCancellation(context.signal);
 		try {
 			return await operation();
 		} catch (error) {
 			const diagnostics = stageFailureDiagnostics(error);
-			if (attempt >= 2 || !isJellyfinEpisodeStageBusy(error)) throw error;
+			if (
+				attempt >= 2 ||
+				(!isJellyfinEpisodeStageBusy(error) && !isRetryableSqlitePublicationStartRefusal(error))
+			)
+				throw error;
 			try {
 				context.log.info(
 					{ category: "jellyfin-episode-stage-retry", attempt: attempt + 1, ...diagnostics },

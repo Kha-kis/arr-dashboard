@@ -52,6 +52,8 @@ const durable = vi.hoisted(() => ({
 	invalidateAttempt: vi.fn(),
 	claimUnit: vi.fn(),
 	failUnit: vi.fn(),
+	failOwnedUnit: vi.fn(),
+	failOwnedBatch: vi.fn(),
 	releaseUnit: vi.fn(),
 	exhausted: vi.fn(),
 	renew: vi.fn(),
@@ -134,6 +136,8 @@ vi.mock("../provider-observation/observation-run-repository.js", () => ({
 		return claims;
 	},
 	failObservationUnit: durable.failUnit,
+	failOwnedObservationUnit: durable.failOwnedUnit,
+	failOwnedJellyfinObservationBatch: durable.failOwnedBatch,
 	releaseJoinedObservationUnitClaim: durable.releaseUnit,
 	getAutomaticObservationRenewalDeadline: durable.deadline,
 	hasExhaustedObservationRunRetries: durable.exhausted,
@@ -975,6 +979,8 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			};
 		});
 		durable.failUnit.mockReset();
+		durable.failOwnedUnit.mockReset();
+		durable.failOwnedBatch.mockReset();
 		durable.releaseUnit.mockReset();
 		durable.releaseUnit.mockImplementation(async (_prisma, input) => {
 			const unit = durable.units.find(
@@ -2218,6 +2224,70 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		},
 	);
 
+	it.each([
+		{ width: 1, refusals: 1 },
+		{ width: 2, refusals: 1 },
+		{ width: 1, refusals: 3 },
+		{ width: 2, refusals: 3 },
+	])(
+		"retries proven unentered page staging without refetching ($width, $refusals)",
+		async ({ width, refusals }) => {
+			const state = ownedFixture("JELLYFIN", { v3: true });
+			const client = configureDurableRun(state, 2_001);
+			durable.claimBatchWidth = width;
+			client.getUsers.mockResolvedValue([
+				{ id: "user-1", name: "Synthetic" },
+				{ id: "user-2", name: "Synthetic" },
+			]);
+			const refusal = new RestoreRuntimeAdmissionError();
+			const proveUnentered = vi
+				.spyOn(runtimeClient, "isRetryableSqlitePublicationStartRefusal")
+				.mockImplementation((error) => error === refusal);
+			for (let attempt = 0; attempt < refusals; attempt++)
+				durable.stage.mockRejectedValueOnce(refusal);
+			const providerFailure = {
+				status: "recorded",
+				progress: { state: "failed", reasonCode: "provider-unavailable" },
+			};
+			durable.failOwnedUnit.mockResolvedValue(providerFailure);
+			durable.failOwnedBatch.mockResolvedValue(providerFailure);
+			try {
+				const run = createJellyfinEpisodeWorkItemRunner();
+				await expect(
+					run({
+						prisma: state.prisma,
+						encryptor: { decrypt: vi.fn() },
+						instance: state.instance,
+						log,
+					}),
+				).resolves.toMatchObject(
+					refusals === 3 ? { retryableDependencyFailure: true } : { progressed: true },
+				);
+				expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledTimes(width);
+				expect(durable.stage).toHaveBeenCalledTimes(width + (refusals === 3 ? 2 : 1));
+				const [firstStage, secondStage] = durable.stage.mock.calls;
+				expect(secondStage![1]).toBe(firstStage![1]);
+				expect(secondStage![3]).toBe(firstStage![3]);
+				expect(durable.failUnit).not.toHaveBeenCalled();
+				expect(durable.failOwnedUnit).not.toHaveBeenCalled();
+				expect(durable.failOwnedBatch).not.toHaveBeenCalled();
+				if (refusals === 3) {
+					expect(durable.releaseUnit).toHaveBeenCalledExactlyOnceWith(
+						state.prisma,
+						expect.objectContaining({
+							claim: expect.objectContaining({ unitId: "unit-0", claimToken: "claim-unit-0" }),
+						}),
+					);
+					expect(durable.units[0]).toMatchObject({ state: "pending", cursor: 0 });
+				} else {
+					expect(durable.releaseUnit).not.toHaveBeenCalled();
+				}
+			} finally {
+				proveUnentered.mockRestore();
+			}
+		},
+	);
+
 	it.each(["P1008", "P2028"])(
 		"finishes a deferred joined release before resuming a page after %s",
 		async (code) => {
@@ -2661,6 +2731,10 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		{ code: "P1008", sqliteCode: "SQLITE_BUSY", service: "EMBY" },
 		{ code: "P1008", sqliteCode: "SQLITE_BUSY", manual: true },
 		{ code: "runtime-admission" },
+		{ code: "runtime-admission", proven: true, classified: true },
+		{ code: "runtime-admission", proven: true, manual: true },
+		{ code: "runtime-admission", proven: true, service: "EMBY" },
+		{ code: "runtime-admission", proven: true, cancelled: true },
 		{ code: "generic" },
 		{ code: "P1008", sqliteCode: "SQLITE_BUSY", cancelled: true },
 	] as const)("classifies only eligible unit claim contention (%j)", async (testCase) => {
@@ -2684,25 +2758,35 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			if ("cancelled" in testCase) cancellation.abort();
 			throw failure;
 		});
-		const result = refreshOwnedJellyfinEpisodeCache({
-			prisma: state.prisma,
-			encryptor: { decrypt: vi.fn() },
-			instance: state.instance,
-			log,
-			signal: cancellation.signal,
-			automaticRenewal: "manual" in testCase ? undefined : "provider-unavailable-cooldown",
-		});
-		if ("classified" in testCase) {
-			await expect(result).resolves.toMatchObject({
-				retryableClaimContention: true,
-				errors: 1,
-				complete: false,
-				progressed: false,
+		const proof =
+			"proven" in testCase
+				? vi
+						.spyOn(runtimeClient, "isRetryableSqlitePublicationStartRefusal")
+						.mockImplementation((error) => error === failure)
+				: undefined;
+		try {
+			const result = refreshOwnedJellyfinEpisodeCache({
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log,
+				signal: cancellation.signal,
+				automaticRenewal: "manual" in testCase ? undefined : "provider-unavailable-cooldown",
 			});
-		} else if ("cancelled" in testCase) {
-			await expect(result).rejects.toMatchObject({ code: "PUBLICATION_CANCELLED" });
-		} else {
-			await expect(result).rejects.toBe(failure);
+			if ("classified" in testCase) {
+				await expect(result).resolves.toMatchObject({
+					retryableClaimContention: true,
+					errors: 1,
+					complete: false,
+					progressed: false,
+				});
+			} else if ("cancelled" in testCase) {
+				await expect(result).rejects.toMatchObject({ code: "PUBLICATION_CANCELLED" });
+			} else {
+				await expect(result).rejects.toBe(failure);
+			}
+		} finally {
+			proof?.mockRestore();
 		}
 		expect(durable.claimUnit).toHaveBeenCalledOnce();
 		expect(durable.releaseUnit).not.toHaveBeenCalled();
