@@ -976,6 +976,7 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 				cursor: unit.cursor,
 				expectedRawCount: unit.expectedRawCount,
 				observedRawCount: unit.observedRawCount,
+				attemptCount: unit.attemptCount ?? 0,
 			};
 		});
 		durable.failUnit.mockReset();
@@ -2471,6 +2472,54 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		expect(durable.releaseUnit.mock.calls[1]![1].claim.claimToken).toBe("claim-unit-0");
 		expect(durable.claimUnit).toHaveBeenCalledOnce();
 		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledOnce();
+	});
+
+	it("continues paired pages when a separate retry metadata read is unavailable", async () => {
+		const state = ownedFixture("JELLYFIN", { v3: true });
+		const client = configureDurableRun(state, 4_001);
+		durable.claimBatchWidth = 2;
+		client.getUsers.mockResolvedValue([
+			{ id: "user-1", name: "Synthetic" },
+			{ id: "user-2", name: "Synthetic" },
+		]);
+		const run = createJellyfinEpisodeWorkItemRunner();
+		const context = {
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+		};
+		await expect(run(context)).resolves.toMatchObject({ progressed: true });
+		expect(durable.units[0]).toMatchObject({ cursor: 1_000, state: "pending" });
+		expect(durable.units[1]).toMatchObject({ cursor: 1_000, state: "pending" });
+		durable.units[0]!.attemptCount = 0;
+		durable.units[1]!.attemptCount = 1;
+		Object.assign(state.prisma, {
+			providerObservationUnit: {
+				findFirst: vi.fn().mockRejectedValue(new RestoreRuntimeAdmissionError()),
+			},
+		});
+		pageWorker.run.mockClear();
+		durable.failOwnedBatch.mockResolvedValue({
+			status: "recorded",
+			progress: { state: "failed", reasonCode: "provider-unavailable" },
+		});
+
+		await expect(run(context)).resolves.toMatchObject({ progressed: true });
+
+		expect(
+			pageWorker.run.mock.calls.map(([input]) => ({
+				userId: input.userId,
+				cursor: input.startIndex,
+				uncounted: input.uncounted ?? false,
+			})),
+		).toEqual([
+			{ userId: "user-1", cursor: 1_000, uncounted: true },
+			{ userId: "user-2", cursor: 1_000, uncounted: false },
+		]);
+		expect(durable.units[0]).toMatchObject({ cursor: 2_000, attemptCount: 0 });
+		expect(durable.units[1]).toMatchObject({ cursor: 2_000, attemptCount: 1 });
+		expect(durable.failOwnedBatch).not.toHaveBeenCalled();
 	});
 
 	it.each([

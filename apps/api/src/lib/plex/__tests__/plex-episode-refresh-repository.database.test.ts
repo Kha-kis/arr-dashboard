@@ -1104,6 +1104,7 @@ describe("plex episode refresh repository", { timeout: 30_000 }, () => {
 								cursor: reserved.cursor,
 								expectedRawCount: reserved.expectedRawCount,
 								observedRawCount: reserved.observedRawCount,
+								attemptCount: reserved.attemptCount,
 							},
 							planPlexEpisodeRefresh(targets).units[1]!,
 							{ complete: true, refreshedTargets: 50, rows: [] },

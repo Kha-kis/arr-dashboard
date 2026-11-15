@@ -9676,6 +9676,7 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 				cursor: page.startIndex,
 				expectedRawCount: page.startIndex === 1 ? 2 : null,
 				observedRawCount: page.startIndex,
+				attemptCount: 0,
 			};
 
 			const reasons: JellyfinEpisodePageRejectionReason[] = [];
@@ -9738,6 +9739,7 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 			cursor: 0,
 			expectedRawCount: null,
 			observedRawCount: 0,
+			attemptCount: 0,
 		};
 
 		const reasons: JellyfinEpisodePageRejectionReason[] = [];
@@ -9828,6 +9830,7 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 			cursor: 0,
 			expectedRawCount: null,
 			observedRawCount: 0,
+			attemptCount: 0,
 		};
 
 		const now = new Date("2026-09-08T00:00:00.000Z");

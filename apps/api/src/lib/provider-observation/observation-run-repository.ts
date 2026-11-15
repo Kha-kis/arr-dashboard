@@ -529,6 +529,7 @@ async function claimObservationUnits(
 			cursor: unit.cursor,
 			expectedRawCount: unit.expectedRawCount,
 			observedRawCount: unit.observedRawCount,
+			attemptCount: unit.attemptCount,
 		}));
 	});
 }

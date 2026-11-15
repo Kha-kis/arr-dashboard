@@ -1577,7 +1577,15 @@ export function createJellyfinEpisodeWorkItemRunner(
 				claim,
 				scope,
 				pageSize,
-				requestedUncounted: false,
+				// Use the counter read with the claim. Staging independently
+				// authenticates the current claim and provider authority.
+				requestedUncounted:
+					Boolean(activeCatalog) &&
+					runOwnsAttempt &&
+					claim.cursor > 0 &&
+					claim.expectedRawCount !== null &&
+					claim.cursor + pageSize < claim.expectedRawCount &&
+					claim.attemptCount === 0,
 				providerReadMs: 0,
 				guardMs: 0,
 				stageMs: 0,
@@ -1599,30 +1607,6 @@ export function createJellyfinEpisodeWorkItemRunner(
 						async () => {
 							const readStartedAt = performance.now();
 							try {
-								// Read retry metadata only for the exact admitted claim. The
-								// generic claim API deliberately carries no retry policy.
-								if (
-									activeCatalog &&
-									runOwnsAttempt &&
-									claim.cursor > 0 &&
-									claim.expectedRawCount !== null &&
-									claim.cursor + pageSize < claim.expectedRawCount
-								) {
-									const unit = await context.prisma.providerObservationUnit.findFirst({
-										where: {
-											id: claim.unitId,
-											runId: claim.runId,
-											state: "running",
-											claimToken: claim.claimToken,
-											cursor: claim.cursor,
-											expectedRawCount: claim.expectedRawCount,
-											observedRawCount: claim.observedRawCount,
-											scopePayload: claim.scopePayload,
-										},
-										select: { attemptCount: true },
-									});
-									work.requestedUncounted = unit?.attemptCount === 0;
-								}
 								return await observeWorkStage(
 									"provider-read",
 									async () =>
