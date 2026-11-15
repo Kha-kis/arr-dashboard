@@ -1,6 +1,6 @@
 import { setTimeout as delay, setImmediate } from "node:timers/promises";
 import Database from "better-sqlite3";
-import { type Prisma, PrismaClient, type PrismaClientInstance } from "../prisma.js";
+import { Prisma, PrismaClient, type PrismaClientInstance } from "../prisma.js";
 import { createRecoverableSqliteAdapter, type SqliteStatementFence } from "../sqlite-adapter.js";
 import { hasSqliteTransactionWriteIntent } from "../sqlite-transaction-intent.js";
 import {
@@ -88,13 +88,42 @@ type SqliteClientRegistration = {
 	): Promise<T>;
 };
 const ordinarySqliteClients = new WeakMap<object, SqliteClientRegistration>();
-const unenteredPublicationStartRefusals = new WeakSet<object>();
+type PublicationStartRefusal = "admission-timeout" | "native-busy-timeout";
+const unenteredPublicationStartRefusals = new WeakMap<object, PublicationStartRefusal>();
 
 /** Exact unentered SQLite provenance, not a generic timeout/admission retry. */
-export function isRetryableSqlitePublicationStartRefusal(error: unknown): boolean {
+export function isRetryableSqlitePublicationStartRefusal(
+	error: unknown,
+	options?: { includeNativeBusyTimeout?: boolean },
+): boolean {
+	const kind =
+		typeof error === "object" && error !== null
+			? unenteredPublicationStartRefusals.get(error)
+			: undefined;
 	return (
-		typeof error === "object" && error !== null && unenteredPublicationStartRefusals.has(error)
+		kind === "admission-timeout" ||
+		(kind === "native-busy-timeout" && options?.includeNativeBusyTimeout === true)
 	);
+}
+
+function sqlitePublicationStartRefusal(error: unknown): PublicationStartRefusal | undefined {
+	if (!(error instanceof Error) || !("code" in error)) return undefined;
+	if (error.code === "P2028") return "admission-timeout";
+	if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P1008")
+		return undefined;
+	const adapter = error.meta?.driverAdapterError;
+	if (!adapter || typeof adapter !== "object" || !("cause" in adapter)) return undefined;
+	const cause = adapter.cause;
+	if (
+		cause &&
+		typeof cause === "object" &&
+		"originalCode" in cause &&
+		cause.originalCode === "SQLITE_BUSY" &&
+		"kind" in cause &&
+		cause.kind === "SocketTimeout"
+	)
+		return "native-busy-timeout";
+	return undefined;
 }
 
 /** Keep atomic cache publication off the ordinary HTTP connection. */
@@ -219,7 +248,7 @@ export function createRuntimePrismaClient(
 				const error = new RestoreRuntimeAdmissionError();
 				// Removed before lending the lane: no native start or callback ran.
 				// A close/ownership refusal never obtains this exact-object proof.
-				if (!registration.closed) unenteredPublicationStartRefusals.add(error);
+				if (!registration.closed) unenteredPublicationStartRefusals.set(error, "admission-timeout");
 				reject(error);
 			}, maxWait);
 			const waiter: PublicationWaiter = {
@@ -396,7 +425,7 @@ export function createRuntimePrismaClient(
 			const began = performance.now();
 			await acquirePublication(maxWait);
 			let callbackEntered = false;
-			let startRefusal: object | undefined;
+			let startRefusal: { error: object; kind: PublicationStartRefusal } | undefined;
 			try {
 				if (registration.closed) throw new RestoreRuntimeAdmissionError();
 				const remaining = Math.floor(maxWait - (performance.now() - began));
@@ -404,7 +433,7 @@ export function createRuntimePrismaClient(
 					// The lane was acquired, but no native start or callback ran.
 					// Publish the exact-object proof only after finally settles it.
 					const error = new RestoreRuntimeAdmissionError();
-					startRefusal = error;
+					startRefusal = { error, kind: "admission-timeout" };
 					throw error;
 				}
 				// Close lifetime is already reserved; ticket, owner and native fences
@@ -430,19 +459,30 @@ export function createRuntimePrismaClient(
 			} catch (error) {
 				if (typeof error === "object" && error !== null)
 					unenteredPublicationStartRefusals.delete(error);
-				if (!callbackEntered && error instanceof Error && "code" in error && error.code === "P2028")
-					startRefusal = error;
+				if (!callbackEntered && error instanceof Error && !startRefusal) {
+					const kind = sqlitePublicationStartRefusal(error);
+					if (kind) startRefusal = { error, kind };
+				}
 				throw error;
 			} finally {
 				// Prisma can reject start on maxWait before its discarded native
 				// transaction is rolled back. Keep the lane and accepted ticket alive
 				// until physical startup/settlement, not just the caller promise, ends.
 				while (publicationTransactions.size > 0) await Promise.all(publicationTransactions);
+				if (startRefusal?.kind === "native-busy-timeout") {
+					try {
+						context.assertTicket();
+					} catch {
+						// Failed rollback can latch runtime loss while the native
+						// adapter preserves the original busy error.
+						startRefusal = undefined;
+					}
+				}
 				releasePublication();
 				// Only after physical settlement may an opted-in caller retry work
 				// which never entered. Preserve the original error and every fence.
 				if (startRefusal && !callbackEntered && !registration.closed)
-					unenteredPublicationStartRefusals.add(startRefusal);
+					unenteredPublicationStartRefusals.set(startRefusal.error, startRefusal.kind);
 			}
 		},
 		readClient: async (operation, maxWait, workload, signal) => {

@@ -13,6 +13,7 @@ import {
 } from "../../__tests__/scoped-write-intent-fixture.js";
 import { hashPassword } from "../../auth/password.js";
 import { SessionService } from "../../auth/session.js";
+import { Prisma } from "../../prisma.js";
 import { RestoreRuntimeAdmissionError } from "../restore-runtime-admission.js";
 import * as publication from "../restore-runtime-client.js";
 
@@ -245,7 +246,18 @@ describe("session publication acquisition budget", { timeout: 20_000 }, () => {
 		async (code) => {
 			const { f, service } = await setup();
 			const before = snapshotProtectedRows(f);
-			const failure = Object.assign(new Error("Synthetic entered failure"), { code });
+			const failure =
+				code === "P1008"
+					? new Prisma.PrismaClientKnownRequestError("Synthetic entered failure", {
+							code,
+							clientVersion: "fixture",
+							meta: {
+								driverAdapterError: {
+									cause: { kind: "SocketTimeout", originalCode: "SQLITE_BUSY" },
+								},
+							},
+						})
+					: Object.assign(new Error("Synthetic entered failure"), { code });
 			const run = publication.withIsolatedRuntimePrismaTransaction;
 			let callbacks = 0;
 			const injected = vi
@@ -263,13 +275,21 @@ describe("session publication acquisition budget", { timeout: 20_000 }, () => {
 				);
 			try {
 				await expect(
-					f.runtime.runOperation(() => service.createSession("synthetic-user")),
+					f.runtime.runOperation(() =>
+						service.createSession("synthetic-user", false, undefined, {
+							authorizePasswordSession: async () => undefined,
+						}),
+					),
 				).rejects.toBe(failure);
 			} finally {
 				injected.mockRestore();
 			}
 			expect(callbacks).toBe(1);
-			expect(publication.isRetryableSqlitePublicationStartRefusal(failure)).toBe(false);
+			expect(
+				publication.isRetryableSqlitePublicationStartRefusal(failure, {
+					includeNativeBusyTimeout: true,
+				}),
+			).toBe(false);
 			expect(await f.plain.session.count()).toBe(0);
 			expect(snapshotProtectedRows(f)).toEqual(before);
 			expect(f.losses).toEqual([]);

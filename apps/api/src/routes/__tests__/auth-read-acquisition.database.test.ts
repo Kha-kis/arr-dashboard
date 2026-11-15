@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import fastifyCookie from "@fastify/cookie";
+import Database from "better-sqlite3";
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ApiEnv } from "../../config/env.js";
@@ -10,6 +11,7 @@ import {
 } from "../../lib/__tests__/scoped-write-intent-fixture.js";
 import { hashPassword } from "../../lib/auth/password.js";
 import { SessionService } from "../../lib/auth/session.js";
+import * as guardedDatabase from "../../lib/backup/restore-runtime-client.js";
 import { registerAuthRoutes } from "../auth.js";
 import { registerAuthOidcRoutes } from "../auth-oidc.js";
 
@@ -193,23 +195,127 @@ describe("password login native client acquisition", { timeout: 20_000 }, () => 
 		expect(f.losses).toEqual([]);
 	});
 
-	it("never acknowledges a session while a real writer prevents persistence, and recovers after rollback", async () => {
+	for (const outcome of ["cleared", "persisted", "revoked"] as const) {
+		const releasesAfterFirstRefusal = outcome !== "persisted";
+		it(
+			{
+				cleared: "retries a settled native start refusal once and commits a single session",
+				persisted:
+					"reports a temporary sign-in failure after two refusals and allows a later retry",
+				revoked: "does not issue a session if the password was revoked before retry",
+			}[outcome],
+			async () => {
+				const { f, app, login } = await setup();
+				const release = await holdOrdinaryTransaction(f, true);
+				const transact = guardedDatabase.withIsolatedRuntimePrismaTransaction;
+				let entered = 0;
+				const failures: unknown[] = [];
+				const observe = vi
+					.spyOn(guardedDatabase, "withIsolatedRuntimePrismaTransaction")
+					.mockImplementation(async (prisma, operation, options) => {
+						try {
+							return await transact(
+								prisma,
+								(tx) => {
+									entered++;
+									return operation(tx);
+								},
+								options,
+							);
+						} catch (error) {
+							if (entered > 0) throw error;
+							failures.push(error);
+							if (releasesAfterFirstRefusal && failures.length === 1) {
+								await release();
+								if (outcome === "revoked") {
+									await f.plain.user.update({
+										where: { id: "synthetic-user" },
+										data: { hashedPassword: null },
+									});
+									await f.plain.session.deleteMany({ where: { userId: "synthetic-user" } });
+								}
+							}
+							throw error;
+						}
+					});
+				try {
+					const response = await login();
+					expect(observe).toHaveBeenCalledTimes(2);
+					expect(failures).toHaveLength(releasesAfterFirstRefusal ? 1 : 2);
+					for (const error of failures) {
+						expect(error).toMatchObject({
+							code: "P1008",
+							meta: { driverAdapterError: { cause: { originalCode: "SQLITE_BUSY" } } },
+						});
+						expect(guardedDatabase.isRetryableSqlitePublicationStartRefusal(error)).toBe(false);
+						expect(
+							guardedDatabase.isRetryableSqlitePublicationStartRefusal(error, {
+								includeNativeBusyTimeout: true,
+							}),
+						).toBe(true);
+					}
+
+					if (outcome === "revoked") {
+						expect(entered).toBe(1);
+						expect(response.statusCode).toBe(401);
+						expect(response.cookies).toEqual([]);
+						expect(await f.plain.session.count()).toBe(0);
+					} else if (outcome === "cleared") {
+						expect(entered).toBe(1);
+						expect(response.statusCode).toBe(200);
+						expect(response.cookies).toHaveLength(1);
+						expect(await f.plain.session.count()).toBe(1);
+					} else {
+						expect(entered).toBe(0);
+						expect(response.statusCode).toBe(503);
+						expect(response.json().message).toBe("Sign-in is temporarily unavailable. Try again.");
+						expect(response.cookies).toEqual([]);
+						expect(await f.plain.session.count()).toBe(0);
+
+						observe.mockRestore();
+						await release();
+						const recovered = await login();
+						expect(recovered.statusCode).toBe(200);
+						expect(recovered.cookies).toHaveLength(1);
+						expect(await f.plain.session.count()).toBe(1);
+					}
+				} finally {
+					observe.mockRestore();
+					await release();
+					await app.close();
+				}
+				expect(f.losses).toEqual([]);
+			},
+		);
+	}
+
+	it("does not retry a busy native refusal whose rollback failed", async () => {
 		const { f, app, login } = await setup();
 		const release = await holdOrdinaryTransaction(f, true);
+		const prepare = Database.prototype.prepare;
+		const rollback = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+			this: Database.Database,
+			sql,
+		) {
+			if (sql === "ROLLBACK" && this.name === f.path) {
+				throw new Error("Synthetic native rollback failure");
+			}
+			return prepare.call(this, sql);
+		});
+		const observe = vi.spyOn(guardedDatabase, "withIsolatedRuntimePrismaTransaction");
 		try {
 			const response = await login();
-			expect(response.statusCode).toBeGreaterThanOrEqual(500);
+			expect(f.losses).toContain("transaction-cleanup-failed");
+			expect(observe).toHaveBeenCalledTimes(1);
+			expect(response.statusCode).toBe(503);
+			expect(response.json().message).toBe("Sign-in is temporarily unavailable. Try again.");
 			expect(response.cookies).toEqual([]);
 			expect(await f.plain.session.count()).toBe(0);
 		} finally {
+			rollback.mockRestore();
+			observe.mockRestore();
 			await release();
-		}
-		try {
-			expect((await login()).statusCode).toBe(200);
-			expect(await f.plain.session.count()).toBe(1);
-		} finally {
 			await app.close();
 		}
-		expect(f.losses).toEqual([]);
 	});
 });

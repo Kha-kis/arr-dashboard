@@ -302,6 +302,7 @@ describe("POST /auth/login", () => {
 			"user-1",
 			false, // rememberMe default
 			expect.any(Object),
+			{ authorizePasswordSession: expect.any(Function) },
 		);
 		expect(mockSessionService.attachCookie).toHaveBeenCalled();
 	});

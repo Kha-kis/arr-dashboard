@@ -107,7 +107,12 @@ export class SessionService {
 	/**
 	 * Create a new session with optional metadata
 	 */
-	async createSession(userId: string, rememberMe = false, metadata?: SessionMetadata) {
+	async createSession(
+		userId: string,
+		rememberMe = false,
+		metadata?: SessionMetadata,
+		options?: { authorizePasswordSession: (tx: Prisma.TransactionClient) => Promise<void> },
+	) {
 		const token = generateSessionToken();
 		const hashedToken = hashToken(token);
 
@@ -121,8 +126,9 @@ export class SessionService {
 		// The token is returned only after this short guarded publication commits.
 		const publish = () =>
 			withSqliteTransactionWriteIntent(() =>
-				withIsolatedRuntimePrismaTransaction(this.prisma, (tx) =>
-					tx.session.create({
+				withIsolatedRuntimePrismaTransaction(this.prisma, async (tx) => {
+					if (options) await options.authorizePasswordSession(tx);
+					await tx.session.create({
 						data: {
 							id: hashedToken,
 							userId,
@@ -130,13 +136,18 @@ export class SessionService {
 							userAgent: metadata?.userAgent,
 							ipAddress: metadata?.ipAddress,
 						},
-					}),
-				),
+					});
+				}),
 			);
 		try {
 			await publish();
 		} catch (error) {
-			if (!isRetryableSqlitePublicationStartRefusal(error)) throw error;
+			if (
+				!isRetryableSqlitePublicationStartRefusal(error, {
+					includeNativeBusyTimeout: options !== undefined,
+				})
+			)
+				throw error;
 			// Only a physically settled start refusal proves replay is safe.
 			// Reacquire every fence once, with the same token and expiry.
 			await delay(25);

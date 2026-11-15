@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { getPasswordSchema } from "@arr/shared";
-import type { FastifyPluginCallback } from "fastify";
+import type { FastifyPluginCallback, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
 import { hashPassword, verifyPassword } from "../lib/auth/password.js";
@@ -15,6 +15,7 @@ import {
 	MutationRepositoryError,
 } from "../lib/label-sync/jellyfin-mutation-repository.js";
 import { withExclusiveCleanupTopologyMutationLease } from "../lib/library-cleanup/cleanup-executor.js";
+import { Prisma } from "../lib/prisma.js";
 import { withSqliteTransactionWriteIntent } from "../lib/sqlite-transaction-intent.js";
 import { assertNoActiveTrashRecoveryForInstance } from "../lib/trash-guides/recovery-evidence.js";
 import { validateRequest } from "../lib/utils/validate.js";
@@ -27,6 +28,37 @@ const loginSchema = z.object({
 
 const REGISTER_RATE_LIMIT = { max: 5, timeWindow: "1 minute" };
 const LOGIN_RATE_LIMIT = { max: 10, timeWindow: "1 minute" };
+
+class LoginDatabaseUnavailableError extends Error {
+	readonly statusCode = 503;
+	constructor() {
+		super("Sign-in is temporarily unavailable. Try again.");
+		this.name = "LoginDatabaseUnavailableError";
+	}
+}
+
+class InvalidPasswordSessionError extends Error {
+	readonly statusCode = 401;
+	constructor() {
+		super("Invalid credentials");
+		this.name = "InvalidPasswordSessionError";
+	}
+}
+
+async function loginDatabaseOperation<T>(
+	request: FastifyRequest,
+	stage: "user-lookup" | "record-lockout" | "session-publication",
+	operation: () => Promise<T>,
+): Promise<T> {
+	try {
+		return await operation();
+	} catch (error) {
+		if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P1008")
+			throw error;
+		request.log.warn({ category: "login-database-timeout", stage }, "Sign-in database unavailable");
+		throw new LoginDatabaseUnavailableError();
+	}
+}
 
 const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	// Get password schema based on configured policy
@@ -152,8 +184,10 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(400).send({ error: "Invalid payload" });
 		}
 
-		const user = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
-			prisma.user.findFirst({ where: { username } }),
+		const user = await loginDatabaseOperation(request, "user-lookup", () =>
+			withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+				prisma.user.findFirst({ where: { username } }),
+			),
 		);
 
 		if (!user) {
@@ -184,18 +218,20 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			const MAX_FAILED_ATTEMPTS = 5;
 			const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
-			await withSqliteTransactionWriteIntent(() =>
-				withIsolatedRuntimePrismaTransaction(app.prisma, (tx) =>
-					tx.user.update({
-						where: { id: user.id },
-						data: {
-							failedLoginAttempts: failedAttempts,
-							lockedUntil:
-								failedAttempts >= MAX_FAILED_ATTEMPTS
-									? new Date(Date.now() + LOCKOUT_DURATION_MS)
-									: null,
-						},
-					}),
+			await loginDatabaseOperation(request, "record-lockout", () =>
+				withSqliteTransactionWriteIntent(() =>
+					withIsolatedRuntimePrismaTransaction(app.prisma, (tx) =>
+						tx.user.update({
+							where: { id: user.id },
+							data: {
+								failedLoginAttempts: failedAttempts,
+								lockedUntil:
+									failedAttempts >= MAX_FAILED_ATTEMPTS
+										? new Date(Date.now() + LOCKOUT_DURATION_MS)
+										: null,
+							},
+						}),
+					),
 				),
 			);
 
@@ -253,22 +289,28 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(401).send({ error: "Invalid credentials" });
 		}
 
-		// Reset failed attempts on successful login
-		if (user.failedLoginAttempts > 0 || user.lockedUntil) {
-			await withSqliteTransactionWriteIntent(() =>
-				withIsolatedRuntimePrismaTransaction(app.prisma, (tx) =>
-					tx.user.update({
-						where: { id: user.id },
+		const session = await loginDatabaseOperation(request, "session-publication", () =>
+			app.sessionService.createSession(user.id, parsed.rememberMe, getSessionMetadata(request), {
+				authorizePasswordSession: async (tx) => {
+					// Lock the current matching user row before reading the verified
+					// hash. A changed credential rolls back the counter reset too.
+					const current = await tx.user.updateMany({
+						where: {
+							id: user.id,
+							username,
+							OR: [{ lockedUntil: null }, { lockedUntil: { lte: new Date() } }],
+						},
 						data: { failedLoginAttempts: 0, lockedUntil: null },
-					}),
-				),
-			);
-		}
-
-		const session = await app.sessionService.createSession(
-			user.id,
-			parsed.rememberMe,
-			getSessionMetadata(request),
+					});
+					if (current.count !== 1) throw new InvalidPasswordSessionError();
+					const stored = await tx.user.findUnique({
+						where: { id: user.id },
+						select: { hashedPassword: true },
+					});
+					if (stored?.hashedPassword !== user.hashedPassword)
+						throw new InvalidPasswordSessionError();
+				},
+			}),
 		);
 		app.sessionService.attachCookie(reply, session.token, parsed.rememberMe);
 
