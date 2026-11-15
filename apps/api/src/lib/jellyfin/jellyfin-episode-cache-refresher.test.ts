@@ -413,6 +413,8 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		expect(stages.map((line) => [line.stage, line.state])).toEqual([
 			["outer-attempt-claim", "entered"],
 			["outer-attempt-claim", "succeeded"],
+			["current-authority-read", "entered"],
+			["current-authority-read", "succeeded"],
 			["unit-claim", "entered"],
 			["unit-claim", "succeeded"],
 			["guarded-read", "entered"],
@@ -498,6 +500,8 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			expect(stages.map((line) => [line.stage, line.state])).toEqual([
 				["outer-attempt-claim", "entered"],
 				["outer-attempt-claim", "succeeded"],
+				["current-authority-read", "entered"],
+				["current-authority-read", "succeeded"],
 				["unit-claim", "entered"],
 				["unit-claim", "failed"],
 			]);
@@ -2527,6 +2531,77 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		expect(durable.failOwnedBatch).not.toHaveBeenCalled();
 	});
 
+	it.each(["current", "changed", "cancelled", "unavailable"] as const)(
+		"reads the current owned service before claiming another page using the isolated lane (%s)",
+		async (mode) => {
+			const state = ownedFixture("JELLYFIN", { v3: true });
+			const client = configureDurableRun(state, 4_001);
+			const run = createJellyfinEpisodeWorkItemRunner();
+			const controller = new AbortController();
+			const context = {
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log,
+				automaticRenewal: "provider-unavailable-cooldown" as const,
+				signal: controller.signal,
+			};
+			await expect(run(context)).resolves.toMatchObject({ progressed: true });
+			expect(durable.units[0]).toMatchObject({ cursor: 1_000, state: "pending" });
+			const refusal = new RestoreRuntimeAdmissionError();
+			vi.mocked(state.prisma.serviceInstance.findFirst).mockRejectedValue(refusal);
+			client.getEpisodeItemsPageWithCoverage.mockClear();
+			durable.claimUnit.mockClear();
+			durable.stage.mockClear();
+			const committed = vi.fn(async () => {
+				if (mode === "cancelled") controller.abort();
+				return mode === "changed"
+					? { ...state.instance, connectionGeneration: state.instance.connectionGeneration + 1 }
+					: state.instance;
+			});
+			const borrow = vi
+				.spyOn(runtimeClient, "withIsolatedRuntimePrismaReadClient")
+				.mockImplementationOnce(async (prisma, operation, options) => {
+					expect(prisma).toBe(state.prisma);
+					expect(options?.signal).toBe(controller.signal);
+					if (mode === "unavailable") throw refusal;
+					return await operation({
+						...state.prisma,
+						serviceInstance: { findFirst: committed },
+					} as unknown as typeof prisma);
+				});
+			try {
+				const result = run(context);
+				if (mode === "current") {
+					await expect(result).resolves.toMatchObject({ progressed: true });
+					expect(durable.units[0]).toMatchObject({ cursor: 2_000, state: "pending" });
+					expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledOnce();
+				} else {
+					if (mode === "changed")
+						await expect(result).resolves.toMatchObject({ progressed: false });
+					else if (mode === "cancelled")
+						await expect(result).rejects.toMatchObject({ code: "PUBLICATION_CANCELLED" });
+					else await expect(result).rejects.toBe(refusal);
+					expect(durable.units[0]).toMatchObject({ cursor: 1_000, state: "pending" });
+					expect(durable.claimUnit).not.toHaveBeenCalled();
+					expect(durable.stage).not.toHaveBeenCalled();
+					expect(client.getEpisodeItemsPageWithCoverage).not.toHaveBeenCalled();
+				}
+				if (mode !== "unavailable")
+					expect(committed).toHaveBeenCalledExactlyOnceWith({
+						where: {
+							id: state.instance.id,
+							userId: state.instance.userId,
+							service: { in: ["JELLYFIN", "EMBY"] },
+							enabled: true,
+						},
+					});
+			} finally {
+				borrow.mockRestore();
+			}
+		},
+	);
+
 	it.each([
 		{ width: 1, outcome: "success", borrows: 1, reads: 1 },
 		{ width: 2, outcome: "success", borrows: 1, reads: 1 },
@@ -2565,8 +2640,10 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			return staged;
 		});
 		let attempts = 0;
+		const readClient = runtimeClient.withIsolatedRuntimePrismaReadClient;
 		const borrow = vi
 			.spyOn(runtimeClient, "withIsolatedRuntimePrismaReadClient")
+			.mockImplementationOnce(readClient)
 			.mockImplementation(async (prisma, operation, options) => {
 				expect(prisma).toBe(state.prisma);
 				expect(acknowledged).toBe(width);
@@ -2593,7 +2670,7 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			else if (outcome.startsWith("cancel"))
 				await expect(result).rejects.toMatchObject({ code: "PUBLICATION_CANCELLED" });
 			else await expect(result).resolves.toMatchObject({ progressed: true });
-			expect(borrow).toHaveBeenCalledTimes(test.borrows);
+			expect(borrow).toHaveBeenCalledTimes(1 + test.borrows);
 			expect(isolatedRead).toHaveBeenCalledTimes(test.reads);
 			expect(ordinaryReadsAfterStaging).toBe(0);
 			expect(durable.stage).toHaveBeenCalledTimes(width);

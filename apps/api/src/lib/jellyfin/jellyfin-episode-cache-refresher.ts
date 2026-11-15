@@ -644,6 +644,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 		async function observeWorkStage<T>(
 			stage:
 				| "outer-attempt-claim"
+				| "current-authority-read"
 				| "unit-claim"
 				| "guarded-read"
 				| "provider-read"
@@ -851,14 +852,28 @@ export function createJellyfinEpisodeWorkItemRunner(
 			}
 			return parentRefreshPendingProgress();
 		};
-		const current = await context.prisma.serviceInstance.findFirst({
-			where: {
-				id: context.instance.id,
-				userId: context.instance.userId,
-				service: { in: ["JELLYFIN", "EMBY"] },
-				enabled: true,
-			},
+		// The ordinary SQLite connection may still be reserved by unrelated work.
+		// Recheck the owned row on a guarded read lane, then release it before
+		// loading the catalog or asking the provider for data.
+		const current = await observeWorkStage("current-authority-read", () =>
+			withIsolatedRuntimePrismaReadClient(
+				context.prisma,
+				(reader) =>
+					reader.serviceInstance.findFirst({
+						where: {
+							id: context.instance.id,
+							userId: context.instance.userId,
+							service: { in: ["JELLYFIN", "EMBY"] },
+							enabled: true,
+						},
+					}),
+				{ maxWait: 5_000, signal: context.signal },
+			),
+		).catch((error: unknown) => {
+			checkEpisodeCancellation(context.signal);
+			throw error;
 		});
+		checkEpisodeCancellation(context.signal);
 		if (
 			!current ||
 			!sameProviderPublicationAuthority(createProviderPublicationAuthority(current), authority)
