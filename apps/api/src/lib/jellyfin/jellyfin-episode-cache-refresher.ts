@@ -681,14 +681,40 @@ export function createJellyfinEpisodeWorkItemRunner(
 				record(state, failure);
 			}
 		}
-		const readStagedProgress = (runId: string) =>
-			observeWorkStage("run-progress", () =>
-				withIsolatedRuntimePrismaReadClient(
-					context.prisma,
-					(reader) => runProgress(reader, runId),
-					{ maxWait: 5_000 },
-				),
-			);
+		async function readStagedProgress(runId: string, acknowledged: boolean) {
+			const read = () =>
+				observeWorkStage("run-progress", async () => {
+					let progress: JellyfinEpisodeWorkProgress;
+					try {
+						progress = await withIsolatedRuntimePrismaReadClient(
+							context.prisma,
+							(reader) => runProgress(reader, runId),
+							{ maxWait: 5_000, signal: context.signal },
+						);
+					} catch (error) {
+						checkEpisodeCancellation(context.signal);
+						throw error;
+					}
+					checkEpisodeCancellation(context.signal);
+					return progress;
+				});
+			try {
+				return await read();
+			} catch (error) {
+				// Only repeat the guarded read after acknowledged staging.
+				if (
+					!acknowledged ||
+					!(
+						error instanceof RestoreRuntimeAdmissionError ||
+						isJellyfinEpisodeSqliteBusyTimeout(error)
+					)
+				) {
+					throw error;
+				}
+				checkEpisodeCancellation(context.signal);
+				return await read();
+			}
+		}
 		const now = context.now ?? new Date();
 		const guardOptions = {
 			signal: context.signal,
@@ -1769,25 +1795,8 @@ export function createJellyfinEpisodeWorkItemRunner(
 						return { ...release, progressed };
 				}
 				if (pendingFailure) return await settlePendingFailure(context, pendingFailure);
-				const readProgress = () => readStagedProgress(run.id);
-				let progress: JellyfinEpisodeWorkProgress;
-				try {
-					progress = await readProgress();
-				} catch (error) {
-					// Acknowledged page writes already advanced their cursors.
-					// The summary may recheck admission once without replaying writes.
-					if (
-						!progressed ||
-						!(
-							error instanceof RestoreRuntimeAdmissionError ||
-							isJellyfinEpisodeSqliteBusyTimeout(error)
-						)
-					) {
-						throw error;
-					}
-					checkEpisodeCancellation(context.signal);
-					progress = await readProgress();
-				}
+				if (pages.every((page) => page.outcome === "progressed")) cancellation.batch = undefined;
+				const progress = await readStagedProgress(run.id, progressed);
 				return { ...progress, progressed };
 			} finally {
 				for (const page of pages) logPageTiming(page);
@@ -1801,6 +1810,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 			checkEpisodeCancellation(context.signal);
 			stagingPage = true;
 			const progressed = await stagePage(work, page);
+			if (progressed) cancellation.claim = undefined;
 			checkEpisodeCancellation(context.signal);
 			if (!progressed) {
 				work.outcome = "rejected";
@@ -1821,7 +1831,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 				if (failed && runOwnsAttempt) await finishAttemptIfExhausted();
 				return { ...(await runProgress(context.prisma, run.id)), progressed: false };
 			}
-			const progress = await readStagedProgress(run.id);
+			const progress = await readStagedProgress(run.id, true);
 			if (progress.state === "failed" && runOwnsAttempt) {
 				const deferred = await finishAttemptIfRetryDeferred();
 				const settled = deferred !== "recorded" && (await finishAttemptIfExhausted());
@@ -1832,7 +1842,9 @@ export function createJellyfinEpisodeWorkItemRunner(
 		} catch (error) {
 			// A failed rejection settlement must not lose resetProgress or be
 			// reclassified as a provider failure by this same page-level catch.
-			if (settlingRejectedPage) throw error;
+			// Acknowledged writes already consumed their claim. Summary or
+			// attempt read errors escape without starting failure settlement.
+			if (settlingRejectedPage || work.outcome === "progressed") throw error;
 			if (isEpisodeCancellation(error)) throw error;
 			checkEpisodeCancellation(context.signal);
 			if (isTerminalIdentityAuthorityFailure(error)) {

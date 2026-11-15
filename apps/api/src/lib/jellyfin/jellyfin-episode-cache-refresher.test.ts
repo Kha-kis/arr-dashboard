@@ -2403,62 +2403,84 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledOnce();
 	});
 
-	it.each([1, 2])(
-		"reads acknowledged progress on an isolated lane for %i page(s)",
-		async (width) => {
-			const state = ownedFixture("JELLYFIN", { v3: true });
-			const client = configureDurableRun(state, 2_001);
-			durable.claimBatchWidth = width;
-			client.getUsers.mockResolvedValue([
-				{ id: "user-1", name: "Synthetic" },
-				{ id: "user-2", name: "Synthetic" },
-			]);
-			const stage = durable.stage.getMockImplementation()!;
-			const ordinaryRead = vi.mocked(state.prisma.providerObservationRun.findUnique);
-			const originalRead = ordinaryRead.getMockImplementation()!;
-			const isolatedRead = vi.fn(originalRead);
-			const lane = {
-				...state.prisma,
-				providerObservationRun: {
-					...state.prisma.providerObservationRun,
-					findUnique: isolatedRead,
-				},
-			};
-			let acknowledged = 0;
-			durable.stage.mockImplementation(async (...args) => {
-				const staged = await stage(...args);
-				if (staged && ++acknowledged === width)
-					ordinaryRead.mockRejectedValue(new RestoreRuntimeAdmissionError());
-				return staged;
-			});
-			const borrow = vi
-				.spyOn(runtimeClient, "withIsolatedRuntimePrismaReadClient")
-				.mockImplementation((prisma, operation) => {
-					expect(prisma).toBe(state.prisma);
-					expect(acknowledged).toBe(width);
-				return operation(lane as unknown as typeof prisma);
+	it.each([
+		{ width: 1, outcome: "success", borrows: 1, reads: 1 },
+		{ width: 2, outcome: "success", borrows: 1, reads: 1 },
+		{ width: 1, outcome: "retry", borrows: 2, reads: 1 },
+		{ width: 1, outcome: "unavailable", borrows: 2, reads: 0 },
+		{ width: 2, outcome: "cancel waiting", borrows: 1, reads: 0 },
+		{ width: 1, outcome: "cancel after read", borrows: 1, reads: 1 },
+	])("reads acknowledged progress on an isolated lane ($width, $outcome)", async (test) => {
+		const { width, outcome } = test;
+		const state = ownedFixture("JELLYFIN", { v3: true });
+		const client = configureDurableRun(state, 2_001);
+		durable.claimBatchWidth = width;
+		client.getUsers.mockResolvedValue([
+			{ id: "user-1", name: "Synthetic" },
+			{ id: "user-2", name: "Synthetic" },
+		]);
+		const cancellation = new AbortController();
+		const refusal = new RestoreRuntimeAdmissionError();
+		const stage = durable.stage.getMockImplementation()!;
+		const ordinaryRead = vi.mocked(state.prisma.providerObservationRun.findUnique);
+		const originalRead = ordinaryRead.getMockImplementation()!;
+		const isolatedRead = vi.fn(originalRead);
+		const lane = {
+			...state.prisma,
+			providerObservationRun: { ...state.prisma.providerObservationRun, findUnique: isolatedRead },
+		};
+		let acknowledged = 0;
+		let ordinaryReadsAfterStaging = 0;
+		durable.stage.mockImplementation(async (...args) => {
+			const staged = await stage(...args);
+			if (staged && ++acknowledged === width)
+				ordinaryRead.mockImplementation(() => {
+					ordinaryReadsAfterStaging++;
+					throw refusal;
 				});
-			try {
-				await expect(
-					createJellyfinEpisodeWorkItemRunner()({
-						prisma: state.prisma,
-						encryptor: { decrypt: vi.fn() },
-						instance: state.instance,
-						log,
-					}),
-				).resolves.toMatchObject({ progressed: true });
-				expect(borrow).toHaveBeenCalledOnce();
-				expect(isolatedRead).toHaveBeenCalledOnce();
-				expect(durable.stage).toHaveBeenCalledTimes(width);
-				expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledTimes(width);
-				expect(durable.units.filter((unit) => unit.cursor === 1_000)).toHaveLength(width);
-				expect(durable.releaseUnit).not.toHaveBeenCalled();
-				expect(durable.failUnit).not.toHaveBeenCalled();
-			} finally {
-				borrow.mockRestore();
-			}
-		},
-	);
+			return staged;
+		});
+		let attempts = 0;
+		const borrow = vi
+			.spyOn(runtimeClient, "withIsolatedRuntimePrismaReadClient")
+			.mockImplementation(async (prisma, operation, options) => {
+				expect(prisma).toBe(state.prisma);
+				expect(acknowledged).toBe(width);
+				attempts++;
+				if (outcome === "unavailable" || (outcome === "retry" && attempts === 1)) throw refusal;
+				if (outcome === "cancel waiting") {
+					expect(options?.signal).toBe(cancellation.signal);
+					cancellation.abort();
+					throw cancellation.signal.reason;
+				}
+				const result = await operation(lane as unknown as typeof prisma);
+				if (outcome === "cancel after read") cancellation.abort();
+				return result;
+			});
+		try {
+			const result = createJellyfinEpisodeWorkItemRunner()({
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log,
+				signal: cancellation.signal,
+			});
+			if (outcome === "unavailable") await expect(result).rejects.toBe(refusal);
+			else if (outcome.startsWith("cancel"))
+				await expect(result).rejects.toMatchObject({ code: "PUBLICATION_CANCELLED" });
+			else await expect(result).resolves.toMatchObject({ progressed: true });
+			expect(borrow).toHaveBeenCalledTimes(test.borrows);
+			expect(isolatedRead).toHaveBeenCalledTimes(test.reads);
+			expect(ordinaryReadsAfterStaging).toBe(0);
+			expect(durable.stage).toHaveBeenCalledTimes(width);
+			expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledTimes(width);
+			expect(durable.units.filter((unit) => unit.cursor === 1_000)).toHaveLength(width);
+			expect(durable.releaseUnit).not.toHaveBeenCalled();
+			expect(durable.failUnit).not.toHaveBeenCalled();
+		} finally {
+			borrow.mockRestore();
+		}
+	});
 
 	it.each([
 		{ code: "SQLITE_BUSY", failures: 1, recovers: true, expectedReads: 2 },
@@ -2520,7 +2542,7 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		expect(durable.stage).toHaveBeenCalledTimes(2);
 		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledTimes(2);
 		expect(durable.units.filter((unit) => unit.cursor === 1_000)).toHaveLength(2);
-		expect(durable.releaseUnit).toHaveBeenCalledTimes(test.recovers ? 0 : 2);
+		expect(durable.releaseUnit).not.toHaveBeenCalled();
 		expect(durable.failUnit).not.toHaveBeenCalled();
 	});
 
