@@ -6260,6 +6260,67 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 		expect(await prisma.jellyfinEpisodeObservationExclusion.count()).toBe(0);
 	});
 
+	it("bounds catalog scope parsing independently of staged V3 rows", async () => {
+		const prisma = await database();
+		const seed = await completeFinalizerFixture(prisma);
+		await bindV3Fixture(prisma, seed.run.id);
+		const units = await prisma.providerObservationUnit.findMany({
+			where: { runId: seed.run.id },
+			orderBy: { ordinal: "asc" },
+		});
+		const catalogPayload = units[0]?.scopePayload;
+		if (!catalogPayload?.includes('"catalogProvenance"'))
+			throw new Error("Catalog scope is missing");
+
+		for (const unit of units) {
+			await prisma.jellyfinEpisodeObservationStage.createMany({
+				data: Array.from({ length: 5 }, (_, index) => ({
+					runId: seed.run.id,
+					unitId: unit.id,
+					userKeyDigest: hash(["jellyfin-user", "user-1"]),
+					pass: unit.phase,
+					jellyfinId: `episode-${index + 2}`,
+					seriesId: "series-1",
+					seasonNumber: 1,
+					episodeNumber: index + 2,
+					title: "Synthetic episode",
+					played: true,
+					playCount: 1,
+					lastPlayedAt: seed.attempt.attemptedAt,
+					userName: "",
+				})),
+			});
+		}
+		await prisma.providerObservationUnit.updateMany({
+			where: { runId: seed.run.id },
+			data: { cursor: 6, expectedRawCount: 6, observedRawCount: 6 },
+		});
+
+		const parse = JSON.parse;
+		let catalogParses = 0;
+		const spy = vi.spyOn(JSON, "parse").mockImplementation((text, reviver) => {
+			if (text === catalogPayload) catalogParses += 1;
+			return parse(text, reviver);
+		});
+		try {
+			const prepared = await prepareJellyfinEpisodeRun({
+				prisma,
+				userId: "user-1",
+				instance: { id: "jellyfin-1" },
+				runId: seed.run.id,
+				scopes: seed.scopes,
+				attempt: seed.attempt,
+				now: seed.attempt.attemptedAt,
+			});
+			expect(prepared.kind).toBe("ready");
+			if (prepared.kind !== "ready") throw new Error("Expected prepared episode rows");
+			expect(prepared.publishedRows).toHaveLength(6);
+			expect(catalogParses).toBeLessThanOrEqual(4);
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
 	it("publishes V3 coverage using unique staged rows when raw positions overlap", async () => {
 		const prisma = await database();
 		const seed = await completeFinalizerFixture(prisma);

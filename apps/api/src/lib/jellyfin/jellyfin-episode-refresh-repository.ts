@@ -1399,7 +1399,22 @@ async function evaluateJellyfinEpisodeRun(
 		}
 		const collect = stages.filter((stage) => stage.pass === "collect");
 		const verify = stages.filter((stage) => stage.pass === "verify");
-		const unitsById = new Map(run.units.map((unit) => [unit.id, unit]));
+		// The first unit can contain the whole catalog. Decode each saved scope
+		// once and still compare its phase and digest against every staged row.
+		const scopesByUnitId = new Map(
+			run.units.map((unit) => {
+				const scope = parseScope(unit.scopePayload);
+				return [
+					unit.id,
+					scope && {
+						userId: scope.userId,
+						libraryId: scope.libraryId,
+						phase: unit.phase,
+						userKeyDigest: digest(["jellyfin-user", scope.userId]),
+					},
+				] as const;
+			}),
+		);
 		const exclusions: JellyfinEpisodeObservationExclusion[] = [];
 		let exclusionCursor:
 			| {
@@ -1435,13 +1450,11 @@ async function evaluateJellyfinEpisodeRun(
 		if (
 			(!isV3Run && exclusions.length > 0) ||
 			exclusions.some((row) => {
-				const unit = unitsById.get(row.unitId);
-				const scope = unit && parseScope(unit.scopePayload);
+				const scope = scopesByUnitId.get(row.unitId);
 				return (
-					!unit ||
 					!scope ||
-					row.pass !== unit.phase ||
-					row.userKeyDigest !== digest(["jellyfin-user", scope.userId]) ||
+					row.pass !== scope.phase ||
+					row.userKeyDigest !== scope.userKeyDigest ||
 					!row.jellyfinId.trim() ||
 					(row.reason !== "missing-episode-metadata" && !parseRepeatedEpisode(row.reason))
 				);
@@ -1488,14 +1501,8 @@ async function evaluateJellyfinEpisodeRun(
 		});
 		if (
 			stages.some((stage) => {
-				const unit = unitsById.get(stage.unitId);
-				const scope = unit && parseScope(unit.scopePayload);
-				return (
-					!unit ||
-					!scope ||
-					stage.pass !== unit.phase ||
-					stage.userKeyDigest !== digest(["jellyfin-user", scope.userId])
-				);
+				const scope = scopesByUnitId.get(stage.unitId);
+				return !scope || stage.pass !== scope.phase || stage.userKeyDigest !== scope.userKeyDigest;
 			}) ||
 			invalidStageCardinality
 		)
@@ -1652,16 +1659,6 @@ async function evaluateJellyfinEpisodeRun(
 			if (existing === undefined) mapped.set(key, row.tmdbId);
 			else if (existing !== row.tmdbId) mapped.set(key, null);
 		}
-		const unitLibraryById = new Map(
-			run.units.map((unit) => {
-				try {
-					const payload = JSON.parse(unit.scopePayload ?? "{}") as { libraryId?: string };
-					return [unit.id, payload.libraryId ?? ""] as const;
-				} catch {
-					return [unit.id, ""] as const;
-				}
-			}),
-		);
 		const coverageByUnit = new Map<
 			string,
 			{ sourceBindings: number; canonicalEntities: number; missingMappings: number }
@@ -1675,7 +1672,9 @@ async function evaluateJellyfinEpisodeRun(
 			let sourceBindings = 0;
 			for (const row of stagesByUnit.get(unit.id) ?? []) {
 				const showTmdbId = mapped.get(
-					isV3Run ? `${unitLibraryById.get(unit.id) ?? ""}\u0000${row.seriesId}` : row.seriesId,
+					isV3Run
+						? `${scopesByUnitId.get(unit.id)?.libraryId ?? ""}\u0000${row.seriesId}`
+						: row.seriesId,
 				);
 				if (excludedIds.has(row.jellyfinId) || showTmdbId === undefined || showTmdbId === null) {
 					missingMappings += 1;
@@ -1703,7 +1702,7 @@ async function evaluateJellyfinEpisodeRun(
 		if (exactV3Identity) {
 			for (const row of collect) {
 				const showTmdbId = mapped.get(
-					`${unitLibraryById.get(row.unitId) ?? ""}\u0000${row.seriesId}`,
+					`${scopesByUnitId.get(row.unitId)?.libraryId ?? ""}\u0000${row.seriesId}`,
 				);
 				if (showTmdbId === undefined || showTmdbId === null) {
 					exactV3Mapping = false;
@@ -1739,13 +1738,13 @@ async function evaluateJellyfinEpisodeRun(
 			run.units.every((unit) => {
 				const unitStages = stagesByUnit.get(unit.id) ?? [];
 				const stageIds = new Set(unitStages.map((row) => row.jellyfinId));
-				const scope = parseScope(unit.scopePayload);
+				const scope = scopesByUnitId.get(unit.id);
 				return (
 					unit.expectedRawCount === unit.observedRawCount &&
 					unitStages.length === unit.observedRawCount &&
 					stageIds.size === unit.observedRawCount &&
-					scope !== null &&
-					unitStages.every((row) => row.userKeyDigest === digest(["jellyfin-user", scope.userId]))
+					!!scope &&
+					unitStages.every((row) => row.userKeyDigest === scope.userKeyDigest)
 				);
 			});
 		const exactV3Passes =
@@ -1778,7 +1777,9 @@ async function evaluateJellyfinEpisodeRun(
 		>();
 		for (const row of publicationCandidates) {
 			const showTmdbId = mapped.get(
-				isV3Run ? `${unitLibraryById.get(row.unitId) ?? ""}\u0000${row.seriesId}` : row.seriesId,
+				isV3Run
+					? `${scopesByUnitId.get(row.unitId)?.libraryId ?? ""}\u0000${row.seriesId}`
+					: row.seriesId,
 			);
 			// A conflicting or missing parent mapping leaves only that provider
 			// coordinate unknown. It cannot erase exact, generation-bound rows
@@ -1847,7 +1848,9 @@ async function evaluateJellyfinEpisodeRun(
 			if (isV3Run)
 				for (const row of stagesByUnit.get(unit.id) ?? []) {
 					if (excludedIds.has(row.jellyfinId)) continue;
-					const tmdbId = mapped.get(`${unitLibraryById.get(unit.id) ?? ""}\0${row.seriesId}`);
+					const tmdbId = mapped.get(
+						`${scopesByUnitId.get(unit.id)?.libraryId ?? ""}\0${row.seriesId}`,
+					);
 					const coordinate = `${tmdbId}\0${row.seasonNumber}\0${row.episodeNumber}`;
 					if (publishedCoordinates.has(coordinate)) admittedCoordinates.add(coordinate);
 				}
@@ -1955,7 +1958,7 @@ async function evaluateJellyfinEpisodeRun(
 			const scopedRows = (rows: typeof stages) =>
 				rows.map((row) => ({
 					userKeyDigest: row.userKeyDigest,
-					libraryId: unitLibraryById.get(row.unitId) ?? "",
+					libraryId: scopesByUnitId.get(row.unitId)?.libraryId ?? "",
 					jellyfinId: row.jellyfinId,
 					seriesId: row.seriesId,
 					seasonNumber: row.seasonNumber,
@@ -1977,7 +1980,7 @@ async function evaluateJellyfinEpisodeRun(
 			const receipts = input.scopes.map((scope) => {
 				const userKeyDigest = digest(["jellyfin-user", scope.userId]);
 				const matchingUnits = run.units.filter((unit) => {
-					const persisted = parseScope(unit.scopePayload);
+					const persisted = scopesByUnitId.get(unit.id);
 					return persisted?.userId === scope.userId && persisted.libraryId === scope.libraryId;
 				});
 				const collectUnit = matchingUnits.find((unit) => unit.phase === "collect");
