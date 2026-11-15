@@ -1,5 +1,6 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { startSlowSqliteReadTiming } from "./backup/restore-runtime-read-timing.js";
 import { SQLITE_TIMESTAMP_FORMAT } from "./sqlite-datetime.js";
 
 type SqliteDriver = Awaited<ReturnType<PrismaBetterSqlite3["connect"]>>;
@@ -38,44 +39,57 @@ function retryStatements<T extends Pick<SqliteDriver, "queryRaw" | "executeRaw">
 						throw new Error("Invalid internal SQLite busy retry budget");
 					const deadline = performance.now() + busyRetryMs;
 					let firstBusy: unknown;
-					for (;;) {
-						if (firstBusy) {
-							const remaining = deadline - performance.now();
-							if (remaining <= 0) throw firstBusy;
-							await delay(Math.min(5, remaining));
-							if (performance.now() >= deadline) throw firstBusy;
+					const timing = property === "queryRaw" ? startSlowSqliteReadTiming(query.sql) : undefined;
+					try {
+						for (;;) {
+							if (firstBusy) {
+								const remaining = deadline - performance.now();
+								if (remaining <= 0) throw firstBusy;
+								await delay(Math.min(5, remaining));
+								if (performance.now() >= deadline) throw firstBusy;
+								assertAvailable();
+								try {
+									await fence.revalidate();
+								} catch (error) {
+									if (fence.isClosedTransactionError?.(error)) throw firstBusy;
+									throw error;
+								}
+								if (performance.now() >= deadline) throw firstBusy;
+							}
 							assertAvailable();
+							// The installed adapter enters its native call synchronously.
+							// Nothing may await between this fence and the actual attempt.
 							try {
-								await fence.revalidate();
+								fence.assert();
 							} catch (error) {
-								if (fence.isClosedTransactionError?.(error)) throw firstBusy;
+								if (firstBusy && fence.isClosedTransactionError?.(error)) throw firstBusy;
 								throw error;
 							}
-							if (performance.now() >= deadline) throw firstBusy;
+							try {
+								const finishAttempt = timing?.startAttempt();
+								let pending: ReturnType<T[typeof property]>;
+								try {
+									pending = target[property](query) as ReturnType<T[typeof property]>;
+								} finally {
+									// Record synchronous native entry before waiting for the driver promise.
+									finishAttempt?.();
+								}
+								return await pending;
+							} catch (error) {
+								if (
+									!(error instanceof Error) ||
+									error.name !== "DriverAdapterError" ||
+									typeof error.cause !== "object" ||
+									error.cause === null ||
+									!("originalCode" in error.cause) ||
+									error.cause.originalCode !== "SQLITE_BUSY"
+								)
+									throw error;
+								firstBusy ??= error;
+							}
 						}
-						assertAvailable();
-						// The installed adapter enters its native call synchronously.
-						// Nothing may await between this fence and the actual attempt.
-						try {
-							fence.assert();
-						} catch (error) {
-							if (firstBusy && fence.isClosedTransactionError?.(error)) throw firstBusy;
-							throw error;
-						}
-						try {
-							return await target[property](query);
-						} catch (error) {
-							if (
-								!(error instanceof Error) ||
-								error.name !== "DriverAdapterError" ||
-								typeof error.cause !== "object" ||
-								error.cause === null ||
-								!("originalCode" in error.cause) ||
-								error.cause.originalCode !== "SQLITE_BUSY"
-							)
-								throw error;
-							firstBusy ??= error;
-						}
+					} finally {
+						timing?.finish();
 					}
 				};
 			const value = Reflect.get(target, property, receiver);

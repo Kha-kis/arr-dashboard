@@ -5,6 +5,7 @@ import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "../../generated/prisma/client.js";
+import { withRuntimeReadTiming } from "../backup/restore-runtime-read-timing.js";
 import { createRecoverableSqliteAdapter, type SqliteStatementFence } from "../sqlite-adapter.js";
 
 type SqliteAdapter = Awaited<ReturnType<PrismaBetterSqlite3["connect"]>>;
@@ -58,6 +59,54 @@ async function connect(databasePath: string, timeout = 0): Promise<SqliteAdapter
 }
 
 describe("recoverable SQLite adapter", () => {
+	it("attributes one slow guarded Plex read without retaining SQL or values", async () => {
+		const { databasePath } = createDatabase();
+		const writer = new Database(databasePath, { timeout: 0 });
+		databases.push(writer);
+		writer.exec("ALTER TABLE records RENAME TO plex_episode_cache");
+		writer.exec("INSERT INTO plex_episode_cache VALUES (1, 'synthetic-argument')");
+		const fences = new WeakMap<SqlQuery, SqliteStatementFence>();
+		const connection = await createRecoverableSqliteAdapter(
+			{ url: databasePath, timeout: 0 },
+			undefined,
+			undefined,
+			fences,
+		).connect();
+		adapters.push(connection);
+		const statement = query(
+			"SELECT `main`.`plex_episode_cache`.`value` FROM `main`.`plex_episode_cache` WHERE value = ?",
+			["synthetic-argument"],
+		);
+		const revalidate = vi.fn(async () => {
+			await new Promise<void>((resolve) => setTimeout(resolve, 270));
+			writer.exec("ROLLBACK");
+		});
+		fences.set(statement, { revalidate, assert() {} });
+		writer.exec("BEGIN EXCLUSIVE");
+		const observe = vi.fn();
+		const selected = await withRuntimeReadTiming(() => connection.queryRaw(statement), observe, {
+			slowSqliteRead: true,
+		});
+		expect(selected.rows).toEqual([["synthetic-argument"]]);
+		expect(revalidate).toHaveBeenCalledTimes(1);
+		expect(observe).toHaveBeenCalledOnce();
+		const diagnostic = observe.mock.calls[0]?.[1];
+		expect(diagnostic).toEqual({
+			family: "plex-episode-cache",
+			elapsedMs: expect.any(Number),
+			synchronousNativeMs: expect.any(Number),
+			attempts: 2,
+		});
+		expect(diagnostic.elapsedMs - diagnostic.synchronousNativeMs).toBeGreaterThanOrEqual(250);
+		expect(JSON.stringify(diagnostic)).not.toMatch(/SELECT|synthetic-argument|WHERE/);
+
+		const disabled = vi.fn();
+		fences.set(statement, { revalidate, assert() {} });
+		writer.exec("BEGIN EXCLUSIVE");
+		await withRuntimeReadTiming(() => connection.queryRaw(statement), disabled);
+		expect(disabled.mock.calls[0]?.[1]).toBeUndefined();
+	});
+
 	it("honors a shorter fenced busy budget without losing native lock provenance", async () => {
 		const { databasePath } = createDatabase();
 		const writer = new Database(databasePath, { timeout: 0 });

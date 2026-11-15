@@ -121,16 +121,21 @@ export async function registerSeriesProgressRoutes(
 				},
 				{ lease: "phase" },
 			);
-		return withRuntimeReadTiming(readProgress, (stages) => {
-			app.log.info(
-				{
-					category: "plex-series-progress-runtime-timing",
-					elapsedMs: Math.round(performance.now() - startedAt),
-					spansOverlap: true,
-					stages,
-				},
-				"Plex series progress runtime timing",
-			);
-		});
+		return withRuntimeReadTiming(
+			readProgress,
+			(stages, slowestSqliteRead) => {
+				app.log.info(
+					{
+						category: "plex-series-progress-runtime-timing",
+						elapsedMs: Math.round(performance.now() - startedAt),
+						spansOverlap: true,
+						stages,
+						...(slowestSqliteRead && { slowestSqliteRead }),
+					},
+					"Plex series progress runtime timing",
+				);
+			},
+			{ slowSqliteRead: app.dbProvider === "sqlite" },
+		);
 	});
 }
