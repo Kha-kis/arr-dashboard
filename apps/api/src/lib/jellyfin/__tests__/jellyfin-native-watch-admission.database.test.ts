@@ -8,6 +8,7 @@ import {
 	recordScopedWriteEvidence,
 	snapshotProtectedRows,
 } from "../../__tests__/scoped-write-intent-fixture.js";
+import { readCompletedJellyfinEpisodePublication } from "../jellyfin-episode-refresh-repository.js";
 import {
 	JellyfinNativeWatchLeaseLostError,
 	prepareNativeWatchGeneration,
@@ -113,6 +114,34 @@ async function createNativeWatchAdmissionFixture() {
 }
 
 describe("native-watch admission on guarded WAL SQLite", { timeout: 30_000 }, () => {
+	it("checks for committed publication while a competing WAL writer holds the writer slot", async () => {
+		const { f, input, pointer } = await createNativeWatchAdmissionFixture();
+		const before = snapshotProtectedRows(f);
+		await f.runtime.runOperation(() => f.client.prisma.$connect());
+		f.writer.exec("BEGIN IMMEDIATE");
+		try {
+			await expect(
+				f.runtime.runOperation(() =>
+					readCompletedJellyfinEpisodePublication(f.client.prisma, {
+						userId: input.userId,
+						instanceId: input.instanceId,
+						runId: input.runId,
+						attempt: { attemptedAt: input.observedAt, resultMarker: "synthetic-attempt" },
+					}),
+				),
+			).resolves.toBeNull();
+			expect(f.writer.inTransaction).toBe(true);
+		} finally {
+			f.writer.exec("ROLLBACK");
+		}
+		expect(snapshotProtectedRows(f)).toEqual(before);
+		await expect(
+			f.plain.jellyfinNativeWatchPublication.findUnique({
+				where: { instanceId: input.instanceId },
+			}),
+		).resolves.toEqual(pointer);
+	});
+
 	it.each(["recovered", "revoked", "cancelled"] as const)(
 		"retains staging at a contended verification checkpoint when %s",
 		async (outcome) => {

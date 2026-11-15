@@ -1767,8 +1767,16 @@ export function createJellyfinEpisodeWorkItemRunner(
 					progress = await readProgress();
 				} catch (error) {
 					// Acknowledged page writes already advanced their cursors.
-					// Retry the summary read once without replaying those writes.
-					if (!progressed || !isJellyfinEpisodeSqliteBusyTimeout(error)) throw error;
+					// The summary may recheck admission once without replaying writes.
+					if (
+						!progressed ||
+						!(
+							error instanceof RestoreRuntimeAdmissionError ||
+							isJellyfinEpisodeSqliteBusyTimeout(error)
+						)
+					) {
+						throw error;
+					}
 					checkEpisodeCancellation(context.signal);
 					progress = await readProgress();
 				}

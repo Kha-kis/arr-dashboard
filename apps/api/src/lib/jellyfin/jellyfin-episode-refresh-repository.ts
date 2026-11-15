@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
-import { withIsolatedRuntimePrismaTransaction } from "../backup/restore-runtime-client.js";
+import {
+	withIsolatedRuntimePrismaReadTransaction,
+	withIsolatedRuntimePrismaTransaction,
+} from "../backup/restore-runtime-client.js";
 import {
 	type JellyfinEpisodeObservationExclusion,
 	type JellyfinEpisodeObservationStage,
@@ -2292,7 +2295,7 @@ export async function readCompletedJellyfinEpisodePublication(
 	},
 ): Promise<number | null> {
 	if (!input.userId.trim() || !input.instanceId.trim() || !input.runId.trim()) return null;
-	return await prisma.$transaction(async (tx) => {
+	return await withIsolatedRuntimePrismaReadTransaction(prisma, async (tx) => {
 		const instance = await tx.serviceInstance.findFirst({
 			where: {
 				id: input.instanceId,

@@ -2406,6 +2406,10 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		{ code: "SQLITE_BUSY", failures: 1, recovers: true, expectedReads: 2 },
 		{ code: "SQLITE_BUSY", failures: 2, recovers: false, expectedReads: 2 },
 		{ code: "SQLITE_BUSY_SNAPSHOT", failures: 1, recovers: false, expectedReads: 1 },
+		{ code: "runtime-admission", failures: 1, recovers: true, expectedReads: 2 },
+		{ code: "runtime-admission", failures: 2, recovers: false, expectedReads: 2 },
+		{ code: "runtime-admission", failures: 1, cancel: true, recovers: false, expectedReads: 1 },
+		{ code: "untyped-admission", failures: 1, recovers: false, expectedReads: 1 },
 	])("rechecks progress after two acknowledged page writes (%j)", async (test) => {
 		const state = ownedFixture("JELLYFIN", { v3: true });
 		const client = configureDurableRun(state, 2_001);
@@ -2414,11 +2418,15 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			{ id: "user-1", name: "Alice" },
 			{ id: "user-2", name: "Bob" },
 		]);
-		const transient = new Prisma.PrismaClientKnownRequestError("progress read timeout", {
+		let refusal: Error = new Prisma.PrismaClientKnownRequestError("progress read timeout", {
 			code: "P1008",
 			clientVersion: "test",
 			meta: { driverAdapterError: { cause: { originalCode: test.code } } },
 		});
+		if (test.code === "runtime-admission") refusal = new RestoreRuntimeAdmissionError();
+		if (test.code === "untyped-admission")
+			refusal = new Error(new RestoreRuntimeAdmissionError().message);
+		const cancellation = new AbortController();
 		const stage = durable.stage.getMockImplementation()!;
 		const read = vi.mocked(state.prisma.providerObservationRun.findUnique);
 		const originalRead = read.getMockImplementation()!;
@@ -2428,7 +2436,10 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			const staged = await stage(...args);
 			if (staged && ++acknowledged === 2) {
 				read.mockImplementation((...readArgs) => {
-					if (++readsAfterStage <= test.failures) throw transient;
+					if (++readsAfterStage <= test.failures) {
+						if (test.cancel) cancellation.abort();
+						throw refusal;
+					}
 					return originalRead(...readArgs);
 				});
 			}
@@ -2440,10 +2451,13 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			encryptor: { decrypt: vi.fn() },
 			instance: state.instance,
 			log,
+			signal: cancellation.signal,
 		};
 		const outcome = run(context);
 		if (test.recovers) await expect(outcome).resolves.toMatchObject({ progressed: true });
-		else await expect(outcome).rejects.toBe(transient);
+		else if (test.cancel)
+			await expect(outcome).rejects.toMatchObject({ code: "PUBLICATION_CANCELLED" });
+		else await expect(outcome).rejects.toBe(refusal);
 		expect(readsAfterStage).toBe(test.expectedReads);
 		expect(durable.stage).toHaveBeenCalledTimes(2);
 		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledTimes(2);
