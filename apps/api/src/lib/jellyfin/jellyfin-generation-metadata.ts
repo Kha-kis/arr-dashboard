@@ -663,20 +663,20 @@ function projectJellyfinLibraryRow(
 	row: JellyfinLibraryRowFingerprintInput,
 ): CanonicalJellyfinLibraryRow {
 	return {
-		tmdbId: row.tmdbId,
-		mediaType: row.mediaType,
-		libraryId: row.libraryId,
-		libraryName: row.libraryName,
-		title: row.title,
+		addedAt: canonicalDate(row.addedAt),
+		collections: row.collections,
 		jellyfinId: row.jellyfinId,
 		lastWatchedAt: canonicalDate(row.lastWatchedAt),
+		libraryId: row.libraryId,
+		libraryName: row.libraryName,
+		mediaType: row.mediaType,
+		onDeck: row.onDeck,
+		thumb: row.thumb,
+		title: row.title,
+		tmdbId: row.tmdbId,
+		userRating: row.userRating,
 		watchCount: row.watchCount,
 		watchedByUsers: row.watchedByUsers,
-		onDeck: row.onDeck,
-		userRating: row.userRating,
-		collections: row.collections,
-		addedAt: canonicalDate(row.addedAt),
-		thumb: row.thumb,
 	};
 }
 
@@ -708,10 +708,11 @@ function compareLibraryRows(
 	);
 }
 
-async function fingerprintDisplayRows<Input, Canonical>(
+async function fingerprintDisplayRows<Input, Canonical extends object>(
 	rows: readonly Input[],
 	project: (row: Input) => Canonical,
 	compare: (left: DecoratedRow<Canonical>, right: DecoratedRow<Canonical>) => number,
+	options?: { fixedRecordShape: true },
 ): Promise<string> {
 	const checkpoint = createJellyfinDisplayCheckpoint();
 	const decorated: DecoratedRow<Canonical>[] = [];
@@ -722,7 +723,10 @@ async function fingerprintDisplayRows<Input, Canonical>(
 		if (pause) await pause;
 	}
 	const sorted = await sortJellyfinDisplayRows(decorated, compare, checkpoint);
-	const fingerprint = createEvidenceFingerprintArrayAccumulator();
+	const first = sorted[0];
+	const fingerprint = createEvidenceFingerprintArrayAccumulator(
+		options?.fixedRecordShape && first ? Object.keys(first.row) : undefined,
+	);
 	for (const { row } of sorted) {
 		fingerprint.append(row);
 		const pause = checkpoint();
@@ -736,7 +740,9 @@ export function fingerprintJellyfinLibraryDisplayRows(
 	rows: readonly JellyfinLibraryRowFingerprintInput[],
 ): Promise<string> {
 	return measureJellyfinDisplayReadPhase("fingerprint", () =>
-		fingerprintDisplayRows(rows, projectJellyfinLibraryRow, compareLibraryRows),
+		fingerprintDisplayRows(rows, projectJellyfinLibraryRow, compareLibraryRows, {
+			fixedRecordShape: true,
+		}),
 	);
 }
 

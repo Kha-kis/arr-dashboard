@@ -460,8 +460,8 @@ describe("Jellyfin and Emby generation metadata", () => {
 		let appended = 0;
 		const accumulator = vi
 			.spyOn(fingerprints, "createEvidenceFingerprintArrayAccumulator")
-			.mockImplementation(() => {
-				const actual = create();
+			.mockImplementation((keys) => {
+				const actual = create(keys);
 				return {
 					append(value) {
 						appended++;
@@ -603,6 +603,26 @@ describe("Jellyfin and Emby generation metadata", () => {
 		);
 	});
 
+	it("does not reorder the same canonical field names separately for every library row", async () => {
+		const rows = Array.from({ length: 512 }, (_, index) => row({ tmdbId: index + 1 }));
+		const expected = fingerprintJellyfinLibraryRows(rows);
+		const compare = String.prototype.localeCompare;
+		let canonicalFieldComparisons = 0;
+		const ordering = vi.spyOn(String.prototype, "localeCompare").mockImplementation(function (
+			this: string,
+			other: string,
+		) {
+			if (this === "addedAt" || other === "addedAt") canonicalFieldComparisons++;
+			return compare.call(this, other);
+		});
+		try {
+			await expect(fingerprintJellyfinLibraryDisplayRows(rows)).resolves.toBe(expected);
+		} finally {
+			ordering.mockRestore();
+		}
+		expect(canonicalFieldComparisons).toBeLessThan(rows.length);
+	});
+
 	it("keeps full episode fingerprint parity across coordinates, dates and user normalization", async () => {
 		const rows = Array.from({ length: 1201 }, (_, index) =>
 			episodeRow({
@@ -656,8 +676,8 @@ describe("Jellyfin and Emby generation metadata", () => {
 		let serviced: Promise<void> | undefined;
 		const spy = vi
 			.spyOn(fingerprints, "createEvidenceFingerprintArrayAccumulator")
-			.mockImplementation(() => {
-				const actual = create();
+			.mockImplementation((keys) => {
+				const actual = create(keys);
 				return {
 					append(value) {
 						if (++appended === 1) {
