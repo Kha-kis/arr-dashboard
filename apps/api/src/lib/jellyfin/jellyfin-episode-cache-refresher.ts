@@ -305,7 +305,7 @@ function stageFailureDiagnostics(error: unknown) {
 	return { errorCategory: "prisma-known", databaseCode, sqliteCode } as const;
 }
 
-function isJellyfinEpisodeClaimContention(error: unknown): boolean {
+function isJellyfinEpisodeSqliteBusyTimeout(error: unknown): boolean {
 	try {
 		const { databaseCode, sqliteCode } = stageFailureDiagnostics(error);
 		return databaseCode === "P1008" && sqliteCode === "SQLITE_BUSY";
@@ -1161,7 +1161,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 				authority.service !== "JELLYFIN" ||
 				!runOwnsAttempt ||
 				run.state !== "running" ||
-				!isJellyfinEpisodeClaimContention(error)
+				!isJellyfinEpisodeSqliteBusyTimeout(error)
 			)
 				throw error;
 			checkEpisodeCancellation(context.signal);
@@ -1760,7 +1760,19 @@ export function createJellyfinEpisodeWorkItemRunner(
 						return { ...release, progressed };
 				}
 				if (pendingFailure) return await settlePendingFailure(context, pendingFailure);
-				return { ...(await runProgress(context.prisma, run.id)), progressed };
+				const readProgress = () =>
+					observeWorkStage("run-progress", () => runProgress(context.prisma, run.id));
+				let progress: JellyfinEpisodeWorkProgress;
+				try {
+					progress = await readProgress();
+				} catch (error) {
+					// Acknowledged page writes already advanced their cursors.
+					// Retry the summary read once without replaying those writes.
+					if (!progressed || !isJellyfinEpisodeSqliteBusyTimeout(error)) throw error;
+					checkEpisodeCancellation(context.signal);
+					progress = await readProgress();
+				}
+				return { ...progress, progressed };
 			} finally {
 				for (const page of pages) logPageTiming(page);
 			}

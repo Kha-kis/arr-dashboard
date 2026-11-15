@@ -60,6 +60,7 @@ const durable = vi.hoisted(() => ({
 	finishFailure: vi.fn(),
 	recordedFailureCount: 0,
 	activePreparationCount: 0,
+	claimBatchWidth: 1,
 }));
 
 const finalizerWorker = vi.hoisted(() => ({ run: vi.fn() }));
@@ -123,8 +124,13 @@ vi.mock("../provider-observation/observation-run-repository.js", () => ({
 	),
 	claimObservationUnit: durable.claimUnit,
 	claimJellyfinObservationBatch: async (...args: unknown[]) => {
-		const claim = await durable.claimUnit(...args);
-		return claim ? [claim] : [];
+		const claims = [];
+		for (let index = 0; index < durable.claimBatchWidth; index++) {
+			const claim = await durable.claimUnit(...args);
+			if (!claim) break;
+			claims.push(claim);
+		}
+		return claims;
 	},
 	failObservationUnit: durable.failUnit,
 	releaseJoinedObservationUnitClaim: durable.releaseUnit,
@@ -838,6 +844,7 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 	});
 
 	function configureDurableRun(state: ReturnType<typeof ownedFixture>, totalRecordCount = 1) {
+		durable.claimBatchWidth = 1;
 		(state.parentRow as unknown as { lastWatchedAt: Date | null }).lastWatchedAt = null;
 		state.parentStatus.generationMetadata = encodeJellyfinLibraryGenerationMetadata({
 			...(JSON.parse(state.parentStatus.generationMetadata) as Record<string, unknown>),
@@ -2393,6 +2400,56 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		expect(durable.releaseUnit.mock.calls[1]![1].claim.claimToken).toBe("claim-unit-0");
 		expect(durable.claimUnit).toHaveBeenCalledOnce();
 		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		{ code: "SQLITE_BUSY", failures: 1, recovers: true, expectedReads: 2 },
+		{ code: "SQLITE_BUSY", failures: 2, recovers: false, expectedReads: 2 },
+		{ code: "SQLITE_BUSY_SNAPSHOT", failures: 1, recovers: false, expectedReads: 1 },
+	])("rechecks progress after two acknowledged page writes (%j)", async (test) => {
+		const state = ownedFixture("JELLYFIN", { v3: true });
+		const client = configureDurableRun(state, 2_001);
+		durable.claimBatchWidth = 2;
+		client.getUsers.mockResolvedValue([
+			{ id: "user-1", name: "Alice" },
+			{ id: "user-2", name: "Bob" },
+		]);
+		const transient = new Prisma.PrismaClientKnownRequestError("progress read timeout", {
+			code: "P1008",
+			clientVersion: "test",
+			meta: { driverAdapterError: { cause: { originalCode: test.code } } },
+		});
+		const stage = durable.stage.getMockImplementation()!;
+		const read = vi.mocked(state.prisma.providerObservationRun.findUnique);
+		const originalRead = read.getMockImplementation()!;
+		let acknowledged = 0;
+		let readsAfterStage = 0;
+		durable.stage.mockImplementation(async (...args) => {
+			const staged = await stage(...args);
+			if (staged && ++acknowledged === 2) {
+				read.mockImplementation((...readArgs) => {
+					if (++readsAfterStage <= test.failures) throw transient;
+					return originalRead(...readArgs);
+				});
+			}
+			return staged;
+		});
+		const run = createJellyfinEpisodeWorkItemRunner();
+		const context = {
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log,
+		};
+		const outcome = run(context);
+		if (test.recovers) await expect(outcome).resolves.toMatchObject({ progressed: true });
+		else await expect(outcome).rejects.toBe(transient);
+		expect(readsAfterStage).toBe(test.expectedReads);
+		expect(durable.stage).toHaveBeenCalledTimes(2);
+		expect(client.getEpisodeItemsPageWithCoverage).toHaveBeenCalledTimes(2);
+		expect(durable.units.filter((unit) => unit.cursor === 1_000)).toHaveLength(2);
+		expect(durable.releaseUnit).toHaveBeenCalledTimes(test.recovers ? 0 : 2);
+		expect(durable.failUnit).not.toHaveBeenCalled();
 	});
 
 	it("resumes the committed cursor after a lost stage acknowledgement and deferred release", async () => {
