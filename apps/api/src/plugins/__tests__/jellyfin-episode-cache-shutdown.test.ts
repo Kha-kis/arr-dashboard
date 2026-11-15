@@ -10,7 +10,7 @@ import {
 	registerRestoreBootstrapPlugin,
 	registerRestoreRuntimeActivation,
 } from "../../lib/backup/restore-runtime-bootstrap.js";
-import { createRuntimePrismaClient } from "../../lib/backup/restore-runtime-client.js";
+import * as runtimePrisma from "../../lib/backup/restore-runtime-client.js";
 import { cleanupObsoleteJellyfinEpisodeGenerations } from "../../lib/jellyfin/jellyfin-episode-generation-repository.js";
 import { cleanupCompletedJellyfinEpisodeArtifacts } from "../../lib/jellyfin/jellyfin-native-watch-repository.js";
 import {
@@ -437,7 +437,7 @@ async function boot(
 	owned.seedCommitted = true;
 	const instances = allInstances.filter((row) => row.enabled);
 	await native.restart(false);
-	const client = createRuntimePrismaClient(native.runtime),
+	const client = runtimePrisma.createRuntimePrismaClient(native.runtime),
 		prisma = client.prisma;
 	const counts: Record<Phase, number> = {
 		round: 0,
@@ -616,23 +616,42 @@ async function boot(
 		});
 		return rows;
 	});
-	const run = prisma.providerObservationRun.findFirst.bind(prisma.providerObservationRun);
-	const runReads: { findFirst: AwaitOnly<typeof prisma.providerObservationRun.findFirst> } =
-		prisma.providerObservationRun;
-	vi.spyOn(runReads, "findFirst").mockImplementation((args) => {
-		expect(args?.where?.instanceId).toEqual(expect.any(String));
-		expect(args?.where?.provider).toBe("jellyfin_episode");
-		expect(args?.where?.cacheType).toBe("jellyfin_episode");
-		if (args?.where?.id) {
-			expect(args.select).toEqual({ id: true });
-			expect(args.where.state).toEqual({ in: ["complete", "invalidated"] });
-			return phase("terminal", () => run(args));
-		}
-		expect(args?.where?.activeSlotKey).toEqual({ not: null });
-		expect(args?.where?.state).toEqual({ in: ["running", "failed"] });
-		expect(args?.select).toEqual({ state: true, nextAttemptAt: true });
-		return phase("retryState", () => run(args));
-	});
+	const instrumentedRunReads = new WeakSet<object>();
+	function instrumentRunReads(client: typeof prisma) {
+		const runReads: { findFirst: AwaitOnly<typeof prisma.providerObservationRun.findFirst> } =
+			client.providerObservationRun;
+		if (instrumentedRunReads.has(runReads)) return;
+		instrumentedRunReads.add(runReads);
+		const run = client.providerObservationRun.findFirst.bind(client.providerObservationRun);
+		vi.spyOn(runReads, "findFirst").mockImplementation((args) => {
+			expect(args?.where?.instanceId).toEqual(expect.any(String));
+			expect(args?.where?.provider).toBe("jellyfin_episode");
+			expect(args?.where?.cacheType).toBe("jellyfin_episode");
+			if (args?.where?.id) {
+				expect(args.select).toEqual({ id: true });
+				expect(args.where.state).toEqual({ in: ["complete", "invalidated"] });
+				return phase("terminal", () => run(args));
+			}
+			expect(args?.where?.activeSlotKey).toEqual({ not: null });
+			expect(args?.where?.state).toEqual({ in: ["running", "failed"] });
+			expect(args?.select).toEqual({ state: true, nextAttemptAt: true });
+			return phase("retryState", () => run(args));
+		});
+	}
+	instrumentRunReads(prisma);
+	// Observe the actual guarded reader without replacing its acquisition or SQL.
+	const isolatedRead = runtimePrisma.withIsolatedRuntimePrismaReadClient;
+	vi.spyOn(runtimePrisma, "withIsolatedRuntimePrismaReadClient").mockImplementation(
+		(client, operation, readOptions) =>
+			isolatedRead(
+				client,
+				(reader) => {
+					instrumentRunReads(reader);
+					return operation(reader);
+				},
+				readOptions,
+			),
+	);
 	const transaction = prisma.$transaction.bind(prisma);
 	const transactions = prisma as unknown as {
 		$transaction: (...args: unknown[]) => Promise<unknown>;
@@ -1071,10 +1090,13 @@ beforeEach(() => {
 });
 afterEach(async () => {
 	try {
-		for (const release of releases.splice(0)) release();
-		await Promise.all(tasks.splice(0));
-		for (const app of apps.splice(0)) await app.close();
-		vi.restoreAllMocks();
+		try {
+			for (const release of releases.splice(0)) release();
+			await Promise.all(tasks.splice(0));
+			for (const app of apps.splice(0)) await app.close();
+		} finally {
+			vi.restoreAllMocks();
+		}
 		for (const native of [...fixtures.keys()]) await cleanup(native);
 	} finally {
 		vi.unstubAllGlobals();
