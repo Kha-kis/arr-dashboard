@@ -423,6 +423,8 @@ export async function prepareNativeWatchGeneration(
 			await checkpointPreparationLease(prisma, input, observer, transactionObserver);
 	}
 	await assertUnpublishedRunningRun(prisma, input, observer);
+	// Keep the UUID index writes local across transactions without reordering candidates.
+	const rowIds = Array.from(input.candidates, () => randomUUID()).sort();
 	for (let start = 0; start < input.candidates.length; start += ROW_WRITE_CHUNK_SIZE) {
 		const chunk = input.candidates.slice(start, start + ROW_WRITE_CHUNK_SIZE);
 		observePreparation(observer, "row-chunk-write", chunk.length);
@@ -435,8 +437,8 @@ export async function prepareNativeWatchGeneration(
 			observePreparation(observer, "row-chunk-write", chunk.length);
 			// Single bound insert inside the existing fenced SQLite write.
 			const values = chunk.map(
-				(candidate) => Prisma.sql`(
-					${randomUUID()}, ${input.instanceId}, ${input.runId}, ${candidate.userKeyDigest},
+				(candidate, index) => Prisma.sql`(
+					${rowIds[start + index]!}, ${input.instanceId}, ${input.runId}, ${candidate.userKeyDigest},
 					${candidate.libraryId}, ${candidate.jellyfinId}, ${candidate.seriesId},
 					${candidate.seasonNumber}, ${candidate.episodeNumber}, ${candidate.played},
 					${candidate.playCount}, ${candidate.lastPlayedAt}, ${input.observedAt},

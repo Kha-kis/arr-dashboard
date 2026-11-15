@@ -1,8 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
+import { describe, expect, it, vi } from "vitest";
 import {
 	prepareNativeWatchGeneration,
 	verifyPreparedNativeWatchGeneration,
 } from "../jellyfin-native-watch-repository.js";
+
+vi.mock("node:crypto", { spy: true });
 
 // These doubles stop at Prisma: the real staging/verification code drives every call.
 function fixture(
@@ -163,7 +166,7 @@ function busyAdmission() {
 	};
 }
 
-it("binds one native-watch insert per bounded row transaction", async () => {
+it("orders native-watch UUIDs across bounded row transactions", async () => {
 	const f = fixture();
 	f.input.candidates = Array.from({ length: 251 }, (_, index) => ({
 		...f.input.candidates[0]!,
@@ -171,9 +174,24 @@ it("binds one native-watch insert per bounded row transaction", async () => {
 	}));
 	f.input.receipts[0]!.expectedRawCount = 251;
 	f.input.receipts[0]!.observedRawCount = 251;
-	await prepareNativeWatchGeneration(f.db as never, f.input);
+	const generatedIds = Array.from(
+		{ length: 251 },
+		(_, index): ReturnType<typeof randomUUID> =>
+			`00000000-0000-4000-8000-${String(251 - index).padStart(12, "0")}`,
+	);
+	const generator = vi.mocked(randomUUID);
+	let nextId = 0;
+	generator.mockImplementation(() => generatedIds[nextId++]!);
+	try {
+		await prepareNativeWatchGeneration(f.db as never, f.input);
+	} finally {
+		generator.mockRestore();
+	}
 	expect(f.boundRowInserts.map((values) => values.length)).toEqual([250 * 15, 15]);
-	expect(f.rows).toHaveLength(251);
+	expect(f.rows.map((row) => Reflect.get(row, "id"))).toEqual(generatedIds.slice().reverse());
+	expect(f.rows.map((row) => Reflect.get(row, "jellyfinId"))).toEqual(
+		f.input.candidates.map((candidate) => candidate.jellyfinId),
+	);
 });
 
 describe("native-watch busy-start recovery", () => {
