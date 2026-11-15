@@ -20,7 +20,13 @@ export type SqliteRuntimeDatePlan = Readonly<{
 }>;
 type Field = Readonly<{ name: string; nullable: boolean }>;
 type Target = Readonly<{ name: string; keys: readonly string[]; dates: readonly Field[] }>;
-type Snapshot = { digest: string; rows: number; changes: number; fields: readonly string[] };
+type Snapshot = {
+	digest: string;
+	rows: number;
+	changes: number;
+	fields: readonly string[];
+	rowidOrder: boolean;
+};
 type Receipt = {
 	id: number;
 	formatVersion: number;
@@ -46,6 +52,7 @@ type Column = {
 type Token = { value: string; quoted: boolean };
 const plans = new WeakMap<SqliteRuntimeDatePlan, Sealed>();
 const marker = "ArrRuntimeDataFormatReceipt";
+const rowidCursorField = "__arr_date_scan_cursor";
 const native = new Set([
 	"RestoreRuntimeControl",
 	"SqliteRestoreStorageBinding",
@@ -373,10 +380,30 @@ function selectedFields(main: Database.Database, table: Target, complete: boolea
 	}
 	return table.dates.filter((d) => actual.some((c) => c.name === d.name)).map((d) => d.name);
 }
-function query(main: Database.Database, table: Target, fields: readonly string[]) {
-	return main.prepare(
-		`SELECT ${[...table.keys, ...fields].map(quote).join(",")} FROM main.${quote(table.name)} ORDER BY ${table.keys.map(quote).join(",")}`,
+function ordinaryRowidTables(main: Database.Database): Set<string> {
+	const tables = main.pragma("main.table_list") as {
+		schema: string;
+		type: string;
+		wr: number;
+		name: string;
+	}[];
+	return new Set(
+		tables
+			.filter((table) => table.schema === "main" && table.type === "table" && table.wr === 0)
+			.map((table) => table.name),
 	);
+}
+function hasUnshadowedRowid(main: Database.Database, name: string): boolean {
+	return !columns(main, name).some((column) => {
+		const field = column.name.toLowerCase();
+		return field === "_rowid_" || field === rowidCursorField;
+	});
+}
+function readRowidCursor(row: Record<string, unknown>): string {
+	const cursor = row[rowidCursorField];
+	// Text round-trips the exact SQLite INTEGER, even beyond JS's safe integer range.
+	if (typeof cursor !== "string" || !/^-?\d+$/.test(cursor)) refuse();
+	return cursor;
 }
 function rowKeys(row: Record<string, unknown>, table: Target): unknown[] {
 	return table.keys.map((key) => {
@@ -386,13 +413,42 @@ function rowKeys(row: Record<string, unknown>, table: Target): unknown[] {
 		return value;
 	});
 }
-function scan(main: Database.Database, table: Target, fields: readonly string[]): Snapshot {
+/** Retain primary-key index readability while the date query scans the table directly. */
+function checkPrimaryKeyIndex(main: Database.Database, table: Target, expectedRows: number) {
+	const indexes = main.pragma(`main.index_list(${quote(table.name)})`) as {
+		name: string;
+		origin: string;
+	}[];
+	const primary = indexes.find(({ origin }) => origin === "pk");
+	if (!primary) return; // An INTEGER PRIMARY KEY can be the table's rowid.
+	const keys = table.keys.map(quote).join(",");
+	const statement = main.prepare(
+		`SELECT ${keys} FROM main.${quote(table.name)} INDEXED BY ${quote(primary.name)}`,
+	);
+	let rows = 0;
+	for (const raw of statement.iterate()) {
+		rowKeys(raw as Record<string, unknown>, table);
+		rows++;
+		if (rows > expectedRows) refuse();
+	}
+	if (rows !== expectedRows) refuse();
+}
+function scan(
+	main: Database.Database,
+	table: Target,
+	fields: readonly string[],
+	rowidOrder: boolean,
+): Snapshot {
 	const digest = createHash("sha256");
 	const readDate = canonicalDateReader();
 	let rows = 0,
 		changes = 0;
-	if (present(main, table.name))
-		for (const raw of query(main, table, fields).iterate()) {
+	if (present(main, table.name)) {
+		const projection = [...table.keys, ...fields].map(quote).join(",");
+		const order = rowidOrder ? "_rowid_" : table.keys.map(quote).join(",");
+		for (const raw of main
+			.prepare(`SELECT ${projection} FROM main.${quote(table.name)} ORDER BY ${order}`)
+			.iterate()) {
 			const row = raw as Record<string, unknown>;
 			rowKeys(row, table);
 			for (const field of fields) {
@@ -403,13 +459,16 @@ function scan(main: Database.Database, table: Target, fields: readonly string[])
 			rows++;
 			if (!Number.isSafeInteger(rows) || !Number.isSafeInteger(changes)) refuse();
 		}
-	return { digest: digest.digest("hex"), rows, changes, fields };
+	}
+	if (rowidOrder) checkPrimaryKeyIndex(main, table, rows);
+	return { digest: digest.digest("hex"), rows, changes, fields, rowidOrder };
 }
 
 /** Validate all existing values without changing the transaction, schema or data. */
 export function planSqliteRuntimeDates(
 	main: Database.Database,
 	registry: RuntimeSchemaRegistry,
+	options: { useTableOrderForCurrentReceipt?: boolean } = {},
 ): SqliteRuntimeDatePlan {
 	try {
 		requireTransaction(main);
@@ -438,9 +497,15 @@ export function planSqliteRuntimeDates(
 			snapshots = new Map<string, Snapshot>();
 		let rowsInspected = 0,
 			normalizedValues = 0;
+		const rowidTables =
+			options.useTableOrderForCurrentReceipt && receipt?.dateColumnsDigest === dateColumnsDigest
+				? ordinaryRowidTables(main)
+				: undefined;
 		for (const table of targets) {
-			const fields = selectedFields(main, table, false),
-				s = scan(main, table, fields);
+			const fields = selectedFields(main, table, false);
+			const rowidOrder =
+				rowidTables?.has(table.name) === true && hasUnshadowedRowid(main, table.name);
+			const s = scan(main, table, fields, rowidOrder);
 			snapshots.set(table.name, s);
 			rowsInspected += s.rows;
 			normalizedValues += s.changes;
@@ -489,6 +554,9 @@ export async function applySqliteRuntimeDates(
 				main.pragma("temp.schema_version", { simple: true }),
 			]);
 		const schemaVersion = version();
+		const rowidTables = [...sealed.snapshots.values()].some(({ rowidOrder }) => rowidOrder)
+			? ordinaryRowidTables(main)
+			: undefined;
 		let changed = 0;
 		for (const table of sealed.targets) {
 			const readDate = canonicalDateReader();
@@ -500,14 +568,23 @@ export async function applySqliteRuntimeDates(
 			const update = main.prepare(
 				`UPDATE main.${quote(table.name)} SET ${fields.map((field) => `${quote(field)}=?`).join(",")} WHERE ${table.keys.map((key) => `${quote(key)} IS ?`).join(" AND ")}`,
 			);
-			const projection = [...table.keys, ...fields].map(quote).join(",");
+			if (
+				before.rowidOrder &&
+				(!rowidTables?.has(table.name) || !hasUnshadowedRowid(main, table.name))
+			)
+				refuse();
+			const dataProjection = [...table.keys, ...fields].map(quote).join(",");
+			const projection = before.rowidOrder
+				? `${dataProjection},CAST(_rowid_ AS TEXT) AS ${quote(rowidCursorField)}`
+				: dataProjection;
 			const keyProjection = table.keys.map(quote).join(",");
-			const first = main.prepare(
-				`SELECT ${projection} FROM main.${quote(table.name)} ORDER BY ${keyProjection} LIMIT 250`,
-			);
-			const more = main.prepare(
-				`SELECT ${projection} FROM main.${quote(table.name)} WHERE (${keyProjection})>(${table.keys.map(() => "?").join(",")}) ORDER BY ${keyProjection} LIMIT 250`,
-			);
+			const order = before.rowidOrder ? "_rowid_" : keyProjection;
+			const cursor = before.rowidOrder
+				? "_rowid_ > CAST(? AS INTEGER)"
+				: `(${keyProjection})>(${table.keys.map(() => "?").join(",")})`;
+			const read = `SELECT ${projection} FROM main.${quote(table.name)}`;
+			const first = main.prepare(`${read} ORDER BY ${order} LIMIT 250`);
+			const more = main.prepare(`${read} WHERE ${cursor} ORDER BY ${order} LIMIT 250`);
 			let page = first.all() as Record<string, unknown>[];
 			while (page.length) {
 				await assertOwned();
@@ -529,7 +606,9 @@ export async function applySqliteRuntimeDates(
 						changed += values.filter((value, i) => value !== row[fields[i]!]).length;
 					}
 				}
-				page = more.all(...rowKeys(page[page.length - 1]!, table)) as Record<string, unknown>[];
+				const last = page[page.length - 1]!;
+				const boundary = before.rowidOrder ? [readRowidCursor(last)] : rowKeys(last, table);
+				page = more.all(...boundary) as Record<string, unknown>[];
 			}
 			if (rows !== before.rows || digest.digest("hex") !== before.digest) refuse();
 		}

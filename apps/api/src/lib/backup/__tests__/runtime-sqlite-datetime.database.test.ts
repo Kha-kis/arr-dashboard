@@ -101,6 +101,123 @@ describe("native SQLite date-format transition", () => {
 		expect(db.pragma("foreign_key_check")).toEqual([]);
 	});
 
+	it("streams the settled date check in rowid order and preserves exact 64-bit cursor boundaries", async () => {
+		for (let i = 0; i < 501; i++) seed(`stable-${501 - i}`, canonical);
+		db.exec("UPDATE sessions SET rowid = -9223372036854775808 WHERE id = 'stable-3'");
+		db.exec("UPDATE sessions SET rowid = 9223372036854775807 WHERE id = 'stable-4'");
+		db.exec("UPDATE sessions SET rowid = 9223372036854775806 WHERE id = 'stable-5'");
+		await apply();
+		db.exec("COMMIT; BEGIN IMMEDIATE");
+		// A compatible custom table may shadow SQLite's table-valued pragma name.
+		db.exec("CREATE TABLE pragma_table_list(id INTEGER PRIMARY KEY)");
+		const before = rows();
+		const receipt = marker();
+		const queries = vi.spyOn(db, "prepare");
+		try {
+			const p = planSqliteRuntimeDates(db, registry, { useTableOrderForCurrentReceipt: true });
+			expect(p.rowsInspected).toBe(502);
+			await applySqliteRuntimeDates(db, p, async () => {});
+			const readQueries = queries.mock.calls
+				.map(([sql]) => sql)
+				.filter(
+					(sql) =>
+						/^SELECT .* FROM main\."sessions" ORDER BY /.test(sql) ||
+						/^SELECT .* FROM main\."sessions" WHERE .* ORDER BY /.test(sql),
+				);
+			expect(readQueries).toHaveLength(3);
+			expect(readQueries.every((sql) => sql.includes("ORDER BY _rowid_"))).toBe(true);
+			expect(rows()).toEqual(before);
+			expect(marker()).toEqual(receipt);
+			expect(db.inTransaction).toBe(true);
+		} finally {
+			queries.mockRestore();
+		}
+	});
+
+	it.each(["missing receipt", "shadowed rowid", "without rowid"] as const)(
+		"keeps primary-key traversal for %s",
+		async (reason) => {
+			if (reason !== "missing receipt") {
+				await apply();
+				db.exec("COMMIT");
+				if (reason === "shadowed rowid") {
+					db.exec('ALTER TABLE sessions ADD COLUMN "_RoWiD_" TEXT');
+				} else {
+					const definition = db
+						.prepare("SELECT sql FROM sqlite_schema WHERE name = 'sessions'")
+						.pluck()
+						.get() as string;
+					db.exec("DROP TABLE sessions");
+					db.exec(`${definition} WITHOUT ROWID`);
+				}
+			}
+			seed("a", canonical);
+			db.exec("BEGIN IMMEDIATE");
+			const queries = vi.spyOn(db, "prepare");
+			try {
+				const p = planSqliteRuntimeDates(db, registry, { useTableOrderForCurrentReceipt: true });
+				await applySqliteRuntimeDates(db, p, async () => {});
+				const sessionReads = queries.mock.calls
+					.map(([sql]) => sql)
+					.filter((sql) => /^SELECT .* FROM main\."sessions".* ORDER BY /.test(sql));
+				expect(sessionReads).toHaveLength(3);
+				expect(sessionReads.every((sql) => sql.includes('ORDER BY "id"'))).toBe(true);
+				expect(rows()).toHaveLength(1);
+			} finally {
+				queries.mockRestore();
+			}
+		},
+	);
+
+	it("rejects an unreadable primary-key index on the settled table-order scan", async () => {
+		for (let i = 0; i < 800; i++) seed(`index-${String(i).padStart(4, "0")}`, canonical);
+		await apply();
+		db.exec("COMMIT");
+		const index = (
+			db.pragma("main.index_list('sessions')") as { name: string; origin: string }[]
+		).find(({ origin }) => origin === "pk");
+		expect(index).toBeDefined();
+		const page = db
+			.prepare(
+				"SELECT pageno FROM dbstat WHERE name = ? AND pagetype = 'leaf' ORDER BY path DESC LIMIT 1",
+			)
+			.pluck()
+			.get(index!.name) as number;
+		const pageSize = db.pragma("page_size", { simple: true }) as number;
+		expect(page).toBeGreaterThan(1);
+		const damaged = db.serialize();
+		damaged[(page - 1) * pageSize] = 0;
+		const copy = new Database(damaged);
+		try {
+			expect(copy.prepare("SELECT expiresAt FROM sessions ORDER BY _rowid_").all()).toHaveLength(
+				800,
+			);
+			copy.pragma("foreign_keys=ON");
+			copy.exec("BEGIN IMMEDIATE");
+			expect(() =>
+				planSqliteRuntimeDates(copy, registry, { useTableOrderForCurrentReceipt: true }),
+			).toThrow(SqliteDateCompatibilityError);
+			copy.exec("ROLLBACK");
+		} finally {
+			copy.close();
+		}
+	});
+
+	it("rejects canonical value drift on the settled table-order scan", async () => {
+		seed("a", canonical);
+		await apply();
+		db.exec("COMMIT; BEGIN IMMEDIATE");
+		const prior = marker();
+		const p = planSqliteRuntimeDates(db, registry, { useTableOrderForCurrentReceipt: true });
+		db.prepare("UPDATE sessions SET expiresAt=? WHERE id='a'").run("2026-11-01T13:00:00.000+00:00");
+		await expect(applySqliteRuntimeDates(db, p, async () => {})).rejects.toBeInstanceOf(
+			SqliteDateCompatibilityError,
+		);
+		expect(marker()).toEqual(prior);
+		db.exec("ROLLBACK");
+		expect(db.prepare("SELECT expiresAt FROM sessions").get()).toEqual({ expiresAt: canonical });
+	});
+
 	it("does not let repeated successful parsing hide a late invalid date", () => {
 		for (let i = 0; i < 700; i++) seed(`repeat-${String(i).padStart(4, "0")}`, canonical);
 		seed("zz-invalid", "2024-02-30T00:00:00.000+00:00");

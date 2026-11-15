@@ -5,9 +5,9 @@ import {
 	type RuntimeSchemaCatalog,
 	type RuntimeSchemaForeignKey,
 	type RuntimeSchemaIndex,
+	RuntimeSchemaPlanError,
 	type RuntimeSchemaPlanningCatalog,
 	type RuntimeSchemaPlanningTable,
-	RuntimeSchemaPlanError,
 } from "./runtime-schema-catalog.js";
 import {
 	createRuntimeSchemaMigrationReceipt,
@@ -448,7 +448,11 @@ async function synchronizeSqliteRuntimeSchemaPhases(
 				return {
 					schema: execution,
 					oidc,
-					dates: timeSqliteStartupPhase("date-plan", () => planSqliteRuntimeDates(main, registry)),
+					dates: timeSqliteStartupPhase("date-plan", () =>
+						planSqliteRuntimeDates(main, registry, {
+							useTableOrderForCurrentReceipt: execution.statementCount === 0 && !oidc,
+						}),
+					),
 				};
 			},
 			async apply(main, execution, assertOwned) {
