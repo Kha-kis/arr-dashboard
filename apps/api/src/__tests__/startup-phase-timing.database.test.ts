@@ -93,15 +93,16 @@ describe.skipIf(process.platform !== "linux")("native startup phase diagnostics"
 				listenAddress: null,
 			});
 			const timings = events(result.stderr);
-			expect(timings.map((event) => event.phase)).toEqual([
-				"catalog-preflight",
-				"date-plan",
-				"schema-apply",
-				"catalog-postflight",
-				"date-apply",
-				"foreign-key-check",
-				"commit",
-				"total",
+			expect(timings.map((event) => [event.phase, event.outcome])).toEqual([
+				["catalog-preflight", "completed"],
+				["date-plan", "completed"],
+				["schema-apply", "completed"],
+				["catalog-postflight", "completed"],
+				["date-apply", "completed"],
+				["foreign-key-check", "started"],
+				["foreign-key-check", "completed"],
+				["commit", "completed"],
+				["total", "completed"],
 			]);
 			for (const event of timings) {
 				expect(Object.keys(event).sort()).toEqual([
@@ -112,7 +113,7 @@ describe.skipIf(process.platform !== "linux")("native startup phase diagnostics"
 					"phase",
 				]);
 				expect(event.category).toBe("sqlite-startup-phase");
-				expect(event.outcome).toBe("completed");
+				if (event.outcome === "started") expect(event.elapsedMs).toBe(0);
 				expect(event.elapsedMs).toEqual(expect.any(Number));
 				expect(Number.isFinite(event.elapsedMs)).toBe(true);
 				expect(event.elapsedMs).toBeGreaterThanOrEqual(0);

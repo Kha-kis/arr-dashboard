@@ -14,7 +14,11 @@ type SqliteStartupPhase =
 
 let diagnosticLogger: Pick<Logger, "info"> | undefined;
 
-function report(phase: SqliteStartupPhase, began: number, outcome: "completed" | "failed") {
+function report(
+	phase: SqliteStartupPhase,
+	outcome: "started" | "completed" | "failed",
+	began?: number,
+) {
 	try {
 		// Pre-launch stdout is a settings protocol. No app logger/file/worker
 		// initialization is safe here; emit only bounded diagnostics on stderr.
@@ -26,15 +30,18 @@ function report(phase: SqliteStartupPhase, began: number, outcome: "completed" |
 			category: "sqlite-startup-phase",
 			phase,
 			outcome,
-			elapsedMs: Math.round(Math.max(0, performance.now() - began) * 1000) / 1000,
+			elapsedMs:
+				began === undefined ? 0 : Math.round(Math.max(0, performance.now() - began) * 1000) / 1000,
 		});
 	} catch {
 		// Diagnostics never replace the original startup result or failure.
 	}
 }
 
-/** A phase completion is diagnostic only, never readiness or commit authority. */
+/** Phase events describe diagnostics only. */
 export function timeSqliteStartupPhase<T>(phase: SqliteStartupPhase, operation: () => T): T {
+	// Native validation can still be running when the supervisor times out.
+	if (phase === "foreign-key-check") report(phase, "started");
 	const began = performance.now();
 	let outcome: "completed" | "failed" = "failed";
 	try {
@@ -42,7 +49,7 @@ export function timeSqliteStartupPhase<T>(phase: SqliteStartupPhase, operation: 
 		outcome = "completed";
 		return result;
 	} finally {
-		report(phase, began, outcome);
+		report(phase, outcome, began);
 	}
 }
 
@@ -58,6 +65,6 @@ export async function timeSqliteStartupPhaseAsync<T>(
 		outcome = "completed";
 		return result;
 	} finally {
-		report(phase, began, outcome);
+		report(phase, outcome, began);
 	}
 }

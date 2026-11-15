@@ -120,6 +120,7 @@ function validateSqliteCliDiagnostics(
 		["date-apply", "completed"],
 		...(success
 			? [
+					["foreign-key-check", "started"],
 					["foreign-key-check", "completed"],
 					["commit", "completed"],
 				]
