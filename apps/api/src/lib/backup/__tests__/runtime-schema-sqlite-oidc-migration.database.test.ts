@@ -748,7 +748,8 @@ describe.skipIf(process.platform !== "linux")(
 				let stderr = 0;
 				actor.stderr!.on("data", (bytes) => {
 					stderr += bytes.length;
-					if (stderr > 1024) actor.kill("SIGKILL");
+					// Startup phase diagnostics include a separate foreign-key start event.
+					if (stderr > 2 * 1024) actor.kill("SIGKILL");
 				});
 				actor.stdout!.on("data", () => {
 					actor.kill("SIGKILL");
