@@ -405,11 +405,15 @@ function readRowidCursor(row: Record<string, unknown>): string {
 	if (typeof cursor !== "string" || !/^-?\d+$/.test(cursor)) refuse();
 	return cursor;
 }
+function assertKey(value: unknown) {
+	if (typeof value !== "string" && !(typeof value === "number" && Number.isSafeInteger(value)))
+		refuse();
+}
+
 function rowKeys(row: Record<string, unknown>, table: Target): unknown[] {
 	return table.keys.map((key) => {
 		const value = row[key];
-		if (typeof value !== "string" && !(typeof value === "number" && Number.isSafeInteger(value)))
-			refuse();
+		assertKey(value);
 		return value;
 	});
 }
@@ -426,8 +430,8 @@ function checkPrimaryKeyIndex(main: Database.Database, table: Target, expectedRo
 		`SELECT ${keys} FROM main.${quote(table.name)} INDEXED BY ${quote(primary.name)}`,
 	);
 	let rows = 0;
-	for (const raw of statement.iterate()) {
-		rowKeys(raw as Record<string, unknown>, table);
+	for (const keys of statement.raw().iterate() as Iterable<unknown[]>) {
+		for (const key of keys) assertKey(key);
 		rows++;
 		if (rows > expectedRows) refuse();
 	}
@@ -445,17 +449,22 @@ function scan(
 		changes = 0;
 	if (present(main, table.name)) {
 		const projection = [...table.keys, ...fields].map(quote).join(",");
+		const nullable = fields.map(
+			(field) => table.dates.find((date) => date.name === field)!.nullable,
+		);
+		const keyCount = table.keys.length;
 		const order = rowidOrder ? "_rowid_" : table.keys.map(quote).join(",");
-		for (const raw of main
+		for (const values of main
 			.prepare(`SELECT ${projection} FROM main.${quote(table.name)} ORDER BY ${order}`)
-			.iterate()) {
-			const row = raw as Record<string, unknown>;
-			rowKeys(row, table);
-			for (const field of fields) {
-				const value = readDate(row[field], table.dates.find((d) => d.name === field)!.nullable);
-				if (value !== row[field]) changes++;
+			.raw()
+			.iterate() as Iterable<unknown[]>) {
+			for (let i = 0; i < keyCount; i++) assertKey(values[i]);
+			for (let i = 0; i < nullable.length; i++) {
+				const original = values[keyCount + i];
+				if (readDate(original, nullable[i]!) !== original) changes++;
 			}
-			digest.update(`${JSON.stringify([...table.keys, ...fields].map((field) => row[field]))}\n`);
+			// The projection already matches the ordered key/date tuple that apply hashes.
+			digest.update(`${JSON.stringify(values)}\n`);
 			rows++;
 			if (!Number.isSafeInteger(rows) || !Number.isSafeInteger(changes)) refuse();
 		}
