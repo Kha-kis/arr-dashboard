@@ -122,6 +122,75 @@ async function ready(hook: ReturnType<typeof mount>, result = row) {
 }
 
 describe("actual read-first durable Grab recovery", () => {
+	it.each(["acknowledged", "lost reply"])(
+		"clears a settled %s send after the result generation changes",
+		async (outcome) => {
+			const response = Promise.withResolvers<Response>();
+			grab = () => response.promise;
+			const hook = mount();
+			await ready(hook);
+
+			let pending!: Promise<void>;
+			act(() => {
+				pending = hook.result.current.handleGrab(row);
+			});
+			await waitFor(() => expect(hook.result.current.state.grabbingKey).not.toBeNull());
+
+			hook.rerender({ rows: [{ ...row }] });
+			await act(async () => {
+				if (outcome === "acknowledged") response.resolve(new Response(null, { status: 204 }));
+				else response.reject(new Error("Synthetic reply loss"));
+				await pending;
+			});
+
+			expect(hook.result.current.state.grabbingKey).toBeNull();
+			expect(hook.result.current.state.feedback).toBeNull();
+			expect(sends).toHaveLength(1);
+		},
+	);
+
+	it("does not clear a newer send when an older result's request settles", async () => {
+		const newer = {
+			...row,
+			id: "newer-result",
+			guid: "newer-result",
+			grabSelector: "sg1.CCCCCCCCCCCCCCCC.DDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
+		};
+		const first = Promise.withResolvers<Response>();
+		const second = Promise.withResolvers<Response>();
+		grab = (payload) => (payload.selector === row.grabSelector ? first.promise : second.promise);
+		const hook = mount();
+		await ready(hook);
+
+		let firstSend!: Promise<void>;
+		act(() => {
+			firstSend = hook.result.current.handleGrab(row);
+		});
+		await waitFor(() => expect(sends).toHaveLength(1));
+
+		hook.rerender({ rows: [newer] });
+		await ready(hook, newer);
+		let secondSend!: Promise<void>;
+		act(() => {
+			secondSend = hook.result.current.handleGrab(newer);
+		});
+		const newerKey = `${newer.instanceId}:${newer.indexerId}:${newer.id}`;
+		await waitFor(() => expect(hook.result.current.state.grabbingKey).toBe(newerKey));
+
+		await act(async () => {
+			first.resolve(new Response(null, { status: 204 }));
+			await firstSend;
+		});
+		expect(hook.result.current.state.grabbingKey).toBe(newerKey);
+
+		await act(async () => {
+			second.resolve(new Response(null, { status: 204 }));
+			await secondSend;
+		});
+		expect(hook.result.current.state.grabbingKey).toBeNull();
+		expect(sends).toHaveLength(2);
+	});
+
 	it("renders and sends a UUIDv4 intent without secure-context randomUUID", async () => {
 		vi.stubGlobal("crypto", { getRandomValues: crypto.getRandomValues.bind(crypto) });
 		vi.stubGlobal("isSecureContext", false);

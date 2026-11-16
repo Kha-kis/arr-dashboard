@@ -123,6 +123,7 @@ export function useSearchGrabRecovery(results: SearchResult[], actions: SearchSt
 		>(),
 	);
 	const busy = useRef(new Set<string>());
+	const sendingIntent = useRef<string | null>(null);
 	const revisions = useRef(new Map<string, number>());
 	const announced = useRef(new Set<string>());
 	const [view, setView] = useState<{ generation: string; observations: Map<string, Observation> }>({
@@ -339,6 +340,7 @@ export function useSearchGrabRecovery(results: SearchResult[], actions: SearchSt
 			const intentId = newUuid(),
 				key = targetKey(row);
 			attempts.current.set(key, { intentId, selector: row.grabSelector });
+			sendingIntent.current = intentId;
 			actions.setGrabbingKey(rowKey(row));
 			actions.setFeedback(null);
 			publish(row, { state: "submitting" });
@@ -384,7 +386,11 @@ export function useSearchGrabRecovery(results: SearchResult[], actions: SearchSt
 					);
 				}
 			} finally {
-				if (isCurrent(row)) actions.setGrabbingKey(null);
+				// Results can change while the request owns the sending indicator.
+				if (sendingIntent.current === intentId) {
+					sendingIntent.current = null;
+					actions.setGrabbingKey(null);
+				}
 			}
 		},
 		[acknowledge, actions, feedback, isCurrent, mutation, publish, readIntent],
