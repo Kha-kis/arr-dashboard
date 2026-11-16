@@ -48,7 +48,9 @@ export const AuthGate = ({ children }: AuthGateProps) => {
 		data: user,
 		isLoading: userLoading,
 		isFetching: userFetching,
+		isError: userError,
 	} = useCurrentUser(shouldFetchUser);
+	const sessionUnavailable = shouldFetchUser && userError && !user;
 
 	useEffect(() => {
 		if (
@@ -122,8 +124,8 @@ export const AuthGate = ({ children }: AuthGateProps) => {
 		// Don't redirect if user query is disabled, still loading, or actively fetching
 		if (!shouldFetchUser || userLoading || userFetching) return;
 
-		// Redirect to login if not authenticated on protected route
-		if (!user) {
+		// A successful null result confirms the session is signed out.
+		if (user === null && !userError) {
 			const redirectTo = encodeURIComponent(pathname);
 			router.push(`/login?redirectTo=${redirectTo}`);
 			return;
@@ -135,6 +137,7 @@ export const AuthGate = ({ children }: AuthGateProps) => {
 		shouldFetchUser,
 		userLoading,
 		userFetching,
+		userError,
 		user,
 		pathname,
 		isPublicRoute,
@@ -166,8 +169,9 @@ export const AuthGate = ({ children }: AuthGateProps) => {
 		);
 	}
 
-	if (!isPublicRoute && (pendingUnauthorized !== 0 || currentRecovery)) {
-		if (currentRecovery?.status === "error" && pendingUnauthorized === 0) {
+	if (!isPublicRoute && (pendingUnauthorized !== 0 || currentRecovery || sessionUnavailable)) {
+		const canRetry = currentRecovery ? currentRecovery.status === "error" : sessionUnavailable;
+		if (canRetry && pendingUnauthorized === 0) {
 			return (
 				<div role="alert">
 					<p>This page could not be loaded safely. Your data is hidden until you retry.</p>

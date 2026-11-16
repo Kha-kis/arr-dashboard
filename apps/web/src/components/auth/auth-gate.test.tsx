@@ -74,6 +74,47 @@ describe("AuthGate protected request recovery", () => {
 		client.clear();
 	});
 
+	it.each([200, 401])(
+		"keeps initial session unavailability retryable before a %i confirmation",
+		async (retryStatus) => {
+			const user = { id: "synthetic-user", username: "synthetic" };
+			let authReads = 0;
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(async (input: string) => {
+					if (input === "/auth/setup-required") return json({ required: false });
+					if (input !== "/auth/me") throw new Error("Unexpected request");
+					authReads++;
+					if (authReads === 1) return new Response(null, { status: 503 });
+					return retryStatus === 200 ? json({ user }) : new Response(null, { status: 401 });
+				}),
+			);
+			const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+			render(
+				<QueryClientProvider client={client}>
+					<AuthGate>Protected content</AuthGate>
+				</QueryClientProvider>,
+			);
+			await screen.findByRole("alert");
+			expect(screen.queryByText("Protected content")).not.toBeInTheDocument();
+			expect(routerPush).not.toHaveBeenCalled();
+			expect(authReads).toBe(1);
+
+			fireEvent.click(screen.getByRole("button", { name: "Retry page" }));
+			if (retryStatus === 200) {
+				await screen.findByText("Protected content");
+				expect(routerPush).not.toHaveBeenCalled();
+			} else {
+				await waitFor(() =>
+					expect(routerPush).toHaveBeenCalledWith("/login?redirectTo=%2Flibrary"),
+				);
+				expect(screen.queryByText("Protected content")).not.toBeInTheDocument();
+			}
+			expect(authReads).toBe(2);
+			client.clear();
+		},
+	);
+
 	it.each([
 		{
 			name: "a still-valid session",
