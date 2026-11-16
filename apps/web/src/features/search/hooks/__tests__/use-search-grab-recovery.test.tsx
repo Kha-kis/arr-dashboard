@@ -675,6 +675,92 @@ describe("actual read-first durable Grab recovery", () => {
 		expect(sends).toHaveLength(0);
 		expect(hook.result.current.state.feedback).toBeNull();
 	});
+	it.each(["before", "during"])(
+		"keeps a replacement confirmation usable when the cancelled check settles %s the new check",
+		async (order) => {
+			const newer = {
+				...row,
+				id: "other-result",
+				guid: "other-result",
+				grabSelector: "sg1.CCCCCCCCCCCCCCCC.DDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
+			};
+			const newerPredecessor = "33333333-3333-4333-8333-333333333333";
+			const newerIntent = "44444444-4444-4444-8444-444444444444";
+			const uncertain = (result: SearchResult) =>
+				json({
+					results: [
+						{
+							resultIndex: 0,
+							availability: "recorded",
+							status:
+								result === row
+									? status("uncertain")
+									: status("uncertain", newerPredecessor, newerIntent),
+						},
+					],
+				});
+			observation = { availability: "recorded", status: status("uncertain") };
+			const hook = mount();
+			await ready(hook);
+			await act(async () => hook.result.current.handleGrab(row));
+			expect(hook.result.current.confirmation?.predecessorId).toBe(predecessor);
+			act(() => hook.result.current.setDuplicateRiskConfirmed(true));
+
+			const oldRead = Promise.withResolvers<Response>();
+			resultRead = () => oldRead.promise;
+			let oldCheck!: Promise<void>;
+			act(() => {
+				oldCheck = hook.result.current.confirmRetry();
+			});
+			expect(hook.result.current.confirming).toBe(true);
+			act(() => hook.result.current.cancelConfirmation());
+
+			resultRead = async () => uncertain(newer);
+			hook.rerender({ rows: [newer] });
+			await ready(hook, newer);
+			await act(async () => hook.result.current.handleGrab(newer));
+			expect(hook.result.current.confirmation?.predecessorId).toBe(newerPredecessor);
+			expect(hook.result.current.duplicateRiskConfirmed).toBe(false);
+			expect(hook.result.current.confirming).toBe(false);
+
+			if (order === "before") {
+				await act(async () => {
+					oldRead.resolve(uncertain(row));
+					await oldCheck;
+				});
+				expect(hook.result.current.confirming).toBe(false);
+			}
+
+			const newRead = Promise.withResolvers<Response>();
+			resultRead = () => newRead.promise;
+			act(() => hook.result.current.setDuplicateRiskConfirmed(true));
+			let newCheck!: Promise<void>;
+			act(() => {
+				newCheck = hook.result.current.confirmRetry();
+			});
+			expect(hook.result.current.confirming).toBe(true);
+			if (order === "during") {
+				await act(async () => {
+					oldRead.resolve(uncertain(row));
+					await oldCheck;
+				});
+				expect(hook.result.current.confirming).toBe(true);
+			}
+			expect(sends).toHaveLength(0);
+
+			await act(async () => {
+				newRead.resolve(uncertain(newer));
+				await newCheck;
+			});
+			expect(hook.result.current.confirming).toBe(false);
+			expect(sends).toHaveLength(1);
+			expect(sends[0]).toMatchObject({
+				selector: newer.grabSelector,
+				retry: { predecessorId: newerPredecessor, duplicateRiskConfirmed: true },
+			});
+		},
+	);
+
 	it("confirmation cannot send after result selector changes", async () => {
 		observation = { availability: "recorded", status: status("uncertain") };
 		const hook = mount();

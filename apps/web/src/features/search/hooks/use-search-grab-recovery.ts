@@ -134,7 +134,7 @@ export function useSearchGrabRecovery(results: SearchResult[], actions: SearchSt
 	const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
 	const consent = useRef(false);
 	const [duplicateRiskConfirmed, setConsent] = useState(false);
-	const [confirming, setConfirming] = useState(false);
+	const [checkingConfirmation, setCheckingConfirmation] = useState<Confirmation | null>(null);
 
 	useEffect(
 		() => () => {
@@ -459,7 +459,7 @@ export function useSearchGrabRecovery(results: SearchResult[], actions: SearchSt
 		if (busy.current.has(key)) return;
 		busy.current.add(key);
 		revisions.current.set(key, (revisions.current.get(key) ?? 0) + 1);
-		setConfirming(true);
+		setCheckingConfirmation(pending);
 		try {
 			const observed = (await readRows([pending.result])).get(key)!;
 			if (!isCurrent(pending.result) || confirmationRef.current !== pending || !consent.current)
@@ -484,7 +484,7 @@ export function useSearchGrabRecovery(results: SearchResult[], actions: SearchSt
 				);
 		} finally {
 			busy.current.delete(key);
-			if (current.current === generation) setConfirming(false);
+			setCheckingConfirmation((checking) => (checking === pending ? null : checking));
 		}
 	}, [acknowledge, cancelConfirmation, feedback, generation, isCurrent, publish, readRows, send]);
 
@@ -505,14 +505,15 @@ export function useSearchGrabRecovery(results: SearchResult[], actions: SearchSt
 			};
 		return { state, ...describeObservation(observed ?? { state }) };
 	};
+	const visibleConfirmation = confirmation?.generation === generation.id ? confirmation : null;
 	return {
 		handleGrab,
 		getRowState,
-		confirmation: confirmation?.generation === generation.id ? confirmation : null,
+		confirmation: visibleConfirmation,
 		duplicateRiskConfirmed,
 		setDuplicateRiskConfirmed,
 		cancelConfirmation,
 		confirmRetry,
-		confirming,
+		confirming: visibleConfirmation !== null && checkingConfirmation === visibleConfirmation,
 	};
 }
