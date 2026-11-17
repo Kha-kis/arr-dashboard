@@ -147,7 +147,40 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 		const pendingInstanceIds = new Set<string>();
 		const continuationHandles = new Set<ReturnType<typeof setTimeout>>();
 		const pendingOperations = new Set<Promise<void>>();
-		const retainedAttempts = new Map<string, PlexCacheRefreshAttempt>();
+		type DurableProgress = { runId: string; refreshedShows: number };
+		const retainedAttempts = new Map<
+			string,
+			{ attempt: PlexCacheRefreshAttempt; progress: DurableProgress | undefined }
+		>();
+
+		function retainAttempt(
+			instanceId: string,
+			attempt: PlexCacheRefreshAttempt,
+			progress?: DurableProgress,
+		): boolean {
+			const previous = retainedAttempts.get(instanceId);
+			const previousProgress =
+				previous?.attempt.resultMarker === attempt.resultMarker &&
+				previous.attempt.attemptedAt.getTime() === attempt.attemptedAt.getTime()
+					? previous.progress
+					: undefined;
+			const comparable = previousProgress?.runId === progress?.runId ? previousProgress : undefined;
+			const advanced =
+				comparable !== undefined &&
+				progress !== undefined &&
+				progress.refreshedShows > comparable.refreshedShows;
+			// A replacement run establishes its own baseline within the same attempt.
+			retainedAttempts.set(instanceId, {
+				attempt,
+				progress:
+					progress === undefined
+						? previousProgress
+						: advanced
+							? progress
+							: (comparable ?? progress),
+			});
+			return advanced;
+		}
 
 		async function runAccepted<T>(operation: () => Promise<T>): Promise<T> {
 			let finish!: () => void;
@@ -176,7 +209,7 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			let phase: "runner" | "retry-state-read" = "runner";
 			const diagnostics: PlexEpisodeWorkDiagnostics = { stage: "not-started" };
 			try {
-				const retainedAttempt = retainedAttempts.get(instance.id);
+				const retainedAttempt = retainedAttempts.get(instance.id)?.attempt;
 				const result = await refreshOwnedPlexEpisodeCache(
 					{
 						prisma: app.prisma,
@@ -190,8 +223,21 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 					retainedAttempt,
 				);
 				if (closed) return;
+				let madeProgress = false;
 				if (result.continuationAttempt) {
-					retainedAttempts.set(instance.id, result.continuationAttempt);
+					const canMeasureProgress =
+						!result.complete &&
+						!result.superseded &&
+						!result.retryCategory &&
+						result.errors === 0 &&
+						!result.capacityDegraded;
+					madeProgress = retainAttempt(
+						instance.id,
+						result.continuationAttempt,
+						canMeasureProgress && result.progressRunId
+							? { runId: result.progressRunId, refreshedShows: result.refreshedShows }
+							: undefined,
+					);
 				} else {
 					retainedAttempts.delete(instance.id);
 				}
@@ -240,14 +286,14 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 					: 30_000;
 				if (closed) return;
 				if (!result.complete && (result.errors === 0 || failedRun?.nextAttemptAt)) {
-					scheduleContinuation(instance, delay, 0, exceptionRetry);
+					scheduleContinuation(instance, delay, 0, madeProgress ? 0 : exceptionRetry);
 				}
 			} catch (error) {
 				const errorCategory = classifyRefreshError(error);
 				const errorDiagnostic = projectRefreshError(error);
 				if (!closed) {
 					const ownedAttempt = plexEpisodeAttemptForPublicationRefusal(error);
-					if (ownedAttempt) retainedAttempts.set(instance.id, ownedAttempt);
+					if (ownedAttempt) retainAttempt(instance.id, ownedAttempt);
 				}
 				const retryDelay = EXCEPTION_RETRY_DELAYS_MS[exceptionRetry];
 				if (retryDelay === undefined) {

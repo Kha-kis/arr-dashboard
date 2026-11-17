@@ -80,6 +80,7 @@ type PlexEpisodeRunProgress = ObservationRunProgress & {
 		| "identity-unavailable"
 		| "parent-refresh-in-progress"
 		| "parent-refresh-unavailable";
+	progressRunId?: string;
 	attemptFailed?: true;
 	superseded?: true;
 	publishedItemCount?: number;
@@ -89,6 +90,8 @@ type PlexEpisodeRunProgress = ObservationRunProgress & {
 
 type PlexEpisodeRefreshResultWithContinuation = PlexEpisodeRefreshResult & {
 	continuationAttempt?: PlexCacheRefreshAttempt;
+	/** Local observation run identity for comparing scheduler progress. */
+	progressRunId?: string;
 };
 
 const publicationRefusalAttempts = new WeakMap<Error, PlexCacheRefreshAttempt>();
@@ -307,6 +310,9 @@ export async function refreshOwnedPlexEpisodeCache(
 		...(progress.superseded ? { superseded: true } : {}),
 		...(progress.retryCategory ? { retryCategory: progress.retryCategory } : {}),
 		...(progress.continuationAttempt ? { continuationAttempt: progress.continuationAttempt } : {}),
+		...(progress.continuationAttempt && progress.progressRunId
+			? { progressRunId: progress.progressRunId }
+			: {}),
 	};
 }
 
@@ -389,6 +395,7 @@ async function runProgress(prisma: PrismaClient, runId: string): Promise<PlexEpi
 	if (!run) return emptyEpisodeProgress();
 	return {
 		state: run.state as ObservationRunProgress["state"],
+		progressRunId: run.id,
 		completedUnits: run.completedUnits,
 		totalUnits: run.totalUnits,
 		completedWork: run.completedWork,

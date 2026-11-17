@@ -510,6 +510,131 @@ describe("Plex episode scheduler continuations", () => {
 		).toMatchObject({ runnerStage: "not-started", errorCategory: "unknown" });
 	});
 
+	it("starts a fresh exception streak after durable progress on the same attempt", async () => {
+		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ id: "a", label: "A" },
+		]);
+		const attemptedAt = new Date("2026-09-15T12:00:00.000Z");
+		const resultMarker = "in_progress:exact-attempt";
+		const refusal = new RestoreRuntimeAdmissionError();
+		mocks.refusalAttempt.mockImplementation((error) =>
+			error === refusal ? { attemptedAt: new Date(attemptedAt), resultMarker } : undefined,
+		);
+		for (const refreshedShows of [50, 400, 450, 500]) {
+			mocks.refresh
+				.mockResolvedValueOnce({
+					complete: false,
+					errors: 0,
+					upserted: 0,
+					refreshedShows,
+					progressRunId: "run-a",
+					capacityDegraded: false,
+					continuationAttempt: { attemptedAt: new Date(attemptedAt), resultMarker },
+				})
+				.mockRejectedValueOnce(refusal);
+		}
+		mocks.refresh.mockResolvedValueOnce({
+			complete: true,
+			errors: 0,
+			upserted: 1,
+			refreshedShows: 500,
+			capacityDegraded: false,
+		});
+
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		for (let call = 2; call <= 9; call++) {
+			await vi.advanceTimersByTimeAsync(30_000);
+			expect(mocks.refresh).toHaveBeenCalledTimes(call);
+			expect(mocks.refresh.mock.calls[call - 1]?.[1]).toEqual({ attemptedAt, resultMarker });
+		}
+		expect(serializedLogs.join("\n")).not.toContain("plex-episode-cache-refresh-retry-exhausted");
+	});
+
+	const priorAttempt = {
+		attemptedAt: new Date("2026-09-15T12:00:00.000Z"),
+		resultMarker: "in_progress:exact-attempt",
+	};
+	it.each([
+		["unchanged progress", { refreshedShows: 50 }],
+		[
+			"a different timestamp",
+			{
+				continuationAttempt: { ...priorAttempt, attemptedAt: new Date("2026-09-15T13:00:00.000Z") },
+			},
+		],
+		[
+			"a different marker",
+			{ continuationAttempt: { ...priorAttempt, resultMarker: "in_progress:other" } },
+		],
+		["a replacement observation run", { progressRunId: "run-b" }],
+		["a dependency wait", { retryCategory: "parent-refresh-in-progress" }],
+		["a failed page", { errors: 1 }],
+	] as const)("preserves the exception budget after %s", async (_, page) => {
+		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ id: "a", label: "A" },
+		]);
+		const findRun = app.prisma.providerObservationRun.findFirst as ReturnType<typeof vi.fn>;
+		findRun.mockImplementationOnce(async () => ({ nextAttemptAt: new Date(Date.now() + 30_000) }));
+		const progress = {
+			complete: false,
+			errors: 0,
+			upserted: 0,
+			refreshedShows: 50,
+			progressRunId: "run-a",
+			capacityDegraded: false,
+			continuationAttempt: priorAttempt,
+		};
+		const refusal = new RestoreRuntimeAdmissionError();
+		mocks.refresh
+			.mockResolvedValueOnce(progress)
+			.mockRejectedValueOnce(refusal)
+			.mockResolvedValueOnce({ ...progress, refreshedShows: 100, ...page })
+			.mockRejectedValue(refusal);
+
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000 + 3 * 30_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(4);
+		await vi.advanceTimersByTimeAsync(2 * 60_000 - 1);
+		expect(mocks.refresh).toHaveBeenCalledTimes(4);
+		await vi.advanceTimersByTimeAsync(1 + 10 * 60_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(6);
+		expect(serializedLogs.join("\n")).toContain("plex-episode-cache-refresh-retry-exhausted");
+	});
+
+	it("uses the replacement run's own durable progress baseline", async () => {
+		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{ id: "a", label: "A" },
+		]);
+		const refusal = new RestoreRuntimeAdmissionError();
+		const progress = (progressRunId: string, refreshedShows: number) => ({
+			complete: false,
+			errors: 0,
+			upserted: 0,
+			refreshedShows,
+			progressRunId,
+			capacityDegraded: false,
+			continuationAttempt: priorAttempt,
+		});
+		mocks.refresh
+			.mockResolvedValueOnce(progress("run-a", 500))
+			.mockRejectedValueOnce(refusal)
+			.mockResolvedValueOnce(progress("run-b", 50))
+			.mockRejectedValueOnce(refusal)
+			.mockResolvedValueOnce(progress("run-b", 100))
+			.mockRejectedValueOnce(refusal)
+			.mockResolvedValueOnce(progress("run-b", 150));
+
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000 + 3 * 30_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(4);
+		await vi.advanceTimersByTimeAsync(2 * 60_000 - 1);
+		expect(mocks.refresh).toHaveBeenCalledTimes(4);
+		await vi.advanceTimersByTimeAsync(1 + 2 * 30_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(7);
+		expect(mocks.refresh.mock.calls[6]?.[1]).toEqual(priorAttempt);
+	});
+
 	it("retains the exact continuation attempt across an exception retry", async () => {
 		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
 			{ id: "a", label: "A" },
@@ -571,18 +696,27 @@ describe("Plex episode scheduler continuations", () => {
 		expect(mocks.refresh).toHaveBeenCalledTimes(5);
 	});
 
-	it("carries the exception budget through ordinary continuations", async () => {
+	it("carries the exception budget when the first durable count establishes a baseline", async () => {
 		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
 			{ id: "a", label: "A" },
 		]);
+		const refusal = new RestoreRuntimeAdmissionError();
+		const continuationAttempt = {
+			attemptedAt: new Date("2026-09-15T12:00:00.000Z"),
+			resultMarker: "in_progress:exact-attempt",
+		};
+		mocks.refusalAttempt.mockImplementation((error) =>
+			error === refusal ? continuationAttempt : undefined,
+		);
 		mocks.refresh
-			.mockRejectedValueOnce(new Error("first failure"))
+			.mockRejectedValueOnce(refusal)
 			.mockResolvedValueOnce({
 				complete: false,
 				errors: 0,
 				upserted: 0,
-				refreshedShows: 0,
+				refreshedShows: 50,
 				capacityDegraded: false,
+				continuationAttempt,
 			})
 			.mockRejectedValue(new Error("later failure"));
 
@@ -594,6 +728,7 @@ describe("Plex episode scheduler continuations", () => {
 		await vi.advanceTimersByTimeAsync(10 * 60_000);
 
 		expect(mocks.refresh).toHaveBeenCalledTimes(5);
+		expect(serializedLogs.join("\n")).toContain("plex-episode-cache-refresh-retry-exhausted");
 	});
 
 	it("suppresses duplicate manual admissions while an exception retry is pending", async () => {
