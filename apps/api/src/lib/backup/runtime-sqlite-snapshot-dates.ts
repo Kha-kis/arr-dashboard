@@ -4,6 +4,7 @@ import {
 	encodeCanonicalSqliteDateForStartup,
 	SqliteDateCompatibilityError,
 } from "../sqlite-datetime.js";
+import { isSqliteForeignKeyValidationTrigger } from "./runtime-sqlite-foreign-keys.js";
 
 const stateTable = "ArrSnapshotDateValidation";
 const dirtyTable = "ArrSnapshotDateDirty";
@@ -49,6 +50,22 @@ const triggerSql = [
 	`CREATE TRIGGER "${triggerNames[1]}" AFTER UPDATE OF id,capturedAt ON "${snapshotTable}" BEGIN ${triggerGuard}${removeOldKey}${recordNewKey} END`,
 	`CREATE TRIGGER "${triggerNames[2]}" AFTER DELETE ON "${snapshotTable}" BEGIN ${triggerGuard}${removeOldKey} END`,
 ] as const;
+
+/** Other integrity protocols may recognize only these exact date-tracking definitions. */
+export function isSqliteSnapshotDateValidationTrigger(object: {
+	type: string;
+	name: string;
+	tbl_name: string;
+	sql: string | null;
+}): boolean {
+	return triggerNames.some(
+		(name, index) =>
+			object.type === "trigger" &&
+			object.name === name &&
+			object.tbl_name === snapshotTable &&
+			object.sql === triggerSql[index],
+	);
+}
 
 type State = {
 	id: number;
@@ -164,11 +181,13 @@ function readState(main: Database.Database): ReadState | undefined {
 	if (hash(sort(objects)) !== hash(expected)) refuse();
 	const triggers = main
 		.prepare(
-			"SELECT name FROM main.sqlite_schema WHERE type='trigger' AND tbl_name=? ORDER BY name",
+			"SELECT type,name,tbl_name,sql FROM main.sqlite_schema WHERE type='trigger' AND tbl_name=? ORDER BY name",
 		)
-		.pluck()
-		.all(snapshotTable);
-	if (hash(triggers) !== hash([...triggerNames].sort())) refuse();
+		.all(snapshotTable) as { type: string; name: string; tbl_name: string; sql: string | null }[];
+	const dateTriggers = triggers
+		.filter((object) => !isSqliteForeignKeyValidationTrigger(object))
+		.map((object) => object.name);
+	if (hash(dateTriggers) !== hash([...triggerNames].sort())) refuse();
 	const rows = main.prepare(`SELECT * FROM main."${stateTable}" LIMIT 2`).all() as State[];
 	const state = rows[0];
 	if (
@@ -259,8 +278,16 @@ export function checkpointTrackedSnapshotDates(
 		// caller's full date scan. Exact object SQL is verified on every reuse.
 		if (
 			main
-				.prepare("SELECT 1 FROM main.sqlite_schema WHERE type='trigger' AND tbl_name=? LIMIT 1")
-				.get(snapshotTable)
+				.prepare(
+					"SELECT type,name,tbl_name,sql FROM main.sqlite_schema WHERE type='trigger' AND tbl_name=?",
+				)
+				.all(snapshotTable)
+				.some(
+					(object) =>
+						!isSqliteForeignKeyValidationTrigger(
+							object as { type: string; name: string; tbl_name: string; sql: string | null },
+						),
+				)
 		)
 			return;
 		const schemaDigest = snapshotSchema(main);

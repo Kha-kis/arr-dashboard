@@ -33,6 +33,8 @@ import {
 	type RuntimeSchemaStartupSettings,
 } from "./runtime-schema-startup.js";
 import { timeSqliteStartupPhase } from "./runtime-schema-timing.js";
+import { validateTrackedSqliteForeignKeys } from "./runtime-sqlite-foreign-keys.js";
+import { isSqliteSnapshotDateValidationTrigger } from "./runtime-sqlite-snapshot-dates.js";
 import { applySqliteStartupCacheHint } from "./runtime-sqlite-startup-cache.js";
 
 export class SqliteRestoreRuntimeEnrollmentError extends Error {
@@ -497,14 +499,16 @@ export async function provisionSqliteRestoreRuntimeSchema<Plan>(
 		if (
 			writer.pragma("foreign_keys", { simple: true }) !== 1 ||
 			writer.pragma("synchronous", { simple: true }) !== 2 ||
-			writer.pragma("journal_mode", { simple: true }) !== mode ||
-			(
-				timeSqliteStartupPhase("foreign-key-check", () =>
-					writer.pragma("foreign_key_check"),
-				) as unknown[]
-			).length !== 0
+			writer.pragma("journal_mode", { simple: true }) !== mode
 		)
 			throw new RuntimeSchemaStartupError();
+		timeSqliteStartupPhase("foreign-key-check", () =>
+			validateTrackedSqliteForeignKeys(
+				writer,
+				COLUMNS.map((field) => binding[field]),
+				isSqliteSnapshotDateValidationTrigger,
+			),
+		);
 		commitStarted = true;
 		timeSqliteStartupPhase("commit", () => writer.exec("COMMIT"));
 		commitAcknowledged = true;

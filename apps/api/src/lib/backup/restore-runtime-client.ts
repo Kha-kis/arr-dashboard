@@ -691,7 +691,25 @@ function createGuardedPrismaClient(
 				let bindingRecord: Record<string, unknown> | undefined;
 				let isolatedReadTurnStartedAt = Number.NEGATIVE_INFINITY;
 				let isolatedReadsInTurn = 0;
+				const assertForeignKeys = () => {
+					if (closing || disposePromise || !native?.open) throw new RestoreRuntimeAdmissionError();
+					try {
+						const enabled = native.pragma("foreign_keys", { simple: true });
+						const deferred = native.pragma("defer_foreign_keys", { simple: true });
+						if (
+							Reflect.get(actual, "client") !== native ||
+							native.name !== context.databaseUrl.slice(5) ||
+							(enabled !== 1 && enabled !== 1n) ||
+							(deferred !== 0 && deferred !== 0n)
+						)
+							throw new RestoreRuntimeAdmissionError();
+					} catch {
+						context.unavailable();
+						throw new RestoreRuntimeAdmissionError();
+					}
+				};
 				const assertNative = (inTransaction: boolean, generation: number) => {
+					assertForeignKeys();
 					if (!yielding) return;
 					if (
 						closing ||
@@ -748,6 +766,7 @@ function createGuardedPrismaClient(
 					const finishGuardTiming = startRuntimeReadTiming("guard");
 					try {
 						await ownershipGuard(loan, isolatedSelect);
+						assertForeignKeys();
 						const journal = await actual.queryRaw({
 							sql: `SELECT ${JOURNAL_COLUMNS.join(", ")} FROM RestoreRuntimeControl LIMIT 2`,
 							args: [],
@@ -788,9 +807,18 @@ function createGuardedPrismaClient(
 					isClosedTransactionError?: (error: unknown) => boolean,
 					busyRetryMs?: number,
 				): Promise<T> => {
+					const invokeChecked = async (copied: Query) => {
+						try {
+							return await measureRuntimeReadTiming("statement-call", () => invoke(copied));
+						} finally {
+							// Recoverable failure cleanup can already have closed this
+							// handle. Preserve that failure; a dead handle cannot write.
+							if (!closing && !disposePromise && native?.open) assertForeignKeys();
+						}
+					};
 					if (!statementFences) {
 						assert();
-						return measureRuntimeReadTiming("statement-call", () => invoke(query));
+						return invokeChecked(query);
 					}
 					const copied = { ...query, args: [...query.args], argTypes: [...query.argTypes] };
 					statementFences.set(copied, {
@@ -804,7 +832,7 @@ function createGuardedPrismaClient(
 					});
 					try {
 						assert();
-						return await measureRuntimeReadTiming("statement-call", () => invoke(copied));
+						return await invokeChecked(copied);
 					} finally {
 						statementFences.delete(copied);
 					}

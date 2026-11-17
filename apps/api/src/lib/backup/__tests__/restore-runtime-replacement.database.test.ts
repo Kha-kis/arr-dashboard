@@ -1,11 +1,11 @@
-import type { BackupData, BackupFormatVersion } from "@arr/shared";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { execFile, fork } from "node:child_process";
 import { chmodSync, lstatSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { Worker } from "node:worker_threads";
+import type { BackupData, BackupFormatVersion } from "@arr/shared";
+import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Encryptor } from "../../auth/encryption.js";
@@ -24,15 +24,15 @@ import {
 import { publishPreparedRestore } from "../restore-runtime-replacement.js";
 import { writeRestoreRuntimeCommit } from "../restore-runtime-repository.js";
 import {
-	preparePublicationCredentialFixture,
-	publicationCredentialColumns,
-} from "./fixtures/restore-runtime-replacement-actor.js";
-import {
 	acquireSqliteRestoreOperationLock,
 	acquireSqliteRestoreRuntimeOwnership,
 } from "../restore-runtime-sqlite.js";
 import { parseSqliteRestoreRuntimeRecord } from "../restore-runtime-sqlite-enrollment.js";
 import { classifyRestoreRuntimeRecovery } from "../restore-runtime-state.js";
+import {
+	preparePublicationCredentialFixture,
+	publicationCredentialColumns,
+} from "./fixtures/restore-runtime-replacement-actor.js";
 
 const sourceKey = "53".repeat(32);
 const destination = new Encryptor("64".repeat(32));
@@ -1325,6 +1325,38 @@ describe("real SQLite replacement reservation and terminal drain", () => {
 		expect(record()).toMatchObject({ phase: "running", activeRestoreId: null });
 		expect(main.prepare("SELECT * FROM Marker").all()).toEqual([{ value: 7 }]);
 	}
+	it("revokes a real replacement writer that disables foreign-key enforcement", async () => {
+		main.exec(`CREATE TABLE ReplacementFkParent(id INTEGER PRIMARY KEY);
+			CREATE TABLE ReplacementFkChild(id INTEGER PRIMARY KEY,parentId INTEGER REFERENCES ReplacementFkParent(id));
+			INSERT INTO ReplacementFkParent VALUES(1);
+			INSERT INTO ReplacementFkChild VALUES(1,1);`);
+		const prepared = await prepare();
+		let disabledRejected = false;
+		let orphanRejected = false;
+		try {
+			await runtimeOperations.withRestoreRuntimeReplacement(runtime, prepared, async (scope) => {
+				const writer = createRuntimeReplacementPrismaClient(scope);
+				await writer.prisma.$connect();
+				try {
+					await writer.prisma.$executeRawUnsafe("PRAGMA foreign_keys=OFF");
+				} catch {
+					disabledRejected = true;
+				}
+				try {
+					await writer.prisma.$executeRawUnsafe("INSERT INTO ReplacementFkChild VALUES(2,999)");
+				} catch {
+					orphanRejected = true;
+				}
+			});
+		} catch {
+			// An invalid writer also fences the enclosing replacement reservation.
+		}
+		expect(main.prepare("SELECT * FROM ReplacementFkChild ORDER BY id").all()).toEqual([
+			{ id: 1, parentId: 1 },
+		]);
+		expect(disabledRejected).toBe(true);
+		expect(orphanRejected).toBe(true);
+	});
 	it("rejects forged preparation before closing healthy ordinary admission", async () => {
 		let called = false;
 		await expect(async () =>
