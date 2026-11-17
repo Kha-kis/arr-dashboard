@@ -498,6 +498,11 @@ export function createRuntimePrismaClient(
 				lane.client ??= createGuardedPrismaClient(
 					{ ...context, registerClose: () => () => undefined },
 					runtime,
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					{ isolatedReadLane: true },
 				);
 				return await operation(lane.client.prisma);
 			} finally {
@@ -569,6 +574,7 @@ function createGuardedPrismaClient(
 	sqliteTimeout?: number,
 	sqliteTransactionIntent?: "write",
 	retainTransaction?: () => () => void,
+	options?: { isolatedReadLane?: boolean },
 ): Readonly<{ prisma: PrismaClientInstance; close(): Promise<void> }> {
 	const replacement = "restoreId" in context ? context : undefined;
 	if (/^postgres(ql)?:\/\//i.test(context.databaseUrl)) {
@@ -683,6 +689,8 @@ function createGuardedPrismaClient(
 				}
 				const actual = driver;
 				let bindingRecord: Record<string, unknown> | undefined;
+				let isolatedReadTurnStartedAt = Number.NEGATIVE_INFINITY;
+				let isolatedReadsInTurn = 0;
 				const assertNative = (inTransaction: boolean, generation: number) => {
 					if (!yielding) return;
 					if (
@@ -698,11 +706,26 @@ function createGuardedPrismaClient(
 					if (!bindingRecord) throw new RestoreRuntimeAdmissionError();
 					context.validateSqliteBinding(bindingRecord);
 				};
-				const ownershipGuard = async (loan?: () => void) => {
+				const ownershipGuard = async (loan?: () => void, isolatedSelect = false) => {
 					const finishOwnerTiming = startRuntimeReadTiming("owner-proof");
 					try {
 						// Service pending I/O before proving authority, never after the final native fence.
-						if (yielding) await measureRuntimeReadTiming("yield", () => setImmediate());
+						if (yielding) {
+							if (!isolatedSelect) {
+								await measureRuntimeReadTiming("yield", () => setImmediate());
+							} else {
+								// Keep a short burst bounded even when every native call returns immediately.
+								if (
+									isolatedReadsInTurn >= 4 ||
+									performance.now() - isolatedReadTurnStartedAt >= 4
+								) {
+									await measureRuntimeReadTiming("yield", () => setImmediate());
+									isolatedReadTurnStartedAt = performance.now();
+									isolatedReadsInTurn = 0;
+								}
+								isolatedReadsInTurn++;
+							}
+						}
 						context.assertTicket();
 						loan?.();
 						await context.assertOwned();
@@ -721,10 +744,10 @@ function createGuardedPrismaClient(
 						finishOwnerTiming();
 					}
 				};
-				const guard = async (loan?: () => void, sql?: string) => {
+				const guard = async (loan?: () => void, sql?: string, isolatedSelect = false) => {
 					const finishGuardTiming = startRuntimeReadTiming("guard");
 					try {
-						await ownershipGuard(loan);
+						await ownershipGuard(loan, isolatedSelect);
 						const journal = await actual.queryRaw({
 							sql: `SELECT ${JOURNAL_COLUMNS.join(", ")} FROM RestoreRuntimeControl LIMIT 2`,
 							args: [],
@@ -856,6 +879,10 @@ function createGuardedPrismaClient(
 						if (property === "queryRaw" || property === "executeRaw")
 							return async (query: Query) => {
 								const loan = context.captureTicket();
+								const isolatedSelect =
+									options?.isolatedReadLane === true &&
+									property === "queryRaw" &&
+									/^\s*SELECT\b/i.test(query.sql);
 								let generation = transactionGeneration;
 								if (yielding) {
 									const deadline = performance.now() + 5000;
@@ -870,7 +897,7 @@ function createGuardedPrismaClient(
 											continue;
 										}
 										generation = transactionGeneration;
-										await guard(loan, query.sql);
+										await guard(loan, query.sql, isolatedSelect);
 										if (performance.now() >= deadline) throw new RestoreRuntimeAdmissionError();
 										// An unrelated BEGIN can race the awaited guard. Wait before
 										// first SQL rather than borrowing its transaction or losing work.

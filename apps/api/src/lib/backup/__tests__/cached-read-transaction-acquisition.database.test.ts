@@ -1,5 +1,5 @@
 import Fastify from "fastify";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerFetchRoutes } from "../../../routes/library/fetch-routes.js";
 import {
 	closeScopedWriteFixtures,
@@ -14,6 +14,54 @@ import { type RuntimeReadTiming, withRuntimeReadTiming } from "../restore-runtim
 afterEach(closeScopedWriteFixtures);
 
 describe("ordinary cached reads during publication", { timeout: 20_000 }, () => {
+	it("bounds scheduling turns for fast isolated SELECTs and yields again after the time budget", async () => {
+		const f = await createScopedWriteFixture();
+		const read = (client: typeof f.client.prisma) =>
+			client.plexCache.findUnique({
+				where: { id: "synthetic-cache", instance: { userId: "synthetic-user" } },
+				select: { watchCount: true },
+			});
+		const observe = async (operation: () => Promise<void>) => {
+			let timing!: RuntimeReadTiming;
+			await withRuntimeReadTiming(operation, (value) => {
+				timing = value;
+			});
+			return timing;
+		};
+		await f.runtime.runOperation(async () => {
+			await withIsolatedRuntimePrismaReadClient(f.client.prisma, read);
+			await read(f.client.prisma);
+			let now = performance.now() + 100;
+			const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+			try {
+				const isolated = await observe(() =>
+					withIsolatedRuntimePrismaReadClient(f.client.prisma, async (client) => {
+						for (let i = 0; i < 9; i++) expect(await read(client)).toEqual({ watchCount: 0 });
+					}),
+				);
+				expect(isolated.guard.count).toBe(9);
+				expect(isolated["owner-proof"].count).toBe(9);
+				expect(isolated.yield.count).toBe(3);
+				now += 10;
+				const elapsed = await observe(() =>
+					withIsolatedRuntimePrismaReadClient(f.client.prisma, async (client) => {
+						expect(await read(client)).toEqual({ watchCount: 0 });
+					}),
+				);
+				expect(elapsed.yield.count).toBe(1);
+
+				const ordinary = await observe(async () => {
+					for (let i = 0; i < 3; i++)
+						expect(await read(f.client.prisma)).toEqual({ watchCount: 0 });
+				});
+				expect(ordinary.yield.count).toBe(3);
+			} finally {
+				clock.mockRestore();
+			}
+		});
+		expect(f.losses).toEqual([]);
+	});
+
 	it("measures real guarded reads without changing data, tickets or closure", async () => {
 		const f = await createScopedWriteFixture();
 		let stages!: RuntimeReadTiming;
