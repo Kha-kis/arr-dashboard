@@ -49,8 +49,15 @@ import {
 	recoverAbandonedObservationRuns,
 } from "../../provider-observation/observation-run-repository.js";
 import type { EpisodeRefreshSchedulerBridge } from "../../services/episode-refresh-scheduler-bridge.js";
-import { reconcileInterruptedProviderCacheRefreshAttempts } from "../../services/provider-cache-status.js";
-import { withGuardedProviderPublication } from "../../services/provider-identity-guard.js";
+import {
+	claimProviderCacheRefreshAttempt,
+	type PlexCacheRefreshAttempt,
+	reconcileInterruptedProviderCacheRefreshAttempts,
+} from "../../services/provider-cache-status.js";
+import {
+	createProviderPublicationAuthority,
+	withGuardedProviderPublication,
+} from "../../services/provider-identity-guard.js";
 import { PlexAuthorityService } from "../plex-authority-service.js";
 import { PlexClient } from "../plex-client.js";
 import { planPlexEpisodeRefresh } from "../plex-episode-refresh-plan.js";
@@ -66,6 +73,7 @@ import { createPlexTargetLedgerBinding } from "../plex-generation-target-ledger.
 import {
 	createPlexEpisodeWorkItemRunner,
 	plexEpisodeAttemptForPublicationRefusal,
+	type PlexEpisodeWorkDiagnostics,
 } from "../plex-refresh-orchestration.js";
 import { plexConnectionFingerprint } from "../service-instance-fingerprint.js";
 
@@ -638,6 +646,164 @@ afterAll(() => {
 });
 
 describe("plex episode refresh repository", { timeout: 30_000 }, () => {
+	it.each([
+		{ ownership: "fresh", stage: "unit-claim", proven: true, handoff: true },
+		{ ownership: "preclaimed", stage: "unit-claim", proven: true, handoff: true },
+		{ ownership: "borrowed", stage: "unit-claim", proven: true, handoff: false },
+		{ ownership: "fresh", stage: "unit-claim", proven: false, handoff: false },
+		{ ownership: "fresh", stage: "attempt-claim", proven: true, handoff: false },
+	] as const)(
+		"bounds Plex claim refusal handoff ($ownership, $stage, proven=$proven)",
+		async ({ ownership, stage, proven, handoff }) => {
+			const prisma = await database();
+			const { run } = await completedFinalizerFixture(prisma);
+			await prisma.plexEpisodeObservationStage.deleteMany({ where: { runId: run.id } });
+			await prisma.providerObservationUnit.updateMany({
+				where: { runId: run.id },
+				data: { state: "pending", completedAt: null, scopePayload: '{"ordinal":0}' },
+			});
+			await prisma.providerObservationRun.update({
+				where: { id: run.id },
+				data: { completedUnits: 0, completedWork: 0 },
+			});
+			const where = { instanceId_cacheType: { instanceId: "plex-1", cacheType: "plex_episode" } };
+			await prisma.cacheRefreshStatus.update({
+				where,
+				data: { lastAttemptResult: "success", lastAttemptErrorMessage: null },
+			});
+			const readStatus = () => prisma.cacheRefreshStatus.findUniqueOrThrow({ where });
+			const readUnits = () => prisma.providerObservationUnit.findMany({ where: { runId: run.id } });
+			const prior = await readStatus();
+			const pending = await readUnits();
+			expect(pending).toEqual([
+				expect.objectContaining({ state: "pending", attemptCount: 0, claimToken: null }),
+			]);
+			const instance = await prisma.serviceInstance.findUniqueOrThrow({ where: { id: "plex-1" } });
+			const runtime = await openRestoreRuntime({
+				databaseUrl: `file:${join(databases.at(-1)!.directory, "test.db")}`,
+			});
+			try {
+				await runtime.bindDestination("plex-unit-claim-repro");
+				await runtime.activate();
+				const { prisma: guarded } = createRuntimePrismaClient(runtime);
+				let originalAttempt: PlexCacheRefreshAttempt | undefined;
+				if (ownership !== "fresh") {
+					const claim = await runtime.runOperation(() =>
+						claimProviderCacheRefreshAttempt(
+							guarded,
+							"plex_episode",
+							createProviderPublicationAuthority(instance),
+						),
+					);
+					if (claim.status !== "acquired") throw new Error("Expected a fresh fixture claim");
+					originalAttempt = claim.attempt;
+				}
+				const readParents = vi.fn().mockResolvedValue({
+					available: true,
+					generationId: "parent-1",
+					connectionGeneration: 2,
+					identityGeneration: 3,
+					targets: [
+						{
+							instanceId: "plex-1",
+							tmdbId: 42,
+							sectionId: "shows",
+							sectionUuid: "shows-uuid",
+							mediaType: "series",
+							tvdbId: 99,
+							ratingKey: "show-1",
+						},
+					],
+				});
+				const createClient = vi.fn(() => {
+					throw new Error("Unexpected provider read");
+				});
+				const runner = createPlexEpisodeWorkItemRunner({
+					createParentAuthority: () => ({ readPositiveEpisodeParents: readParents }),
+					createClient,
+				});
+				const diagnostics: PlexEpisodeWorkDiagnostics = { stage: "not-started" };
+				const context = {
+					prisma: guarded,
+					instance,
+					diagnostics,
+					encryptor: { decrypt: () => "synthetic" },
+					log: { error: () => undefined } as never,
+				};
+				const lookalike = new RestoreRuntimeAdmissionError();
+				const now = performance.now.bind(performance);
+				let publicationClockReads = 0;
+				const clock = vi.spyOn(performance, "now").mockImplementation(() => {
+					if (
+						diagnostics.stage === stage &&
+						/\bat (?:Object\.)?publicationTransaction \(/.test(new Error().stack ?? "") &&
+						++publicationClockReads === 2
+					) {
+						// Expire the real companion lane before native transaction startup.
+						if (proven) return now() + 2_001;
+						throw lookalike;
+					}
+					return now();
+				});
+				let refusal: unknown;
+				try {
+					await runtime.runOperation(() =>
+						runner(context, ownership === "preclaimed" ? originalAttempt : undefined),
+					);
+				} catch (error) {
+					refusal = error;
+				} finally {
+					clock.mockRestore();
+				}
+				expect(publicationClockReads).toBe(2);
+				expect(diagnostics.stage).toBe(stage);
+				expect(refusal).toBeInstanceOf(RestoreRuntimeAdmissionError);
+				if (!proven) expect(refusal).toBe(lookalike);
+				expect(isRetryableSqlitePublicationStartRefusal(refusal)).toBe(proven);
+				expect(readParents).toHaveBeenCalledTimes(stage === "unit-claim" ? 1 : 0);
+				expect(createClient).not.toHaveBeenCalled();
+				expect(await readUnits()).toEqual(pending);
+
+				const status = await readStatus();
+				if (stage === "attempt-claim") expect(status).toEqual(prior);
+				else {
+					expect(status.lastAttemptResult).toMatch(/^in_progress:/);
+					expect(status.lastAttemptAt!.getTime()).toBeGreaterThan(prior.lastAttemptAt!.getTime());
+					if (originalAttempt) expect(status.lastAttemptResult).toBe(originalAttempt.resultMarker);
+					expect(status).toEqual({
+						...prior,
+						lastAttemptAt: status.lastAttemptAt,
+						lastAttemptResult: status.lastAttemptResult,
+					});
+				}
+				const attempt = plexEpisodeAttemptForPublicationRefusal(refusal);
+				if (!handoff) {
+					expect(attempt).toBeUndefined();
+					return;
+				}
+				expect(attempt).toEqual({
+					attemptedAt: status.lastAttemptAt,
+					resultMarker: status.lastAttemptResult,
+				});
+				if (originalAttempt) expect(attempt).toBe(originalAttempt);
+
+				readParents.mockResolvedValue({ available: false });
+				await expect(runtime.runOperation(() => runner(context, attempt))).resolves.toMatchObject({
+					retryCategory: "parent-refresh-unavailable",
+				});
+				expect(await readStatus()).toMatchObject({
+					lastAttemptAt: status.lastAttemptAt,
+					lastAttemptResult: "error",
+					generationId: prior.generationId,
+					lastResult: prior.lastResult,
+				});
+				expect(createClient).not.toHaveBeenCalled();
+			} finally {
+				await runtime.close();
+			}
+		},
+	);
+
 	it.each([1, 2])("bounds proven unentered SQLite publication refusals (%s)", async (refusals) => {
 		const prisma = await database();
 		const seed = await completedFinalizerFixture(prisma);

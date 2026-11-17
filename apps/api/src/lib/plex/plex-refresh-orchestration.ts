@@ -737,7 +737,20 @@ export function createPlexEpisodeWorkItemRunner(
 			}
 		};
 		stage("unit-claim");
-		const claim = await claimObservationUnit(context.prisma, { runId: run.id, now: new Date() });
+		const claim = await claimObservationUnit(context.prisma, {
+			runId: run.id,
+			now: new Date(),
+		}).catch((error: unknown) => {
+			if (
+				ownsAttempt &&
+				error instanceof Error &&
+				isRetryableSqlitePublicationStartRefusal(error)
+			) {
+				// Preserve the durable outer attempt for the scheduler's existing backoff.
+				publicationRefusalAttempts.set(error, attempt);
+			}
+			throw error;
+		});
 		if (claim) cancellation.claim = claim;
 		checkEpisodeCancellation(context.signal);
 		if (!claim) {
