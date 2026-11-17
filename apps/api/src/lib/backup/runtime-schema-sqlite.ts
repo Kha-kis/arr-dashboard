@@ -458,6 +458,7 @@ async function synchronizeSqliteRuntimeSchemaPhases(
 							// the date receipt matches, and recheck values after DDL.
 							useTableOrderForCurrentReceipt: !oidc,
 							reuseCurrentReceiptScan: currentSchema,
+							trackSnapshotDates: true,
 						}),
 					),
 				};

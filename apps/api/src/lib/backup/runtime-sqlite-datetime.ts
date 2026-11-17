@@ -1,7 +1,15 @@
 import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
-import { encodeCanonicalSqliteDate, SqliteDateCompatibilityError } from "../sqlite-datetime.js";
+import {
+	encodeCanonicalSqliteDateForStartup as canonical,
+	SqliteDateCompatibilityError,
+} from "../sqlite-datetime.js";
 import type { RuntimeSchemaRegistry } from "./runtime-schema-catalog.js";
+import {
+	checkpointTrackedSnapshotDates,
+	planTrackedSnapshotDates,
+	type SqliteSnapshotDatePlan,
+} from "./runtime-sqlite-snapshot-dates.js";
 
 export const SQLITE_DATE_FORMAT_RECEIPT_SQL = `CREATE TABLE "ArrRuntimeDataFormatReceipt" (
 	"id" INTEGER NOT NULL PRIMARY KEY,
@@ -26,6 +34,7 @@ type Snapshot = {
 	changes: number;
 	fields: readonly string[];
 	rowidOrder: boolean;
+	tracked?: SqliteSnapshotDatePlan;
 };
 type Receipt = {
 	id: number;
@@ -40,6 +49,7 @@ type Sealed = {
 	snapshots: Map<string, Snapshot>;
 	receipt: Receipt | null;
 	currentScanStamp?: string;
+	trackSnapshotDates: boolean;
 	consumed: boolean;
 };
 type Column = {
@@ -140,12 +150,6 @@ function readCurrentScanStamp(main: Database.Database): string {
 	if (!values.every((value) => Number.isSafeInteger(value) && Number(value) >= 0)) refuse();
 	return hash(values);
 }
-function canonical(value: unknown, nullable: boolean) {
-	const result = encodeCanonicalSqliteDate(value, nullable);
-	if (result !== null && !/^\d{4}-/.test(result)) refuse();
-	return result;
-}
-
 /** Reuse pure encodings only; each table/pass still reads and hashes every row. */
 function canonicalDateReader() {
 	const required = new Map<string | number, string | null>();
@@ -494,6 +498,8 @@ export function planSqliteRuntimeDates(
 		useTableOrderForCurrentReceipt?: boolean;
 		/** Only for the startup path with an established schema and no planned DDL. */
 		reuseCurrentReceiptScan?: boolean;
+		/** Native startup owns installation and atomic checkpoint of snapshot evidence. */
+		trackSnapshotDates?: boolean;
 	} = {},
 ): SqliteRuntimeDatePlan {
 	try {
@@ -535,7 +541,22 @@ export function planSqliteRuntimeDates(
 			const fields = selectedFields(main, table, false);
 			const rowidOrder =
 				rowidTables?.has(table.name) === true && hasUnshadowedRowid(main, table.name);
-			const s = scan(main, table, fields, rowidOrder);
+			const tracked =
+				options.trackSnapshotDates &&
+				currentScanStamp !== undefined &&
+				table.name === "session_snapshots"
+					? planTrackedSnapshotDates(main, dateColumnsDigest)
+					: undefined;
+			const s: Snapshot = tracked
+				? {
+						digest: "",
+						rows: tracked.rowsInspected,
+						changes: 0,
+						fields,
+						rowidOrder,
+						tracked,
+					}
+				: scan(main, table, fields, rowidOrder);
 			snapshots.set(table.name, s);
 			rowsInspected += s.rows;
 			normalizedValues += s.changes;
@@ -554,7 +575,15 @@ export function planSqliteRuntimeDates(
 			rowsInspected,
 			normalizedValues,
 		});
-		plans.set(plan, { main, targets, snapshots, receipt, currentScanStamp, consumed: false });
+		plans.set(plan, {
+			main,
+			targets,
+			snapshots,
+			receipt,
+			currentScanStamp,
+			trackSnapshotDates: options.trackSnapshotDates === true,
+			consumed: false,
+		});
 		return plan;
 	} catch (error) {
 		if (error instanceof SqliteDateCompatibilityError) throw error;
@@ -592,14 +621,20 @@ export async function applySqliteRuntimeDates(
 				// Preserve SQLite's compile-time checks for date updates and their triggers.
 				prepareDateUpdate(main, table, fields);
 			}
-			// The first scan read every value in this writer transaction. Reuse it
-			// only while there is no schema, connection-local or external data change.
+			// The full scans and tracked snapshot rows belong to this writer
+			// transaction. Reuse them only while its data and schema stay stable.
 			await assertOwned();
 			if (
 				readCurrentScanStamp(main) !== sealed.currentScanStamp ||
 				hash(readReceipt(main, priorDigest)) !== hash(sealed.receipt)
 			)
 				refuse();
+			if (sealed.trackSnapshotDates)
+				checkpointTrackedSnapshotDates(
+					main,
+					plan.dateColumnsDigest,
+					sealed.snapshots.get("session_snapshots")?.tracked,
+				);
 			return;
 		}
 		const version = () =>
@@ -709,6 +744,7 @@ export async function applySqliteRuntimeDates(
 			)
 				refuse();
 		}
+		if (sealed.trackSnapshotDates) checkpointTrackedSnapshotDates(main, plan.dateColumnsDigest);
 	} catch (error) {
 		if (error instanceof SqliteDateCompatibilityError) throw error;
 		refuse();

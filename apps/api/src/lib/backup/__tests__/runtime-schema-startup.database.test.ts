@@ -165,7 +165,12 @@ describe.skipIf(process.platform !== "linux")("native SQLite schema startup writ
 	};
 	const synchronize = () => sqlite.synchronizeSqliteRuntimeSchema(url);
 	const rows = (
-		table: "RestoreRuntimeControl" | "SqliteRestoreStorageBinding" | "ArrSchemaMigrationReceipt",
+		table:
+			| "RestoreRuntimeControl"
+			| "SqliteRestoreStorageBinding"
+			| "ArrSchemaMigrationReceipt"
+			| "ArrSnapshotDateValidation"
+			| "ArrSnapshotDateDirty",
 	) => database((main) => main.prepare(`SELECT * FROM "${table}" ORDER BY id`).all());
 	const objects = () =>
 		database(
@@ -307,7 +312,17 @@ describe.skipIf(process.platform !== "linux")("native SQLite schema startup writ
 							.get() as { n: number }
 					).n,
 			),
-		).toBe(103);
+		).toBe(105);
+		expect(rows("ArrSnapshotDateValidation")).toEqual([
+			expect.objectContaining({
+				id: 1,
+				protocolVersion: 1,
+				generation: 0,
+				dirtyCount: 0,
+				fullScanRequired: 0,
+			}),
+		]);
+		expect(rows("ArrSnapshotDateDirty")).toEqual([]);
 		expect(lstatSync(path).mode & 0o777).toBe(0o600);
 		const coordination = `${path}.arr-restore-runtime`;
 		expect(lstatSync(coordination).mode & 0o777).toBe(0o700);

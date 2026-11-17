@@ -73,3 +73,10 @@ export function encodeCanonicalSqliteDate(value: unknown, nullable: boolean): st
 
 	return new Date(milliseconds).toISOString().replace("Z", "+00:00");
 }
+
+/** The startup storage contract supports four-digit Gregorian years. */
+export function encodeCanonicalSqliteDateForStartup(value: unknown, nullable: boolean) {
+	const result = encodeCanonicalSqliteDate(value, nullable);
+	if (result !== null && !/^\d{4}-/.test(result)) unavailable();
+	return result;
+}
