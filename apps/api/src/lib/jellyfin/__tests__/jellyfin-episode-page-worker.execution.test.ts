@@ -22,6 +22,7 @@ import { createRequire } from "node:module";
 import type { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Worker } from "node:worker_threads";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -469,37 +470,106 @@ describe("real one-page GET worker", () => {
 		await closedConnections();
 	});
 
-	it("returns only a generic failure and no output for private malformed provider data", async () => {
-		const { fixture, joined, trackedWorker, closedConnections } = createPageFixture();
-		const input = await fixture((_req, res) => {
-			res.setHeader("Content-Type", "application/json");
-			res.end(
-				JSON.stringify({
-					StartIndex: 0,
-					TotalRecordCount: 1,
-					Items: [{ Id: "TITLE_SENTINEL", UserData: { Played: "SECRET_SENTINEL" } }],
-				}),
+	it.each([
+		{ scenario: "HTTP error", status: 503, startIndex: 0, played: "SECRET_SENTINEL" },
+		{ scenario: "invalid schema", status: 200, startIndex: 0, played: "SECRET_SENTINEL" },
+		{ scenario: "wrong page offset", status: 200, startIndex: 1, played: true },
+	])(
+		"preserves the provider-response category for $scenario without exposing provider data",
+		async ({ status, startIndex, played }) => {
+			const { fixture, joined, trackedWorker, closedConnections } = createPageFixture();
+			const input = await fixture((_req, res) => {
+				res.writeHead(status, { "Content-Type": "application/json" });
+				res.end(
+					JSON.stringify({
+						StartIndex: startIndex,
+						TotalRecordCount: 1,
+						Items: [
+							{
+								Id: "TITLE_SENTINEL",
+								Name: "Synthetic",
+								Type: "Episode",
+								UserData: { Played: played },
+							},
+						],
+					}),
+				);
+			});
+			const output: string[] = [];
+			const result = await joined(
+				runJellyfinEpisodePageWorker(input, {
+					createWorker: (url, payload) => {
+						const worker = trackedWorker(url, payload);
+						worker.stdout!.on("data", (chunk) => output.push(String(chunk)));
+						worker.stderr!.on("data", (chunk) => output.push(String(chunk)));
+						return worker;
+					},
+				}).catch((error: unknown) => error),
 			);
+			expect(JSON.stringify(result)).not.toContain("SENTINEL");
+			expect(output).toEqual([]);
+			await closedConnections();
+			expect(result).toMatchObject({
+				category: "provider-response",
+				message: "Jellyfin episode page unavailable",
+			});
+		},
+	);
+
+	it("returns the normalized page when the provider delays a valid response body", async () => {
+		const { fixture, joined, trackedWorker, closedConnections } = createPageFixture();
+		let acceptBody!: (response: ServerResponse) => void;
+		const body = new Promise<ServerResponse>((resolve) => {
+			acceptBody = resolve;
 		});
-		const output: string[] = [];
-		const result = await joined(
-			runJellyfinEpisodePageWorker(input, {
-				createWorker: (url, payload) => {
-					const worker = trackedWorker(url, payload);
-					worker.stdout!.on("data", (chunk) => output.push(String(chunk)));
-					worker.stderr!.on("data", (chunk) => output.push(String(chunk)));
-					return worker;
-				},
-			}).catch((error: unknown) => error),
-		);
-		expect(result).toMatchObject({
-			category: "provider-unavailable",
-			message: "Jellyfin episode page unavailable",
+		const input = await fixture((_req, res) => {
+			res.writeHead(200, { "Content-Type": "application/json" });
+			res.write('{"StartIndex":0,"TotalRecordCount":1,"Items":[');
+			acceptBody(res);
 		});
-		expect(JSON.stringify(result)).not.toContain("SENTINEL");
-		expect(output).toEqual([]);
+		const pending = joined(runJellyfinEpisodePageWorker(input, { createWorker: trackedWorker }));
+		const response = await Promise.race([
+			body,
+			pending.then(() => {
+				throw new Error("Synthetic page settled before the provider request");
+			}),
+		]);
+		await delay(75);
+		response.end('{"Id":"excluded","Type":"Episode","UserData":{"Played":true}}]}');
+		await expect(pending).resolves.toEqual({
+			startIndex: 0,
+			totalRecordCount: 1,
+			items: [{ id: "excluded", type: "Episode", excludedReason: "missing-episode-metadata" }],
+		});
 		await closedConnections();
 	});
+
+	it.each(["creation", "bootstrap"] as const)(
+		"preserves a local worker %s failure without a provider request",
+		async (phase) => {
+			const { fixture, joined, trackedWorker, workers } = createPageFixture();
+			let requests = 0;
+			const input = await fixture((_req, res) => {
+				requests++;
+				res.end();
+			});
+			const result = await joined(
+				runJellyfinEpisodePageWorker(input, {
+					createWorker: (_url, payload) => {
+						if (phase === "creation") throw new Error("SECRET_SENTINEL");
+						return trackedWorker(
+							new URL("./fixtures/missing-page-worker.ts", import.meta.url),
+							payload,
+						);
+					},
+				}).catch((error: unknown) => error),
+			);
+			expect(requests).toBe(0);
+			expect(workers.size).toBe(0);
+			expect(JSON.stringify(result)).not.toContain("SENTINEL");
+			expect(result).toMatchObject({ category: "worker-failed" });
+		},
+	);
 
 	// Catches reimplementing/weakening the existing client normalization.
 	it.each([false, true])(
@@ -606,7 +676,7 @@ describe("real one-page GET worker", () => {
 	);
 
 	it.each(["headers", "body"] as const)(
-		"joins the real client after stalled %s and closes its server socket before retry",
+		"preserves the provider-timeout category after stalled %s and closes its socket before retry",
 		async (stall) => {
 			const { fixture, joined, trackedWorker, closedConnections } = createPageFixture();
 			let requests = 0;
@@ -627,7 +697,6 @@ describe("real one-page GET worker", () => {
 					timeoutMs: 5000,
 				}).catch((error: unknown) => error),
 			);
-			expect(failure).toMatchObject({ category: "provider-unavailable" });
 			expect(JSON.stringify(failure)).not.toContain("SENTINEL");
 			expect(requests).toBe(1);
 			await closedConnections();
@@ -636,6 +705,7 @@ describe("real one-page GET worker", () => {
 			).toEqual({ startIndex: 0, totalRecordCount: 0, items: [] });
 			expect(requests).toBe(2);
 			await closedConnections();
+			expect(failure).toMatchObject({ category: "provider-timeout" });
 		},
 	);
 

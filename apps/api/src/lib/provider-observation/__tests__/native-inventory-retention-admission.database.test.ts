@@ -14,10 +14,22 @@ import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import Database from "better-sqlite3";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { runNativeInventoryRetentionTick } from "../../../plugins/native-inventory-scheduler.js";
 import { openRestoreRuntime } from "../../backup/restore-runtime-admission.js";
-import { createRuntimePrismaClient } from "../../backup/restore-runtime-client.js";
+import {
+	createRuntimePrismaClient,
+	withIsolatedRuntimePrismaTransaction,
+} from "../../backup/restore-runtime-client.js";
 import type { Prisma, PrismaClient } from "../../prisma.js";
-import { pruneNativeInventoryRetentionSlice } from "../native-inventory-retention.js";
+import {
+	beginNativeInventoryPass,
+	claimDueNativeInventoryRun,
+	commitNativeInventoryPage,
+} from "../native-inventory-job-repository.js";
+import {
+	type NativeInventoryRetentionCursor,
+	pruneNativeInventoryRetentionSlice,
+} from "../native-inventory-retention.js";
 import { nativeInventoryRetentionDiagnosticsFrom } from "../native-inventory-retention-diagnostics.js";
 
 const OLD = new Date(Date.now() - 30 * 86_400_000);
@@ -83,6 +95,7 @@ function nativeBusy() {
 
 async function withFixture(
 	operation: (fixture: {
+		databaseUrl: string;
 		prisma: PrismaClient;
 		writer: Database.Database;
 		seedOld: (id: string) => Promise<void>;
@@ -182,6 +195,7 @@ async function withFixture(
 			await seedOld("old-A");
 			writer = new Database(path, { timeout: 0 });
 			await operation({
+				databaseUrl: `file:${path}`,
 				prisma,
 				writer,
 				seedOld,
@@ -270,7 +284,261 @@ function observeTransactions(
 	return { prisma: proxy, observed };
 }
 
+function retentionForFixture(prisma: PrismaClient, databaseUrl: string) {
+	const errors: unknown[] = [];
+	const completed: Array<{ deletedRows: number; scannedRuns: number }> = [];
+	const state: { cursor: NativeInventoryRetentionCursor | null } = { cursor: null };
+	return {
+		completed,
+		errors,
+		state,
+		tick: () =>
+			runNativeInventoryRetentionTick(
+				{
+					prisma,
+					config: { DATABASE_URL: databaseUrl },
+					log: {
+						info(event: (typeof completed)[number]) {
+							completed.push(event);
+						},
+						error(event: unknown) {
+							errors.push(event);
+						},
+					},
+				} as never,
+				{ retentionState: state },
+			),
+	};
+}
+
+it("recovers the next retention tick after a guarded native inventory page writer holds SQLite", async () => {
+	await withFixture(async ({ databaseUrl, prisma, assertProtected }) => {
+		await prisma.serviceInstance.update({
+			where: { id: "provider" },
+			data: {
+				expectedIdentity: "synthetic-provider",
+				identityKind: "JELLYFIN_SERVER_ID",
+				identityStatus: "VERIFIED",
+			},
+		});
+		const now = new Date();
+		const acquired = await claimDueNativeInventoryRun(prisma, "latest", now);
+		if (acquired.status !== "acquired")
+			throw new Error(`Expected live claim, got ${acquired.status}`);
+		const { claim } = acquired;
+		const scopeKey = "synthetic-scope";
+		await expect(
+			beginNativeInventoryPass(
+				prisma,
+				claim,
+				{
+					catalogIdentity: "synthetic-catalog",
+					domains: [{ domain: "library", scopeKeys: [scopeKey] }],
+				},
+				now,
+			),
+		).resolves.toMatchObject({ status: "recorded" });
+		const pass = await prisma.providerNativeInventoryPass.findFirstOrThrow({
+			where: { runId: "latest" },
+		});
+		const activeCounts = () =>
+			Promise.all([
+				prisma.providerNativeInventoryPageReceipt.count({ where: { passId: pass.id } }),
+				prisma.providerNativeInventoryStageItem.count({ where: { passId: pass.id } }),
+			]);
+		const obsoleteCount = () =>
+			prisma.providerNativeInventoryStageItem.count({
+				where: { passId: "old-A-pass" },
+			});
+		const retention = retentionForFixture(prisma, databaseUrl);
+		const receipt = {
+			domain: "library" as const,
+			scopeKey,
+			pageKey: "0",
+			nextCursor: null,
+			isLast: true,
+			expectedRawCount: 1,
+			rawNativeIds: ["new-page-item"],
+			comparisonKeys: ["movie:new-page-item"],
+		};
+		const rows = [
+			{
+				nativeId: "new-page-item",
+				mediaType: "movie" as const,
+				libraryIds: [scopeKey],
+				parentNativeId: null,
+				seasonNumber: null,
+				episodeNumber: null,
+				title: "Synthetic movie",
+			},
+		];
+		await expect(activeCounts()).resolves.toEqual([0, 0]);
+		await expect(obsoleteCount()).resolves.toBe(1);
+		await assertProtected();
+		// Pause after the real guarded page write and before the writer releases SQLite.
+		const heldWriter = new Proxy(prisma, {
+			get(target, property) {
+				if (property === "$transaction") {
+					return (
+						operation: TransactionOperation,
+						options?: {
+							maxWait?: number;
+							timeout?: number;
+							isolationLevel?: Prisma.TransactionIsolationLevel;
+						},
+					) =>
+						withIsolatedRuntimePrismaTransaction(
+							target,
+							async (tx) => {
+								const result = await operation(tx);
+								await expect(retention.tick()).rejects.toThrow("Native inventory retention failed");
+								return result;
+							},
+							options,
+						);
+				}
+				return Reflect.get(target, property, target);
+			},
+		});
+		await expect(commitNativeInventoryPage(heldWriter, claim, receipt, rows, now)).resolves.toEqual(
+			{
+				status: "recorded",
+			},
+		);
+		expect(retention.errors).toEqual([
+			{
+				category: "native-inventory-retention-failed",
+				failurePhase: "retention",
+				failureCode: "P1008",
+				retentionBoundary: {
+					operation: "transaction-start",
+					transactionEntered: false,
+					nativeCode: "SQLITE_BUSY",
+				},
+			},
+		]);
+		expect(retention.state.cursor).toBeNull();
+		await expect(activeCounts()).resolves.toEqual([1, 1]);
+		await expect(obsoleteCount()).resolves.toBe(1);
+		await assertProtected();
+
+		await retention.tick();
+		await expect(obsoleteCount()).resolves.toBe(0);
+		await expect(activeCounts()).resolves.toEqual([1, 1]);
+		await assertProtected();
+		await expect(
+			prisma.providerNativeInventoryRun.findUnique({ where: { id: claim.runId } }),
+		).resolves.toMatchObject({
+			claimToken: claim.token,
+			leaseUntil: claim.leaseUntil,
+			connectionGeneration: 2,
+			identityGeneration: 3,
+			failureCount: 0,
+		});
+		await expect(
+			commitNativeInventoryPage(prisma, { ...claim, token: "stale" }, receipt, rows, now),
+		).resolves.toEqual({ status: "superseded" });
+		await expect(commitNativeInventoryPage(prisma, claim, receipt, rows, now)).resolves.toEqual({
+			status: "coalesced",
+		});
+	});
+}, 20_000);
+
+it("retires two scaled cohorts with the default scheduler limits", async () => {
+	await withFixture(async ({ databaseUrl, prisma, seedOld, assertProtected }) => {
+		const retention = retentionForFixture(prisma, databaseUrl);
+		const cohortSize = 1_000;
+		const samples = [];
+		for (const runId of ["old-C", "old-D"]) {
+			await seedOld(runId);
+			const passId = `${runId}-pass`;
+			const items = Array.from({ length: cohortSize }, (_, index) => ({
+				passId,
+				domain: "library",
+				nativeId: `cohort-item-${index}`,
+			}));
+			await prisma.providerNativeInventoryStageItem.createMany({
+				data: items.map((item) => ({ ...item, mediaType: "movie", libraryIds: '["scope"]' })),
+			});
+			await prisma.providerNativeInventorySeenItem.createMany({
+				data: items.map((item) => ({ ...item, scopeKey: "scope" })),
+			});
+			const countRows = () =>
+				Promise.all([
+					prisma.providerNativeInventoryStageItem.count({ where: { passId } }),
+					prisma.providerNativeInventorySeenItem.count({ where: { passId } }),
+				]);
+			await expect(countRows()).resolves.toEqual([1_001, 1_000]);
+			const firstReceipt = retention.completed.length;
+			const started = performance.now();
+			for (let tick = 0; tick < 8; tick++) {
+				await retention.tick();
+				if (!(await countRows()).some(Boolean)) break;
+			}
+			await expect(countRows()).resolves.toEqual([0, 0]);
+			await expect(
+				prisma.providerNativeInventoryPass.count({ where: { id: passId } }),
+			).resolves.toBe(0);
+			await assertProtected();
+			const ticks = retention.completed
+				.slice(firstReceipt)
+				.map(({ deletedRows, scannedRuns }) => ({ deletedRows, scannedRuns }));
+			expect(ticks.reduce((sum, tick) => sum + tick.deletedRows, 0)).toBe(
+				runId === "old-C" ? 2_004 : 2_002,
+			);
+			samples.push({
+				cohortRows: 2_001,
+				elapsedMs: Math.round(performance.now() - started),
+				ticks,
+			});
+		}
+		expect(retention.errors).toEqual([]);
+		process.stdout.write(
+			`${JSON.stringify({ category: "synthetic-native-retention-capacity", samples })}\n`,
+		);
+	});
+}, 35_000);
+
 describe("bounded native retention admission retry", () => {
+	it("advances over pass-less attempt metadata without reserving the writer", async () => {
+		await withFixture(async ({ prisma, seedOld, assertProtected }) => {
+			await seedOld("old-0");
+			await prisma.providerNativeInventoryPass.delete({ where: { id: "old-0-pass" } });
+			const metadata = await prisma.providerNativeInventoryRun.findUniqueOrThrow({
+				where: { id: "old-0" },
+			});
+			const observed = observeTransactions(prisma);
+			const first = await pruneNativeInventoryRetentionSlice(observed.prisma, CUTOFF, {
+				scanLimit: 1,
+			});
+			expect(first).toEqual({
+				deletedRows: 0,
+				deletedRuns: 0,
+				scannedRuns: 1,
+				nextCursor: { id: "old-0" },
+				hasMore: true,
+			});
+			const drained = await pruneNativeInventoryRetentionSlice(observed.prisma, CUTOFF, {
+				cursor: first.nextCursor,
+			});
+			expect(drained).toEqual({
+				deletedRows: 2,
+				deletedRuns: 0,
+				scannedRuns: 1,
+				nextCursor: null,
+				hasMore: false,
+			});
+			await assertProtected();
+			await expect(
+				prisma.providerNativeInventoryRun.findUnique({ where: { id: "old-0" } }),
+			).resolves.toEqual(metadata);
+			await expect(
+				prisma.providerNativeInventoryPass.count({ where: { runId: "old-A" } }),
+			).resolves.toBe(0);
+			expect(observed.observed).toEqual({ attempts: 1, callbacks: 1 });
+		});
+	});
+
 	it("retries one settled native-busy admission and revalidates the real transaction", async () => {
 		await withFixture(async ({ prisma, writer, assertProtected }) => {
 			writer.exec("BEGIN IMMEDIATE");

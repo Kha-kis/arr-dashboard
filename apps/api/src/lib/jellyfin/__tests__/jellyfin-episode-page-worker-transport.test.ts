@@ -209,6 +209,22 @@ describe("episode page worker physical closure", () => {
 	});
 
 	it.each([
+		["provider-timeout", "provider-timeout"],
+		["provider-response", "provider-response"],
+		["provider-unavailable", "provider-unavailable"],
+		["worker-failed", "worker-failed"],
+		["invalid-request", "worker-failed"],
+	] as const)("holds %s until exit and returns %s", async (reported, category) => {
+		vi.useFakeTimers();
+		const run = invocation();
+		run.worker.emit("message", { status: "failed", category: reported });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(run.settled()).toBe(false);
+		run.worker.emit("exit", 1);
+		expect(await run.outcome).toMatchObject({ error: { category } });
+	});
+
+	it.each([
 		[
 			"duplicate success",
 			[

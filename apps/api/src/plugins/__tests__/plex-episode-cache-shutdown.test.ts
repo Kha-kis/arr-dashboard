@@ -29,6 +29,7 @@ import registryPlugin from "../scheduler-registry.js";
 const boundaries = vi.hoisted(() => ({ refresh: vi.fn(), evidence: vi.fn() }));
 vi.mock("../../lib/plex/plex-refresh-orchestration.js", () => ({
 	refreshOwnedPlexEpisodeCache: boundaries.refresh,
+	plexEpisodeAttemptForPublicationRefusal: () => undefined,
 }));
 vi.mock("../../lib/plex/plex-persisted-observation-repository.js", () => ({
 	getPublishedEpisodeGenerationObservation: boundaries.evidence,

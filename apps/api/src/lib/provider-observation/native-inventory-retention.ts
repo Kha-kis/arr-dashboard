@@ -2,8 +2,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { Prisma, PrismaClient } from "../prisma.js";
 import { NativeInventoryInputError } from "./native-inventory.js";
 import {
-	rememberNativeInventoryRetentionBoundary,
 	type NativeInventoryRetentionOperation,
+	rememberNativeInventoryRetentionBoundary,
 } from "./native-inventory-retention-diagnostics.js";
 
 const MINIMUM_AGE_MS = 24 * 60 * 60_000;
@@ -193,17 +193,24 @@ async function protectedRun(tx: Transaction, candidate: Candidate, cutoff: Date)
 	return false;
 }
 
-async function keepAttemptMetadata(tx: Transaction, candidate: Candidate): Promise<boolean> {
+async function keepAttemptMetadata(
+	db: Pick<PrismaClient, "providerNativeInventorySnapshot">,
+	candidate: Candidate,
+	options?: { requireNoPasses: boolean },
+): Promise<boolean> {
 	if (candidate.state === "published") return false;
 	// The reader's newer-unpublished-run check uses this metadata to keep an
 	// older published head last-known. Staging can go, but that fact must remain.
-	return !!(await tx.providerNativeInventorySnapshot.findFirst({
+	return !!(await db.providerNativeInventorySnapshot.findFirst({
 		where: {
 			instanceId: candidate.instanceId,
 			domain: { in: domains(candidate) },
 			connectionGeneration: candidate.connectionGeneration,
 			identityGeneration: candidate.identityGeneration,
 			observedAt: { lte: candidate.createdAt },
+			...(options?.requireNoPasses && {
+				instance: { nativeInventoryRuns: { some: { id: candidate.id, passes: { none: {} } } } },
+			}),
 		},
 		select: { id: true },
 	}));
@@ -295,6 +302,16 @@ export async function pruneNativeInventoryRetentionSlice(
 			operation: "transaction-start",
 		};
 		try {
+			// A read-side skip can only defer work until a later sweep. Every
+			// candidate with possible deletions still goes through the writer fences.
+			const metadataOnly = await keepAttemptMetadata(prisma, candidate, {
+				requireNoPasses: true,
+			}).catch((error: unknown) => {
+				rememberNativeInventoryRetentionBoundary(error, "candidate-enumeration", false);
+				throw error;
+			});
+			if (options.signal?.aborted) throw CANCELLED;
+			if (metadataOnly) continue;
 			const removed = await retentionTransaction(
 				prisma,
 				async (tx) => {

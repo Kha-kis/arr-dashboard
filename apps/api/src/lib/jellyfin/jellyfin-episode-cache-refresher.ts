@@ -74,7 +74,10 @@ import {
 	sanitizeNativeWatchStageFailureDiagnostics,
 } from "./jellyfin-episode-finalizer-worker-transport.js";
 import type { JellyfinEpisodePageWorkerInput } from "./jellyfin-episode-page-worker-protocol.js";
-import { runJellyfinEpisodePageWorker } from "./jellyfin-episode-page-worker-transport.js";
+import {
+	JellyfinEpisodePageWorkerError,
+	runJellyfinEpisodePageWorker,
+} from "./jellyfin-episode-page-worker-transport.js";
 import {
 	fingerprintJellyfinEpisodeParentDependency,
 	JELLYFIN_EPISODE_PARENT_KEY_PREFIX,
@@ -285,6 +288,8 @@ function classifyJellyfinEpisodeStageFailure(error: unknown): JellyfinEpisodePag
 }
 
 function stageFailureDiagnostics(error: unknown) {
+	if (error instanceof JellyfinEpisodePageWorkerError)
+		return { errorCategory: error.category, databaseCode: null, sqliteCode: null } as const;
 	if (error instanceof RestoreRuntimeAdmissionError)
 		return { errorCategory: "runtime-admission", databaseCode: null, sqliteCode: null } as const;
 	if (!(error instanceof Prisma.PrismaClientKnownRequestError))

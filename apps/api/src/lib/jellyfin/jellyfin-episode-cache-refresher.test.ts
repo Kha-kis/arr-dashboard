@@ -24,6 +24,7 @@ import {
 	logJellyfinEpisodePrePageFailure,
 	refreshOwnedJellyfinEpisodeCache,
 } from "./jellyfin-episode-cache-refresher.js";
+import { JellyfinEpisodePageWorkerError } from "./jellyfin-episode-page-worker-transport.js";
 import * as generationMetadata from "./jellyfin-generation-metadata.js";
 import {
 	encodeJellyfinLibraryGenerationMetadata,
@@ -1122,6 +1123,32 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 				},
 				{ signal: undefined },
 			);
+		},
+	);
+
+	it.each(["provider-timeout", "provider-response", "worker-failed"] as const)(
+		"records a closed %s category at the failed page-read boundary",
+		async (category) => {
+			const state = ownedFixture("JELLYFIN");
+			configureDurableRun(state);
+			pageWorker.run.mockRejectedValueOnce(new JellyfinEpisodePageWorkerError(category));
+			const info = vi.fn();
+			await refreshOwnedJellyfinEpisodeCache({
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log: { ...log, info },
+			});
+			expect(info).toHaveBeenCalledWith(
+				expect.objectContaining({
+					category: "jellyfin-episode-work-stage",
+					stage: "provider-read",
+					state: "failed",
+					errorCategory: category,
+				}),
+				"Jellyfin episode work stage",
+			);
+			expect(durable.stage).not.toHaveBeenCalled();
 		},
 	);
 

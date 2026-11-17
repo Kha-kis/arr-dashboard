@@ -1126,6 +1126,28 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 		});
 	});
 
+	it("retains automatic renewal when the deadline read fails after a unit-claim refusal", async () => {
+		findInstances.mockResolvedValue([instance("JELLYFIN")]);
+		findFailedRun.mockRejectedValueOnce(new Error("deadline read unavailable"));
+		mocks.refresh
+			.mockResolvedValueOnce({
+				complete: false,
+				upserted: 0,
+				errors: 1,
+				retryableClaimContention: true,
+			})
+			.mockResolvedValue({ complete: true, upserted: 1, errors: 0 });
+		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+		await app.ready();
+
+		await vi.advanceTimersByTimeAsync(6 * 60_000 + 30_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(2);
+		expect(mocks.refresh.mock.calls[1]![0]).toMatchObject({
+			resumeFailed: false,
+			automaticRenewal: "provider-unavailable-cooldown",
+		});
+	});
+
 	it("reads the durable retry deadline when the ordinary connection is unavailable", async () => {
 		findInstances.mockResolvedValue([instance("JELLYFIN")]);
 		findFailedRun.mockRejectedValue(new Error("ordinary read unavailable"));

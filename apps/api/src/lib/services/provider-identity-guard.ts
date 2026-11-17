@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import {
+	isRetryableSqlitePublicationStartRefusal,
 	withIsolatedRuntimePrismaReadTransaction,
 	withIsolatedRuntimePrismaTransaction,
 } from "../backup/restore-runtime-client.js";
@@ -194,7 +195,7 @@ export async function withGuardedProviderPublication<TSnapshot, TResult>(
 	log: FastifyBaseLogger,
 	collect: () => Promise<TSnapshot>,
 	publish: (tx: Prisma.TransactionClient, snapshot: TSnapshot) => Promise<TResult>,
-	options: ProviderIdentityGuardOptions = {},
+	options: ProviderIdentityGuardOptions & { retryUnenteredPublication?: true } = {},
 ): Promise<TResult> {
 	assertVerified(instance);
 	assertPublicationNotCancelled(options.signal);
@@ -215,20 +216,29 @@ export async function withGuardedProviderPublication<TSnapshot, TResult>(
 	assertPublicationNotCancelled(options.signal);
 	await ensureExpectedIdentity(prisma, instance, after, options);
 
-	assertPublicationNotCancelled(options.signal);
-	observePublicationStage(options, "publication-admission");
-	const publication = await withCurrentProviderPublicationAuthority(
-		prisma,
-		instance,
-		async (tx) => {
-			// Admission and authority reads may have waited. Once entered, the
-			// publisher/transaction must be joined and retain its actual result.
-			assertPublicationNotCancelled(options.signal);
-			observePublicationStage(options, "transaction-publisher-entered");
-			return await publish(tx, snapshot);
-		},
-		options,
-	);
+	const publishCurrent = () => {
+		assertPublicationNotCancelled(options.signal);
+		observePublicationStage(options, "publication-admission");
+		return withCurrentProviderPublicationAuthority(
+			prisma,
+			instance,
+			async (tx) => {
+				// Admission and authority reads may have waited. Once entered, the
+				// publisher/transaction must be joined and retain its actual result.
+				assertPublicationNotCancelled(options.signal);
+				observePublicationStage(options, "transaction-publisher-entered");
+				return await publish(tx, snapshot);
+			},
+			options,
+		);
+	};
+	const publication = await publishCurrent().catch((error: unknown) => {
+		// Keep the verified collection and re-enter the current-authority
+		// transaction once, solely when the SQLite writer never entered.
+		if (!options.retryUnenteredPublication || !isRetryableSqlitePublicationStartRefusal(error))
+			throw error;
+		return publishCurrent();
+	});
 	if (!publication.matched) {
 		throw new ProviderIdentityGuardError(
 			"PUBLICATION_SUPERSEDED",

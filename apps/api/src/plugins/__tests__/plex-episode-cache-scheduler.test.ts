@@ -2,10 +2,15 @@ import Fastify, { type FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ refresh: vi.fn(), observation: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+	refresh: vi.fn(),
+	observation: vi.fn(),
+	refusalAttempt: vi.fn(),
+}));
 
 vi.mock("../../lib/plex/plex-refresh-orchestration.js", () => ({
 	refreshOwnedPlexEpisodeCache: mocks.refresh,
+	plexEpisodeAttemptForPublicationRefusal: mocks.refusalAttempt,
 }));
 vi.mock("../../lib/plex/plex-persisted-observation-repository.js", () => ({
 	getPublishedEpisodeGenerationObservation: mocks.observation,
@@ -34,6 +39,7 @@ beforeEach(async () => {
 		capacityDegraded: false,
 	});
 	mocks.observation.mockReset().mockResolvedValue({ available: true });
+	mocks.refusalAttempt.mockReset().mockReturnValue(undefined);
 	app = Fastify({
 		logger: { level: "info", stream: { write: (record) => serializedLogs.push(record) } },
 	});
@@ -136,6 +142,39 @@ describe("plexEpisodeRefreshResultStatus", () => {
 });
 
 describe("Plex episode scheduler continuations", () => {
+	it("carries the locally owned outer attempt after a publication refusal on the first unit", async () => {
+		const enumerate = app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>;
+		enumerate.mockResolvedValue([{ id: "a", label: "A" }]);
+		const refusal = new RestoreRuntimeAdmissionError();
+		const owned = { attemptedAt: new Date(), resultMarker: "in_progress:local" };
+		mocks.refusalAttempt.mockImplementation((error) => (error === refusal ? owned : undefined));
+		mocks.refresh.mockRejectedValueOnce(refusal);
+		await app.ready();
+		await vi.advanceTimersByTimeAsync(5 * 60_000 + 30_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(2);
+		expect(mocks.refresh.mock.calls[1]?.[1]).toBe(owned);
+	});
+
+	it("keeps the exact outer attempt for the regular round when exception retries are exhausted", async () => {
+		const enumerate = app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>;
+		enumerate.mockResolvedValue([{ id: "a", label: "A" }]);
+		const refusal = new RestoreRuntimeAdmissionError();
+		const owned = { attemptedAt: new Date(), resultMarker: "in_progress:local" };
+		mocks.refusalAttempt.mockImplementation((error) => (error === refusal ? owned : undefined));
+		for (let retry = 0; retry < 3; retry++)
+			mocks.refresh.mockRejectedValueOnce(new Error("synthetic retry"));
+		mocks.refresh.mockRejectedValueOnce(refusal);
+		await app.ready();
+
+		const elapsedRetries = 30_000 + 120_000 + 600_000;
+		await vi.advanceTimersByTimeAsync(5 * 60_000 + elapsedRetries);
+		expect(mocks.refresh).toHaveBeenCalledTimes(4);
+		await vi.advanceTimersByTimeAsync(6 * 60 * 60_000 - elapsedRetries - 1);
+		expect(mocks.refresh).toHaveBeenCalledTimes(4);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(mocks.refresh.mock.calls[4]?.[1]).toBe(owned);
+	});
+
 	it("retries startup enumeration before starting provider work and preserves resume intent", async () => {
 		const enumerate = app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>;
 		enumerate

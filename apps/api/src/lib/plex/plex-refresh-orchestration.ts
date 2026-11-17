@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { Encryptor } from "../auth/encryption.js";
+import { isRetryableSqlitePublicationStartRefusal } from "../backup/restore-runtime-client.js";
 import type { PrismaClient, ServiceInstance } from "../prisma.js";
 import { requestNativeInventoryRefresh } from "../provider-observation/native-inventory-job-orchestration.js";
 import {
@@ -89,6 +90,13 @@ type PlexEpisodeRunProgress = ObservationRunProgress & {
 type PlexEpisodeRefreshResultWithContinuation = PlexEpisodeRefreshResult & {
 	continuationAttempt?: PlexCacheRefreshAttempt;
 };
+
+const publicationRefusalAttempts = new WeakMap<Error, PlexCacheRefreshAttempt>();
+
+/** Handoff for an exact attempt already owned by the interrupted work item. */
+export function plexEpisodeAttemptForPublicationRefusal(error: unknown) {
+	return error instanceof Error ? publicationRefusalAttempts.get(error) : undefined;
+}
 
 type PlexParentReadResult = Awaited<ReturnType<PlexAuthorityService["readPositiveEpisodeParents"]>>;
 
@@ -868,9 +876,15 @@ export function createPlexEpisodeWorkItemRunner(
 						? await stagePlexEpisodeUnitInTransaction(tx, claim, unit, collected)
 						: false,
 				}),
-				attemptOptions(context),
+				{ ...attemptOptions(context), retryUnenteredPublication: true },
 			);
 		} catch (error) {
+			// Let the joined-claim recovery path release this exact claim.
+			// A local unentered refusal must not consume a provider retry.
+			if (error instanceof Error && isRetryableSqlitePublicationStartRefusal(error)) {
+				if (ownsAttempt) publicationRefusalAttempts.set(error, attempt);
+				throw error;
+			}
 			if (error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_CANCELLED")
 				throw error;
 			if (error instanceof ProviderIdentityGuardError && error.code !== "IDENTITY_UNAVAILABLE") {

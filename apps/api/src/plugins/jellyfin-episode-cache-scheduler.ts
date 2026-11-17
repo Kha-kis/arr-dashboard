@@ -148,6 +148,7 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			runningInstances.add(instance.id);
 			let effectiveTransientIdentityRetry = transientIdentityRetry;
 			let retryAfterOuterRefusal = false;
+			let retryAfterLocalRefusal = false;
 			try {
 				const result = await refreshScheduledJellyfinEpisodeCacheInstance(
 					app,
@@ -222,6 +223,7 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 				if (result.renewalDeferred) return;
 				if (result.progressed) effectiveTransientIdentityRetry = 0;
 				retryAfterOuterRefusal = result.retryableOuterAttemptContention === true;
+				retryAfterLocalRefusal = retryAfterOuterRefusal || result.retryableClaimContention === true;
 				const activeRun =
 					result.errors > 0
 						? await withIsolatedRuntimePrismaReadClient(
@@ -334,7 +336,7 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 						transientDelay,
 						effectiveTransientIdentityRetry + 1,
 						catalogReplans,
-						retryAfterOuterRefusal ? automaticRenewal : "none",
+						retryAfterLocalRefusal ? automaticRenewal : "none",
 					);
 				}
 			} finally {

@@ -19,9 +19,19 @@ export type JellyfinEpisodePageWorkerRequest = JellyfinEpisodePageWorkerInput & 
 	requestTimeoutMs: number;
 };
 
+const failureCategories = [
+	"provider-timeout",
+	"provider-response",
+	"provider-unavailable",
+	"worker-failed",
+	"invalid-request",
+] as const;
+
+export type JellyfinEpisodePageWorkerFailureCategory = (typeof failureCategories)[number];
+
 export type JellyfinEpisodePageWorkerResult =
 	| { status: "page"; page: JellyfinEpisodeCollectedPage }
-	| { status: "failed"; category: "provider-unavailable" | "invalid-request" };
+	| { status: "failed"; category: JellyfinEpisodePageWorkerFailureCategory };
 
 // Read data descriptors only: even synthetic/unexpected messages cannot make
 // validation invoke a getter, toJSON, coercion, or untrusted error formatter.
@@ -123,12 +133,9 @@ export function parseJellyfinEpisodePageWorkerResult(
 		const envelope = record(value);
 		if (!envelope) return null;
 		if (envelope.status === "failed") {
-			if (
-				!record(value, ["status", "category"]) ||
-				(envelope.category !== "provider-unavailable" && envelope.category !== "invalid-request")
-			)
-				return null;
-			return { status: "failed", category: envelope.category };
+			if (!record(value, ["status", "category"])) return null;
+			const category = failureCategories.find((allowed) => allowed === envelope.category);
+			return category ? { status: "failed", category } : null;
 		}
 		if (envelope.status !== "page" || !record(value, ["status", "page"])) return null;
 		const uncounted = coordinates.uncounted === true;

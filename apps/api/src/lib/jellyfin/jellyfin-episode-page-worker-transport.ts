@@ -1,6 +1,7 @@
 import { Worker } from "node:worker_threads";
 import type { JellyfinEpisodeCollectedPage } from "./jellyfin-client.js";
 import {
+	type JellyfinEpisodePageWorkerFailureCategory,
 	type JellyfinEpisodePageWorkerInput,
 	type JellyfinEpisodePageWorkerRequest,
 	parseJellyfinEpisodePageWorkerRequest,
@@ -17,10 +18,9 @@ type WorkerLike = {
 
 type FailureCategory =
 	| "worker-timeout"
-	| "worker-failed"
 	| "invalid-message"
 	| "cancelled"
-	| "provider-unavailable";
+	| Exclude<JellyfinEpisodePageWorkerFailureCategory, "invalid-request">;
 
 export class JellyfinEpisodePageWorkerError extends Error {
 	constructor(readonly category: FailureCategory) {
@@ -47,7 +47,7 @@ export function createJellyfinEpisodePageWorker(
 	const { register } = await import("tsx/esm/api");
 	register();
 	await import(${JSON.stringify(url.href)});
-})().catch(() => { parentPort.postMessage({ status: "failed", category: "provider-unavailable" }); parentPort.close(); });`;
+})().catch(() => { parentPort.postMessage({ status: "failed", category: "worker-failed" }); parentPort.close(); });`;
 		return new Worker(bootstrap, { ...options, eval: true });
 	}
 	return new Worker(url, options);
@@ -132,7 +132,8 @@ export async function runJellyfinEpisodePageWorker(
 			received = true;
 			const result = parseJellyfinEpisodePageWorkerResult(message, payload);
 			if (!result) return fail("invalid-message");
-			if (result.status === "failed") return fail("provider-unavailable");
+			if (result.status === "failed")
+				return fail(result.category === "invalid-request" ? "worker-failed" : result.category);
 			page = result.page;
 			// A success message is provisional; only a clean exit can return it.
 		});

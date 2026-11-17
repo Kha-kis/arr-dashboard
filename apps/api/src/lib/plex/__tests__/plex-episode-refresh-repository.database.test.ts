@@ -36,6 +36,14 @@ import scheduler from "../../../plugins/plex-episode-cache-scheduler.js";
 import { SqliteSchemaFixture } from "../../__tests__/sqlite-schema-fixture.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import {
+	openRestoreRuntime,
+	RestoreRuntimeAdmissionError,
+} from "../../backup/restore-runtime-admission.js";
+import {
+	createRuntimePrismaClient,
+	isRetryableSqlitePublicationStartRefusal,
+} from "../../backup/restore-runtime-client.js";
+import {
 	claimObservationUnit,
 	createOrLoadObservationRun,
 	recoverAbandonedObservationRuns,
@@ -55,7 +63,10 @@ import {
 	encodePositivePlexGenerationMetadata,
 } from "../plex-generation-metadata.js";
 import { createPlexTargetLedgerBinding } from "../plex-generation-target-ledger.js";
-import { createPlexEpisodeWorkItemRunner } from "../plex-refresh-orchestration.js";
+import {
+	createPlexEpisodeWorkItemRunner,
+	plexEpisodeAttemptForPublicationRefusal,
+} from "../plex-refresh-orchestration.js";
 import { plexConnectionFingerprint } from "../service-instance-fingerprint.js";
 
 const databases: Array<{ directory: string; prisma: ReturnType<typeof createTestPrismaClient> }> =
@@ -627,6 +638,145 @@ afterAll(() => {
 });
 
 describe("plex episode refresh repository", { timeout: 30_000 }, () => {
+	it.each([1, 2])("bounds proven unentered SQLite publication refusals (%s)", async (refusals) => {
+		const prisma = await database();
+		const seed = await completedFinalizerFixture(prisma);
+		await prisma.providerObservationRun.delete({ where: { id: seed.run.id } });
+		await prisma.cacheRefreshStatus.update({
+			where: { instanceId_cacheType: { instanceId: "plex-1", cacheType: "plex_episode" } },
+			data: { lastAttemptResult: "success", lastAttemptErrorMessage: null },
+		});
+		const instance = await prisma.serviceInstance.findUniqueOrThrow({ where: { id: "plex-1" } });
+		const runtime = await openRestoreRuntime({
+			databaseUrl: `file:${join(databases.at(-1)!.directory, "test.db")}`,
+		});
+		try {
+			await runtime.bindDestination("plex-unit-publication-repro");
+			await runtime.activate();
+			const client = createRuntimePrismaClient(runtime);
+			const now = performance.now.bind(performance);
+			let expireNextPublication = false;
+			let publicationClockReads = 0;
+			const clock = vi.spyOn(performance, "now").mockImplementation(() => {
+				// Advance the acquisition clock only after upstream collection and
+				// immediately before the real publication companion's native start.
+				if (
+					expireNextPublication &&
+					/\bat (?:Object\.)?publicationTransaction \(/.test(new Error().stack ?? "")
+				) {
+					if (++publicationClockReads % 2 === 0) {
+						expireNextPublication = publicationClockReads < refusals * 2;
+						return now() + 2_001;
+					}
+				}
+				return now();
+			});
+			const readEpisodes = vi.fn(async () => {
+				expireNextPublication = true;
+				return [
+					{
+						ratingKey: "new-episode",
+						title: "Synthetic",
+						seasonNumber: 1,
+						episodeNumber: 1,
+						viewCount: 1,
+					},
+				];
+			});
+			const runner = createPlexEpisodeWorkItemRunner({
+				createParentAuthority: () => ({
+					readPositiveEpisodeParents: async () =>
+						({
+							available: true,
+							generationId: "parent-1",
+							connectionGeneration: 2,
+							identityGeneration: 3,
+							targets: [
+								{
+									instanceId: "plex-1",
+									tmdbId: 42,
+									sectionId: "shows",
+									sectionUuid: "shows-uuid",
+									mediaType: "series",
+									tvdbId: 99,
+									ratingKey: "show-1",
+								},
+							],
+						}) as never,
+				}),
+				createClient: () => ({ getEpisodes: readEpisodes }) as never,
+			});
+			try {
+				const context = {
+					prisma: client.prisma,
+					instance,
+					encryptor: { decrypt: () => "synthetic" },
+					log: { error: () => undefined } as never,
+				};
+				const work = runtime.runOperation(() => runner(context));
+				let refusal: unknown;
+				if (refusals === 1) {
+					await work;
+				} else {
+					refusal = await work.catch((error: unknown) => error);
+					expect(refusal).toBeInstanceOf(RestoreRuntimeAdmissionError);
+					expect(isRetryableSqlitePublicationStartRefusal(refusal)).toBe(true);
+				}
+				expect(publicationClockReads).toBe(refusals * 2);
+				expect(readEpisodes).toHaveBeenCalledOnce();
+				const unit = await prisma.providerObservationUnit.findFirstOrThrow({
+					where: { run: { instanceId: "plex-1", cacheType: "plex_episode" } },
+				});
+				expect(unit).toMatchObject({
+					state: refusals === 1 ? "complete" : "pending",
+					attemptCount: 0,
+					claimToken: null,
+				});
+				const readStatus = () =>
+					prisma.cacheRefreshStatus.findUniqueOrThrow({
+						where: { instanceId_cacheType: { instanceId: "plex-1", cacheType: "plex_episode" } },
+					});
+				const publication = await readStatus();
+				expect(publication.lastResult).toBe("success");
+				if (refusals === 1) {
+					expect(publication.generationId).not.toBe("old");
+					return;
+				}
+				expect(publication.generationId).toBe("old");
+				const attempt = plexEpisodeAttemptForPublicationRefusal(refusal);
+				expect(attempt).toEqual({
+					attemptedAt: publication.lastAttemptAt,
+					resultMarker: publication.lastAttemptResult,
+				});
+				readEpisodes.mockRejectedValue(new Error("synthetic provider failure"));
+				for (let retry = 0; retry < 4; retry++) {
+					if (retry > 0) {
+						const nextAttemptAt = new Date(0);
+						await prisma.providerObservationUnit.update({
+							where: { id: unit.id },
+							data: { nextAttemptAt },
+						});
+						await prisma.providerObservationRun.update({
+							where: { id: unit.runId },
+							data: { nextAttemptAt },
+						});
+					}
+					await runtime.runOperation(() => runner(context, attempt));
+				}
+				expect(readEpisodes).toHaveBeenCalledTimes(5);
+				expect(await readStatus()).toMatchObject({
+					lastResult: "success",
+					generationId: "old",
+					lastAttemptResult: "error",
+				});
+			} finally {
+				clock.mockRestore();
+			}
+		} finally {
+			await runtime.close();
+		}
+	});
+
 	it("resumes the same populated run after a scheduler exception without replacing completed work", async () => {
 		// Removing exception continuation must strand this real run at four units.
 		const prisma = await database();

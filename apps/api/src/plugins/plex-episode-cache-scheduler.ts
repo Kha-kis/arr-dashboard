@@ -15,6 +15,7 @@ import {
 import { getPublishedEpisodeGenerationObservation } from "../lib/plex/plex-persisted-observation-repository.js";
 import {
 	type PlexEpisodeWorkDiagnostics,
+	plexEpisodeAttemptForPublicationRefusal,
 	refreshOwnedPlexEpisodeCache,
 } from "../lib/plex/plex-refresh-orchestration.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
@@ -244,6 +245,10 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			} catch (error) {
 				const errorCategory = classifyRefreshError(error);
 				const errorDiagnostic = projectRefreshError(error);
+				if (!closed) {
+					const ownedAttempt = plexEpisodeAttemptForPublicationRefusal(error);
+					if (ownedAttempt) retainedAttempts.set(instance.id, ownedAttempt);
+				}
 				const retryDelay = EXCEPTION_RETRY_DELAYS_MS[exceptionRetry];
 				if (retryDelay === undefined) {
 					app.log.error(
