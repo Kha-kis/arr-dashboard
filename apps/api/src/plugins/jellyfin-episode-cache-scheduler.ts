@@ -35,7 +35,8 @@ import {
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const STARTUP_DELAY_MS = 6 * 60 * 1000; // 6 minutes (after jellyfin-cache populates)
 const TRANSIENT_IDENTITY_RETRY_DELAYS_MS = [30_000, 120_000, 600_000] as const;
-const UNIT_CLAIM_CONTENTION_RETRY_DELAY_MS = 10_000;
+const FIRST_CLAIM_CONTENTION_RETRY_DELAY_MS = 2_000;
+const CLAIM_CONTENTION_RETRY_DELAY_MS = 10_000;
 const MAX_CATALOG_REPLANS_PER_CHAIN = 1;
 const COMPLETED_RUN_RETRY_DELAYS_MS = [30_000, 60_000, 120_000] as const;
 
@@ -317,11 +318,16 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 								}
 								return;
 							}
-							delay =
-								result.retryableClaimContention ||
-								(retryAfterOuterRefusal && activeRun?.state === "running")
-									? UNIT_CLAIM_CONTENTION_RETRY_DELAY_MS
-									: transientDelay;
+							const activeLocalContention =
+								retryAfterLocalRefusal && activeRun?.state === "running";
+							if (retryCount === 0 && activeLocalContention) {
+								delay = FIRST_CLAIM_CONTENTION_RETRY_DELAY_MS;
+							} else {
+								delay =
+									activeLocalContention || result.retryableClaimContention
+										? CLAIM_CONTENTION_RETRY_DELAY_MS
+										: transientDelay;
+							}
 							nextTransientIdentityRetry = retryCount + 1;
 						}
 					}

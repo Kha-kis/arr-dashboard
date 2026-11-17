@@ -943,6 +943,58 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 		expect(mocks.refresh).toHaveBeenCalledTimes(4);
 	});
 
+	it("retries initial unit claim contention after two seconds and keeps persistent contention bounded", async () => {
+		findInstances.mockResolvedValue([instance("JELLYFIN")]);
+		findFailedRun.mockResolvedValue({ state: "running", nextAttemptAt: null });
+		mocks.refresh.mockResolvedValue({
+			complete: false,
+			upserted: 0,
+			errors: 1,
+			progressed: false,
+			retryableClaimContention: true,
+		});
+		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+		await app.ready();
+
+		await vi.advanceTimersByTimeAsync(6 * 60_000);
+		for (const [index, delay] of [2_000, 10_000, 10_000].entries()) {
+			await vi.advanceTimersByTimeAsync(delay - 1);
+			expect(mocks.refresh).toHaveBeenCalledTimes(index + 1);
+			await vi.advanceTimersByTimeAsync(1);
+			expect(mocks.refresh).toHaveBeenCalledTimes(index + 2);
+		}
+		await vi.advanceTimersByTimeAsync(600_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(4);
+	});
+
+	it("restores the first unit claim contention delay after durable progress", async () => {
+		findInstances.mockResolvedValue([instance("JELLYFIN")]);
+		findFailedRun.mockResolvedValue({ state: "running", nextAttemptAt: null });
+		const refusal = {
+			complete: false,
+			upserted: 0,
+			errors: 1,
+			progressed: false,
+			retryableClaimContention: true,
+		};
+		mocks.refresh
+			.mockResolvedValueOnce(refusal)
+			.mockResolvedValueOnce({ complete: false, upserted: 0, errors: 0, progressed: true })
+			.mockResolvedValueOnce(refusal)
+			.mockResolvedValue({ complete: true, upserted: 1, errors: 0 });
+		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+		await app.ready();
+
+		await vi.advanceTimersByTimeAsync(
+			6 * 60_000 + 2_000 + JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS,
+		);
+		expect(mocks.refresh).toHaveBeenCalledTimes(3);
+		await vi.advanceTimersByTimeAsync(1_999);
+		expect(mocks.refresh).toHaveBeenCalledTimes(3);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(mocks.refresh).toHaveBeenCalledTimes(4);
+	});
+
 	it("waits 30 seconds after release and 10 seconds for each remaining unit claim contention retry", async () => {
 		findInstances.mockResolvedValue([instance("JELLYFIN")]);
 		findFailedRun.mockResolvedValue({ state: "running", nextAttemptAt: null });
@@ -1030,7 +1082,7 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 			expect(mocks.refresh).toHaveBeenCalledOnce();
 			const delays =
 				state === "running"
-					? [10_000, 10_000, 10_000]
+					? [2_000, 10_000, 10_000]
 					: [...(state === "future" ? [45_000] : []), 30_000, 120_000, 600_000];
 			for (const [index, delay] of delays.entries()) {
 				await vi.advanceTimersByTimeAsync(delay - (index === 0 ? 2 : 1));
@@ -1088,7 +1140,7 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 			await app.register(jellyfinEpisodeCacheSchedulerPlugin);
 			await app.ready();
 
-			await vi.advanceTimersByTimeAsync(6 * 60_000 + 30_000);
+			await vi.advanceTimersByTimeAsync(6 * 60_000 + 22_000);
 			expect(mocks.refresh).toHaveBeenCalledTimes(4);
 			await vi.advanceTimersByTimeAsync(29_999);
 			expect(mocks.refresh).toHaveBeenCalledTimes(4);
