@@ -451,7 +451,9 @@ async function synchronizeSqliteRuntimeSchemaPhases(
 					oidc,
 					dates: timeSqliteStartupPhase("date-plan", () =>
 						planSqliteRuntimeDates(main, registry, {
-							useTableOrderForCurrentReceipt: currentSchema,
+							// Registered DDL preserves table rows. Keep locality when
+							// the date receipt matches, and recheck values after DDL.
+							useTableOrderForCurrentReceipt: !oidc,
 							reuseCurrentReceiptScan: currentSchema,
 						}),
 					),

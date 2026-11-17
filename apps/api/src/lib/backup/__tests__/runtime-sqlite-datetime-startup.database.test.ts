@@ -2,7 +2,7 @@ import { existsSync, lstatSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	loadRuntimeSchemaRegistry,
 	prepareRuntimeSchemaExecution,
@@ -86,6 +86,28 @@ describe("SQLite date-format startup admission", () => {
 		expect(directory.startsWith(join(tmpdir(), "arr-date-startup-"))).toBe(true);
 		expect(lstatSync(directory).isSymbolicLink()).toBe(false);
 		rmSync(directory, { recursive: true });
+	});
+	it("scans dates in table order on both sides of the additive replay migration", async () => {
+		await synchronizeSqliteRuntimeSchema(url);
+		change('ALTER TABLE provider_observation_units DROP COLUMN "jellyfinReplayState"');
+		const sessionBefore = read("SELECT * FROM sessions");
+		const statements = vi.spyOn(Database.prototype, "prepare");
+		try {
+			await synchronizeSqliteRuntimeSchema(url);
+			const dateQueries = statements.mock.calls
+				.map(([sql]) => sql)
+				.filter((sql) => sql.includes('FROM main."sessions"') && sql.includes('"expiresAt"'));
+			expect(dateQueries).toHaveLength(3);
+			expect(dateQueries.every((sql) => sql.includes("ORDER BY _rowid_"))).toBe(true);
+		} finally {
+			statements.mockRestore();
+		}
+		expect(read("SELECT * FROM sessions")).toEqual(sessionBefore);
+		expect(
+			read(
+				"SELECT name FROM pragma_table_info('provider_observation_units') WHERE name='jellyfinReplayState'",
+			),
+		).toEqual([{ name: "jellyfinReplayState" }]);
 	});
 	it("preserves a valid numeric future session before returning physically closed startup", async () => {
 		const inode = lstatSync(path).ino;
