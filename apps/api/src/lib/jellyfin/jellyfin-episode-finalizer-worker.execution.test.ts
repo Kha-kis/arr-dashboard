@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
 	guard: vi.fn(),
 	finalize: vi.fn(),
 	prepare: vi.fn(),
+	reserveReplay: vi.fn(),
 	readCompleted: vi.fn(),
 	prepareNative: vi.fn(),
 	acquireEpisode: vi.fn(),
@@ -57,9 +58,10 @@ vi.mock("../services/provider-identity-guard.js", () => ({
 vi.mock("./jellyfin-episode-refresh-repository.js", () => ({
 	finalizeJellyfinEpisodeRun: mocks.finalize,
 	prepareJellyfinEpisodeRun: mocks.prepare,
+	reserveJellyfinEpisodeScopeReplay: mocks.reserveReplay,
 	readCompletedJellyfinEpisodePublication: mocks.readCompleted,
 	commitPreparedJellyfinEpisodeRun: mocks.commit,
-	settleInvalidJellyfinEpisodeRun: mocks.settleInvalid,
+	settleJellyfinEpisodeFinalizationRejection: mocks.settleInvalid,
 }));
 vi.mock("./jellyfin-native-watch-repository.js", () => ({
 	JellyfinNativeWatchLeaseLostError: class JellyfinNativeWatchLeaseLostError extends Error {},
@@ -384,6 +386,32 @@ describe("Jellyfin episode finalizer worker execution", () => {
 			expect(JSON.stringify(result)).not.toContain("private");
 		},
 	);
+
+	it.each([true, false])("returns only guarded replay reservation result %s", async (reserved) => {
+		mocks.prepare.mockResolvedValueOnce({ kind: "ready", replayEligible: true });
+		mocks.reserveReplay.mockResolvedValueOnce(reserved);
+		expect(
+			await executeJellyfinEpisodeFinalization({ ...payload, allowScopeReplay: true }),
+		).toEqual(
+			reserved ? { status: "replay-reserved" } : { status: "not-published", reason: "lease-lost" },
+		);
+		expect(mocks.reserveReplay).toHaveBeenCalledOnce();
+		expect(mocks.acquireEpisode).not.toHaveBeenCalled();
+		expect(mocks.commit).not.toHaveBeenCalled();
+		expect(mocks.cleanup).not.toHaveBeenCalled();
+	});
+
+	it("acknowledges a rejected replay fallback without publishing or cleaning up the run", async () => {
+		mocks.prepare.mockResolvedValueOnce({ kind: "replay-rejected", verifyUnitId: "scope-verify" });
+		mocks.settleInvalid.mockResolvedValueOnce(true);
+		expect(await executeJellyfinEpisodeFinalization(payload)).toEqual({
+			status: "replay-fallback",
+		});
+		expect(mocks.settleInvalid).toHaveBeenCalledOnce();
+		expect(mocks.acquireEpisode).not.toHaveBeenCalled();
+		expect(mocks.commit).not.toHaveBeenCalled();
+		expect(mocks.cleanup).not.toHaveBeenCalled();
+	});
 
 	it("defers an unavailable run without committing or deleting stages", async () => {
 		mocks.prepare.mockResolvedValueOnce({ kind: "not-published" });

@@ -1,11 +1,11 @@
 {
 	"formatVersion": 1,
-	"schemaSourceSha256": "37f65bf997572e24f82098f7956a2115d33d1e60a9a67dbd13f72892632f33bb",
+	"schemaSourceSha256": "a5362c90c3bf41291f6e6db4d3a3984c29ee6011a93f1af70c7b2fe1e416bb01",
 	"applicationModelCount": 101,
 	"registry": {
 		"provider": "postgresql",
 		"version": 1,
-		"targetDigest": "37ce6b8182e7a2d1ecc2da1d0f2a62bf491684e36d9aff3be3e0ed89f180b29d",
+		"targetDigest": "217aaacc6dd821d21cc101d593b9f7d9d1b470a3a197a5c04a34f75831dbd81e",
 		"tables": [
 			{
 				"target": {
@@ -6812,6 +6812,12 @@
 						{ "name": "scopeKey", "type": "TEXT", "nullable": false, "defaultValue": null },
 						{ "name": "scopeDigest", "type": "TEXT", "nullable": false, "defaultValue": null },
 						{ "name": "scopePayload", "type": "TEXT", "nullable": true, "defaultValue": null },
+						{
+							"name": "jellyfinReplayState",
+							"type": "TEXT",
+							"nullable": true,
+							"defaultValue": null
+						},
 						{ "name": "phase", "type": "TEXT", "nullable": false, "defaultValue": null },
 						{
 							"name": "expectedTargets",
@@ -6911,6 +6917,7 @@
 					"scopeKey": "column:0dbd7addb0aece0d8c01aeca8deaf4ca878e7e4b48c300b5587a511731f684c2",
 					"scopeDigest": "column:c2926e40f4d72f05339b9e810ddba0ff8de27ab9337fd1f06962995bbaa746ea",
 					"scopePayload": "column:b4107914cbf1f7ef497a5015b7e9c1bbb52c8e5c234e1db3d9a230ca5aed77a9",
+					"jellyfinReplayState": "column:8dafa25873811aa74d7a95dfe4ca55f32e11117dff50e73fb06f725a9b6e1522",
 					"phase": "column:fa8de0a62afed817dcc9fdc710646c5adbadbc01fdada04733571852f762e32e",
 					"expectedTargets": "column:6f318c09db6c5b31affef250cb66eabbc1aacbd864076f615c78cace466279b5",
 					"cursor": "column:d64a49c3cbadefb333263d854a91046d1bf85ac0fde07ece9cf5cda95b245728",
@@ -10795,6 +10802,7 @@
 			"column:0dbd7addb0aece0d8c01aeca8deaf4ca878e7e4b48c300b5587a511731f684c2",
 			"column:c2926e40f4d72f05339b9e810ddba0ff8de27ab9337fd1f06962995bbaa746ea",
 			"column:b4107914cbf1f7ef497a5015b7e9c1bbb52c8e5c234e1db3d9a230ca5aed77a9",
+			"column:8dafa25873811aa74d7a95dfe4ca55f32e11117dff50e73fb06f725a9b6e1522",
 			"column:fa8de0a62afed817dcc9fdc710646c5adbadbc01fdada04733571852f762e32e",
 			"column:6f318c09db6c5b31affef250cb66eabbc1aacbd864076f615c78cace466279b5",
 			"column:d64a49c3cbadefb333263d854a91046d1bf85ac0fde07ece9cf5cda95b245728",
@@ -12176,8 +12184,8 @@
 			"kind": "table",
 			"tableName": "provider_observation_units",
 			"objectName": "provider_observation_units",
-			"sql": "CREATE TABLE \"provider_observation_units\" (\n    \"id\" TEXT NOT NULL,\n    \"runId\" TEXT NOT NULL,\n    \"ordinal\" INTEGER NOT NULL,\n    \"scopeKey\" TEXT NOT NULL,\n    \"scopeDigest\" TEXT NOT NULL,\n    \"scopePayload\" TEXT,\n    \"phase\" TEXT NOT NULL,\n    \"expectedTargets\" INTEGER NOT NULL,\n    \"cursor\" INTEGER NOT NULL DEFAULT 0,\n    \"expectedRawCount\" INTEGER,\n    \"observedRawCount\" INTEGER NOT NULL DEFAULT 0,\n    \"completedPages\" INTEGER NOT NULL DEFAULT 0,\n    \"state\" TEXT NOT NULL,\n    \"claimToken\" TEXT,\n    \"attemptCount\" INTEGER NOT NULL DEFAULT 0,\n    \"nextAttemptAt\" TIMESTAMP(3),\n    \"lastReasonCode\" TEXT,\n    \"createdAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    \"updatedAt\" TIMESTAMP(3) NOT NULL,\n    \"completedAt\" TIMESTAMP(3),\n\n    CONSTRAINT \"provider_observation_units_pkey\" PRIMARY KEY (\"id\")\n);",
-			"sha256": "67cfb57d0672f7fad3d1490dae750fc467aca4064e4a36cc412f4f872ac7a446"
+			"sql": "CREATE TABLE \"provider_observation_units\" (\n    \"id\" TEXT NOT NULL,\n    \"runId\" TEXT NOT NULL,\n    \"ordinal\" INTEGER NOT NULL,\n    \"scopeKey\" TEXT NOT NULL,\n    \"scopeDigest\" TEXT NOT NULL,\n    \"scopePayload\" TEXT,\n    \"jellyfinReplayState\" TEXT,\n    \"phase\" TEXT NOT NULL,\n    \"expectedTargets\" INTEGER NOT NULL,\n    \"cursor\" INTEGER NOT NULL DEFAULT 0,\n    \"expectedRawCount\" INTEGER,\n    \"observedRawCount\" INTEGER NOT NULL DEFAULT 0,\n    \"completedPages\" INTEGER NOT NULL DEFAULT 0,\n    \"state\" TEXT NOT NULL,\n    \"claimToken\" TEXT,\n    \"attemptCount\" INTEGER NOT NULL DEFAULT 0,\n    \"nextAttemptAt\" TIMESTAMP(3),\n    \"lastReasonCode\" TEXT,\n    \"createdAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    \"updatedAt\" TIMESTAMP(3) NOT NULL,\n    \"completedAt\" TIMESTAMP(3),\n\n    CONSTRAINT \"provider_observation_units_pkey\" PRIMARY KEY (\"id\")\n);",
+			"sha256": "d1f8e3954ceb43d6b4eed64cb7d14e28047deaf16dd565d40e9b410c079017a9"
 		},
 		{
 			"id": "table:6ad72bf99e27797970361854291bc641b8b6a8a1d72fd62f1d9a0d1c7bb2e337",
@@ -19532,6 +19540,14 @@
 			"sha256": "90787594b74794b21bc705516898fd56bea0b15ec82d81f5acf9e6a442bace73"
 		},
 		{
+			"id": "column:8dafa25873811aa74d7a95dfe4ca55f32e11117dff50e73fb06f725a9b6e1522",
+			"kind": "column",
+			"tableName": "provider_observation_units",
+			"objectName": "jellyfinReplayState",
+			"sql": "ALTER TABLE \"provider_observation_units\" ADD COLUMN \"jellyfinReplayState\" TEXT;",
+			"sha256": "2ce02cb98455349d68a6e16d2d5a27a62e4868969027791f89665b993b0fb518"
+		},
+		{
 			"id": "column:fa8de0a62afed817dcc9fdc710646c5adbadbc01fdada04733571852f762e32e",
 			"kind": "column",
 			"tableName": "provider_observation_units",
@@ -25092,5 +25108,5 @@
 			"sha256": "fcb23de07ba77082669e52425fd198c6f7ac46314db598894c3a4fff7ee960ab"
 		}
 	],
-	"sqlSha256": "f0621360b026ef8d7a820359b069b062577fe5978d690bf75d0b5594442cf680"
+	"sqlSha256": "0b22554ffce299c0be5f9b7f2cf6093d2757187e68038683b7f74a15d713fa73"
 }

@@ -49,6 +49,11 @@ import {
 	jellyfinEpisodePageSizeFromPayload,
 } from "./jellyfin-episode-refresh-policy.js";
 import {
+	decodeJellyfinEpisodeReplayState,
+	type JellyfinEpisodeReplayState,
+	parseJellyfinEpisodeScope as parseScope,
+} from "./jellyfin-episode-replay-state.js";
+import {
 	decodeJellyfinEpisodeGenerationMetadata,
 	decodeJellyfinLibraryGenerationMetadata,
 	encodeJellyfinEpisodeGenerationMetadata,
@@ -65,7 +70,10 @@ import {
 	type JellyfinSeriesProgressCoordinate,
 	retainCurrentJellyfinMappedSeriesBindings,
 } from "./jellyfin-mapped-series-progress.js";
-import { serializeNativeWatchScopeDiagnostics } from "./jellyfin-native-watch-diagnostics.js";
+import {
+	parseNativeWatchScopeDiagnostics,
+	serializeNativeWatchScopeDiagnostics,
+} from "./jellyfin-native-watch-diagnostics.js";
 import {
 	deriveNativeWatchCandidates,
 	emptyNativeWatchProjectionDiagnostics,
@@ -103,6 +111,9 @@ export {
 export const MAX_JELLYFIN_FINALIZER_STAGE_ROWS = 600_000;
 const JELLYFIN_FINALIZER_STAGE_READ_PAGE_SIZE = 1_000;
 const JELLYFIN_EPISODE_STAGE_INSERT_ROWS = 500;
+const JELLYFIN_EPISODE_REPLAY_RUN_BUDGET_MS = 30 * 60_000;
+const JELLYFIN_EPISODE_REPLAY_LEASE_MS = 2 * 60_000;
+const JELLYFIN_EPISODE_REPLAY_PASSES = ["collect-replay", "verify-replay"];
 const STAGE_INSERT_DRIVER_CODES = new Map([
 	["DatabaseNotReachable", "P1001"],
 	["SocketTimeout", "P1008"],
@@ -193,8 +204,60 @@ function finalizationUnitFingerprint(units: readonly ProviderObservationUnit[]):
 				unit.observedRawCount,
 				unit.state,
 				unit.claimToken,
+				unit.jellyfinReplayState,
 			]),
 	);
+}
+
+function settledJellyfinReplaySelection(units: readonly ProviderObservationUnit[]) {
+	const selected = new Map<
+		string,
+		{ partnerId: string; count: number; pages: number; completedMs: number }
+	>();
+	for (const verify of units) {
+		if (verify.jellyfinReplayState == null) continue;
+		const replay = decodeJellyfinEpisodeReplayState(verify.jellyfinReplayState);
+		if (
+			verify.phase !== "verify" ||
+			!replay ||
+			(replay.state !== "original" && replay.state !== "selected")
+		)
+			return null;
+		const collect = units.find((candidate) => candidate.id === replay.collectUnitId);
+		if (collect?.phase !== "collect") return null;
+		const originalScope = parseScope(collect.scopePayload);
+		const verifiedScope = parseScope(verify.scopePayload);
+		if (
+			!originalScope ||
+			!verifiedScope ||
+			originalScope.userId !== verifiedScope.userId ||
+			originalScope.libraryId !== verifiedScope.libraryId
+		)
+			return null;
+		if (replay.state === "original") continue;
+		const pageSize = jellyfinEpisodePageSizeFromPayload(verify.scopePayload);
+		if (
+			pageSize === null ||
+			jellyfinEpisodePageSizeFromPayload(collect.scopePayload) !== pageSize ||
+			!hasPlausibleJellyfinEpisodePageCount(replay.rawCount, replay.collectPages, pageSize) ||
+			!hasPlausibleJellyfinEpisodePageCount(replay.rawCount, replay.verifyPages, pageSize) ||
+			selected.has(collect.id)
+		)
+			return null;
+		selected.set(collect.id, {
+			partnerId: verify.id,
+			count: replay.rawCount,
+			pages: replay.collectPages,
+			completedMs: replay.completedMs,
+		});
+		selected.set(verify.id, {
+			partnerId: collect.id,
+			count: replay.rawCount,
+			pages: replay.verifyPages,
+			completedMs: replay.completedMs,
+		});
+	}
+	return selected;
 }
 
 function canonicalScopes(scopes: readonly JellyfinEpisodeScope[]) {
@@ -239,6 +302,8 @@ export interface FinalizeJellyfinEpisodeRunInput {
 	prisma: PrismaClient;
 	/** Existing provider-authority transaction; omitted for direct repository callers. */
 	transaction?: Prisma.TransactionClient;
+	/** Ordinary refresh entry points can defer publication for one bounded replay. */
+	allowScopeReplay?: true;
 	userId: string;
 	instance: { id: string };
 	runId: string;
@@ -283,9 +348,17 @@ type PreparedRunAuthority = {
 
 export type PreparedJellyfinEpisodeRun =
 	| { kind: "not-published" }
-	| { kind: "invalid"; authority: PreparedRunAuthority }
+	| { kind: "replay-pending" }
+	| { kind: "invalid"; authority: PreparedRunAuthority; unitFingerprint: string }
+	| {
+			kind: "replay-rejected";
+			authority: PreparedRunAuthority;
+			unitFingerprint: string;
+			verifyUnitId: string;
+	  }
 	| {
 			kind: "ready";
+			replayEligible?: true;
 			authority: PreparedRunAuthority;
 			observedAt: Date;
 			cacheGenerationId: string;
@@ -631,23 +704,6 @@ function validateJellyfinEpisodeSavedPlan(
 
 function scopeDigest(phase: "collect" | "verify", scope: { userId: string; libraryId: string }) {
 	return digest(["jellyfin-episode", phase, scope.userId, scope.libraryId]);
-}
-
-function parseScope(value: string | null) {
-	if (!value) return null;
-	try {
-		const parsed: unknown = JSON.parse(value);
-		if (
-			typeof parsed !== "object" ||
-			parsed === null ||
-			typeof (parsed as { userId?: unknown }).userId !== "string" ||
-			typeof (parsed as { libraryId?: unknown }).libraryId !== "string"
-		)
-			return null;
-		return parsed as { userId: string; libraryId: string };
-	} catch {
-		return null;
-	}
 }
 
 function pageRejectionReason(
@@ -1255,25 +1311,25 @@ async function evaluateJellyfinEpisodeRun(
 			return mode === "prepare"
 				? ({ kind: "not-published" } as const)
 				: { published: false, itemCount: 0 };
+		const rejectionSnapshot = () => ({
+			unitFingerprint: finalizationUnitFingerprint(run.units),
+			authority: {
+				instanceId: instance.id,
+				userId: input.userId,
+				runId: run.id,
+				authorityKey: run.authorityKey,
+				parentGenerationId: run.parentGenerationId,
+				targetDigest: run.targetDigest,
+				completedUnits: run.completedUnits,
+				completedWork: run.completedWork,
+				totalUnits: run.totalUnits,
+				totalWork: run.totalWork,
+				connectionGeneration: run.connectionGeneration,
+				identityGeneration: run.identityGeneration,
+			},
+		});
 		const invalidate = async () => {
-			if (mode === "prepare")
-				return {
-					kind: "invalid" as const,
-					authority: {
-						instanceId: instance.id,
-						userId: input.userId,
-						runId: run.id,
-						authorityKey: run.authorityKey,
-						parentGenerationId: run.parentGenerationId,
-						targetDigest: run.targetDigest,
-						completedUnits: run.completedUnits,
-						completedWork: run.completedWork,
-						totalUnits: run.totalUnits,
-						totalWork: run.totalWork,
-						connectionGeneration: run.connectionGeneration,
-						identityGeneration: run.identityGeneration,
-					},
-				};
+			if (mode === "prepare") return { kind: "invalid" as const, ...rejectionSnapshot() };
 			await tx.jellyfinEpisodeObservationExclusion.deleteMany({ where: { runId: input.runId } });
 			await tx.jellyfinEpisodeObservationStage.deleteMany({ where: { runId: input.runId } });
 			await tx.providerObservationUnit.updateMany({
@@ -1299,6 +1355,7 @@ async function evaluateJellyfinEpisodeRun(
 		)
 			return await invalidate();
 		if (!input.scopes || !input.attempt) return await invalidate();
+
 		const status = await tx.cacheRefreshStatus.findUnique({
 			where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "jellyfin_episode" } },
 		});
@@ -1313,11 +1370,66 @@ async function evaluateJellyfinEpisodeRun(
 			return mode === "prepare"
 				? ({ kind: "not-published" } as const)
 				: { published: false, itemCount: 0 };
+		const replaySelection = settledJellyfinReplaySelection(run.units);
+		const active = replaySelection === null ? findActiveReplayUnit(run.units) : null;
+		const activeScope = parseScope(active?.verify.scopePayload ?? null);
+		if (
+			replaySelection === null &&
+			instance.service === "JELLYFIN" &&
+			run.parentGenerationId?.startsWith(JELLYFIN_EPISODE_PARENT_V3_KEY_PREFIX) &&
+			active &&
+			activeScope &&
+			run.units.some(
+				(unit) =>
+					unit.id === active.replay.collectUnitId &&
+					unit.phase === "collect" &&
+					unit.scopeDigest === scopeDigest("collect", activeScope),
+			)
+		)
+			return mode === "prepare"
+				? { kind: "replay-pending" as const }
+				: { published: false, itemCount: 0, replayPending: true as const };
+		if (
+			replaySelection === null ||
+			(replaySelection.size > 0 &&
+				!run.parentGenerationId?.startsWith(JELLYFIN_EPISODE_PARENT_V3_KEY_PREFIX))
+		)
+			return mode === "prepare"
+				? ({ kind: "not-published" } as const)
+				: { published: false, itemCount: 0 };
 		const runParentGenerationId = run.parentGenerationId;
 		if (typeof runParentGenerationId !== "string" || runParentGenerationId.trim() === "")
 			return await invalidate();
 		const isV2Run = runParentGenerationId.startsWith(JELLYFIN_EPISODE_PARENT_KEY_PREFIX);
 		const isV3Run = runParentGenerationId.startsWith(JELLYFIN_EPISODE_PARENT_V3_KEY_PREFIX);
+		const rejectReplay = async (unitIds: readonly string[]) => {
+			const selected = run.units
+				.filter(
+					(unit) =>
+						unit.phase === "verify" &&
+						(unitIds.includes(unit.id) ||
+							unitIds.includes(replaySelection.get(unit.id)?.partnerId ?? "")),
+				)
+				.map((unit) => ({ unit, replay: replaySelection.get(unit.id) }))
+				.filter(({ replay }) => replay !== undefined)
+				.sort(
+					(left, right) => (right.replay?.completedMs ?? 0) - (left.replay?.completedMs ?? 0),
+				)[0];
+			if (!selected) return await invalidate();
+			const rejection = {
+				kind: "replay-rejected" as const,
+				...rejectionSnapshot(),
+				verifyUnitId: selected.unit.id,
+			};
+			if (mode === "prepare") return rejection;
+			const replayFallback = await settleJellyfinEpisodeFinalizationRejection(tx, input, rejection);
+			return {
+				published: false,
+				itemCount: 0,
+				...(replayFallback && { replayFallback: true as const }),
+			};
+		};
+
 		const rootUnit = run.units.find((unit) => unit.ordinal === 0);
 		const originalParent =
 			isV2Run || isV3Run ? parseParentProvenance(rootUnit?.scopePayload ?? null) : null;
@@ -1419,8 +1531,33 @@ async function evaluateJellyfinEpisodeRun(
 		)
 			return await unavailableDependency();
 		const stageLoadStartedAt = performance.now();
+		const evidenceUnits = run.units.map((unit) => {
+			const replay = replaySelection.get(unit.id);
+			return replay
+				? {
+						...unit,
+						cursor: replay.count,
+						observedRawCount: replay.count,
+						expectedRawCount: replay.count,
+						completedPages: replay.pages,
+					}
+				: unit;
+		});
+		const selectedIds = [...replaySelection.keys()];
+		const ordinaryPass = Prisma.sql`"pass" NOT IN ('collect-replay', 'verify-replay')`;
+		const selectedStageFilter =
+			selectedIds.length > 0
+				? Prisma.sql`(
+				("unitId" NOT IN (${Prisma.join(selectedIds)}) AND ${ordinaryPass}) OR
+				("unitId" IN (${Prisma.join(selectedIds)}) AND NOT (${ordinaryPass}))
+			)`
+				: ordinaryPass;
+		const selectedExclusionFilter =
+			selectedIds.length > 0
+				? Prisma.sql`AND "unitId" NOT IN (${Prisma.join(selectedIds)})`
+				: Prisma.empty;
 		let expectedStageRows = 0;
-		for (const unit of run.units) {
+		for (const unit of evidenceUnits) {
 			expectedStageRows += unit.observedRawCount;
 			if (expectedStageRows > MAX_JELLYFIN_FINALIZER_STAGE_ROWS)
 				return await unavailableDependency();
@@ -1440,13 +1577,21 @@ async function evaluateJellyfinEpisodeRun(
 				: Prisma.empty;
 			const page = await tx.$queryRaw<JellyfinEpisodeObservationStage[]>(Prisma.sql`
 				SELECT * FROM "jellyfin_episode_observation_stage"
-				WHERE "runId" = ${run.id} ${seek}
+				WHERE "runId" = ${run.id} AND ${selectedStageFilter} ${seek}
 				ORDER BY "pass", "userKeyDigest", "jellyfinId"
 				LIMIT ${JELLYFIN_FINALIZER_STAGE_READ_PAGE_SIZE}
 			`);
 			if (stages.length + page.length > MAX_JELLYFIN_FINALIZER_STAGE_ROWS)
 				return await unavailableDependency();
-			stages.push(...page);
+			for (const row of page) {
+				const pass =
+					row.pass === "collect-replay"
+						? "collect"
+						: row.pass === "verify-replay"
+							? "verify"
+							: row.pass;
+				stages.push(pass === row.pass ? row : { ...row, pass });
+			}
 			if (page.length < JELLYFIN_FINALIZER_STAGE_READ_PAGE_SIZE) break;
 			const last = page[page.length - 1]!;
 			stageCursor = {
@@ -1461,7 +1606,7 @@ async function evaluateJellyfinEpisodeRun(
 		// The first unit can contain the whole catalog. Decode each saved scope
 		// once and still compare its phase and digest against every staged row.
 		const scopesByUnitId = new Map(
-			run.units.map((unit) => {
+			evidenceUnits.map((unit) => {
 				const scope = parseScope(unit.scopePayload);
 				return [
 					unit.id,
@@ -1489,7 +1634,7 @@ async function evaluateJellyfinEpisodeRun(
 				: Prisma.empty;
 			const page = await tx.$queryRaw<JellyfinEpisodeObservationExclusion[]>(Prisma.sql`
 				SELECT * FROM "jellyfin_episode_observation_exclusions"
-				WHERE "runId" = ${run.id} ${seek}
+				WHERE "runId" = ${run.id} ${selectedExclusionFilter} ${seek}
 				ORDER BY "pass", "userKeyDigest", "jellyfinId"
 				LIMIT ${JELLYFIN_FINALIZER_STAGE_READ_PAGE_SIZE}
 			`);
@@ -1547,9 +1692,21 @@ async function evaluateJellyfinEpisodeRun(
 			rows.push(stage);
 			stagesByUnit.set(stage.unitId, rows);
 		}
+		for (const unit of evidenceUnits) {
+			const selected = replaySelection.get(unit.id);
+			if (!selected || unit.phase !== "verify") continue;
+			const verified = stagesByUnit.get(unit.id) ?? [];
+			const collected = stagesByUnit.get(selected.partnerId) ?? [];
+			if (
+				collected.length !== selected.count ||
+				verified.length !== selected.count ||
+				!hasV3ExactPassEquality(collected, verified)
+			)
+				return await rejectReplay([unit.id]);
+		}
 		// V3 publishes partial observations: raw page positions can exceed unique
 		// staged identities after overlap. Neither count grants absence authority.
-		const invalidStageCardinality = run.units.some((unit) => {
+		const invalidStageCardinality = evidenceUnits.some((unit) => {
 			const stageCount = new Set([
 				...(stagesByUnit.get(unit.id) ?? []).map((row) => row.jellyfinId),
 				...(exclusionsByUnit.get(unit.id) ?? []),
@@ -1670,32 +1827,47 @@ async function evaluateJellyfinEpisodeRun(
 		const positivePublicationCandidates = isV3Run
 			? collect.filter((row) => row.played && !excludedIds.has(row.jellyfinId))
 			: collect;
-		const itemIds = new Set<string>();
-		const coordinates = new Set<string>();
-		const sourceCoordinateByItemId = new Map<string, string>();
+		const itemIds = new Map<string, string>();
+		const coordinates = new Map<string, string>();
+		const sourceCoordinateByItemId = new Map<string, { coordinate: string; unitId: string }>();
 		if (isV3Run) {
 			const positiveItemIds = new Set(positivePublicationCandidates.map((row) => row.jellyfinId));
+			const replayPositiveByItemId = new Map(
+				positivePublicationCandidates
+					.filter((row) => replaySelection.has(row.unitId))
+					.map((row) => [row.jellyfinId, row.unitId]),
+			);
 			// A published item's identity must remain consistent across users and
 			// passes, including conflicting observations whose watched flag is false.
 			for (const row of stages) {
 				if (!positiveItemIds.has(row.jellyfinId)) continue;
 				const coordinate = `${row.seriesId}\u0000${row.seasonNumber}\u0000${row.episodeNumber}`;
 				const prior = sourceCoordinateByItemId.get(row.jellyfinId);
-				if (prior !== undefined && prior !== coordinate) return await invalidate();
-				sourceCoordinateByItemId.set(row.jellyfinId, coordinate);
+				if (prior && prior.coordinate !== coordinate)
+					return await rejectReplay([
+						prior.unitId,
+						row.unitId,
+						replayPositiveByItemId.get(row.jellyfinId) ?? "",
+					]);
+				sourceCoordinateByItemId.set(row.jellyfinId, { coordinate, unitId: row.unitId });
 			}
 		}
 		for (const row of positivePublicationCandidates) {
 			const key = `${row.userKeyDigest}\u0000${row.jellyfinId}`;
 			const coordinate = `${row.userKeyDigest}\u0000${row.seriesId}\u0000${row.seasonNumber}\u0000${row.episodeNumber}`;
-			const sourceCoordinate = `${row.seriesId}\u0000${row.seasonNumber}\u0000${row.episodeNumber}`;
-			const priorCoordinate = sourceCoordinateByItemId.get(row.jellyfinId);
-			if (itemIds.has(key) || coordinates.has(coordinate)) return await invalidate();
-			if (priorCoordinate !== undefined && priorCoordinate !== sourceCoordinate)
-				return await invalidate();
-			itemIds.add(key);
-			coordinates.add(coordinate);
-			sourceCoordinateByItemId.set(row.jellyfinId, sourceCoordinate);
+			const priorUnitId = itemIds.get(key) ?? coordinates.get(coordinate);
+			if (priorUnitId) return await rejectReplay([priorUnitId, row.unitId]);
+			if (!isV3Run) {
+				const sourceCoordinate = `${row.seriesId}\u0000${row.seasonNumber}\u0000${row.episodeNumber}`;
+				const prior = sourceCoordinateByItemId.get(row.jellyfinId);
+				if (prior && prior.coordinate !== sourceCoordinate) return await invalidate();
+				sourceCoordinateByItemId.set(row.jellyfinId, {
+					coordinate: sourceCoordinate,
+					unitId: row.unitId,
+				});
+			}
+			itemIds.set(key, row.unitId);
+			coordinates.set(coordinate, row.unitId);
 		}
 		if (
 			isV3Run
@@ -1704,7 +1876,7 @@ async function evaluateJellyfinEpisodeRun(
 					JSON.stringify(canonicalStageRows(collect, false)) !==
 						JSON.stringify(canonicalStageRows(verify, false))
 		)
-			return await invalidate();
+			return await rejectReplay(selectedIds);
 		const mapped = new Map<string, number | null>();
 		const originalBindings = new Map<string, number>();
 		for (const binding of originalCatalog?.bindings ?? []) {
@@ -1722,7 +1894,7 @@ async function evaluateJellyfinEpisodeRun(
 			string,
 			{ sourceBindings: number; canonicalEntities: number; missingMappings: number }
 		>();
-		for (const unit of run.units) {
+		for (const unit of evidenceUnits) {
 			const canonicalCoordinates = new Set<string>();
 			const stagedIds = new Set((stagesByUnit.get(unit.id) ?? []).map((row) => row.jellyfinId));
 			let missingMappings = [...(exclusionsByUnit.get(unit.id) ?? [])].filter(
@@ -1794,7 +1966,7 @@ async function evaluateJellyfinEpisodeRun(
 		const exactV3Cardinality =
 			exactV3Catalog &&
 			excludedIds.size === 0 &&
-			run.units.every((unit) => {
+			evidenceUnits.every((unit) => {
 				const unitStages = stagesByUnit.get(unit.id) ?? [];
 				const stageIds = new Set(unitStages.map((row) => row.jellyfinId));
 				const scope = scopesByUnitId.get(unit.id);
@@ -1810,7 +1982,7 @@ async function evaluateJellyfinEpisodeRun(
 			exactV3Cardinality &&
 			exactV3Mapping &&
 			hasV3ExactNativeIdentityConsistency([...collect, ...verify]) &&
-			run.units.every(
+			evidenceUnits.every(
 				(unit) =>
 					coverageByUnit.get(unit.id)?.missingMappings === 0 &&
 					coverageByUnit.get(unit.id)?.sourceBindings === unit.observedRawCount,
@@ -1890,7 +2062,7 @@ async function evaluateJellyfinEpisodeRun(
 		const hasMissingMappings = [...coverageByUnit.values()].some(
 			(coverage) => coverage.missingMappings > 0,
 		);
-		const coverageUnits = run.units.map((unit) => {
+		const coverageUnits = evidenceUnits.map((unit) => {
 			const coverage = coverageByUnit.get(unit.id)!;
 			const stageCount = new Set([
 				...(stagesByUnit.get(unit.id) ?? []).map((row) => row.jellyfinId),
@@ -1898,7 +2070,7 @@ async function evaluateJellyfinEpisodeRun(
 			]).size;
 			const duplicateSourceObservations = isV3Run ? unit.observedRawCount - stageCount : 0;
 			const pages =
-				pageSize === 2_000
+				pageSize === 2_000 || replaySelection.has(unit.id)
 					? unit.completedPages
 					: Math.max(1, Math.ceil(unit.expectedRawCount! / pageSize));
 			// Raw/source counts still describe the complete observed pass. V3's
@@ -2038,7 +2210,7 @@ async function evaluateJellyfinEpisodeRun(
 			);
 			const receipts = input.scopes.map((scope) => {
 				const userKeyDigest = digest(["jellyfin-user", scope.userId]);
-				const matchingUnits = run.units.filter((unit) => {
+				const matchingUnits = evidenceUnits.filter((unit) => {
 					const persisted = scopesByUnitId.get(unit.id);
 					return persisted?.userId === scope.userId && persisted.libraryId === scope.libraryId;
 				});
@@ -2158,29 +2330,11 @@ async function evaluateJellyfinEpisodeRun(
 					})
 				: undefined;
 		const nativeProjectionFinishedAt = performance.now();
-		if (mode === "prepare") {
-			const preparedAt = performance.now();
-			try {
-				const ms = (duration: number) => Math.max(0, Math.round(duration));
-				input.recordTiming?.(
-					{
-						authorityMs: ms(stageLoadStartedAt - startedAt),
-						stageLoadMs: ms(stageLoadedAt - stageLoadStartedAt),
-						computeMs: ms(preparedAt - stageLoadedAt),
-						episodeWriteMs: 0,
-						nativeProjectionMs: ms(nativeProjectionFinishedAt - nativeProjectionStartedAt),
-						nativeWatchWriteMs: 0,
-						totalMs: ms(preparedAt - startedAt),
-						stageRows: stages.length,
-						nativeCandidates: nativePublication?.candidates.length ?? 0,
-						...(nativeWatchDiagnostics ? { nativeWatchDiagnostics } : {}),
-					},
-					preparedAt - startedAt,
-				);
-			} catch {
-				// Diagnostics cannot replace otherwise valid prepared evidence.
-			}
-			return {
+		const replayEligible =
+			input.allowScopeReplay &&
+			(await findJellyfinEpisodeReplayReservation(tx, run, input.scopes, nativePublication, now));
+		if (mode === "prepare" || replayEligible) {
+			const prepared: ReadyJellyfinEpisodeRun = {
 				kind: "ready" as const,
 				authority: {
 					instanceId: instance.id,
@@ -2220,6 +2374,32 @@ async function evaluateJellyfinEpisodeRun(
 				},
 				statusId: status.id,
 			};
+			if (mode === "prepare") {
+				const preparedAt = performance.now();
+				try {
+					const ms = (duration: number) => Math.max(0, Math.round(duration));
+					input.recordTiming?.(
+						{
+							authorityMs: ms(stageLoadStartedAt - startedAt),
+							stageLoadMs: ms(stageLoadedAt - stageLoadStartedAt),
+							computeMs: ms(preparedAt - stageLoadedAt),
+							episodeWriteMs: 0,
+							nativeProjectionMs: ms(nativeProjectionFinishedAt - nativeProjectionStartedAt),
+							nativeWatchWriteMs: 0,
+							totalMs: ms(preparedAt - startedAt),
+							stageRows: stages.length,
+							nativeCandidates: nativePublication?.candidates.length ?? 0,
+							...(nativeWatchDiagnostics ? { nativeWatchDiagnostics } : {}),
+						},
+						preparedAt - startedAt,
+					);
+				} catch {
+					// Diagnostics cannot replace otherwise valid prepared evidence.
+				}
+				return replayEligible ? { ...prepared, replayEligible: true as const } : prepared;
+			}
+			if (input.transaction && (await reserveJellyfinEpisodeScopeReplay(tx, input, prepared)))
+				return { published: false, itemCount: 0, replayReserved: true as const };
 		}
 		const computeFinishedAt = performance.now();
 		await input.testHooks?.beforePublish?.(tx);
@@ -2348,6 +2528,7 @@ export async function readCompletedJellyfinEpisodePublication(
 		instanceId: string;
 		runId: string;
 		attempt: ProviderCacheRefreshAttempt;
+		inlineV3?: true;
 	},
 ): Promise<number | null> {
 	if (!input.userId.trim() || !input.instanceId.trim() || !input.runId.trim()) return null;
@@ -2398,6 +2579,24 @@ export async function readCompletedJellyfinEpisodePublication(
 			where: { instanceId: input.instanceId },
 			select: { activeRunId: true, activeCacheGenerationId: true },
 		});
+		const decoded = decodeJellyfinEpisodeGenerationMetadata(status?.generationMetadata);
+		if (
+			!status ||
+			!decoded.ok ||
+			status.lastResult !== "success" ||
+			status.lastAttemptResult !== "success" ||
+			status.lastAttemptAt?.getTime() !== input.attempt.attemptedAt.getTime() ||
+			status.connectionGeneration !== instance.connectionGeneration ||
+			status.identityGeneration !== instance.identityGeneration
+		)
+			return null;
+		if (input.inlineV3)
+			return (decoded.metadata.version === 2 || decoded.metadata.version === 3) &&
+				status.generationId &&
+				pointer?.activeRunId === input.runId &&
+				pointer.activeCacheGenerationId === status.generationId
+				? status.itemCount
+				: null;
 		const preparation = await tx.jellyfinEpisodePreparation.findUnique({
 			where: { runId: input.runId },
 			select: {
@@ -2407,15 +2606,8 @@ export async function readCompletedJellyfinEpisodePublication(
 				expectedRowCount: true,
 			},
 		});
-		const decoded = decodeJellyfinEpisodeGenerationMetadata(status?.generationMetadata);
-		return status?.generationId === input.runId &&
-			decoded.ok &&
+		return status.generationId === input.runId &&
 			decoded.metadata.version === 4 &&
-			status.lastResult === "success" &&
-			status.lastAttemptResult === "success" &&
-			status.lastAttemptAt?.getTime() === input.attempt.attemptedAt.getTime() &&
-			status.connectionGeneration === instance.connectionGeneration &&
-			status.identityGeneration === instance.identityGeneration &&
 			(decoded.metadata.sourceVersion !== 3 ||
 				(pointer?.activeRunId === input.runId &&
 					pointer.activeCacheGenerationId === input.runId)) &&
@@ -2428,24 +2620,31 @@ export async function readCompletedJellyfinEpisodePublication(
 	});
 }
 
-export async function finalizeJellyfinEpisodeRun(
-	input: FinalizeJellyfinEpisodeRunInput,
-): Promise<{ published: boolean; itemCount: number }> {
+export async function finalizeJellyfinEpisodeRun(input: FinalizeJellyfinEpisodeRunInput): Promise<{
+	published: boolean;
+	itemCount: number;
+	replayReserved?: true;
+	replayFallback?: true;
+	replayPending?: true;
+}> {
 	return (await evaluateJellyfinEpisodeRun(input, "publish")) as {
 		published: boolean;
 		itemCount: number;
+		replayReserved?: true;
+		replayFallback?: true;
+		replayPending?: true;
 	};
 }
 
-/** Only short, execution-time authority checks and visible publication run here. */
-export async function commitPreparedJellyfinEpisodeRun(
+type ReadyJellyfinEpisodeRun = Extract<PreparedJellyfinEpisodeRun, { kind: "ready" }>;
+
+async function readCurrentPreparedJellyfinEpisodeRun(
 	tx: Prisma.TransactionClient,
 	input: FinalizeJellyfinEpisodeRunInput,
-	prepared: Extract<PreparedJellyfinEpisodeRun, { kind: "ready" }>,
-): Promise<{ published: boolean; itemCount: number }> {
-	const rejected = { published: false, itemCount: 0 };
+	prepared: ReadyJellyfinEpisodeRun,
+	now: Date,
+) {
 	const authority = prepared.authority;
-	const now = input.testHooks?.commitClock?.() ?? new Date();
 	if (
 		input.userId !== authority.userId ||
 		input.instance.id !== authority.instanceId ||
@@ -2457,7 +2656,7 @@ export async function commitPreparedJellyfinEpisodeRun(
 		input.attempt.resultMarker !== prepared.attempt.resultMarker ||
 		!Number.isFinite(now.getTime())
 	)
-		return rejected;
+		return null;
 	const instance = await tx.serviceInstance.findFirst({
 		where: {
 			id: authority.instanceId,
@@ -2497,9 +2696,10 @@ export async function commitPreparedJellyfinEpisodeRun(
 		run.completedWork !== run.totalWork ||
 		run.units.length !== run.totalUnits ||
 		run.units.some((unit) => unit.state !== "complete") ||
+		settledJellyfinReplaySelection(run.units) === null ||
 		finalizationUnitFingerprint(run.units) !== prepared.unitFingerprint
 	)
-		return rejected;
+		return null;
 	const status = await tx.cacheRefreshStatus.findUnique({
 		where: {
 			instanceId_cacheType: { instanceId: authority.instanceId, cacheType: "jellyfin_episode" },
@@ -2514,7 +2714,7 @@ export async function commitPreparedJellyfinEpisodeRun(
 		status.connectionGeneration !== authority.connectionGeneration ||
 		status.identityGeneration !== authority.identityGeneration
 	)
-		return rejected;
+		return null;
 	const parentStatus = await tx.cacheRefreshStatus.findUnique({
 		where: { instanceId_cacheType: { instanceId: authority.instanceId, cacheType: "jellyfin" } },
 	});
@@ -2533,7 +2733,523 @@ export async function commitPreparedJellyfinEpisodeRun(
 			JELLYFIN_EPISODE_PARENT_MUTATION_AUTHORITY_MAX_AGE_MS ||
 		prepared.parentStatus.lastRefreshedAt.getTime() > now.getTime()
 	)
-		return rejected;
+		return null;
+	return { run, status };
+}
+
+function hasReplayablePaginationDrift(receipt: NativeWatchPublicationInput["receipts"][number]) {
+	const diagnostics = parseNativeWatchScopeDiagnostics(receipt.diagnosticsJson);
+	return (
+		!receipt.exact &&
+		diagnostics !== null &&
+		diagnostics.collectUnits === 1 &&
+		diagnostics.verifyUnits === 1 &&
+		diagnostics.invalidCollectRows === 0 &&
+		diagnostics.invalidVerifyRows === 0 &&
+		diagnostics.conflictedCoordinates === 0 &&
+		diagnostics.changedObservationCoordinates === 0 &&
+		diagnostics.excludedRows === 0 &&
+		receipt.expectedRawCount <= JELLYFIN_EPISODE_MAX_SCOPE_ROWS &&
+		receipt.observedRawCount <= JELLYFIN_EPISODE_MAX_SCOPE_ROWS &&
+		diagnostics.collectStageRows <= receipt.expectedRawCount &&
+		diagnostics.verifyStageRows <= receipt.observedRawCount &&
+		(!diagnostics.expectedCountsMatch ||
+			diagnostics.collectStageRows < receipt.expectedRawCount ||
+			diagnostics.verifyStageRows < receipt.observedRawCount)
+	);
+}
+
+async function findJellyfinEpisodeReplayReservation(
+	tx: Prisma.TransactionClient,
+	run: {
+		id: string;
+		createdAt: Date;
+		parentGenerationId: string | null;
+		units: ProviderObservationUnit[];
+	},
+	scopes: readonly JellyfinEpisodeScope[],
+	nativePublication: NativeWatchPublicationInput | null,
+	now: Date,
+) {
+	if (!run.parentGenerationId?.startsWith(JELLYFIN_EPISODE_PARENT_V3_KEY_PREFIX)) return null;
+	const eligibleReceipts = nativePublication?.receipts.filter(hasReplayablePaginationDrift);
+	if (!eligibleReceipts?.length) return null;
+
+	const startedMs = run.createdAt.getTime();
+	const deadlineMs = startedMs + JELLYFIN_EPISODE_REPLAY_RUN_BUDGET_MS;
+	if (!Number.isSafeInteger(deadlineMs) || now.getTime() < startedMs || now.getTime() >= deadlineMs)
+		return null;
+
+	const unitsByScopeKey = new Map(run.units.map((unit) => [unit.scopeKey, unit]));
+	for (const scope of scopes) {
+		const collect = unitsByScopeKey.get(`collect:${scope.userId}:${scope.libraryId}`);
+		const verify = unitsByScopeKey.get(`verify:${scope.userId}:${scope.libraryId}`);
+		if (
+			collect?.phase !== "collect" ||
+			verify?.phase !== "verify" ||
+			collect.scopeDigest !== scopeDigest("collect", scope) ||
+			verify.scopeDigest !== scopeDigest("verify", scope) ||
+			collect.jellyfinReplayState !== null ||
+			verify.jellyfinReplayState !== null
+		)
+			continue;
+		const userKeyDigest = digest(["jellyfin-user", scope.userId]);
+		if (
+			!eligibleReceipts.some(
+				(receipt) =>
+					receipt.userKeyDigest === userKeyDigest && receipt.libraryId === scope.libraryId,
+			)
+		)
+			continue;
+		// Deduplicated stage rows retain only the first watch flag. A repeat
+		// sidecar can disqualify the scope even when both staged passes agree.
+		const conflictingRepeat = await tx.jellyfinEpisodeObservationExclusion.findFirst({
+			where: {
+				runId: run.id,
+				unitId: { in: [collect.id, verify.id] },
+				reason: { startsWith: "repeated-episode:", endsWith: ":conflicts" },
+			},
+			select: { id: true },
+		});
+		if (conflictingRepeat) continue;
+		const originalRows = run.units.reduce((sum, unit) => sum + unit.observedRawCount, 0);
+		const replayRows = await tx.jellyfinEpisodeObservationStage.count({
+			where: { runId: run.id, pass: { in: JELLYFIN_EPISODE_REPLAY_PASSES } },
+		});
+		const rowBudget = Math.min(
+			2 * JELLYFIN_EPISODE_MAX_SCOPE_ROWS,
+			MAX_JELLYFIN_FINALIZER_STAGE_ROWS - originalRows - replayRows,
+		);
+		if (rowBudget < 2) return null;
+		const replay: JellyfinEpisodeReplayState = {
+			version: 1,
+			collectUnitId: collect.id,
+			state: "collecting",
+			rowBudget,
+			deadlineMs,
+			completedPages: 0,
+			cursor: 0,
+			expectedRawCount: null,
+			collectRawCount: null,
+			lease: null,
+		};
+		return { verify, replay };
+	}
+	return null;
+}
+
+/** Called inside the provider publication authority lock before staging a generation. */
+export async function reserveJellyfinEpisodeScopeReplay(
+	tx: Prisma.TransactionClient,
+	input: FinalizeJellyfinEpisodeRunInput,
+	prepared: ReadyJellyfinEpisodeRun,
+): Promise<boolean> {
+	if (!input.scopes) return false;
+	const now = input.testHooks?.commitClock?.() ?? new Date();
+	const current = await readCurrentPreparedJellyfinEpisodeRun(tx, input, prepared, now);
+	if (!current) return false;
+	const reservation = await findJellyfinEpisodeReplayReservation(
+		tx,
+		current.run,
+		input.scopes,
+		prepared.nativePublication,
+		now,
+	);
+	if (!reservation) return false;
+	const { verify, replay } = reservation;
+	const reserved = await tx.providerObservationUnit.updateMany({
+		where: {
+			id: verify.id,
+			runId: verify.runId,
+			phase: "verify",
+			state: "complete",
+			jellyfinReplayState: null,
+		},
+		data: { jellyfinReplayState: JSON.stringify(replay), updatedAt: verify.updatedAt },
+	});
+	return reserved.count === 1;
+}
+
+type JellyfinEpisodeReplayInput = {
+	prisma: PrismaClient;
+	authority: ProviderPublicationAuthority;
+	attempt: ProviderCacheRefreshAttempt;
+	runId: string;
+	catalogKey: string;
+	scopes: readonly JellyfinEpisodeScope[];
+	cleanupRunClaimToken?: string;
+};
+
+type JellyfinEpisodeReplayClaim = {
+	token: string;
+	verifyUnitId: string;
+	phase: "collect" | "verify";
+	scope: JellyfinEpisodeScope;
+	pageSize: JellyfinEpisodePageSize;
+	cursor: number;
+	untilMs: number;
+};
+
+type ActiveJellyfinEpisodeReplay = Extract<
+	JellyfinEpisodeReplayState,
+	{ state: "collecting" | "verifying" }
+>;
+
+function findActiveReplayUnit(units: readonly ProviderObservationUnit[]) {
+	let active: { verify: ProviderObservationUnit; replay: ActiveJellyfinEpisodeReplay } | null =
+		null;
+	for (const verify of units) {
+		if (verify.jellyfinReplayState == null) continue;
+		const replay = decodeJellyfinEpisodeReplayState(verify.jellyfinReplayState);
+		if (!replay || verify.phase !== "verify" || verify.state !== "complete") return null;
+		if (replay.state !== "collecting" && replay.state !== "verifying") continue;
+		if (active) return null;
+		active = { verify, replay };
+	}
+	return active;
+}
+
+async function currentJellyfinEpisodeReplay(
+	tx: Prisma.TransactionClient,
+	input: JellyfinEpisodeReplayInput,
+) {
+	const { authority, attempt } = input;
+	const run = await tx.providerObservationRun.findFirst({
+		where: {
+			id: input.runId,
+			instanceId: authority.id,
+			provider: "jellyfin_episode",
+			cacheType: "jellyfin_episode",
+			state: "running",
+			activeSlotKey: { not: null },
+			parentGenerationId: input.catalogKey,
+			connectionGeneration: authority.connectionGeneration,
+			identityGeneration: authority.identityGeneration,
+		},
+		include: { units: { where: { jellyfinReplayState: { not: null } } } },
+	});
+	if (!run || run.completedUnits !== run.totalUnits || run.completedWork !== run.totalWork)
+		return null;
+
+	const active = findActiveReplayUnit(run.units);
+	if (!active) return null;
+	const { verify, replay } = active;
+	const status = await tx.cacheRefreshStatus.findFirst({
+		where: {
+			instanceId: authority.id,
+			cacheType: "jellyfin_episode",
+			connectionGeneration: authority.connectionGeneration,
+			identityGeneration: authority.identityGeneration,
+			lastAttemptAt: attempt.attemptedAt,
+			lastAttemptResult: attempt.resultMarker,
+		},
+		select: { id: true },
+	});
+	if (!status) return null;
+
+	const scope = input.scopes.find(
+		(candidate) => scopeDigest("verify", candidate) === verify.scopeDigest,
+	);
+	const verifyScope = parseScope(verify.scopePayload);
+	if (!scope || verifyScope?.userId !== scope.userId || verifyScope.libraryId !== scope.libraryId)
+		return null;
+	const collect = await tx.providerObservationUnit.findFirst({
+		where: {
+			id: replay.collectUnitId,
+			runId: run.id,
+			phase: "collect",
+			state: "complete",
+			scopeDigest: scopeDigest("collect", scope),
+			jellyfinReplayState: null,
+		},
+	});
+	const collectScope = parseScope(collect?.scopePayload ?? null);
+	const pageSize = jellyfinEpisodePageSizeFromPayload(verify.scopePayload);
+	if (
+		!collect ||
+		collectScope?.userId !== scope.userId ||
+		collectScope.libraryId !== scope.libraryId ||
+		pageSize === null ||
+		jellyfinEpisodePageSizeFromPayload(collect.scopePayload) !== pageSize
+	)
+		return null;
+	return { verify, replay, scope, pageSize };
+}
+
+async function updateJellyfinEpisodeReplay(
+	tx: Prisma.TransactionClient,
+	verify: ProviderObservationUnit,
+	replay: JellyfinEpisodeReplayState,
+): Promise<void> {
+	const updated = await tx.providerObservationUnit.updateMany({
+		where: {
+			id: verify.id,
+			runId: verify.runId,
+			phase: "verify",
+			state: "complete",
+			jellyfinReplayState: verify.jellyfinReplayState,
+		},
+		data: { jellyfinReplayState: JSON.stringify(replay), updatedAt: verify.updatedAt },
+	});
+	if (updated.count !== 1) throw new Error("Jellyfin episode replay was superseded");
+}
+
+function ownsJellyfinEpisodeReplay(input: JellyfinEpisodeReplayInput): boolean {
+	return (
+		input.authority.service === "JELLYFIN" &&
+		input.catalogKey.startsWith(JELLYFIN_EPISODE_PARENT_V3_KEY_PREFIX) &&
+		input.attempt.resultMarker.startsWith("in_progress:")
+	);
+}
+
+function originalJellyfinReplay(
+	replay: ActiveJellyfinEpisodeReplay,
+	reason: Extract<JellyfinEpisodeReplayState, { state: "original" }>["reason"],
+): JellyfinEpisodeReplayState {
+	return { version: 1, collectUnitId: replay.collectUnitId, state: "original", reason };
+}
+
+/** A read probe avoids taking the publication write lock on ordinary, complete runs. */
+export async function hasActiveJellyfinEpisodeReplay(
+	input: JellyfinEpisodeReplayInput,
+	transaction?: Prisma.TransactionClient,
+): Promise<boolean> {
+	if (!ownsJellyfinEpisodeReplay(input)) return false;
+	if (transaction) return (await currentJellyfinEpisodeReplay(transaction, input)) !== null;
+	return await withIsolatedRuntimePrismaReadTransaction(
+		input.prisma,
+		async (tx) => (await currentJellyfinEpisodeReplay(tx, input)) !== null,
+	);
+}
+
+/** Establish the only token that may advance the current replay cursor. */
+export async function claimJellyfinEpisodeReplayPage(
+	input: JellyfinEpisodeReplayInput,
+	clock?: Date,
+): Promise<
+	| { kind: "none" | "unavailable" | "fallback" }
+	| { kind: "busy"; untilMs: number }
+	| { kind: "claimed"; claim: JellyfinEpisodeReplayClaim }
+> {
+	if (!ownsJellyfinEpisodeReplay(input)) return { kind: "unavailable" };
+	const result = await withCurrentProviderPublicationAuthority(
+		input.prisma,
+		input.authority,
+		async (tx) => {
+			const current = await currentJellyfinEpisodeReplay(tx, input);
+			if (!current) return { kind: "none" } as const;
+			const { verify, replay, scope, pageSize } = current;
+			const nowMs = (clock ?? new Date()).getTime();
+			if (!Number.isFinite(nowMs)) return { kind: "unavailable" } as const;
+			if (nowMs >= replay.deadlineMs) {
+				await updateJellyfinEpisodeReplay(tx, verify, originalJellyfinReplay(replay, "deadline"));
+				return { kind: "fallback" } as const;
+			}
+			if (replay.lease && replay.lease.untilMs > nowMs)
+				return { kind: "busy", untilMs: replay.lease.untilMs } as const;
+			const token = randomUUID();
+			const untilMs = Math.min(nowMs + JELLYFIN_EPISODE_REPLAY_LEASE_MS, replay.deadlineMs);
+			await updateJellyfinEpisodeReplay(tx, verify, { ...replay, lease: { token, untilMs } });
+			return {
+				kind: "claimed",
+				claim: {
+					token,
+					untilMs,
+					verifyUnitId: verify.id,
+					phase: replay.state === "collecting" ? "collect" : "verify",
+					scope,
+					pageSize,
+					cursor: replay.cursor,
+				},
+			} as const;
+		},
+		{ cleanupRunClaimToken: input.cleanupRunClaimToken },
+	);
+	return result.matched ? result.value : { kind: "unavailable" };
+}
+
+function replayRowsMatch(
+	before: Prisma.JellyfinEpisodeObservationStageCreateManyInput,
+	after:
+		| Pick<
+				JellyfinEpisodeObservationStage,
+				"seriesId" | "seasonNumber" | "episodeNumber" | "played" | "playCount" | "lastPlayedAt"
+		  >
+		| undefined,
+): boolean {
+	return (
+		after !== undefined &&
+		before.seriesId === after.seriesId &&
+		before.seasonNumber === after.seasonNumber &&
+		before.episodeNumber === after.episodeNumber &&
+		before.played === after.played &&
+		before.playCount === after.playCount &&
+		(before.lastPlayedAt instanceof Date ? before.lastPlayedAt.getTime() : undefined) ===
+			after.lastPlayedAt?.getTime()
+	);
+}
+
+/** Finish a counted page or abandon this pair, atomically with the cursor update. */
+export async function stageJellyfinEpisodeReplayPage(
+	input: JellyfinEpisodeReplayInput,
+	claim: JellyfinEpisodeReplayClaim,
+	page: JellyfinEpisodeCollectedPage | null,
+	clock?: Date,
+): Promise<"advanced" | "selected" | "fallback" | "stale"> {
+	if (!ownsJellyfinEpisodeReplay(input)) return "stale";
+	const result = await withCurrentProviderPublicationAuthority(
+		input.prisma,
+		input.authority,
+		async (tx) => {
+			const current = await currentJellyfinEpisodeReplay(tx, input);
+			if (!current) return "stale" as const;
+			const { verify, replay, scope, pageSize } = current;
+			const phase = replay.state === "collecting" ? "collect" : "verify";
+			if (
+				replay.lease?.token !== claim.token ||
+				replay.cursor !== claim.cursor ||
+				verify.id !== claim.verifyUnitId ||
+				phase !== claim.phase
+			)
+				return "stale" as const;
+			const nowMs = (clock ?? new Date()).getTime();
+			if (!Number.isFinite(nowMs)) return "stale" as const;
+			const fallback = async (reason: "deadline" | "transport" | "coverage") => {
+				await updateJellyfinEpisodeReplay(tx, verify, originalJellyfinReplay(replay, reason));
+				return "fallback" as const;
+			};
+			if (nowMs >= replay.deadlineMs) return await fallback("deadline");
+			if (nowMs >= replay.lease.untilMs) return "stale" as const;
+			if (!page) return await fallback("transport");
+			if (
+				page.totalRecordCount === null ||
+				2 * page.totalRecordCount > replay.rowBudget ||
+				(replay.state === "verifying" && page.totalRecordCount !== replay.collectRawCount) ||
+				pageRejectionReason(page, replay.cursor, replay.expectedRawCount, pageSize) !== null
+			)
+				return await fallback("coverage");
+
+			const items = page.items.filter((item) => item.excludedReason === undefined);
+			if (items.length !== page.items.length) return await fallback("coverage");
+			const userKeyDigest = digest(["jellyfin-user", scope.userId]);
+			const pass = phase === "collect" ? "collect-replay" : "verify-replay";
+			const unitId = phase === "collect" ? replay.collectUnitId : verify.id;
+			const ids = items.map((item) => item.id);
+			if (ids.length) {
+				const byIdentity = { runId: input.runId, userKeyDigest, jellyfinId: { in: ids } };
+				const known = await tx.jellyfinEpisodeObservationStage.findMany({
+					where: {
+						...byIdentity,
+						pass: { in: ["collect", "verify", ...JELLYFIN_EPISODE_REPLAY_PASSES] },
+					},
+					select: {
+						pass: true,
+						unitId: true,
+						jellyfinId: true,
+						seriesId: true,
+						seasonNumber: true,
+						episodeNumber: true,
+						played: true,
+						playCount: true,
+						lastPlayedAt: true,
+					},
+				});
+				if (
+					known.some((row) => {
+						if (row.pass === pass) return true;
+						if (row.pass === "collect" || row.pass === "collect-replay")
+							return row.unitId !== replay.collectUnitId;
+						return row.pass !== "verify" || row.unitId !== verify.id;
+					}) ||
+					(await tx.jellyfinEpisodeObservationExclusion.findFirst({
+						where: {
+							...byIdentity,
+							pass: { in: ["collect", "verify"] },
+							unitId: { notIn: [replay.collectUnitId, verify.id] },
+						},
+						select: { id: true },
+					}))
+				)
+					return await fallback("coverage");
+				const rows = items.map((item) => ({
+					runId: input.runId,
+					unitId,
+					userKeyDigest,
+					pass,
+					jellyfinId: item.id,
+					seriesId: item.seriesId!,
+					seasonNumber: item.seasonNumber!,
+					episodeNumber: item.episodeNumber!,
+					title: item.name,
+					played: item.played,
+					playCount: item.playCount ?? null,
+					lastPlayedAt: item.lastPlayedDate ? new Date(item.lastPlayedDate) : null,
+					userName: "",
+				}));
+				if (phase === "verify") {
+					const collectRows = new Map(
+						known
+							.filter((row) => row.pass === "collect-replay")
+							.map((row) => [row.jellyfinId, row]),
+					);
+					if (rows.some((row) => !replayRowsMatch(row, collectRows.get(row.jellyfinId))))
+						return await fallback("coverage");
+				}
+				await insertJellyfinEpisodeStageRows(tx, rows);
+			}
+			const cursor = replay.cursor + page.items.length;
+			const total = page.totalRecordCount;
+			if (cursor < total) {
+				await updateJellyfinEpisodeReplay(tx, verify, {
+					...replay,
+					cursor,
+					expectedRawCount: total,
+					completedPages: replay.completedPages + 1,
+					lease: null,
+				});
+				return "advanced" as const;
+			}
+			if (replay.state === "collecting") {
+				await updateJellyfinEpisodeReplay(tx, verify, {
+					...replay,
+					state: "verifying",
+					cursor: 0,
+					expectedRawCount: null,
+					collectRawCount: total,
+					collectPages: replay.completedPages + 1,
+					completedPages: 0,
+					lease: null,
+				});
+				return "advanced" as const;
+			}
+			await updateJellyfinEpisodeReplay(tx, verify, {
+				version: 1,
+				collectUnitId: replay.collectUnitId,
+				state: "selected",
+				rawCount: total,
+				collectPages: replay.collectPages,
+				verifyPages: replay.completedPages + 1,
+				completedMs: nowMs,
+			});
+			return "selected" as const;
+		},
+		{ cleanupRunClaimToken: input.cleanupRunClaimToken },
+	);
+	return result.matched ? result.value : "stale";
+}
+
+/** Only short, execution-time authority checks and visible publication run here. */
+export async function commitPreparedJellyfinEpisodeRun(
+	tx: Prisma.TransactionClient,
+	input: FinalizeJellyfinEpisodeRunInput,
+	prepared: ReadyJellyfinEpisodeRun,
+): Promise<{ published: boolean; itemCount: number }> {
+	const rejected = { published: false, itemCount: 0 };
+	const authority = prepared.authority;
+	const now = input.testHooks?.commitClock?.() ?? new Date();
+	const current = await readCurrentPreparedJellyfinEpisodeRun(tx, input, prepared, now);
+	if (!current) return rejected;
+	const { status } = current;
 	if (
 		authority.parentGenerationId?.startsWith(JELLYFIN_EPISODE_PARENT_V3_KEY_PREFIX) &&
 		!prepared.nativePublication
@@ -2646,10 +3362,10 @@ export async function commitPreparedJellyfinEpisodeRun(
 }
 
 /** Quarantine proven-invalid evidence without deleting its large staging in the guard. */
-export async function settleInvalidJellyfinEpisodeRun(
+export async function settleJellyfinEpisodeFinalizationRejection(
 	tx: Prisma.TransactionClient,
 	input: FinalizeJellyfinEpisodeRunInput,
-	prepared: Extract<PreparedJellyfinEpisodeRun, { kind: "invalid" }>,
+	prepared: Extract<PreparedJellyfinEpisodeRun, { kind: "invalid" | "replay-rejected" }>,
 ): Promise<boolean> {
 	const authority = prepared.authority;
 	if (
@@ -2682,22 +3398,42 @@ export async function settleInvalidJellyfinEpisodeRun(
 		status.lastAttemptResult !== input.attempt.resultMarker
 	)
 		return false;
+	const units = await tx.providerObservationUnit.findMany({ where: { runId: authority.runId } });
+	if (finalizationUnitFingerprint(units) !== prepared.unitFingerprint) return false;
+	const where = {
+		id: authority.runId,
+		instanceId: authority.instanceId,
+		provider: "jellyfin_episode",
+		cacheType: "jellyfin_episode",
+		state: "running",
+		activeSlotKey: { not: null },
+		authorityKey: authority.authorityKey,
+		parentGenerationId: authority.parentGenerationId,
+		targetDigest: authority.targetDigest,
+		completedUnits: authority.completedUnits,
+		completedWork: authority.completedWork,
+		connectionGeneration: authority.connectionGeneration,
+		identityGeneration: authority.identityGeneration,
+		totalUnits: authority.totalUnits,
+		totalWork: authority.totalWork,
+	} satisfies Prisma.ProviderObservationRunWhereInput;
+	if (prepared.kind === "replay-rejected") {
+		const verify = units.find((unit) => unit.id === prepared.verifyUnitId);
+		const replay = decodeJellyfinEpisodeReplayState(verify?.jellyfinReplayState);
+		if (verify?.phase !== "verify" || verify.state !== "complete" || replay?.state !== "selected")
+			return false;
+		const run = await tx.providerObservationRun.findFirst({ where, select: { id: true } });
+		if (!run) return false;
+		await updateJellyfinEpisodeReplay(tx, verify, {
+			version: 1,
+			collectUnitId: replay.collectUnitId,
+			state: "original",
+			reason: "coverage",
+		});
+		return true;
+	}
 	const invalidated = await tx.providerObservationRun.updateMany({
-		where: {
-			id: authority.runId,
-			instanceId: authority.instanceId,
-			provider: "jellyfin_episode",
-			cacheType: "jellyfin_episode",
-			state: "running",
-			activeSlotKey: { not: null },
-			authorityKey: authority.authorityKey,
-			parentGenerationId: authority.parentGenerationId,
-			targetDigest: authority.targetDigest,
-			completedUnits: authority.completedUnits,
-			completedWork: authority.completedWork,
-			connectionGeneration: authority.connectionGeneration,
-			identityGeneration: authority.identityGeneration,
-		},
+		where,
 		data: {
 			state: "invalidated",
 			activeSlotKey: null,

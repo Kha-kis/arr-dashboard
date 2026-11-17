@@ -1398,6 +1398,7 @@ CREATE TABLE "provider_observation_units" (
     "scopeKey" TEXT NOT NULL,
     "scopeDigest" TEXT NOT NULL,
     "scopePayload" TEXT,
+    "jellyfinReplayState" TEXT,
     "phase" TEXT NOT NULL,
     "expectedTargets" INTEGER NOT NULL,
     "cursor" INTEGER NOT NULL DEFAULT 0,
@@ -4630,6 +4631,9 @@ ALTER TABLE "provider_observation_units" ADD COLUMN "scopeDigest" TEXT NOT NULL;
 
 -- arr-schema-atom column:b4107914cbf1f7ef497a5015b7e9c1bbb52c8e5c234e1db3d9a230ca5aed77a9
 ALTER TABLE "provider_observation_units" ADD COLUMN "scopePayload" TEXT;
+
+-- arr-schema-atom column:8dafa25873811aa74d7a95dfe4ca55f32e11117dff50e73fb06f725a9b6e1522
+ALTER TABLE "provider_observation_units" ADD COLUMN "jellyfinReplayState" TEXT;
 
 -- arr-schema-atom column:fa8de0a62afed817dcc9fdc710646c5adbadbc01fdada04733571852f762e32e
 ALTER TABLE "provider_observation_units" ADD COLUMN "phase" TEXT NOT NULL;

@@ -160,6 +160,16 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 				);
 				if (closing) return;
 				if (completedRunRetry) {
+					if (result?.progressed && !result.complete) {
+						scheduleContinuation(
+							instance,
+							JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS,
+							transientIdentityRetry,
+							catalogReplans,
+							automaticRenewal,
+						);
+						return;
+					}
 					const index = completedRunRetry.index + 1;
 					const delay = COMPLETED_RUN_RETRY_DELAYS_MS[index];
 					if (

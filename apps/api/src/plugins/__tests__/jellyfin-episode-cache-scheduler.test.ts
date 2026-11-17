@@ -1043,7 +1043,7 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 		},
 	);
 
-	it.each(["recovered", "still refused", "finalizer deferred"] as const)(
+	it.each(["recovered", "still refused", "finalizer deferred", "replay reserved"] as const)(
 		"bounds delayed publication recovery when the claim is %s",
 		async (outcome) => {
 			findInstances.mockResolvedValue([instance("JELLYFIN")]);
@@ -1075,6 +1075,13 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 					retryableDependencyFailure: true,
 				});
 			}
+			if (outcome === "replay reserved")
+				mocks.refresh.mockResolvedValueOnce({
+					complete: false,
+					upserted: 0,
+					errors: 0,
+					progressed: true,
+				});
 			mocks.refresh.mockResolvedValue(
 				outcome === "still refused" ? refusal : { complete: true, upserted: 24, errors: 0 },
 			);
@@ -1092,6 +1099,14 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 				automaticRenewal: "provider-unavailable-cooldown",
 				expectedCompletedRunId: "staged-run",
 			});
+			if (outcome === "replay reserved") {
+				await vi.advanceTimersByTimeAsync(999);
+				expect(mocks.refresh).toHaveBeenCalledTimes(5);
+				await vi.advanceTimersByTimeAsync(1);
+				expect(mocks.refresh).toHaveBeenCalledTimes(6);
+				expect(mocks.refresh.mock.lastCall?.[0]).not.toHaveProperty("expectedCompletedRunId");
+				return;
+			}
 			await vi.advanceTimersByTimeAsync(600_000);
 			expect(mocks.refresh).toHaveBeenCalledTimes(
 				outcome === "still refused" ? 7 : outcome === "finalizer deferred" ? 6 : 5,

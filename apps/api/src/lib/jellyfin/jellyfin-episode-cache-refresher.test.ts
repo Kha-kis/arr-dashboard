@@ -146,11 +146,20 @@ vi.mock("../provider-observation/observation-run-repository.js", () => ({
 	renewExhaustedObservationRun: durable.renew,
 }));
 
+const replay = vi.hoisted(() => ({
+	active: vi.fn().mockResolvedValue(false),
+	claim: vi.fn(),
+	stage: vi.fn(),
+}));
+
 vi.mock("./jellyfin-episode-refresh-repository.js", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("./jellyfin-episode-refresh-repository.js")>();
 	return {
 		...actual,
 		stageJellyfinEpisodePage: durable.stage,
+		hasActiveJellyfinEpisodeReplay: replay.active,
+		claimJellyfinEpisodeReplayPage: replay.claim,
+		stageJellyfinEpisodeReplayPage: replay.stage,
 		finalizeJellyfinEpisodeRun: durable.finalize,
 		readCompletedJellyfinEpisodePublication: durable.readCompleted,
 		invalidateJellyfinEpisodeRun: durable.invalidate,
@@ -1676,6 +1685,134 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 						},
 			);
 			expect(JSON.stringify(warning)).not.toContain("private");
+		},
+	);
+
+	it.each(["acknowledged", "lost acknowledgement"] as const)(
+		"keeps the attempt and advances replay after reservation %s",
+		async (acknowledgement) => {
+			finalizerWorker.run.mockClear();
+			replay.claim.mockClear();
+			const state = ownedFixture("JELLYFIN", { v3: true });
+			configureDurableRun(state, 2);
+			const context = {
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log,
+				databaseUrl: "file:/config/prod.db",
+			};
+			await refreshOwnedJellyfinEpisodeCache(context);
+			await refreshOwnedJellyfinEpisodeCache(context);
+			replay.active.mockResolvedValueOnce(false);
+			if (acknowledgement === "acknowledged")
+				finalizerWorker.run.mockResolvedValueOnce({ status: "replay-reserved" });
+			else {
+				finalizerWorker.run.mockRejectedValueOnce(new Error("Synthetic worker exit"));
+				replay.active.mockResolvedValueOnce(true);
+			}
+			const reserved = await refreshOwnedJellyfinEpisodeCache(context);
+			expect(reserved).toMatchObject({ complete: false, errors: 0, progressed: true, upserted: 0 });
+			expect(durable.finishFailure).not.toHaveBeenCalled();
+			expect(durable.invalidate).not.toHaveBeenCalled();
+			expect(finalizerWorker.run).toHaveBeenCalledOnce();
+
+			replay.active.mockResolvedValueOnce(true);
+			replay.claim.mockResolvedValueOnce({ kind: "fallback" });
+			const continued = await refreshOwnedJellyfinEpisodeCache(context);
+			expect(continued).toMatchObject({ complete: false, errors: 0, progressed: true });
+			expect(replay.claim).toHaveBeenCalledOnce();
+			expect(finalizerWorker.run).toHaveBeenCalledOnce();
+		},
+	);
+
+	it.each(["sqlite", "inline"] as const)(
+		"fences %s coverage failure against a concurrently reserved replay",
+		async (backend) => {
+			const state = ownedFixture("JELLYFIN", { v3: true });
+			configureDurableRun(state, 2);
+			const context = {
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log,
+				...(backend === "sqlite" ? { databaseUrl: "file:/config/prod.db" } : {}),
+			};
+			await refreshOwnedJellyfinEpisodeCache(context);
+			await refreshOwnedJellyfinEpisodeCache(context);
+			replay.active.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+			if (backend === "sqlite")
+				finalizerWorker.run.mockResolvedValueOnce({
+					status: "not-published",
+					reason: "run-not-ready",
+				});
+			else durable.finalize.mockResolvedValueOnce({ published: false, itemCount: 0 });
+			expect(await refreshOwnedJellyfinEpisodeCache(context)).toMatchObject({
+				complete: false,
+				progressed: true,
+				errors: 0,
+			});
+			expect(durable.recordedFailureCount).toBe(0);
+		},
+	);
+
+	it.each([true, false])(
+		"keeps the inline run after a lost reply when readback is available=%s",
+		async (available) => {
+			const state = ownedFixture("JELLYFIN", { v3: true });
+			configureDurableRun(state, 2);
+			const context = {
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log,
+			};
+			await refreshOwnedJellyfinEpisodeCache(context);
+			await refreshOwnedJellyfinEpisodeCache(context);
+			durable.finalize.mockRejectedValueOnce(new Error("Synthetic lost transaction reply"));
+			replay.active.mockResolvedValueOnce(false);
+			if (available) replay.active.mockResolvedValueOnce(true);
+			else durable.readCompleted.mockRejectedValueOnce(new Error("Synthetic unavailable readback"));
+			expect(await refreshOwnedJellyfinEpisodeCache(context)).toMatchObject({
+				complete: false,
+				progressed: available,
+				errors: available ? 0 : 1,
+			});
+			expect(durable.recordedFailureCount).toBe(0);
+			expect(durable.invalidate).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each(["sqlite", "inline"] as const)(
+		"keeps a replay-pending %s finalizer result retryable after the other caller settles replay",
+		async (backend) => {
+			const state = ownedFixture("JELLYFIN", { v3: true });
+			configureDurableRun(state, 2);
+			const context = {
+				prisma: state.prisma,
+				encryptor: { decrypt: vi.fn() },
+				instance: state.instance,
+				log,
+				...(backend === "sqlite" ? { databaseUrl: "file:/config/prod.db" } : {}),
+			};
+			await refreshOwnedJellyfinEpisodeCache(context);
+			await refreshOwnedJellyfinEpisodeCache(context);
+			replay.active.mockResolvedValue(false); // the other caller already finished the final replay page
+			if (backend === "sqlite")
+				finalizerWorker.run.mockResolvedValueOnce({ status: "replay-pending" });
+			else
+				durable.finalize.mockResolvedValueOnce({
+					published: false,
+					itemCount: 0,
+					replayPending: true,
+				});
+			expect(await refreshOwnedJellyfinEpisodeCache(context)).toMatchObject({
+				complete: false,
+				progressed: true,
+				errors: 0,
+			});
+			expect(durable.finishFailure).not.toHaveBeenCalled();
+			expect(durable.invalidate).not.toHaveBeenCalled();
 		},
 	);
 

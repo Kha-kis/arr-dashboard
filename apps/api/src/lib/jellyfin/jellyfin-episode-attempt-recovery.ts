@@ -17,6 +17,7 @@ type JellyfinEpisodeAttemptRecoveryInput = {
 	runId: string;
 	now?: Date;
 	cleanupRunClaimToken?: string;
+	canInvalidate?: (tx: Prisma.TransactionClient) => Promise<boolean>;
 	/** Test-only fault injection; production callers never provide this hook. */
 	testHooks?: {
 		afterStageCount?: (tx: Prisma.TransactionClient) => void | Promise<void>;
@@ -134,6 +135,7 @@ export async function invalidateJellyfinEpisodeAttempt(
 			)
 				return "superseded" as const;
 
+			if (input.canInvalidate && !(await input.canInvalidate(tx))) return "superseded" as const;
 			const claimedUnits = await tx.providerObservationUnit.count({
 				where: {
 					runId: run.id,

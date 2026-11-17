@@ -9598,6 +9598,7 @@ export const ProviderObservationUnitScalarFieldEnum = {
   scopeKey: 'scopeKey',
   scopeDigest: 'scopeDigest',
   scopePayload: 'scopePayload',
+  jellyfinReplayState: 'jellyfinReplayState',
   phase: 'phase',
   expectedTargets: 'expectedTargets',
   cursor: 'cursor',

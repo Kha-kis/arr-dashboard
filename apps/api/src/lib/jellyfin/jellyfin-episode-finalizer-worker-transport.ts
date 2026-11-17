@@ -74,7 +74,15 @@ export type JellyfinEpisodeFinalizationWorkerResult =
 			cleanupMs: number;
 			cleanupFailed: boolean;
 	  }
-	| { status: "identity-unavailable" | "superseded" | "cancelled" }
+	| {
+			status:
+				| "identity-unavailable"
+				| "superseded"
+				| "cancelled"
+				| "replay-reserved"
+				| "replay-fallback"
+				| "replay-pending";
+	  }
 	| {
 			status: "not-published";
 			reason?: "run-not-ready" | "lease-busy" | "lease-lost" | "invalidated" | "commit-rejected";
@@ -117,6 +125,7 @@ export type JellyfinEpisodeFinalizationWorkerPayload = {
 	attempt: { attemptedAt: Date; resultMarker: string };
 	now: Date;
 	cleanupRunClaimToken?: string;
+	allowScopeReplay?: true;
 };
 
 type WorkerLike = {
@@ -378,7 +387,10 @@ function sanitizeWorkerResult(value: unknown): JellyfinEpisodeFinalizationWorker
 	if (
 		result.status === "identity-unavailable" ||
 		result.status === "superseded" ||
-		result.status === "cancelled"
+		result.status === "cancelled" ||
+		result.status === "replay-reserved" ||
+		result.status === "replay-fallback" ||
+		result.status === "replay-pending"
 	) {
 		return { status: result.status };
 	}

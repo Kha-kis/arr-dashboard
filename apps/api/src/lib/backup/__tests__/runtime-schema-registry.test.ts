@@ -1157,7 +1157,7 @@ describe("complete packaged application schema", () => {
 			}
 			expect(
 				registry.tables.reduce((count, definition) => count + definition.target.columns.length, 0),
-			).toBe(provider === "sqlite" ? 1356 : 1351);
+			).toBe(provider === "sqlite" ? 1357 : 1352);
 			expect(
 				registry.tables.reduce(
 					(count, definition) => count + definition.target.foreignKeys.length,

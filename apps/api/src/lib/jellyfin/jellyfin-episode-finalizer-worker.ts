@@ -33,7 +33,8 @@ import {
 	type JellyfinEpisodeFinalizationTiming,
 	prepareJellyfinEpisodeRun,
 	readCompletedJellyfinEpisodePublication,
-	settleInvalidJellyfinEpisodeRun,
+	reserveJellyfinEpisodeScopeReplay,
+	settleJellyfinEpisodeFinalizationRejection,
 } from "./jellyfin-episode-refresh-repository.js";
 import { createNativeWatchPreparationTiming } from "./jellyfin-native-watch-preparation-timing.js";
 import {
@@ -178,6 +179,7 @@ async function finalizeAdmitted(
 					scopes: payload.scopes,
 					attempt: payload.attempt,
 					now: payload.now,
+					allowScopeReplay: payload.allowScopeReplay,
 					recordTiming: (value, raw) => {
 						timing = value;
 						rawPrepareMs = raw;
@@ -188,6 +190,7 @@ async function finalizeAdmitted(
 					if (prepared.kind === "not-published") nonPublicationReason = "run-not-ready";
 					return prepared;
 				}
+				if (prepared.replayEligible) return prepared;
 				failureStage = "acquire-lease";
 				const lease = await acquireJellyfinEpisodePreparation(prisma as never, {
 					userId: payload.userId,
@@ -298,14 +301,33 @@ async function finalizeAdmitted(
 					attempt: payload.attempt,
 					now: payload.now,
 				};
+				if (prepared.kind === "replay-pending")
+					return { published: false, itemCount: 0, invalidated: false, replayPending: true };
 				if (prepared.kind === "not-published")
 					return { published: false, itemCount: 0, invalidated: false };
-				if (prepared.kind === "invalid")
+				if (prepared.kind === "invalid" || prepared.kind === "replay-rejected") {
+					const settled = await settleJellyfinEpisodeFinalizationRejection(
+						transaction,
+						input,
+						prepared,
+					);
+					if (!settled) nonPublicationReason = "lease-lost";
 					return {
 						published: false,
 						itemCount: 0,
-						invalidated: await settleInvalidJellyfinEpisodeRun(transaction, input, prepared),
+						invalidated: settled && prepared.kind === "invalid",
+						replayFallback: settled && prepared.kind === "replay-rejected",
 					};
+				}
+				if (prepared.replayEligible) {
+					const replayReserved = await reserveJellyfinEpisodeScopeReplay(
+						transaction,
+						input,
+						prepared,
+					);
+					if (!replayReserved) nonPublicationReason = "lease-lost";
+					return { published: false, itemCount: 0, invalidated: false, replayReserved };
+				}
 				const commitStartedAt = performance.now();
 				const committed = await commitPreparedJellyfinEpisodeRun(transaction, input, prepared);
 				commitMs = elapsed(commitStartedAt);
@@ -322,6 +344,12 @@ async function finalizeAdmitted(
 			},
 		);
 		const finalizationCallMs = elapsed(finalizationStartedAt);
+		if ("replayPending" in finalized && finalized.replayPending)
+			return { status: "replay-pending" };
+		if ("replayFallback" in finalized && finalized.replayFallback)
+			return { status: "replay-fallback" };
+		if ("replayReserved" in finalized && finalized.replayReserved)
+			return { status: "replay-reserved" };
 		if (!finalized.published) {
 			if (finalized.invalidated) {
 				try {

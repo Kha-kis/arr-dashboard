@@ -2435,6 +2435,8 @@ model ProviderObservationUnit {
   scopeDigest         String
   // JSON identifiers only; never returned by routes or written to logs.
   scopePayload        String?
+  // Private versioned Jellyfin replay state. Legacy rows leave it unset.
+  jellyfinReplayState String?
   phase               String
   expectedTargets     Int
   cursor              Int      @default(0)

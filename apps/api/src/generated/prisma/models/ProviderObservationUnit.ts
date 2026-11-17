@@ -53,6 +53,7 @@ export type ProviderObservationUnitMinAggregateOutputType = {
   scopeKey: string | null
   scopeDigest: string | null
   scopePayload: string | null
+  jellyfinReplayState: string | null
   phase: string | null
   expectedTargets: number | null
   cursor: number | null
@@ -76,6 +77,7 @@ export type ProviderObservationUnitMaxAggregateOutputType = {
   scopeKey: string | null
   scopeDigest: string | null
   scopePayload: string | null
+  jellyfinReplayState: string | null
   phase: string | null
   expectedTargets: number | null
   cursor: number | null
@@ -99,6 +101,7 @@ export type ProviderObservationUnitCountAggregateOutputType = {
   scopeKey: number
   scopeDigest: number
   scopePayload: number
+  jellyfinReplayState: number
   phase: number
   expectedTargets: number
   cursor: number
@@ -144,6 +147,7 @@ export type ProviderObservationUnitMinAggregateInputType = {
   scopeKey?: true
   scopeDigest?: true
   scopePayload?: true
+  jellyfinReplayState?: true
   phase?: true
   expectedTargets?: true
   cursor?: true
@@ -167,6 +171,7 @@ export type ProviderObservationUnitMaxAggregateInputType = {
   scopeKey?: true
   scopeDigest?: true
   scopePayload?: true
+  jellyfinReplayState?: true
   phase?: true
   expectedTargets?: true
   cursor?: true
@@ -190,6 +195,7 @@ export type ProviderObservationUnitCountAggregateInputType = {
   scopeKey?: true
   scopeDigest?: true
   scopePayload?: true
+  jellyfinReplayState?: true
   phase?: true
   expectedTargets?: true
   cursor?: true
@@ -300,6 +306,7 @@ export type ProviderObservationUnitGroupByOutputType = {
   scopeKey: string
   scopeDigest: string
   scopePayload: string | null
+  jellyfinReplayState: string | null
   phase: string
   expectedTargets: number
   cursor: number
@@ -346,6 +353,7 @@ export type ProviderObservationUnitWhereInput = {
   scopeKey?: Prisma.StringFilter<"ProviderObservationUnit"> | string
   scopeDigest?: Prisma.StringFilter<"ProviderObservationUnit"> | string
   scopePayload?: Prisma.StringNullableFilter<"ProviderObservationUnit"> | string | null
+  jellyfinReplayState?: Prisma.StringNullableFilter<"ProviderObservationUnit"> | string | null
   phase?: Prisma.StringFilter<"ProviderObservationUnit"> | string
   expectedTargets?: Prisma.IntFilter<"ProviderObservationUnit"> | number
   cursor?: Prisma.IntFilter<"ProviderObservationUnit"> | number
@@ -373,6 +381,7 @@ export type ProviderObservationUnitOrderByWithRelationInput = {
   scopeKey?: Prisma.SortOrder
   scopeDigest?: Prisma.SortOrder
   scopePayload?: Prisma.SortOrderInput | Prisma.SortOrder
+  jellyfinReplayState?: Prisma.SortOrderInput | Prisma.SortOrder
   phase?: Prisma.SortOrder
   expectedTargets?: Prisma.SortOrder
   cursor?: Prisma.SortOrder
@@ -406,6 +415,7 @@ export type ProviderObservationUnitWhereUniqueInput = Prisma.AtLeast<{
   scopeKey?: Prisma.StringFilter<"ProviderObservationUnit"> | string
   scopeDigest?: Prisma.StringFilter<"ProviderObservationUnit"> | string
   scopePayload?: Prisma.StringNullableFilter<"ProviderObservationUnit"> | string | null
+  jellyfinReplayState?: Prisma.StringNullableFilter<"ProviderObservationUnit"> | string | null
   phase?: Prisma.StringFilter<"ProviderObservationUnit"> | string
   expectedTargets?: Prisma.IntFilter<"ProviderObservationUnit"> | number
   cursor?: Prisma.IntFilter<"ProviderObservationUnit"> | number
@@ -433,6 +443,7 @@ export type ProviderObservationUnitOrderByWithAggregationInput = {
   scopeKey?: Prisma.SortOrder
   scopeDigest?: Prisma.SortOrder
   scopePayload?: Prisma.SortOrderInput | Prisma.SortOrder
+  jellyfinReplayState?: Prisma.SortOrderInput | Prisma.SortOrder
   phase?: Prisma.SortOrder
   expectedTargets?: Prisma.SortOrder
   cursor?: Prisma.SortOrder
@@ -464,6 +475,7 @@ export type ProviderObservationUnitScalarWhereWithAggregatesInput = {
   scopeKey?: Prisma.StringWithAggregatesFilter<"ProviderObservationUnit"> | string
   scopeDigest?: Prisma.StringWithAggregatesFilter<"ProviderObservationUnit"> | string
   scopePayload?: Prisma.StringNullableWithAggregatesFilter<"ProviderObservationUnit"> | string | null
+  jellyfinReplayState?: Prisma.StringNullableWithAggregatesFilter<"ProviderObservationUnit"> | string | null
   phase?: Prisma.StringWithAggregatesFilter<"ProviderObservationUnit"> | string
   expectedTargets?: Prisma.IntWithAggregatesFilter<"ProviderObservationUnit"> | number
   cursor?: Prisma.IntWithAggregatesFilter<"ProviderObservationUnit"> | number
@@ -486,6 +498,7 @@ export type ProviderObservationUnitCreateInput = {
   scopeKey: string
   scopeDigest: string
   scopePayload?: string | null
+  jellyfinReplayState?: string | null
   phase: string
   expectedTargets: number
   cursor?: number
@@ -513,6 +526,7 @@ export type ProviderObservationUnitUncheckedCreateInput = {
   scopeKey: string
   scopeDigest: string
   scopePayload?: string | null
+  jellyfinReplayState?: string | null
   phase: string
   expectedTargets: number
   cursor?: number
@@ -538,6 +552,7 @@ export type ProviderObservationUnitUpdateInput = {
   scopeKey?: Prisma.StringFieldUpdateOperationsInput | string
   scopeDigest?: Prisma.StringFieldUpdateOperationsInput | string
   scopePayload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  jellyfinReplayState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   phase?: Prisma.StringFieldUpdateOperationsInput | string
   expectedTargets?: Prisma.IntFieldUpdateOperationsInput | number
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
@@ -565,6 +580,7 @@ export type ProviderObservationUnitUncheckedUpdateInput = {
   scopeKey?: Prisma.StringFieldUpdateOperationsInput | string
   scopeDigest?: Prisma.StringFieldUpdateOperationsInput | string
   scopePayload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  jellyfinReplayState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   phase?: Prisma.StringFieldUpdateOperationsInput | string
   expectedTargets?: Prisma.IntFieldUpdateOperationsInput | number
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
@@ -591,6 +607,7 @@ export type ProviderObservationUnitCreateManyInput = {
   scopeKey: string
   scopeDigest: string
   scopePayload?: string | null
+  jellyfinReplayState?: string | null
   phase: string
   expectedTargets: number
   cursor?: number
@@ -613,6 +630,7 @@ export type ProviderObservationUnitUpdateManyMutationInput = {
   scopeKey?: Prisma.StringFieldUpdateOperationsInput | string
   scopeDigest?: Prisma.StringFieldUpdateOperationsInput | string
   scopePayload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  jellyfinReplayState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   phase?: Prisma.StringFieldUpdateOperationsInput | string
   expectedTargets?: Prisma.IntFieldUpdateOperationsInput | number
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
@@ -636,6 +654,7 @@ export type ProviderObservationUnitUncheckedUpdateManyInput = {
   scopeKey?: Prisma.StringFieldUpdateOperationsInput | string
   scopeDigest?: Prisma.StringFieldUpdateOperationsInput | string
   scopePayload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  jellyfinReplayState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   phase?: Prisma.StringFieldUpdateOperationsInput | string
   expectedTargets?: Prisma.IntFieldUpdateOperationsInput | number
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
@@ -684,6 +703,7 @@ export type ProviderObservationUnitCountOrderByAggregateInput = {
   scopeKey?: Prisma.SortOrder
   scopeDigest?: Prisma.SortOrder
   scopePayload?: Prisma.SortOrder
+  jellyfinReplayState?: Prisma.SortOrder
   phase?: Prisma.SortOrder
   expectedTargets?: Prisma.SortOrder
   cursor?: Prisma.SortOrder
@@ -717,6 +737,7 @@ export type ProviderObservationUnitMaxOrderByAggregateInput = {
   scopeKey?: Prisma.SortOrder
   scopeDigest?: Prisma.SortOrder
   scopePayload?: Prisma.SortOrder
+  jellyfinReplayState?: Prisma.SortOrder
   phase?: Prisma.SortOrder
   expectedTargets?: Prisma.SortOrder
   cursor?: Prisma.SortOrder
@@ -740,6 +761,7 @@ export type ProviderObservationUnitMinOrderByAggregateInput = {
   scopeKey?: Prisma.SortOrder
   scopeDigest?: Prisma.SortOrder
   scopePayload?: Prisma.SortOrder
+  jellyfinReplayState?: Prisma.SortOrder
   phase?: Prisma.SortOrder
   expectedTargets?: Prisma.SortOrder
   cursor?: Prisma.SortOrder
@@ -861,6 +883,7 @@ export type ProviderObservationUnitCreateWithoutRunInput = {
   scopeKey: string
   scopeDigest: string
   scopePayload?: string | null
+  jellyfinReplayState?: string | null
   phase: string
   expectedTargets: number
   cursor?: number
@@ -886,6 +909,7 @@ export type ProviderObservationUnitUncheckedCreateWithoutRunInput = {
   scopeKey: string
   scopeDigest: string
   scopePayload?: string | null
+  jellyfinReplayState?: string | null
   phase: string
   expectedTargets: number
   cursor?: number
@@ -940,6 +964,7 @@ export type ProviderObservationUnitScalarWhereInput = {
   scopeKey?: Prisma.StringFilter<"ProviderObservationUnit"> | string
   scopeDigest?: Prisma.StringFilter<"ProviderObservationUnit"> | string
   scopePayload?: Prisma.StringNullableFilter<"ProviderObservationUnit"> | string | null
+  jellyfinReplayState?: Prisma.StringNullableFilter<"ProviderObservationUnit"> | string | null
   phase?: Prisma.StringFilter<"ProviderObservationUnit"> | string
   expectedTargets?: Prisma.IntFilter<"ProviderObservationUnit"> | number
   cursor?: Prisma.IntFilter<"ProviderObservationUnit"> | number
@@ -962,6 +987,7 @@ export type ProviderObservationUnitCreateWithoutPlexEpisodeRowsInput = {
   scopeKey: string
   scopeDigest: string
   scopePayload?: string | null
+  jellyfinReplayState?: string | null
   phase: string
   expectedTargets: number
   cursor?: number
@@ -988,6 +1014,7 @@ export type ProviderObservationUnitUncheckedCreateWithoutPlexEpisodeRowsInput = 
   scopeKey: string
   scopeDigest: string
   scopePayload?: string | null
+  jellyfinReplayState?: string | null
   phase: string
   expectedTargets: number
   cursor?: number
@@ -1028,6 +1055,7 @@ export type ProviderObservationUnitUpdateWithoutPlexEpisodeRowsInput = {
   scopeKey?: Prisma.StringFieldUpdateOperationsInput | string
   scopeDigest?: Prisma.StringFieldUpdateOperationsInput | string
   scopePayload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  jellyfinReplayState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   phase?: Prisma.StringFieldUpdateOperationsInput | string
   expectedTargets?: Prisma.IntFieldUpdateOperationsInput | number
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1054,6 +1082,7 @@ export type ProviderObservationUnitUncheckedUpdateWithoutPlexEpisodeRowsInput = 
   scopeKey?: Prisma.StringFieldUpdateOperationsInput | string
   scopeDigest?: Prisma.StringFieldUpdateOperationsInput | string
   scopePayload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  jellyfinReplayState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   phase?: Prisma.StringFieldUpdateOperationsInput | string
   expectedTargets?: Prisma.IntFieldUpdateOperationsInput | number
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1078,6 +1107,7 @@ export type ProviderObservationUnitCreateWithoutJellyfinEpisodeRowsInput = {
   scopeKey: string
   scopeDigest: string
   scopePayload?: string | null
+  jellyfinReplayState?: string | null
   phase: string
   expectedTargets: number
   cursor?: number
@@ -1104,6 +1134,7 @@ export type ProviderObservationUnitUncheckedCreateWithoutJellyfinEpisodeRowsInpu
   scopeKey: string
   scopeDigest: string
   scopePayload?: string | null
+  jellyfinReplayState?: string | null
   phase: string
   expectedTargets: number
   cursor?: number
@@ -1144,6 +1175,7 @@ export type ProviderObservationUnitUpdateWithoutJellyfinEpisodeRowsInput = {
   scopeKey?: Prisma.StringFieldUpdateOperationsInput | string
   scopeDigest?: Prisma.StringFieldUpdateOperationsInput | string
   scopePayload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  jellyfinReplayState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   phase?: Prisma.StringFieldUpdateOperationsInput | string
   expectedTargets?: Prisma.IntFieldUpdateOperationsInput | number
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1170,6 +1202,7 @@ export type ProviderObservationUnitUncheckedUpdateWithoutJellyfinEpisodeRowsInpu
   scopeKey?: Prisma.StringFieldUpdateOperationsInput | string
   scopeDigest?: Prisma.StringFieldUpdateOperationsInput | string
   scopePayload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  jellyfinReplayState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   phase?: Prisma.StringFieldUpdateOperationsInput | string
   expectedTargets?: Prisma.IntFieldUpdateOperationsInput | number
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1194,6 +1227,7 @@ export type ProviderObservationUnitCreateWithoutJellyfinEpisodeExclusionsInput =
   scopeKey: string
   scopeDigest: string
   scopePayload?: string | null
+  jellyfinReplayState?: string | null
   phase: string
   expectedTargets: number
   cursor?: number
@@ -1220,6 +1254,7 @@ export type ProviderObservationUnitUncheckedCreateWithoutJellyfinEpisodeExclusio
   scopeKey: string
   scopeDigest: string
   scopePayload?: string | null
+  jellyfinReplayState?: string | null
   phase: string
   expectedTargets: number
   cursor?: number
@@ -1260,6 +1295,7 @@ export type ProviderObservationUnitUpdateWithoutJellyfinEpisodeExclusionsInput =
   scopeKey?: Prisma.StringFieldUpdateOperationsInput | string
   scopeDigest?: Prisma.StringFieldUpdateOperationsInput | string
   scopePayload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  jellyfinReplayState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   phase?: Prisma.StringFieldUpdateOperationsInput | string
   expectedTargets?: Prisma.IntFieldUpdateOperationsInput | number
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1286,6 +1322,7 @@ export type ProviderObservationUnitUncheckedUpdateWithoutJellyfinEpisodeExclusio
   scopeKey?: Prisma.StringFieldUpdateOperationsInput | string
   scopeDigest?: Prisma.StringFieldUpdateOperationsInput | string
   scopePayload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  jellyfinReplayState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   phase?: Prisma.StringFieldUpdateOperationsInput | string
   expectedTargets?: Prisma.IntFieldUpdateOperationsInput | number
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1310,6 +1347,7 @@ export type ProviderObservationUnitCreateManyRunInput = {
   scopeKey: string
   scopeDigest: string
   scopePayload?: string | null
+  jellyfinReplayState?: string | null
   phase: string
   expectedTargets: number
   cursor?: number
@@ -1332,6 +1370,7 @@ export type ProviderObservationUnitUpdateWithoutRunInput = {
   scopeKey?: Prisma.StringFieldUpdateOperationsInput | string
   scopeDigest?: Prisma.StringFieldUpdateOperationsInput | string
   scopePayload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  jellyfinReplayState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   phase?: Prisma.StringFieldUpdateOperationsInput | string
   expectedTargets?: Prisma.IntFieldUpdateOperationsInput | number
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1357,6 +1396,7 @@ export type ProviderObservationUnitUncheckedUpdateWithoutRunInput = {
   scopeKey?: Prisma.StringFieldUpdateOperationsInput | string
   scopeDigest?: Prisma.StringFieldUpdateOperationsInput | string
   scopePayload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  jellyfinReplayState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   phase?: Prisma.StringFieldUpdateOperationsInput | string
   expectedTargets?: Prisma.IntFieldUpdateOperationsInput | number
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1382,6 +1422,7 @@ export type ProviderObservationUnitUncheckedUpdateManyWithoutRunInput = {
   scopeKey?: Prisma.StringFieldUpdateOperationsInput | string
   scopeDigest?: Prisma.StringFieldUpdateOperationsInput | string
   scopePayload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  jellyfinReplayState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   phase?: Prisma.StringFieldUpdateOperationsInput | string
   expectedTargets?: Prisma.IntFieldUpdateOperationsInput | number
   cursor?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1454,6 +1495,7 @@ export type ProviderObservationUnitSelect<ExtArgs extends runtime.Types.Extensio
   scopeKey?: boolean
   scopeDigest?: boolean
   scopePayload?: boolean
+  jellyfinReplayState?: boolean
   phase?: boolean
   expectedTargets?: boolean
   cursor?: boolean
@@ -1482,6 +1524,7 @@ export type ProviderObservationUnitSelectCreateManyAndReturn<ExtArgs extends run
   scopeKey?: boolean
   scopeDigest?: boolean
   scopePayload?: boolean
+  jellyfinReplayState?: boolean
   phase?: boolean
   expectedTargets?: boolean
   cursor?: boolean
@@ -1506,6 +1549,7 @@ export type ProviderObservationUnitSelectUpdateManyAndReturn<ExtArgs extends run
   scopeKey?: boolean
   scopeDigest?: boolean
   scopePayload?: boolean
+  jellyfinReplayState?: boolean
   phase?: boolean
   expectedTargets?: boolean
   cursor?: boolean
@@ -1530,6 +1574,7 @@ export type ProviderObservationUnitSelectScalar = {
   scopeKey?: boolean
   scopeDigest?: boolean
   scopePayload?: boolean
+  jellyfinReplayState?: boolean
   phase?: boolean
   expectedTargets?: boolean
   cursor?: boolean
@@ -1546,7 +1591,7 @@ export type ProviderObservationUnitSelectScalar = {
   completedAt?: boolean
 }
 
-export type ProviderObservationUnitOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "runId" | "ordinal" | "scopeKey" | "scopeDigest" | "scopePayload" | "phase" | "expectedTargets" | "cursor" | "expectedRawCount" | "observedRawCount" | "completedPages" | "state" | "claimToken" | "attemptCount" | "nextAttemptAt" | "lastReasonCode" | "createdAt" | "updatedAt" | "completedAt", ExtArgs["result"]["providerObservationUnit"]>
+export type ProviderObservationUnitOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "runId" | "ordinal" | "scopeKey" | "scopeDigest" | "scopePayload" | "jellyfinReplayState" | "phase" | "expectedTargets" | "cursor" | "expectedRawCount" | "observedRawCount" | "completedPages" | "state" | "claimToken" | "attemptCount" | "nextAttemptAt" | "lastReasonCode" | "createdAt" | "updatedAt" | "completedAt", ExtArgs["result"]["providerObservationUnit"]>
 export type ProviderObservationUnitInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   run?: boolean | Prisma.ProviderObservationRunDefaultArgs<ExtArgs>
   plexEpisodeRows?: boolean | Prisma.ProviderObservationUnit$plexEpisodeRowsArgs<ExtArgs>
@@ -1576,6 +1621,7 @@ export type $ProviderObservationUnitPayload<ExtArgs extends runtime.Types.Extens
     scopeKey: string
     scopeDigest: string
     scopePayload: string | null
+    jellyfinReplayState: string | null
     phase: string
     expectedTargets: number
     cursor: number
@@ -2023,6 +2069,7 @@ export interface ProviderObservationUnitFieldRefs {
   readonly scopeKey: Prisma.FieldRef<"ProviderObservationUnit", 'String'>
   readonly scopeDigest: Prisma.FieldRef<"ProviderObservationUnit", 'String'>
   readonly scopePayload: Prisma.FieldRef<"ProviderObservationUnit", 'String'>
+  readonly jellyfinReplayState: Prisma.FieldRef<"ProviderObservationUnit", 'String'>
   readonly phase: Prisma.FieldRef<"ProviderObservationUnit", 'String'>
   readonly expectedTargets: Prisma.FieldRef<"ProviderObservationUnit", 'Int'>
   readonly cursor: Prisma.FieldRef<"ProviderObservationUnit", 'Int'>

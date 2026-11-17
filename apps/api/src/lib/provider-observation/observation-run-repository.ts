@@ -1,12 +1,17 @@
 import { randomBytes } from "node:crypto";
 import type { ProviderObservationReasonCode } from "@arr/shared";
 import { withIsolatedRuntimePrismaTransaction } from "../backup/restore-runtime-client.js";
+import { JELLYFIN_EPISODE_PARENT_V3_KEY_PREFIX } from "../jellyfin/jellyfin-episode-catalog-provenance.js";
 import {
 	hasPlausibleJellyfinEpisodePageCount,
 	JELLYFIN_EPISODE_MAX_SCOPE_ROWS,
 	JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS,
 	jellyfinEpisodePageSizeFromPayload,
 } from "../jellyfin/jellyfin-episode-refresh-policy.js";
+import {
+	decodeJellyfinEpisodeReplayState,
+	parseJellyfinEpisodeScope,
+} from "../jellyfin/jellyfin-episode-replay-state.js";
 import type {
 	Prisma,
 	PrismaClient,
@@ -983,6 +988,7 @@ export async function inspectRecoverableObservationRunForCacheAttempt(
 		select: {
 			id: true,
 			authorityKey: true,
+			parentGenerationId: true,
 			state: true,
 			connectionGeneration: true,
 			identityGeneration: true,
@@ -995,7 +1001,15 @@ export async function inspectRecoverableObservationRunForCacheAttempt(
 	if (!run) return null;
 	const units = await readObservationUnitLedger(prisma, run.id);
 	if (!observationLedgerIsConsistent(run, units)) return null;
-	if (run.completedUnits >= run.totalUnits) return null;
+	if (run.completedUnits >= run.totalUnits) {
+		if (
+			input.cacheType !== "jellyfin_episode" ||
+			run.state !== "running" ||
+			!run.parentGenerationId?.startsWith(JELLYFIN_EPISODE_PARENT_V3_KEY_PREFIX) ||
+			!(await hasRecoverableJellyfinReplay(prisma, run.id))
+		)
+			return null;
+	}
 	if (run.state === "failed" && !units.some((unit) => unit.state === "failed")) return null;
 	if (run.state === "failed" && units.some((unit) => unit.state === "running")) return null;
 	if (units.some((unit) => unit.state === "invalidated")) return null;
@@ -1013,6 +1027,42 @@ export async function inspectRecoverableObservationRunForCacheAttempt(
 		hasInheritedClaim: inheritedClaims.length > 0,
 		inheritedClaims,
 	};
+}
+
+async function hasRecoverableJellyfinReplay(
+	prisma: Pick<Tx, "providerObservationUnit">,
+	runId: string,
+): Promise<boolean> {
+	const units = await prisma.providerObservationUnit.findMany({
+		where: { runId },
+		select: { id: true, phase: true, scopePayload: true, jellyfinReplayState: true },
+	});
+	let hasReplay = false;
+	let hasActiveReplay = false;
+	for (const verify of units) {
+		if (verify.jellyfinReplayState === null) continue;
+		const replay = decodeJellyfinEpisodeReplayState(verify.jellyfinReplayState);
+		if (verify.phase !== "verify" || !replay) return false;
+		const collect = units.find((unit) => unit.id === replay.collectUnitId);
+		const collectScope = parseJellyfinEpisodeScope(collect?.scopePayload ?? null);
+		const verifyScope = parseJellyfinEpisodeScope(verify.scopePayload);
+		if (
+			collect?.phase !== "collect" ||
+			collectScope === null ||
+			verifyScope === null ||
+			collectScope.userId !== verifyScope.userId ||
+			collectScope.libraryId !== verifyScope.libraryId
+		)
+			return false;
+		hasReplay = true;
+		if (replay.state === "collecting" || replay.state === "verifying") {
+			if (hasActiveReplay) return false;
+			hasActiveReplay = true;
+		}
+	}
+	// A replay lease is fenced with a separate token. Let its deadline, rather
+	// than startup, decide when another page worker can reclaim it.
+	return hasReplay;
 }
 
 /** Joined owned work releases no retry budget and cannot authorize a new owner. */
