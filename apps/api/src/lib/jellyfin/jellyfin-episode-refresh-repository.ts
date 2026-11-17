@@ -2218,6 +2218,10 @@ async function evaluateJellyfinEpisodeRun(
 				const verifyUnit = matchingUnits.find((unit) => unit.phase === "verify");
 				const collectRows = collectUnit ? (stagesByUnit.get(collectUnit.id) ?? []) : [];
 				const verifyRows = verifyUnit ? (stagesByUnit.get(verifyUnit.id) ?? []) : [];
+				const expectedCountsMatch =
+					collectUnit !== undefined &&
+					verifyUnit !== undefined &&
+					collectUnit.expectedRawCount === verifyUnit.expectedRawCount;
 				if (mappedScopes) {
 					// A complete verification pass can identify the series omitted from
 					// collection when the collected identities are a strict subset.
@@ -2261,9 +2265,23 @@ async function evaluateJellyfinEpisodeRun(
 				const scopeCandidates = candidates.filter(
 					(row) => row.userKeyDigest === userKeyDigest && row.libraryId === scope.libraryId,
 				);
+				const projection = scopedNativeWatchDiagnostics.find(
+					(entry) => entry.userKeyDigest === userKeyDigest && entry.libraryId === scope.libraryId,
+				);
+				const diagnostics = projection?.diagnostics ?? emptyNativeWatchProjectionDiagnostics();
+				// Verify-only conflicts disqualify balanced substitutions. Count deficits
+				// keep their existing diagnostics and replay eligibility.
+				const balancedFullPasses =
+					matchingUnits.length === 2 &&
+					expectedCountsMatch &&
+					collectRows.length === verifyRows.length &&
+					collectRows.length === collectUnit?.observedRawCount &&
+					verifyRows.length === verifyUnit?.observedRawCount &&
+					diagnostics.missingVerifyCoordinates > 0 &&
+					diagnostics.missingVerifyCoordinates === diagnostics.verifyOnlyCoordinates;
 				const exact =
 					matchingUnits.length === 2 &&
-					collectUnit?.expectedRawCount === verifyUnit?.expectedRawCount &&
+					expectedCountsMatch &&
 					collectRows.length === collectUnit?.observedRawCount &&
 					verifyRows.length === verifyUnit?.observedRawCount &&
 					collectRows.length === scopeCandidates.length &&
@@ -2277,18 +2295,15 @@ async function evaluateJellyfinEpisodeRun(
 					exact,
 					diagnosticsJson: serializeNativeWatchScopeDiagnostics({
 						version: 1,
-						...(scopedNativeWatchDiagnostics.find(
-							(entry) =>
-								entry.userKeyDigest === userKeyDigest && entry.libraryId === scope.libraryId,
-						)?.diagnostics ?? emptyNativeWatchProjectionDiagnostics()),
+						...diagnostics,
+						conflictedCoordinates:
+							diagnostics.conflictedCoordinates +
+							(balancedFullPasses ? (projection?.verifyOnlyConflictedCoordinates ?? 0) : 0),
 						collectUnits: matchingUnits.filter((unit) => unit.phase === "collect").length,
 						verifyUnits: matchingUnits.filter((unit) => unit.phase === "verify").length,
 						collectStageRows: collectRows.length,
 						verifyStageRows: verifyRows.length,
-						expectedCountsMatch:
-							collectUnit !== undefined &&
-							verifyUnit !== undefined &&
-							collectUnit.expectedRawCount === verifyUnit.expectedRawCount,
+						expectedCountsMatch,
 						excludedRows: matchingUnits.reduce(
 							(count, unit) => count + (exclusionsByUnit.get(unit.id)?.size ?? 0),
 							0,
@@ -2739,9 +2754,8 @@ async function readCurrentPreparedJellyfinEpisodeRun(
 
 function hasReplayablePaginationDrift(receipt: NativeWatchPublicationInput["receipts"][number]) {
 	const diagnostics = parseNativeWatchScopeDiagnostics(receipt.diagnosticsJson);
-	return (
-		!receipt.exact &&
-		diagnostics !== null &&
+	if (receipt.exact || diagnostics === null) return false;
+	const cleanPasses =
 		diagnostics.collectUnits === 1 &&
 		diagnostics.verifyUnits === 1 &&
 		diagnostics.invalidCollectRows === 0 &&
@@ -2752,10 +2766,22 @@ function hasReplayablePaginationDrift(receipt: NativeWatchPublicationInput["rece
 		receipt.expectedRawCount <= JELLYFIN_EPISODE_MAX_SCOPE_ROWS &&
 		receipt.observedRawCount <= JELLYFIN_EPISODE_MAX_SCOPE_ROWS &&
 		diagnostics.collectStageRows <= receipt.expectedRawCount &&
-		diagnostics.verifyStageRows <= receipt.observedRawCount &&
-		(!diagnostics.expectedCountsMatch ||
-			diagnostics.collectStageRows < receipt.expectedRawCount ||
-			diagnostics.verifyStageRows < receipt.observedRawCount)
+		diagnostics.verifyStageRows <= receipt.observedRawCount;
+	if (!cleanPasses) return false;
+	if (
+		!diagnostics.expectedCountsMatch ||
+		diagnostics.collectStageRows < receipt.expectedRawCount ||
+		diagnostics.verifyStageRows < receipt.observedRawCount
+	)
+		return true;
+	// Two full passes can count the same number of items while observing
+	// different coordinates. Only a clean substitution can request a replay.
+	return (
+		receipt.expectedRawCount === receipt.observedRawCount &&
+		diagnostics.duplicateCollectCoordinates === 0 &&
+		diagnostics.duplicateVerifyCoordinates === 0 &&
+		diagnostics.missingVerifyCoordinates > 0 &&
+		diagnostics.missingVerifyCoordinates === diagnostics.verifyOnlyCoordinates
 	);
 }
 

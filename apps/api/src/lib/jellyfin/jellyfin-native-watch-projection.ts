@@ -27,6 +27,7 @@ export type NativeWatchScopedProjectionDiagnostics = {
 	userKeyDigest: string;
 	libraryId: string;
 	diagnostics: NativeWatchProjectionDiagnostics;
+	verifyOnlyConflictedCoordinates: number;
 };
 
 export function emptyNativeWatchProjectionDiagnostics(): NativeWatchProjectionDiagnostics {
@@ -100,6 +101,7 @@ export function deriveNativeWatchCandidates(
 				userKeyDigest: row.userKeyDigest,
 				libraryId: row.libraryId,
 				diagnostics: emptyNativeWatchProjectionDiagnostics(),
+				verifyOnlyConflictedCoordinates: 0,
 			};
 			scopes.set(key, scope);
 		}
@@ -146,7 +148,9 @@ export function deriveNativeWatchCandidates(
 		else candidates.push(row);
 	}
 	for (const [key, row] of verified.byKey) {
-		if (!collected.byKey.has(key)) increment(row, "verifyOnlyCoordinates");
+		if (collected.byKey.has(key)) continue;
+		increment(row, "verifyOnlyCoordinates");
+		if (conflictedIds.has(row.jellyfinId)) scopeFor(row).verifyOnlyConflictedCoordinates++;
 	}
 	try {
 		reportDiagnostics?.(diagnostics);

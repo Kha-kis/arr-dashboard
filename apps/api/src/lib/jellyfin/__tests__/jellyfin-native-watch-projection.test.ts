@@ -174,6 +174,52 @@ describe("deriveNativeWatchCandidates", () => {
 		expect(deriveNativeWatchCandidates([one, collision], [one, collision])).toEqual([]);
 	});
 
+	it("reports a global identity conflict in a scope where the coordinate is verify-only", () => {
+		const stableA = { ...one, played: true, playCount: 1 };
+		const stableB = {
+			...stableA,
+			libraryId: "library-b",
+			jellyfinId: "episode-b",
+			episodeNumber: 6,
+		};
+		const collectOnly = { ...one, jellyfinId: "episode-c", episodeNumber: 3 };
+		const verifyOnly = { ...one, jellyfinId: "episode-d", episodeNumber: 4 };
+		const collision = { ...verifyOnly, libraryId: "library-b", episodeNumber: 5 };
+		const replacement = { ...collision, jellyfinId: "episode-e" };
+		const report = vi.fn();
+		const scoped = vi.fn();
+		expect(
+			deriveNativeWatchCandidates(
+				[stableA, collectOnly, stableB, collision],
+				[stableA, verifyOnly, stableB, replacement],
+				report,
+				scoped,
+			),
+		).toEqual([stableA, stableB]);
+		expect(scoped).toHaveBeenCalledWith([
+			expect.objectContaining({
+				libraryId: "library-a",
+				verifyOnlyConflictedCoordinates: 1,
+				diagnostics: expect.objectContaining({
+					conflictedCoordinates: 0,
+					missingVerifyCoordinates: 1,
+					verifyOnlyCoordinates: 1,
+				}),
+			}),
+			expect.objectContaining({
+				libraryId: "library-b",
+				verifyOnlyConflictedCoordinates: 0,
+				diagnostics: expect.objectContaining({
+					conflictedCoordinates: 1,
+					verifyOnlyCoordinates: 1,
+				}),
+			}),
+		]);
+		expect(report).toHaveBeenCalledWith(
+			expect.objectContaining({ conflictedCoordinates: 1, verifyOnlyCoordinates: 2 }),
+		);
+	});
+
 	it("keeps matching native coordinates from two library scopes", () => {
 		const shared = { ...one, libraryId: "library-b" };
 		expect(deriveNativeWatchCandidates([one, shared], [one, shared])).toEqual([one, shared]);

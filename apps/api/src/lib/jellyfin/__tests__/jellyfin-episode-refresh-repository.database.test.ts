@@ -1929,6 +1929,159 @@ describe("native inventory independence from Jellyfin watch finalization", {
 		},
 	);
 
+	it.each([false, true])(
+		"checks bounded replay for equal-cardinality substitutions (watch drift=%s)",
+		async (watchDrift) => {
+			const prisma = await database();
+			const now = new Date("2026-09-07T00:01:00.000Z");
+			const seed = await completeFinalizerFixture(prisma, now);
+			await bindV3Fixture(prisma, seed.run.id);
+			await prisma.serviceInstance.update({
+				where: { id: "jellyfin-1" },
+				data: { identityStatus: "VERIFIED", expectedIdentity: "native-server" },
+			});
+			await prisma.providerObservationRun.update({
+				where: { id: seed.run.id },
+				data: { createdAt: new Date(now.getTime() - 60_000) },
+			});
+			await addStagePair(prisma, seed.run.id, {
+				jellyfinId: "collect-only",
+				seriesId: "series-1",
+				episodeNumber: 2,
+				played: false,
+			});
+			await prisma.jellyfinEpisodeObservationStage.updateMany({
+				where: { runId: seed.run.id, pass: "verify", jellyfinId: "collect-only" },
+				data: { jellyfinId: "verify-only", episodeNumber: 3 },
+			});
+			if (watchDrift) {
+				await prisma.jellyfinEpisodeObservationStage.updateMany({
+					where: { runId: seed.run.id, pass: "verify", jellyfinId: "episode-1" },
+					data: { playCount: 2 },
+				});
+			}
+			const input = {
+				prisma,
+				userId: "user-1",
+				instance: { id: "jellyfin-1" },
+				runId: seed.run.id,
+				scopes: seed.scopes,
+				attempt: seed.attempt,
+				now,
+				allowScopeReplay: true as const,
+				testHooks: { commitClock: () => now },
+			};
+			const before = await finalizerState(prisma, seed.run.id);
+			const prepared = await prepareJellyfinEpisodeRun(input);
+			if (prepared.kind !== "ready") throw new Error("Fixture did not prepare original evidence");
+			const receipt = prepared.nativePublication?.receipts[0];
+			expect(receipt).toMatchObject({ expectedRawCount: 2, observedRawCount: 2, exact: false });
+			expect(JSON.parse(receipt!.diagnosticsJson!)).toMatchObject({
+				collectUnits: 1,
+				verifyUnits: 1,
+				collectStageRows: 2,
+				verifyStageRows: 2,
+				expectedCountsMatch: true,
+				missingVerifyCoordinates: 1,
+				verifyOnlyCoordinates: 1,
+				changedObservationCoordinates: watchDrift ? 1 : 0,
+				invalidCollectRows: 0,
+				invalidVerifyRows: 0,
+				duplicateCollectCoordinates: 0,
+				duplicateVerifyCoordinates: 0,
+				conflictedCoordinates: 0,
+				excludedRows: 0,
+			});
+			expect(prepared.publishedRows).toEqual([
+				expect.objectContaining({ jellyfinId: "episode-1", watched: true }),
+			]);
+			expect(prepared.replayEligible).toBe(watchDrift ? undefined : true);
+			const reserve = () =>
+				prisma.$transaction((tx) => reserveJellyfinEpisodeScopeReplay(tx, input, prepared));
+			expect(await reserve()).toBe(!watchDrift);
+			expect(await reserve()).toBe(false);
+			const verify = await prisma.providerObservationUnit.findFirstOrThrow({
+				where: { runId: seed.run.id, phase: "verify" },
+			});
+			if (watchDrift) expect(verify.jellyfinReplayState).toBeNull();
+			else expect(JSON.parse(verify.jellyfinReplayState!)).toMatchObject({ state: "collecting" });
+			expect(await finalizerState(prisma, seed.run.id)).toEqual(before);
+		},
+	);
+
+	it("rejects replay for a full-count substitution with a globally conflicted verify-only ID", async () => {
+		const prisma = await database();
+		const now = new Date("2026-09-07T00:00:00.000Z");
+		const seed = await completeFinalizerFixture(prisma, now);
+		const scopes = [
+			...seed.scopes,
+			{ userId: "user-2", userName: "Second User", libraryId: "library-1" },
+		];
+		const stable = { jellyfinId: "episode-1", played: true, playCount: 1, lastPlayedAt: now };
+		const unwatched = { played: false, playCount: 0, lastPlayedAt: null };
+		const { run } = await replaceRunWithV3Scopes(
+			prisma,
+			scopes,
+			{
+				"user-1": [stable, { ...unwatched, jellyfinId: "scope-original" }],
+				"user-2": [stable, { ...unwatched, jellyfinId: "scope-collision" }],
+			},
+			now,
+		);
+		await prisma.serviceInstance.update({
+			where: { id: "jellyfin-1" },
+			data: { identityStatus: "VERIFIED", expectedIdentity: "native-server" },
+		});
+		await prisma.providerObservationRun.update({
+			where: { id: run.id },
+			data: { createdAt: now },
+		});
+		const originalUser = hash(["jellyfin-user", scopes[0]!.userId]);
+		await prisma.jellyfinEpisodeObservationStage.updateMany({
+			where: {
+				runId: run.id,
+				pass: "verify",
+				userKeyDigest: originalUser,
+				jellyfinId: "scope-original",
+			},
+			data: { jellyfinId: "scope-collision", episodeNumber: 3 },
+		});
+		const input = {
+			prisma,
+			userId: "user-1",
+			instance: { id: "jellyfin-1" },
+			runId: run.id,
+			scopes,
+			attempt: seed.attempt,
+			now,
+			allowScopeReplay: true as const,
+			testHooks: { commitClock: () => now },
+		};
+		const before = await finalizerState(prisma, run.id);
+		const prepared = await prepareJellyfinEpisodeRun(input);
+		if (prepared.kind !== "ready") throw new Error("Fixture did not prepare original evidence");
+		const receipt = prepared.nativePublication?.receipts.find(
+			(receipt) => receipt.userKeyDigest === originalUser,
+		);
+		expect(receipt).toMatchObject({ expectedRawCount: 2, observedRawCount: 2, exact: false });
+		expect(JSON.parse(receipt!.diagnosticsJson!)).toMatchObject({
+			collectStageRows: 2,
+			verifyStageRows: 2,
+			expectedCountsMatch: true,
+			missingVerifyCoordinates: 1,
+			verifyOnlyCoordinates: 1,
+			conflictedCoordinates: 1,
+		});
+		expect(prepared.replayEligible).toBeUndefined();
+		expect(
+			await prisma.$transaction((tx) => reserveJellyfinEpisodeScopeReplay(tx, input, prepared)),
+		).toBe(false);
+		expect(prepared.publishedRows).toEqual([
+			expect.objectContaining({ jellyfinId: "episode-1", watched: true }),
+		]);
+		expect(await finalizerState(prisma, run.id)).toEqual(before);
+	});
+
 	it.each(["none", "same-user", "cross-user", "activated-sibling-conflict"] as const)(
 		"reserves, dispatches and publishes replay or original evidence (conflict=%s)",
 		async (conflict) => {
