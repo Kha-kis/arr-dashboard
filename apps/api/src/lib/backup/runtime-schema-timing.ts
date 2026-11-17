@@ -3,6 +3,7 @@ import pino, { type Logger } from "pino";
 
 type SqliteStartupPhase =
 	| "catalog-preflight"
+	| "schema-plan"
 	| "date-plan"
 	| "oidc-migration"
 	| "schema-apply"
@@ -41,7 +42,8 @@ function report(
 /** Phase events describe diagnostics only. */
 export function timeSqliteStartupPhase<T>(phase: SqliteStartupPhase, operation: () => T): T {
 	// Native validation can still be running when the supervisor times out.
-	if (phase === "foreign-key-check") report(phase, "started");
+	if (phase === "schema-plan" || phase === "date-plan" || phase === "foreign-key-check")
+		report(phase, "started");
 	const began = performance.now();
 	let outcome: "completed" | "failed" = "failed";
 	try {

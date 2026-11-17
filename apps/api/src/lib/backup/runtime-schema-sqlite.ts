@@ -400,51 +400,54 @@ async function synchronizeSqliteRuntimeSchemaPhases(
 				const catalog = timeSqliteStartupPhase("catalog-preflight", () =>
 					readSqliteRuntimeSchemaPlanningCatalog(main, targets.tables, indexes),
 				);
-				const oidc = prepareSqliteOidcPredecessorMigration(main, registry, catalog);
-				const execution = prepareRuntimeSchemaExecution(registry, oidc?.postCatalog ?? catalog);
-				for (const name of [
-					"RestoreRuntimeControl",
-					"SqliteRestoreStorageBinding",
-					"ArrSchemaMigrationReceipt",
-					"ArrRuntimeDataFormatReceipt",
-				]) {
-					const actual = catalog.tables.find((table) => table.name === name);
-					if (!actual) continue;
-					const target = registry.tables.find(
-						(definition) => definition.target.name === name,
-					)!.target;
-					if (
-						actual.columns.length !== target.columns.length ||
-						actual.indexes.length ||
-						actual.foreignKeys.length ||
-						JSON.stringify(actual.primaryKey) !== JSON.stringify(target.primaryKey) ||
-						target.columns.some(
-							(column) =>
-								JSON.stringify(actual.columns.find((field) => field.name === column.name)) !==
-								JSON.stringify(column),
+				const { oidc, execution } = timeSqliteStartupPhase("schema-plan", () => {
+					const oidc = prepareSqliteOidcPredecessorMigration(main, registry, catalog);
+					const execution = prepareRuntimeSchemaExecution(registry, oidc?.postCatalog ?? catalog);
+					for (const name of [
+						"RestoreRuntimeControl",
+						"SqliteRestoreStorageBinding",
+						"ArrSchemaMigrationReceipt",
+						"ArrRuntimeDataFormatReceipt",
+					]) {
+						const actual = catalog.tables.find((table) => table.name === name);
+						if (!actual) continue;
+						const target = registry.tables.find(
+							(definition) => definition.target.name === name,
+						)!.target;
+						if (
+							actual.columns.length !== target.columns.length ||
+							actual.indexes.length ||
+							actual.foreignKeys.length ||
+							JSON.stringify(actual.primaryKey) !== JSON.stringify(target.primaryKey) ||
+							target.columns.some(
+								(column) =>
+									JSON.stringify(actual.columns.find((field) => field.name === column.name)) !==
+									JSON.stringify(column),
+							)
 						)
-					)
-						throw new RuntimeSchemaStartupError();
-				}
-				if (
-					main
-						.prepare(
-							"SELECT 1 FROM sqlite_schema WHERE type='trigger' AND tbl_name IN ('RestoreRuntimeControl','SqliteRestoreStorageBinding','ArrSchemaMigrationReceipt') LIMIT 1",
-						)
-						.get()
-				)
-					throw new RuntimeSchemaStartupError();
-				if (catalog.tables.some((table) => table.name === "ArrSchemaMigrationReceipt")) {
-					for (const row of main
-						.prepare(
-							"SELECT id,protocolVersion,registryVersion,provider,targetDigest,planDigest,completedAt FROM ArrSchemaMigrationReceipt",
-						)
-						.iterate()) {
-						const receipt = parseRuntimeSchemaMigrationReceipt(row);
-						if (receipt.provider !== "sqlite" || receipt.registryVersion !== registry.version)
 							throw new RuntimeSchemaStartupError();
 					}
-				}
+					if (
+						main
+							.prepare(
+								"SELECT 1 FROM sqlite_schema WHERE type='trigger' AND tbl_name IN ('RestoreRuntimeControl','SqliteRestoreStorageBinding','ArrSchemaMigrationReceipt') LIMIT 1",
+							)
+							.get()
+					)
+						throw new RuntimeSchemaStartupError();
+					if (catalog.tables.some((table) => table.name === "ArrSchemaMigrationReceipt")) {
+						for (const row of main
+							.prepare(
+								"SELECT id,protocolVersion,registryVersion,provider,targetDigest,planDigest,completedAt FROM ArrSchemaMigrationReceipt",
+							)
+							.iterate()) {
+							const receipt = parseRuntimeSchemaMigrationReceipt(row);
+							if (receipt.provider !== "sqlite" || receipt.registryVersion !== registry.version)
+								throw new RuntimeSchemaStartupError();
+						}
+					}
+					return { oidc, execution };
+				});
 				const currentSchema = execution.statementCount === 0 && !oidc;
 				return {
 					schema: execution,

@@ -29,25 +29,28 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("SQLite startup timing isolation", () => {
-	it("reports entry to foreign-key validation before the native call completes", async () => {
-		const { timeSqliteStartupPhase } = await import("../runtime-schema-timing.js");
-		const start = {
-			category: "sqlite-startup-phase",
-			phase: "foreign-key-check",
-			outcome: "started",
-			elapsedMs: 0,
-		};
-		expect(
-			timeSqliteStartupPhase("foreign-key-check", () => {
-				expect(boundary.events).toEqual([start]);
-				return [];
-			}),
-		).toEqual([]);
-		expect(boundary.events).toEqual([
-			start,
-			{ ...start, outcome: "completed", elapsedMs: expect.any(Number) },
-		]);
-	});
+	it.each(["schema-plan", "date-plan", "foreign-key-check"] as const)(
+		"reports entry to %s before the native call completes",
+		async (phase) => {
+			const { timeSqliteStartupPhase } = await import("../runtime-schema-timing.js");
+			const start = {
+				category: "sqlite-startup-phase",
+				phase,
+				outcome: "started",
+				elapsedMs: 0,
+			};
+			expect(
+				timeSqliteStartupPhase(phase, () => {
+					expect(boundary.events).toEqual([start]);
+					return [];
+				}),
+			).toEqual([]);
+			expect(boundary.events).toEqual([
+				start,
+				{ ...start, outcome: "completed", elapsedMs: expect.any(Number) },
+			]);
+		},
+	);
 
 	it("returns the original synchronous result and emits only the bounded measurement", async () => {
 		const { timeSqliteStartupPhase } = await import("../runtime-schema-timing.js");
@@ -76,6 +79,12 @@ describe("SQLite startup timing isolation", () => {
 		}
 		expect(caught).toBe(error);
 		expect(boundary.events).toEqual([
+			{
+				category: "sqlite-startup-phase",
+				phase: "date-plan",
+				outcome: "started",
+				elapsedMs: 0,
+			},
 			{
 				category: "sqlite-startup-phase",
 				phase: "date-plan",

@@ -114,6 +114,9 @@ function validateSqliteCliDiagnostics(
 	}
 	expect(events.map((event) => [event.phase, event.outcome])).toEqual([
 		["catalog-preflight", "completed"],
+		["schema-plan", "started"],
+		["schema-plan", "completed"],
+		["date-plan", "started"],
 		["date-plan", "completed"],
 		["schema-apply", "completed"],
 		["catalog-postflight", "completed"],

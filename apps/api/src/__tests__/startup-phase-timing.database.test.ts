@@ -95,6 +95,9 @@ describe.skipIf(process.platform !== "linux")("native startup phase diagnostics"
 			const timings = events(result.stderr);
 			expect(timings.map((event) => [event.phase, event.outcome])).toEqual([
 				["catalog-preflight", "completed"],
+				["schema-plan", "started"],
+				["schema-plan", "completed"],
+				["date-plan", "started"],
 				["date-plan", "completed"],
 				["schema-apply", "completed"],
 				["catalog-postflight", "completed"],
@@ -156,6 +159,9 @@ describe.skipIf(process.platform !== "linux")("native startup phase diagnostics"
 		expect(result.stdout).toBe("");
 		expect(events(result.stderr).map((event) => [event.phase, event.outcome])).toEqual([
 			["catalog-preflight", "completed"],
+			["schema-plan", "started"],
+			["schema-plan", "completed"],
+			["date-plan", "started"],
 			["date-plan", "failed"],
 			["total", "failed"],
 		]);
