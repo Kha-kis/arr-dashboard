@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
 import { RuntimeSchemaStartupError } from "./runtime-schema-startup.js";
+import { checkCompleteSqliteForeignKeys } from "./runtime-sqlite-foreign-key-check.js";
 
 const table = "ArrForeignKeyValidation";
 const prefix = "arr_fk_validation_";
@@ -183,12 +184,12 @@ export function validateTrackedSqliteForeignKeys(
 		previous.schemaDigest === hash(objects)
 	)
 		return "reused";
-	// This remains the complete native check. No timeout or receipt can turn
+	// This remains a complete FK check. No timeout or receipt can turn
 	// an interrupted/failed scan into a baseline. The caller owns commit/rollback.
-	if ((main.pragma("foreign_key_check") as unknown[]).length !== 0) refuse();
+	checkCompleteSqliteForeignKeys(main);
 	requireWriter(main);
 	// ALTER TABLE rewrites the ON target but retains trigger names. Retire only
-	// exact recognized old-name definitions after the complete native check,
+	// exact recognized old-name definitions after complete FK validation,
 	// before installing canonical coverage: the old table name may be reused.
 	// Exclusion remains held; no data writes occur between check and sealing.
 	// Rollback restores the former tracking if any later step fails.

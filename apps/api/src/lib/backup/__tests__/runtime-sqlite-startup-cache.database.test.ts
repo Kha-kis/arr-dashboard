@@ -34,6 +34,27 @@ describe.skipIf(process.platform !== "linux")("native startup page-cache budget"
 	}
 	const rows = (table: string) =>
 		database((db) => db.prepare(`SELECT * FROM ${table} ORDER BY id`).all());
+	it("establishes its first FK proof without a global payload scan of indexed staging", async () => {
+		const pragma = vi.spyOn(Database.prototype, "pragma");
+		const prepare = vi.spyOn(Database.prototype, "prepare");
+		await synchronizeSqliteRuntimeSchema(url);
+		expect(pragma.mock.calls.filter(([sql]) => sql === "foreign_key_check")).toEqual([]);
+		for (const table of [
+			"provider_native_inventory_stage_items",
+			"provider_native_inventory_seen_items",
+			"qui_torrent_observations",
+		]) {
+			expect(
+				prepare.mock.calls.some(
+					([sql]) => sql.startsWith("WITH RECURSIVE") && sql.includes(`main."${table}"`),
+				),
+			).toBe(true);
+			expect(pragma.mock.calls.some(([sql]) => sql === `main.foreign_key_check("${table}")`)).toBe(
+				false,
+			);
+		}
+		expect(rows("ArrForeignKeyValidation")).toHaveLength(1);
+	});
 	it.each(["delete", "wal"])(
 		"applies the hint on the %s startup writer and closes it without persisting the hint",
 		async (mode) => {
@@ -157,7 +178,7 @@ describe.skipIf(process.platform !== "linux")("native startup page-cache budget"
 				options,
 			) {
 				const result = pragma.call(this, source, options);
-				if (source === "foreign_key_check") {
+				if (source.startsWith("main.foreign_key_check")) {
 					writer = this;
 					observed = {
 						cache: pragma.call(this, "main.cache_size", { simple: true }),

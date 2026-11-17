@@ -4,6 +4,7 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { synchronizeSqliteRuntimeSchema } from "../runtime-schema-sqlite.js";
+import * as completeForeignKeys from "../runtime-sqlite-foreign-key-check.js";
 
 describe.skipIf(process.platform !== "linux")("durable native foreign-key validation", () => {
 	let directory: string;
@@ -35,14 +36,10 @@ describe.skipIf(process.platform !== "linux")("durable native foreign-key valida
 		);
 		await start();
 		fullChecks = 0;
-		const pragma = Database.prototype.pragma;
-		vi.spyOn(Database.prototype, "pragma").mockImplementation(function (
-			this: Database.Database,
-			source,
-			options,
-		) {
-			if (source === "foreign_key_check") fullChecks++;
-			return pragma.call(this, source, options);
+		const check = completeForeignKeys.checkCompleteSqliteForeignKeys;
+		vi.spyOn(completeForeignKeys, "checkCompleteSqliteForeignKeys").mockImplementation((main) => {
+			fullChecks++;
+			return check(main);
 		});
 	});
 	afterEach(() => {
@@ -252,7 +249,8 @@ describe.skipIf(process.platform !== "linux")("durable native foreign-key valida
 			source,
 			options,
 		) {
-			if (source === "foreign_key_check") throw new Error("Synthetic native interruption");
+			if (source.startsWith("main.foreign_key_check"))
+				throw new Error("Synthetic native interruption");
 			return pragma.call(this, source, options);
 		});
 		await expect(start()).rejects.toThrow();
