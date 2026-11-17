@@ -39,6 +39,7 @@ type Sealed = {
 	targets: readonly Target[];
 	snapshots: Map<string, Snapshot>;
 	receipt: Receipt | null;
+	currentScanStamp?: string;
 	consumed: boolean;
 };
 type Column = {
@@ -126,6 +127,18 @@ function requireTransaction(main: Database.Database) {
 		main.pragma("foreign_keys", { simple: true }) !== 1
 	)
 		refuse();
+}
+
+function readCurrentScanStamp(main: Database.Database): string {
+	requireTransaction(main);
+	const values = [
+		main.pragma("main.schema_version", { simple: true }),
+		main.pragma("temp.schema_version", { simple: true }),
+		main.pragma("main.data_version", { simple: true }),
+		main.prepare("SELECT total_changes()").pluck().get(),
+	];
+	if (!values.every((value) => Number.isSafeInteger(value) && Number(value) >= 0)) refuse();
+	return hash(values);
 }
 function canonical(value: unknown, nullable: boolean) {
 	const result = encodeCanonicalSqliteDate(value, nullable);
@@ -477,7 +490,11 @@ function scan(
 export function planSqliteRuntimeDates(
 	main: Database.Database,
 	registry: RuntimeSchemaRegistry,
-	options: { useTableOrderForCurrentReceipt?: boolean } = {},
+	options: {
+		useTableOrderForCurrentReceipt?: boolean;
+		/** Only for the startup path with an established schema and no planned DDL. */
+		reuseCurrentReceiptScan?: boolean;
+	} = {},
 ): SqliteRuntimeDatePlan {
 	try {
 		requireTransaction(main);
@@ -504,6 +521,10 @@ export function planSqliteRuntimeDates(
 		).map((transition) => transition.predecessorDigest);
 		const receipt = readReceipt(main, dateColumnsDigest, predecessorDigests),
 			snapshots = new Map<string, Snapshot>();
+		const currentScanStamp =
+			options.reuseCurrentReceiptScan && receipt?.dateColumnsDigest === dateColumnsDigest
+				? readCurrentScanStamp(main)
+				: undefined;
 		let rowsInspected = 0,
 			normalizedValues = 0;
 		const rowidTables =
@@ -533,12 +554,18 @@ export function planSqliteRuntimeDates(
 			rowsInspected,
 			normalizedValues,
 		});
-		plans.set(plan, { main, targets, snapshots, receipt, consumed: false });
+		plans.set(plan, { main, targets, snapshots, receipt, currentScanStamp, consumed: false });
 		return plan;
 	} catch (error) {
 		if (error instanceof SqliteDateCompatibilityError) throw error;
 		refuse();
 	}
+}
+
+function prepareDateUpdate(main: Database.Database, table: Target, fields: readonly string[]) {
+	return main.prepare(
+		`UPDATE main.${quote(table.name)} SET ${fields.map((field) => `${quote(field)}=?`).join(",")} WHERE ${table.keys.map((key) => `${quote(key)} IS ?`).join(" AND ")}`,
+	);
 }
 
 /** The caller owns rollback/commit and physical closure; this function never commits. */
@@ -557,6 +584,24 @@ export async function applySqliteRuntimeDates(
 		const priorDigest = sealed.receipt?.dateColumnsDigest ?? plan.dateColumnsDigest;
 		if (!present(main, marker) || hash(readReceipt(main, priorDigest)) !== hash(sealed.receipt))
 			refuse();
+		if (sealed.currentScanStamp !== undefined) {
+			if (readCurrentScanStamp(main) !== sealed.currentScanStamp) refuse();
+			for (const table of sealed.targets) {
+				const fields = selectedFields(main, table, true);
+				if (hash(fields) !== hash(sealed.snapshots.get(table.name)!.fields)) refuse();
+				// Preserve SQLite's compile-time checks for date updates and their triggers.
+				prepareDateUpdate(main, table, fields);
+			}
+			// The first scan read every value in this writer transaction. Reuse it
+			// only while there is no schema, connection-local or external data change.
+			await assertOwned();
+			if (
+				readCurrentScanStamp(main) !== sealed.currentScanStamp ||
+				hash(readReceipt(main, priorDigest)) !== hash(sealed.receipt)
+			)
+				refuse();
+			return;
+		}
 		const version = () =>
 			hash([
 				main.pragma("main.schema_version", { simple: true }),
@@ -574,9 +619,7 @@ export async function applySqliteRuntimeDates(
 			if (before.changes) assertEffectsSafe(main, table);
 			const digest = createHash("sha256");
 			let rows = 0;
-			const update = main.prepare(
-				`UPDATE main.${quote(table.name)} SET ${fields.map((field) => `${quote(field)}=?`).join(",")} WHERE ${table.keys.map((key) => `${quote(key)} IS ?`).join(" AND ")}`,
-			);
+			const update = prepareDateUpdate(main, table, fields);
 			if (
 				before.rowidOrder &&
 				(!rowidTables?.has(table.name) || !hasUnshadowedRowid(main, table.name))

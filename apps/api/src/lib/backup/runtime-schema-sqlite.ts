@@ -445,12 +445,14 @@ async function synchronizeSqliteRuntimeSchemaPhases(
 							throw new RuntimeSchemaStartupError();
 					}
 				}
+				const currentSchema = execution.statementCount === 0 && !oidc;
 				return {
 					schema: execution,
 					oidc,
 					dates: timeSqliteStartupPhase("date-plan", () =>
 						planSqliteRuntimeDates(main, registry, {
-							useTableOrderForCurrentReceipt: execution.statementCount === 0 && !oidc,
+							useTableOrderForCurrentReceipt: currentSchema,
+							reuseCurrentReceiptScan: currentSchema,
 						}),
 					),
 				};

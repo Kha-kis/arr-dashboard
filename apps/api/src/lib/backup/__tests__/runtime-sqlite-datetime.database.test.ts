@@ -218,6 +218,78 @@ describe("native SQLite date-format transition", () => {
 		expect(db.prepare("SELECT expiresAt FROM sessions").get()).toEqual({ expiresAt: canonical });
 	});
 
+	it("reuses one complete date scan for an unchanged current receipt", async () => {
+		for (let i = 0; i < 501; i++) seed(`settled-${i}`, canonical);
+		await apply();
+		db.exec("COMMIT; BEGIN EXCLUSIVE");
+		const before = rows();
+		const receipt = marker();
+		const queries = vi.spyOn(db, "prepare");
+		const ownership = vi.fn(async () => {});
+		try {
+			const p = planSqliteRuntimeDates(db, registry, {
+				useTableOrderForCurrentReceipt: true,
+				reuseCurrentReceiptScan: true,
+			});
+			expect(p.rowsInspected).toBe(502);
+			await applySqliteRuntimeDates(db, p, ownership);
+			expect(
+				queries.mock.calls
+					.map(([sql]) => sql)
+					.filter((sql) => /^SELECT .* FROM main\."sessions".* ORDER BY /.test(sql)),
+			).toHaveLength(1);
+			expect(ownership).toHaveBeenCalledTimes(2);
+			expect(rows()).toEqual(before);
+			expect(marker()).toEqual(receipt);
+			expect(db.inTransaction).toBe(true);
+		} finally {
+			queries.mockRestore();
+		}
+	});
+
+	it("still rejects a broken date-update trigger when the current scan is reusable", async () => {
+		seed("a", canonical);
+		await apply();
+		db.exec("COMMIT; BEGIN EXCLUSIVE");
+		db.exec(`
+			CREATE TABLE DateAudit(value TEXT);
+			CREATE TRIGGER audit_expiration AFTER UPDATE OF expiresAt ON sessions
+			BEGIN INSERT INTO DateAudit(value) VALUES(NEW.expiresAt); END;
+			DROP TABLE DateAudit;
+		`);
+		const p = planSqliteRuntimeDates(db, registry, {
+			useTableOrderForCurrentReceipt: true,
+			reuseCurrentReceiptScan: true,
+		});
+		await expect(applySqliteRuntimeDates(db, p, async () => {})).rejects.toBeInstanceOf(
+			SqliteDateCompatibilityError,
+		);
+	});
+
+	it.each([
+		["row write", "UPDATE sessions SET expiresAt='2026-11-01T13:00:00.000+00:00' WHERE id='a'"],
+		["main schema", "CREATE TABLE MainDrift(id INTEGER PRIMARY KEY)"],
+		["temp schema", "CREATE TEMP TABLE TempDrift(id INTEGER PRIMARY KEY)"],
+	])("refuses %s at the final ownership check when reusing the scan", async (_name, sql) => {
+		seed("a", canonical);
+		await apply();
+		db.exec("COMMIT; BEGIN EXCLUSIVE");
+		const receipt = marker();
+		const p = planSqliteRuntimeDates(db, registry, {
+			useTableOrderForCurrentReceipt: true,
+			reuseCurrentReceiptScan: true,
+		});
+		let proofs = 0;
+		await expect(
+			applySqliteRuntimeDates(db, p, async () => {
+				if (++proofs === 2) db.exec(sql);
+			}),
+		).rejects.toBeInstanceOf(SqliteDateCompatibilityError);
+		db.exec("ROLLBACK");
+		expect(marker()).toEqual(receipt);
+		expect(rows()[0]).toMatchObject({ expiresAt: canonical });
+	});
+
 	it("does not let repeated successful parsing hide a late invalid date", () => {
 		for (let i = 0; i < 700; i++) seed(`repeat-${String(i).padStart(4, "0")}`, canonical);
 		seed("zz-invalid", "2024-02-30T00:00:00.000+00:00");
