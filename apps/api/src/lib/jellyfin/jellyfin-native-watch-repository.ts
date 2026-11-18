@@ -901,6 +901,37 @@ export async function publishNativeWatchGeneration(
 	});
 }
 
+function sqliteStageCleanupAcknowledgement(
+	rows: unknown,
+	previousCursor: bigint | undefined,
+): { count: number; maximum: bigint | undefined } {
+	const invalid = () => new Error("Invalid SQLite stage cleanup acknowledgement");
+	if (!Array.isArray(rows) || rows.length > SQLITE_STAGE_CLEANUP_BATCH_SIZE) throw invalid();
+	const seen = new Set<bigint>();
+	let maximum = previousCursor;
+	for (const row of rows) {
+		const value =
+			typeof row === "object" && row !== null && "physicalRow" in row ? row.physicalRow : undefined;
+		if (
+			typeof value !== "bigint" &&
+			!(typeof value === "number" && Number.isSafeInteger(value)) &&
+			!(typeof value === "string" && value.length <= 20 && /^(?:0|-?[1-9][0-9]*)$/.test(value))
+		)
+			throw invalid();
+		const physicalRow = BigInt(value);
+		if (
+			physicalRow < -(1n << 63n) ||
+			physicalRow > (1n << 63n) - 1n ||
+			(previousCursor !== undefined && physicalRow <= previousCursor) ||
+			seen.has(physicalRow)
+		)
+			throw invalid();
+		seen.add(physicalRow);
+		if (maximum === undefined || physicalRow > maximum) maximum = physicalRow;
+	}
+	return { count: rows.length, maximum };
+}
+
 /** Reclaims only terminal observation staging; published artifacts are untouched. */
 export async function cleanupTerminalJellyfinEpisodeStage(
 	prisma: PrismaClient,
@@ -924,23 +955,45 @@ export async function cleanupTerminalJellyfinEpisodeStage(
 	});
 	options.signal?.throwIfAborted();
 	if (!terminal) return;
+	// Both access paths resolve the same execution-time authority in their DELETE.
+	const guardedStageSelection = Prisma.sql`
+		FROM "jellyfin_episode_observation_stage" AS stage
+		${options.dbProvider === "sqlite" ? Prisma.sql`NOT INDEXED` : Prisma.empty}
+		JOIN "provider_observation_runs" AS run ON run."id" = stage."runId"
+		WHERE stage."runId" = ${runId}
+			AND run."instanceId" = ${instanceId}
+			AND run."provider" = 'jellyfin_episode'
+			AND run."cacheType" = 'jellyfin_episode'
+			AND run."state" IN ('complete', 'invalidated')
+	`;
+	// Absent initially so negative keys are included; never persisted across invocations.
+	let physicalCursor: bigint | undefined;
 	for (;;) {
 		options.signal?.throwIfAborted();
-		const deleted = await prisma.$executeRaw`
-			DELETE FROM "jellyfin_episode_observation_stage"
-			WHERE "id" IN (
-				SELECT stage."id"
-				FROM "jellyfin_episode_observation_stage" AS stage
-				JOIN "provider_observation_runs" AS run ON run."id" = stage."runId"
-				WHERE stage."runId" = ${runId}
-					AND run."instanceId" = ${instanceId}
-					AND run."provider" = 'jellyfin_episode'
-					AND run."cacheType" = 'jellyfin_episode'
-					AND run."state" IN ('complete', 'invalidated')
-				LIMIT ${batchSize}
-			)
-		`;
-		options.signal?.throwIfAborted();
+		let deleted: number;
+		if (options.dbProvider === "sqlite") {
+			const rows = await prisma.$queryRaw<unknown>`
+				DELETE FROM "jellyfin_episode_observation_stage"
+				WHERE rowid IN (
+					SELECT stage.rowid ${guardedStageSelection}
+					${physicalCursor === undefined ? Prisma.empty : Prisma.sql`AND stage.rowid > ${physicalCursor}`}
+					ORDER BY stage.rowid LIMIT ${SQLITE_STAGE_CLEANUP_BATCH_SIZE}
+			) RETURNING CAST(rowid AS TEXT) AS "physicalRow"
+			`;
+			options.signal?.throwIfAborted();
+			const acknowledged = sqliteStageCleanupAcknowledgement(rows, physicalCursor);
+			physicalCursor = acknowledged.maximum;
+			deleted = acknowledged.count;
+		} else {
+			deleted = await prisma.$executeRaw`
+				DELETE FROM "jellyfin_episode_observation_stage"
+				WHERE "id" IN (
+					SELECT stage."id" ${guardedStageSelection}
+					LIMIT ${batchSize}
+				)
+			`;
+			options.signal?.throwIfAborted();
+		}
 		if (deleted === 0) break;
 		await yieldBetweenCleanupBatches();
 	}

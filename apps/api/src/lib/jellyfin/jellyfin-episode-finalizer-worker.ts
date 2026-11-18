@@ -138,7 +138,9 @@ async function finalizeAdmitted(
 			const cleanupStartedAt = performance.now();
 			let cleanupFailed = false;
 			try {
-				await cleanupPublishedJellyfinEpisodeArtifacts(prisma, payload.instance.id, payload.runId);
+				await cleanupPublishedJellyfinEpisodeArtifacts(prisma, payload.instance.id, payload.runId, {
+					dbProvider: "sqlite",
+				});
 				await cleanupObsoleteJellyfinEpisodeGenerations(prisma as never, {
 					userId: payload.userId,
 					instanceId: payload.instance.id,
@@ -357,6 +359,7 @@ async function finalizeAdmitted(
 						prisma,
 						payload.instance.id,
 						payload.runId,
+						{ dbProvider: "sqlite" },
 					);
 					await cleanupUnpublishedJellyfinEpisodeGeneration(prisma as never, {
 						userId: payload.userId,
@@ -377,7 +380,9 @@ async function finalizeAdmitted(
 		const cleanupStartedAt = performance.now();
 		let cleanupFailed = false;
 		try {
-			await cleanupPublishedJellyfinEpisodeArtifacts(prisma, payload.instance.id, payload.runId);
+			await cleanupPublishedJellyfinEpisodeArtifacts(prisma, payload.instance.id, payload.runId, {
+				dbProvider: "sqlite",
+			});
 			await cleanupObsoleteJellyfinEpisodeGenerations(prisma as never, {
 				userId: payload.userId,
 				instanceId: payload.instance.id,

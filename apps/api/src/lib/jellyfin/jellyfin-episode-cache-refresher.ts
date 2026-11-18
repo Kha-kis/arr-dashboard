@@ -1722,10 +1722,11 @@ export function createJellyfinEpisodeWorkItemRunner(
 					const cleanupStartedAt = performance.now();
 					try {
 						await cleanupPublishedJellyfinEpisodeArtifacts(context.prisma, current.id, run.id, {
-							dbProvider:
-								context.databaseUrl && /^postgres(ql)?:\/\//i.test(context.databaseUrl)
+							dbProvider: context.databaseUrl
+								? /^postgres(ql)?:\/\//i.test(context.databaseUrl)
 									? "postgresql"
-									: "sqlite",
+									: "sqlite"
+								: undefined,
 						});
 					} catch {
 						cleanupFailed = true;

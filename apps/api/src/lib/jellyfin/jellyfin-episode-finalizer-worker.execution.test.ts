@@ -618,6 +618,12 @@ describe("Jellyfin episode finalizer worker execution", () => {
 		expect(result).toEqual({ status: "not-published", reason: "invalidated" });
 		expect(mocks.settleInvalid).toHaveBeenCalledOnce();
 		expect(mocks.cleanup).toHaveBeenCalledOnce();
+		expect(mocks.cleanup).toHaveBeenCalledWith(
+			expect.anything(),
+			payload.instance.id,
+			payload.runId,
+			{ dbProvider: "sqlite" },
+		);
 		expect(mocks.commit).not.toHaveBeenCalled();
 	});
 
@@ -675,6 +681,12 @@ describe("Jellyfin episode finalizer worker execution", () => {
 		mocks.readCompleted.mockResolvedValueOnce(17);
 		const result = await executeJellyfinEpisodeFinalization(payload);
 		expect(result).toMatchObject({ status: "published", itemCount: 17 });
+		expect(mocks.cleanup).toHaveBeenCalledWith(
+			expect.anything(),
+			payload.instance.id,
+			payload.runId,
+			{ dbProvider: "sqlite" },
+		);
 		expect(mocks.prepare).not.toHaveBeenCalled();
 		expect(mocks.stageEpisode).not.toHaveBeenCalled();
 		expect(mocks.commit).not.toHaveBeenCalled();

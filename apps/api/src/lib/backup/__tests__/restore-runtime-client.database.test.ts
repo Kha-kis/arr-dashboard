@@ -255,15 +255,36 @@ describe.each([
 				native = createClient(runtime);
 				await runtime.runOperation(async () => {
 					await native.prisma.$connect();
+					await native.prisma.user.createMany({
+						data: [
+							{ username: "fixture-returning-ordinary" },
+							{ username: "fixture-returning-transaction" },
+						],
+					});
 					const beforeOrdinary = bindingChecks;
 					expect(await native.prisma.$queryRaw`SELECT 7 AS value`).toEqual([{ value: 7n }]);
 					expect(bindingChecks - beforeOrdinary).toBe(3);
+					const beforeDelete = bindingChecks;
+					const removed = await native.prisma.$queryRaw<Array<{ physicalRow: string }>>`
+						DELETE FROM "User" WHERE "username" = 'fixture-returning-ordinary'
+						RETURNING CAST(rowid AS TEXT) AS "physicalRow"
+					`;
+					expect(removed).toEqual([{ physicalRow: expect.stringMatching(/^[0-9]+$/) }]);
+					expect(bindingChecks - beforeDelete).toBe(3);
 					await native.prisma.$transaction(async (tx) => {
 						const beforeTransaction = bindingChecks;
 						expect(await tx.$queryRaw`SELECT 7 AS value`).toEqual([{ value: 7n }]);
 						// Guard, transaction prelude, pre-invocation, and native attempt.
 						expect(bindingChecks - beforeTransaction).toBe(4);
+						const beforeDelete = bindingChecks;
+						const removed = await tx.$queryRaw<Array<{ physicalRow: string }>>`
+							DELETE FROM "User" WHERE "username" = 'fixture-returning-transaction'
+							RETURNING CAST(rowid AS TEXT) AS "physicalRow"
+						`;
+						expect(removed).toEqual([{ physicalRow: expect.stringMatching(/^[0-9]+$/) }]);
+						expect(bindingChecks - beforeDelete).toBe(4);
 					});
+					expect(persistedCount()).toBe(0);
 				});
 			} finally {
 				observed.mockRestore();
