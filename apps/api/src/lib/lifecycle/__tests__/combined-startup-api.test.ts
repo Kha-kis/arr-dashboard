@@ -6,10 +6,14 @@ const state = vi.hoisted(() => ({
 	events: [] as string[],
 	messages: [] as unknown[],
 	exits: [] as unknown[],
+	diagnostics: [] as unknown[],
+	stderr: [] as string[],
 	environment: {} as Record<string, unknown>,
 	listenGate: Promise.resolve(),
 	initFails: false,
 	listenFails: false,
+	listenCode: undefined as string | undefined,
+	diagnosticLogFails: false,
 	throwEarlyExit: false,
 	settings: { apiPort: 3011, webPort: 3010, listenAddress: "127.0.0.1" } as {
 		apiPort: number | null;
@@ -17,7 +21,31 @@ const state = vi.hoisted(() => ({
 		listenAddress: string | null;
 	},
 }));
+function captureDiagnostic(fields: unknown) {
+	if (
+		typeof fields === "object" &&
+		fields !== null &&
+		"category" in fields &&
+		fields.category === "api-startup-failure"
+	) {
+		state.diagnostics.push(fields);
+		if (state.diagnosticLogFails) throw new Error("synthetic logging destination failure");
+	}
+}
 vi.mock("dotenv/config", () => ({}));
+vi.mock("node:fs", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:fs")>();
+	return {
+		...actual,
+		writeSync: (...args: Parameters<typeof actual.writeSync>) => {
+			if (args[0] === 2) {
+				state.stderr.push(String(args[1]));
+				return Buffer.byteLength(String(args[1]));
+			}
+			return Reflect.apply(actual.writeSync, actual, args);
+		},
+	};
+});
 vi.mock("../../backup/runtime-schema-startup.js", () => ({
 	synchronizeRuntimeSchema: async () => {
 		state.events.push("native-validation");
@@ -46,7 +74,7 @@ vi.mock("../../backup/restore-runtime-bootstrap.js", () => ({
 vi.mock("../../logger.js", () => ({
 	LOG_DIR: "synthetic",
 	LOG_LEVEL: "fatal",
-	logger: { error() {} },
+	logger: { error: captureDiagnostic },
 }));
 vi.mock("../../utils/version.js", () => ({
 	getAppVersionInfo: () => ({ version: "synthetic", commitSha: "synthetic" }),
@@ -63,10 +91,13 @@ vi.mock("../../../server.js", () => ({
 			listen: async () => {
 				state.events.push("listen");
 				await state.listenGate;
-				if (state.listenFails) throw Error("synthetic listen failure");
+				if (state.listenFails)
+					throw Object.assign(Error("private bootstrap payload"), {
+						code: state.listenCode,
+					});
 				state.events.push("listening");
 			},
-			log: { info() {}, error() {}, warn() {} },
+			log: { info() {}, error: captureDiagnostic, warn() {} },
 			notificationService: { notify: async () => {} },
 		};
 	},
@@ -84,8 +115,12 @@ beforeEach(() => {
 	state.events.length = 0;
 	state.messages.length = 0;
 	state.exits.length = 0;
+	state.diagnostics.length = 0;
+	state.stderr.length = 0;
 	state.initFails = false;
 	state.listenFails = false;
+	state.listenCode = undefined;
+	state.diagnosticLogFails = false;
 	state.throwEarlyExit = false;
 	state.listenGate = Promise.resolve();
 	state.settings = { apiPort: 3011, webPort: 3010, listenAddress: "127.0.0.1" };
@@ -120,6 +155,10 @@ beforeEach(() => {
 		return undefined as never;
 	});
 	vi.spyOn(console, "error").mockImplementation(() => {});
+	vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+		state.stderr.push(String(chunk));
+		return true;
+	});
 });
 
 it.each(["junk", "65536"])(
@@ -246,6 +285,60 @@ it("does not send after listen failure and joins the existing shutdown", async (
 	state.listenFails = true;
 	await boot();
 	expect(state.messages).toEqual([]);
+	expect(state.events.slice(-2)).toEqual(["app-closed", "owner-closed"]);
+	expect(state.exits).toEqual([1]);
+});
+it("reports closed startup diagnostics before server construction", async () => {
+	state.initFails = true;
+	await boot();
+	expect(state.diagnostics).toEqual([
+		{
+			category: "api-startup-failure",
+			stage: "schema",
+			errorCategory: "unknown",
+			code: null,
+		},
+	]);
+	expect(state.stderr.join("")).toContain('"stage":"schema"');
+	expect(state.stderr.join("")).not.toContain("synthetic validation failure");
+	expect(state.exits).toEqual([1]);
+});
+it("reports a whitelisted listen diagnostic without exception details", async () => {
+	state.listenFails = true;
+	state.listenCode = "EACCES";
+	await boot();
+	expect(state.diagnostics).toEqual([
+		expect.objectContaining({ category: "api-startup-failure", stage: "listen", code: "EACCES" }),
+	]);
+	expect(JSON.stringify([state.diagnostics, state.stderr])).not.toContain(
+		"private bootstrap payload",
+	);
+	expect(state.events.slice(-2)).toEqual(["app-closed", "owner-closed"]);
+	expect(state.exits).toEqual([1]);
+});
+it("preserves the failure drain when a diagnostic destination throws", async () => {
+	state.listenFails = true;
+	state.diagnosticLogFails = true;
+	await boot();
+	expect(state.stderr.join("")).toContain('"stage":"listen"');
+	expect(state.events.slice(-2)).toEqual(["app-closed", "owner-closed"]);
+	expect(state.exits).toEqual([1]);
+});
+it("identifies startup handoff rejection after listen without exposing its error", async () => {
+	Object.defineProperty(process, "send", {
+		configurable: true,
+		value: (_message: unknown, callback: (error: Error) => void) => {
+			callback(new Error("private handoff payload"));
+			return true;
+		},
+	});
+	await boot();
+	expect(state.diagnostics).toEqual([
+		expect.objectContaining({ category: "api-startup-failure", stage: "handoff" }),
+	]);
+	expect(JSON.stringify([state.diagnostics, state.stderr])).not.toContain(
+		"private handoff payload",
+	);
 	expect(state.events.slice(-2)).toEqual(["app-closed", "owner-closed"]);
 	expect(state.exits).toEqual([1]);
 });

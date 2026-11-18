@@ -15,6 +15,11 @@ import {
 	logSecurityConfig,
 } from "./lib/config/port-config.js";
 import {
+	type ApiStartupStage,
+	getApiStartupDiagnostic,
+	writeApiStartupDiagnostic,
+} from "./lib/lifecycle/api-startup-diagnostics.js";
+import {
 	type CombinedStartupMessage,
 	parseCombinedStartupMessage,
 	readCombinedStartupMode,
@@ -65,6 +70,7 @@ const start = async () => {
 	let shutdown: Promise<void> | undefined;
 	let failedShutdown = false;
 	let combinedMessage: CombinedStartupMessage | undefined;
+	let startupStage: ApiStartupStage = "handoff";
 	function closeAndExit(failed = false): Promise<void> {
 		failedShutdown ||= failed;
 		// Keep both listeners installed throughout the drain: a repeated signal
@@ -131,8 +137,10 @@ const start = async () => {
 			throw new Error("Combined startup IPC is unavailable.");
 		// Every actual API child validates, including managed replacements. A
 		// combined handoff coordinates settings; it never bypasses this boundary.
+		startupStage = "schema";
 		const schemaSettings = await synchronizeRuntimeSchema(validatedEnv.DATABASE_URL!);
 		if (shutdown) return;
+		startupStage = "runtime-open";
 		runtime = await openRestoreRuntime({
 			databaseUrl: validatedEnv.DATABASE_URL!,
 			onUnavailable: (diagnostic) => {
@@ -141,6 +149,7 @@ const start = async () => {
 			},
 		});
 		if (shutdown) return;
+		startupStage = "settings";
 		const settings = await loadRestoreRuntimeStartupSettings(runtime);
 		if (shutdown) return;
 		const combined = combinedMode
@@ -166,6 +175,7 @@ const start = async () => {
 		process.env.TRUST_PROXY = String(securityConfig.trustProxy);
 		if (securityConfig.secureCookies !== undefined)
 			process.env.COOKIE_SECURE = String(securityConfig.secureCookies);
+		startupStage = "server-build";
 		app = buildServer({
 			env: {
 				...validatedEnv,
@@ -185,17 +195,20 @@ const start = async () => {
 		if (shutdown) return;
 		if (!app || !runtime) throw new Error("API initialization did not complete");
 		const env = app.config;
+		startupStage = "listen";
 		await app.listen({
 			port: env.API_PORT,
 			host: env.API_HOST,
 		});
 		if (shutdown) return;
 		if (combinedMessage) {
+			startupStage = "handoff";
 			await new Promise<void>((resolve, reject) => {
 				process.send!(combinedMessage!, (error) => (error ? reject(error) : resolve()));
 			});
 			if (shutdown) return;
 		}
+		startupStage = "running";
 		const dbUrl = process.env.DATABASE_URL || "";
 		const dbType = dbUrl.startsWith("postgresql") ? "PostgreSQL" : "SQLite";
 		const versionInfo = getAppVersionInfo();
@@ -233,14 +246,18 @@ const start = async () => {
 			.catch((err) => {
 				app!.log.warn({ err }, "Startup notification failed (non-critical)");
 			});
-	} catch {
+	} catch (error) {
 		// A concurrent termination request does not establish why listen failed.
 		// Preserve the failure exit while joining the same accepted-work drain.
-		// Log to both pino (file) and console (stderr). Pino uses an async worker
-		// thread transport, so process.exit() can kill the process before pino
-		// flushes. console.error is synchronous and guarantees visible output.
-		app?.log.error("Failed to start API server");
-		console.error("Failed to start API server");
+		// Only closed diagnostic fields cross this boundary. A broken logging
+		// destination must not prevent the same accepted-work drain.
+		const diagnostic = getApiStartupDiagnostic(startupStage, error);
+		try {
+			(app?.log ?? logger).error(diagnostic, "Failed to start API server");
+		} catch {
+			/* Continue closure when a logging destination is unavailable. */
+		}
+		writeApiStartupDiagnostic(diagnostic);
 		await closeAndExit(true);
 	}
 };
