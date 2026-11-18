@@ -246,7 +246,11 @@ async function nonStageSnapshot(prisma: TestPrisma) {
 // Observe only issued DML; completed-cleanup discovery SELECTs must never be held.
 function observeDeletes(
 	prisma: TestPrisma,
-	afterDelete: (result: unknown, parameters: readonly unknown[]) => Promise<unknown>,
+	afterDelete: (
+		result: unknown,
+		parameters: readonly unknown[],
+		statement: Prisma.Sql,
+	) => Promise<unknown>,
 ) {
 	const raw = prisma as unknown as Record<
 		"$executeRaw" | "$queryRaw",
@@ -259,7 +263,9 @@ function observeDeletes(
 			const statement = Array.isArray(args[0])
 				? Prisma.sql(args[0], ...args.slice(1))
 				: (args[0] as Prisma.Sql);
-			return /^\s*DELETE\b/i.test(statement.sql) ? afterDelete(result, statement.values) : result;
+			return /^\s*DELETE\b/i.test(statement.sql)
+				? afterDelete(result, statement.values, statement)
+				: result;
 		});
 	});
 	return () => {
@@ -449,7 +455,67 @@ describe("terminal Jellyfin episode stage cleanup", { timeout: 30_000 }, () => {
 		},
 	);
 
-	it("uses row order and the maximum acknowledged cursor across foreign prefixes, holes, and signed keys", async () => {
+	it.each(["prefix", "tail", "interleaved"] as const)(
+		"uses a scoped index for %s unrelated rows and empty target selection",
+		async (layout) => {
+			const prisma = await database();
+			await seedRun(prisma, "foreign", { instanceId: "other-instance" }, 128);
+			await seedRun(prisma, "active", { state: "running" }, 128);
+			await seedRun(prisma, "target", {}, 101);
+			if (layout === "tail") {
+				await prisma.$executeRaw`UPDATE jellyfin_episode_observation_stage SET rowid = -rowid WHERE runId = 'target'`;
+			} else if (layout === "interleaved") {
+				await prisma.$executeRaw`UPDATE jellyfin_episode_observation_stage SET rowid = -rowid * 3`;
+				await prisma.$executeRaw`
+					UPDATE jellyfin_episode_observation_stage SET rowid = -episodeNumber * 3 - 1 WHERE runId = 'target'
+				`;
+			}
+			const protectedRows = await prisma.jellyfinEpisodeObservationStage.findMany({
+				where: { runId: { not: "target" } },
+				orderBy: { id: "asc" },
+			});
+			const otherTables = await nonStageSnapshot(prisma);
+			const counts: unknown[] = [];
+			const restore = observeDeletes(prisma, async (result, parameters, statement) => {
+				const plan = await prisma.$queryRawUnsafe<Array<{ detail: string }>>(
+					`EXPLAIN QUERY PLAN ${statement.sql}`,
+					...parameters,
+				);
+				const details = plan.map(({ detail }) => detail);
+				expect(details.some((detail) => /\bSCAN stage\b/i.test(detail))).toBe(false);
+				expect(
+					details.some((detail) => /\bSEARCH stage USING (?:COVERING )?INDEX\b/i.test(detail)),
+				).toBe(true);
+				expect(details.some((detail) => /\bUSE TEMP B-TREE\b/i.test(detail))).toBe(false);
+				counts.push(deletionCount(result));
+				return result;
+			});
+			try {
+				await cleanupTerminalJellyfinEpisodeStage(prisma, "instance", "target", {
+					dbProvider: "sqlite",
+				});
+				// Exercise a fresh invocation whose admitted target is already empty.
+				await cleanupTerminalJellyfinEpisodeStage(prisma, "instance", "target", {
+					dbProvider: "sqlite",
+				});
+			} finally {
+				restore();
+			}
+			expect(counts).toEqual([100, 1, 0, 0]);
+			expect(
+				await prisma.jellyfinEpisodeObservationStage.count({ where: { runId: "target" } }),
+			).toBe(0);
+			expect(
+				await prisma.jellyfinEpisodeObservationStage.findMany({
+					where: { runId: { not: "target" } },
+					orderBy: { id: "asc" },
+				}),
+			).toEqual(protectedRows);
+			expect(await nonStageSnapshot(prisma)).toEqual(otherTables);
+		},
+	);
+
+	it("accepts unordered nonmonotonic batches with holes and signed physical keys", async () => {
 		const prisma = await database();
 		await seedRun(prisma, "foreign", { instanceId: "other-instance" }, 128);
 		await seedRun(prisma, "active", { state: "running" });
@@ -457,16 +523,38 @@ describe("terminal Jellyfin episode stage cleanup", { timeout: 30_000 }, () => {
 		await prisma.$executeRaw`UPDATE jellyfin_episode_observation_stage SET rowid = rowid * 3 - 1000000`;
 		for (let index = 99; index < 201; index++) {
 			const id = `target-stage-${index}`;
-			// Adjacent inexact-number keys cross the first 100-row boundary.
+			// Neighboring keys above the safe-number range remain distinct identities.
 			const physicalRow =
 				index >= 199
 					? 9223372036854775807n - BigInt((200 - index) * 2)
 					: 9007199254740995n + BigInt(index - 99);
 			await prisma.$executeRaw`UPDATE jellyfin_episode_observation_stage SET rowid = ${physicalRow} WHERE id = ${id}`;
 		}
-		const ordered = await prisma.$queryRaw<Array<{ id: string; physicalRow: string }>>`
-			SELECT id, CAST(rowid AS TEXT) AS physicalRow FROM jellyfin_episode_observation_stage
-			WHERE runId = 'target' ORDER BY rowid
+		for (const [ordinal, group] of [
+			[1, "a"],
+			[2, "b"],
+		] as const) {
+			await prisma.providerObservationUnit.create({
+				data: {
+					id: `${group}-unit`,
+					runId: "target",
+					ordinal,
+					scopeKey: group,
+					scopeDigest: "synthetic-digest",
+					phase: "collect",
+					expectedTargets: 1,
+					state: "complete",
+				},
+			});
+		}
+		// Every run-prefixed index groups the higher keys first, so later batches
+		// legitimately contain lower physical keys without collecting new rows.
+		await prisma.$executeRaw`
+			UPDATE jellyfin_episode_observation_stage SET
+				unitId = CASE WHEN episodeNumber >= 100 THEN 'a-unit' ELSE 'b-unit' END,
+				seriesId = CASE WHEN episodeNumber >= 100 THEN 'a' ELSE 'b' END,
+				pass = CASE WHEN episodeNumber >= 100 THEN 'a' ELSE 'b' END
+			WHERE runId = 'target'
 		`;
 		const protectedRows = await prisma.jellyfinEpisodeObservationStage.findMany({
 			where: { runId: { not: "target" } },
@@ -474,29 +562,25 @@ describe("terminal Jellyfin episode stage cleanup", { timeout: 30_000 }, () => {
 		});
 		const otherTables = await nonStageSnapshot(prisma);
 		const counts: unknown[] = [];
-		let acknowledgedMaximum: bigint | undefined;
+		let previousMaximum: bigint | undefined;
+		let sawNonmonotonicBatch = false;
+		const acknowledgedKeys = new Set<bigint>();
 		const restore = observeDeletes(prisma, async (result, parameters) => {
-			if (acknowledgedMaximum !== undefined) expect(parameters).toContain(acknowledgedMaximum);
+			expect(parameters).toEqual(["target", "instance", 100]);
 			counts.push(deletionCount(result));
-			if (counts.length === 1) {
-				const remaining = await prisma.jellyfinEpisodeObservationStage.findMany({
-					where: { runId: "target" },
-					select: { id: true },
-				});
-				expect(remaining.map(({ id }) => id).sort()).toEqual(
-					ordered
-						.slice(100)
-						.map(({ id }) => id)
-						.sort(),
-				);
-			}
 			if (!Array.isArray(result)) return result;
 			if (result.length > 0) {
-				acknowledgedMaximum = result.reduce<bigint>(
-					(maximum, row: { physicalRow: bigint | number | string }) =>
-						BigInt(row.physicalRow) > maximum ? BigInt(row.physicalRow) : maximum,
-					BigInt(result[0].physicalRow),
+				const keys = result.map((row: { physicalRow: bigint | number | string }) =>
+					BigInt(row.physicalRow),
 				);
+				const priorMaximum = previousMaximum;
+				if (priorMaximum !== undefined && keys.some((key) => key < priorMaximum))
+					sawNonmonotonicBatch = true;
+				previousMaximum = keys.reduce((maximum, key) => (key > maximum ? key : maximum));
+				for (const key of keys) {
+					expect(acknowledgedKeys.has(key)).toBe(false);
+					acknowledgedKeys.add(key);
+				}
 			}
 			// Driver acknowledgements need not preserve SELECT/RETURNING order.
 			return result
@@ -517,6 +601,8 @@ describe("terminal Jellyfin episode stage cleanup", { timeout: 30_000 }, () => {
 			restore();
 		}
 		expect(counts).toEqual([100, 100, 1, 0]);
+		expect(acknowledgedKeys.size).toBe(201);
+		expect(sawNonmonotonicBatch).toBe(true);
 		expect(
 			await prisma.jellyfinEpisodeObservationStage.findMany({
 				where: { runId: "target" },
@@ -530,6 +616,44 @@ describe("terminal Jellyfin episode stage cleanup", { timeout: 30_000 }, () => {
 			}),
 		).toEqual(protectedRows);
 		expect(await nonStageSnapshot(prisma)).toEqual(otherTables);
+	});
+
+	it("rejects an immediately repeated acknowledgement across committed batches and retries", async () => {
+		const prisma = await database();
+		await seedRun(prisma, "target", {}, 201);
+		await seedRun(prisma, "foreign", { instanceId: "other-instance" });
+		let issued = 0;
+		let previousKey: string | undefined;
+		const restore = observeDeletes(prisma, async (result) => {
+			issued++;
+			expect(Array.isArray(result)).toBe(true);
+			const rows = result as Array<{ physicalRow: string }>;
+			if (issued === 1) previousKey = rows[0]!.physicalRow;
+			if (issued === 2) {
+				expect(previousKey).toBeTypeOf("string");
+				return [{ physicalRow: previousKey }, ...rows.slice(1)];
+			}
+			return rows;
+		});
+		try {
+			await expect(
+				cleanupTerminalJellyfinEpisodeStage(prisma, "instance", "target", {
+					dbProvider: "sqlite",
+				}),
+			).rejects.toThrow("Invalid SQLite stage cleanup acknowledgement");
+		} finally {
+			restore();
+		}
+		expect(issued).toBe(2);
+		expect(await prisma.jellyfinEpisodeObservationStage.count({ where: { runId: "target" } })).toBe(
+			1,
+		);
+		await cleanupTerminalJellyfinEpisodeStage(prisma, "instance", "target", {
+			dbProvider: "sqlite",
+		});
+		expect(
+			await prisma.jellyfinEpisodeObservationStage.findMany({ select: { runId: true } }),
+		).toEqual([{ runId: "foreign" }]);
 	});
 
 	it("reports a failed acknowledgement after committed SQLite progress and retries the remainder", async () => {

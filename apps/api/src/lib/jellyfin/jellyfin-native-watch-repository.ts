@@ -903,12 +903,11 @@ export async function publishNativeWatchGeneration(
 
 function sqliteStageCleanupAcknowledgement(
 	rows: unknown,
-	previousCursor: bigint | undefined,
-): { count: number; maximum: bigint | undefined } {
+	previousBatch: ReadonlySet<bigint> | undefined,
+): { count: number; physicalRows: ReadonlySet<bigint> } {
 	const invalid = () => new Error("Invalid SQLite stage cleanup acknowledgement");
 	if (!Array.isArray(rows) || rows.length > SQLITE_STAGE_CLEANUP_BATCH_SIZE) throw invalid();
 	const seen = new Set<bigint>();
-	let maximum = previousCursor;
 	for (const row of rows) {
 		const value =
 			typeof row === "object" && row !== null && "physicalRow" in row ? row.physicalRow : undefined;
@@ -922,14 +921,13 @@ function sqliteStageCleanupAcknowledgement(
 		if (
 			physicalRow < -(1n << 63n) ||
 			physicalRow > (1n << 63n) - 1n ||
-			(previousCursor !== undefined && physicalRow <= previousCursor) ||
+			previousBatch?.has(physicalRow) ||
 			seen.has(physicalRow)
 		)
 			throw invalid();
 		seen.add(physicalRow);
-		if (maximum === undefined || physicalRow > maximum) maximum = physicalRow;
 	}
-	return { count: rows.length, maximum };
+	return { count: rows.length, physicalRows: seen };
 }
 
 /** Reclaims only terminal observation staging; published artifacts are untouched. */
@@ -958,7 +956,6 @@ export async function cleanupTerminalJellyfinEpisodeStage(
 	// Both access paths resolve the same execution-time authority in their DELETE.
 	const guardedStageSelection = Prisma.sql`
 		FROM "jellyfin_episode_observation_stage" AS stage
-		${options.dbProvider === "sqlite" ? Prisma.sql`NOT INDEXED` : Prisma.empty}
 		JOIN "provider_observation_runs" AS run ON run."id" = stage."runId"
 		WHERE stage."runId" = ${runId}
 			AND run."instanceId" = ${instanceId}
@@ -966,8 +963,10 @@ export async function cleanupTerminalJellyfinEpisodeStage(
 			AND run."cacheType" = 'jellyfin_episode'
 			AND run."state" IN ('complete', 'invalidated')
 	`;
-	// Absent initially so negative keys are included; never persisted across invocations.
-	let physicalCursor: bigint | undefined;
+	// Existing run-prefixed indexes bound selection to this run, including empty
+	// scopes. Physical keys can arrive in any order; only retain one bounded batch
+	// to reject an immediately repeated acknowledgement without a global cursor.
+	let previousBatch: ReadonlySet<bigint> | undefined;
 	for (;;) {
 		options.signal?.throwIfAborted();
 		let deleted: number;
@@ -976,13 +975,12 @@ export async function cleanupTerminalJellyfinEpisodeStage(
 				DELETE FROM "jellyfin_episode_observation_stage"
 				WHERE rowid IN (
 					SELECT stage.rowid ${guardedStageSelection}
-					${physicalCursor === undefined ? Prisma.empty : Prisma.sql`AND stage.rowid > ${physicalCursor}`}
-					ORDER BY stage.rowid LIMIT ${SQLITE_STAGE_CLEANUP_BATCH_SIZE}
+					LIMIT ${SQLITE_STAGE_CLEANUP_BATCH_SIZE}
 			) RETURNING CAST(rowid AS TEXT) AS "physicalRow"
 			`;
 			options.signal?.throwIfAborted();
-			const acknowledged = sqliteStageCleanupAcknowledgement(rows, physicalCursor);
-			physicalCursor = acknowledged.maximum;
+			const acknowledged = sqliteStageCleanupAcknowledgement(rows, previousBatch);
+			previousBatch = acknowledged.physicalRows;
 			deleted = acknowledged.count;
 		} else {
 			deleted = await prisma.$executeRaw`
