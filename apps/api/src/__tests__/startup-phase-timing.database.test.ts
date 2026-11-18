@@ -93,14 +93,20 @@ describe.skipIf(process.platform !== "linux")("native startup phase diagnostics"
 				listenAddress: null,
 			});
 			const timings = events(result.stderr);
+			const datePlan = [
+				["date-plan", "started"],
+				["date-plan", "completed"],
+			];
 			expect(timings.map((event) => [event.phase, event.outcome])).toEqual([
 				["catalog-preflight", "completed"],
 				["schema-plan", "started"],
 				["schema-plan", "completed"],
-				["date-plan", "started"],
-				["date-plan", "completed"],
+				// Fresh schemas plan legacy dates before DDL; current receipts wait
+				// until FK tracking is prepared after the schema postflight.
+				...(iteration === 0 ? datePlan : []),
 				["schema-apply", "completed"],
 				["catalog-postflight", "completed"],
+				...(iteration === 1 ? datePlan : []),
 				["date-apply", "completed"],
 				["foreign-key-check", "started"],
 				["foreign-key-check", "completed"],
@@ -161,6 +167,8 @@ describe.skipIf(process.platform !== "linux")("native startup phase diagnostics"
 			["catalog-preflight", "completed"],
 			["schema-plan", "started"],
 			["schema-plan", "completed"],
+			["schema-apply", "completed"],
+			["catalog-postflight", "completed"],
 			["date-plan", "started"],
 			["date-plan", "failed"],
 			["total", "failed"],

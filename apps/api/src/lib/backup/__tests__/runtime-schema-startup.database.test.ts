@@ -88,6 +88,7 @@ const cliUnavailable = {
 function validateSqliteCliDiagnostics(
 	result: Awaited<ReturnType<typeof runStartupCli>>,
 	success: boolean,
+	currentDateReceipt = false,
 ) {
 	const error = success ? "" : cliUnavailable.stderr;
 	if (!success) expect(result.stderr.endsWith(error)).toBe(true);
@@ -112,14 +113,20 @@ function validateSqliteCliDiagnostics(
 		expect(Number.isFinite(event.elapsedMs)).toBe(true);
 		expect(event.elapsedMs).toBeGreaterThanOrEqual(0);
 	}
+	const datePlan = [
+		["date-plan", "started"],
+		["date-plan", "completed"],
+	];
 	expect(events.map((event) => [event.phase, event.outcome])).toEqual([
 		["catalog-preflight", "completed"],
 		["schema-plan", "started"],
 		["schema-plan", "completed"],
-		["date-plan", "started"],
-		["date-plan", "completed"],
+		// Current receipts plan dates only after preparing FK tracking, while
+		// fresh schemas still plan legacy normalization before applying DDL.
+		...(!currentDateReceipt ? datePlan : []),
 		["schema-apply", "completed"],
 		["catalog-postflight", "completed"],
+		...(currentDateReceipt ? datePlan : []),
 		["date-apply", "completed"],
 		...(success
 			? [
@@ -265,7 +272,7 @@ describe.skipIf(process.platform !== "linux")("native SQLite schema startup writ
 			db.exec(`INSERT INTO system_settings(id,apiPort,webPort,listenAddress,createdAt,updatedAt)
 				VALUES(1,43101,43102,'127.0.0.1','2026-10-08T00:00:00.000+00:00','2026-10-08T00:00:00.000+00:00')`),
 		);
-		expect(validateSqliteCliDiagnostics(await runStartupCli(url), true)).toEqual({
+		expect(validateSqliteCliDiagnostics(await runStartupCli(url), true, true)).toEqual({
 			code: 0,
 			signal: null,
 			stdout: '{"apiPort":43101,"webPort":43102,"listenAddress":"127.0.0.1"}\n',
@@ -280,7 +287,9 @@ describe.skipIf(process.platform !== "linux")("native SQLite schema startup writ
 		);
 		const before = rows("RestoreRuntimeControl"),
 			receipt = rows("ArrSchemaMigrationReceipt");
-		expect(validateSqliteCliDiagnostics(await runStartupCli(url), false)).toEqual(cliUnavailable);
+		expect(validateSqliteCliDiagnostics(await runStartupCli(url), false, true)).toEqual(
+			cliUnavailable,
+		);
 		expect(rows("RestoreRuntimeControl")).toEqual(before);
 		expect(rows("ArrSchemaMigrationReceipt")).toEqual(receipt);
 	});
@@ -301,6 +310,7 @@ describe.skipIf(process.platform !== "linux")("native SQLite schema startup writ
 	it("creates a fresh private file and commits schema, original binding, journal and receipt together", async () => {
 		expect(existsSync(path)).toBe(false);
 		expect(await synchronize()).toEqual({ apiPort: null, webPort: null, listenAddress: null });
+		// 103 registered tables, two date-checkpoint tables and ArrForeignKeyValidation.
 		expect(
 			database(
 				(main) =>
@@ -312,7 +322,7 @@ describe.skipIf(process.platform !== "linux")("native SQLite schema startup writ
 							.get() as { n: number }
 					).n,
 			),
-		).toBe(105);
+		).toBe(106);
 		expect(rows("ArrSnapshotDateValidation")).toEqual([
 			expect.objectContaining({
 				id: 1,
