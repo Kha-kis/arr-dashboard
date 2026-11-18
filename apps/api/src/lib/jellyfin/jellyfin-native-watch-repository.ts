@@ -15,6 +15,13 @@ const PUBLICATION_CHUNK_SIZE = 500;
 // Bound each fenced insert and divide the 5,000-row lease checkpoint evenly.
 const ROW_WRITE_CHUNK_SIZE = 500;
 const CLEANUP_BATCH_SIZE = 5_000;
+// Keep SQLite staging writes short enough to yield to pending reads and shutdown.
+const SQLITE_STAGE_CLEANUP_BATCH_SIZE = 100;
+
+type JellyfinEpisodeCleanupOptions = {
+	signal?: AbortSignal;
+	dbProvider?: "sqlite" | "postgresql";
+};
 const LEASE_CHECKPOINT_CHUNKS = 10;
 const ADMISSION_RETRY_DELAYS_MS = [10, 20, 40] as const;
 const VERIFICATION_CHECKPOINT_RETRY_DELAYS_MS = [...ADMISSION_RETRY_DELAYS_MS, 250, 500, 1_000];
@@ -894,18 +901,17 @@ export async function publishNativeWatchGeneration(
 	});
 }
 
-/**
- * Reclaims large, no-longer-authoritative tables after the generation pointer
- * has committed. Each statement is bounded so SQLite health checks can proceed
- * between batches; an interrupted cleanup can safely resume on the next pass.
- */
-export async function cleanupPublishedJellyfinEpisodeArtifacts(
+/** Reclaims only terminal observation staging; published artifacts are untouched. */
+export async function cleanupTerminalJellyfinEpisodeStage(
 	prisma: PrismaClient,
 	instanceId: string,
 	runId: string,
-	options: { signal?: AbortSignal } = {},
+	options: JellyfinEpisodeCleanupOptions = {},
 ): Promise<void> {
 	options.signal?.throwIfAborted();
+	// Callers without a provider use the conservative SQLite limit.
+	const batchSize =
+		options.dbProvider === "postgresql" ? CLEANUP_BATCH_SIZE : SQLITE_STAGE_CLEANUP_BATCH_SIZE;
 	const terminal = await prisma.providerObservationRun.findFirst({
 		where: {
 			id: runId,
@@ -928,14 +934,43 @@ export async function cleanupPublishedJellyfinEpisodeArtifacts(
 				JOIN "provider_observation_runs" AS run ON run."id" = stage."runId"
 				WHERE stage."runId" = ${runId}
 					AND run."instanceId" = ${instanceId}
+					AND run."provider" = 'jellyfin_episode'
+					AND run."cacheType" = 'jellyfin_episode'
 					AND run."state" IN ('complete', 'invalidated')
-				LIMIT ${CLEANUP_BATCH_SIZE}
+				LIMIT ${batchSize}
 			)
 		`;
 		options.signal?.throwIfAborted();
 		if (deleted === 0) break;
 		await yieldBetweenCleanupBatches();
 	}
+}
+
+/**
+ * Reclaims large, no-longer-authoritative tables after the generation pointer
+ * has committed. Each statement is bounded so SQLite health checks can proceed
+ * between batches; an interrupted cleanup can safely resume on the next pass.
+ */
+export async function cleanupPublishedJellyfinEpisodeArtifacts(
+	prisma: PrismaClient,
+	instanceId: string,
+	runId: string,
+	options: JellyfinEpisodeCleanupOptions = {},
+): Promise<void> {
+	options.signal?.throwIfAborted();
+	const terminal = await prisma.providerObservationRun.findFirst({
+		where: {
+			id: runId,
+			instanceId,
+			provider: "jellyfin_episode",
+			cacheType: "jellyfin_episode",
+			state: { in: ["complete", "invalidated"] },
+		},
+		select: { id: true },
+	});
+	options.signal?.throwIfAborted();
+	if (!terminal) return;
+	await cleanupTerminalJellyfinEpisodeStage(prisma, instanceId, runId, options);
 	for (;;) {
 		options.signal?.throwIfAborted();
 		const deleted = await prisma.$executeRaw`
@@ -1017,7 +1052,7 @@ export async function cleanupPublishedJellyfinEpisodeArtifacts(
 export async function cleanupCompletedJellyfinEpisodeArtifacts(
 	prisma: PrismaClient,
 	instanceId: string,
-	options: { signal?: AbortSignal } = {},
+	options: JellyfinEpisodeCleanupOptions = {},
 ): Promise<void> {
 	for (;;) {
 		options.signal?.throwIfAborted();

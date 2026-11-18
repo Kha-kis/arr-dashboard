@@ -474,6 +474,7 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 								try {
 									await cleanupCompletedJellyfinEpisodeArtifacts(app.prisma, instance.id, {
 										signal: cancellation.signal,
+										dbProvider: app.dbProvider,
 									});
 								} catch (error) {
 									if (cancellation.signal.aborted && error === cancellation.signal.reason) return;

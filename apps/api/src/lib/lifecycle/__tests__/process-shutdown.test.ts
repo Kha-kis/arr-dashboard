@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { writeSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import Fastify, { type FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
@@ -10,7 +11,7 @@ import { withCleanupMaintenanceGuard } from "../../library-cleanup/cleanup-maint
 import { SchedulerRegistry } from "../../scheduler-registry/scheduler-registry.js";
 
 // Actual index.ts + Fastify/lifecycle/hydration. Replace only configuration,
-// unrelated bootstrap, socket listen, process termination and process spawning.
+// unrelated bootstrap, socket listen, startup stderr, process termination and spawning.
 // No application config, stored credentials, real database or providers.
 const boundary = vi.hoisted(() => ({
 	app: null as FastifyInstance | null,
@@ -21,6 +22,10 @@ const boundary = vi.hoisted(() => ({
 	progress: [] as object[],
 }));
 vi.mock("dotenv/config", () => ({}));
+vi.mock("node:fs", async (original) => ({
+	...(await original<typeof import("node:fs")>()),
+	writeSync: vi.fn(() => 0),
+}));
 vi.mock("../../../config/env.js", () => ({
 	envSchema: { safeParse: () => ({ success: true, data: { API_HOST: "127.0.0.1" } }) },
 }));
@@ -78,7 +83,7 @@ const apps: FastifyInstance[] = [];
 const releases: Array<() => void> = [];
 const signals = new Map<string, () => void>();
 const exitCodes: Array<string | number | null | undefined> = [];
-let startupErrors = 0;
+let unexpectedConsoleErrors = 0;
 function deferred() {
 	let resolve!: () => void;
 	const promise = new Promise<void>((done) => {
@@ -208,7 +213,8 @@ beforeEach(() => {
 	boundary.progress.splice(0);
 	signals.clear();
 	exitCodes.splice(0);
-	startupErrors = 0;
+	vi.mocked(writeSync).mockClear();
+	unexpectedConsoleErrors = 0;
 	// index.ts overwrites these resolved configuration fields. Stub first so
 	// teardown restores them, without ever reading/printing original values.
 	vi.stubEnv("API_PORT", "29999");
@@ -227,7 +233,7 @@ beforeEach(() => {
 		return undefined as never;
 	});
 	vi.spyOn(console, "error").mockImplementation(() => {
-		startupErrors++;
+		unexpectedConsoleErrors++;
 	});
 	vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
 		throw new Error("Fixture forbids network");
@@ -239,6 +245,7 @@ afterEach(async () => {
 	await Promise.all(apps.splice(0).map((app) => app.close().catch(() => {})));
 	await settle();
 	expect(globalThis.fetch).not.toHaveBeenCalled();
+	expect(unexpectedConsoleErrors).toBe(0);
 	vi.restoreAllMocks();
 	vi.unstubAllEnvs();
 	vi.useRealTimers();
@@ -369,17 +376,24 @@ describe.each(["SIGTERM", "SIGINT"] as const)("API termination: %s", (signal) =>
 	});
 
 	it.each([
-		{ category: "unattributed", error: new Error("Synthetic listener unavailable") },
+		{
+			category: "unattributed",
+			error: new Error("Synthetic listener unavailable"),
+			errorCategory: "unknown",
+			code: null,
+		},
 		{
 			category: "bind-conflict",
 			error: Object.assign(new Error("Synthetic bind unavailable"), { code: "EADDRINUSE" }),
+			errorCategory: "bind",
+			code: "EADDRINUSE",
 		},
 	])(
 		"reports a $category listener failure during termination and still drains",
-		async ({ error }) => {
+		async ({ error, errorCategory, code }) => {
 			const init = deferred(),
 				read = deferred();
-			const { state } = await boot({
+			const { state, errors } = await boot({
 				initGate: init.promise,
 				readGate: read.promise,
 				listenError: error,
@@ -394,13 +408,18 @@ describe.each(["SIGTERM", "SIGINT"] as const)("API termination: %s", (signal) =>
 			expect(state.afterTeardown).toBe(0);
 			expect(exitCodes).toEqual([1]);
 			expect(boundary.notifications).toBe(0);
-			expect(startupErrors).toBe(1);
+			const diagnostic = { category: "api-startup-failure", stage: "listen", errorCategory, code };
+			expect(errors).toHaveBeenCalledExactlyOnceWith(diagnostic, "Failed to start API server");
+			expect(writeSync).toHaveBeenCalledExactlyOnceWith(
+				2,
+				`Failed to start API server\n${JSON.stringify({ level: 50, ...diagnostic })}\n`,
+			);
 		},
 	);
 
 	it("reports a readiness failure racing termination without replacing the process", async () => {
 		const init = deferred();
-		const { close } = await boot({ initGate: init.promise, initFails: true });
+		const { close, errors } = await boot({ initGate: init.promise, initFails: true });
 		emit(signal);
 		await settle();
 		expect(exitCodes).toEqual([]);
@@ -410,7 +429,17 @@ describe.each(["SIGTERM", "SIGINT"] as const)("API termination: %s", (signal) =>
 		expect(exitCodes).toEqual([1]);
 		expect(boundary.notifications).toBe(0);
 		expect(boundary.spawns).toBe(0);
-		expect(startupErrors).toBe(1);
+		const diagnostic = {
+			category: "api-startup-failure",
+			stage: "listen",
+			errorCategory: "unknown",
+			code: null,
+		};
+		expect(errors).toHaveBeenCalledExactlyOnceWith(diagnostic, "Failed to start API server");
+		expect(writeSync).toHaveBeenCalledExactlyOnceWith(
+			2,
+			`Failed to start API server\n${JSON.stringify({ level: 50, ...diagnostic })}\n`,
+		);
 	});
 
 	it("reports a bounded close failure before lifecycle decoration exists", async () => {
