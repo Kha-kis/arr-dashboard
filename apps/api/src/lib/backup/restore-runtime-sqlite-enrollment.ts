@@ -377,6 +377,8 @@ function assertMainDescriptor(storage: SqliteRestoreStorage, main: Database.Data
 }
 
 export type SqliteRuntimeSchemaProvisioning<Plan> = Readonly<{
+	/** Date-aware callers prepare tracking before sealing their schema checkpoint. */
+	requirePreparedForeignKeySchema?: boolean;
 	preflight(main: Database.Database): Plan;
 	apply(main: Database.Database, plan: Plan, assertOwned: () => Promise<void>): Promise<void>;
 	finish(main: Database.Database, plan: Plan): RuntimeSchemaStartupSettings;
@@ -507,6 +509,7 @@ export async function provisionSqliteRestoreRuntimeSchema<Plan>(
 				writer,
 				COLUMNS.map((field) => binding[field]),
 				isSqliteSnapshotDateValidationTrigger,
+				{ requirePreparedSchema: operation.requirePreparedForeignKeySchema === true },
 			),
 		);
 		commitStarted = true;

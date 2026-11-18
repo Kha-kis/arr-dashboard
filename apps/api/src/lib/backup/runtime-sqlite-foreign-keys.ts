@@ -101,16 +101,7 @@ function state(main: Database.Database, objects: SchemaObject[]): State | undefi
 	return row;
 }
 
-/** Call only inside the existing exclusive, descriptor-bound startup transaction.
- * Enforced writes preserve a validated FK graph. Unenforced/deferred writes
- * invalidate its proof transactionally; schema changes also force full validation.
- * This is not a physical integrity check or restore authorization.
- */
-export function validateTrackedSqliteForeignKeys(
-	main: Database.Database,
-	storageIdentity: readonly (string | number)[],
-	isApplicationTrigger: (object: SchemaObject) => boolean = () => false,
-): "full" | "reused" {
+function inspectTracking(main: Database.Database) {
 	requireWriter(main);
 	const objects = schema(main);
 	const tables = objects.filter(
@@ -147,12 +138,6 @@ export function validateTrackedSqliteForeignKeys(
 		refuse();
 	const previous = state(main, objects);
 	const installed = objects.filter((object) => object.name.startsWith(prefix));
-	const unknownTriggers = objects.some(
-		(object) =>
-			object.type === "trigger" &&
-			!isSqliteForeignKeyValidationTrigger(object) &&
-			!isApplicationTrigger(object),
-	);
 	for (const object of installed) {
 		if (
 			!tables.some((target) => target.name === object.tbl_name) ||
@@ -169,6 +154,60 @@ export function validateTrackedSqliteForeignKeys(
 	);
 	const renamed = installed.filter(
 		(object) => !actions.some((action) => hash(object) === hash(trigger(object.tbl_name, action))),
+	);
+	return { objects, previous, missing, renamed };
+}
+
+/** Prepare owned bookkeeping before other startup checkpoints capture the schema.
+ * The caller holds the existing exclusive startup transaction and owns rollback.
+ * New or changed coverage remains unvalidated until the final complete FK check;
+ * complete existing coverage is read-only, including an already dirty marker.
+ */
+export function prepareTrackedSqliteForeignKeySchema(main: Database.Database): void {
+	const { previous, missing, renamed } = inspectTracking(main);
+	if (previous && !missing.length && !renamed.length) return;
+	// Preserve validation-before-retirement for exact guards rewritten by ALTER TABLE.
+	if (renamed.length) {
+		checkCompleteSqliteForeignKeys(main);
+		requireWriter(main);
+	}
+	for (const object of renamed) main.exec(`DROP TRIGGER main.${quote(object.name)}`);
+	if (!previous) main.exec(stateSql);
+	for (const object of missing) main.exec(object.sql);
+	if (previous) {
+		if (main.prepare(`UPDATE main."${table}" SET dirty=1 WHERE id=1`).run().changes !== 1) refuse();
+	} else {
+		main
+			.prepare(
+				`INSERT INTO main."${table}"(id,protocolVersion,bindingDigest,sqliteVersion,schemaDigest,schemaCookie,dirty) VALUES(1,1,?,?,?,?,1)`,
+			)
+			.run(
+				"0".repeat(64),
+				main.prepare("SELECT sqlite_version()").pluck().get(),
+				hash(schema(main)),
+				cookie(main),
+			);
+	}
+}
+
+/** Call only inside the existing exclusive, descriptor-bound startup transaction.
+ * Enforced writes preserve a validated FK graph. Unenforced/deferred writes
+ * invalidate its proof transactionally; schema changes also force full validation.
+ * This is not a physical integrity check or restore authorization.
+ */
+export function validateTrackedSqliteForeignKeys(
+	main: Database.Database,
+	storageIdentity: readonly (string | number)[],
+	isApplicationTrigger: (object: SchemaObject) => boolean = () => false,
+	options: { requirePreparedSchema?: boolean } = {},
+): "full" | "reused" {
+	const { objects, previous, missing, renamed } = inspectTracking(main);
+	if (options.requirePreparedSchema && (!previous || missing.length || renamed.length)) refuse();
+	const unknownTriggers = objects.some(
+		(object) =>
+			object.type === "trigger" &&
+			!isSqliteForeignKeyValidationTrigger(object) &&
+			!isApplicationTrigger(object),
 	);
 	const bindingDigest = hash(storageIdentity);
 	const sqliteVersion = main.prepare("SELECT sqlite_version()").pluck().get() as string;

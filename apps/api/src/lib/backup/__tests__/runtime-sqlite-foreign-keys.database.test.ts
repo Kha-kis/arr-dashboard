@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { chmodSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -5,6 +6,170 @@ import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { synchronizeSqliteRuntimeSchema } from "../runtime-schema-sqlite.js";
 import * as completeForeignKeys from "../runtime-sqlite-foreign-key-check.js";
+import {
+	prepareTrackedSqliteForeignKeySchema,
+	validateTrackedSqliteForeignKeys,
+} from "../runtime-sqlite-foreign-keys.js";
+
+describe("foreign-key schema preparation before checkpointing", () => {
+	let db: Database.Database;
+	const binding = ["owned-descriptor", 123] as const;
+	const validate = () =>
+		validateTrackedSqliteForeignKeys(db, binding, undefined, { requirePreparedSchema: true });
+	const objects = () =>
+		db.prepare("SELECT type,name,tbl_name,sql FROM main.sqlite_schema ORDER BY type,name").all();
+	const stamp = () => ({
+		objects: objects(),
+		cookie: db.pragma("main.schema_version", { simple: true }),
+		changes: db.prepare("SELECT total_changes()").pluck().get(),
+		state: db.prepare("SELECT * FROM ArrForeignKeyValidation").all(),
+	});
+	function dropInsertGuard() {
+		const name = db
+			.prepare(
+				"SELECT name FROM sqlite_schema WHERE type='trigger' AND tbl_name='Child' AND sql LIKE '%BEFORE INSERT%'",
+			)
+			.pluck()
+			.get() as string;
+		db.exec(`DROP TRIGGER "${name}"`);
+	}
+	beforeEach(() => {
+		db = new Database(":memory:");
+		db.pragma("foreign_keys=ON");
+		db.exec(`CREATE TABLE Parent(id INTEGER PRIMARY KEY);
+			CREATE TABLE Child(id INTEGER PRIMARY KEY,parent INTEGER REFERENCES Parent(id),createdAt TEXT);
+			INSERT INTO Parent VALUES(1); INSERT INTO Child VALUES(1,1,'2026-11-01T00:00:00.000Z');
+			BEGIN EXCLUSIVE`);
+	});
+	afterEach(() => {
+		vi.restoreAllMocks();
+		db.close();
+	});
+	it("requires preparation, leaves new evidence unvalidated, then seals the actual binding without DDL", () => {
+		const original = objects();
+		expect(validate).toThrow();
+		expect(objects()).toEqual(original);
+		const check = vi.spyOn(completeForeignKeys, "checkCompleteSqliteForeignKeys");
+		prepareTrackedSqliteForeignKeySchema(db);
+		expect(check).not.toHaveBeenCalled();
+		expect(db.prepare("SELECT dirty,bindingDigest FROM ArrForeignKeyValidation").get()).toEqual({
+			dirty: 1,
+			bindingDigest: "0".repeat(64),
+		});
+		const prepared = objects();
+		const schemaCookie = db.pragma("main.schema_version", { simple: true });
+		expect(validate()).toBe("full");
+		expect(check).toHaveBeenCalledTimes(1);
+		expect(objects()).toEqual(prepared);
+		expect(db.pragma("main.schema_version", { simple: true })).toBe(schemaCookie);
+		expect(db.prepare("SELECT dirty,bindingDigest FROM ArrForeignKeyValidation").get()).toEqual({
+			dirty: 0,
+			bindingDigest: createHash("sha256").update(JSON.stringify(binding)).digest("hex"),
+		});
+		expect(validate()).toBe("reused");
+		expect(check).toHaveBeenCalledTimes(1);
+		expect(db.prepare("SELECT * FROM Child").all()).toEqual([
+			{ id: 1, parent: 1, createdAt: "2026-11-01T00:00:00.000Z" },
+		]);
+	});
+	it.each([false, true])(
+		"does not write complete schema or proof when validated=%s",
+		(validated) => {
+			prepareTrackedSqliteForeignKeySchema(db);
+			if (validated) validate();
+			const before = stamp();
+			prepareTrackedSqliteForeignKeySchema(db);
+			expect(stamp()).toEqual(before);
+		},
+	);
+	it.each(["missing", "renamed"])(
+		"strict validation refuses %s guards without repairing them",
+		(mode) => {
+			prepareTrackedSqliteForeignKeySchema(db);
+			validate();
+			if (mode === "missing") dropInsertGuard();
+			else db.exec("ALTER TABLE Child RENAME TO PriorChild");
+			const before = stamp();
+			const check = vi.spyOn(completeForeignKeys, "checkCompleteSqliteForeignKeys");
+			expect(validate).toThrow();
+			expect(stamp()).toEqual(before);
+			expect(check).not.toHaveBeenCalled();
+		},
+	);
+	it("prepares missing guards as dirty and rejects orphan data at final validation", () => {
+		prepareTrackedSqliteForeignKeySchema(db);
+		validate();
+		db.exec("COMMIT");
+		dropInsertGuard();
+		db.pragma("foreign_keys=OFF");
+		db.exec("INSERT INTO Child VALUES(2,999,'unchanged')");
+		db.pragma("foreign_keys=ON");
+		db.exec("BEGIN EXCLUSIVE");
+		const rows = db.prepare("SELECT * FROM Child ORDER BY id").all();
+		prepareTrackedSqliteForeignKeySchema(db);
+		expect(db.prepare("SELECT dirty FROM ArrForeignKeyValidation").pluck().get()).toBe(1);
+		expect(validate).toThrow();
+		expect(db.prepare("SELECT dirty FROM ArrForeignKeyValidation").pluck().get()).toBe(1);
+		expect(db.prepare("SELECT * FROM Child ORDER BY id").all()).toEqual(rows);
+	});
+	it("checks renamed guards before retirement and rolls preparation back with its caller", () => {
+		prepareTrackedSqliteForeignKeySchema(db);
+		validate();
+		db.exec("COMMIT; ALTER TABLE Child RENAME TO PriorChild");
+		const before = stamp();
+		db.exec("BEGIN EXCLUSIVE");
+		const check = vi
+			.spyOn(completeForeignKeys, "checkCompleteSqliteForeignKeys")
+			.mockImplementationOnce(() => {
+				expect(stamp()).toEqual(before);
+				throw new Error("Synthetic native interruption");
+			});
+		expect(() => prepareTrackedSqliteForeignKeySchema(db)).toThrow("Synthetic native interruption");
+		expect(stamp()).toEqual(before);
+		check.mockRestore();
+		prepareTrackedSqliteForeignKeySchema(db);
+		expect(db.prepare("SELECT dirty FROM ArrForeignKeyValidation").pluck().get()).toBe(1);
+		expect(
+			db
+				.prepare(
+					"SELECT COUNT(*) FROM sqlite_schema WHERE type='trigger' AND tbl_name='PriorChild'",
+				)
+				.pluck()
+				.get(),
+		).toBe(3);
+		db.exec("ROLLBACK");
+		expect(objects()).toEqual(before.objects);
+		expect(db.prepare("SELECT * FROM ArrForeignKeyValidation").all()).toEqual(before.state);
+	});
+	it("does not retire renamed guards when the native FK check finds an orphan", () => {
+		prepareTrackedSqliteForeignKeySchema(db);
+		validate();
+		db.exec("COMMIT");
+		db.pragma("foreign_keys=OFF");
+		db.exec("INSERT INTO Child VALUES(2,999,'unchanged'); ALTER TABLE Child RENAME TO PriorChild");
+		db.pragma("foreign_keys=ON");
+		db.exec("BEGIN EXCLUSIVE");
+		const before = stamp();
+		expect(() => prepareTrackedSqliteForeignKeySchema(db)).toThrow();
+		expect(stamp()).toEqual(before);
+		expect(db.prepare("SELECT parent FROM PriorChild WHERE id=2").pluck().get()).toBe(999);
+	});
+	it.each([
+		"UPDATE ArrForeignKeyValidation SET dirty=7",
+		"DELETE FROM ArrForeignKeyValidation",
+		"CREATE TEMP TABLE Child(id INTEGER)",
+		"CREATE TEMP TABLE pragma_foreign_keys(foreign_keys INTEGER)",
+		"CREATE TABLE pragma_defer_foreign_keys(defer_foreign_keys INTEGER)",
+		"PRAGMA defer_foreign_keys=ON",
+	])("refuses malformed or shadowed evidence without repair: %s", (mutation) => {
+		prepareTrackedSqliteForeignKeySchema(db);
+		db.exec(mutation);
+		const before = stamp();
+		expect(() => prepareTrackedSqliteForeignKeySchema(db)).toThrow();
+		expect(validate).toThrow();
+		expect(stamp()).toEqual(before);
+	});
+});
 
 describe.skipIf(process.platform !== "linux")("durable native foreign-key validation", () => {
 	let directory: string;
@@ -121,7 +286,8 @@ describe.skipIf(process.platform !== "linux")("durable native foreign-key valida
 		async (target) => {
 			database((db) => db.exec(`ALTER TABLE "${target}" RENAME TO "Renamed${target}"`));
 			await expect(start()).resolves.toMatchObject({ apiPort: null });
-			expect(fullChecks).toBe(1);
+			// Check before retiring renamed guards, then seal the final prepared schema.
+			expect(fullChecks).toBe(2);
 			expect(
 				database((db) =>
 					db
@@ -130,7 +296,7 @@ describe.skipIf(process.platform !== "linux")("durable native foreign-key valida
 				),
 			).toEqual({ n: 3 });
 			await start();
-			expect(fullChecks).toBe(1);
+			expect(fullChecks).toBe(2);
 		},
 	);
 	it("does not trust a dropped trigger after an unenforced orphan write", async () => {
@@ -155,7 +321,8 @@ describe.skipIf(process.platform !== "linux")("durable native foreign-key valida
 			INSERT INTO ProofChild VALUES(2,1);`),
 		);
 		await expect(start()).resolves.toMatchObject({ apiPort: null });
-		expect(fullChecks).toBe(1);
+		// Check before retiring renamed guards, then seal the final prepared schema.
+		expect(fullChecks).toBe(2);
 		expect(database((db) => db.prepare("SELECT * FROM PriorProofChild").all())).toEqual([
 			{ id: 1, parent: 1 },
 		]);
@@ -163,7 +330,7 @@ describe.skipIf(process.platform !== "linux")("durable native foreign-key valida
 			{ id: 2, parent: 1 },
 		]);
 		await start();
-		expect(fullChecks).toBe(1);
+		expect(fullChecks).toBe(2);
 	});
 	it("refuses a malformed proof without repairing it", async () => {
 		database((db) => db.exec("UPDATE ArrForeignKeyValidation SET dirty=7"));

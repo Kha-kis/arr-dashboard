@@ -5,6 +5,7 @@ import {
 	SqliteDateCompatibilityError,
 } from "../sqlite-datetime.js";
 import type { RuntimeSchemaRegistry } from "./runtime-schema-catalog.js";
+import { prepareTrackedSqliteForeignKeySchema } from "./runtime-sqlite-foreign-keys.js";
 import {
 	checkpointTrackedSnapshotDates,
 	planTrackedSnapshotDates,
@@ -490,6 +491,49 @@ function scan(
 	return { digest: digest.digest("hex"), rows, changes, fields, rowidOrder };
 }
 
+function dateContext(main: Database.Database, registry: RuntimeSchemaRegistry) {
+	if (registry.provider !== "sqlite") refuse();
+	const targets: Target[] = registry.tables
+		.filter((t) => !native.has(t.target.name))
+		.map(({ target }) => ({
+			name: target.name,
+			keys: [...target.primaryKey],
+			dates: target.columns
+				.filter((c) => c.type === "DATETIME")
+				.map((c) => ({ name: c.name, nullable: c.nullable })),
+		}))
+		.filter((t) => t.dates.length)
+		.sort((a, b) => a.name.localeCompare(b.name));
+	const dateColumnsDigest = hash(targets);
+	const predecessorDigests = DATE_SCHEMA_TRANSITIONS.filter(
+		(transition) =>
+			dateColumnsDigest === transition.targetDigest &&
+			hash(targets.filter((table) => !transition.newTables.some((name) => name === table.name))) ===
+				transition.predecessorDigest &&
+			transition.newTables.every((name) => !present(main, name)),
+	).map((transition) => transition.predecessorDigest);
+	return {
+		targets,
+		dateColumnsDigest,
+		receipt: readReceipt(main, dateColumnsDigest, predecessorDigests),
+	};
+}
+
+/** Metadata only. Stored date values still require planning under the writer. */
+export function hasCurrentSqliteDateFormatReceipt(
+	main: Database.Database,
+	registry: RuntimeSchemaRegistry,
+): boolean {
+	try {
+		requireTransaction(main);
+		const { receipt, dateColumnsDigest } = dateContext(main, registry);
+		return receipt?.dateColumnsDigest === dateColumnsDigest;
+	} catch (error) {
+		if (error instanceof SqliteDateCompatibilityError) throw error;
+		refuse();
+	}
+}
+
 /** Validate all existing values without changing the transaction, schema or data. */
 export function planSqliteRuntimeDates(
 	main: Database.Database,
@@ -504,29 +548,8 @@ export function planSqliteRuntimeDates(
 ): SqliteRuntimeDatePlan {
 	try {
 		requireTransaction(main);
-		if (registry.provider !== "sqlite") refuse();
-		const targets: Target[] = registry.tables
-			.filter((t) => !native.has(t.target.name))
-			.map(({ target }) => ({
-				name: target.name,
-				keys: [...target.primaryKey],
-				dates: target.columns
-					.filter((c) => c.type === "DATETIME")
-					.map((c) => ({ name: c.name, nullable: c.nullable })),
-			}))
-			.filter((t) => t.dates.length)
-			.sort((a, b) => a.name.localeCompare(b.name));
-		const dateColumnsDigest = hash(targets);
-		const predecessorDigests = DATE_SCHEMA_TRANSITIONS.filter(
-			(transition) =>
-				dateColumnsDigest === transition.targetDigest &&
-				hash(
-					targets.filter((table) => !transition.newTables.some((name) => name === table.name)),
-				) === transition.predecessorDigest &&
-				transition.newTables.every((name) => !present(main, name)),
-		).map((transition) => transition.predecessorDigest);
-		const receipt = readReceipt(main, dateColumnsDigest, predecessorDigests),
-			snapshots = new Map<string, Snapshot>();
+		const { targets, dateColumnsDigest, receipt } = dateContext(main, registry);
+		const snapshots = new Map<string, Snapshot>();
 		const currentScanStamp =
 			options.reuseCurrentReceiptScan && receipt?.dateColumnsDigest === dateColumnsDigest
 				? readCurrentScanStamp(main)
@@ -629,12 +652,17 @@ export async function applySqliteRuntimeDates(
 				hash(readReceipt(main, priorDigest)) !== hash(sealed.receipt)
 			)
 				refuse();
-			if (sealed.trackSnapshotDates)
+			if (sealed.trackSnapshotDates) {
+				prepareTrackedSqliteForeignKeySchema(main);
+				// A reused scan cannot cross even owned bookkeeping DDL. Native
+				// startup prepares this schema before making the date plan.
+				if (readCurrentScanStamp(main) !== sealed.currentScanStamp) refuse();
 				checkpointTrackedSnapshotDates(
 					main,
 					plan.dateColumnsDigest,
 					sealed.snapshots.get("session_snapshots")?.tracked,
 				);
+			}
 			return;
 		}
 		const version = () =>
@@ -744,7 +772,12 @@ export async function applySqliteRuntimeDates(
 			)
 				refuse();
 		}
-		if (sealed.trackSnapshotDates) checkpointTrackedSnapshotDates(main, plan.dateColumnsDigest);
+		if (sealed.trackSnapshotDates) {
+			// Legacy normalization has finished. Install only unvalidated FK
+			// bookkeeping before the date checkpoint captures the final schema.
+			prepareTrackedSqliteForeignKeySchema(main);
+			checkpointTrackedSnapshotDates(main, plan.dateColumnsDigest);
+		}
 	} catch (error) {
 		if (error instanceof SqliteDateCompatibilityError) throw error;
 		refuse();

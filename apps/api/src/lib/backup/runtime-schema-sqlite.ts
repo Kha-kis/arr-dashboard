@@ -28,7 +28,12 @@ import {
 	type RuntimeSchemaStartupSettings,
 } from "./runtime-schema-startup.js";
 import { timeSqliteStartupPhase, timeSqliteStartupPhaseAsync } from "./runtime-schema-timing.js";
-import { applySqliteRuntimeDates, planSqliteRuntimeDates } from "./runtime-sqlite-datetime.js";
+import {
+	applySqliteRuntimeDates,
+	hasCurrentSqliteDateFormatReceipt,
+	planSqliteRuntimeDates,
+} from "./runtime-sqlite-datetime.js";
+import { prepareTrackedSqliteForeignKeySchema } from "./runtime-sqlite-foreign-keys.js";
 
 type SchemaObject = { type: string; name: string; tbl_name: string; sql: string | null };
 type Column = {
@@ -396,6 +401,7 @@ async function synchronizeSqliteRuntimeSchemaPhases(
 		databaseUrl,
 		{ runtimeEpoch: randomUUID() },
 		{
+			requirePreparedForeignKeySchema: true,
 			preflight(main) {
 				const catalog = timeSqliteStartupPhase("catalog-preflight", () =>
 					readSqliteRuntimeSchemaPlanningCatalog(main, targets.tables, indexes),
@@ -452,15 +458,18 @@ async function synchronizeSqliteRuntimeSchemaPhases(
 				return {
 					schema: execution,
 					oidc,
-					dates: timeSqliteStartupPhase("date-plan", () =>
-						planSqliteRuntimeDates(main, registry, {
-							// Registered DDL preserves table rows. Keep locality when
-							// the date receipt matches, and recheck values after DDL.
-							useTableOrderForCurrentReceipt: !oidc,
-							reuseCurrentReceiptScan: currentSchema,
-							trackSnapshotDates: true,
-						}),
-					),
+					dates:
+						currentSchema && hasCurrentSqliteDateFormatReceipt(main, registry)
+							? undefined
+							: timeSqliteStartupPhase("date-plan", () =>
+									planSqliteRuntimeDates(main, registry, {
+										// Registered DDL preserves table rows. Keep locality when
+										// the date receipt matches, and recheck values after DDL.
+										useTableOrderForCurrentReceipt: !oidc,
+										reuseCurrentReceiptScan: currentSchema,
+										trackSnapshotDates: true,
+									}),
+								),
 				};
 			},
 			async apply(main, execution, assertOwned) {
@@ -479,8 +488,23 @@ async function synchronizeSqliteRuntimeSchemaPhases(
 				);
 				if (prepareRuntimeSchemaExecution(registry, post).statementCount !== 0)
 					throw new RuntimeSchemaStartupError();
+				let dates = execution.dates;
+				if (!dates) {
+					// Existing receipts need no legacy normalization. Prepare the
+					// unvalidated FK metadata before capturing a reusable date scan.
+					await assertOwned();
+					prepareTrackedSqliteForeignKeySchema(main);
+					dates = timeSqliteStartupPhase("date-plan", () =>
+						planSqliteRuntimeDates(main, registry, {
+							useTableOrderForCurrentReceipt: true,
+							reuseCurrentReceiptScan: true,
+							trackSnapshotDates: true,
+						}),
+					);
+				}
+				const datePlan = dates;
 				await timeSqliteStartupPhaseAsync("date-apply", () =>
-					applySqliteRuntimeDates(main, execution.dates, assertOwned),
+					applySqliteRuntimeDates(main, datePlan, assertOwned),
 				);
 			},
 			finish(main, execution) {
