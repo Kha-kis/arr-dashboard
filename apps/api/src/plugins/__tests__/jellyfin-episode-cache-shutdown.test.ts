@@ -18,7 +18,7 @@ import {
 	withCleanupOperationGuard,
 } from "../../lib/library-cleanup/cleanup-maintenance-gate.js";
 import { createNotificationOutboxNativeFixture } from "../../lib/notifications/__tests__/notification-outbox-native-fixture.js";
-import type { ServiceInstance } from "../../lib/prisma.js";
+import { Prisma, type ServiceInstance } from "../../lib/prisma.js";
 import { JOB_ID } from "../../lib/scheduler-registry/job-definitions.js";
 import {
 	type EpisodeRefreshRetryResult,
@@ -527,44 +527,76 @@ async function boot(
 		$queryRaw: (...args: unknown[]) => PromiseLike<unknown>;
 		$executeRaw: (...args: unknown[]) => PromiseLike<unknown>;
 	};
-	vi.spyOn(raw, "$queryRaw").mockImplementation((...args) => {
-		expect(args).toHaveLength(2);
+	// Prisma.sql flattens nested guarded selections while retaining their bound values.
+	const statement = (args: unknown[]) => {
 		expect(Array.isArray(args[0])).toBe(true);
-		const sql = (args[0] as TemplateStringsArray).join("?");
-		expect(sql).toContain("SELECT DISTINCT");
+		return Prisma.sql(args[0] as TemplateStringsArray, ...args.slice(1));
+	};
+	const instanceFor = (values: unknown[]) => {
+		const matches = owned.instances.filter((row) => values.includes(row.id));
+		expect(matches).toHaveLength(1);
+		return matches[0]!.id;
+	};
+	vi.spyOn(raw, "$queryRaw").mockImplementation((...args) => {
+		const { sql, values } = statement(args);
+		const instanceId = instanceFor(values);
 		expect(sql).toContain("'complete', 'invalidated'");
-		expect(args.slice(1).some((value) => owned.instances.some((row) => row.id === value))).toBe(
-			true,
+		if (sql.trimStart().startsWith("SELECT DISTINCT")) {
+			expect(values).toEqual([instanceId]);
+			return phase("artifactRead", () => Reflect.apply(query, prisma, args), instanceId);
+		}
+		// SQLite DELETE RETURNING is issued through queryRaw, not an artifact read.
+		expect(sql).toContain('DELETE FROM "jellyfin_episode_observation_stage"');
+		expect(sql).toContain('JOIN "provider_observation_runs" AS run ON run."id" = stage."runId"');
+		expect(sql).toContain('WHERE stage."runId" = ?');
+		expect(sql).toContain('AND run."instanceId" = ?');
+		expect(sql).toContain("AND run.\"provider\" = 'jellyfin_episode'");
+		expect(sql).toContain("AND run.\"cacheType\" = 'jellyfin_episode'");
+		expect(sql).toContain("LIMIT ?");
+		expect(sql).toContain('RETURNING CAST(rowid AS TEXT) AS "physicalRow"');
+		const graph = owned.graphs.find((row) => row.runId === values[0]);
+		expect(graph?.instanceId).toBe(instanceId);
+		expect(graph?.role).toMatch(/^(retired|active|previous|status)$/);
+		expect(values).toEqual([graph!.runId, instanceId, 100]);
+		return phase(
+			"artifactDelete",
+			async () => {
+				const rows = (await Reflect.apply(query, prisma, args)) as Array<{ physicalRow: string }>;
+				expect(Array.isArray(rows)).toBe(true);
+				expect(rows.length).toBeLessThanOrEqual(100);
+				for (const row of rows) expect(row.physicalRow).toEqual(expect.any(String));
+				deletions.push({ instanceId, kind: "staging", count: rows.length });
+				return rows;
+			},
+			instanceId,
 		);
-		return phase("artifactRead", () => Reflect.apply(query, prisma, args), String(args[1]));
 	});
 	vi.spyOn(raw, "$executeRaw").mockImplementation((...args) => {
-		const sql = (args[0] as TemplateStringsArray).join("?");
+		const { sql, values } = statement(args);
+		const instanceId = instanceFor(values);
 		expect(sql).toContain("DELETE FROM");
+		expect(sql).not.toContain("observation_stage");
 		expect(sql).toContain("LIMIT");
-		expect(args.at(-1)).toBe(5000);
-		expect(args.slice(1).some((value) => owned.instances.some((row) => row.id === value))).toBe(
-			true,
-		);
-		return phase("artifactDelete", async () => {
-			const count = (await Reflect.apply(execute, prisma, args)) as number;
-			expect(count).toBeGreaterThanOrEqual(0);
-			expect(count).toBeLessThanOrEqual(5000);
-			deletions.push({
-				instanceId: String(
-					args.slice(1).find((value) => owned.instances.some((row) => row.id === value)),
-				),
-				kind: sql.includes("observation_stage")
-					? "staging"
-					: sql.includes("observation_exclusions")
+		expect(values.at(-1)).toBe(5000);
+		return phase(
+			"artifactDelete",
+			async () => {
+				const count = (await Reflect.apply(execute, prisma, args)) as number;
+				expect(count).toBeGreaterThanOrEqual(0);
+				expect(count).toBeLessThanOrEqual(5000);
+				deletions.push({
+					instanceId,
+					kind: sql.includes("observation_exclusions")
 						? "exclusions"
 						: sql.includes("scope_receipts")
 							? "receipts"
 							: "retired-rows",
-				count,
-			});
-			return count;
-		});
+					count,
+				});
+				return count;
+			},
+			instanceId,
+		);
 	});
 	const pointer = prisma.jellyfinNativeWatchPublication.findUnique.bind(
 		prisma.jellyfinNativeWatchPublication,
@@ -746,6 +778,7 @@ async function boot(
 		fp(
 			async (server) => {
 				server.decorate("prisma", prisma);
+				server.decorate("dbProvider", native.engine as FastifyInstance["dbProvider"]);
 				server.decorate("encryptor", native.encryptor);
 				server.addHook("onClose", async () => {
 					state.pendingAtTeardown = state.pending;
@@ -1255,6 +1288,14 @@ describe("Jellyfin and Emby episode scheduler accepted lifetimes", { timeout: 30
 		const retired = f.graphs.find((row) => row.instanceId === primary && row.role === "retired")!;
 		expect(retired.watchIds).toHaveLength(5001);
 		expect(retired.generationIds).toHaveLength(501);
+		expect(
+			f.deletions
+				.filter((row) => row.instanceId === primary && row.kind === "staging" && row.count > 0)
+				.map((row) => row.count),
+		).toEqual([1, 1, 1, 1]);
+		// Four terminal runs plus the active-pointer replay, each checked by both
+		// published cleanup and its extracted stage helper, for each instance.
+		expect(f.counts.terminal).toBe(20);
 		expect(
 			f.deletions
 				.filter((row) => row.instanceId === primary && row.kind === "retired-rows" && row.count > 0)
