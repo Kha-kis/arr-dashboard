@@ -213,6 +213,46 @@ export async function prepareNativePostgresFixture({ sourceApiRoot }) {
 			],
 			{ cwd: project, env: environment },
 		);
+		// db push leaves the protocol table empty. Seed only the fresh fixture's
+		// idle row so direct consumers and native startup do not depend on order.
+		const bootstrap = new pg.Client({
+			connectionString: url,
+			connectionTimeoutMillis: 5000,
+			query_timeout: 5000,
+			statement_timeout: 4000,
+		});
+		bootstrap.on("error", () => {});
+		try {
+			await bootstrap.connect();
+			await bootstrap.query("BEGIN");
+			await bootstrap.query('LOCK TABLE public."RestoreRuntimeControl" IN ACCESS EXCLUSIVE MODE');
+			const control = (
+				await bootstrap.query('SELECT count(*) AS count FROM public."RestoreRuntimeControl"')
+			).rows;
+			const receipts = (
+				await bootstrap.query(
+					`SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname='ArrSchemaMigrationReceipt') AS present`,
+				)
+			).rows;
+			if (
+				control.length !== 1 ||
+				control[0]?.count !== "0" ||
+				receipts.length !== 1 ||
+				receipts[0]?.present !== false
+			)
+				throw new Error("Fresh native fixture protocol initialization is unavailable.");
+			const initialized = await bootstrap.query(
+				`INSERT INTO public."RestoreRuntimeControl"(id,"protocolVersion",phase,"runtimeEpoch","ownerBackendPid","activeRestoreId","lastCommittedRestoreId","lastCommittedAt","destinationInstallationId") VALUES(1,1,'idle',NULL,NULL,NULL,NULL,NULL,NULL)`,
+			);
+			if (initialized.rowCount !== 1)
+				throw new Error("Fresh native fixture protocol initialization is unavailable.");
+			await bootstrap.query("COMMIT");
+		} catch {
+			await bootstrap.query("ROLLBACK").catch(() => {});
+			throw new Error("Fresh native fixture protocol initialization is unavailable.");
+		} finally {
+			await bootstrap.end();
+		}
 		// Failed physical PG-close witnesses run the shared admission actor. Its
 		// bundled client must be generated for PG, not the default SQLite source.
 		actors = await prepareNativeTestActors({ apiRoot: project });
