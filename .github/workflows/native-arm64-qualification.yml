@@ -2,7 +2,7 @@ name: Unpublished native ARM64 candidate qualification
 'on':
   push:
     branches:
-      - qa/893-native-arm64-216419f1
+      - qa/893-native-arm64-3be77e34
 permissions:
   contents: read
 jobs:
@@ -10,12 +10,12 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 35
     env:
-      CANDIDATE: 216419f112eafecb9f1c8110364eec0d203d2c8c
+      CANDIDATE: 3be77e34307ae83234e531f23c3fa4bb168e5e95
     steps:
       - name: Check out the immutable candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 216419f112eafecb9f1c8110364eec0d203d2c8c
+          ref: 3be77e34307ae83234e531f23c3fa4bb168e5e95
           persist-credentials: false
       - name: Build, start, and scan the same local ARM64 image
         shell: bash
