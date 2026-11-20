@@ -8,14 +8,11 @@
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import webpush from "web-push";
-import { AggregationBuffer } from "../lib/notifications/aggregation-buffer.js";
 import { createBrowserPushSender } from "../lib/notifications/channels/browser-push-sender.js";
 import { closeAllTransports } from "../lib/notifications/channels/email-sender.js";
-import { DedupGate } from "../lib/notifications/dedup-gate.js";
+import { purgeOldLogsBatched } from "../lib/notifications/log-retention.js";
 import { NotificationDispatcher } from "../lib/notifications/notification-dispatcher.js";
 import { NotificationService } from "../lib/notifications/notification-service.js";
-import { RetryHandler } from "../lib/notifications/retry-handler.js";
-import { purgeOldLogsBatched } from "../lib/notifications/log-retention.js";
 import { RuleEngine } from "../lib/notifications/rule-engine.js";
 
 declare module "fastify" {
@@ -31,29 +28,7 @@ const notificationServicePlugin = fastifyPlugin(
 		// Initialize Browser Push sender if VAPID keys exist
 		await initBrowserPush(app, dispatcher);
 
-		const dedupGate = new DedupGate();
-
-		// Create the service first (needed for logDelivery reference)
-		// We'll set retryHandler after construction via a temporary holder
-		const sendFn = dispatcher.send.bind(dispatcher);
-
-		// Build the service with retry handler wired to the dispatcher and service's logDelivery
-		let service: NotificationService;
-
-		const retryHandler = new RetryHandler(
-			sendFn,
-			(channelId, channelType, payload, status, error, retryCount) => {
-				return service.logDelivery(channelId, channelType, payload, status, error, retryCount);
-			},
-			app.log,
-		);
-
 		const ruleEngine = new RuleEngine();
-
-		const aggregationBuffer = new AggregationBuffer(async (digest) => {
-			// When a digest flushes, feed it back through the service's notify()
-			await service.notify(digest);
-		});
 
 		// Resolve the public-facing base URL for notification links.
 		// Prefer admin-configured externalUrl so links resolve behind reverse proxies;
@@ -61,16 +36,17 @@ const notificationServicePlugin = fastifyPlugin(
 		const settings = await app.prisma.systemSettings.findUnique({ where: { id: 1 } });
 		const baseUrl = settings?.externalUrl?.replace(/\/$/, "") ?? app.config.APP_URL;
 
-		service = new NotificationService(
+		const service = new NotificationService(
 			app.prisma,
 			app.encryptor,
 			dispatcher,
 			app.log,
-			dedupGate,
-			retryHandler,
+			undefined,
+			undefined,
 			baseUrl,
 			ruleEngine,
-			aggregationBuffer,
+			undefined,
+			{ runtime: app.restoreRuntime },
 		);
 
 		app.decorate("notificationService", service);
@@ -78,53 +54,87 @@ const notificationServicePlugin = fastifyPlugin(
 		// Wire validation health degradation notifications
 		const { integrationHealth } = await import("../lib/validation/integration-health.js");
 		integrationHealth.setNotifyFn((payload) => {
-			service
-				.notify(payload as Parameters<typeof service.notify>[0])
-				.catch((err: unknown) =>
-					app.log.warn({ err }, "Failed to send validation health notification"),
-				);
+			return service
+				.runProducer(() =>
+					app.restoreRuntime.runIndependentOperation(() =>
+						service.notify(payload as Parameters<typeof service.notify>[0]),
+					),
+				)
+				.catch((err: unknown) => {
+					app.log.warn(
+						{ operation: "notification-admission", status: "unavailable" },
+						"Failed to submit validation health notification",
+					);
+					// The registry consumes rejection and retains bounded retry admission.
+					throw err;
+				});
 		});
 
 		// Log retention: purge old logs every 6 hours
 		const LOG_RETENTION_INTERVAL_MS = 6 * 60 * 60 * 1000;
 		let logRetentionInterval: ReturnType<typeof setInterval> | null = null;
+		let retentionAdmissionClosed = false;
+		const pendingRetentions = new Set<Promise<void>>();
+
+		const closeRetentionAdmission = () => {
+			retentionAdmissionClosed = true;
+			if (logRetentionInterval) {
+				clearInterval(logRetentionInterval);
+				logRetentionInterval = null;
+			}
+		};
 
 		const runLogRetention = async () => {
+			if (retentionAdmissionClosed) return;
+			// Register before the first query; clearing a timer cannot cancel accepted work.
+			let settle!: () => void;
+			const completion = new Promise<void>((resolve) => {
+				settle = resolve;
+			});
+			pendingRetentions.add(completion);
 			try {
-				const settings = await app.prisma.systemSettings.findUnique({ where: { id: 1 } });
-				const retentionDays = settings?.notificationLogRetentionDays ?? 90;
-				const deleted = await purgeOldLogsBatched(app.prisma, retentionDays);
-				if (deleted > 0) {
-					app.log.info({ deleted, retentionDays }, "Purged old notification logs");
-				}
-			} catch (error) {
-				app.log.error({ err: error }, "Failed to purge old notification logs");
+				await app.restoreRuntime.runIndependentOperation(async () => {
+					const settings = await app.prisma.systemSettings.findUnique({ where: { id: 1 } });
+					const retentionDays = settings?.notificationLogRetentionDays ?? 90;
+					const deleted = await purgeOldLogsBatched(app.prisma, retentionDays);
+					if (deleted > 0) {
+						app.log.info({ deleted, retentionDays }, "Purged old notification logs");
+					}
+				});
+			} catch {
+				app.log.error(
+					{ operation: "notification-log-retention", status: "unavailable" },
+					"Failed to purge old notification logs",
+				);
+			} finally {
+				pendingRetentions.delete(completion);
+				settle();
 			}
 		};
 
 		app.addHook("onReady", async () => {
 			await runLogRetention();
-			logRetentionInterval = setInterval(runLogRetention, LOG_RETENTION_INTERVAL_MS);
+			if (!retentionAdmissionClosed) {
+				logRetentionInterval = setInterval(runLogRetention, LOG_RETENTION_INTERVAL_MS);
+			}
 		});
 
-		// Graceful shutdown: flush pending retries, destroy dedup gate, flush aggregation, close email transports
+		app.addHook("preClose", async () => {
+			// Close admission without delaying sibling plugins' preClose hooks.
+			closeRetentionAdmission();
+			service.closeAdmission();
+		});
+
+		// Join actual producers/sends; durable future work is not forced or canceled.
 		app.addHook("onClose", async () => {
-			if (logRetentionInterval) {
-				clearInterval(logRetentionInterval);
-				logRetentionInterval = null;
+			closeRetentionAdmission();
+			service.closeAdmission();
+			while (pendingRetentions.size > 0) {
+				await Promise.all(pendingRetentions);
 			}
-			service.dispose();
-			aggregationBuffer.flushAll();
-			retryHandler.flush();
-			dedupGate.destroy();
+			await service.shutdown();
 			closeAllTransports();
-			app.log.info(
-				{
-					pendingRetries: retryHandler.pendingCount,
-					pendingAggregation: aggregationBuffer.pendingCount,
-				},
-				"Notification service shut down",
-			);
+			app.log.info("Notification workers shut down; queued work remains durable");
 		});
 
 		app.log.info("Notification service initialized");
@@ -172,9 +182,9 @@ async function initBrowserPush(
 		const contactEmail = process.env.VAPID_CONTACT_EMAIL ?? "admin@arr-dashboard.local";
 		const sender = createBrowserPushSender(vapidRecord.publicKey, privateKey, contactEmail);
 		dispatcher.registerSender("BROWSER_PUSH", sender);
-	} catch (error) {
+	} catch {
 		app.log.error(
-			{ err: error instanceof Error ? error : new Error(String(error)) },
+			{ operation: "browser-push-initialization", status: "unavailable" },
 			"Browser push initialization failed — push notifications will be unavailable",
 		);
 	}

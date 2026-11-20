@@ -82,13 +82,27 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 				produce: (attempt) =>
 					runJellyfinCacheRefreshSingleFlightWithAttempt(authority, "jellyfin", attempt, () =>
 						refreshOwnedJellyfinCacheWithAttempt(
-							{ prisma: app.prisma, encryptor: app.encryptor, instance, log },
+							{
+								prisma: app.prisma,
+								encryptor: app.encryptor,
+								instance,
+								log,
+								nativeInventoryMode: "force",
+							},
 							attempt,
 						),
 					),
 				log,
 				...(recovery
-					? { recovery: { provider: "jellyfin" as const, userId, instanceId, handoff: recovery } }
+					? {
+							recovery: {
+								provider: "jellyfin" as const,
+								userId,
+								instanceId,
+								authority,
+								handoff: recovery,
+							},
+						}
 					: {}),
 			});
 

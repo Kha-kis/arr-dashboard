@@ -53,6 +53,121 @@ esac
 	};
 }
 
+test("normal stop reports a forced child before removing the failed fixture", (t) => {
+	const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "stop-timing-diagnostics-"));
+	t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+	writeExecutable(path.join(fixture, "curl"), "#!/bin/sh\nexit 0\n");
+	writeExecutable(
+		path.join(fixture, "docker"),
+		`#!/bin/sh
+case "$1" in
+	run)
+		while [ "$1" != --name ]; do shift; done
+		printf '%s\\n' "$2" > "$FAKE_STATE/name"
+		;;
+	port)
+		case "$2:$3" in
+			*-rootful:3001/tcp) echo 127.0.0.1:40101 ;;
+			*-rootful:3000/tcp) echo 127.0.0.1:40100 ;;
+			*-rootless:3001/tcp) echo 127.0.0.1:40201 ;;
+			*-rootless:3000/tcp) echo 127.0.0.1:40200 ;;
+			*) exit 64 ;;
+		esac
+		;;
+	ps) if [ -e "$FAKE_STATE/name" ]; then cat "$FAKE_STATE/name"; fi ;;
+	stop) touch "$FAKE_STATE/stopped" ;;
+	logs)
+		test -e "$FAKE_STATE/name" || exit 1
+		echo "API started with PID 11"
+		if [ "$FAKE_SCENARIO" = duplicate-epoch ] && grep -q rootless "$FAKE_STATE/name"; then
+			echo "Web started with PID 11"
+			echo "SUPERVISOR_WAIT_COMPLETED pid=11 status=137"
+			exit 0
+		fi
+		echo "Web started with PID 12"
+		if [ -e "$FAKE_STATE/stopped" ]; then
+			echo "Shutting down services..."
+			echo "SUPERVISOR_WAIT_COMPLETED pid=12 status=0"
+			if grep -q rootless "$FAKE_STATE/name"; then
+				echo "SUPERVISOR_WAIT_COMPLETED pid=11 status=137"
+				echo "  API did not stop within 90s - sending SIGKILL" >&2
+				echo "ERROR: Services required forced or failed termination" >&2
+				echo "raw-fixture-log-must-not-appear" >&2
+				echo '{"category":"launcher-shutdown-failure","reason":"forced-child-termination"}'
+				echo '{"category":"shutdown-progress","phase":"fastify","elapsedMs":85000,"runningSchedulers":1,"private":"raw-fixture-progress-must-not-appear"}'
+				echo '{"category":"launcher-shutdown-failure","reason":"raw-fixture-launcher-must-not-appear"}'
+			else
+				echo "SUPERVISOR_WAIT_COMPLETED pid=11 status=0"
+				echo "Services stopped gracefully"
+			fi
+		fi
+		;;
+	inspect)
+		test -e "$FAKE_STATE/name" || exit 1
+		code=0
+		if grep -q rootless "$FAKE_STATE/name"; then code=1; fi
+		case "$*" in
+			*"{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}}"*) echo "exited $code false" ;;
+			*"{{.State.Status}}"*) echo exited ;;
+			*"{{.State.ExitCode}}"*) echo "$code" ;;
+			*"{{.State.OOMKilled}}"*) echo false ;;
+			*) exit 64 ;;
+		esac
+		;;
+	rm) rm -f "$FAKE_STATE/name" "$FAKE_STATE/stopped" ;;
+	*) exit 64 ;;
+esac
+`,
+	);
+	const run = (scenario) =>
+		spawnSync(
+			"/bin/sh",
+			[path.join(__dirname, "test-stop-timing.sh"), "synthetic", "--case", "default-normal"],
+			{
+				encoding: "utf8",
+				env: {
+					...process.env,
+					PATH: `${fixture}:${process.env.PATH}`,
+					FAKE_STATE: fixture,
+					FAKE_SCENARIO: scenario,
+				},
+				timeout: 10_000,
+			},
+		);
+	const result = run("forced-child");
+	assert.equal(result.status, 1, result.stderr);
+	assert.match(result.stdout, /PASS: rootful normal stop/);
+	assert.match(
+		result.stderr,
+		/rootless normal stop diagnostic stage=reaping elapsed_ms=\d+ state=exited exit=1 oom=false/,
+	);
+	assert.match(
+		result.stderr,
+		/rootless normal stop markers .*api_wait=137 web_wait=0 .*api_sigkill=1/,
+	);
+	assert.match(
+		result.stderr,
+		/rootless normal stop launcher forced_child=1 handoff_revocation_failed=0 handoff_rejected=0/,
+	);
+	const progress = result.stderr.match(/^  rootless normal stop API progress: (.*)$/m);
+	assert(progress);
+	assert.deepEqual(JSON.parse(progress[1]), {
+		observations: 1,
+		latestByPhase: [{ phase: "fastify", elapsedMs: 85000, runningSchedulers: 1 }],
+	});
+	assert.doesNotMatch(result.stdout + result.stderr, /raw-fixture-.*-must-not-appear/);
+	assert.equal(fs.existsSync(path.join(fixture, "name")), false);
+
+	const rejectedEpoch = run("duplicate-epoch");
+	assert.equal(rejectedEpoch.status, 1, rejectedEpoch.stderr);
+	assert.match(rejectedEpoch.stderr, /rootless normal stop diagnostic stage=supervisor-epoch/);
+	assert.match(
+		rejectedEpoch.stderr,
+		/rootless normal stop markers .*api_wait=unknown web_wait=unknown/,
+	);
+	assert.equal(fs.existsSync(path.join(fixture, "name")), false);
+});
+
 test("clock CLI returns integer monotonic milliseconds", () => {
 	const result = spawnSync(process.execPath, [clockPath], { encoding: "utf8" });
 	assert.equal(result.status, 0, result.stderr);

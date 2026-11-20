@@ -42,6 +42,7 @@ export type QueueCleanerStrikeMinAggregateOutputType = {
   downloadId: string | null
   downloadTitle: string | null
   downloadHash: string | null
+  downloadFingerprint: string | null
   strikeCount: number | null
   lastRule: string | null
   lastReason: string | null
@@ -58,6 +59,7 @@ export type QueueCleanerStrikeMaxAggregateOutputType = {
   downloadId: string | null
   downloadTitle: string | null
   downloadHash: string | null
+  downloadFingerprint: string | null
   strikeCount: number | null
   lastRule: string | null
   lastReason: string | null
@@ -74,6 +76,7 @@ export type QueueCleanerStrikeCountAggregateOutputType = {
   downloadId: number
   downloadTitle: number
   downloadHash: number
+  downloadFingerprint: number
   strikeCount: number
   lastRule: number
   lastReason: number
@@ -102,6 +105,7 @@ export type QueueCleanerStrikeMinAggregateInputType = {
   downloadId?: true
   downloadTitle?: true
   downloadHash?: true
+  downloadFingerprint?: true
   strikeCount?: true
   lastRule?: true
   lastReason?: true
@@ -118,6 +122,7 @@ export type QueueCleanerStrikeMaxAggregateInputType = {
   downloadId?: true
   downloadTitle?: true
   downloadHash?: true
+  downloadFingerprint?: true
   strikeCount?: true
   lastRule?: true
   lastReason?: true
@@ -134,6 +139,7 @@ export type QueueCleanerStrikeCountAggregateInputType = {
   downloadId?: true
   downloadTitle?: true
   downloadHash?: true
+  downloadFingerprint?: true
   strikeCount?: true
   lastRule?: true
   lastReason?: true
@@ -237,6 +243,7 @@ export type QueueCleanerStrikeGroupByOutputType = {
   downloadId: string
   downloadTitle: string
   downloadHash: string | null
+  downloadFingerprint: string | null
   strikeCount: number
   lastRule: string
   lastReason: string
@@ -276,6 +283,7 @@ export type QueueCleanerStrikeWhereInput = {
   downloadId?: Prisma.StringFilter<"QueueCleanerStrike"> | string
   downloadTitle?: Prisma.StringFilter<"QueueCleanerStrike"> | string
   downloadHash?: Prisma.StringNullableFilter<"QueueCleanerStrike"> | string | null
+  downloadFingerprint?: Prisma.StringNullableFilter<"QueueCleanerStrike"> | string | null
   strikeCount?: Prisma.IntFilter<"QueueCleanerStrike"> | number
   lastRule?: Prisma.StringFilter<"QueueCleanerStrike"> | string
   lastReason?: Prisma.StringFilter<"QueueCleanerStrike"> | string
@@ -293,6 +301,7 @@ export type QueueCleanerStrikeOrderByWithRelationInput = {
   downloadId?: Prisma.SortOrder
   downloadTitle?: Prisma.SortOrder
   downloadHash?: Prisma.SortOrderInput | Prisma.SortOrder
+  downloadFingerprint?: Prisma.SortOrderInput | Prisma.SortOrder
   strikeCount?: Prisma.SortOrder
   lastRule?: Prisma.SortOrder
   lastReason?: Prisma.SortOrder
@@ -314,6 +323,7 @@ export type QueueCleanerStrikeWhereUniqueInput = Prisma.AtLeast<{
   downloadId?: Prisma.StringFilter<"QueueCleanerStrike"> | string
   downloadTitle?: Prisma.StringFilter<"QueueCleanerStrike"> | string
   downloadHash?: Prisma.StringNullableFilter<"QueueCleanerStrike"> | string | null
+  downloadFingerprint?: Prisma.StringNullableFilter<"QueueCleanerStrike"> | string | null
   strikeCount?: Prisma.IntFilter<"QueueCleanerStrike"> | number
   lastRule?: Prisma.StringFilter<"QueueCleanerStrike"> | string
   lastReason?: Prisma.StringFilter<"QueueCleanerStrike"> | string
@@ -331,6 +341,7 @@ export type QueueCleanerStrikeOrderByWithAggregationInput = {
   downloadId?: Prisma.SortOrder
   downloadTitle?: Prisma.SortOrder
   downloadHash?: Prisma.SortOrderInput | Prisma.SortOrder
+  downloadFingerprint?: Prisma.SortOrderInput | Prisma.SortOrder
   strikeCount?: Prisma.SortOrder
   lastRule?: Prisma.SortOrder
   lastReason?: Prisma.SortOrder
@@ -355,6 +366,7 @@ export type QueueCleanerStrikeScalarWhereWithAggregatesInput = {
   downloadId?: Prisma.StringWithAggregatesFilter<"QueueCleanerStrike"> | string
   downloadTitle?: Prisma.StringWithAggregatesFilter<"QueueCleanerStrike"> | string
   downloadHash?: Prisma.StringNullableWithAggregatesFilter<"QueueCleanerStrike"> | string | null
+  downloadFingerprint?: Prisma.StringNullableWithAggregatesFilter<"QueueCleanerStrike"> | string | null
   strikeCount?: Prisma.IntWithAggregatesFilter<"QueueCleanerStrike"> | number
   lastRule?: Prisma.StringWithAggregatesFilter<"QueueCleanerStrike"> | string
   lastReason?: Prisma.StringWithAggregatesFilter<"QueueCleanerStrike"> | string
@@ -370,6 +382,7 @@ export type QueueCleanerStrikeCreateInput = {
   downloadId: string
   downloadTitle: string
   downloadHash?: string | null
+  downloadFingerprint?: string | null
   strikeCount?: number
   lastRule: string
   lastReason: string
@@ -387,6 +400,7 @@ export type QueueCleanerStrikeUncheckedCreateInput = {
   downloadId: string
   downloadTitle: string
   downloadHash?: string | null
+  downloadFingerprint?: string | null
   strikeCount?: number
   lastRule: string
   lastReason: string
@@ -402,6 +416,7 @@ export type QueueCleanerStrikeUpdateInput = {
   downloadId?: Prisma.StringFieldUpdateOperationsInput | string
   downloadTitle?: Prisma.StringFieldUpdateOperationsInput | string
   downloadHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  downloadFingerprint?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   strikeCount?: Prisma.IntFieldUpdateOperationsInput | number
   lastRule?: Prisma.StringFieldUpdateOperationsInput | string
   lastReason?: Prisma.StringFieldUpdateOperationsInput | string
@@ -419,6 +434,7 @@ export type QueueCleanerStrikeUncheckedUpdateInput = {
   downloadId?: Prisma.StringFieldUpdateOperationsInput | string
   downloadTitle?: Prisma.StringFieldUpdateOperationsInput | string
   downloadHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  downloadFingerprint?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   strikeCount?: Prisma.IntFieldUpdateOperationsInput | number
   lastRule?: Prisma.StringFieldUpdateOperationsInput | string
   lastReason?: Prisma.StringFieldUpdateOperationsInput | string
@@ -435,6 +451,7 @@ export type QueueCleanerStrikeCreateManyInput = {
   downloadId: string
   downloadTitle: string
   downloadHash?: string | null
+  downloadFingerprint?: string | null
   strikeCount?: number
   lastRule: string
   lastReason: string
@@ -450,6 +467,7 @@ export type QueueCleanerStrikeUpdateManyMutationInput = {
   downloadId?: Prisma.StringFieldUpdateOperationsInput | string
   downloadTitle?: Prisma.StringFieldUpdateOperationsInput | string
   downloadHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  downloadFingerprint?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   strikeCount?: Prisma.IntFieldUpdateOperationsInput | number
   lastRule?: Prisma.StringFieldUpdateOperationsInput | string
   lastReason?: Prisma.StringFieldUpdateOperationsInput | string
@@ -466,6 +484,7 @@ export type QueueCleanerStrikeUncheckedUpdateManyInput = {
   downloadId?: Prisma.StringFieldUpdateOperationsInput | string
   downloadTitle?: Prisma.StringFieldUpdateOperationsInput | string
   downloadHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  downloadFingerprint?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   strikeCount?: Prisma.IntFieldUpdateOperationsInput | number
   lastRule?: Prisma.StringFieldUpdateOperationsInput | string
   lastReason?: Prisma.StringFieldUpdateOperationsInput | string
@@ -497,6 +516,7 @@ export type QueueCleanerStrikeCountOrderByAggregateInput = {
   downloadId?: Prisma.SortOrder
   downloadTitle?: Prisma.SortOrder
   downloadHash?: Prisma.SortOrder
+  downloadFingerprint?: Prisma.SortOrder
   strikeCount?: Prisma.SortOrder
   lastRule?: Prisma.SortOrder
   lastReason?: Prisma.SortOrder
@@ -518,6 +538,7 @@ export type QueueCleanerStrikeMaxOrderByAggregateInput = {
   downloadId?: Prisma.SortOrder
   downloadTitle?: Prisma.SortOrder
   downloadHash?: Prisma.SortOrder
+  downloadFingerprint?: Prisma.SortOrder
   strikeCount?: Prisma.SortOrder
   lastRule?: Prisma.SortOrder
   lastReason?: Prisma.SortOrder
@@ -534,6 +555,7 @@ export type QueueCleanerStrikeMinOrderByAggregateInput = {
   downloadId?: Prisma.SortOrder
   downloadTitle?: Prisma.SortOrder
   downloadHash?: Prisma.SortOrder
+  downloadFingerprint?: Prisma.SortOrder
   strikeCount?: Prisma.SortOrder
   lastRule?: Prisma.SortOrder
   lastReason?: Prisma.SortOrder
@@ -596,6 +618,7 @@ export type QueueCleanerStrikeCreateWithoutInstanceInput = {
   downloadId: string
   downloadTitle: string
   downloadHash?: string | null
+  downloadFingerprint?: string | null
   strikeCount?: number
   lastRule: string
   lastReason: string
@@ -611,6 +634,7 @@ export type QueueCleanerStrikeUncheckedCreateWithoutInstanceInput = {
   downloadId: string
   downloadTitle: string
   downloadHash?: string | null
+  downloadFingerprint?: string | null
   strikeCount?: number
   lastRule: string
   lastReason: string
@@ -655,6 +679,7 @@ export type QueueCleanerStrikeScalarWhereInput = {
   downloadId?: Prisma.StringFilter<"QueueCleanerStrike"> | string
   downloadTitle?: Prisma.StringFilter<"QueueCleanerStrike"> | string
   downloadHash?: Prisma.StringNullableFilter<"QueueCleanerStrike"> | string | null
+  downloadFingerprint?: Prisma.StringNullableFilter<"QueueCleanerStrike"> | string | null
   strikeCount?: Prisma.IntFilter<"QueueCleanerStrike"> | number
   lastRule?: Prisma.StringFilter<"QueueCleanerStrike"> | string
   lastReason?: Prisma.StringFilter<"QueueCleanerStrike"> | string
@@ -670,6 +695,7 @@ export type QueueCleanerStrikeCreateManyInstanceInput = {
   downloadId: string
   downloadTitle: string
   downloadHash?: string | null
+  downloadFingerprint?: string | null
   strikeCount?: number
   lastRule: string
   lastReason: string
@@ -685,6 +711,7 @@ export type QueueCleanerStrikeUpdateWithoutInstanceInput = {
   downloadId?: Prisma.StringFieldUpdateOperationsInput | string
   downloadTitle?: Prisma.StringFieldUpdateOperationsInput | string
   downloadHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  downloadFingerprint?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   strikeCount?: Prisma.IntFieldUpdateOperationsInput | number
   lastRule?: Prisma.StringFieldUpdateOperationsInput | string
   lastReason?: Prisma.StringFieldUpdateOperationsInput | string
@@ -700,6 +727,7 @@ export type QueueCleanerStrikeUncheckedUpdateWithoutInstanceInput = {
   downloadId?: Prisma.StringFieldUpdateOperationsInput | string
   downloadTitle?: Prisma.StringFieldUpdateOperationsInput | string
   downloadHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  downloadFingerprint?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   strikeCount?: Prisma.IntFieldUpdateOperationsInput | number
   lastRule?: Prisma.StringFieldUpdateOperationsInput | string
   lastReason?: Prisma.StringFieldUpdateOperationsInput | string
@@ -715,6 +743,7 @@ export type QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceInput = {
   downloadId?: Prisma.StringFieldUpdateOperationsInput | string
   downloadTitle?: Prisma.StringFieldUpdateOperationsInput | string
   downloadHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  downloadFingerprint?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   strikeCount?: Prisma.IntFieldUpdateOperationsInput | number
   lastRule?: Prisma.StringFieldUpdateOperationsInput | string
   lastReason?: Prisma.StringFieldUpdateOperationsInput | string
@@ -733,6 +762,7 @@ export type QueueCleanerStrikeSelect<ExtArgs extends runtime.Types.Extensions.In
   downloadId?: boolean
   downloadTitle?: boolean
   downloadHash?: boolean
+  downloadFingerprint?: boolean
   strikeCount?: boolean
   lastRule?: boolean
   lastReason?: boolean
@@ -750,6 +780,7 @@ export type QueueCleanerStrikeSelectCreateManyAndReturn<ExtArgs extends runtime.
   downloadId?: boolean
   downloadTitle?: boolean
   downloadHash?: boolean
+  downloadFingerprint?: boolean
   strikeCount?: boolean
   lastRule?: boolean
   lastReason?: boolean
@@ -767,6 +798,7 @@ export type QueueCleanerStrikeSelectUpdateManyAndReturn<ExtArgs extends runtime.
   downloadId?: boolean
   downloadTitle?: boolean
   downloadHash?: boolean
+  downloadFingerprint?: boolean
   strikeCount?: boolean
   lastRule?: boolean
   lastReason?: boolean
@@ -784,6 +816,7 @@ export type QueueCleanerStrikeSelectScalar = {
   downloadId?: boolean
   downloadTitle?: boolean
   downloadHash?: boolean
+  downloadFingerprint?: boolean
   strikeCount?: boolean
   lastRule?: boolean
   lastReason?: boolean
@@ -794,7 +827,7 @@ export type QueueCleanerStrikeSelectScalar = {
   lastStrikeAt?: boolean
 }
 
-export type QueueCleanerStrikeOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "downloadId" | "downloadTitle" | "downloadHash" | "strikeCount" | "lastRule" | "lastReason" | "importAttempts" | "lastImportAttempt" | "lastImportError" | "firstStrikeAt" | "lastStrikeAt", ExtArgs["result"]["queueCleanerStrike"]>
+export type QueueCleanerStrikeOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "downloadId" | "downloadTitle" | "downloadHash" | "downloadFingerprint" | "strikeCount" | "lastRule" | "lastReason" | "importAttempts" | "lastImportAttempt" | "lastImportError" | "firstStrikeAt" | "lastStrikeAt", ExtArgs["result"]["queueCleanerStrike"]>
 export type QueueCleanerStrikeInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }
@@ -816,6 +849,7 @@ export type $QueueCleanerStrikePayload<ExtArgs extends runtime.Types.Extensions.
     downloadId: string
     downloadTitle: string
     downloadHash: string | null
+    downloadFingerprint: string | null
     strikeCount: number
     lastRule: string
     lastReason: string
@@ -1253,6 +1287,7 @@ export interface QueueCleanerStrikeFieldRefs {
   readonly downloadId: Prisma.FieldRef<"QueueCleanerStrike", 'String'>
   readonly downloadTitle: Prisma.FieldRef<"QueueCleanerStrike", 'String'>
   readonly downloadHash: Prisma.FieldRef<"QueueCleanerStrike", 'String'>
+  readonly downloadFingerprint: Prisma.FieldRef<"QueueCleanerStrike", 'String'>
   readonly strikeCount: Prisma.FieldRef<"QueueCleanerStrike", 'Int'>
   readonly lastRule: Prisma.FieldRef<"QueueCleanerStrike", 'String'>
   readonly lastReason: Prisma.FieldRef<"QueueCleanerStrike", 'String'>

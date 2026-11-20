@@ -109,6 +109,34 @@ describe("seerrQuotaSchema", () => {
 		expect(() => seerrQuotaSchema.parse(data)).not.toThrow();
 	});
 
+	it("accepts unlimited quotas without remaining and preserves their omission", () => {
+		const data = {
+			movie: { used: 2, restricted: false, limit: 0, days: 7 },
+			tv: { used: 1, restricted: false, limit: 0, days: 7 },
+		};
+		expect(seerrQuotaSchema.parse(data)).toStrictEqual(data);
+	});
+
+	it.each([{}, { remaining: 0 }])("preserves remaining in a mixed quota %#", (remaining) => {
+		const data = {
+			movie: { used: 5, remaining: 0, restricted: true, limit: 5, days: 7 },
+			tv: { used: 1, restricted: false, limit: 0, days: 7, ...remaining },
+		};
+		expect(seerrQuotaSchema.parse(data)).toStrictEqual(data);
+	});
+
+	it.each([
+		{ used: 1, restricted: false, limit: 5, days: 7 },
+		{ used: 1, remaining: null, restricted: false, limit: 0, days: 7 },
+		{ used: 1, remaining: "0", restricted: false, limit: 0, days: 7 },
+		{ used: 1, limit: 0, days: 7 },
+		{ used: 1, restricted: false, limit: 0 },
+		{ restricted: false, limit: 0, days: 7 },
+	])("rejects a malformed quota entry %#", (tv) => {
+		const movie = { used: 1, remaining: 4, restricted: false, limit: 5, days: 7 };
+		expect(seerrQuotaSchema.safeParse({ movie, tv }).success).toBe(false);
+	});
+
 	it("rejects missing tv quota", () => {
 		const data = {
 			movie: { used: 2, remaining: 3, restricted: true, limit: 5, days: 7 },

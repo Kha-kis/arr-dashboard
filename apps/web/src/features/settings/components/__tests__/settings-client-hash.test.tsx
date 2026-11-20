@@ -10,9 +10,9 @@
  * exercises the hash → activeTab wiring.
  */
 
-import { render } from "@testing-library/react";
+import { act, render } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // --- Stub every hook the SettingsClient touches -----------------------------
 vi.mock("../../../../hooks/api/useAuth", () => ({
@@ -110,5 +110,18 @@ describe("SettingsClient — URL hash deep-link", () => {
 		window.location.hash = "#not-a-tab";
 		const { queryByTestId } = render(<SettingsClient />);
 		expect(queryByTestId("tab-services")).not.toBeNull();
+	});
+
+	it("follows a later hash change while already mounted", () => {
+		window.location.hash = "#backup";
+		const { queryByTestId } = render(<SettingsClient />);
+		expect(queryByTestId("tab-backup")).not.toBeNull();
+
+		act(() => {
+			window.location.hash = "#system";
+			window.dispatchEvent(new HashChangeEvent("hashchange"));
+		});
+		expect(queryByTestId("tab-system")).not.toBeNull();
+		expect(queryByTestId("tab-backup")).toBeNull();
 	});
 });

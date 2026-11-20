@@ -10,11 +10,11 @@
  * Failure posture:
  *   - Missing/invalid secret → 401, no log row (someone is probing).
  *   - Body fails envelope validation → 400, no log row (probably a misroute).
- *   - DB insert fails → 500, but we still return 200 to qui so it doesn't
- *     retry forever; the error is logged on our side. (Defensive: a DB
- *     hiccup shouldn't put a qui-side notification retry loop on us.)
+ *   - DB insert fails → 503 for recognized transient storage failures,
+ *     500 otherwise. Only saved events receive a success acknowledgment.
  *
- * SSE broadcast happens in Phase 5.2; this route just records the event.
+ * SSE failures after saving are nonfatal. Sender retries are not guaranteed,
+ * and an acknowledgment lost after saving can still result in duplicate events.
  */
 
 import { quiWebhookEnvelopeSchema } from "@arr/shared";
@@ -23,7 +23,6 @@ import { z } from "zod";
 import { logQuiActivity } from "../lib/qui/activity-log.js";
 import { quiEventBus } from "../lib/qui/event-bus.js";
 import { resolveUserFromQuiSecret } from "../lib/qui/webhook-secret.js";
-import { getErrorMessage } from "../lib/utils/error-message.js";
 import { buildQuiDeploymentId, buildQuiNotificationTargetOwnerId } from "./qui/webhook-routes.js";
 
 const quiShoutrrrNotificationSchema = z
@@ -66,6 +65,48 @@ function isForeignKeyConstraintError(error: unknown): boolean {
 		"code" in error &&
 		(error as Error & { code?: unknown }).code === "P2003"
 	);
+}
+
+/** Inspect only fixed data fields; never classify from private error text. */
+function isTransientPersistenceError(error: unknown): boolean {
+	const ownData = (value: unknown, key: string): unknown => {
+		if (typeof value !== "object" || value === null) return undefined;
+		const descriptor = Object.getOwnPropertyDescriptor(value, key);
+		return descriptor && "value" in descriptor ? descriptor.value : undefined;
+	};
+	try {
+		const code = ownData(error, "code") ?? ownData(error, "errorCode");
+		const isStorageConflict = (value: unknown): boolean =>
+			value === "SQLITE_BUSY" ||
+			value === "SQLITE_BUSY_TIMEOUT" ||
+			value === "SQLITE_BUSY_SNAPSHOT" ||
+			value === "SQLITE_LOCKED" ||
+			value === "40001" ||
+			value === "40P01";
+		if (
+			code === "P1001" ||
+			code === "P1002" ||
+			code === "P1008" ||
+			code === "P1017" ||
+			code === "P2024" ||
+			code === "P2034" ||
+			isStorageConflict(code)
+		)
+			return true;
+		// Prisma's adapter may wrap a native conflict as a raw-query failure.
+		// An arbitrary P2010 or transaction error is not evidence of transience.
+		return (
+			code === "P2010" &&
+			isStorageConflict(
+				ownData(
+					ownData(ownData(ownData(error, "meta"), "driverAdapterError"), "cause"),
+					"originalCode",
+				),
+			)
+		);
+	} catch {
+		return false;
+	}
 }
 
 const quiWebhookRoute: FastifyPluginCallback = (app, _opts, done) => {
@@ -128,6 +169,17 @@ const quiWebhookRoute: FastifyPluginCallback = (app, _opts, done) => {
 			// uniformly documented; storing the raw payload means we can re-mine
 			// the hash later if extraction logic improves.
 			const torrentHash = extractTorrentHash(envelope.payload);
+			// Secondary activity/SSE helpers may log their own errors. Keep those
+			// request-correlated diagnostics free of raw errors and inbound types.
+			const diagnosticLog = request.log.child(
+				{},
+				{
+					serializers: {
+						err: () => ({ message: "qUI webhook operation failed" }),
+						msgType: () => undefined,
+					},
+				},
+			);
 
 			try {
 				const eventData = {
@@ -159,7 +211,7 @@ const quiWebhookRoute: FastifyPluginCallback = (app, _opts, done) => {
 				// Phase 5.2 — fan the event out to any open SSE connections for
 				// this user. Failures here are non-fatal: the event is already
 				// persisted; SSE is just a freshness optimization. Pass
-				// request.log so listener-side errors are correlated with the
+				// the sanitized request logger so listener-side errors correlate with the
 				// originating webhook in structured logs (default is a
 				// console-only fallback, which is fine but loses request id).
 				try {
@@ -171,20 +223,18 @@ const quiWebhookRoute: FastifyPluginCallback = (app, _opts, done) => {
 							torrentHash,
 							receivedAt: row.receivedAt.toISOString(),
 						},
-						request.log,
+						diagnosticLog,
 					);
 				} catch (busErr) {
-					request.log.warn({ err: busErr }, "qui event bus publish failed");
+					diagnosticLog.warn({ err: busErr }, "qui event bus publish failed");
 				}
 				return reply.status(200).send({ ok: true, eventId: row.id });
 			} catch (err) {
-				// Log + return 200 to suppress qui-side retry storms.
-				// Upgraded from warn → error: this is a real loss of operator
-				// data they may want alert on. Pino's warn level often skips
-				// the alerting filter that triggers on error+.
+				const unavailable = isTransientPersistenceError(err);
+				const reason = unavailable ? "storage-unavailable" : "storage-failure";
 				request.log.error(
-					{ err, userId: user.id, eventType: envelope.type },
-					"qui event log insert failed; acknowledging anyway to suppress qui retries",
+					{ userId: user.id, reason },
+					"qui event log insert failed; event not acknowledged",
 				);
 				// Best-effort second-channel visibility — if QuiEventLog itself
 				// is broken (schema drift, disk full), record the drop on the
@@ -196,11 +246,13 @@ const quiWebhookRoute: FastifyPluginCallback = (app, _opts, done) => {
 					app,
 					userId: user.id,
 					eventType: "qui_webhook_dropped",
-					details: { eventType: envelope.type, reason: getErrorMessage(err) },
+					details: { reason },
 					severity: "error",
-					log: request.log,
+					log: diagnosticLog,
 				});
-				return reply.status(200).send({ ok: true, eventId: null });
+				return reply.status(unavailable ? 503 : 500).send({
+					error: unavailable ? "Event persistence unavailable" : "Event persistence failed",
+				});
 			}
 		},
 	);

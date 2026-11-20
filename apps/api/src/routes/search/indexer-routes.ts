@@ -1,13 +1,15 @@
-import type { ProwlarrIndexerHealth, SearchIndexerUpdateRequest } from "@arr/shared";
+import type { ProwlarrIndexerHealth } from "@arr/shared";
 import {
 	prowlarrIndexerHealthSchema,
 	searchIndexerDetailsResponseSchema,
 	searchIndexersResponseSchema,
 	searchIndexerTestRequestSchema,
 	searchIndexerTestResponseSchema,
+	searchIndexerUpdateOutcomeSchema,
 	searchIndexerUpdateRequestSchema,
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
+import { z } from "zod";
 import {
 	executeOnInstances,
 	getClientForInstance,
@@ -17,11 +19,12 @@ import {
 	buildIndexerDetailsFallback,
 	fetchProwlarrIndexerDetailsWithSdk,
 	fetchProwlarrIndexersWithSdk,
+	IndexerUpdateDispatchError,
+	indexerUpdateReadbackMatchesChanges,
 	testProwlarrIndexerWithSdk,
 	updateProwlarrIndexerWithSdk,
 } from "../../lib/search/prowlarr-api.js";
-import { z } from "zod";
-import { getErrorMessage } from "../../lib/utils/error-message.js";
+import { withProwlarrIndexerUpdateGuard } from "../../lib/search/prowlarr-indexer-update-guard.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 const instanceIndexerParams = z.object({
@@ -50,7 +53,7 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 			{ serviceTypes: ["PROWLARR"] },
 			async (client, instance) => {
 				if (!isProwlarrClient(client)) {
-					return [];
+					throw new Error("Configured Prowlarr instance has an incompatible client");
 				}
 
 				return fetchProwlarrIndexersWithSdk(client, instance);
@@ -61,6 +64,7 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 		const results = response.instances.map((result) => ({
 			instanceId: result.instanceId,
 			instanceName: result.instanceName,
+			success: result.success,
 			data: result.success ? result.data : [],
 		}));
 
@@ -68,6 +72,7 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 			instances: results,
 			aggregated: response.aggregated,
 			totalCount: response.totalCount,
+			failedInstanceCount: response.errorCount,
 		});
 	});
 
@@ -134,58 +139,56 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 	 * Updates an indexer's configuration in Prowlarr.
 	 */
 	app.put("/search/indexers/:instanceId/:indexerId", async (request, reply) => {
-		const { instanceId: paramInstanceId, indexerId: indexerIdValue } = validateRequest(
+		const { instanceId, indexerId: indexerIdValue } = validateRequest(
 			instanceIndexerParams,
 			request.params,
 		);
 
-		const payload: SearchIndexerUpdateRequest = validateRequest(
-			searchIndexerUpdateRequestSchema,
-			request.body ?? {},
-		);
-		const instanceId = payload.instanceId ?? paramInstanceId;
+		const payload = validateRequest(searchIndexerUpdateRequestSchema, request.body ?? {});
 
-		const clientResult = await getClientForInstance(app, request, instanceId);
-		if (!clientResult.success) {
-			reply.status(clientResult.statusCode);
-			return searchIndexerDetailsResponseSchema.parse({
-				indexer: buildIndexerDetailsFallback(instanceId, "", undefined, indexerIdValue),
-			});
-		}
-
-		const { client, instance } = clientResult;
-
-		if (!isProwlarrClient(client)) {
-			reply.status(400);
-			return searchIndexerDetailsResponseSchema.parse({
-				indexer: buildIndexerDetailsFallback(instanceId, "", undefined, indexerIdValue),
-			});
-		}
-
-		const originalIndexer = payload.indexer ?? { id: indexerIdValue };
-		const bodyIndexer = {
-			...originalIndexer,
-			id: typeof originalIndexer.id === "number" ? originalIndexer.id : indexerIdValue,
-			instanceId: originalIndexer.instanceId ?? instance.id,
-			instanceName: originalIndexer.instanceName ?? instance.label,
-			instanceUrl: originalIndexer.instanceUrl ?? instance.baseUrl,
-		};
-
-		await updateProwlarrIndexerWithSdk(client, indexerIdValue, bodyIndexer);
-
-		try {
-			const updated = await fetchProwlarrIndexerDetailsWithSdk(client, instance, indexerIdValue);
-			if (updated) {
-				return searchIndexerDetailsResponseSchema.parse({ indexer: updated });
+		return withProwlarrIndexerUpdateGuard(async () => {
+			const clientResult = await getClientForInstance(app, request, instanceId);
+			if (!clientResult.success) {
+				reply.status(clientResult.statusCode);
+				return searchIndexerDetailsResponseSchema.parse({
+					indexer: buildIndexerDetailsFallback(instanceId, "", undefined, indexerIdValue),
+				});
 			}
-		} catch (error) {
-			request.log.error(
-				{ err: error, instance: instance.id, indexerId: indexerIdValue },
-				"prowlarr indexer fetch after update failed",
-			);
-		}
 
-		return searchIndexerDetailsResponseSchema.parse({ indexer: bodyIndexer });
+			const { client, instance } = clientResult;
+
+			if (!isProwlarrClient(client)) {
+				reply.status(400);
+				return searchIndexerDetailsResponseSchema.parse({
+					indexer: buildIndexerDetailsFallback(instanceId, "", undefined, indexerIdValue),
+				});
+			}
+
+			try {
+				await updateProwlarrIndexerWithSdk(client, indexerIdValue, payload.changes);
+			} catch (error) {
+				if (!(error instanceof IndexerUpdateDispatchError)) throw error;
+				request.log.warn(
+					{ category: "indexer-update-outcome-unknown" },
+					"Prowlarr indexer update outcome requires provider verification",
+				);
+				reply.status(202);
+				return searchIndexerUpdateOutcomeSchema.parse({ status: "outcome-unknown" });
+			}
+
+			const updated = await fetchProwlarrIndexerDetailsWithSdk(client, instance, indexerIdValue);
+			if (
+				updated &&
+				updated.id === indexerIdValue &&
+				updated.instanceId === instance.id &&
+				indexerUpdateReadbackMatchesChanges(updated, payload.changes)
+			) {
+				return searchIndexerUpdateOutcomeSchema.parse({ status: "verified", indexer: updated });
+			}
+
+			reply.status(202);
+			return searchIndexerUpdateOutcomeSchema.parse({ status: "applied-unverified" });
+		});
 	});
 
 	/**
@@ -204,7 +207,7 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 			});
 		}
 
-		const { client, instance } = clientResult;
+		const { client } = clientResult;
 
 		if (!isProwlarrClient(client)) {
 			reply.status(400);
@@ -217,14 +220,11 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 		try {
 			await testProwlarrIndexerWithSdk(client, payload.indexerId);
 			return searchIndexerTestResponseSchema.parse({ success: true });
-		} catch (error) {
-			request.log.error(
-				{ err: error, instance: instance.id, indexerId: payload.indexerId },
-				"prowlarr indexer test failed",
-			);
+		} catch {
+			request.log.error({ category: "indexer-test-failed" }, "Prowlarr indexer test failed");
 			return searchIndexerTestResponseSchema.parse({
 				success: false,
-				message: getErrorMessage(error, "Failed to test indexer"),
+				message: "Indexer test failed. Check Prowlarr before retrying.",
 			});
 		}
 	});

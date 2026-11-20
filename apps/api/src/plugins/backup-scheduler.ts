@@ -41,7 +41,11 @@ const backupSchedulerPlugin = fastifyPlugin(
 						secretsPath,
 						(payload) => app.notificationService.notify(payload),
 						{
-							trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.backup, fn),
+							// The producer owns the sole shared lease so createBackup can upgrade it.
+							trackTick: (fn) =>
+								app.notificationService.runProducer(() =>
+									app.schedulerRegistry.track(JOB_ID.backup, fn),
+								),
 							secretsSynchronized: app.secretsSynchronized,
 							encryptor: app.encryptor,
 						},
@@ -55,17 +59,21 @@ const backupSchedulerPlugin = fastifyPlugin(
 			);
 		});
 
-		// Stop scheduler on server close
+		app.addHook("preClose", async () => {
+			app.backupScheduler?.closeAdmission();
+		});
+
 		app.addHook("onClose", async () => {
 			if (app.backupScheduler) {
 				app.log.info("Stopping backup scheduler");
-				app.backupScheduler.stop();
+				await app.backupScheduler.shutdown();
 			}
 		});
 	},
 	{
 		name: "backup-scheduler",
 		dependencies: ["prisma", "scheduler-registry"],
+		decorators: { fastify: ["notificationService"] },
 	},
 );
 

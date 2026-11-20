@@ -67,6 +67,7 @@ export type LabelSyncMutationAttemptMinAggregateOutputType = {
   completedAt: Date | null
   status: string | null
   reasonCode: string | null
+  restoreEvidence: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -95,6 +96,7 @@ export type LabelSyncMutationAttemptMaxAggregateOutputType = {
   completedAt: Date | null
   status: string | null
   reasonCode: string | null
+  restoreEvidence: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -123,6 +125,7 @@ export type LabelSyncMutationAttemptCountAggregateOutputType = {
   completedAt: number
   status: number
   reasonCode: number
+  restoreEvidence: number
   createdAt: number
   updatedAt: number
   _all: number
@@ -169,6 +172,7 @@ export type LabelSyncMutationAttemptMinAggregateInputType = {
   completedAt?: true
   status?: true
   reasonCode?: true
+  restoreEvidence?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -197,6 +201,7 @@ export type LabelSyncMutationAttemptMaxAggregateInputType = {
   completedAt?: true
   status?: true
   reasonCode?: true
+  restoreEvidence?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -225,6 +230,7 @@ export type LabelSyncMutationAttemptCountAggregateInputType = {
   completedAt?: true
   status?: true
   reasonCode?: true
+  restoreEvidence?: true
   createdAt?: true
   updatedAt?: true
   _all?: true
@@ -340,6 +346,7 @@ export type LabelSyncMutationAttemptGroupByOutputType = {
   completedAt: Date | null
   status: string
   reasonCode: string | null
+  restoreEvidence: string | null
   createdAt: Date
   updatedAt: Date
   _count: LabelSyncMutationAttemptCountAggregateOutputType | null
@@ -391,6 +398,7 @@ export type LabelSyncMutationAttemptWhereInput = {
   completedAt?: Prisma.DateTimeNullableFilter<"LabelSyncMutationAttempt"> | Date | string | null
   status?: Prisma.StringFilter<"LabelSyncMutationAttempt"> | string
   reasonCode?: Prisma.StringNullableFilter<"LabelSyncMutationAttempt"> | string | null
+  restoreEvidence?: Prisma.StringNullableFilter<"LabelSyncMutationAttempt"> | string | null
   createdAt?: Prisma.DateTimeFilter<"LabelSyncMutationAttempt"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"LabelSyncMutationAttempt"> | Date | string
   owner?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
@@ -422,6 +430,7 @@ export type LabelSyncMutationAttemptOrderByWithRelationInput = {
   completedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   status?: Prisma.SortOrder
   reasonCode?: Prisma.SortOrderInput | Prisma.SortOrder
+  restoreEvidence?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   owner?: Prisma.UserOrderByWithRelationInput
@@ -456,6 +465,7 @@ export type LabelSyncMutationAttemptWhereUniqueInput = Prisma.AtLeast<{
   completedAt?: Prisma.DateTimeNullableFilter<"LabelSyncMutationAttempt"> | Date | string | null
   status?: Prisma.StringFilter<"LabelSyncMutationAttempt"> | string
   reasonCode?: Prisma.StringNullableFilter<"LabelSyncMutationAttempt"> | string | null
+  restoreEvidence?: Prisma.StringNullableFilter<"LabelSyncMutationAttempt"> | string | null
   createdAt?: Prisma.DateTimeFilter<"LabelSyncMutationAttempt"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"LabelSyncMutationAttempt"> | Date | string
   owner?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
@@ -487,6 +497,7 @@ export type LabelSyncMutationAttemptOrderByWithAggregationInput = {
   completedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   status?: Prisma.SortOrder
   reasonCode?: Prisma.SortOrderInput | Prisma.SortOrder
+  restoreEvidence?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   _count?: Prisma.LabelSyncMutationAttemptCountOrderByAggregateInput
@@ -523,6 +534,7 @@ export type LabelSyncMutationAttemptScalarWhereWithAggregatesInput = {
   completedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"LabelSyncMutationAttempt"> | Date | string | null
   status?: Prisma.StringWithAggregatesFilter<"LabelSyncMutationAttempt"> | string
   reasonCode?: Prisma.StringNullableWithAggregatesFilter<"LabelSyncMutationAttempt"> | string | null
+  restoreEvidence?: Prisma.StringNullableWithAggregatesFilter<"LabelSyncMutationAttempt"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"LabelSyncMutationAttempt"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"LabelSyncMutationAttempt"> | Date | string
 }
@@ -548,6 +560,7 @@ export type LabelSyncMutationAttemptCreateInput = {
   completedAt?: Date | string | null
   status: string
   reasonCode?: string | null
+  restoreEvidence?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   owner: Prisma.UserCreateNestedOneWithoutLabelSyncMutationAttemptsInput
@@ -579,6 +592,7 @@ export type LabelSyncMutationAttemptUncheckedCreateInput = {
   completedAt?: Date | string | null
   status: string
   reasonCode?: string | null
+  restoreEvidence?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -604,6 +618,7 @@ export type LabelSyncMutationAttemptUpdateInput = {
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   reasonCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  restoreEvidence?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   owner?: Prisma.UserUpdateOneRequiredWithoutLabelSyncMutationAttemptsNestedInput
@@ -635,6 +650,7 @@ export type LabelSyncMutationAttemptUncheckedUpdateInput = {
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   reasonCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  restoreEvidence?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -663,6 +679,7 @@ export type LabelSyncMutationAttemptCreateManyInput = {
   completedAt?: Date | string | null
   status: string
   reasonCode?: string | null
+  restoreEvidence?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -688,6 +705,7 @@ export type LabelSyncMutationAttemptUpdateManyMutationInput = {
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   reasonCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  restoreEvidence?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -716,6 +734,7 @@ export type LabelSyncMutationAttemptUncheckedUpdateManyInput = {
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   reasonCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  restoreEvidence?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -754,6 +773,7 @@ export type LabelSyncMutationAttemptCountOrderByAggregateInput = {
   completedAt?: Prisma.SortOrder
   status?: Prisma.SortOrder
   reasonCode?: Prisma.SortOrder
+  restoreEvidence?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -790,6 +810,7 @@ export type LabelSyncMutationAttemptMaxOrderByAggregateInput = {
   completedAt?: Prisma.SortOrder
   status?: Prisma.SortOrder
   reasonCode?: Prisma.SortOrder
+  restoreEvidence?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -818,6 +839,7 @@ export type LabelSyncMutationAttemptMinOrderByAggregateInput = {
   completedAt?: Prisma.SortOrder
   status?: Prisma.SortOrder
   reasonCode?: Prisma.SortOrder
+  restoreEvidence?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -977,6 +999,7 @@ export type LabelSyncMutationAttemptCreateWithoutOwnerInput = {
   completedAt?: Date | string | null
   status: string
   reasonCode?: string | null
+  restoreEvidence?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   rule: Prisma.LabelSyncRuleCreateNestedOneWithoutMutationAttemptsInput
@@ -1006,6 +1029,7 @@ export type LabelSyncMutationAttemptUncheckedCreateWithoutOwnerInput = {
   completedAt?: Date | string | null
   status: string
   reasonCode?: string | null
+  restoreEvidence?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -1062,6 +1086,7 @@ export type LabelSyncMutationAttemptScalarWhereInput = {
   completedAt?: Prisma.DateTimeNullableFilter<"LabelSyncMutationAttempt"> | Date | string | null
   status?: Prisma.StringFilter<"LabelSyncMutationAttempt"> | string
   reasonCode?: Prisma.StringNullableFilter<"LabelSyncMutationAttempt"> | string | null
+  restoreEvidence?: Prisma.StringNullableFilter<"LabelSyncMutationAttempt"> | string | null
   createdAt?: Prisma.DateTimeFilter<"LabelSyncMutationAttempt"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"LabelSyncMutationAttempt"> | Date | string
 }
@@ -1087,6 +1112,7 @@ export type LabelSyncMutationAttemptCreateWithoutDestinationInput = {
   completedAt?: Date | string | null
   status: string
   reasonCode?: string | null
+  restoreEvidence?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   owner: Prisma.UserCreateNestedOneWithoutLabelSyncMutationAttemptsInput
@@ -1116,6 +1142,7 @@ export type LabelSyncMutationAttemptUncheckedCreateWithoutDestinationInput = {
   completedAt?: Date | string | null
   status: string
   reasonCode?: string | null
+  restoreEvidence?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -1166,6 +1193,7 @@ export type LabelSyncMutationAttemptCreateWithoutRuleInput = {
   completedAt?: Date | string | null
   status: string
   reasonCode?: string | null
+  restoreEvidence?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   owner: Prisma.UserCreateNestedOneWithoutLabelSyncMutationAttemptsInput
@@ -1195,6 +1223,7 @@ export type LabelSyncMutationAttemptUncheckedCreateWithoutRuleInput = {
   completedAt?: Date | string | null
   status: string
   reasonCode?: string | null
+  restoreEvidence?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -1247,6 +1276,7 @@ export type LabelSyncMutationAttemptCreateManyOwnerInput = {
   completedAt?: Date | string | null
   status: string
   reasonCode?: string | null
+  restoreEvidence?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -1272,6 +1302,7 @@ export type LabelSyncMutationAttemptUpdateWithoutOwnerInput = {
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   reasonCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  restoreEvidence?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   rule?: Prisma.LabelSyncRuleUpdateOneRequiredWithoutMutationAttemptsNestedInput
@@ -1301,6 +1332,7 @@ export type LabelSyncMutationAttemptUncheckedUpdateWithoutOwnerInput = {
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   reasonCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  restoreEvidence?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -1328,6 +1360,7 @@ export type LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerInput = {
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   reasonCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  restoreEvidence?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -1355,6 +1388,7 @@ export type LabelSyncMutationAttemptCreateManyDestinationInput = {
   completedAt?: Date | string | null
   status: string
   reasonCode?: string | null
+  restoreEvidence?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -1380,6 +1414,7 @@ export type LabelSyncMutationAttemptUpdateWithoutDestinationInput = {
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   reasonCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  restoreEvidence?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   owner?: Prisma.UserUpdateOneRequiredWithoutLabelSyncMutationAttemptsNestedInput
@@ -1409,6 +1444,7 @@ export type LabelSyncMutationAttemptUncheckedUpdateWithoutDestinationInput = {
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   reasonCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  restoreEvidence?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -1436,6 +1472,7 @@ export type LabelSyncMutationAttemptUncheckedUpdateManyWithoutDestinationInput =
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   reasonCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  restoreEvidence?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -1463,6 +1500,7 @@ export type LabelSyncMutationAttemptCreateManyRuleInput = {
   completedAt?: Date | string | null
   status: string
   reasonCode?: string | null
+  restoreEvidence?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -1488,6 +1526,7 @@ export type LabelSyncMutationAttemptUpdateWithoutRuleInput = {
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   reasonCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  restoreEvidence?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   owner?: Prisma.UserUpdateOneRequiredWithoutLabelSyncMutationAttemptsNestedInput
@@ -1517,6 +1556,7 @@ export type LabelSyncMutationAttemptUncheckedUpdateWithoutRuleInput = {
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   reasonCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  restoreEvidence?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -1544,6 +1584,7 @@ export type LabelSyncMutationAttemptUncheckedUpdateManyWithoutRuleInput = {
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   reasonCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  restoreEvidence?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -1574,6 +1615,7 @@ export type LabelSyncMutationAttemptSelect<ExtArgs extends runtime.Types.Extensi
   completedAt?: boolean
   status?: boolean
   reasonCode?: boolean
+  restoreEvidence?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   owner?: boolean | Prisma.UserDefaultArgs<ExtArgs>
@@ -1605,6 +1647,7 @@ export type LabelSyncMutationAttemptSelectCreateManyAndReturn<ExtArgs extends ru
   completedAt?: boolean
   status?: boolean
   reasonCode?: boolean
+  restoreEvidence?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   owner?: boolean | Prisma.UserDefaultArgs<ExtArgs>
@@ -1636,6 +1679,7 @@ export type LabelSyncMutationAttemptSelectUpdateManyAndReturn<ExtArgs extends ru
   completedAt?: boolean
   status?: boolean
   reasonCode?: boolean
+  restoreEvidence?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   owner?: boolean | Prisma.UserDefaultArgs<ExtArgs>
@@ -1667,11 +1711,12 @@ export type LabelSyncMutationAttemptSelectScalar = {
   completedAt?: boolean
   status?: boolean
   reasonCode?: boolean
+  restoreEvidence?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type LabelSyncMutationAttemptOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "ruleId" | "destinationInstanceId" | "provider" | "mediaType" | "tmdbId" | "connectionGeneration" | "identityGeneration" | "targetItemId" | "libraryId" | "intentFingerprint" | "ruleFingerprint" | "destinationTag" | "activeOperationKey" | "claimToken" | "sendAttemptCount" | "reconcileAttemptCount" | "requestStartedAt" | "lastObservedAt" | "completedAt" | "status" | "reasonCode" | "createdAt" | "updatedAt", ExtArgs["result"]["labelSyncMutationAttempt"]>
+export type LabelSyncMutationAttemptOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "ruleId" | "destinationInstanceId" | "provider" | "mediaType" | "tmdbId" | "connectionGeneration" | "identityGeneration" | "targetItemId" | "libraryId" | "intentFingerprint" | "ruleFingerprint" | "destinationTag" | "activeOperationKey" | "claimToken" | "sendAttemptCount" | "reconcileAttemptCount" | "requestStartedAt" | "lastObservedAt" | "completedAt" | "status" | "reasonCode" | "restoreEvidence" | "createdAt" | "updatedAt", ExtArgs["result"]["labelSyncMutationAttempt"]>
 export type LabelSyncMutationAttemptInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   owner?: boolean | Prisma.UserDefaultArgs<ExtArgs>
   rule?: boolean | Prisma.LabelSyncRuleDefaultArgs<ExtArgs>
@@ -1719,6 +1764,7 @@ export type $LabelSyncMutationAttemptPayload<ExtArgs extends runtime.Types.Exten
     completedAt: Date | null
     status: string
     reasonCode: string | null
+    restoreEvidence: string | null
     createdAt: Date
     updatedAt: Date
   }, ExtArgs["result"]["labelSyncMutationAttempt"]>
@@ -2170,6 +2216,7 @@ export interface LabelSyncMutationAttemptFieldRefs {
   readonly completedAt: Prisma.FieldRef<"LabelSyncMutationAttempt", 'DateTime'>
   readonly status: Prisma.FieldRef<"LabelSyncMutationAttempt", 'String'>
   readonly reasonCode: Prisma.FieldRef<"LabelSyncMutationAttempt", 'String'>
+  readonly restoreEvidence: Prisma.FieldRef<"LabelSyncMutationAttempt", 'String'>
   readonly createdAt: Prisma.FieldRef<"LabelSyncMutationAttempt", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"LabelSyncMutationAttempt", 'DateTime'>
 }

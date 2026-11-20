@@ -7,6 +7,7 @@
  */
 
 import type { FastifyBaseLogger } from "fastify";
+import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { evaluateProviderCoverageReceipt } from "../../provider-observation/coverage-receipt.js";
 import {
@@ -57,13 +58,14 @@ vi.mock("../../services/provider-identity-guard.js", async (importOriginal) => {
 				_log: unknown,
 				collect: () => Promise<unknown>,
 				publish: (tx: unknown, snapshot: unknown) => Promise<unknown>,
-				options: unknown,
+				options: { maxWait?: number; timeout?: number },
 			) => {
 				const snapshot = await collect();
 				if ((snapshot as { complete?: boolean }).complete !== true) return snapshot;
 				return await prisma.$transaction(async (tx) => await publish(tx, snapshot), {
 					isolationLevel: "Serializable",
-					...(options as object),
+					...(options.maxWait === undefined ? {} : { maxWait: options.maxWait }),
+					...(options.timeout === undefined ? {} : { timeout: options.timeout }),
 				});
 			},
 		),
@@ -160,6 +162,237 @@ const oneUser: JellyfinUser[] = [{ id: "user-1", name: "Alice" }];
 const oneLibrary: JellyfinLibrary[] = [
 	{ id: "lib-1", name: "TV Shows", collectionType: "tvshows" },
 ];
+
+describe("canonical collection phase diagnostics", () => {
+	it.each(["ordinary", "throwing", "bound-child", "throwing-bindings"] as const)(
+		"consumes real client page stages with a %s logger and fixed private-safe fields",
+		async (scenario) => {
+			const { JellyfinClient: RealClient } =
+				await vi.importActual<typeof import("../jellyfin-client.js")>("../jellyfin-client.js");
+			const records: Record<string, unknown>[] = [];
+			const serialized: string[] = [];
+			let attempts = 0;
+			let logger = {
+				...silentLog,
+				info: (record: Record<string, unknown>) => {
+					attempts++;
+					if (scenario === "throwing") throw new Error("private-logger-failure");
+					records.push(record);
+				},
+			} as FastifyBaseLogger;
+			if (scenario === "bound-child" || scenario === "throwing-bindings") {
+				let privacyLogger = pino(
+					{ level: "info" },
+					{ write: (chunk: string) => serialized.push(chunk) },
+				);
+				if (scenario === "bound-child")
+					privacyLogger = privacyLogger.child({
+						url: "https://private.example",
+						token: "private-token",
+					});
+				else
+					privacyLogger.bindings = () => {
+						throw new Error("private-bindings-failure");
+					};
+				logger = privacyLogger;
+			}
+			const libraryOffsets: string[] = [];
+			vi.stubGlobal("fetch", async (input: string) => {
+				const url = new URL(input);
+				let body: unknown;
+				if (url.pathname === "/Users") body = [{ Id: "private-user", Name: "private-name" }];
+				else if (url.pathname.endsWith("/Views"))
+					body = {
+						Items: [
+							{
+								Id: "private-library",
+								Name: "private-library-name",
+								Type: "CollectionFolder",
+								CollectionType: "movies",
+							},
+						],
+						TotalRecordCount: 1,
+					};
+				else if (url.searchParams.has("ParentId")) {
+					const offset = url.searchParams.get("StartIndex")!;
+					libraryOffsets.push(offset);
+					body = {
+						Items: [
+							{
+								Id: `private-item-${offset}`,
+								Name: "private-title",
+								Type: "Movie",
+								ProviderIds: { Tmdb: offset === "0" ? "10" : "20" },
+							},
+						],
+						TotalRecordCount: 2,
+					};
+				} else body = { Items: [], TotalRecordCount: 0 };
+				return new Response(JSON.stringify(body), {
+					headers: { "Content-Type": "application/json" },
+				});
+			});
+			try {
+				const client = new RealClient("https://private.synthetic.test", "private-token", logger);
+				const result = await collectJellyfinCacheLiveEvidence(client, "private-instance", logger);
+				expect(result.complete).toBe(true);
+				expect(result.snapshot?.rows).toHaveLength(2);
+				expect(libraryOffsets).toEqual(["0", "1"]);
+				const stages = [
+					"user-discovery",
+					"library-discovery",
+					"library-item-collection",
+					"library-page-request",
+					"library-page-headers",
+					"library-page-body",
+					"library-page-validation",
+					"library-page-accepted",
+					"library-page-request",
+					"library-page-headers",
+					"library-page-body",
+					"library-page-validation",
+					"library-page-accepted",
+					"library-items-mapped",
+					"on-deck-collection",
+				];
+				if (scenario === "ordinary") {
+					expect(records.map((record) => record.stage)).toEqual(stages);
+					for (const record of records) {
+						expect(Object.keys(record).sort()).toEqual([
+							"cacheType",
+							"category",
+							"elapsedMs",
+							"provider",
+							"stage",
+						]);
+						expect(record).toMatchObject({
+							cacheType: "jellyfin",
+							category: "canonical-phase",
+							provider: "jellyfin",
+						});
+						expect(Number.isSafeInteger(record.elapsedMs)).toBe(true);
+						expect(record.elapsedMs).toBeGreaterThanOrEqual(0);
+					}
+					expect(JSON.stringify(records)).not.toContain("private-");
+				} else {
+					expect(records).toEqual([]);
+					if (scenario === "throwing") expect(attempts).toBe(stages.length);
+				}
+				expect(serialized).toEqual([]);
+			} finally {
+				vi.unstubAllGlobals();
+			}
+		},
+	);
+
+	it("reports each real user/library/on-deck await without exposing fixture values", async () => {
+		const client = makeMockClient([makeMovieItem({ name: "private-title", id: "private-item" })]);
+		const users = [
+			{ id: "private-user-a", name: "private-name-a" },
+			{ id: "private-user-b", name: "private-name-b" },
+		];
+		client.getUsers = async () => users;
+		client.getLibraries = async () => [
+			{ id: "private-library-a", name: "private-library-name-a", collectionType: "movies" },
+			{ id: "private-library-b", name: "private-library-name-b", collectionType: "movies" },
+		];
+		client.getLibraryItems = async (_userId, libraryId) => [
+			makeMovieItem({ name: "private-title", id: `private-item-${libraryId}` }),
+		];
+		const records: Record<string, unknown>[] = [];
+		const logger = {
+			...silentLog,
+			info: (record: Record<string, unknown>) => records.push(record),
+		} as FastifyBaseLogger;
+		const result = await collectJellyfinCacheLiveEvidence(client, "private-instance", logger, {
+			provider: "emby",
+		});
+		expect(result.complete).toBe(true);
+		expect(result.snapshot?.rows).toHaveLength(2);
+		expect(records.map((record) => record.stage)).toEqual([
+			"user-discovery",
+			"library-discovery",
+			"library-discovery",
+			"library-item-collection",
+			"library-item-collection",
+			"library-item-collection",
+			"library-item-collection",
+			"on-deck-collection",
+			"on-deck-collection",
+		]);
+		for (const record of records) {
+			expect(Object.keys(record).sort()).toEqual([
+				"cacheType",
+				"category",
+				"elapsedMs",
+				"provider",
+				"stage",
+			]);
+			expect(record).toMatchObject({
+				category: "canonical-phase",
+				cacheType: "jellyfin",
+				provider: "emby",
+				elapsedMs: expect.any(Number),
+			});
+			expect(Number.isSafeInteger(record.elapsedMs)).toBe(true);
+			expect(record.elapsedMs).toBeGreaterThanOrEqual(0);
+		}
+		expect(JSON.stringify(records)).not.toContain("private-");
+	});
+
+	it("keeps successful collection successful when the timing logger throws", async () => {
+		let timingAttempts = 0;
+		const logger = {
+			...silentLog,
+			info: () => {
+				timingAttempts++;
+				throw new Error("private logger error");
+			},
+		} as FastifyBaseLogger;
+		const result = await collectJellyfinCacheLiveEvidence(
+			makeMockClient([makeMovieItem()]),
+			"private-instance",
+			logger,
+		);
+		expect(result.complete).toBe(true);
+		expect(result.snapshot?.rows).toHaveLength(1);
+		expect(timingAttempts).toBe(4);
+	});
+
+	it.each(["private-bindings", "throwing-bindings"] as const)(
+		"suppresses diagnostics for %s without changing collection",
+		async (scenario) => {
+			const records: string[] = [];
+			let logger = pino(
+				{ level: "info" },
+				{
+					write: (chunk: string) => {
+						records.push(chunk);
+					},
+				},
+			);
+			if (scenario === "private-bindings")
+				logger = logger.child({
+					instanceId: "private-instance",
+					name: "private-name",
+					url: "https://private.example",
+					token: "private-token",
+				});
+			else
+				logger.bindings = () => {
+					throw new Error("private bindings failure");
+				};
+			const result = await collectJellyfinCacheLiveEvidence(
+				makeMockClient([makeMovieItem()]),
+				"private-instance",
+				logger,
+			);
+			expect(result.complete).toBe(true);
+			expect(result.snapshot?.rows).toHaveLength(1);
+			expect(records).toEqual([]);
+		},
+	);
+});
 
 /**
  * Build a minimal mock JellyfinClient that serves the given library items.
@@ -276,6 +509,135 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+describe("canonical body recovery through the real client and collector", () => {
+	it.each(["recovered", "exhausted"] as const)(
+		"conserves logical coverage and publication state when body recovery is %s",
+		async (outcome) => {
+			const { JellyfinClient: RealClient } =
+				await vi.importActual<typeof import("../jellyfin-client.js")>("../jellyfin-client.js");
+			const realClient = new RealClient("https://synthetic.test", "synthetic-token", silentLog);
+			const client = makeMockClient([]);
+			// Only unrelated discovery/on-deck and DB boundaries use existing stubs.
+			// All pagination, body failures, recovery and coverage counters are real.
+			client.getLibraryItemsWithCoverage = realClient.getLibraryItemsWithCoverage.bind(realClient);
+			const requests: URL[] = [];
+			vi.stubGlobal("fetch", async (input: string) => {
+				const url = new URL(input);
+				requests.push(url);
+				const broken = outcome === "recovered" ? requests.length === 1 : requests.length > 1;
+				if (broken) {
+					return new Response(
+						new ReadableStream({
+							start(controller) {
+								controller.error(
+									new TypeError("synthetic-private-body", { cause: { code: "UND_ERR_SOCKET" } }),
+								);
+							},
+						}),
+						{ headers: { "Content-Type": "application/json" } },
+					);
+				}
+				const firstPage = url.searchParams.get("StartIndex") === "0";
+				return new Response(
+					JSON.stringify({
+						Items: [
+							{
+								Id: firstPage ? "source-1" : "source-2",
+								Name: "Synthetic series",
+								Type: "Series",
+								ProviderIds: { Tmdb: firstPage ? "101" : "202" },
+							},
+						],
+						TotalRecordCount: 2,
+					}),
+					{ headers: { "Content-Type": "application/json" } },
+				);
+			});
+			const { stub, tx, upserts } = makeMockPrisma();
+			const previousCache = [{ jellyfinId: "previous-source", tmdbId: 99 }];
+			tx.jellyfinCache.deleteMany.mockImplementation(async () => {
+				const count = previousCache.length;
+				previousCache.length = 0;
+				return { count };
+			});
+			try {
+				const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+				const physicalPages = requests.map((url) => [
+					url.searchParams.get("StartIndex"),
+					url.searchParams.get("Limit"),
+				]);
+				if (outcome === "recovered") {
+					expect(result).toMatchObject({ complete: true, errors: 0, upserted: 2 });
+					expect(result.snapshot?.rows.map((row) => row.tmdbId).sort()).toEqual([101, 202]);
+					expect(result.receipt).toMatchObject({
+						evidence: "complete",
+						domains: expect.arrayContaining([
+							expect.objectContaining({
+								domain: "library-inventory",
+								evidence: "complete",
+								valueSemantics: "exact",
+								units: [
+									expect.objectContaining({
+										pagesAttempted: 2,
+										pagesCompleted: 2,
+										rawObserved: 2,
+										expectedRawCount: 2,
+										fatalCount: 0,
+									}),
+								],
+							}),
+						]),
+					});
+					expect(upserts).toHaveLength(2);
+					expect(physicalPages).toEqual([
+						["0", "1000"],
+						["0", "500"],
+						["1", "500"],
+					]);
+				} else {
+					expect(result).toMatchObject({
+						complete: false,
+						upserted: 0,
+						receipt: {
+							evidence: "unknown",
+							units: expect.arrayContaining([
+								expect.objectContaining({
+									pagesAttempted: 2,
+									pagesCompleted: 1,
+									expectedRawCount: 2,
+									rawObserved: 1,
+									fatalCount: 1,
+								}),
+							]),
+						},
+					});
+					expect(result.snapshot).toBeUndefined();
+					expect(stub.$transaction).not.toHaveBeenCalled();
+					expect(tx.jellyfinCache.deleteMany).not.toHaveBeenCalled();
+					expect(tx.jellyfinCache.createMany).not.toHaveBeenCalled();
+					expect(tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+					expect(previousCache).toEqual([{ jellyfinId: "previous-source", tmdbId: 99 }]);
+					expect(upserts).toEqual([]);
+					expect(physicalPages).toEqual([
+						["0", "1000"],
+						["1", "1000"],
+						["1", "500"],
+						["1", "250"],
+						["1", "125"],
+					]);
+				}
+				for (const request of requests) {
+					expect(request.pathname).toBe("/Users/user-1/Items");
+					expect(request.searchParams.get("ParentId")).toBe("lib-1");
+					expect(request.searchParams.get("IncludeItemTypes")).toBe("Series");
+				}
+			} finally {
+				vi.unstubAllGlobals();
+			}
+		},
+	);
+});
 
 describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 	it("publishes a large cache through bounded createMany calls", async () => {
@@ -1060,6 +1422,7 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		expect(deleteMany).not.toHaveBeenCalled();
 		expect(coverageClient.getLibraryItemsWithCoverage).toHaveBeenCalledWith("user-1", "lib-1", {
 			includeItemTypes: "Series",
+			onReadStage: expect.any(Function),
 		});
 		expect(client.getLibraryItems).not.toHaveBeenCalled();
 		expect(receiptFrom(result)).toMatchObject({
@@ -1127,6 +1490,7 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
 		expect(client.getLibraryItems).toHaveBeenCalledWith("user-1", "lib-movies", {
 			includeItemTypes: "Movie",
+			onReadStage: expect.any(Function),
 		});
 		expect(upserts).toHaveLength(1);
 		expect(upserts[0]).toMatchObject({ create: { jellyfinId: "jf-movie-1" } });

@@ -7,6 +7,7 @@
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import { withIsolatedRuntimePrismaBulkReadClient } from "../../lib/backup/restore-runtime-client.js";
 import {
 	type JellyfinDisplayInstance,
 	readOwnedJellyfinLibraryDisplaySources,
@@ -40,46 +41,52 @@ export async function registerRecentlyAddedRoutes(
 		const { limit } = validateRequest(recentlyAddedQuery, request.query);
 		const userId = request.currentUser!.id;
 
-		const jellyfinInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true, label: true, service: true },
-		});
+		return withIsolatedRuntimePrismaBulkReadClient(
+			app.prisma,
+			async (prisma) => {
+				const jellyfinInstances = await prisma.serviceInstance.findMany({
+					where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
+					select: { id: true, label: true, service: true },
+				});
 
-		if (jellyfinInstances.length === 0) {
-			return reply.send({ items: [] });
-		}
+				if (jellyfinInstances.length === 0) {
+					return reply.send({ items: [] });
+				}
 
-		const displayEvidence = await readOwnedJellyfinLibraryDisplaySources({
-			prisma: app.prisma,
-			userId,
-			instances: jellyfinInstances as JellyfinDisplayInstance[],
-		});
+				const displayEvidence = await readOwnedJellyfinLibraryDisplaySources({
+					prisma,
+					userId,
+					instances: jellyfinInstances as JellyfinDisplayInstance[],
+				});
 
-		const items = displayEvidence.sources
-			.flatMap((source) =>
-				source.rows
-					.filter((entry) => entry.addedAt !== null)
-					.map((entry) => ({ entry, instanceName: source.instanceName })),
-			)
-			.sort(
-				(left, right) =>
-					right.entry.addedAt!.getTime() - left.entry.addedAt!.getTime() ||
-					compareStrings(left.entry.instanceId, right.entry.instanceId) ||
-					compareStrings(left.entry.id, right.entry.id),
-			)
-			.slice(0, limit)
-			.map(({ entry, instanceName }) => ({
-				tmdbId: entry.tmdbId,
-				title: entry.title,
-				mediaType: entry.mediaType,
-				libraryName: entry.libraryName,
-				addedAt: entry.addedAt!.toISOString(),
-				jellyfinId: entry.jellyfinId,
-				thumb: entry.thumb,
-				instanceId: entry.instanceId,
-				instanceName,
-			}));
+				const items = displayEvidence.sources
+					.flatMap((source) =>
+						source.rows
+							.filter((entry) => entry.addedAt !== null)
+							.map((entry) => ({ entry, instanceName: source.instanceName })),
+					)
+					.sort(
+						(left, right) =>
+							right.entry.addedAt!.getTime() - left.entry.addedAt!.getTime() ||
+							compareStrings(left.entry.instanceId, right.entry.instanceId) ||
+							compareStrings(left.entry.id, right.entry.id),
+					)
+					.slice(0, limit)
+					.map(({ entry, instanceName }) => ({
+						tmdbId: entry.tmdbId,
+						title: entry.title,
+						mediaType: entry.mediaType,
+						libraryName: entry.libraryName,
+						addedAt: entry.addedAt!.toISOString(),
+						jellyfinId: entry.jellyfinId,
+						thumb: entry.thumb,
+						instanceId: entry.instanceId,
+						instanceName,
+					}));
 
-		return reply.send({ items, providerStatus: displayEvidence.providerStatus });
+				return reply.send({ items, providerStatus: displayEvidence.providerStatus });
+			},
+			{ lease: "phase" },
+		);
 	});
 }

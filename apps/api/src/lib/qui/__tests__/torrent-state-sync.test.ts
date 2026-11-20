@@ -16,6 +16,31 @@ vi.mock("../client-factory.js", () => ({
 	createQuiClient: mockCreateQuiClient,
 }));
 
+// Explicit repository INPUT seam for projection/notification unit contracts.
+// Real owner/generation/source fencing is covered by native repository/producer tests.
+vi.mock("../torrent-observation-repository.js", () => ({
+	captureQuiObservationTopology: async () => ({ digest: "synthetic-topology", sourceCount: 1 }),
+	beginQuiObservationPublication: async () => "synthetic-generation",
+	pruneQuiObservationGenerations: async () => {},
+	stageQuiTorrentObservations: async () => {},
+	invalidateQuiObservationPublication: async () => "synthetic-invalid-generation",
+	withQuiObservationGenerationWrite: async (
+		prisma: any,
+		_user: string,
+		_generation: string,
+		operation: any,
+	) => prisma.$transaction(operation),
+	completeQuiObservationPublication: async (
+		prisma: any,
+		_user: string,
+		_generation: string,
+		_digest: string,
+		_count: number,
+		_at: Date,
+		operation: any,
+	) => prisma.$transaction(operation),
+}));
+
 import { withQuiObservationTopologyGuard } from "../observation-topology-guard.js";
 import { runQuiTorrentStateSync } from "../torrent-state-sync.js";
 
@@ -42,6 +67,7 @@ function makeApp(overrides: Record<string, unknown> = {}) {
 	const executeRaw = vi.fn().mockResolvedValue(1);
 	const prisma = {
 		libraryCache: {
+			findFirst: vi.fn().mockResolvedValue({ data: "{}" }),
 			update: libraryCacheUpdate,
 			updateMany: libraryCacheUpdateMany,
 			findMany: libraryCacheFindMany,
@@ -54,6 +80,7 @@ function makeApp(overrides: Record<string, unknown> = {}) {
 			findFirst: serviceInstanceFindFirst,
 			findMany: serviceInstanceFindMany,
 		},
+		quiObservationPublication: { findUnique: vi.fn().mockResolvedValue(null) },
 		$executeRaw: executeRaw,
 		$transaction: vi.fn(),
 	};
@@ -137,8 +164,8 @@ describe("runQuiTorrentStateSync", () => {
 		configureOneUser(app);
 		mockCreateQuiClient.mockReturnValue(
 			completeInventory([
-				{ hash: "AAAA", state: "stalledUP", ratio: 1.5 },
-				{ hash: "BBBB", state: "stalledDL", ratio: 0.1 },
+				{ hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", state: "stalledUP", ratio: 1.5 },
+				{ hash: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB", state: "stalledDL", ratio: 0.1 },
 			]),
 		);
 
@@ -147,7 +174,13 @@ describe("runQuiTorrentStateSync", () => {
 		expect(result).toMatchObject({ torrentsSeen: 2, rowsUpdated: 2, errors: 0 });
 		expect(app.__executeRaw).toHaveBeenCalledTimes(2);
 		expect(app.__executeRaw.mock.calls[0]?.[0].values).toEqual(
-			expect.arrayContaining(["aaaa", "seeding", "bbbb", "stalled_dl", "user-1"]),
+			expect.arrayContaining([
+				"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				"seeding",
+				"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+				"stalled_dl",
+				"user-1",
+			]),
 		);
 		expect(app.__executeRaw.mock.calls[0]?.[0].strings.join("")).toContain(
 			'LOWER(cache."infoHash")',
@@ -161,7 +194,9 @@ describe("runQuiTorrentStateSync", () => {
 		const app = makeApp();
 		configureOneUser(app);
 		mockCreateQuiClient.mockReturnValue(
-			completeInventory([{ hash: "AAAA", state: "uploading", ratio: Number.NaN }]),
+			completeInventory([
+				{ hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", state: "uploading", ratio: Number.NaN },
+			]),
 		);
 
 		await runQuiTorrentStateSync(app);
@@ -176,7 +211,9 @@ describe("runQuiTorrentStateSync", () => {
 		configureOneUser(app);
 		const listAllTorrents = vi
 			.fn()
-			.mockResolvedValue([{ hash: "AAAA", state: "pausedUP", ratio: 1 }]);
+			.mockResolvedValue([
+				{ hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", state: "pausedUP", ratio: 1 },
+			]);
 		mockCreateQuiClient.mockReturnValue({ listAllTorrents });
 
 		await runQuiTorrentStateSync(app);
@@ -198,15 +235,34 @@ describe("runQuiTorrentStateSync", () => {
 			);
 			mockCreateQuiClient.mockImplementation((_app: unknown, selected: { id: string }) =>
 				selected.id === "qui-active"
-					? completeInventory([{ hash: "AAAA", state: "uploading", ratio: 2, instanceId: 1 }])
-					: completeInventory([{ hash: "AAAA", state: "pausedUP", ratio: 1, instanceId: 2 }]),
+					? completeInventory([
+							{
+								hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+								state: "uploading",
+								ratio: 2,
+								instanceId: 1,
+							},
+						])
+					: completeInventory([
+							{
+								hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+								state: "pausedUP",
+								ratio: 1,
+								instanceId: 2,
+							},
+						]),
 			);
 
 			await runQuiTorrentStateSync(app);
 
 			expect(infoHashWrites(app.__executeRaw)).toHaveLength(2);
 			expect(app.__executeRaw.mock.calls[0]?.[0].values).toEqual(
-				expect.arrayContaining(["aaaa", "seeding", null, "user-1"]),
+				expect.arrayContaining([
+					"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+					"seeding",
+					null,
+					"user-1",
+				]),
 			);
 		},
 	);
@@ -216,14 +272,23 @@ describe("runQuiTorrentStateSync", () => {
 		configureOneUser(app, [instance("qui-paused"), instance("qui-unknown")]);
 		mockCreateQuiClient.mockImplementation((_app: unknown, selected: { id: string }) =>
 			selected.id === "qui-paused"
-				? completeInventory([{ hash: "AAAA", state: "pausedUP", ratio: 1 }])
-				: completeInventory([{ hash: "AAAA", state: "futureState", ratio: 1 }]),
+				? completeInventory([
+						{ hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", state: "pausedUP", ratio: 1 },
+					])
+				: completeInventory([
+						{ hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", state: "futureState", ratio: 1 },
+					]),
 		);
 
 		await runQuiTorrentStateSync(app);
 
 		expect(app.__executeRaw.mock.calls[0]?.[0].values).toEqual(
-			expect.arrayContaining(["aaaa", "unknown", null, "user-1"]),
+			expect.arrayContaining([
+				"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				"unknown",
+				null,
+				"user-1",
+			]),
 		);
 	});
 
@@ -234,7 +299,9 @@ describe("runQuiTorrentStateSync", () => {
 		const releaseSecond = deferred();
 		mockCreateQuiClient.mockImplementation((_app: unknown, selected: { id: string }) =>
 			selected.id === "qui-a"
-				? completeInventory([{ hash: "AAAA", state: "uploading", ratio: 1 }])
+				? completeInventory([
+						{ hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", state: "uploading", ratio: 1 },
+					])
 				: {
 						listTorrentInventory: vi.fn().mockImplementation(async () => {
 							secondStarted.resolve();
@@ -258,22 +325,22 @@ describe("runQuiTorrentStateSync", () => {
 		configureOneUser(app);
 		mockCreateQuiClient.mockReturnValue(
 			completeInventory([
-				{ hash: "AAAA", state: "uploading", ratio: 1 },
-				{ hash: "BBBB", state: "pausedUP", ratio: 1 },
+				{ hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", state: "uploading", ratio: 1 },
+				{ hash: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB", state: "pausedUP", ratio: 1 },
 			]),
 		);
 		const firstHashStaged = deferred();
 		const releaseStaging = deferred();
 		const visible = new Map<string, { torrentState: string | null; torrentSyncedAt: Date | null }>([
 			[
-				"aaaa",
+				"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 				{
 					torrentState: "paused",
 					torrentSyncedAt: new Date("2026-07-31T00:00:00.000Z"),
 				},
 			],
 			[
-				"bbbb",
+				"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 				{
 					torrentState: "seeding",
 					torrentSyncedAt: new Date("2026-07-31T00:00:00.000Z"),
@@ -282,8 +349,14 @@ describe("runQuiTorrentStateSync", () => {
 		]);
 		app.__executeRaw.mockImplementation(async (query: { strings?: string[] }) => {
 			if (query.strings?.join("").includes('"library_cache"')) {
-				visible.set("aaaa", { torrentState: "seeding", torrentSyncedAt: null });
-				visible.set("bbbb", { torrentState: "paused", torrentSyncedAt: null });
+				visible.set("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", {
+					torrentState: "seeding",
+					torrentSyncedAt: null,
+				});
+				visible.set("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", {
+					torrentState: "paused",
+					torrentSyncedAt: null,
+				});
 				firstHashStaged.resolve();
 				await releaseStaging.promise;
 				return 2;
@@ -314,8 +387,8 @@ describe("runQuiTorrentStateSync", () => {
 					},
 				};
 				const result = await operation(tx);
-				visible.clear();
-				for (const [hash, value] of staged) visible.set(hash, value);
+				for (const [hash, value] of staged)
+					visible.set(hash, { ...visible.get(hash)!, torrentSyncedAt: value.torrentSyncedAt });
 				return result;
 			},
 		);
@@ -325,22 +398,22 @@ describe("runQuiTorrentStateSync", () => {
 
 		// The state payload may be staged incrementally, but freshness is the
 		// publication marker consumed by preview. Every row remains no_signal.
-		expect(visible.get("aaaa")).toEqual({
+		expect(visible.get("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).toEqual({
 			torrentState: "seeding",
 			torrentSyncedAt: null,
 		});
-		expect(visible.get("bbbb")).toEqual({
+		expect(visible.get("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")).toEqual({
 			torrentState: "paused",
 			torrentSyncedAt: null,
 		});
 
 		releaseStaging.resolve();
 		await sync;
-		expect(visible.get("aaaa")).toEqual({
+		expect(visible.get("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).toEqual({
 			torrentState: "seeding",
 			torrentSyncedAt: expect.any(Date),
 		});
-		expect(visible.get("bbbb")).toEqual({
+		expect(visible.get("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")).toEqual({
 			torrentState: "paused",
 			torrentSyncedAt: expect.any(Date),
 		});
@@ -370,7 +443,9 @@ describe("runQuiTorrentStateSync", () => {
 			httpAuthEncryptionIv: null,
 		});
 		mockCreateQuiClient.mockReturnValue(
-			completeInventory([{ hash: "BBBB", state: "uploading", ratio: 1 }]),
+			completeInventory([
+				{ hash: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB", state: "uploading", ratio: 1 },
+			]),
 		);
 		const stageStarted = deferred();
 		const releaseStage = deferred();
@@ -399,9 +474,10 @@ describe("runQuiTorrentStateSync", () => {
 				return operation(tx);
 			},
 		);
-		app.__libraryCacheUpdate.mockImplementation(async () => {
+		app.__libraryCacheUpdateMany.mockImplementation(async (args: any) => {
+			if (!args.data?.infoHash) return { count: 1 };
 			events.push("writer");
-			return {};
+			return { count: 1 };
 		});
 
 		const sync = runQuiTorrentStateSync(app);
@@ -415,15 +491,37 @@ describe("runQuiTorrentStateSync", () => {
 			arrItemId: 101,
 		});
 		await Promise.resolve();
-		expect(app.__libraryCacheUpdate).not.toHaveBeenCalled();
+		expect(app.__libraryCacheUpdateMany.mock.calls.filter((c: any) => c[0].data?.infoHash)).toEqual(
+			[],
+		);
 
 		releaseStage.resolve();
 		await sync;
 		await expect(writer).resolves.toBe("a".repeat(40));
 
 		expect(events).toEqual(["stage", "publish", "writer"]);
-		expect(app.__libraryCacheUpdate).toHaveBeenCalledWith({
-			where: { id: "movie-1" },
+		expect(app.__libraryCacheUpdateMany).toHaveBeenCalledWith({
+			where: {
+				id: "movie-1",
+				instanceId: "radarr-1",
+				itemType: "movie",
+				arrItemId: 101,
+				data: "{}",
+				infoHash: null,
+				instance: {
+					id: "radarr-1",
+					userId: "user-1",
+					service: "RADARR",
+					enabled: true,
+					baseUrl: "http://radarr.internal",
+					connectionGeneration: undefined,
+					identityGeneration: undefined,
+					encryptedApiKey: "encrypted",
+					encryptionIv: "iv",
+					encryptedHttpAuthCredentials: null,
+					httpAuthEncryptionIv: null,
+				},
+			},
 			data: {
 				infoHash: "a".repeat(40),
 				torrentState: null,
@@ -433,11 +531,11 @@ describe("runQuiTorrentStateSync", () => {
 		});
 	});
 
-	it("stages a large inventory outside the two short publication transactions", async () => {
+	it("stages a large inventory in bounded generation-fenced short transactions", async () => {
 		const app = makeApp();
 		configureOneUser(app);
 		const torrents = Array.from({ length: 1001 }, (_, index) => ({
-			hash: `hash-${index}`,
+			hash: index.toString(16).padStart(40, "0"),
 			state: "uploading",
 			ratio: 1,
 		}));
@@ -472,7 +570,7 @@ describe("runQuiTorrentStateSync", () => {
 		await runQuiTorrentStateSync(app);
 
 		expect(infoHashWrites(app.__executeRaw)).toHaveLength(8);
-		expect(transactionStatementCounts).toEqual([2, 2]);
+		expect(transactionStatementCounts).toEqual([2, ...Array(8).fill(0), 2]);
 	});
 
 	it("clears prior state and publishes no hash when A=paused and B errors", async () => {
@@ -480,7 +578,9 @@ describe("runQuiTorrentStateSync", () => {
 		configureOneUser(app, [instance("qui-paused"), instance("qui-error")]);
 		mockCreateQuiClient.mockImplementation((_app: unknown, selected: { id: string }) =>
 			selected.id === "qui-paused"
-				? completeInventory([{ hash: "AAAA", state: "pausedUP", ratio: 1 }])
+				? completeInventory([
+						{ hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", state: "pausedUP", ratio: 1 },
+					])
 				: { listTorrentInventory: vi.fn().mockRejectedValue(new Error("offline")) },
 		);
 
@@ -500,10 +600,14 @@ describe("runQuiTorrentStateSync", () => {
 		configureOneUser(app, [instance("qui-paused"), instance("qui-partial")]);
 		mockCreateQuiClient.mockImplementation((_app: unknown, selected: { id: string }) =>
 			selected.id === "qui-paused"
-				? completeInventory([{ hash: "AAAA", state: "pausedUP", ratio: 1 }])
+				? completeInventory([
+						{ hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", state: "pausedUP", ratio: 1 },
+					])
 				: {
 						listTorrentInventory: vi.fn().mockResolvedValue({
-							torrents: [{ hash: "AAAA", state: "pausedUP", ratio: 2 }],
+							torrents: [
+								{ hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", state: "pausedUP", ratio: 2 },
+							],
 							complete: false,
 						}),
 					},
@@ -521,9 +625,15 @@ describe("runQuiTorrentStateSync", () => {
 		configureOneUser(app);
 		mockCreateQuiClient.mockReturnValue(completeInventory([]));
 		app.__libraryCacheFindMany.mockImplementation((args: { select?: { title?: boolean } }) =>
-			Promise.resolve(args.select?.title ? [] : [{ id: "movie-1", infoHash: "aaaa" }]),
+			Promise.resolve(
+				args.select?.title
+					? []
+					: [{ id: "movie-1", infoHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }],
+			),
 		);
-		app.__episodeFileCacheFindMany.mockResolvedValue([{ id: "episode-1", infoHash: "bbbb" }]);
+		app.__episodeFileCacheFindMany.mockResolvedValue([
+			{ id: "episode-1", infoHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+		]);
 		app.__episodeFileCacheUpdateMany.mockResolvedValue({ count: 1 });
 
 		const result = await runQuiTorrentStateSync(app);
@@ -560,7 +670,7 @@ describe("runQuiTorrentStateSync", () => {
 		mockCreateQuiClient.mockReturnValue(completeInventory([]));
 		const absentRows = Array.from({ length: 1072 }, (_, index) => ({
 			id: `absent-${index}`,
-			infoHash: `hash-${index}`,
+			infoHash: index.toString(16).padStart(40, "0"),
 		}));
 		app.__libraryCacheFindMany.mockImplementation((args: { select?: { title?: boolean } }) =>
 			Promise.resolve(args.select?.title ? [] : absentRows),
@@ -586,7 +696,9 @@ describe("runQuiTorrentStateSync", () => {
 				inventoryStarted.resolve();
 				await releaseInventory.promise;
 				return {
-					torrents: [{ hash: "AAAA", state: "uploading", ratio: 1 }],
+					torrents: [
+						{ hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", state: "uploading", ratio: 1 },
+					],
 					complete: true,
 				};
 			}),
@@ -623,7 +735,9 @@ describe("runQuiTorrentStateSync", () => {
 		mockCreateQuiClient.mockImplementation((_app: unknown, selected: { userId: string }) =>
 			selected.userId === "user-a"
 				? { listTorrentInventory: vi.fn().mockRejectedValue(new Error("offline")) }
-				: completeInventory([{ hash: "BBBB", state: "uploading", ratio: 1 }]),
+				: completeInventory([
+						{ hash: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB", state: "uploading", ratio: 1 },
+					]),
 		);
 
 		const result = await runQuiTorrentStateSync(app);
@@ -646,8 +760,8 @@ describe("runQuiTorrentStateSync", () => {
 		configureOneUser(app);
 		mockCreateQuiClient.mockReturnValue(
 			completeInventory([
-				{ hash: "AAAA", state: "uploading", ratio: 1 },
-				{ hash: "BBBB", state: "pausedUP", ratio: 1 },
+				{ hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", state: "uploading", ratio: 1 },
+				{ hash: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB", state: "pausedUP", ratio: 1 },
 			]),
 		);
 		app.__libraryCacheUpdateMany
@@ -664,7 +778,7 @@ describe("runQuiTorrentStateSync", () => {
 			where: { instance: { userId: "user-1" } },
 			data: { torrentState: null, torrentRatio: null, torrentSyncedAt: null },
 		});
-		expect(app.prisma.$transaction).toHaveBeenCalledTimes(2);
+		expect(app.prisma.$transaction).toHaveBeenCalledTimes(3);
 	});
 
 	it("rolls back user-wide invalidation when either cache-table clear fails", async () => {
@@ -713,13 +827,23 @@ describe("runQuiTorrentStateSync", () => {
 		configureOneUser(app, [instance("qui-active"), instance("qui-paused")]);
 		mockCreateQuiClient.mockImplementation((_app: unknown, selected: { id: string }) =>
 			selected.id === "qui-active"
-				? completeInventory([{ hash: "AAAA", state: "uploading", ratio: 1 }])
-				: completeInventory([{ hash: "AAAA", state: "pausedUP", ratio: 1 }]),
+				? completeInventory([
+						{ hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", state: "uploading", ratio: 1 },
+					])
+				: completeInventory([
+						{ hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", state: "pausedUP", ratio: 1 },
+					]),
 		);
 		app.__libraryCacheFindMany.mockImplementation((args: { select?: { title?: boolean } }) =>
 			Promise.resolve(
 				args.select?.title
-					? [{ infoHash: "aaaa", torrentState: "downloading", title: "Example" }]
+					? [
+							{
+								infoHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+								torrentState: "downloading",
+								title: "Example",
+							},
+						]
 					: [],
 			),
 		);
@@ -727,19 +851,26 @@ describe("runQuiTorrentStateSync", () => {
 		await runQuiTorrentStateSync(app);
 
 		expect(notify).toHaveBeenCalledTimes(1);
+		expect(notify).toHaveBeenCalledWith(expect.any(Object), { userId: "user-1" });
 	});
 
 	it("coerces a non-finite single-torrent ratio to null", async () => {
 		const app = makeApp();
 		configureOneUser(app);
 		mockCreateQuiClient.mockReturnValue(
-			completeInventory([{ hash: "EEEE", state: "uploading", ratio: Number.POSITIVE_INFINITY }]),
+			completeInventory([
+				{
+					hash: "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
+					state: "uploading",
+					ratio: Number.POSITIVE_INFINITY,
+				},
+			]),
 		);
 
 		await runQuiTorrentStateSync(app);
 
 		expect(app.__executeRaw.mock.calls[0]?.[0].values).toEqual(
-			expect.arrayContaining(["eeee", null, "user-1"]),
+			expect.arrayContaining(["eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", null, "user-1"]),
 		);
 	});
 });
@@ -789,8 +920,16 @@ describePostgres("runQuiTorrentStateSync PostgreSQL staging", () => {
 			);
 			mockCreateQuiClient.mockReturnValue(
 				completeInventory([
-					{ hash: "AAAA", state: "uploading", ratio: 123456.789123456 },
-					{ hash: "BBBB", state: "stalledDL", ratio: Number.NaN },
+					{
+						hash: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+						state: "uploading",
+						ratio: 123456.789123456,
+					},
+					{
+						hash: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+						state: "stalledDL",
+						ratio: Number.NaN,
+					},
 				]),
 			);
 

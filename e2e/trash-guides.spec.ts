@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 /**
  * E2E Tests for TRaSH Guides features on branch fix/auto-sync-diff-error-23
@@ -68,27 +68,59 @@ async function navigateToTrashGuides(page: Page) {
 	// 3. "Rate limit exceeded" (API rate limiting)
 	// 4. "Failed to load" (other API errors)
 	// Use Promise.race to wait for any of these states (avoids strict mode violation)
-	const headingVisible = page.getByRole("heading", { name: "TRaSH Guides", level: 1 }).first().isVisible({ timeout: 15000 }).catch(() => false);
-	const cacheErrorVisible = page.getByText(/cache is not initialized/i).first().isVisible({ timeout: 15000 }).catch(() => false);
-	const rateLimitVisible = page.getByText(/rate limit exceeded/i).first().isVisible({ timeout: 15000 }).catch(() => false);
-	const failedLoadVisible = page.getByText(/failed to load/i).first().isVisible({ timeout: 15000 }).catch(() => false);
+	const headingVisible = page
+		.getByRole("heading", { name: "TRaSH Guides", level: 1 })
+		.first()
+		.isVisible({ timeout: 15000 })
+		.catch(() => false);
+	const cacheErrorVisible = page
+		.getByText(/cache is not initialized/i)
+		.first()
+		.isVisible({ timeout: 15000 })
+		.catch(() => false);
+	const rateLimitVisible = page
+		.getByText(/rate limit exceeded/i)
+		.first()
+		.isVisible({ timeout: 15000 })
+		.catch(() => false);
+	const failedLoadVisible = page
+		.getByText(/failed to load/i)
+		.first()
+		.isVisible({ timeout: 15000 })
+		.catch(() => false);
 
 	// Wait for any condition to be true
 	const result = await Promise.race([
-		headingVisible.then(v => v ? "heading" : null),
-		cacheErrorVisible.then(v => v ? "cache" : null),
-		rateLimitVisible.then(v => v ? "rate" : null),
-		failedLoadVisible.then(v => v ? "failed" : null),
+		headingVisible.then((v) => (v ? "heading" : null)),
+		cacheErrorVisible.then((v) => (v ? "cache" : null)),
+		rateLimitVisible.then((v) => (v ? "rate" : null)),
+		failedLoadVisible.then((v) => (v ? "failed" : null)),
 		page.waitForTimeout(15000).then(() => "timeout"),
 	]);
 
 	if (result === "timeout") {
 		// Check if any element is now visible
 		const anyVisible =
-			await page.getByRole("heading", { name: "TRaSH Guides", level: 1 }).first().isVisible().catch(() => false) ||
-			await page.getByText(/cache is not initialized/i).first().isVisible().catch(() => false) ||
-			await page.getByText(/rate limit exceeded/i).first().isVisible().catch(() => false) ||
-			await page.getByText(/failed to load/i).first().isVisible().catch(() => false);
+			(await page
+				.getByRole("heading", { name: "TRaSH Guides", level: 1 })
+				.first()
+				.isVisible()
+				.catch(() => false)) ||
+			(await page
+				.getByText(/cache is not initialized/i)
+				.first()
+				.isVisible()
+				.catch(() => false)) ||
+			(await page
+				.getByText(/rate limit exceeded/i)
+				.first()
+				.isVisible()
+				.catch(() => false)) ||
+			(await page
+				.getByText(/failed to load/i)
+				.first()
+				.isVisible()
+				.catch(() => false));
 
 		if (!anyVisible) {
 			throw new Error("TRaSH Guides page did not load within timeout");
@@ -116,31 +148,50 @@ test.describe("TRaSH Guides - Template Management", () => {
 	});
 
 	test("should display templates with service type badges or empty state", async ({ page }) => {
-		// Skip if rate limited
-		if (await isRateLimited(page)) {
-			test.skip(true, "Rate limited by TRaSH Guides API");
-			return;
+		const reads: Record<string, unknown> = {
+			"/api/trash-guides/cache/status": {
+				radarr: [],
+				sonarr: [],
+				stats: { totalEntries: 0, staleEntries: 0, totalSizeBytes: 0 },
+			},
+			"/api/trash-guides/templates": { templates: [], count: 0 },
+		};
+		for (const [pathname, body] of Object.entries(reads)) {
+			await page.route(
+				(url) => url.pathname === pathname,
+				async (route) => {
+					expect(route.request().method()).toBe("GET");
+					await route.fulfill({
+						status: 200,
+						contentType: "application/json",
+						body: JSON.stringify(body),
+					});
+				},
+			);
 		}
-
-		// Look for template cards OR empty state (no templates in CI)
-		const templateCards = page.locator("article");
-		const emptyState = page.getByText(/no templates|create.*template|get started/i);
-
-		const hasTemplates = await templateCards.first().isVisible({ timeout: 10000 }).catch(() => false);
-		const hasEmptyState = await emptyState.first().isVisible({ timeout: 2000 }).catch(() => false);
-
-		// Either templates exist or we see an empty state message
-		if (hasTemplates) {
-			// Check that template cards show service type (RADARR or SONARR)
-			const serviceBadge = page
-				.locator("article")
-				.first()
-				.getByText(/RADARR|SONARR/i);
-			await expect(serviceBadge).toBeVisible();
-		} else {
-			// In CI without templates, empty state is acceptable
-			expect(hasEmptyState || true).toBe(true);
-		}
+		const templatesLoaded = page.waitForResponse(
+			(response) =>
+				new URL(response.url()).pathname === "/api/trash-guides/templates" &&
+				response.request().method() === "GET",
+		);
+		await page.goto(`${BASE_URL}/trash-guides`);
+		expect((await templatesLoaded).status()).toBe(200);
+		await expect(
+			page.getByRole("heading", { name: "TRaSH Guides", exact: true, level: 1 }),
+		).toBeVisible();
+		await expect(
+			page.getByRole("heading", { name: "Templates", exact: true, level: 2 }),
+		).toBeVisible();
+		await expect(page.getByText("No templates yet", { exact: true })).toBeVisible();
+		await expect(
+			page.getByText("Create your first template to get started with TRaSH Guides deployment", {
+				exact: true,
+			}),
+		).toBeVisible();
+		await expect(page.locator("article")).toHaveCount(0);
+		await expect(
+			page.getByText(/rate limit exceeded|failed to load (?:cache status|templates)/i),
+		).toHaveCount(0);
 	});
 
 	test("should have Template Stats button on templates", async ({ page }) => {
@@ -315,7 +366,8 @@ test.describe("TRaSH Guides - Update Scheduler Dashboard", () => {
 
 		// Wait for the scheduler section to load
 		const schedulerLoaded = await page
-			.getByText("Update Scheduler").first()
+			.getByText("Update Scheduler")
+			.first()
 			.isVisible({ timeout: 5000 })
 			.catch(() => false);
 
@@ -346,7 +398,8 @@ test.describe("TRaSH Guides - Update Scheduler Dashboard", () => {
 
 		// Wait for scheduler section
 		const schedulerLoaded = await page
-			.getByText("Update Scheduler").first()
+			.getByText("Update Scheduler")
+			.first()
 			.isVisible({ timeout: 5000 })
 			.catch(() => false);
 
@@ -386,7 +439,8 @@ test.describe("TRaSH Guides - Update Scheduler Dashboard", () => {
 
 		// Wait for scheduler section - may not load if rate limited
 		const schedulerLoaded = await page
-			.getByText("Update Scheduler").first()
+			.getByText("Update Scheduler")
+			.first()
 			.isVisible({ timeout: 5000 })
 			.catch(() => false);
 
@@ -425,7 +479,8 @@ test.describe("TRaSH Guides - Update Scheduler Dashboard", () => {
 
 		// Wait for scheduler section - may fail due to rate limiting
 		const schedulerLoaded = await page
-			.getByText("Update Scheduler").first()
+			.getByText("Update Scheduler")
+			.first()
 			.isVisible({ timeout: 5000 })
 			.catch(() => false);
 
@@ -621,14 +676,7 @@ test.describe("TRaSH Guides - Navigation", () => {
 
 		// Test all tabs - using locator approach for reliable tab finding
 		// Tab names as they appear in the actual UI:
-		const tabs = [
-			"Templates",
-			"Custom Formats",
-			"Bulk Scores",
-			"History",
-			"Scheduler",
-			"Cache",
-		];
+		const tabs = ["Templates", "Custom Formats", "Bulk Scores", "History", "Scheduler", "Cache"];
 
 		for (const tabName of tabs) {
 			// Use locator with filter for more reliable tab finding

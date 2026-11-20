@@ -13,8 +13,8 @@ export class DedupGate {
 		if (this.cleanupTimer.unref) this.cleanupTimer.unref();
 	}
 
-	isDuplicate(payload: NotificationPayload): boolean {
-		const key = this.computeKey(payload);
+	isDuplicate(payload: NotificationPayload, userId?: string): boolean {
+		const key = this.computeKey(payload, userId);
 		const now = Date.now();
 		const existing = this.seen.get(key);
 		if (existing && now - existing < this.ttlMs) {
@@ -24,8 +24,8 @@ export class DedupGate {
 		return false;
 	}
 
-	private computeKey(payload: NotificationPayload): string {
-		const data = `${payload.eventType}:${payload.title}:${payload.body}`;
+	private computeKey(payload: NotificationPayload, userId?: string): string {
+		const data = `${userId ?? "system"}:${payload.eventType}:${payload.title}:${payload.body}`;
 		return createHash("sha256").update(data).digest("hex");
 	}
 

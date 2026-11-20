@@ -1,9 +1,9 @@
-import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { SqliteSchemaFixture } from "../../__tests__/sqlite-schema-fixture.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import { ArrClientFactory } from "../../arr/client-factory.js";
 import { Encryptor } from "../../auth/encryption.js";
@@ -52,6 +52,11 @@ const silentLog = {
 } as unknown as CleanupExecutorDeps["log"];
 
 type ProviderFamily = "jellyfin" | "tautulli";
+const sqliteSchema = new SqliteSchemaFixture();
+
+beforeAll(() => sqliteSchema.initialize(), 90_000);
+afterAll(() => sqliteSchema.dispose());
+
 type Fixture = {
 	directory: string;
 	prisma: PrismaClient;
@@ -180,11 +185,7 @@ async function createFixture(
 ): Promise<Fixture> {
 	const directory = mkdtempSync(join(tmpdir(), "positive-watch-cleanup-"));
 	const databasePath = join(directory, "fixture.db");
-	execFileSync("pnpm", ["exec", "prisma", "db", "push", "--schema", "prisma/schema.prisma"], {
-		cwd: process.cwd(),
-		env: { ...process.env, DATABASE_URL: `file:${databasePath}` },
-		stdio: "ignore",
-	});
+	sqliteSchema.copyTo(databasePath);
 	const prisma = createTestPrismaClient(databasePath);
 	await prisma.user.create({ data: { id: USER_ID, username: USER_ID } });
 	const arrCredentials = encryptor.encrypt("radarr-fixture-key");
@@ -316,6 +317,10 @@ async function createFixture(
 			hasFile: true,
 			sizeOnDisk: 2_000,
 			data: JSON.stringify({
+				id: MOVIE_ID,
+				instanceId: arr.id,
+				type: "movie",
+				monitored: true,
 				_arrDashboardSource: { serviceFingerprint: createArrServiceFingerprint(arr) },
 				service: "radarr",
 				remoteIds: { tmdbId: TMDB_ID },
@@ -415,6 +420,15 @@ describe.each(["jellyfin", "tautulli"] as const)(
 					where: { id: "positive-watch-cache" },
 				}),
 			).toMatchObject({ monitored: false });
+			expect(
+				JSON.parse(
+					(
+						await fixture.prisma.libraryCache.findUniqueOrThrow({
+							where: { id: "positive-watch-cache" },
+						})
+					).data,
+				).monitored,
+			).toBe(false);
 		}, 15_000);
 
 		it("leaves the ARR target untouched and expires the intent when reproof changes", async () => {

@@ -1,7 +1,9 @@
 "use client";
 
 import type { CreateTemplateRequest, UpdateTemplateRequest } from "@arr/shared";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { InvalidSuccessResponseError } from "../../lib/api-client/base";
 import {
 	createTemplate,
 	deleteTemplate,
@@ -18,6 +20,7 @@ import {
 	type TemplateStatsResponse,
 	updateTemplate,
 } from "../../lib/api-client/trash-guides";
+import { getErrorMessage } from "../../lib/error-utils";
 
 // ============================================================================
 // Query Key Constants
@@ -154,18 +157,40 @@ export const useImportTemplate = () => {
 	});
 };
 
+const ENHANCED_IMPORT_MUTATION = {
+	mutationKey: ["trash-guides", "templates", "enhanced-import"],
+	exact: true,
+} as const;
+
 /**
  * Hook to import a template with enhanced options (validation, conflict resolution)
  */
 export const useEnhancedImportTemplate = () => {
 	const queryClient = useQueryClient();
-
-	return useMutation({
-		mutationFn: (payload: EnhancedImportTemplatePayload) => importEnhancedTemplate(payload),
+	const isPending = useIsMutating(ENHANCED_IMPORT_MUTATION) > 0;
+	const { mutate } = useMutation({
+		mutationKey: ENHANCED_IMPORT_MUTATION.mutationKey,
+		networkMode: "always",
+		retry: false,
+		mutationFn: async (payload: EnhancedImportTemplatePayload) => {
+			const result = await importEnhancedTemplate(payload);
+			if (result?.success !== true) throw new InvalidSuccessResponseError();
+			return result;
+		},
 		onSuccess: () => {
 			void queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
+			toast.success("Template imported successfully");
+		},
+		onError: (error) => {
+			toast.error(getErrorMessage(error, "Failed to import template"));
 		},
 	});
+
+	return {
+		mutate,
+		isPending,
+		hasPendingImport: () => queryClient.isMutating(ENHANCED_IMPORT_MUTATION) > 0,
+	};
 };
 
 /**

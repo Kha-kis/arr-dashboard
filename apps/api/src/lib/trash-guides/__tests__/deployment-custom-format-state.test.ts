@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { describe, expect, it, vi } from "vitest";
 import {
 	type CustomFormatRollbackState,
@@ -421,12 +422,151 @@ describe("Custom Format intended post-state tokens", () => {
 		expect(matchesIntendedCustomFormatPostStateToken(metadataRichSonarrReadback, token)).toBe(true);
 	});
 
-	it("does not apply the Sonarr exception to a Radarr recovery token", () => {
+	it("recognizes Radarr's one omitted false default despite readback metadata", () => {
 		const token = createIntendedCustomFormatPostStateToken(intended, "RADARR");
-		expect(matchesIntendedCustomFormatPostStateToken(metadataRichSonarrReadback, token)).toBe(
+		expect(matchesIntendedCustomFormatPostStateToken(intended, token)).toBe(true);
+		expect(matchesIntendedCustomFormatPostStateToken(metadataRichSonarrReadback, token)).toBe(true);
+	});
+
+	it("keeps independently constructed older Radarr v2 tokens strict", () => {
+		const oldShape = {
+			id: true,
+			includeCustomFormatWhenRenaming: true,
+			name: true,
+			specifications: [
+				{
+					fields: [{ name: true, value: true }],
+					implementation: true,
+					name: true,
+					negate: true,
+					required: true,
+				},
+			],
+		};
+		const oldToken = [
+			"arr-dashboard-custom-format-writable-v2",
+			"RADARR",
+			"-",
+			Buffer.from(JSON.stringify(oldShape)).toString("base64url"),
+			createUpstreamResourceStateToken(intended),
+		].join(":");
+		expect(matchesIntendedCustomFormatPostStateToken(intended, oldToken)).toBe(true);
+		expect(matchesIntendedCustomFormatPostStateToken(metadataRichSonarrReadback, oldToken)).toBe(
 			false,
 		);
 	});
+
+	it.each(["SONARR", "RADARR"])(
+		"rejects non-default values, duplicates and writable drift in new %s recovery tokens",
+		(service) => {
+			const token = createIntendedCustomFormatPostStateToken(intended, service);
+			for (const fields of [
+				[
+					{ name: "value", value: 1 },
+					{ name: "exceptLanguage", value: true },
+				],
+				[
+					{ name: "value", value: 1 },
+					{ name: "exceptLanguage", value: "false" },
+				],
+				[
+					{ name: "value", value: 1 },
+					{ name: "exceptLanguage", value: false },
+					{ name: "exceptLanguage", value: false },
+				],
+				[
+					{ name: "value", value: 1 },
+					{ name: "exceptLanguage", value: true },
+					{ name: "exceptLanguage", value: true },
+				],
+				[
+					{ name: "value", value: 1 },
+					{ name: "exceptLanguage", value: false },
+					{ name: "exceptLanguage", value: true },
+				],
+				[
+					{ name: "value", value: 1 },
+					{ name: "exceptLanguage", value: true },
+					{ name: "exceptLanguage", value: false },
+				],
+				[
+					{ name: "value", value: 2 },
+					{ name: "exceptLanguage", value: false },
+				],
+				[{ name: "exceptLanguage", value: false }],
+				[
+					{ name: "value", value: 1 },
+					{ name: "unexpected", value: false },
+					{ name: "exceptLanguage", value: false },
+				],
+			]) {
+				const actual = { ...intended, specifications: [{ ...intended.specifications[0], fields }] };
+				expect(
+					matchesIntendedCustomFormatPostStateToken(actual, token),
+					JSON.stringify(fields),
+				).toBe(false);
+			}
+			for (const drift of [
+				{ name: "Changed CF" },
+				{ includeCustomFormatWhenRenaming: true },
+				{ specifications: [{ ...metadataRichSonarrReadback.specifications[0], negate: false }] },
+				{
+					specifications: [
+						...metadataRichSonarrReadback.specifications,
+						intended.specifications[0],
+					],
+				},
+			]) {
+				expect(
+					matchesIntendedCustomFormatPostStateToken(
+						{ ...metadataRichSonarrReadback, ...drift },
+						token,
+					),
+				).toBe(false);
+			}
+		},
+	);
+
+	it.each(["SONARR", "RADARR"])(
+		"preserves explicit true and false intent in %s recovery tokens",
+		(service) => {
+			for (const value of [true, false]) {
+				const explicit = {
+					...intended,
+					specifications: [
+						{
+							...intended.specifications[0],
+							fields: [
+								{ name: "value", value: 1 },
+								{ name: "exceptLanguage", value },
+							],
+						},
+					],
+				};
+				const token = createIntendedCustomFormatPostStateToken(explicit, service);
+				expect(matchesIntendedCustomFormatPostStateToken(explicit, token)).toBe(true);
+				for (const fields of [
+					[{ name: "value", value: 1 }],
+					[...explicit.specifications[0]!.fields].reverse(),
+					[
+						{ name: "value", value: 1 },
+						{ name: "exceptLanguage", value: !value },
+					],
+					[...explicit.specifications[0]!.fields, { name: "exceptLanguage", value }],
+				]) {
+					expect(
+						matchesIntendedCustomFormatPostStateToken(
+							{
+								...explicit,
+								specifications: [{ ...explicit.specifications[0], fields }],
+							},
+							token,
+						),
+					).toBe(false);
+				}
+			}
+		},
+	);
 
 	it.each([
 		[
@@ -553,7 +693,7 @@ describe("Custom Format intended post-state tokens", () => {
 		["field label", {}, { label: "Changed label" }],
 		["field type", {}, { type: "text" }],
 	])(
-		"rejects drift in an explicitly intended %s after Sonarr materializes a default",
+		"rejects drift in an explicitly intended %s after either service materializes a default",
 		(_label, specificationDrift, fieldDrift) => {
 			const intendedWithMetadata = {
 				...intended,
@@ -571,7 +711,9 @@ describe("Custom Format intended post-state tokens", () => {
 					},
 				],
 			};
-			const token = createIntendedCustomFormatPostStateToken(intendedWithMetadata, "SONARR");
+			const tokens = ["SONARR", "RADARR"].map((service) =>
+				createIntendedCustomFormatPostStateToken(intendedWithMetadata, service),
+			);
 			const metadataRichReadback = {
 				...intendedWithMetadata,
 				specifications: [
@@ -601,8 +743,10 @@ describe("Custom Format intended post-state tokens", () => {
 					},
 				],
 			};
-			expect(matchesIntendedCustomFormatPostStateToken(unchangedReadback, token)).toBe(true);
-			expect(matchesIntendedCustomFormatPostStateToken(metadataRichReadback, token)).toBe(false);
+			for (const token of tokens) {
+				expect(matchesIntendedCustomFormatPostStateToken(unchangedReadback, token)).toBe(true);
+				expect(matchesIntendedCustomFormatPostStateToken(metadataRichReadback, token)).toBe(false);
+			}
 		},
 	);
 });

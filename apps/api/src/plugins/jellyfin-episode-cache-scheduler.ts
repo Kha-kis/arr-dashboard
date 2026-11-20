@@ -7,28 +7,48 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
+import { withIsolatedRuntimePrismaReadClient } from "../lib/backup/restore-runtime-client.js";
 import { runJellyfinCacheRefreshSingleFlight } from "../lib/jellyfin/jellyfin-cache-singleflight.js";
 import { refreshOwnedJellyfinEpisodeCache } from "../lib/jellyfin/jellyfin-episode-cache-refresher.js";
+import { cleanupObsoleteJellyfinEpisodeGenerations } from "../lib/jellyfin/jellyfin-episode-generation-repository.js";
 import {
 	JELLYFIN_EPISODE_PARENT_REFRESH_CONTINUATION_DELAY_MS,
 	JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS,
 } from "../lib/jellyfin/jellyfin-episode-refresh-policy.js";
+import { cleanupCompletedJellyfinEpisodeArtifacts } from "../lib/jellyfin/jellyfin-native-watch-repository.js";
+import {
+	CleanupMaintenanceConflictError,
+	withIndependentCleanupOperationGuard,
+} from "../lib/library-cleanup/cleanup-maintenance-gate.js";
 import type { ServiceInstance } from "../lib/prisma.js";
 import type { AutomaticObservationRenewalMode } from "../lib/provider-observation/observation-run-repository.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
-import { ensureEpisodeRefreshScheduler } from "../lib/services/episode-refresh-scheduler-bridge.js";
-import { createProviderPublicationAuthority } from "../lib/services/provider-identity-guard.js";
+import {
+	type EpisodeRefreshRetryResult,
+	ensureEpisodeRefreshScheduler,
+} from "../lib/services/episode-refresh-scheduler-bridge.js";
+import {
+	createProviderPublicationAuthority,
+	ProviderIdentityGuardError,
+} from "../lib/services/provider-identity-guard.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const STARTUP_DELAY_MS = 6 * 60 * 1000; // 6 minutes (after jellyfin-cache populates)
 const TRANSIENT_IDENTITY_RETRY_DELAYS_MS = [30_000, 120_000, 600_000] as const;
+const FIRST_CLAIM_CONTENTION_RETRY_DELAY_MS = 2_000;
+const CLAIM_CONTENTION_RETRY_DELAY_MS = 10_000;
 const MAX_CATALOG_REPLANS_PER_CHAIN = 1;
+const COMPLETED_RUN_RETRY_DELAYS_MS = [30_000, 60_000, 120_000] as const;
+
+type CompletedRunRetry = { runId: string; index: number };
 
 export async function refreshScheduledJellyfinEpisodeCacheInstance(
-	app: Pick<FastifyInstance, "encryptor" | "prisma" | "log">,
+	app: Pick<FastifyInstance, "encryptor" | "prisma" | "log" | "config">,
 	instance: ServiceInstance,
 	resumeFailed = true,
 	automaticRenewal: AutomaticObservationRenewalMode | "none" = "none",
+	signal?: AbortSignal,
+	expectedCompletedRunId?: string,
 ): Promise<Awaited<ReturnType<typeof refreshOwnedJellyfinEpisodeCache>> | null> {
 	try {
 		const authority = createProviderPublicationAuthority(instance);
@@ -38,11 +58,16 @@ export async function refreshScheduledJellyfinEpisodeCacheInstance(
 			async () =>
 				await refreshOwnedJellyfinEpisodeCache({
 					prisma: app.prisma,
+					signal,
+					...(typeof app.config?.DATABASE_URL === "string"
+						? { databaseUrl: app.config.DATABASE_URL }
+						: {}),
 					encryptor: app.encryptor,
 					instance,
 					log: app.log,
 					resumeFailed,
 					...(automaticRenewal !== "none" ? { automaticRenewal } : {}),
+					...(expectedCompletedRunId ? { expectedCompletedRunId } : {}),
 				}),
 		);
 		app.log.info(
@@ -55,7 +80,18 @@ export async function refreshScheduledJellyfinEpisodeCacheInstance(
 			"Jellyfin episode cache refresh completed",
 		);
 		return result;
-	} catch {
+	} catch (error) {
+		if (
+			signal?.aborted &&
+			error instanceof ProviderIdentityGuardError &&
+			error.code === "PUBLICATION_CANCELLED"
+		) {
+			app.log.info(
+				{ instanceId: instance.id, category: "refresh-cancelled" },
+				"Jellyfin episode cache refresh cancelled during shutdown",
+			);
+			return null;
+		}
 		app.log.error(
 			{ instanceId: instance.id, category: "refresh-failed" },
 			"Jellyfin episode cache refresh failed for instance",
@@ -66,6 +102,7 @@ export async function refreshScheduledJellyfinEpisodeCacheInstance(
 
 const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
+		const cancellation = new AbortController();
 		let intervalHandle: ReturnType<typeof setInterval> | null = null;
 		let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
 		let isRunning = false;
@@ -77,7 +114,22 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			string,
 			{ handle: ReturnType<typeof setTimeout>; deadline: number }
 		>();
-		const admittedPageTasks = new Set<Promise<void>>();
+		const pendingOperations = new Set<Promise<void>>();
+
+		async function runAccepted<T>(operation: () => Promise<T>): Promise<T> {
+			let finish!: () => void;
+			const completion = new Promise<void>((resolve) => {
+				finish = resolve;
+			});
+			// Retain lookups and cleanup as well as independently admitted pages.
+			pendingOperations.add(completion);
+			try {
+				return await withIndependentCleanupOperationGuard(operation);
+			} finally {
+				pendingOperations.delete(completion);
+				finish();
+			}
+		}
 
 		async function refreshInstance(
 			instance: ServiceInstance,
@@ -85,6 +137,7 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			transientIdentityRetry = 0,
 			catalogReplans = 0,
 			automaticRenewal: AutomaticObservationRenewalMode | "none" = "none",
+			completedRunRetry?: CompletedRunRetry,
 		) {
 			if (closing || runningInstances.has(instance.id) || pendingInstanceIds.has(instance.id))
 				return;
@@ -95,14 +148,51 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			}
 			runningInstances.add(instance.id);
 			let effectiveTransientIdentityRetry = transientIdentityRetry;
+			let retryAfterOuterRefusal = false;
+			let retryAfterLocalRefusal = false;
 			try {
 				const result = await refreshScheduledJellyfinEpisodeCacheInstance(
 					app,
 					instance,
 					resumeFailed,
 					automaticRenewal,
+					cancellation.signal,
+					completedRunRetry?.runId,
 				);
 				if (closing) return;
+				if (completedRunRetry) {
+					if (result?.progressed && !result.complete) {
+						scheduleContinuation(
+							instance,
+							JELLYFIN_EPISODE_SUCCESSFUL_PROGRESS_CONTINUATION_DELAY_MS,
+							transientIdentityRetry,
+							catalogReplans,
+							automaticRenewal,
+						);
+						return;
+					}
+					const index = completedRunRetry.index + 1;
+					const delay = COMPLETED_RUN_RETRY_DELAYS_MS[index];
+					if (
+						delay !== undefined &&
+						(result?.retryableOuterAttemptContention ||
+							result?.retryableDependencyFailure ||
+							result?.retryableClaimContention ||
+							result?.retryablePreRenewalFailure ||
+							result?.parentRefreshPending)
+					) {
+						scheduleContinuation(
+							instance,
+							delay,
+							transientIdentityRetry,
+							catalogReplans,
+							automaticRenewal,
+							false,
+							{ runId: completedRunRetry.runId, index },
+						);
+					}
+					return;
+				}
 				if (!result) {
 					const transientDelay = TRANSIENT_IDENTITY_RETRY_DELAYS_MS[transientIdentityRetry];
 					if (transientDelay === undefined) return;
@@ -143,18 +233,25 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 				}
 				if (result.renewalDeferred) return;
 				if (result.progressed) effectiveTransientIdentityRetry = 0;
+				retryAfterOuterRefusal = result.retryableOuterAttemptContention === true;
+				retryAfterLocalRefusal = retryAfterOuterRefusal || result.retryableClaimContention === true;
 				const activeRun =
 					result.errors > 0
-						? await app.prisma.providerObservationRun.findFirst({
-								where: {
-									instanceId: instance.id,
-									provider: "jellyfin_episode",
-									cacheType: "jellyfin_episode",
-									state: { in: ["running", "failed"] },
-									activeSlotKey: { not: null },
-								},
-								select: { state: true, nextAttemptAt: true },
-							})
+						? await withIsolatedRuntimePrismaReadClient(
+								app.prisma,
+								(reader) =>
+									reader.providerObservationRun.findFirst({
+										where: {
+											instanceId: instance.id,
+											provider: "jellyfin_episode",
+											cacheType: "jellyfin_episode",
+											state: { in: ["running", "failed"] },
+											activeSlotKey: { not: null },
+										},
+										select: { state: true, nextAttemptAt: true },
+									}),
+								{ maxWait: 5_000, signal: cancellation.signal },
+							)
 						: null;
 				if (closing) return;
 				let nextTransientIdentityRetry = effectiveTransientIdentityRetry;
@@ -169,20 +266,81 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 						if (activeRun || catalogReplans >= MAX_CATALOG_REPLANS_PER_CHAIN) return;
 						delay = 30_000;
 						nextCatalogReplans += 1;
-					} else if (!activeRun) return;
-					else if (activeRun.state === "failed") {
-						if (!activeRun.nextAttemptAt) return;
-						delay = Math.max(0, activeRun.nextAttemptAt.getTime() - Date.now());
-					} else {
-						const retryCount = effectiveTransientIdentityRetry;
-						const transientDelay = TRANSIENT_IDENTITY_RETRY_DELAYS_MS[retryCount];
-						if (transientDelay === undefined) return;
-						delay = transientDelay;
-						nextTransientIdentityRetry = retryCount + 1;
+					} else if (!activeRun && !retryAfterOuterRefusal) return;
+					else {
+						const retryAt = activeRun?.state === "failed" ? activeRun.nextAttemptAt : null;
+						const untilRetry = retryAt ? retryAt.getTime() - Date.now() : null;
+						if (activeRun?.state === "failed" && !retryAfterOuterRefusal && untilRetry === null)
+							return;
+						if (untilRetry !== null && (untilRetry > 0 || !retryAfterOuterRefusal)) {
+							delay = Math.max(0, untilRetry);
+						} else {
+							// A refused outer claim cannot advance an already-due deadline.
+							// Consume the finite retry budget instead of scheduling at zero.
+							const retryCount = effectiveTransientIdentityRetry;
+							const transientDelay = TRANSIENT_IDENTITY_RETRY_DELAYS_MS[retryCount];
+							if (transientDelay === undefined) {
+								// The page work is done. Give this exact generation a bounded
+								// chance to reenter the ordinary, fenced publication path.
+								if (!retryAfterOuterRefusal || activeRun?.state !== "running") return;
+								const completedRun = await withIsolatedRuntimePrismaReadClient(
+									app.prisma,
+									(reader) =>
+										reader.providerObservationRun.findFirst({
+											where: {
+												instanceId: instance.id,
+												provider: "jellyfin_episode",
+												cacheType: "jellyfin_episode",
+												state: "running",
+												activeSlotKey: { not: null },
+												connectionGeneration: instance.connectionGeneration,
+												identityGeneration: instance.identityGeneration,
+												totalUnits: { gt: 0 },
+											},
+											select: { id: true, totalUnits: true, completedUnits: true },
+										}),
+									{ maxWait: 5_000, signal: cancellation.signal },
+								);
+								if (
+									completedRun &&
+									completedRun.totalUnits > 0 &&
+									completedRun.completedUnits === completedRun.totalUnits
+								) {
+									scheduleContinuation(
+										instance,
+										COMPLETED_RUN_RETRY_DELAYS_MS[0],
+										retryCount,
+										catalogReplans,
+										automaticRenewal,
+										false,
+										{ runId: completedRun.id, index: 0 },
+									);
+								}
+								return;
+							}
+							const activeLocalContention =
+								retryAfterLocalRefusal && activeRun?.state === "running";
+							if (retryCount === 0 && activeLocalContention) {
+								delay = FIRST_CLAIM_CONTENTION_RETRY_DELAY_MS;
+							} else {
+								delay =
+									activeLocalContention || result.retryableClaimContention
+										? CLAIM_CONTENTION_RETRY_DELAY_MS
+										: transientDelay;
+							}
+							nextTransientIdentityRetry = retryCount + 1;
+						}
 					}
 				}
-				scheduleContinuation(instance, delay, nextTransientIdentityRetry, nextCatalogReplans);
+				scheduleContinuation(
+					instance,
+					delay,
+					nextTransientIdentityRetry,
+					nextCatalogReplans,
+					automaticRenewal,
+				);
 			} catch {
+				if (closing) return;
 				app.log.error(
 					{ category: "episode-continuation-state-failed" },
 					"Jellyfin episode cache continuation state unavailable",
@@ -194,6 +352,7 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 						transientDelay,
 						effectiveTransientIdentityRetry + 1,
 						catalogReplans,
+						retryAfterLocalRefusal ? automaticRenewal : "none",
 					);
 				}
 			} finally {
@@ -225,6 +384,8 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			transientIdentityRetry: number,
 			catalogReplans: number,
 			automaticRenewal: AutomaticObservationRenewalMode | "none" = "none",
+			resumeFailed = false,
+			completedRunRetry?: CompletedRunRetry,
 		) {
 			if (closing || pendingInstanceIds.has(instance.id)) return;
 			pendingInstanceIds.add(instance.id);
@@ -233,32 +394,59 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 				pendingInstanceIds.delete(instance.id);
 				void admitRefreshInstance(
 					instance,
-					false,
+					resumeFailed,
 					transientIdentityRetry,
 					catalogReplans,
 					automaticRenewal,
+					delay,
+					"detached",
+					completedRunRetry,
 				);
 			}, delay);
 			continuationHandles.add(handle);
 		}
 
-		function admitRefreshInstance(
+		async function admitRefreshInstance(
 			instance: ServiceInstance,
 			resumeFailed: boolean,
 			transientIdentityRetry = 0,
 			catalogReplans = 0,
 			automaticRenewal: AutomaticObservationRenewalMode | "none" = "none",
+			admissionRetryDelay: number = TRANSIENT_IDENTITY_RETRY_DELAYS_MS[0],
+			observation: "detached" | "covered-by-round" = "detached",
+			completedRunRetry?: CompletedRunRetry,
 		): Promise<void> {
-			const pageTask = refreshInstance(
-				instance,
-				resumeFailed,
-				transientIdentityRetry,
-				catalogReplans,
-				automaticRenewal,
-			).then(() => undefined);
-			admittedPageTasks.add(pageTask);
-			void pageTask.finally(() => admittedPageTasks.delete(pageTask)).catch(() => undefined);
-			return pageTask;
+			if (closing || runningInstances.has(instance.id) || pendingInstanceIds.has(instance.id))
+				return;
+			try {
+				await runAccepted(() => {
+					const refresh = () =>
+						refreshInstance(
+							instance,
+							resumeFailed,
+							transientIdentityRetry,
+							catalogReplans,
+							automaticRenewal,
+							completedRunRetry,
+						);
+					return observation === "covered-by-round"
+						? refresh()
+						: app.schedulerRegistry.observeAlreadyAdmitted(JOB_ID.jellyfinEpisodeCache, refresh);
+				});
+			} catch (error) {
+				if (!(error instanceof CleanupMaintenanceConflictError)) throw error;
+				// Maintenance did not run a provider attempt or consume either retry budget.
+				scheduleContinuation(
+					instance,
+					Math.max(TRANSIENT_IDENTITY_RETRY_DELAYS_MS[0], admissionRetryDelay),
+					transientIdentityRetry,
+					catalogReplans,
+					automaticRenewal,
+					resumeFailed,
+					completedRunRetry,
+				);
+				app.log.debug("Jellyfin episode cache page paused for database maintenance");
+			}
 		}
 
 		async function refreshAllEpisodeCaches(
@@ -272,20 +460,62 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			}
 			isRunning = true;
 			try {
-				await app.schedulerRegistry.track(JOB_ID.jellyfinEpisodeCache, async () => {
-					const instances = await app.prisma.serviceInstance.findMany({
-						where: { service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-					});
+				await runAccepted(() =>
+					app.schedulerRegistry.track(JOB_ID.jellyfinEpisodeCache, async () => {
+						const instances = await app.prisma.serviceInstance.findMany({
+							where: { service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
+						});
 
-					if (instances.length === 0) return;
+						if (closing || instances.length === 0) return;
 
-					await Promise.all(
-						instances.map(
-							async (instance) =>
-								await admitRefreshInstance(instance, resumeFailed, 0, 0, automaticRenewal),
-						),
-					);
-				});
+						await Promise.all(
+							instances.map(async (instance) => {
+								if (closing) return;
+								try {
+									await cleanupCompletedJellyfinEpisodeArtifacts(app.prisma, instance.id, {
+										signal: cancellation.signal,
+										dbProvider: app.dbProvider,
+									});
+								} catch (error) {
+									if (cancellation.signal.aborted && error === cancellation.signal.reason) return;
+									app.log.warn(
+										{ category: "jellyfin-episode-post-publication-cleanup-failed" },
+										"Jellyfin episode post-publication cleanup deferred",
+									);
+								}
+								if (closing) return;
+								try {
+									await cleanupObsoleteJellyfinEpisodeGenerations(
+										app.prisma,
+										{ userId: instance.userId, instanceId: instance.id },
+										{ signal: cancellation.signal },
+									);
+								} catch (error) {
+									if (cancellation.signal.aborted && error === cancellation.signal.reason) return;
+									app.log.warn(
+										{ category: "jellyfin-episode-generation-cleanup-failed" },
+										"Jellyfin episode generation cleanup deferred",
+									);
+								}
+								if (closing) return;
+								// Initial pages belong to the single tracked round. Detached
+								// continuations and bridge retries receive their own observation.
+								await admitRefreshInstance(
+									instance,
+									resumeFailed,
+									0,
+									0,
+									automaticRenewal,
+									undefined,
+									"covered-by-round",
+								);
+							}),
+						);
+					}),
+				);
+			} catch (error) {
+				if (!(error instanceof CleanupMaintenanceConflictError)) throw error;
+				app.log.debug("Jellyfin episode cache round paused for database maintenance");
 			} finally {
 				isRunning = false;
 			}
@@ -297,21 +527,23 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			async ({ userId, instanceId }) => {
 				if (closing) return { status: "unavailable" };
 				try {
-					const instance = await app.prisma.serviceInstance.findFirst({
-						where: {
-							id: instanceId,
-							userId,
-							service: { in: ["JELLYFIN", "EMBY"] },
-							enabled: true,
-						},
+					return await runAccepted<EpisodeRefreshRetryResult>(async () => {
+						const instance = await app.prisma.serviceInstance.findFirst({
+							where: {
+								id: instanceId,
+								userId,
+								service: { in: ["JELLYFIN", "EMBY"] },
+								enabled: true,
+							},
+						});
+						if (!instance) return { status: "ineligible" };
+						if (closing) return { status: "unavailable" };
+						if (runningInstances.has(instance.id) || pendingInstanceIds.has(instance.id)) {
+							return { status: "accepted" };
+						}
+						const backgroundTask = admitRefreshInstance(instance, true);
+						return { status: "accepted", backgroundTask };
 					});
-					if (!instance) return { status: "ineligible" };
-					if (closing) return { status: "unavailable" };
-					if (runningInstances.has(instance.id) || pendingInstanceIds.has(instance.id)) {
-						return { status: "accepted" };
-					}
-					const backgroundTask = admitRefreshInstance(instance, true);
-					return { status: "accepted", backgroundTask };
 				} catch {
 					return { status: "unavailable" };
 				}
@@ -319,6 +551,7 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 		);
 
 		app.addHook("onReady", async () => {
+			if (closing) return;
 			timeoutHandle = setTimeout(() => {
 				if (closing) return;
 				refreshAllEpisodeCaches(true, "provider-unavailable-cooldown").catch(() =>
@@ -327,6 +560,7 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 						"Jellyfin episode cache initial refresh failed",
 					),
 				);
+				if (closing) return;
 				intervalHandle = setInterval(() => {
 					refreshAllEpisodeCaches(false, "provider-unavailable-cooldown").catch(() =>
 						app.log.error(
@@ -338,8 +572,10 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			}, STARTUP_DELAY_MS);
 		});
 
-		app.addHook("onClose", async () => {
+		function closeAdmission() {
+			if (closing) return;
 			closing = true;
+			cancellation.abort();
 			unregisterRetry();
 			if (timeoutHandle) clearTimeout(timeoutHandle);
 			if (intervalHandle) clearInterval(intervalHandle);
@@ -348,7 +584,16 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			for (const { handle } of recoveryHandles.values()) clearTimeout(handle);
 			recoveryHandles.clear();
 			pendingInstanceIds.clear();
-			await Promise.allSettled([...admittedPageTasks]);
+			timeoutHandle = null;
+			intervalHandle = null;
+		}
+
+		app.addHook("preClose", async () => closeAdmission());
+		app.addHook("onClose", async () => {
+			closeAdmission();
+			while (pendingOperations.size > 0) {
+				await Promise.all([...pendingOperations]);
+			}
 		});
 
 		app.log.info(

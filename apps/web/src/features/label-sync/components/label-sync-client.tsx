@@ -3,6 +3,10 @@
 import type { LabelSyncRule } from "@arr/shared";
 import { CheckCircle2, Pencil, Play, Plus, Tag, Trash2, XCircle } from "lucide-react";
 import { useState } from "react";
+import { useIncognitoMode } from "../../../contexts/IncognitoContext";
+import { getLinuxSectionName } from "../../../lib/incognito";
+import { getErrorMessage } from "../../../lib/error-utils";
+import { ApiError } from "../../../lib/api-client/base";
 import { GlassmorphicCard, PageLayout } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import {
@@ -13,12 +17,39 @@ import {
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { SERVICE_LABEL_BY_VALUE } from "../service-registry";
 import { RuleDialog } from "./rule-dialog";
+import { RecoveryStatus } from "./recovery-status";
+
+function isRunConflict(error: unknown): boolean {
+	return (
+		error instanceof ApiError &&
+		error.status === 409 &&
+		typeof error.payload === "object" &&
+		error.payload !== null &&
+		"code" in error.payload &&
+		error.payload.code === "label_sync_rule_changed"
+	);
+}
 
 export const LabelSyncClient = () => {
+	const [incognitoMode] = useIncognitoMode();
 	const { gradient } = useThemeGradient();
-	const { data: rules = [], isLoading } = useLabelSyncRules();
+	const {
+		data: rules = [],
+		isLoading,
+		isError,
+		isFetching,
+		refetch: refetchRules,
+	} = useLabelSyncRules();
 	const deleteMutation = useDeleteLabelSyncRule();
-	const runMutation = useRunLabelSyncRule();
+	const runMutation = useRunLabelSyncRule(async (error) => {
+		if (!isRunConflict(error)) return;
+		const readback = refetchRules();
+		alert(
+			"Label Sync execution finished, but its result could not be saved because the rule changed or was deleted. Review the current rule and destination before running again.",
+		);
+		await readback;
+	});
+	const { isRunPending } = runMutation;
 	const [runningId, setRunningId] = useState<string | null>(null);
 
 	const [dialogOpen, setDialogOpen] = useState(false);
@@ -35,12 +66,23 @@ export const LabelSyncClient = () => {
 	};
 
 	const handleDelete = async (rule: LabelSyncRule) => {
-		if (!confirm(`Delete rule "${rule.name}"? This cannot be undone.`)) return;
+		if (
+			!confirm(
+				`Delete rule "${incognitoMode ? getLinuxSectionName(rule.name) : rule.name}"? This cannot be undone.`,
+			)
+		)
+			return;
 		await deleteMutation.mutateAsync(rule.id);
 	};
 
 	const handleRun = async (rule: LabelSyncRule) => {
-		if (!rule.destinationMutationCapability.supported) return;
+		if (
+			isError ||
+			isRunPending ||
+			runningId !== null ||
+			!rule.destinationMutationCapability.supported
+		)
+			return;
 		if (!rule.enabled) {
 			alert("Rule is disabled. Enable it before running.");
 			return;
@@ -48,9 +90,31 @@ export const LabelSyncClient = () => {
 		setRunningId(rule.id);
 		try {
 			const updated = await runMutation.mutateAsync(rule.id);
-			alert(`${updated.lastRunStatus?.toUpperCase() ?? "DONE"}\n\n${updated.lastRunMessage ?? ""}`);
+			const runOutcome = `Run outcome: ${updated.lastRunStatus?.toUpperCase() ?? "UNKNOWN"}\n\n${incognitoMode ? "Run details hidden in incognito mode." : (updated.lastRunMessage ?? "")}`;
+			if (!updated.recovery || updated.recovery.availability === "unavailable") {
+				alert(
+					`${runOutcome}\n\nRecovery status is unavailable; do not assume held work is resolved.`,
+				);
+			} else if (updated.recovery.state === "restored-held") {
+				alert(
+					`${runOutcome}\n\n${updated.recovery.heldCount} restored operations remain held; no automatic resend.`,
+				);
+			} else if (updated.recovery.state === "reconciled") {
+				alert(
+					`${runOutcome}\n\nRestored desired state observed; this does not acknowledge the original send.`,
+				);
+			} else {
+				alert(
+					`${updated.lastRunStatus?.toUpperCase() ?? "DONE"}\n\n${incognitoMode ? "Run details hidden in incognito mode." : (updated.lastRunMessage ?? "")}`,
+				);
+			}
 		} catch (err) {
-			alert(`Run failed: ${err instanceof Error ? err.message : String(err)}`);
+			if (isRunConflict(err)) return;
+			alert(
+				incognitoMode
+					? "Run failed; details hidden in incognito mode."
+					: `Run failed: ${getErrorMessage(err)}`,
+			);
 		} finally {
 			setRunningId(null);
 		}
@@ -60,7 +124,7 @@ export const LabelSyncClient = () => {
 		<PageLayout>
 			<div className="space-y-6 animate-in fade-in duration-300">
 				{/* Header */}
-				<header className="flex items-start justify-between gap-4">
+				<header className="flex flex-col items-start justify-between gap-4 sm:flex-row">
 					<div className="space-y-1">
 						<div className="flex items-center gap-2 text-sm text-muted-foreground">
 							<Tag className="h-4 w-4" />
@@ -91,14 +155,36 @@ export const LabelSyncClient = () => {
 
 				{/* Rules list */}
 				<GlassmorphicCard>
+					{isError && (
+						<div
+							role="alert"
+							className="flex flex-wrap items-center justify-between gap-3 p-6 text-sm text-muted-foreground"
+						>
+							<p>
+								{rules.length > 0
+									? "Current rules could not be verified. Showing last-known rules. Retry before running a rule."
+									: "Rules are unavailable. Retry to check again."}
+							</p>
+							<Button
+								variant="secondary"
+								onClick={() => void refetchRules({ cancelRefetch: false })}
+								disabled={isFetching}
+							>
+								Retry rules
+							</Button>
+						</div>
+					)}
 					{isLoading ? (
 						<div className="p-6 text-sm text-muted-foreground">Loading rules…</div>
-					) : rules.length === 0 ? (
+					) : isError && rules.length === 0 ? null : rules.length === 0 ? (
 						<EmptyState onCreateClick={openCreate} />
 					) : (
 						<RuleTable
 							rules={rules}
 							runningId={runningId}
+							isRunPending={isRunPending}
+							recoveryUnavailable={isError}
+							incognitoMode={incognitoMode}
 							onEdit={openEdit}
 							onDelete={handleDelete}
 							onRun={handleRun}
@@ -140,19 +226,25 @@ const EmptyState = ({ onCreateClick }: { onCreateClick: () => void }) => (
 const RuleTable = ({
 	rules,
 	runningId,
+	isRunPending,
+	recoveryUnavailable,
+	incognitoMode,
 	onEdit,
 	onDelete,
 	onRun,
 }: {
 	rules: LabelSyncRule[];
 	runningId: string | null;
+	isRunPending: boolean;
+	recoveryUnavailable?: boolean;
+	incognitoMode: boolean;
 	onEdit: (rule: LabelSyncRule) => void;
 	onDelete: (rule: LabelSyncRule) => void;
 	onRun: (rule: LabelSyncRule) => void;
 }) => (
-	<div className="overflow-x-auto">
-		<table className="w-full text-sm">
-			<thead className="border-b border-border/50">
+	<div className="min-w-0">
+		<table className="block w-full table-fixed text-sm md:table">
+			<thead className="hidden border-b border-border/50 md:table-header-group">
 				<tr className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide">
 					<th className="px-4 py-3">Name</th>
 					<th className="px-4 py-3">Source</th>
@@ -163,20 +255,26 @@ const RuleTable = ({
 					<th className="px-4 py-3 text-right">Actions</th>
 				</tr>
 			</thead>
-			<tbody className="divide-y divide-border/30">
+			<tbody className="block divide-y divide-border/30 md:table-row-group">
 				{rules.map((rule) => (
-					<tr key={rule.id} className="hover:bg-muted/10 transition-colors">
-						<td className="px-4 py-3">
+					<tr
+						key={rule.id}
+						className="block break-words hover:bg-muted/10 transition-colors md:table-row"
+					>
+						<td className="block px-4 py-3 md:table-cell">
 							<div className="flex items-center gap-2">
 								{rule.enabled ? (
 									<CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
 								) : (
 									<XCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
 								)}
-								<span className="font-medium">{rule.name}</span>
+								<span className="font-medium">
+									{incognitoMode ? getLinuxSectionName(rule.name) : rule.name}
+								</span>
 							</div>
 						</td>
-						<td className="px-4 py-3 text-muted-foreground">
+						<td className="block px-4 py-3 text-muted-foreground md:table-cell">
+							<span className="mr-2 font-medium md:hidden">Source:</span>
 							<span>{SERVICE_LABEL_BY_VALUE[rule.sourceService] ?? rule.sourceService}</span>
 							{rule.sourceInstanceId ? (
 								<span className="text-xs ml-1">(instance)</span>
@@ -184,15 +282,20 @@ const RuleTable = ({
 								<span className="text-xs text-muted-foreground/60 ml-1">(all instances)</span>
 							)}
 						</td>
-						<td className="px-4 py-3 text-muted-foreground">
+						<td className="block px-4 py-3 text-muted-foreground md:table-cell">
+							<span className="mr-2 font-medium md:hidden">Destination:</span>
 							<span>{SERVICE_LABEL_BY_VALUE[rule.destService] ?? rule.destService}</span>
 						</td>
-						<td className="px-4 py-3 font-mono text-xs">
-							<span className="text-muted-foreground">{rule.sourceTagName}</span>
+						<td className="block px-4 py-3 font-mono text-xs md:table-cell">
+							<span className="text-muted-foreground">
+								{incognitoMode ? getLinuxSectionName(rule.sourceTagName) : rule.sourceTagName}
+							</span>
 							<span className="text-muted-foreground/50 mx-1.5">→</span>
-							<span>{rule.destTagName}</span>
+							<span>
+								{incognitoMode ? getLinuxSectionName(rule.destTagName) : rule.destTagName}
+							</span>
 						</td>
-						<td className="px-4 py-3">
+						<td className="block px-4 py-3 md:table-cell">
 							{!rule.destinationMutationCapability.supported ? (
 								<span
 									className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500"
@@ -200,22 +303,40 @@ const RuleTable = ({
 								>
 									Mutation unavailable
 								</span>
-							) : rule.lastRunStatus ? (
+							) : null}
+							{recoveryUnavailable ||
+							!rule.recovery ||
+							rule.recovery.availability === "unavailable" ||
+							rule.recovery.state !== "clear" ? (
+								<RecoveryStatus recovery={recoveryUnavailable ? undefined : rule.recovery} />
+							) : !rule.destinationMutationCapability.supported ? null : rule.lastRunStatus ? (
 								<span className={statusClass(rule.lastRunStatus)}>{rule.lastRunStatus}</span>
 							) : (
 								<span className="text-muted-foreground/50 text-xs">never run</span>
 							)}
+							{(rule.lastRunStatus === "failed" || rule.lastRunStatus === "partial") &&
+							(recoveryUnavailable ||
+								!rule.recovery ||
+								rule.recovery.availability === "unavailable" ||
+								rule.recovery.state !== "clear") ? (
+								<span className={`mt-2 block ${statusClass(rule.lastRunStatus)}`}>
+									Last run: {rule.lastRunStatus}
+								</span>
+							) : null}
 						</td>
-						<td className="px-4 py-3 text-xs text-muted-foreground">
+						<td className="block px-4 py-3 text-xs text-muted-foreground md:table-cell">
+							<span className="mr-2 font-medium md:hidden">Historical last run:</span>
 							{rule.lastRunAt ? new Date(rule.lastRunAt).toLocaleString() : "—"}
 						</td>
-						<td className="px-4 py-3 text-right">
+						<td className="block px-4 py-3 md:table-cell md:text-right">
 							<div className="inline-flex gap-1">
 								<button
 									type="button"
 									onClick={() => onRun(rule)}
 									disabled={
-										runningId === rule.id ||
+										runningId !== null ||
+										isRunPending ||
+										recoveryUnavailable ||
 										!rule.enabled ||
 										!rule.destinationMutationCapability.supported
 									}
@@ -240,6 +361,13 @@ const RuleTable = ({
 								<button
 									type="button"
 									onClick={() => onEdit(rule)}
+									aria-label="Edit rule"
+									disabled={
+										recoveryUnavailable ||
+										!rule.recovery ||
+										rule.recovery.availability === "unavailable" ||
+										rule.recovery.state === "restored-held"
+									}
 									className="p-1.5 rounded-md hover:bg-muted/30 transition-colors"
 									title="Edit rule"
 								>
@@ -248,6 +376,13 @@ const RuleTable = ({
 								<button
 									type="button"
 									onClick={() => onDelete(rule)}
+									aria-label="Delete rule"
+									disabled={
+										recoveryUnavailable ||
+										!rule.recovery ||
+										rule.recovery.availability === "unavailable" ||
+										rule.recovery.state === "restored-held"
+									}
 									className="p-1.5 rounded-md hover:bg-red-500/10 transition-colors"
 									title="Delete rule"
 								>

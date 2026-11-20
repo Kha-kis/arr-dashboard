@@ -119,8 +119,10 @@ const InstanceStatusCard = ({ instance, onRefresh, animationDelay }: InstanceSta
 	const { runPreview, runClean, previewResult, isLoadingPreview, isRunningClean, resetPreview } =
 		useEnhancedPreview();
 	const [showPreview, setShowPreview] = useState(false);
+	const isCleanPending = isTriggering || isRunningClean;
 
 	const handleManualClean = async () => {
+		if (isCleanPending) return;
 		try {
 			const result = await triggerClean(instance.instanceId);
 			toast.success(result.message);
@@ -144,6 +146,7 @@ const InstanceStatusCard = ({ instance, onRefresh, animationDelay }: InstanceSta
 	};
 
 	const handleRunClean = async () => {
+		if (isCleanPending) throw new Error("A clean request is already pending");
 		await runClean(instance.instanceId);
 		setTimeout(() => void onRefresh(), POST_CLEAN_REFRESH_DELAY_MS);
 	};
@@ -267,9 +270,9 @@ const InstanceStatusCard = ({ instance, onRefresh, animationDelay }: InstanceSta
 								size="sm"
 								className="flex-1 gap-1.5 text-xs border-border/50 bg-card/50"
 								onClick={() => void handleManualClean()}
-								disabled={isTriggering || !instance.enabled}
+								disabled={isCleanPending || !instance.enabled}
 							>
-								{isTriggering ? (
+								{isCleanPending ? (
 									<Loader2 className="h-3 w-3 animate-spin" />
 								) : (
 									<Play className="h-3 w-3" />
@@ -310,7 +313,7 @@ const InstanceStatusCard = ({ instance, onRefresh, animationDelay }: InstanceSta
 						resetPreview();
 					}}
 					onRunClean={handleRunClean}
-					isRunningClean={isRunningClean}
+					isRunningClean={isCleanPending}
 				/>
 			)}
 		</>

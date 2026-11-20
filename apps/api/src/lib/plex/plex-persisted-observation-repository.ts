@@ -9,4 +9,5 @@ export {
 	getPublishedGenerationObservationForOwnedInstance,
 	loadGenerationObservationsForOwnedInstances,
 	loadUserGenerationObservations,
+	summarizePlexEvidence,
 } from "./plex-evidence-repository.js";

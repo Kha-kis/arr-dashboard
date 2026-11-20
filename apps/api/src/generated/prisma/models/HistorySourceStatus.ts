@@ -594,14 +594,6 @@ export type HistorySourceStatusUncheckedUpdateOneWithoutInstanceNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.HistorySourceStatusUpdateToOneWithWhereWithoutInstanceInput, Prisma.HistorySourceStatusUpdateWithoutInstanceInput>, Prisma.HistorySourceStatusUncheckedUpdateWithoutInstanceInput>
 }
 
-export type NullableIntFieldUpdateOperationsInput = {
-  set?: number | null
-  increment?: number
-  decrement?: number
-  multiply?: number
-  divide?: number
-}
-
 export type HistorySourceStatusCreateWithoutInstanceInput = {
   connectionGeneration: number
   publishedAt?: Date | string | null

@@ -234,6 +234,21 @@ function createPrismaStub() {
 	};
 
 	const prisma = {
+		$executeRaw: vi.fn(async (query: { values: unknown[] }) => {
+			const [instanceId, userId] = query.values;
+			const row = instances.get(String(instanceId));
+			return row?.userId === userId ? 1 : 0;
+		}),
+		searchGrabClaim: { findFirst: vi.fn().mockResolvedValue(null) },
+		arrImportOperation: {
+			findFirst: vi.fn().mockResolvedValue(null),
+			count: vi.fn().mockResolvedValue(0),
+		},
+		queueCleanerImportReceipt: {
+			count: vi.fn().mockResolvedValue(0),
+			findFirst: vi.fn().mockResolvedValue(null),
+		},
+		quiActionLog: { count: vi.fn().mockResolvedValue(0) },
 		_instances: instances,
 		_mappings: mappings,
 		_overrides: overrides,
@@ -245,8 +260,13 @@ function createPrismaStub() {
 		plexEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		tautulliCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		providerNativeInventorySnapshot: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		providerNativeInventoryRun: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinNativeWatchPublication: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinNativeWatchScopeReceipt: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinNativeWatchRow: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinPositiveWatchRow: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		cacheRefreshStatus: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		labelSyncMutationAttempt: {
 			findMany: vi.fn().mockResolvedValue([]),

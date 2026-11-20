@@ -8,6 +8,8 @@ import type {
 	SearchIndexersResponse,
 	SearchIndexerTestRequest,
 	SearchIndexerTestResponse,
+	SearchIndexerUpdateChanges,
+	SearchIndexerUpdateOutcome,
 	SearchRequest,
 } from "@arr/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -37,6 +39,7 @@ export const useGrabSearchResultMutation = () => {
 	const queryClient = useQueryClient();
 	return useMutation<void, unknown, SearchGrabRequest>({
 		mutationFn: grabManualSearchResult,
+		retry: false,
 		onSuccess: () => {
 			// Grabbing a release adds it to the queue
 			void queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
@@ -62,12 +65,20 @@ export const useIndexerDetailsQuery = (
 		staleTime: 60 * 1000,
 	});
 
-export const useUpdateIndexerMutation = () =>
-	useMutation<
-		ProwlarrIndexerDetails,
+export const useUpdateIndexerMutation = () => {
+	const queryClient = useQueryClient();
+	return useMutation<
+		SearchIndexerUpdateOutcome,
 		unknown,
-		{ instanceId: string; indexerId: number; indexer: ProwlarrIndexerDetails }
+		{ instanceId: string; indexerId: number; changes: SearchIndexerUpdateChanges }
 	>({
-		mutationFn: ({ instanceId, indexerId, indexer }) =>
-			updateSearchIndexer(instanceId, indexerId, indexer),
+		mutationFn: ({ instanceId, indexerId, changes }) =>
+			updateSearchIndexer(instanceId, indexerId, changes),
+		onSettled: (_data, _error, variables) => {
+			void queryClient.invalidateQueries({ queryKey: ["search", "indexers"] });
+			void queryClient.invalidateQueries({
+				queryKey: ["search", "indexers", "details", variables.instanceId, variables.indexerId],
+			});
+		},
 	});
+};

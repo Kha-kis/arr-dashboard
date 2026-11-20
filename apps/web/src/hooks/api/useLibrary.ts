@@ -52,7 +52,7 @@ import {
 	updateLibrarySyncSettings,
 } from "../../lib/api-client/library";
 import { POLLING_BACKGROUND, POLLING_STANDARD } from "../../lib/polling-intervals";
-import { QUEUE_QUERY_KEY } from "../../lib/query-keys";
+import { discoverKeys, libraryKeys, QUEUE_QUERY_KEY } from "../../lib/query-keys";
 
 // ============================================================================
 // Library Query Hook (with pagination, search, filters)
@@ -124,9 +124,12 @@ export const useLibraryMonitorMutation = () => {
 	const queryClient = useQueryClient();
 	return useMutation<void, unknown, LibraryToggleMonitorRequest>({
 		mutationFn: toggleLibraryMonitoring,
-		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["library"] });
-			void queryClient.invalidateQueries({ queryKey: ["discover", "search"] });
+		onSettled: () => {
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.all });
+			void queryClient.invalidateQueries({
+				queryKey: discoverKeys.all,
+				predicate: ({ queryKey }) => queryKey[1] === "search",
+			});
 		},
 	});
 };
@@ -238,9 +241,8 @@ export const useLibraryEpisodeMonitorMutation = () => {
 	const queryClient = useQueryClient();
 	return useMutation<void, unknown, LibraryEpisodeMonitorRequest>({
 		mutationFn: toggleEpisodeMonitoring,
-		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["library"] });
-			void queryClient.invalidateQueries({ queryKey: ["library", "episodes"] });
+		onSettled: () => {
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.all });
 		},
 	});
 };
@@ -286,9 +288,8 @@ export const useLibraryAlbumMonitorMutation = () => {
 	const queryClient = useQueryClient();
 	return useMutation<void, unknown, LibraryAlbumMonitorRequest>({
 		mutationFn: toggleAlbumMonitoring,
-		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["library"] });
-			void queryClient.invalidateQueries({ queryKey: ["library", "albums"] });
+		onSettled: () => {
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.all });
 		},
 	});
 };
@@ -348,9 +349,8 @@ export const useLibraryBookMonitorMutation = () => {
 	const queryClient = useQueryClient();
 	return useMutation<void, unknown, LibraryBookMonitorRequest>({
 		mutationFn: toggleBookMonitoring,
-		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["library"] });
-			void queryClient.invalidateQueries({ queryKey: ["library", "books"] });
+		onSettled: () => {
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.all });
 		},
 	});
 };

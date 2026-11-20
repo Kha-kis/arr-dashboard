@@ -40,9 +40,19 @@ const TABLE_NAMES = [
 	"notificationSubscription",
 	"notificationRule",
 	"notificationAggregationConfig",
+	"notificationOutboxEvent",
+	"notificationOutboxDelivery",
 	"autoTagRule",
 	"labelSyncRule",
 	"labelSyncMutationAttempt",
+	"arrImportOperation",
+	"arrImportFileProof",
+	"arrImportSourceClaim",
+	"queueCleanerImportReceipt",
+	"quiActionClaim",
+	"quiActionLog",
+	"searchGrabAttempt",
+	"searchGrabClaim",
 	"providerObservationRun",
 	"providerObservationUnit",
 	"plexEpisodeObservationStage",
@@ -111,7 +121,7 @@ describe("BackupService coordination safety", () => {
 		await fs.writeFile(
 			secretsPath,
 			JSON.stringify({
-				encryptionKey: "test-encryption-key",
+				encryptionKey: "a".repeat(64),
 				sessionCookieSecret: "test-session-secret",
 				backupPassword: "backup-exclusive-password",
 			}),
@@ -142,8 +152,11 @@ describe("BackupService coordination safety", () => {
 			);
 		} finally {
 			releaseExport();
-			await creatingBackup;
-			await fs.rm(tempDir, { recursive: true, force: true });
+			try {
+				await creatingBackup;
+			} finally {
+				await fs.rm(tempDir, { recursive: true, force: true });
+			}
 		}
 	});
 
@@ -154,7 +167,7 @@ describe("BackupService coordination safety", () => {
 		await fs.writeFile(
 			secretsPath,
 			JSON.stringify({
-				encryptionKey: "test-encryption-key",
+				encryptionKey: "a".repeat(64),
 				sessionCookieSecret: "test-session-secret",
 				backupPassword: password,
 			}),
@@ -175,7 +188,7 @@ describe("BackupService coordination safety", () => {
 			};
 
 			expect(envelope.version).toBe("1.0");
-			expect(payload.version).toBe("1.2");
+			expect(payload.version).toBe("1.6");
 			expect(payload.data.trashSyncHistory).toEqual([
 				expect.objectContaining({ id: "rollback-active" }),
 			]);

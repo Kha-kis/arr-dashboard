@@ -731,7 +731,15 @@ describe("watch-provider publication authority", () => {
 
 			expect(result).toMatchObject({ complete: true, upserted: 1 });
 			expect(authority.connections).toEqual([
-				[instance.baseUrl, instance.apiKey, log, undefined, instance.httpAuthHeaders],
+				[
+					instance.baseUrl,
+					instance.apiKey,
+					log,
+					undefined,
+					instance.httpAuthHeaders,
+					undefined,
+					undefined,
+				],
 			]);
 			expect(authority.events).toEqual([
 				"identity",

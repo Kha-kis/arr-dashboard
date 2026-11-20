@@ -91,7 +91,7 @@ describe("browserPushSender", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(false);
-		expect(result.error).toContain("410");
+		expect(result.failureCategory).toBe("subscription-expired");
 	});
 
 	it("returns retryable on 429", async () => {
@@ -104,7 +104,7 @@ describe("browserPushSender", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
-		expect(result.error).toContain("429");
+		expect(result.failureCategory).toBe("rate-limited");
 	});
 
 	it("returns retryable on 5xx (500, 503)", async () => {
@@ -117,7 +117,7 @@ describe("browserPushSender", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
-		expect(result.error).toContain("503");
+		expect(result.failureCategory).toBe("provider-unavailable");
 	});
 
 	it("returns non-retryable on 4xx (400, 403)", async () => {
@@ -130,7 +130,7 @@ describe("browserPushSender", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(false);
-		expect(result.error).toContain("400");
+		expect(result.failureCategory).toBe("rejected");
 	});
 
 	it("returns retryable on network error (no statusCode)", async () => {
@@ -141,6 +141,6 @@ describe("browserPushSender", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
-		expect(result.error).toContain("ECONNREFUSED");
+		expect(result.failureCategory).toBe("transport");
 	});
 });

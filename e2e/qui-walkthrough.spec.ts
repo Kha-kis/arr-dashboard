@@ -44,7 +44,10 @@ function torrentStateSelect(page: Page) {
  * routes so the rest of the page (sidebar, header, auth) renders
  * normally.
  */
-async function setupQuiMocks(page: Page): Promise<void> {
+async function setupQuiMocks(
+	page: Page,
+	{ includeQuiObservationStatus = true }: { includeQuiObservationStatus?: boolean } = {},
+): Promise<void> {
 	// Diagnostic — log every request the page makes. CI captures this in
 	// the test output so we can verify the route matchers are firing and
 	// no unexpected endpoint is breaking the page render. Cheap and only
@@ -163,6 +166,9 @@ async function setupQuiMocks(page: Page): Promise<void> {
 					syncInProgress: false,
 					totalCachedItems: allItems.length,
 				},
+				...(includeQuiObservationStatus
+					? { quiObservationStatus: { status: "available", observedAt: new Date().toISOString() } }
+					: {}),
 				torrentStateCounts: {
 					all: allItems.length,
 					none: 1,
@@ -232,10 +238,13 @@ function buildMockLibraryItems(): MockLibraryItem[] {
 	];
 }
 
-async function gotoLibrary(page: Page) {
+async function gotoLibrary(
+	page: Page,
+	options: { includeQuiObservationStatus?: boolean } = {},
+) {
 	// Set up qui-data mocks BEFORE navigating — Playwright's page.route
 	// matchers must be installed before the page makes the requests.
-	await setupQuiMocks(page);
+	await setupQuiMocks(page, options);
 	await page.goto("/library");
 	// Wait for the main heading first
 	await expect(page.getByRole("heading", { name: /your collection|library/i }).first()).toBeVisible(
@@ -258,7 +267,7 @@ test.describe("qui walkthrough — filter dropdown gating + counts", () => {
 		const dropdown = torrentStateSelect(page);
 		const optionTexts = await dropdown.locator("option").allTextContents();
 		const torrentStateOptions = optionTexts.filter((t) =>
-			/Seeding|Stalled|Downloading|Not correlated/i.test(t),
+			/Seeding|Stalled|Downloading|No available qUI data/i.test(t),
 		);
 		const hasCounts = torrentStateOptions.some((t) => /\(\d+\)/.test(t));
 		expect(
@@ -267,7 +276,7 @@ test.describe("qui walkthrough — filter dropdown gating + counts", () => {
 		).toBe(true);
 	});
 
-	test('"Not correlated with qui" option is present (renamed from "No qui data")', async ({
+	test('"No available qUI data" option is present (renamed from "No qui data")', async ({
 		page,
 	}) => {
 		await gotoLibrary(page);
@@ -275,8 +284,15 @@ test.describe("qui walkthrough — filter dropdown gating + counts", () => {
 		const noneOption = dropdown.locator('option[value="none"]');
 		await expect(noneOption).toHaveCount(1);
 		const text = (await noneOption.textContent()) ?? "";
-		expect(text, `expected "Not correlated with qui" label`).toMatch(/Not correlated with qui/);
+		expect(text, `expected "No available qUI data" label`).toMatch(/No available qUI data/);
 	});
+});
+
+test("missing qUI observation status keeps filters disabled and hides torrent badges", async ({ page }) => {
+	await gotoLibrary(page, { includeQuiObservationStatus: false });
+	await expect(page.getByRole("heading", { name: "Mock Show 1", exact: true })).toBeVisible();
+	await expect(torrentStateSelect(page)).toBeDisabled();
+	await expect(page.locator('[aria-label*="Torrent:"]')).toHaveCount(0);
 });
 
 test.describe("qui walkthrough — filter behavior", () => {

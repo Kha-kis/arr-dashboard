@@ -138,6 +138,7 @@ export interface ObservationUnitClaim {
 	cursor: number;
 	expectedRawCount: number | null;
 	observedRawCount: number;
+	attemptCount: number;
 }
 
 export interface ObservationRunProgress {

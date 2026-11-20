@@ -134,6 +134,45 @@ const createMockInstance = (
 	...overrides,
 });
 
+describe("ArrClientFactory - raw request redirect policy", () => {
+	it("supports refusing credentialed redirects while preserving the configured base subpath", async () => {
+		const fetch = vi.fn().mockResolvedValue(new Response("synthetic"));
+		vi.stubGlobal("fetch", fetch);
+		try {
+			const factory = new ArrClientFactory(createMockEncryptor());
+			await factory.rawRequest(
+				createMockInstance("RADARR", { baseUrl: "http://arr.example.test/radarr/" }),
+				"/MediaCover/42/poster.jpg",
+				{ method: "GET", timeout: 5000, redirect: "error" },
+			);
+			expect(fetch).toHaveBeenCalledWith(
+				"http://arr.example.test/radarr/MediaCover/42/poster.jpg",
+				expect.objectContaining({
+					method: "GET",
+					redirect: "error",
+					headers: { "X-Api-Key": "decrypted-api-key" },
+				}),
+			);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("leaves existing raw-request redirect defaults unchanged", async () => {
+		const fetch = vi.fn().mockResolvedValue(new Response("synthetic"));
+		vi.stubGlobal("fetch", fetch);
+		try {
+			await new ArrClientFactory(createMockEncryptor()).rawRequest(
+				createMockInstance("RADARR"),
+				"/api/v3/system/status",
+			);
+			expect(fetch.mock.calls[0]?.[1]).not.toHaveProperty("redirect");
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+});
+
 describe("ArrClientFactory - Client Creation", () => {
 	let factory: ArrClientFactory;
 	let mockEncryptor: Encryptor;

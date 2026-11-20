@@ -201,7 +201,7 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 			data = await cacheManager.get<TrashNamingData[]>(serviceType, configType);
 		} catch (error) {
 			if (!(error instanceof CacheCorruptionError)) throw error;
-			// Cache corrupted and auto-deleted — re-fetch from GitHub
+			// Cache unreadable — re-fetch from GitHub
 			app.log.warn({ serviceType }, "Naming preset cache corrupted, re-fetching from GitHub");
 		}
 

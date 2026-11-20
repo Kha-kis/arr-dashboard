@@ -49,7 +49,9 @@ export async function registerUserRoutes(app: FastifyInstance, _opts: FastifyPlu
 	app.put("/:instanceId/:seerrUserId", async (request) => {
 		const { instanceId, seerrUserId } = validateRequest(userIdParams, request.params);
 		const body = validateRequest(updateUserBody, request.body);
-		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
+		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId, {
+			requireEnabled: true,
+		});
 		return client.updateUser(seerrUserId, body);
 	});
 }

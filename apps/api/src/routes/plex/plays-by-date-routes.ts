@@ -5,11 +5,12 @@
  * media type. Replaces Tautulli's pre-aggregated `cmd=get_plays_by_date`.
  */
 
-import type { PlaysByDateResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import { readSessionSnapshotPages } from "../../lib/statistics/session-snapshot-pages.js";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { aggregatePlaysByDate } from "./lib/plays-by-date-helpers.js";
+import { projectDailyActivityCollection } from "./lib/activity-collection-helpers.js";
+import { createPlaysByDateAccumulator } from "./lib/plays-by-date-helpers.js";
 
 const playsByDateQuery = z.object({
 	days: z
@@ -26,27 +27,15 @@ export async function registerPlaysByDateRoutes(app: FastifyInstance, _opts: Fas
 		const { days } = validateRequest(playsByDateQuery, request.query);
 		const userId = request.currentUser!.id;
 
-		const plexInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "PLEX", enabled: true },
-			select: { id: true },
-		});
-
-		if (plexInstances.length === 0) {
-			const empty: PlaysByDateResponse = { categories: [], series: [] };
-			return reply.send(empty);
-		}
-
 		const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-		const snapshots = await app.prisma.sessionSnapshot.findMany({
-			where: {
-				instanceId: { in: plexInstances.map((i) => i.id) },
-				capturedAt: { gte: cutoff },
-			},
-			select: { capturedAt: true, sessionsJson: true },
-			orderBy: { capturedAt: "asc" },
-			take: 20000,
+		const accumulator = createPlaysByDateAccumulator({ days });
+		const read = await readSessionSnapshotPages(app.prisma, {
+			userId,
+			services: ["PLEX"],
+			cutoff,
+			onPage: (page) => accumulator.addBatch(page),
+			includeCollectionByDate: true,
 		});
-
-		return reply.send(aggregatePlaysByDate(snapshots, { days }));
+		return reply.send(projectDailyActivityCollection(accumulator.getResult(), read));
 	});
 }

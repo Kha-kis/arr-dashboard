@@ -100,6 +100,64 @@ describe("deployment route uncertain outcomes", () => {
 		});
 	});
 
+	it("scopes direct deployment failure notifications to the authenticated owner", async () => {
+		deploySingleInstance.mockResolvedValue({
+			instanceId: "instance-1",
+			instanceLabel: "Radarr",
+			success: false,
+			status: "FAILED",
+			customFormatsCreated: 0,
+			customFormatsUpdated: 0,
+			qualityProfileApplied: false,
+			namingFieldsApplied: 0,
+			errors: ["Synthetic failure"],
+		});
+
+		const response = await createInjectAuthenticated(app)("POST", "/execute", {
+			body: {
+				templateId: "template-1",
+				instanceId: "instance-1",
+				executionToken: "a".repeat(64),
+			},
+		});
+
+		expect(response.statusCode).toBe(200);
+		await vi.waitFor(() =>
+			expect(notify).toHaveBeenCalledWith(
+				expect.objectContaining({ eventType: "TRASH_DEPLOY_FAILED" }),
+				{ userId: "user-1" },
+			),
+		);
+	});
+
+	it("scopes bulk deployment failure notifications to the authenticated owner", async () => {
+		deployBulkInstances.mockResolvedValue({
+			templateId: "template-1",
+			templateName: "Synthetic",
+			totalInstances: 1,
+			successfulInstances: 0,
+			failedInstances: 1,
+			uncertainInstances: 0,
+			results: [{ instanceLabel: "Radarr", status: "FAILED", success: false }],
+		});
+
+		const response = await createInjectAuthenticated(app)("POST", "/execute-bulk", {
+			body: {
+				templateId: "template-1",
+				instanceIds: ["instance-1"],
+				executionTokens: { "instance-1": "a".repeat(64) },
+			},
+		});
+
+		expect(response.statusCode).toBe(200);
+		await vi.waitFor(() =>
+			expect(notify).toHaveBeenCalledWith(
+				expect.objectContaining({ eventType: "TRASH_DEPLOY_FAILED" }),
+				{ userId: "user-1" },
+			),
+		);
+	});
+
 	it("sends one logical review notification for mixed bulk failure and uncertainty", async () => {
 		deployBulkInstances.mockResolvedValue({
 			templateId: "template-1",

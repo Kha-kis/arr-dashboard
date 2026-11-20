@@ -335,6 +335,7 @@ describe("POST /pulse/:id/action — cache.refresh", () => {
 				encryptor: app.encryptor,
 				instance: plexInstance,
 				log: expect.anything(),
+				nativeInventoryMode: "force",
 			},
 			expect.objectContaining({ resultMarker: expect.stringMatching(/^in_progress:/) }),
 		);
@@ -393,6 +394,7 @@ describe("POST /pulse/:id/action — cache.refresh", () => {
 				prisma: app.prisma,
 				encryptor: app.encryptor,
 				instance: jellyfinInstance,
+				nativeInventoryMode: "force",
 			}),
 			expect.objectContaining({ resultMarker: expect.stringMatching(/^in_progress:/) }),
 		);

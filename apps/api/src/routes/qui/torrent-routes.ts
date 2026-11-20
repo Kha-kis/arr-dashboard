@@ -1,15 +1,49 @@
 import type { FastifyInstance } from "fastify";
-import { z } from "zod";
 import { createQuiClient } from "../../lib/qui/client-factory.js";
+import { executeQuiDrawerAction } from "../../lib/qui/drawer-action-service.js";
 import { requireQuiInstance } from "../../lib/qui/instance-helpers.js";
+import { projectQuiTrackerViews } from "../../lib/qui/tracker-selection.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import {
-	extractHostnameSafe,
 	HASH_PARAM,
 	INSTANCE_HASH_PARAMS,
+	QUI_DRAWER_ADD_TRACKERS_BODY,
+	QUI_DRAWER_EDIT_TRACKER_BODY,
+	QUI_DRAWER_REMOVE_TRACKERS_BODY,
+	QUI_DRAWER_RENAME_BODY,
 	QUI_INSTANCE_PARAM,
 } from "./qui-shared.js";
+
+function sendDrawerResult(
+	reply: import("fastify").FastifyReply,
+	result: Awaited<ReturnType<typeof executeQuiDrawerAction>>,
+) {
+	if (result.status === "failed") {
+		if (result.failureCategory === "tracker_lookup") {
+			return reply.status(502).send({
+				error: "qui tracker lookup failed",
+				message: result.error,
+			});
+		}
+		return reply.status(409).send({
+			error:
+				result.failureCategory === "selection"
+					? "qui tracker selection unavailable"
+					: "qui mutation unavailable",
+			message: result.error,
+		});
+	}
+	if (result.status === "uncertain") {
+		return reply
+			.status(502)
+			.send({ error: "qui mutation outcome uncertain", message: result.error });
+	}
+	if (result.status === "audit_unsettled") {
+		return reply.status(503).send({ error: "qui action audit unresolved", message: result.error });
+	}
+	return reply.send({ status: "success", logRowCount: result.logRowCount });
+}
 
 export function registerTorrentRoutes(app: FastifyInstance): void {
 	app.get<{ Params: { id: string; hash: string } }>(
@@ -34,24 +68,20 @@ export function registerTorrentRoutes(app: FastifyInstance): void {
 				instanceId: request.params.instanceId,
 				hash: request.params.hash,
 			});
-			const qbitInstanceId = Number.parseInt(instanceId, 10);
-			if (!Number.isFinite(qbitInstanceId)) {
+			const qbitInstanceId = /^\d+$/.test(instanceId) ? Number(instanceId) : NaN;
+			if (!Number.isSafeInteger(qbitInstanceId) || qbitInstanceId <= 0) {
 				return reply.status(400).send({ error: "qbit instanceId must be numeric" });
 			}
 			const instance = await requireQuiInstance(app, userId, id);
 			const client = createQuiClient(app, instance);
 			const trackers = await client.getTrackers(qbitInstanceId, hash);
-			// Filter pseudo-trackers (DHT/PeX/LSD) from the visible list, then
-			// strip the raw announce URL — it embeds the user's tracker passkey,
-			// which is effectively a credential and an ejection-worthy leak on
-			// most private trackers (#491). Replace with the hostname so the
-			// response is safe to render, screenshot, or capture in a HAR.
-			// Mutation routes (add/remove/edit) re-fetch the original URL
-			// server-side when qBit needs it, so the wire never carries it.
-			const realTrackers = trackers
-				.filter((t) => !t.url.startsWith("** "))
-				.map(({ url, ...rest }) => ({ ...rest, hostname: extractHostnameSafe(url) }));
-			return reply.send({ trackers: realTrackers });
+			return reply.send({
+				trackers: projectQuiTrackerViews(
+					app.encryptor,
+					{ userId, serviceInstanceId: instance.id, qbitInstanceId, hash },
+					trackers,
+				),
+			});
 		},
 	);
 
@@ -162,168 +192,113 @@ export function registerTorrentRoutes(app: FastifyInstance): void {
 	);
 
 	// ────────────────────────────────────────────────────────────────────
-	// Detail-drawer mutations (Phase 6) — rename + tracker CRUD
-	// ────────────────────────────────────────────────────────────────────
-	//
-	// These bypass the bulk-action transport because qui exposes them as
-	// individual endpoints. Still flow through executeQuiAction for audit-
-	// log uniformity? — No: those endpoints aren't in the bulk-action enum
-	// vocabulary. Audit logging for these mutations lives directly in the
-	// route handler via writeNonBulkActionLog (helper added below). The
-	// shape stored in the audit log uses the existing QuiActionLog table
-	// with synthetic `action` values prefixed `nonBulk.` to stay distinct
-	// from the bulk-action enum. (See `nonBulkActionToString` below.)
-	//
-	// Failure mode: any non-2xx from qui surfaces as 502 with the qui
-	// error message, matching the bulk-action route's behavior.
-
-	app.post<{
-		Params: { id: string; instanceId: string; hash: string };
-		Body: { name?: unknown };
-	}>("/qui/instances/:id/qbit/:instanceId/torrents/:hash/rename", async (request, reply) => {
-		const userId = request.currentUser!.id;
-		const { id } = validateRequest(QUI_INSTANCE_PARAM, request.params);
-		const { instanceId, hash } = validateRequest(INSTANCE_HASH_PARAMS, {
-			instanceId: request.params.instanceId,
-			hash: request.params.hash,
-		});
-		const body = validateRequest(z.object({ name: z.string().min(1).max(1024) }), request.body);
-		const qbitInstanceId = Number.parseInt(instanceId, 10);
-		if (!Number.isFinite(qbitInstanceId)) {
-			return reply.status(400).send({ error: "qbit instanceId must be numeric" });
-		}
-		const instance = await requireQuiInstance(app, userId, id);
-		const client = createQuiClient(app, instance);
-		try {
-			await client.renameTorrent(qbitInstanceId, hash, body.name);
-			return reply.send({ status: "success" });
-		} catch (error) {
-			return reply.status(502).send({
-				error: "qui mutation failed",
-				message: getErrorMessage(error, "qui rename failed"),
-			});
-		}
-	});
-
-	app.post<{
-		Params: { id: string; instanceId: string; hash: string };
-		Body: { urls?: unknown };
-	}>("/qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers/add", async (request, reply) => {
-		const userId = request.currentUser!.id;
-		const { id } = validateRequest(QUI_INSTANCE_PARAM, request.params);
-		const { instanceId, hash } = validateRequest(INSTANCE_HASH_PARAMS, {
-			instanceId: request.params.instanceId,
-			hash: request.params.hash,
-		});
-		const body = validateRequest(
-			z.object({ urls: z.array(z.string().min(1)).min(1).max(50) }),
-			request.body,
-		);
-		const qbitInstanceId = Number.parseInt(instanceId, 10);
-		if (!Number.isFinite(qbitInstanceId)) {
-			return reply.status(400).send({ error: "qbit instanceId must be numeric" });
-		}
-		const instance = await requireQuiInstance(app, userId, id);
-		const client = createQuiClient(app, instance);
-		try {
-			await client.addTrackers(qbitInstanceId, hash, body.urls);
-			return reply.send({ status: "success" });
-		} catch (error) {
-			return reply.status(502).send({
-				error: "qui mutation failed",
-				message: getErrorMessage(error, "qui addTrackers failed"),
-			});
-		}
-	});
-
-	// Remove takes HOSTNAMES, not URLs — the panel/drawer only ever holds
-	// passkey-stripped hostnames (extractHostnameSafe in qui-shared.ts), but
-	// qBit matches trackers for removal by exact full announce URL. Resolve
-	// hostname → full URL here so the URL (with its passkey) never leaves
-	// the API process.
-	app.post<{
-		Params: { id: string; instanceId: string; hash: string };
-		Body: { hostnames?: unknown };
-	}>(
-		"/qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers/remove",
+	// Drawer mutations share the same target verification, atomic hash claim,
+	// audit intent, uncertainty hold, and success release as bulk actions.
+	app.post<{ Params: { id: string; instanceId: string; hash: string }; Body: unknown }>(
+		"/qui/instances/:id/qbit/:instanceId/torrents/:hash/rename",
 		async (request, reply) => {
 			const userId = request.currentUser!.id;
 			const { id } = validateRequest(QUI_INSTANCE_PARAM, request.params);
-			const { instanceId, hash } = validateRequest(INSTANCE_HASH_PARAMS, {
-				instanceId: request.params.instanceId,
-				hash: request.params.hash,
-			});
-			const body = validateRequest(
-				z.object({ hostnames: z.array(z.string().min(1)).min(1).max(50) }),
-				request.body,
-			);
-			const qbitInstanceId = Number.parseInt(instanceId, 10);
-			if (!Number.isFinite(qbitInstanceId)) {
+			const { instanceId, hash } = validateRequest(INSTANCE_HASH_PARAMS, request.params);
+			const body = validateRequest(QUI_DRAWER_RENAME_BODY, request.body);
+			const qbitInstanceId = /^\d+$/.test(instanceId) ? Number(instanceId) : NaN;
+			if (!Number.isSafeInteger(qbitInstanceId) || qbitInstanceId <= 0) {
 				return reply.status(400).send({ error: "qbit instanceId must be numeric" });
 			}
 			const instance = await requireQuiInstance(app, userId, id);
 			const client = createQuiClient(app, instance);
-			try {
-				const wanted = new Set(body.hostnames.map((h) => h.toLowerCase()));
-				const trackers = await client.getTrackers(qbitInstanceId, hash);
-				const urls = trackers
-					.filter((t) => wanted.has(extractHostnameSafe(t.url).toLowerCase()))
-					.map((t) => t.url);
-				if (urls.length === 0) {
-					return reply.status(404).send({ error: "no tracker matches the given hostname" });
-				}
-				await client.removeTrackers(qbitInstanceId, hash, urls);
-				return reply.send({ status: "success" });
-			} catch (error) {
-				return reply.status(502).send({
-					error: "qui mutation failed",
-					message: getErrorMessage(error, "qui removeTrackers failed"),
-				});
-			}
+			const result = await executeQuiDrawerAction({
+				app,
+				client,
+				userId,
+				serviceInstanceId: instance.id,
+				qbitInstanceId,
+				hash,
+				operation: { action: "renameTorrent", input: body },
+			});
+			return sendDrawerResult(reply, result);
 		},
 	);
 
-	// Edit identifies the tracker to replace by HOSTNAME (same passkey-safety
-	// constraint as removal — the caller never sees the old full URL). The
-	// new URL is operator-supplied, so it arrives whole. Resolve oldHostname
-	// → old full URL here, then hand both to qui's edit endpoint.
-	app.post<{
-		Params: { id: string; instanceId: string; hash: string };
-		Body: { oldHostname?: unknown; newURL?: unknown };
-	}>("/qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers/edit", async (request, reply) => {
-		const userId = request.currentUser!.id;
-		const { id } = validateRequest(QUI_INSTANCE_PARAM, request.params);
-		const { instanceId, hash } = validateRequest(INSTANCE_HASH_PARAMS, {
-			instanceId: request.params.instanceId,
-			hash: request.params.hash,
-		});
-		const body = validateRequest(
-			z.object({
-				oldHostname: z.string().min(1),
-				newURL: z.string().min(1),
-			}),
-			request.body,
-		);
-		const qbitInstanceId = Number.parseInt(instanceId, 10);
-		if (!Number.isFinite(qbitInstanceId)) {
-			return reply.status(400).send({ error: "qbit instanceId must be numeric" });
-		}
-		const instance = await requireQuiInstance(app, userId, id);
-		const client = createQuiClient(app, instance);
-		try {
-			const oldHostname = body.oldHostname.toLowerCase();
-			const trackers = await client.getTrackers(qbitInstanceId, hash);
-			const target = trackers.find((t) => extractHostnameSafe(t.url).toLowerCase() === oldHostname);
-			if (!target) {
-				return reply.status(404).send({ error: "no tracker matches the given hostname" });
+	app.post<{ Params: { id: string; instanceId: string; hash: string }; Body: unknown }>(
+		"/qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers/add",
+		async (request, reply) => {
+			const userId = request.currentUser!.id;
+			const { id } = validateRequest(QUI_INSTANCE_PARAM, request.params);
+			const { instanceId, hash } = validateRequest(INSTANCE_HASH_PARAMS, request.params);
+			const body = validateRequest(QUI_DRAWER_ADD_TRACKERS_BODY, request.body);
+			const qbitInstanceId = /^\d+$/.test(instanceId) ? Number(instanceId) : NaN;
+			if (!Number.isSafeInteger(qbitInstanceId) || qbitInstanceId <= 0) {
+				return reply.status(400).send({ error: "qbit instanceId must be numeric" });
 			}
-			await client.editTracker(qbitInstanceId, hash, target.url, body.newURL);
-			return reply.send({ status: "success" });
-		} catch (error) {
-			return reply.status(502).send({
-				error: "qui mutation failed",
-				message: getErrorMessage(error, "qui editTracker failed"),
+			const instance = await requireQuiInstance(app, userId, id);
+			const client = createQuiClient(app, instance);
+			const result = await executeQuiDrawerAction({
+				app,
+				client,
+				userId,
+				serviceInstanceId: instance.id,
+				qbitInstanceId,
+				hash,
+				operation: { action: "addTrackers", input: body },
 			});
-		}
-	});
+			return sendDrawerResult(reply, result);
+		},
+	);
+
+	app.post<{ Params: { id: string; instanceId: string; hash: string }; Body: unknown }>(
+		"/qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers/remove",
+		async (request, reply) => {
+			const userId = request.currentUser!.id;
+			const { id } = validateRequest(QUI_INSTANCE_PARAM, request.params);
+			const { instanceId, hash } = validateRequest(INSTANCE_HASH_PARAMS, request.params);
+			const body = validateRequest(QUI_DRAWER_REMOVE_TRACKERS_BODY, request.body);
+			const qbitInstanceId = /^\d+$/.test(instanceId) ? Number(instanceId) : NaN;
+			if (!Number.isSafeInteger(qbitInstanceId) || qbitInstanceId <= 0) {
+				return reply.status(400).send({ error: "qbit instanceId must be numeric" });
+			}
+			const instance = await requireQuiInstance(app, userId, id);
+			const client = createQuiClient(app, instance);
+			const result = await executeQuiDrawerAction({
+				app,
+				client,
+				userId,
+				serviceInstanceId: instance.id,
+				qbitInstanceId,
+				hash,
+				operation: { action: "removeTrackers", input: body },
+			});
+			return sendDrawerResult(reply, result);
+		},
+	);
+
+	app.post<{ Params: { id: string; instanceId: string; hash: string }; Body: unknown }>(
+		"/qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers/edit",
+		async (request, reply) => {
+			const userId = request.currentUser!.id;
+			const { id } = validateRequest(QUI_INSTANCE_PARAM, request.params);
+			const { instanceId, hash } = validateRequest(INSTANCE_HASH_PARAMS, request.params);
+			const body = validateRequest(QUI_DRAWER_EDIT_TRACKER_BODY, request.body);
+			const qbitInstanceId = /^\d+$/.test(instanceId) ? Number(instanceId) : NaN;
+			if (!Number.isSafeInteger(qbitInstanceId) || qbitInstanceId <= 0) {
+				return reply.status(400).send({ error: "qbit instanceId must be numeric" });
+			}
+			const instance = await requireQuiInstance(app, userId, id);
+			const client = createQuiClient(app, instance);
+			const input =
+				"trackerSelector" in body
+					? { trackerSelectors: [body.trackerSelector], newURL: body.newURL }
+					: { hostnames: [body.oldHostname], newURL: body.newURL };
+			const result = await executeQuiDrawerAction({
+				app,
+				client,
+				userId,
+				serviceInstanceId: instance.id,
+				qbitInstanceId,
+				hash,
+				operation: { action: "editTracker", input },
+			});
+			return sendDrawerResult(reply, result);
+		},
+	);
 }

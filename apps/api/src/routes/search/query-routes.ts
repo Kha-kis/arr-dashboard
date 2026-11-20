@@ -1,6 +1,8 @@
 import { multiInstanceSearchResponseSchema, searchRequestSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { executeOnInstances, isProwlarrClient } from "../../lib/arr/client-helpers.js";
+import { createArrServiceFingerprint } from "../../lib/arr/service-fingerprint.js";
+import { issueSearchGrabSelector, searchGrabTargetSchema } from "../../lib/search/grab-selector.js";
 import { performProwlarrSearchWithSdk } from "../../lib/search/prowlarr-api.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
@@ -42,19 +44,37 @@ export const registerQueryRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			},
 			async (client, instance) => {
 				if (!isProwlarrClient(client)) {
-					return [];
+					throw new Error("Configured Prowlarr instance has an incompatible client");
 				}
 
 				// Get filter options for this instance
 				const filter = filterMap.get(instance.id);
 
-				return performProwlarrSearchWithSdk(client, instance, {
+				const batch = await performProwlarrSearchWithSdk(client, instance, {
 					query: payload.query,
 					type: payload.type,
 					limit: payload.limit ?? 100,
 					indexerIds: filter?.indexerIds,
 					categories: filter?.categories,
 				});
+				const connectionFingerprint = createArrServiceFingerprint(instance);
+				return {
+					...batch,
+					results: batch.results.map((result) => {
+						// Only the accepted provider GUID/indexer pair is action evidence;
+						// an id or download URL can still be a display-only fallback.
+						const target = searchGrabTargetSchema.safeParse({
+							userId: request.currentUser!.id,
+							serviceInstanceId: instance.id,
+							connectionFingerprint,
+							guid: result.guid,
+							indexerId: result.indexerId,
+						});
+						return target.success
+							? { ...result, grabSelector: issueSearchGrabSelector(app.encryptor, target.data) }
+							: result;
+					}),
+				};
 			},
 		);
 
@@ -62,13 +82,35 @@ export const registerQueryRoutes: FastifyPluginCallback = (app, _opts, done) => 
 		const results = response.instances.map((result) => ({
 			instanceId: result.instanceId,
 			instanceName: result.instanceName,
-			data: result.success ? result.data : [],
+			success: result.success,
+			data: result.success ? result.data.results : [],
+			...(result.success ? { coverage: result.data.coverage } : {}),
 		}));
+		const aggregated = results.flatMap((result) => result.data);
+		const successfulBatches = response.instances.filter((result) => result.success);
+		const coverage =
+			successfulBatches.length > 0
+				? successfulBatches.reduce(
+						(total, result) => ({
+							receivedCount: total.receivedCount + result.data.coverage.receivedCount,
+							acceptedCount: total.acceptedCount + result.data.coverage.acceptedCount,
+							rejectedCount: total.rejectedCount + result.data.coverage.rejectedCount,
+							metadataIncompleteCount:
+								total.metadataIncompleteCount + result.data.coverage.metadataIncompleteCount,
+						}),
+						{ receivedCount: 0, acceptedCount: 0, rejectedCount: 0, metadataIncompleteCount: 0 },
+					)
+				: undefined;
+		const returnedInstanceIds = new Set(response.instances.map((result) => result.instanceId));
+		const omittedSelectedCount =
+			instanceIds?.filter((id) => !returnedInstanceIds.has(id)).length ?? 0;
 
 		return multiInstanceSearchResponseSchema.parse({
 			instances: results,
-			aggregated: response.aggregated,
-			totalCount: response.totalCount,
+			aggregated,
+			totalCount: aggregated.length,
+			failedInstanceCount: response.errorCount + omittedSelectedCount,
+			coverage,
 		});
 	});
 

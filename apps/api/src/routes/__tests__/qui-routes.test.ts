@@ -5,6 +5,7 @@
  * pattern as services.test.ts — real route plugins, mocked Prisma + client.
  */
 
+import { type QuiAction, quiActionSchema } from "@arr/shared";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockRequireQuiInstance, mockListQuiInstances } = vi.hoisted(() => ({
@@ -18,6 +19,7 @@ vi.mock("../../lib/qui/instance-helpers.js", () => ({
 }));
 
 const mockQuiClient = vi.hoisted(() => ({
+	getTorrentsByHash: vi.fn(),
 	getTorrentByHash: vi.fn(),
 	listInstances: vi.fn(),
 	getTrackers: vi.fn(),
@@ -66,14 +68,15 @@ vi.mock("../../lib/library-sync/episode-file-backfill.js", () => ({
 }));
 
 import Fastify, { type FastifyRequest } from "fastify";
+import { Encryptor } from "../../lib/auth/encryption.js";
 import { InstanceNotFoundError } from "../../lib/errors.js";
 import { hashSecret } from "../../lib/qui/webhook-secret.js";
-import { registerQuiRoutes } from "../qui.js";
 import {
 	buildQuiDeploymentId,
 	buildQuiNotificationTargetName,
 	buildQuiNotificationTargetOwnerId,
 } from "../qui/webhook-routes.js";
+import { registerQuiRoutes } from "../qui.js";
 import {
 	createInjectAuthenticated,
 	createMockEncryptor,
@@ -100,8 +103,29 @@ function makeQuiInstance(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+type ActionFixture = {
+	userId: string;
+	serviceInstanceId: string;
+	qbitInstanceId: number;
+	torrentHash: string;
+	attemptId: string;
+	status?: string;
+	[key: string]: unknown;
+};
+
+function matchesActionFixture(row: ActionFixture, where: Record<string, unknown>) {
+	return Object.entries(where).every(([key, expected]) => {
+		if (typeof expected === "object" && expected !== null && "in" in expected) {
+			return Array.isArray(expected.in) && expected.in.includes(row[key]);
+		}
+		return row[key] === expected;
+	});
+}
+
 function createMockPrisma() {
-	return {
+	const actionRows: ActionFixture[] = [];
+	const claimAttempts = new Map<string, ActionFixture>();
+	const mockPrisma = {
 		serviceInstance: {
 			findMany: vi.fn().mockResolvedValue([]),
 			findFirst: vi.fn().mockResolvedValue(null),
@@ -112,9 +136,70 @@ function createMockPrisma() {
 		},
 		quiActionLog: {
 			create: vi.fn().mockResolvedValue({ id: "row-x" }),
-			updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+			createMany: vi.fn().mockImplementation(async ({ data }: { data: ActionFixture[] }) => {
+				actionRows.push(...data.map((row) => ({ ...row })));
+				return { count: data.length };
+			}),
+			updateMany: vi
+				.fn()
+				.mockImplementation(
+					async ({
+						where,
+						data,
+					}: {
+						where: Record<string, unknown>;
+						data: Record<string, unknown>;
+					}) => {
+						const matching = actionRows.filter((row) => matchesActionFixture(row, where));
+						for (const row of matching) Object.assign(row, data);
+						return { count: matching.length };
+					},
+				),
 			findUnique: vi.fn().mockResolvedValue(null),
-			findMany: vi.fn().mockResolvedValue([]),
+			findUniqueOrThrow: vi.fn().mockResolvedValue({
+				serviceInstanceId: "qui-1",
+				qbitInstanceId: 3,
+				torrentHash: VALID_HASH,
+				attemptId: "attempt-1",
+			}),
+			findMany: vi
+				.fn()
+				.mockImplementation(
+					async ({
+						where,
+					}: {
+						where: Record<string, unknown>;
+						orderBy?: unknown;
+					}): Promise<Record<string, unknown>[]> =>
+						actionRows.filter((row) => matchesActionFixture(row, where)).map((row) => ({ ...row })),
+				),
+		},
+		quiActionClaim: {
+			createMany: vi.fn().mockImplementation(async ({ data }: { data: ActionFixture[] }) => {
+				if (data.some(({ torrentHash }) => claimAttempts.has(torrentHash))) {
+					throw Object.assign(new Error("unique claim conflict"), { code: "P2002" });
+				}
+				for (const item of data) claimAttempts.set(item.torrentHash, { ...item });
+				return { count: data.length };
+			}),
+			deleteMany: vi
+				.fn()
+				.mockImplementation(async ({ where }: { where: Record<string, unknown> }) => {
+					const matches = [...claimAttempts.values()].filter((row) =>
+						matchesActionFixture(row, where),
+					);
+					for (const row of matches) claimAttempts.delete(row.torrentHash);
+					return { count: matches.length };
+				}),
+			findMany: vi
+				.fn()
+				.mockImplementation(async ({ where }: { where: Record<string, unknown> }) =>
+					[...claimAttempts.values()]
+						.filter((row) => matchesActionFixture(row, where))
+						.map((row) => ({ ...row })),
+				),
+			findUnique: vi.fn().mockResolvedValue({ attemptId: "attempt-1" }),
+			delete: vi.fn().mockResolvedValue({}),
 		},
 		// Phase 5.1 — webhook config persists `hashedQuiWebhookSecret` on the
 		// User row; Phase 5.1/5.2 events live in QuiEventLog.
@@ -134,12 +219,20 @@ function createMockPrisma() {
 		systemSettings: {
 			findUnique: vi.fn().mockResolvedValue(null),
 		},
-		// $transaction(operations[]) — returns the resolved values of each op.
-		// Our route only reads `.id` from each so the trivial stub suffices.
-		$transaction: vi.fn((ops: unknown[]) =>
-			Promise.resolve(ops.map((_, i) => ({ id: `row-${i}` }))),
-		),
+		$transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => {
+			const before = new Map([...claimAttempts].map(([hash, row]) => [hash, { ...row }]));
+			const beforeRows = actionRows.map((row) => ({ ...row }));
+			try {
+				return await callback(mockPrisma);
+			} catch (error) {
+				claimAttempts.clear();
+				for (const [hash, row] of before) claimAttempts.set(hash, row);
+				actionRows.splice(0, actionRows.length, ...beforeRows);
+				throw error;
+			}
+		}),
 	};
+	return mockPrisma;
 }
 
 const VALID_HASH = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -151,6 +244,10 @@ let requestWarnSpy: ReturnType<typeof vi.fn>;
 
 beforeEach(async () => {
 	vi.clearAllMocks();
+	mockQuiClient.listInstances.mockResolvedValue([{ id: 3, connected: true, isActive: true }]);
+	mockQuiClient.getTorrentsByHash.mockImplementation(async (hash: string) => [
+		{ hash, instanceId: 3 },
+	]);
 
 	mockPrisma = createMockPrisma();
 	mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
@@ -158,7 +255,7 @@ beforeEach(async () => {
 
 	app = Fastify();
 	app.decorate("prisma", mockPrisma);
-	app.decorate("encryptor", createMockEncryptor("test-api-key"));
+	app.decorate("encryptor", new Encryptor("x".repeat(32)));
 	app.decorate("installationId", "installation-1");
 	app.decorate("installationIdIsPersistent", true);
 	app.decorate("arrClientFactory", { rawRequest: vi.fn() });
@@ -451,7 +548,7 @@ describe("POST /qui/instances/:id/qbit/:instanceId/torrents/:hash/actions/:actio
 		});
 	});
 
-	it("returns 502 with the qui error message when bulkAction throws", async () => {
+	it("returns an actionable uncertain outcome when the qUI response is lost", async () => {
 		mockQuiClient.bulkAction.mockRejectedValue(
 			new Error("qui request to /api/instances/3/torrents/bulk-action failed: 502 Bad Gateway"),
 		);
@@ -460,11 +557,45 @@ describe("POST /qui/instances/:id/qbit/:instanceId/torrents/:hash/actions/:actio
 			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/actions/pause`,
 			{ body: {} },
 		);
-		// The route surfaces upstream failure as 502 and includes the
-		// underlying message so the UI can render a meaningful toast.
+		// A timeout may follow an applied mutation; never claim a definitive
+		// failure or expose the upstream URL from the transport error.
 		expect(res.statusCode).toBe(502);
 		const body = JSON.parse(res.payload);
-		expect(body.message).toMatch(/502 Bad Gateway/);
+		expect(body.error).toBe("qui mutation outcome uncertain");
+		expect(body.message).toMatch(/outcome is unresolved/);
+		expect(mockPrisma.quiActionLog.updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({ data: { status: "uncertain" } }),
+		);
+	});
+
+	it("fails closed on delete-with-files even when the selected hash exists", async () => {
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/actions/delete`,
+			{ body: { deleteFiles: true } },
+		);
+		expect(res.statusCode).toBe(409);
+		expect(JSON.parse(res.payload).error).toBe("qui mutation unavailable");
+		expect(JSON.parse(res.payload).message).toMatch(/shared-storage ownership/);
+		expect(mockQuiClient.bulkAction).not.toHaveBeenCalled();
+	});
+
+	it("rejects body fields that could replace a single-torrent action or target", async () => {
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/actions/pause`,
+			{
+				body: {
+					action: "deleteWithFiles",
+					hashes: ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+					selectAll: true,
+					deleteFiles: true,
+				},
+			},
+		);
+		expect(res.statusCode).toBe(400);
+		expect(mockQuiClient.bulkAction).not.toHaveBeenCalled();
+		expect(mockPrisma.$transaction).not.toHaveBeenCalled();
 	});
 
 	it("returns 400 on an unknown action", async () => {
@@ -494,6 +625,16 @@ describe("POST /qui/instances/:id/qbit/:instanceId/torrents/:hash/actions/:actio
 			{ body: {} },
 		);
 		expect(res.statusCode).toBe(400);
+	});
+
+	it("rejects a numeric-prefix qbit instanceId instead of coercing it to another target", async () => {
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3junk/torrents/${VALID_HASH}/actions/pause`,
+			{ body: {} },
+		);
+		expect(res.statusCode).toBe(400);
+		expect(mockQuiClient.bulkAction).not.toHaveBeenCalled();
 	});
 
 	it("returns 404 for a non-owned qui instance (cross-user isolation)", async () => {
@@ -576,6 +717,38 @@ describe("POST /qui/instances/:id/qbit/:instanceId/torrents/bulk-action/:action"
 		});
 	});
 
+	it("rejects bulk selection and action controls outside the URL and hashes envelope", async () => {
+		const res = await injectAuthenticated(
+			"POST",
+			"/qui/instances/qui-1/qbit/3/torrents/bulk-action/pause",
+			{
+				body: {
+					hashes: [HASH_A],
+					action: "deleteWithFiles",
+					selectAll: true,
+					deleteFiles: true,
+				},
+			},
+		);
+		expect(res.statusCode).toBe(400);
+		expect(mockQuiClient.bulkAction).not.toHaveBeenCalled();
+		expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+	});
+
+	it("rejects the whole bulk selection when one execution-time target is absent", async () => {
+		mockQuiClient.getTorrentsByHash.mockImplementation(async (hash: string) =>
+			hash === HASH_A ? [{ hash, instanceId: 3 }] : [{ hash, instanceId: 9 }],
+		);
+		const res = await injectAuthenticated(
+			"POST",
+			"/qui/instances/qui-1/qbit/3/torrents/bulk-action/delete",
+			{ body: { hashes: [HASH_A, HASH_B], deleteFiles: false } },
+		);
+		expect(res.statusCode).toBe(409);
+		expect(mockQuiClient.bulkAction).not.toHaveBeenCalled();
+		expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+	});
+
 	it("returns 400 on empty hashes[]", async () => {
 		const res = await injectAuthenticated(
 			"POST",
@@ -616,8 +789,227 @@ describe("POST /qui/instances/:id/qbit/:instanceId/torrents/bulk-action/:action"
 });
 
 // ────────────────────────────────────────────────────────────────────────
-// Phase 4.1 — action log feed
+// Action-specific contracts through both parsing boundaries. Expected payloads
+// are literal fixtures, not derived from the schemas or dispatch implementation.
 // ────────────────────────────────────────────────────────────────────────
+
+describe("qUI single/bulk action payload contract matrix", () => {
+	type ActionCase = {
+		action: QuiAction;
+		body: Record<string, unknown>;
+		extras: Record<string, unknown> | undefined;
+	};
+	const cases: ActionCase[] = [
+		{ action: "pause", body: {}, extras: undefined },
+		{ action: "resume", body: {}, extras: undefined },
+		{ action: "recheck", body: {}, extras: undefined },
+		{ action: "reannounce", body: {}, extras: undefined },
+		{ action: "forceStart", body: {}, extras: undefined },
+		{ action: "topPriority", body: {}, extras: undefined },
+		{ action: "bottomPriority", body: {}, extras: undefined },
+		{ action: "increasePriority", body: {}, extras: undefined },
+		{ action: "decreasePriority", body: {}, extras: undefined },
+		{ action: "toggleSequentialDownload", body: {}, extras: undefined },
+		{ action: "setTags", body: { tags: "test,seed" }, extras: { tags: "test,seed" } },
+		{ action: "setCategory", body: { category: "" }, extras: { category: "" } },
+		{ action: "toggleAutoTMM", body: { enable: false }, extras: { enable: false } },
+		{ action: "setUploadLimit", body: { uploadLimit: 0 }, extras: { uploadLimit: 0 } },
+		{ action: "setDownloadLimit", body: { downloadLimit: 0 }, extras: { downloadLimit: 0 } },
+		{
+			action: "setShareLimit",
+			body: { ratioLimit: -1, seedingTimeLimit: -2 },
+			extras: { ratioLimit: -1, seedingTimeLimit: -2 },
+		},
+		{
+			action: "setLocation",
+			body: { location: "/synthetic/media" },
+			extras: { location: "/synthetic/media" },
+		},
+		{ action: "delete", body: { deleteFiles: false }, extras: { deleteFiles: false } },
+	];
+	const valueVariants: ActionCase[] = [
+		{ action: "setTags", body: { tags: "" }, extras: { tags: "" } },
+		{ action: "setCategory", body: { category: "test" }, extras: { category: "test" } },
+		{ action: "toggleAutoTMM", body: { enable: true }, extras: { enable: true } },
+		{ action: "setUploadLimit", body: { uploadLimit: 128 }, extras: { uploadLimit: 128 } },
+		{ action: "setDownloadLimit", body: { downloadLimit: 256 }, extras: { downloadLimit: 256 } },
+		{
+			action: "setShareLimit",
+			body: { ratioLimit: 1.5, seedingTimeLimit: 30, inactiveSeedingTimeLimit: 0 },
+			extras: { ratioLimit: 1.5, seedingTimeLimit: 30, inactiveSeedingTimeLimit: 0 },
+		},
+		{
+			action: "setShareLimit",
+			body: { ratioLimit: -2, seedingTimeLimit: -1, inactiveSeedingTimeLimit: -2 },
+			extras: { ratioLimit: -2, seedingTimeLimit: -1, inactiveSeedingTimeLimit: -2 },
+		},
+	];
+	const invalidCases: Array<{ action: QuiAction; body: Record<string, unknown> }> = [
+		{ action: "setTags", body: {} },
+		{ action: "setTags", body: { tags: null } },
+		{ action: "setTags", body: { tags: "x".repeat(2001) } },
+		{ action: "setCategory", body: {} },
+		{ action: "setCategory", body: { category: 0 } },
+		{ action: "toggleAutoTMM", body: {} },
+		{ action: "toggleAutoTMM", body: { enable: 0 } },
+		{ action: "setUploadLimit", body: {} },
+		{ action: "setUploadLimit", body: { uploadLimit: -1 } },
+		{ action: "setDownloadLimit", body: {} },
+		{ action: "setDownloadLimit", body: { downloadLimit: 0.5 } },
+		{ action: "setShareLimit", body: {} },
+		{ action: "setShareLimit", body: { ratioLimit: -2 } },
+		{ action: "setLocation", body: {} },
+		{ action: "setLocation", body: { location: "" } },
+		{ action: "delete", body: {} },
+		{ action: "delete", body: { deleteFiles: "false" } },
+	];
+
+	it("has an independent fixture for every declared action", () => {
+		expect(cases.map(({ action }) => action).sort()).toEqual([...quiActionSchema.options].sort());
+	});
+
+	for (const mode of ["single", "bulk"] as const) {
+		describe(mode, () => {
+			const hashes =
+				mode === "single" ? [VALID_HASH] : [VALID_HASH, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"];
+			function request(action: QuiAction, body: Record<string, unknown>) {
+				return injectAuthenticated(
+					"POST",
+					mode === "single"
+						? `/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/actions/${action}`
+						: `/qui/instances/qui-1/qbit/3/torrents/bulk-action/${action}`,
+					{ body: mode === "single" ? body : { hashes, ...body } },
+				);
+			}
+
+			it.each([...cases, ...valueVariants])(
+				"forwards $action with $body exactly and audits each selected hash",
+				async ({ action, body, extras }) => {
+					mockQuiClient.bulkAction.mockResolvedValue(undefined);
+					const res = await request(action, body);
+					expect(res.statusCode).toBe(200);
+					expect(JSON.parse(res.payload)).toEqual({
+						status: "success",
+						logRowCount: hashes.length,
+					});
+					expect(mockRequireQuiInstance).toHaveBeenCalledOnce();
+					const [routeApp, ownerId, instanceId] = mockRequireQuiInstance.mock.calls[0]!;
+					expect(routeApp.prisma).toBe(mockPrisma);
+					expect([ownerId, instanceId]).toEqual(["user-1", "qui-1"]);
+					expect(mockQuiClient.bulkAction).toHaveBeenCalledExactlyOnceWith({
+						qbitInstanceId: 3,
+						hashes,
+						action,
+						extras,
+					});
+					const rows = mockPrisma.quiActionLog.createMany.mock.calls[0]?.[0].data;
+					expect(rows).toHaveLength(hashes.length);
+					for (const [index, hash] of hashes.entries()) {
+						expect(rows[index]).toEqual(
+							expect.objectContaining({
+								userId: "user-1",
+								serviceInstanceId: "qui-1",
+								qbitInstanceId: 3,
+								torrentHash: hash,
+								action,
+								payload: extras === undefined ? null : JSON.stringify(extras),
+								status: "pending",
+							}),
+						);
+					}
+					expect(mockPrisma.quiActionLog.updateMany).toHaveBeenCalledWith(
+						expect.objectContaining({ data: expect.objectContaining({ status: "success" }) }),
+					);
+				},
+			);
+
+			it.each(invalidCases)(
+				"rejects malformed $action payload $body before claims",
+				async ({ action, body }) => {
+					const res = await request(action, body);
+					expect(res.statusCode).toBe(400);
+					expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+					expect(mockPrisma.quiActionClaim.createMany).not.toHaveBeenCalled();
+					expect(mockPrisma.quiActionLog.createMany).not.toHaveBeenCalled();
+					expect(mockQuiClient.bulkAction).not.toHaveBeenCalled();
+				},
+			);
+
+			it.each(cases)("rejects unauthorized controls with $action", async ({ action, body }) => {
+				const res = await request(action, { ...body, action: "delete", selectAll: true });
+				expect(res.statusCode).toBe(400);
+				expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+				expect(mockQuiClient.bulkAction).not.toHaveBeenCalled();
+			});
+
+			it.each(cases.filter(({ extras }) => extras !== undefined))(
+				"reports a lost $action response as uncertain and retains the claim",
+				async ({ action, body }) => {
+					mockQuiClient.bulkAction.mockRejectedValue(new Error("synthetic lost response"));
+					const res = await request(action, body);
+					expect(res.statusCode).toBe(502);
+					expect(JSON.parse(res.payload).error).toBe("qui mutation outcome uncertain");
+					expect(mockQuiClient.bulkAction).toHaveBeenCalledOnce();
+					expect(mockPrisma.quiActionLog.updateMany).toHaveBeenCalledWith(
+						expect.objectContaining({ data: { status: "uncertain" } }),
+					);
+					expect(mockPrisma.quiActionClaim.deleteMany).not.toHaveBeenCalled();
+					expect(mockPrisma.quiActionClaim.delete).not.toHaveBeenCalled();
+				},
+			);
+
+			it("retains the claim after an explicit empty tag replacement loses its response", async () => {
+				mockQuiClient.bulkAction.mockRejectedValue(new Error("Synthetic clear response lost"));
+				const res = await request("setTags", { tags: "" });
+				expect(res.statusCode).toBe(502);
+				expect(JSON.parse(res.payload).error).toBe("qui mutation outcome uncertain");
+				expect(mockQuiClient.bulkAction).toHaveBeenCalledExactlyOnceWith({
+					qbitInstanceId: 3,
+					hashes,
+					action: "setTags",
+					extras: { tags: "" },
+				});
+				expect(mockPrisma.quiActionLog.updateMany).toHaveBeenCalledWith(
+					expect.objectContaining({ data: { status: "uncertain" } }),
+				);
+				expect(mockPrisma.quiActionClaim.deleteMany).not.toHaveBeenCalled();
+				expect(mockPrisma.quiActionClaim.delete).not.toHaveBeenCalled();
+			});
+
+			it("refuses file deletion before creating a claim or dispatching", async () => {
+				const res = await request("delete", { deleteFiles: true });
+				expect(res.statusCode).toBe(409);
+				expect(JSON.parse(res.payload).error).toBe("qui mutation unavailable");
+				expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+				expect(mockQuiClient.bulkAction).not.toHaveBeenCalled();
+			});
+		});
+	}
+});
+
+describe("POST /qui/actions/:id/reconcile", () => {
+	it("requires explicit verification before releasing one owned claim", async () => {
+		const route = "/qui/actions/log-1/reconcile";
+		mockPrisma.quiActionLog.updateMany.mockResolvedValue({ count: 1 });
+		const missingAcknowledgment = await injectAuthenticated("POST", route, {
+			body: { decision: "not_applied" },
+		});
+		expect(missingAcknowledgment.statusCode).toBe(400);
+		expect(mockPrisma.quiActionClaim.delete).not.toHaveBeenCalled();
+
+		const resolved = await injectAuthenticated("POST", route, {
+			body: { decision: "not_applied", acknowledgeVerified: true },
+		});
+		expect(resolved.statusCode).toBe(200);
+		expect(JSON.parse(resolved.payload)).toEqual({ status: "operator_verified_not_applied" });
+		expect(mockPrisma.quiActionLog.updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ id: "log-1", userId: "user-1" }),
+			}),
+		);
+		expect(mockPrisma.quiActionClaim.delete).toHaveBeenCalledOnce();
+	});
+});
 
 describe("GET /qui/actions", () => {
 	it("returns rows scoped to the caller's userId, newest first", async () => {
@@ -669,11 +1061,79 @@ describe("GET /qui/actions", () => {
 		expect(findManyArgs.where).not.toHaveProperty("requestedAt");
 	});
 
+	it("continues through bulk rows sharing one timestamp", async () => {
+		const timestamp = new Date("2026-09-28T00:00:00.000Z");
+		mockPrisma.quiActionLog.findUnique.mockResolvedValue({
+			requestedAt: timestamp,
+			userId: "user-1",
+		});
+		mockPrisma.quiActionLog.findMany.mockResolvedValue([]);
+		await injectAuthenticated("GET", "/qui/actions?cursor=log-50&limit=50");
+		const args = mockPrisma.quiActionLog.findMany.mock.calls[0]?.[0];
+		expect(args.where.OR).toEqual([
+			{ requestedAt: { lt: timestamp } },
+			{ requestedAt: timestamp, id: { lt: "log-50" } },
+		]);
+		expect(args.orderBy).toEqual([{ requestedAt: "desc" }, { id: "desc" }]);
+	});
+
 	it("filters by action when ?action=pause is provided", async () => {
 		mockPrisma.quiActionLog.findMany.mockResolvedValue([]);
 		await injectAuthenticated("GET", "/qui/actions?action=pause");
 		const args = mockPrisma.quiActionLog.findMany.mock.calls[0]?.[0];
 		expect(args.where).toMatchObject({ action: "pause" });
+	});
+
+	it("accepts drawer-operation filters and suppresses unsafe legacy audit payloads", async () => {
+		const privateUrl = "https://private-tracker.test/announce?passkey=private-token";
+		mockPrisma.quiActionLog.findMany.mockResolvedValue([
+			{
+				id: "drawer-log",
+				userId: "user-1",
+				serviceInstanceId: "qui-1",
+				qbitInstanceId: 3,
+				torrentHash: VALID_HASH,
+				action: "editTracker",
+				status: "success",
+				error: null,
+				payload: JSON.stringify({ trackerCount: 1, trackerUrl: privateUrl }),
+				requestedAt: new Date("2026-05-14T10:00:00Z"),
+				completedAt: new Date("2026-05-14T10:00:01Z"),
+				serviceInstance: { label: "qui main" },
+			},
+		]);
+		const res = await injectAuthenticated("GET", "/qui/actions?action=editTracker");
+		expect(res.statusCode).toBe(200);
+		expect(JSON.parse(res.payload).entries[0]).toMatchObject({
+			action: "editTracker",
+			payload: null,
+		});
+		expect(res.payload).not.toContain(privateUrl);
+		expect(res.payload).not.toContain("private-token");
+		expect(mockPrisma.quiActionLog.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({ where: expect.objectContaining({ action: "editTracker" }) }),
+		);
+	});
+
+	it("returns only the bounded count from a safe drawer audit summary", async () => {
+		mockPrisma.quiActionLog.findMany.mockResolvedValue([
+			{
+				id: "drawer-log",
+				userId: "user-1",
+				serviceInstanceId: "qui-1",
+				qbitInstanceId: 3,
+				torrentHash: VALID_HASH,
+				action: "addTrackers",
+				status: "success",
+				error: null,
+				payload: JSON.stringify({ trackerCount: 2 }),
+				requestedAt: new Date("2026-05-14T10:00:00Z"),
+				completedAt: new Date("2026-05-14T10:00:01Z"),
+				serviceInstance: { label: "qui main" },
+			},
+		]);
+		const res = await injectAuthenticated("GET", "/qui/actions?action=addTrackers");
+		expect(JSON.parse(res.payload).entries[0].payload).toEqual({ trackerCount: 2 });
 	});
 
 	it("rejects an unknown ?action value", async () => {
@@ -1397,11 +1857,10 @@ describe("POST /qui/dirscan/trigger", () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────
-// Phase 6 — torrent mutation routes (rename + tracker CRUD)
+// Torrent mutation routes (rename + tracker CRUD)
 //
 // These bypass the bulk-action transport because qui exposes them as
-// individual endpoints. Audit-log shape uses synthetic `action` values
-// prefixed `nonBulk.` to stay distinct from the bulk-action enum.
+// individual endpoints. They currently have no durable action claim or audit.
 // ────────────────────────────────────────────────────────────────────────
 
 describe("POST /qui/instances/:id/qbit/:instanceId/torrents/:hash/rename", () => {
@@ -1455,18 +1914,24 @@ describe("POST /qui/instances/:id/qbit/:instanceId/torrents/:hash/rename", () =>
 		expect(mockQuiClient.renameTorrent).not.toHaveBeenCalled();
 	});
 
-	it("returns 502 with qui error message when qui rejects the rename", async () => {
+	it("returns an uncertain outcome without upstream error details when rename fails", async () => {
 		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
 		mockQuiClient.renameTorrent.mockRejectedValue(
-			new Error("qui request to /api/torrents/rename failed: 409 Conflict"),
+			new Error("private title and https://private.test/?passkey=secret"),
 		);
 		const res = await injectAuthenticated(
 			"POST",
 			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/rename`,
-			{ body: { name: "ok" } },
+			{ body: { name: "Private Torrent Title" } },
 		);
 		expect(res.statusCode).toBe(502);
-		expect(JSON.parse(res.payload).message).toMatch(/409 Conflict/);
+		expect(JSON.parse(res.payload)).toEqual({
+			error: "qui mutation outcome uncertain",
+			message:
+				"qUI action outcome is unresolved for a selected torrent; inspect My Actions before retrying",
+		});
+		expect(res.payload).not.toContain("Private Torrent Title");
+		expect(res.payload).not.toContain("passkey=secret");
 	});
 
 	it("returns 404 when the qui instance is not found / not owned", async () => {
@@ -1521,16 +1986,23 @@ describe("POST /qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers/add",
 		expect(mockQuiClient.addTrackers).not.toHaveBeenCalled();
 	});
 
-	it("returns 502 with qui error when addTrackers throws", async () => {
+	it("returns an uncertain outcome without upstream error details when addTrackers fails", async () => {
 		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
-		mockQuiClient.addTrackers.mockRejectedValue(new Error("qui addTrackers exploded"));
+		mockQuiClient.addTrackers.mockRejectedValue(
+			new Error("https://private-tracker.test/announce/secret-passkey"),
+		);
 		const res = await injectAuthenticated(
 			"POST",
 			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/trackers/add`,
 			{ body: { urls: ["https://tracker.example.com/announce"] } },
 		);
 		expect(res.statusCode).toBe(502);
-		expect(JSON.parse(res.payload).message).toMatch(/exploded/);
+		expect(JSON.parse(res.payload)).toEqual({
+			error: "qui mutation outcome uncertain",
+			message:
+				"qUI action outcome is unresolved for a selected torrent; inspect My Actions before retrying",
+		});
+		expect(res.payload).not.toContain("secret-passkey");
 	});
 });
 
@@ -1575,7 +2047,7 @@ describe("POST /qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers/remov
 		]);
 	});
 
-	it("returns 404 when no tracker matches the supplied hostname", async () => {
+	it("returns 409 when no tracker matches the supplied hostname", async () => {
 		// Trying to remove a hostname that doesn't exist on the torrent —
 		// the route should bail with 404, not silently no-op.
 		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
@@ -1596,7 +2068,7 @@ describe("POST /qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers/remov
 			{ body: { hostnames: ["tracker.example.com"] } },
 		);
 
-		expect(res.statusCode).toBe(404);
+		expect(res.statusCode).toBe(409);
 		expect(mockQuiClient.removeTrackers).not.toHaveBeenCalled();
 	});
 
@@ -1610,6 +2082,55 @@ describe("POST /qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers/remov
 		expect(res.statusCode).toBe(400);
 		expect(mockQuiClient.getTrackers).not.toHaveBeenCalled();
 		expect(mockQuiClient.removeTrackers).not.toHaveBeenCalled();
+	});
+
+	it("reports tracker lookup failure before dispatch without exposing the announce URL", async () => {
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		mockQuiClient.getTrackers.mockRejectedValue(
+			new Error("https://private-tracker.test/announce?passkey=secret"),
+		);
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/trackers/remove`,
+			{ body: { hostnames: ["private-tracker.test"] } },
+		);
+		expect(res.statusCode).toBe(502);
+		expect(JSON.parse(res.payload)).toEqual({
+			error: "qui tracker lookup failed",
+			message: "Could not load trackers from qUI; no tracker mutation was dispatched.",
+		});
+		expect(mockQuiClient.removeTrackers).not.toHaveBeenCalled();
+		expect(res.payload).not.toContain("passkey=secret");
+	});
+
+	it("reports an uncertain outcome when removeTrackers fails after lookup", async () => {
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		mockQuiClient.getTrackers.mockResolvedValue([
+			{
+				url: "https://private-tracker.test/announce?passkey=secret",
+				status: 2,
+				msg: "",
+				numSeeds: 1,
+				numLeeches: 0,
+				numPeers: 0,
+			},
+		]);
+		mockQuiClient.removeTrackers.mockRejectedValue(
+			new Error("private title https://private-tracker.test/?passkey=secret"),
+		);
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/trackers/remove`,
+			{ body: { hostnames: ["private-tracker.test"] } },
+		);
+		expect(res.statusCode).toBe(502);
+		expect(JSON.parse(res.payload)).toEqual({
+			error: "qui mutation outcome uncertain",
+			message:
+				"qUI action outcome is unresolved for a selected torrent; inspect My Actions before retrying",
+		});
+		expect(res.payload).not.toContain("passkey=secret");
+		expect(mockQuiClient.removeTrackers).toHaveBeenCalledOnce();
 	});
 });
 
@@ -1653,7 +2174,7 @@ describe("POST /qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers/edit"
 		);
 	});
 
-	it("returns 404 when oldHostname doesn't match any tracker on the torrent", async () => {
+	it("returns 409 when oldHostname doesn't match any tracker on the torrent", async () => {
 		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
 		mockQuiClient.getTrackers.mockResolvedValue([
 			{
@@ -1675,9 +2196,240 @@ describe("POST /qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers/edit"
 				},
 			},
 		);
-		expect(res.statusCode).toBe(404);
+		expect(res.statusCode).toBe(409);
 		expect(mockQuiClient.editTracker).not.toHaveBeenCalled();
 	});
+
+	it("reports tracker lookup failure before dispatch without exposing the announce URL", async () => {
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		mockQuiClient.getTrackers.mockRejectedValue(
+			new Error("https://private-tracker.test/announce?passkey=secret"),
+		);
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/trackers/edit`,
+			{
+				body: { oldHostname: "private-tracker.test", newURL: "https://new-tracker.test/announce" },
+			},
+		);
+		expect(res.statusCode).toBe(502);
+		expect(JSON.parse(res.payload)).toEqual({
+			error: "qui tracker lookup failed",
+			message: "Could not load trackers from qUI; no tracker mutation was dispatched.",
+		});
+		expect(mockQuiClient.editTracker).not.toHaveBeenCalled();
+		expect(res.payload).not.toContain("passkey=secret");
+	});
+
+	it("reports an uncertain outcome when editTracker fails after lookup", async () => {
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		mockQuiClient.getTrackers.mockResolvedValue([
+			{
+				url: "https://private-tracker.test/announce?passkey=secret",
+				status: 2,
+				msg: "",
+				numSeeds: 1,
+				numLeeches: 0,
+				numPeers: 0,
+			},
+		]);
+		mockQuiClient.editTracker.mockRejectedValue(
+			new Error("private title https://replacement.test/announce?passkey=new-secret"),
+		);
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/trackers/edit`,
+			{
+				body: {
+					oldHostname: "private-tracker.test",
+					newURL: "https://replacement.test/announce?passkey=new-secret",
+				},
+			},
+		);
+		expect(res.statusCode).toBe(502);
+		expect(JSON.parse(res.payload)).toEqual({
+			error: "qui mutation outcome uncertain",
+			message:
+				"qUI action outcome is unresolved for a selected torrent; inspect My Actions before retrying",
+		});
+		expect(res.payload).not.toContain("new-secret");
+		expect(res.payload).not.toContain("passkey=secret");
+		expect(mockQuiClient.editTracker).toHaveBeenCalledOnce();
+	});
+});
+
+describe("qUI drawer recovery regression cases", () => {
+	it.each(["absent", "mismatched"])(
+		"does not dispatch a rename when final claim ownership is %s",
+		async (ownership) => {
+			mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+			if (ownership === "absent") {
+				mockPrisma.quiActionClaim.findMany.mockResolvedValueOnce([]);
+			} else {
+				const findOwned = mockPrisma.quiActionClaim.findMany.getMockImplementation()!;
+				mockPrisma.quiActionClaim.findMany.mockImplementationOnce(async (args) =>
+					(await findOwned(args)).map((row: ActionFixture) => ({
+						...row,
+						torrentHash: "b".repeat(40),
+					})),
+				);
+			}
+			const res = await injectAuthenticated(
+				"POST",
+				`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/rename`,
+				{ body: { name: "Verified rename target" } },
+			);
+			expect(res.statusCode).toBe(503);
+			expect(JSON.parse(res.payload).message).toContain("No qUI command was dispatched");
+			expect(mockQuiClient.renameTorrent).not.toHaveBeenCalled();
+			expect(mockPrisma.quiActionClaim.deleteMany).not.toHaveBeenCalled();
+			expect(mockPrisma.quiActionClaim.findMany).toHaveBeenCalledWith({
+				where: {
+					userId: "user-1",
+					serviceInstanceId: "qui-1",
+					qbitInstanceId: 3,
+					attemptId: mockPrisma.quiActionClaim.createMany.mock.calls[0]![0].data[0]!.attemptId,
+				},
+				select: { torrentHash: true },
+			});
+			expect(mockPrisma.quiActionLog.updateMany).not.toHaveBeenCalledWith(
+				expect.objectContaining({ data: expect.objectContaining({ status: "success" }) }),
+			);
+		},
+	);
+
+	it("does not dispatch a rename when the live qBit target is unverified", async () => {
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		mockQuiClient.listInstances.mockResolvedValue([{ id: 3, connected: false, isActive: true }]);
+		mockQuiClient.getTorrentsByHash.mockResolvedValue([]);
+
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/rename`,
+			{ body: { name: "Verified rename target" } },
+		);
+
+		expect(res.statusCode).toBe(409);
+		expect(mockQuiClient.renameTorrent).not.toHaveBeenCalled();
+	});
+
+	it("holds an explicitly repeated rename after its first response is lost", async () => {
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		mockQuiClient.renameTorrent.mockRejectedValue(new Error("response lost after dispatch"));
+
+		const path = `/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/rename`;
+		const first = await injectAuthenticated("POST", path, { body: { name: "New name" } });
+		const repeated = await injectAuthenticated("POST", path, { body: { name: "New name" } });
+
+		expect(first.statusCode).toBe(502);
+		expect(repeated.statusCode).toBe(409);
+		expect(mockQuiClient.renameTorrent).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not choose the first duplicate-host tracker for legacy edit", async () => {
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		mockQuiClient.getTrackers.mockResolvedValue([
+			{
+				url: "https://tracker.example.com/first/announce?passkey=first-secret",
+				status: 2,
+				health: "working",
+				msg: "",
+				numSeeds: 2,
+				numLeeches: 0,
+				numPeers: 2,
+				tier: 0,
+			},
+			{
+				url: "https://tracker.example.com/second/announce?passkey=second-secret",
+				status: 2,
+				health: "working",
+				msg: "",
+				numSeeds: 4,
+				numLeeches: 1,
+				numPeers: 5,
+				tier: 1,
+			},
+		]);
+
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/trackers/edit`,
+			{
+				body: {
+					oldHostname: "tracker.example.com",
+					newURL: "https://replacement.example.com/announce",
+				},
+			},
+		);
+
+		expect(res.statusCode).toBe(409);
+		expect(mockQuiClient.editTracker).not.toHaveBeenCalled();
+	});
+
+	it("does not partially remove trackers when one requested target is missing", async () => {
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		mockQuiClient.getTrackers.mockResolvedValue([
+			{
+				url: "https://present.example.com/announce?passkey=private-token",
+				status: 2,
+				health: "working",
+				msg: "",
+				numSeeds: 3,
+				numLeeches: 0,
+				numPeers: 3,
+				tier: 0,
+			},
+		]);
+
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/trackers/remove`,
+			{ body: { hostnames: ["present.example.com", "missing.example.com"] } },
+		);
+
+		expect(res.statusCode).toBe(409);
+		expect(mockQuiClient.removeTrackers).not.toHaveBeenCalled();
+	});
+});
+
+describe("qUI torrent mutation instance ID validation", () => {
+	const routes = [
+		{
+			path: (instanceId: string) =>
+				`/qui/instances/qui-1/qbit/${instanceId}/torrents/${VALID_HASH}/rename`,
+			body: { name: "Renamed" },
+		},
+		{
+			path: (instanceId: string) =>
+				`/qui/instances/qui-1/qbit/${instanceId}/torrents/${VALID_HASH}/trackers/add`,
+			body: { urls: ["https://tracker.test/announce"] },
+		},
+		{
+			path: (instanceId: string) =>
+				`/qui/instances/qui-1/qbit/${instanceId}/torrents/${VALID_HASH}/trackers/remove`,
+			body: { hostnames: ["tracker.test"] },
+		},
+		{
+			path: (instanceId: string) =>
+				`/qui/instances/qui-1/qbit/${instanceId}/torrents/${VALID_HASH}/trackers/edit`,
+			body: { oldHostname: "tracker.test", newURL: "https://new-tracker.test/announce" },
+		},
+	];
+	const invalidIds = ["3suffix", "3.5", "3e2", "0", "-3", "9007199254740992"];
+
+	it.each(routes.flatMap((route) => invalidIds.map((instanceId) => ({ ...route, instanceId }))))(
+		"rejects $instanceId before ownership lookup or qUI access",
+		async ({ path, body, instanceId }) => {
+			const res = await injectAuthenticated("POST", path(instanceId), { body });
+			expect(res.statusCode).toBe(400);
+			expect(mockRequireQuiInstance).not.toHaveBeenCalled();
+			expect(mockQuiClient.getTrackers).not.toHaveBeenCalled();
+			expect(mockQuiClient.renameTorrent).not.toHaveBeenCalled();
+			expect(mockQuiClient.addTrackers).not.toHaveBeenCalled();
+			expect(mockQuiClient.removeTrackers).not.toHaveBeenCalled();
+			expect(mockQuiClient.editTracker).not.toHaveBeenCalled();
+		},
+	);
 });
 
 // ────────────────────────────────────────────────────────────────────────

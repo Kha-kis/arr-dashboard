@@ -4,7 +4,7 @@
  * Tests for account settings, service instances, and configuration.
  */
 
-import { test, expect } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { ROUTES, TIMEOUTS, waitForLoadingComplete } from "./utils/test-helpers";
 
 test.describe("Settings - Page Load", () => {
@@ -113,6 +113,12 @@ test.describe("Settings - Account Tab", () => {
 });
 
 test.describe("Settings - Authentication Tab", () => {
+	const activeSessionsRefresh = (page: Page) =>
+		page
+			.locator("#settings-panel-authentication section")
+			.filter({ has: page.getByRole("heading", { name: "Active Sessions", exact: true }) })
+			.getByRole("button", { name: "Refresh", exact: true });
+
 	test.beforeEach(async ({ page }) => {
 		await page.goto(ROUTES.settings);
 		await waitForLoadingComplete(page);
@@ -189,7 +195,7 @@ test.describe("Settings - Authentication Tab", () => {
 
 	test("should have refresh sessions button", async ({ page }) => {
 		// There should be a Refresh button in the sessions section
-		const refreshButton = page.getByRole("button", { name: /refresh/i });
+		const refreshButton = activeSessionsRefresh(page);
 		await expect(refreshButton).toBeVisible({ timeout: TIMEOUTS.medium });
 	});
 
@@ -224,18 +230,19 @@ test.describe("Settings - Authentication Tab", () => {
 	});
 
 	test("should refresh sessions when clicking refresh button", async ({ page }) => {
-		const refreshButton = page.getByRole("button", { name: /refresh/i });
+		const refreshButton = activeSessionsRefresh(page);
 		await expect(refreshButton).toBeVisible({ timeout: TIMEOUTS.medium });
 
-		// Click refresh and verify it works (no error)
-		await refreshButton.click();
-
-		// Wait a moment for refresh
-		await page.waitForTimeout(500);
-
-		// Sessions section heading should still be visible
-		const sessionsSection = page.getByRole("heading", { name: "Active Sessions" });
-		await expect(sessionsSection).toBeVisible();
+		const [response] = await Promise.all([
+			page.waitForResponse(
+				(response) =>
+					new URL(response.url()).pathname === "/auth/sessions" &&
+					response.request().method() === "GET",
+			),
+			refreshButton.click(),
+		]);
+		expect(response.status()).toBe(200);
+		await expect(refreshButton).toBeEnabled();
 	});
 });
 

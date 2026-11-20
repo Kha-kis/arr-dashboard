@@ -272,9 +272,10 @@ export async function qualitySizeRoutes(app: FastifyInstance, _opts: FastifyPlug
 
 			return reply.send({
 				success: true,
+				resetStatus: "requested",
 				appliedCount: 0,
 				totalQualities: 0,
-				message: `Reset quality sizes to factory defaults on ${instance.label}`,
+				message: `Factory-default reset requested on ${instance.label}. Completion is not confirmed; check Sonarr/Radarr task status and Quality settings.`,
 			});
 		}
 

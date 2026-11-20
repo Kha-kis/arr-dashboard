@@ -144,6 +144,7 @@ async function installPopulatedFixtures(
 						instanceId: service.id,
 						instanceName: service.label,
 						service: "sonarr",
+						success: true,
 						data: [queueItem],
 					},
 				],
@@ -244,7 +245,7 @@ async function installPopulatedFixtures(
 async function assertNoHorizontalOverflow(
 	page: import("@playwright/test").Page,
 	path: string,
-	expectedText: string,
+	expectedText: string | RegExp,
 	assertions?: (page: import("@playwright/test").Page, clientWidth: number) => Promise<void>,
 ) {
 	await page.goto(path);
@@ -342,7 +343,7 @@ test.describe("mobile page overflow", () => {
 			await assertNoHorizontalOverflow(
 				page,
 				"/dashboard",
-				"items in queue",
+				/^Returned queue items$/,
 				async (currentPage, clientWidth) => {
 					const tabs = currentPage.getByRole("tab");
 					await expect(tabs).toHaveCount(3);
@@ -472,7 +473,7 @@ test.describe("desktop responsive guard", () => {
 	test("dashboard preserves its desktop header and controls", async ({ page }) => {
 		await installPopulatedFixtures(page);
 		await page.setViewportSize({ width: 1440, height: 900 });
-		await assertNoHorizontalOverflow(page, "/dashboard", "items in queue", async (currentPage) => {
+		await assertNoHorizontalOverflow(page, "/dashboard", /^Returned queue items$/, async (currentPage) => {
 			await expect(currentPage.getByText("Arr Control Center", { exact: true })).toBeVisible();
 			await expect(
 				currentPage.getByRole("button", { name: "Refresh", exact: true }).first(),

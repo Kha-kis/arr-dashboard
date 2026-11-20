@@ -102,6 +102,24 @@ function makeSeries(overrides: Partial<MockSeriesEntry> & { id: number }): MockS
 describe("fetchSonarrStatisticsWithSdk", () => {
 	const INSTANCE = { id: "inst-1", name: "Sonarr Main", url: "http://sonarr:8989" };
 
+	it("marks an ancillary failure as incomplete instead of trusting fallback disk values", async () => {
+		const client = createMockSonarrClient([makeSeries({ id: 1 })]);
+		vi.mocked(client.diskSpace.getAll).mockRejectedValue(new Error("synthetic upstream failure"));
+		const markIncomplete = vi.fn();
+
+		const result = await fetchSonarrStatisticsWithSdk(
+			client,
+			INSTANCE.id,
+			INSTANCE.name,
+			INSTANCE.url,
+			undefined,
+			{ markIncomplete },
+		);
+
+		expect(result.totalSeries).toBe(1);
+		expect(markIncomplete).toHaveBeenCalledWith("ancillary");
+	});
+
 	it("counts missing episodes using monitored episodeCount, not totalEpisodeCount (#131)", async () => {
 		// Series with 200 total episodes but only 50 monitored, 40 have files
 		// Old code: missing = 200 - 40 = 160 (WRONG)
@@ -615,6 +633,7 @@ describe("fetchSonarrStatisticsWithSdk — stream-error degradation", () => {
 			}),
 		);
 		const { log, warn } = makeLog();
+		const markIncomplete = vi.fn();
 
 		const result = await fetchSonarrStatisticsWithSdk(
 			client,
@@ -622,13 +641,14 @@ describe("fetchSonarrStatisticsWithSdk — stream-error degradation", () => {
 			INSTANCE.name,
 			INSTANCE.url,
 			undefined,
-			{ streamItems: makeFailingStreamItems(items, 30), log },
+			{ streamItems: makeFailingStreamItems(items, 30), log, markIncomplete },
 		);
 
 		// 30 items aggregated before failure — counters reflect this, not 0,
 		// not 100. The whole point of the fix.
 		expect(result.totalSeries).toBe(30);
 		expect(result.downloadedEpisodes).toBe(150); // 30 × 5 files-per-series
+		expect(markIncomplete).toHaveBeenCalledWith("stream");
 
 		// Operator gets a signal. Pre-fix this was silent.
 		expect(warn).toHaveBeenCalledWith(

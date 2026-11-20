@@ -178,9 +178,15 @@ export class TautulliClient {
 	 * versions may omit it, so a single non-empty `get_servers_info`
 	 * `machine_identifier` is accepted as a compatibility fallback only.
 	 */
-	async getServerIdentity(): Promise<TautulliServerIdentity> {
+	async getServerIdentity(signal?: AbortSignal): Promise<TautulliServerIdentity> {
 		try {
-			const serverInfo = await this.command("get_server_info", undefined, tautulliServerInfoSchema);
+			signal?.throwIfAborted();
+			const serverInfo = await this.command(
+				"get_server_info",
+				undefined,
+				tautulliServerInfoSchema,
+				signal,
+			);
 			const primaryIdentifier = serverInfo.pms_identifier?.trim();
 			if (primaryIdentifier) {
 				return {
@@ -189,7 +195,13 @@ export class TautulliClient {
 				};
 			}
 
-			const servers = await this.command("get_servers_info", undefined, tautulliServersInfoSchema);
+			signal?.throwIfAborted();
+			const servers = await this.command(
+				"get_servers_info",
+				undefined,
+				tautulliServersInfoSchema,
+				signal,
+			);
 			if (servers.length !== 1) throw new Error("ambiguous fallback identity");
 			const fallbackServer = servers[0]!;
 			const fallbackIdentifier = fallbackServer.machine_identifier.trim();

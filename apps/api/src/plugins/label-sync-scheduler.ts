@@ -12,7 +12,9 @@ declare module "fastify" {
 
 const labelSyncSchedulerPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
+		let closing = false;
 		app.addHook("onReady", async () => {
+			if (closing) return;
 			await runSchedulerInit(
 				{ registry: app.schedulerRegistry, log: app.log },
 				JOB_ID.labelSync,
@@ -35,10 +37,15 @@ const labelSyncSchedulerPlugin = fastifyPlugin(
 			);
 		});
 
+		app.addHook("preClose", async () => {
+			closing = true;
+			app.labelSyncScheduler?.closeAdmission();
+		});
+
 		app.addHook("onClose", async () => {
 			if (app.labelSyncScheduler) {
 				app.log.info("Stopping label sync scheduler");
-				app.labelSyncScheduler.stop();
+				await app.labelSyncScheduler.shutdown();
 			}
 		});
 	},

@@ -14,6 +14,7 @@ import type {
 	TemplateImportOptions,
 	TemplateImportValidation,
 } from "@arr/shared";
+import { onlineManager } from "@tanstack/react-query";
 import {
 	AlertCircle,
 	AlertTriangle,
@@ -25,12 +26,11 @@ import {
 	Upload,
 	X,
 } from "lucide-react";
-import { useState } from "react";
+import { useId, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Button, Input } from "../../../components/ui";
+import { Button, Input, Textarea } from "../../../components/ui";
 import { useEnhancedImportTemplate } from "../../../hooks/api/useTemplates";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { getErrorMessage } from "../../../lib/error-utils";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 interface EnhancedTemplateImportModalProps {
@@ -38,16 +38,29 @@ interface EnhancedTemplateImportModalProps {
 	onClose?: () => void;
 }
 
+type ImportSource = "file" | "paste";
+
+type InputValidation =
+	| { status: "validating" }
+	| {
+			status: "validated";
+			id: number;
+			jsonData: string;
+			validation: TemplateImportValidation;
+			compatibility: TemplateCompatibility;
+	  };
+
 export function EnhancedTemplateImportModal({
 	onImportComplete,
 	onClose,
 }: EnhancedTemplateImportModalProps) {
 	const { gradient: themeGradient } = useThemeGradient();
 
-	const [jsonData, setJsonData] = useState("");
-	const [validation, setValidation] = useState<TemplateImportValidation | null>(null);
-	const [compatibility, setCompatibility] = useState<TemplateCompatibility | null>(null);
-	const [isValidating, setIsValidating] = useState(false);
+	const controlId = useId();
+	const [source, setSource] = useState<ImportSource>("file");
+	const [pasteDraft, setPasteDraft] = useState("");
+	const [inputValidation, setInputValidation] = useState<InputValidation | null>(null);
+	const inputRevision = useRef(0);
 	const [options, setOptions] = useState<TemplateImportOptions>({
 		onNameConflict: "rename",
 		includeQualitySettings: true,
@@ -59,27 +72,41 @@ export function EnhancedTemplateImportModal({
 
 	const importMutation = useEnhancedImportTemplate();
 
-	const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-		const file = e.target.files?.[0];
-		if (!file) return;
+	const isValidating = inputValidation?.status === "validating";
+	const validatedInput = inputValidation?.status === "validated" ? inputValidation : null;
+	const validation = validatedInput?.validation;
+	const compatibility = validatedInput?.compatibility;
+	const canImport =
+		Boolean(validatedInput?.jsonData) &&
+		validation?.valid === true &&
+		compatibility?.compatible === true;
 
-		try {
-			const text = await file.text();
-			setJsonData(text);
-			await validateTemplate(text);
-		} catch (_error) {
-			alert("Failed to read template file");
-		}
+	const isImportPending = importMutation.hasPendingImport;
+
+	const invalidateInput = () => {
+		setInputValidation(null);
+		setOptions((current) => ({ ...current, onNameConflict: "rename" }));
+		setFocusedSelect(false);
+		return ++inputRevision.current;
 	};
 
-	const validateTemplate = async (data: string) => {
-		setIsValidating(true);
+	const validateInput = async (
+		read: () => string | Promise<string>,
+		resetFileInput?: () => void,
+	) => {
+		const id = invalidateInput();
+		setInputValidation({ status: "validating" });
 
+		let failureMessage = "Failed to read template file";
 		try {
+			const jsonData = await read();
+			if (id !== inputRevision.current) return;
+
+			failureMessage = "Failed to validate template";
 			const response = await fetch("/api/trash-guides/sharing/validate", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ jsonData: data }),
+				body: JSON.stringify({ jsonData }),
 			});
 
 			if (!response.ok) {
@@ -87,33 +114,95 @@ export function EnhancedTemplateImportModal({
 			}
 
 			const result = await response.json();
-			setValidation(result.data.validation);
-			setCompatibility(result.data.compatibility);
+			if (id !== inputRevision.current) return;
+			if (result.success !== true || !result.data?.validation || !result.data.compatibility) {
+				throw new Error("Validation failed");
+			}
+
+			setInputValidation({
+				status: "validated",
+				id,
+				jsonData,
+				validation: result.data.validation,
+				compatibility: result.data.compatibility,
+			});
 		} catch (_error) {
-			alert("Failed to validate template");
-		} finally {
-			setIsValidating(false);
+			if (id !== inputRevision.current) return;
+
+			setInputValidation(null);
+			resetFileInput?.();
+			alert(failureMessage);
 		}
 	};
 
+	const handleSourceChange = (next: ImportSource) => {
+		if (isImportPending()) return;
+		invalidateInput();
+		setSource(next);
+	};
+
+	const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+		if (isImportPending()) return;
+		const input = event.currentTarget;
+		const file = input.files?.[0];
+		if (!file) {
+			invalidateInput();
+			return;
+		}
+		void validateInput(
+			() => file.text(),
+			() => {
+				input.value = "";
+			},
+		);
+	};
+
+	const handlePasteEdit = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+		if (isImportPending()) return;
+		invalidateInput();
+		setPasteDraft(event.currentTarget.value);
+	};
+
+	const handleValidatePaste = () => {
+		if (isImportPending() || isValidating || !pasteDraft.trim()) return;
+		void validateInput(() => pasteDraft);
+	};
+
+	const handleClose = () => {
+		if (isImportPending()) return;
+		invalidateInput();
+		onClose?.();
+	};
+
 	const handleImport = () => {
-		if (!jsonData || !validation?.valid) return;
+		if (
+			!validatedInput ||
+			!canImport ||
+			validatedInput.id !== inputRevision.current ||
+			isImportPending()
+		) {
+			return;
+		}
+
+		if (!onlineManager.isOnline()) {
+			toast.error("Reconnect to import the template");
+			return;
+		}
 
 		importMutation.mutate(
-			{ jsonData, options },
+			{ jsonData: validatedInput.jsonData, options },
 			{
 				onSuccess: () => {
 					onImportComplete?.();
 					onClose?.();
 				},
-				onError: (error) => {
-					const errorMessage = getErrorMessage(error, "Failed to import template");
-					toast.error(errorMessage);
-				},
 			},
 		);
 	};
 
+	const incompatible = compatibility?.compatible === false;
+	const hasValidationStatus =
+		isValidating || canImport || (validation && (!validation.valid || incompatible));
 	const hasErrors = validation?.errors && validation.errors.length > 0;
 	const hasWarnings = validation?.warnings && validation.warnings.length > 0;
 	const hasConflicts = validation?.conflicts && validation.conflicts.length > 0;
@@ -134,15 +223,16 @@ export function EnhancedTemplateImportModal({
 					</div>
 					<div>
 						<h3 className="text-lg font-semibold text-foreground">Import Template</h3>
-						<p className="text-xs text-muted-foreground">Upload and validate template files</p>
+						<p className="text-xs text-muted-foreground">Upload or paste a JSON template</p>
 					</div>
 				</div>
 				{onClose && (
 					<button
 						type="button"
-						onClick={onClose}
+						onClick={handleClose}
+						disabled={importMutation.isPending}
 						aria-label="Close import modal"
-						className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+						className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:opacity-50"
 					>
 						<X className="h-4 w-4" />
 					</button>
@@ -159,71 +249,131 @@ export function EnhancedTemplateImportModal({
 			>
 				<Info className="h-4 w-4 mt-0.5 shrink-0" style={{ color: themeGradient.from }} />
 				<p className="text-sm text-muted-foreground">
-					Import a template from JSON file. The template will be validated for compatibility and
-					conflicts before import.
+					Templates are checked for compatibility and conflicts before import.
 				</p>
 			</div>
 
-			{/* File Upload */}
-			<div className="space-y-2">
-				<label className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground font-medium">
-					<FileJson className="h-3 w-3" />
-					Select Template File
+			<fieldset disabled={importMutation.isPending} className="flex flex-wrap gap-4">
+				<legend className="mb-2 text-xs uppercase tracking-wider text-muted-foreground font-medium">
+					Import source
+				</legend>
+				<label className="flex items-center gap-2 text-sm">
+					<input
+						type="radio"
+						name={controlId}
+						checked={source === "file"}
+						onChange={() => handleSourceChange("file")}
+						className="accent-primary"
+					/>
+					Upload JSON file
 				</label>
-				<Input
-					type="file"
-					accept=".json"
-					onChange={handleFileSelect}
-					className="w-full rounded-xl"
-				/>
-			</div>
+				<label className="flex items-center gap-2 text-sm">
+					<input
+						type="radio"
+						name={controlId}
+						checked={source === "paste"}
+						onChange={() => handleSourceChange("paste")}
+						className="accent-primary"
+					/>
+					Paste JSON
+				</label>
+			</fieldset>
 
-			{/* Validation Status */}
-			{isValidating && (
-				<div className="flex items-center gap-3 py-4 justify-center text-muted-foreground">
-					<Loader2 className="h-5 w-5 animate-spin" style={{ color: themeGradient.from }} />
-					<span className="text-sm">Validating template...</span>
+			{source === "file" ? (
+				<div className="space-y-2">
+					<label
+						htmlFor={`${controlId}-file`}
+						className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground font-medium"
+					>
+						<FileJson className="h-3 w-3" />
+						Select Template File
+					</label>
+					<Input
+						id={`${controlId}-file`}
+						type="file"
+						accept=".json"
+						onChange={handleFileSelect}
+						disabled={importMutation.isPending}
+						className="w-full rounded-xl"
+					/>
+				</div>
+			) : (
+				<div className="space-y-2">
+					<label
+						htmlFor={`${controlId}-paste`}
+						className="text-xs uppercase tracking-wider text-muted-foreground font-medium"
+					>
+						Template JSON
+					</label>
+					<Textarea
+						id={`${controlId}-paste`}
+						value={pasteDraft}
+						onChange={handlePasteEdit}
+						disabled={importMutation.isPending}
+						rows={6}
+						className="rounded-xl font-mono"
+					/>
+					<Button
+						type="button"
+						variant="outline"
+						onClick={handleValidatePaste}
+						disabled={isValidating || importMutation.isPending || !pasteDraft.trim()}
+						className="rounded-xl"
+					>
+						Validate JSON
+					</Button>
 				</div>
 			)}
 
-			{/* Validation Results */}
-			{validation && !isValidating && (
-				<div className="space-y-4">
-					{/* Overall Status */}
-					{validation.valid ? (
-						<div
-							className="flex items-center gap-3 rounded-xl px-4 py-3"
-							style={{
-								backgroundColor: SEMANTIC_COLORS.success.bg,
-								border: `1px solid ${SEMANTIC_COLORS.success.border}`,
-							}}
-						>
-							<CheckCircle
-								className="h-5 w-5 shrink-0"
-								style={{ color: SEMANTIC_COLORS.success.from }}
-							/>
-							<p className="text-sm" style={{ color: SEMANTIC_COLORS.success.text }}>
-								Template is valid and ready to import
-							</p>
-						</div>
-					) : (
-						<div
-							className="flex items-center gap-3 rounded-xl px-4 py-3"
-							style={{
-								backgroundColor: SEMANTIC_COLORS.error.bg,
-								border: `1px solid ${SEMANTIC_COLORS.error.border}`,
-							}}
-						>
-							<AlertCircle
-								className="h-5 w-5 shrink-0"
-								style={{ color: SEMANTIC_COLORS.error.from }}
-							/>
-							<p className="text-sm" style={{ color: SEMANTIC_COLORS.error.text }}>
-								Template has validation errors that must be fixed
-							</p>
-						</div>
-					)}
+			{/* Validation Status */}
+			<div role="status" aria-atomic="true" className={hasValidationStatus ? undefined : "sr-only"}>
+				{isValidating && (
+					<div className="flex items-center gap-3 py-4 justify-center text-muted-foreground">
+						<Loader2 className="h-5 w-5 animate-spin" style={{ color: themeGradient.from }} />
+						<span className="text-sm">Validating template...</span>
+					</div>
+				)}
+				{canImport && (
+					<div
+						className="flex items-center gap-3 rounded-xl px-4 py-3"
+						style={{
+							backgroundColor: SEMANTIC_COLORS.success.bg,
+							border: `1px solid ${SEMANTIC_COLORS.success.border}`,
+						}}
+					>
+						<CheckCircle
+							className="h-5 w-5 shrink-0"
+							style={{ color: SEMANTIC_COLORS.success.from }}
+						/>
+						<p className="text-sm" style={{ color: SEMANTIC_COLORS.success.text }}>
+							Template is valid and ready to import
+						</p>
+					</div>
+				)}
+				{validation && (!validation.valid || incompatible) && (
+					<div
+						className="flex items-center gap-3 rounded-xl px-4 py-3"
+						style={{
+							backgroundColor: SEMANTIC_COLORS.error.bg,
+							border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+						}}
+					>
+						<AlertCircle
+							className="h-5 w-5 shrink-0"
+							style={{ color: SEMANTIC_COLORS.error.from }}
+						/>
+						<p className="text-sm" style={{ color: SEMANTIC_COLORS.error.text }}>
+							{validation.valid
+								? "Template is incompatible and cannot be imported"
+								: "Template has validation errors that must be fixed"}
+						</p>
+					</div>
+				)}
+			</div>
 
+			{/* Validation Results */}
+			{validation && (
+				<div className="space-y-4">
 					{/* Errors */}
 					{hasErrors && (
 						<div
@@ -334,7 +484,7 @@ export function EnhancedTemplateImportModal({
 					)}
 
 					{/* Compatibility */}
-					{compatibility && !compatibility.compatible && (
+					{compatibility && incompatible && (
 						<div
 							className="rounded-xl p-4 space-y-3"
 							style={{
@@ -362,7 +512,7 @@ export function EnhancedTemplateImportModal({
 			)}
 
 			{/* Import Options */}
-			{validation && validation.valid && (
+			{canImport && (
 				<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4 space-y-4">
 					<div className="flex items-center gap-2">
 						<Settings2 className="h-4 w-4" style={{ color: themeGradient.from }} />
@@ -455,16 +605,21 @@ export function EnhancedTemplateImportModal({
 			{/* Actions */}
 			<div className="flex justify-end gap-3 pt-4 border-t border-border/30">
 				{onClose && (
-					<Button variant="outline" onClick={onClose} className="rounded-xl">
+					<Button
+						variant="outline"
+						onClick={handleClose}
+						disabled={importMutation.isPending}
+						className="rounded-xl"
+					>
 						Cancel
 					</Button>
 				)}
 				<Button
 					onClick={handleImport}
-					disabled={!validation?.valid || importMutation.isPending}
+					disabled={!canImport || importMutation.isPending}
 					className="gap-2 rounded-xl font-medium"
 					style={
-						validation?.valid
+						canImport
 							? {
 									background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
 									boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,

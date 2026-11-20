@@ -22,6 +22,7 @@ export const JOB_ID = {
 	librarySync: "library-sync",
 	hunting: "hunting",
 	queueCleaner: "queue-cleaner",
+	arrImportObservation: "arr-import-observation",
 	libraryCleanup: "library-cleanup",
 	insightsDigest: "insights-digest",
 	trashBackupCleanup: "trash-backup-cleanup",
@@ -31,6 +32,9 @@ export const JOB_ID = {
 	plexEpisodeCache: "plex-episode-cache",
 	jellyfinCache: "jellyfin-cache",
 	jellyfinEpisodeCache: "jellyfin-episode-cache",
+	jellyfinPositiveWatch: "jellyfin-positive-watch",
+	nativeInventory: "native-inventory",
+	nativeInventoryRetention: "native-inventory-retention",
 	tautulliCache: "tautulli-cache",
 	seerrHealth: "seerr-health",
 	labelSync: "label-sync",
@@ -95,6 +99,14 @@ export const KNOWN_JOBS: readonly JobDefinition[] = [
 		concurrency: "per-instance",
 	},
 	{
+		id: JOB_ID.arrImportObservation,
+		label: "ARR import observation",
+		description:
+			"Observes tracked imports without replaying POSTs. Rotates up to four owned connections per tick, one bounded leased operation per connection; shutdown waits for admitted observation. Expired unsubmitted preparations are fenced and recovered.",
+		concurrency: "serial",
+		intervalMs: 5 * 1000,
+	},
+	{
 		id: JOB_ID.insightsDigest,
 		label: "Insights digest",
 		description:
@@ -146,6 +158,30 @@ export const KNOWN_JOBS: readonly JobDefinition[] = [
 		description:
 			"Refreshes Jellyfin/Emby episode metadata cache per instance. Per-instance serial.",
 		concurrency: "per-instance",
+	},
+	{
+		id: JOB_ID.jellyfinPositiveWatch,
+		label: "Jellyfin positive watch",
+		description:
+			"Refreshes display-only stable watched episode facts every five minutes. Durable per-instance attempt CAS prevents overlapping publication.",
+		concurrency: "per-instance",
+		intervalMs: 5 * 60 * 1000,
+	},
+	{
+		id: JOB_ID.nativeInventory,
+		label: "Native media inventory",
+		description:
+			"Admits aged Plex/Jellyfin/Emby native work and resumes bounded database-backed page jobs. Per-run leases fence cross-process workers; each tick selects one work key per instance first.",
+		concurrency: "per-instance",
+		intervalMs: 30 * 1000,
+	},
+	{
+		id: JOB_ID.nativeInventoryRetention,
+		label: "Native inventory retention",
+		description:
+			"Drains obsolete native staging independently of provider work every five seconds. Serial ticks admit bounded 500-row transactions for up to two seconds; shutdown joins accepted work.",
+		concurrency: "serial",
+		intervalMs: 5 * 1000,
 	},
 	{
 		id: JOB_ID.tautulliCache,

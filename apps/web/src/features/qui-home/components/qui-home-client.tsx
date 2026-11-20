@@ -1,5 +1,6 @@
 "use client";
 
+import type { QuiAttentionResponse, QuiSummaryResponse } from "@arr/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
 	AlertCircle,
@@ -17,7 +18,7 @@ import {
 	Zap,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import {
 	GlassmorphicCard,
@@ -93,11 +94,27 @@ export const QuiHomeClient = () => {
 	return (
 		<>
 			<Header />
-			<KpiStrip data={data} />
+			{data.inventoryCoverage.status === "unavailable" ? (
+				<Alert variant="warning" className="mb-6">
+					<AlertDescription>
+						Torrent inventory unavailable. Counts and ratios are hidden until a fresh qUI read
+						succeeds.
+					</AlertDescription>
+				</Alert>
+			) : (
+				<>
+					<InventoryCoverageNotice coverage={data.inventoryCoverage} />
+					<KpiStrip data={data} />
+				</>
+			)}
 			<CorrelationBackfillCard />
 			<AttentionSection
 				items={attention.data?.items ?? []}
 				totalCount={attention.data?.totalCount ?? 0}
+				inventoryCoverage={attention.data?.inventoryCoverage.status ?? "unavailable"}
+				trackerCoverage={attention.data?.trackerCoverage ?? "unavailable"}
+				fileCoverage={attention.data?.fileCoverage.status ?? "unavailable"}
+				fileIssueCount={attention.data?.fileCoverage.issueCount ?? 0}
 				isLoading={attention.isLoading}
 				isError={attention.isError}
 				error={attention.error}
@@ -117,6 +134,26 @@ const Header = () => (
 	/>
 );
 
+const InventoryCoverageNotice = ({
+	coverage,
+}: {
+	coverage: QuiSummaryResponse["inventoryCoverage"];
+}) => {
+	if (coverage.status === "current" || coverage.status === "unconfigured") return null;
+	const oldest = coverage.oldestFetchedAt
+		? `Oldest included observation: ${relativeTime(coverage.oldestFetchedAt)}.`
+		: "";
+	return (
+		<Alert variant="warning" className="mb-6">
+			<AlertDescription>
+				{coverage.status === "last-known"
+					? `Last-known torrent inventory. A fresh qUI read is pending or unavailable. ${oldest}`
+					: `Partial torrent inventory: ${coverage.unavailableInstances} connection(s) unavailable, ${coverage.incompleteInstances} inventory read(s) unverified. Counts below include observed rows only. ${oldest}`}
+			</AlertDescription>
+		</Alert>
+	);
+};
+
 // ── Correlation backfill — manual rescan ───────────────────────────────
 
 /**
@@ -130,10 +167,12 @@ const Header = () => (
  */
 const CorrelationBackfillCard = () => {
 	const queryClient = useQueryClient();
+	const backfillInFlight = useRef(false);
 	const [lastResult, setLastResult] = useState<{
 		rowsScanned: number;
 		rowsHashed: number;
 		durationMs: number;
+		errors: number;
 	} | null>(null);
 	const rescan = useMutation({
 		mutationFn: runQuiBackfillNow,
@@ -142,22 +181,33 @@ const CorrelationBackfillCard = () => {
 				rowsScanned: data.rowsScanned,
 				rowsHashed: data.rowsHashed,
 				durationMs: data.durationMs,
+				errors: data.errors,
 			});
-			toast.success(
-				`Hashed ${data.rowsHashed.toLocaleString()} of ${data.rowsScanned.toLocaleString()} rows in ${(data.durationMs / 1000).toFixed(1)}s`,
-			);
+			const message = `Hashed ${data.rowsHashed.toLocaleString()} of ${data.rowsScanned.toLocaleString()} rows in ${(data.durationMs / 1000).toFixed(1)}s`;
+			if (data.errors > 0) {
+				toast.warning(`${message}; ${data.errors} error${data.errors === 1 ? "" : "s"}`);
+			} else {
+				toast.success(message);
+			}
+		},
+		onError: (err) => {
+			toast.error(`Backfill failed: ${getErrorMessage(err, "Unknown error")}`);
+		},
+		onSettled: () => {
+			backfillInFlight.current = false;
 			// Invalidate qui surfaces that depend on infoHash correlation so
-			// new rows immediately propagate to the library, cross-seed, and
-			// attention surfaces.
+			// completed work propagates even if a later part of the sweep failed.
 			queryClient.invalidateQueries({ queryKey: quiKeys.summary });
 			queryClient.invalidateQueries({ queryKey: quiKeys.attention() });
 			queryClient.invalidateQueries({ queryKey: quiKeys.crossSeedAvailability() });
 			queryClient.invalidateQueries({ queryKey: quiKeys.crossSeedDiscovery() });
 		},
-		onError: (err) => {
-			toast.error(`Backfill failed: ${getErrorMessage(err, "Unknown error")}`);
-		},
 	});
+	const runBackfill = () => {
+		if (backfillInFlight.current) return;
+		backfillInFlight.current = true;
+		rescan.mutate();
+	};
 	return (
 		<section className="mb-6">
 			<GlassmorphicCard padding="md">
@@ -171,14 +221,27 @@ const CorrelationBackfillCard = () => {
 							runs it now.
 						</p>
 						{lastResult ? (
-							<p className="mt-2 text-xs text-emerald-300">
-								Last run: hashed {lastResult.rowsHashed.toLocaleString()} of{" "}
+							<p className="mt-2 text-xs text-muted-foreground">
+								Last completed run{rescan.isError ? " (last-known)" : ""}: hashed{" "}
+								{lastResult.rowsHashed.toLocaleString()} of{" "}
 								{lastResult.rowsScanned.toLocaleString()} scanned in{" "}
 								{(lastResult.durationMs / 1000).toFixed(1)}s
 							</p>
 						) : null}
+						{rescan.isError ? (
+							<p role="alert" className="mt-2 text-xs text-destructive">
+								The last correlation attempt failed. Previous completed results are last-known;
+								review the current state before trying again.
+							</p>
+						) : null}
+						{lastResult && lastResult.errors > 0 && !rescan.isError ? (
+							<p role="status" className="mt-2 text-xs text-muted-foreground">
+								Correlation completed with {lastResult.errors} error
+								{lastResult.errors === 1 ? "" : "s"}. Counts reflect completed work only.
+							</p>
+						) : null}
 					</div>
-					<Button variant="secondary" onClick={() => rescan.mutate()} disabled={rescan.isPending}>
+					<Button variant="secondary" onClick={runBackfill} disabled={rescan.isPending}>
 						{rescan.isPending ? (
 							<>
 								<RefreshCw className="mr-2 h-4 w-4 animate-spin" aria-hidden /> Correlating…
@@ -198,84 +261,94 @@ const CorrelationBackfillCard = () => {
 // ── KPI strip ──────────────────────────────────────────────────────────
 
 interface KpiStripProps {
-	data: {
-		totalTorrents: number;
-		byState: {
-			seeding: number;
-			downloading: number;
-			paused: number;
-			stalled: number;
-			error: number;
-			other: number;
-		};
-		avgRatio: number;
-		lowRatioCount: number;
-		dlSpeed: number;
-		upSpeed: number;
-		lastSyncAt: string | null;
-		lastSyncOk: boolean | null;
-		configuredInstances: number;
-		qbitInstances: Array<{ id: number; name: string; connected: boolean; torrentCount: number }>;
-	};
+	data: QuiSummaryResponse;
 }
 
 const KpiStrip = ({ data }: KpiStripProps) => {
 	const [incognito] = useIncognitoMode();
 	const disconnectedInstances = data.qbitInstances.filter((i) => !i.connected);
+	const inventoryCurrent = data.inventoryCoverage.status === "current";
+	const inventoryPartial = data.inventoryCoverage.status === "partial";
+	const observedCount = (count: number) =>
+		`${inventoryPartial ? "≥ " : ""}${count.toLocaleString()}`;
 	return (
 		<section className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-7">
 			<KpiCard
 				label="Total torrents"
-				value={data.totalTorrents.toLocaleString()}
+				value={observedCount(data.totalTorrents)}
 				icon={Download}
 				tone="default"
 			/>
 			<KpiCard
 				label="Seeding"
-				value={data.byState.seeding.toLocaleString()}
-				sub={`${pct(data.byState.seeding, data.totalTorrents)} of total`}
+				value={observedCount(data.byState.seeding)}
+				sub={
+					inventoryCurrent
+						? `${pct(data.byState.seeding, data.totalTorrents)} of total`
+						: "Observed rows only"
+				}
 				icon={Upload}
 				tone="positive"
 			/>
 			<KpiCard
 				label="Downloading"
-				value={data.byState.downloading.toLocaleString()}
+				value={observedCount(data.byState.downloading)}
 				sub={data.byState.stalled > 0 ? `${data.byState.stalled} stalled` : undefined}
 				icon={Download}
 				tone={data.byState.stalled > 0 ? "warning" : "default"}
 			/>
 			<KpiCard
 				label="Paused / Errored"
-				value={(data.byState.paused + data.byState.error).toLocaleString()}
+				value={observedCount(data.byState.paused + data.byState.error)}
 				sub={data.byState.error > 0 ? `${data.byState.error} errored` : undefined}
 				icon={data.byState.error > 0 ? AlertCircle : Pause}
 				tone={data.byState.error > 0 ? "critical" : data.byState.paused > 0 ? "warning" : "default"}
 			/>
 			<KpiCard
 				label="Avg ratio"
-				value={data.avgRatio.toFixed(2)}
-				sub={data.lowRatioCount > 0 ? `${data.lowRatioCount} below 1.00×` : "all healthy"}
+				value={data.totalTorrents > 0 ? data.avgRatio.toFixed(2) : "—"}
+				sub={
+					data.totalTorrents === 0
+						? "No observed torrents"
+						: data.lowRatioCount > 0
+							? `${data.lowRatioCount} below 1.00×${inventoryCurrent ? "" : " in observed rows"}`
+							: inventoryCurrent
+								? "No low-ratio torrents"
+								: "Observed rows only"
+				}
 				icon={Zap}
 				tone={data.lowRatioCount > data.totalTorrents / 2 ? "warning" : "default"}
 			/>
 			<KpiCard
 				label="Throughput"
-				value={`↑ ${formatBytes(data.upSpeed)}/s`}
-				sub={`↓ ${formatBytes(data.dlSpeed)}/s`}
+				value={data.throughputCoverage === "unavailable" ? "—" : `↑ ${formatBytes(data.upSpeed)}/s`}
+				sub={
+					data.throughputCoverage === "unavailable"
+						? "Transfer data unavailable"
+						: `↓ ${formatBytes(data.dlSpeed)}/s${data.throughputCoverage === "partial" ? " · partial" : ""}`
+				}
 				icon={Network}
 				tone="default"
 			/>
 			<KpiCard
 				label="qBit instances"
-				value={`${data.qbitInstances.length - disconnectedInstances.length}/${data.qbitInstances.length}`}
+				value={
+					data.topologyCoverage === "unavailable"
+						? "—"
+						: `${data.qbitInstances.length - disconnectedInstances.length}/${data.qbitInstances.length}`
+				}
 				sub={
-					disconnectedInstances.length > 0
-						? `${disconnectedInstances
-								.map((i) => (incognito ? getLinuxInstanceName(i.name) : i.name))
-								.join(", ")} offline`
-						: data.lastSyncAt
-							? `synced ${relativeTime(data.lastSyncAt)}${data.lastSyncOk === false ? " · errored" : ""}`
-							: "never synced"
+					data.topologyCoverage === "unavailable"
+						? "qBittorrent status unavailable"
+						: data.topologyCoverage === "partial"
+							? "Partial qBittorrent status"
+							: disconnectedInstances.length > 0
+								? `${disconnectedInstances
+										.map((i) => (incognito ? getLinuxInstanceName(i.name) : i.name))
+										.join(", ")} offline`
+								: data.lastSyncAt
+									? `synced ${relativeTime(data.lastSyncAt)}${data.lastSyncOk === false ? " · errored" : ""}`
+									: "never synced"
 				}
 				icon={HardDrive}
 				tone={
@@ -327,6 +400,7 @@ const KpiCard = ({ label, value, sub, icon: Icon, tone }: KpiCardProps) => (
 
 interface AttentionSectionProps {
 	items: ReadonlyArray<{
+		quiInstanceId: string;
 		hash: string;
 		name: string;
 		state: string;
@@ -344,6 +418,10 @@ interface AttentionSectionProps {
 		} | null;
 	}>;
 	totalCount: number;
+	inventoryCoverage: QuiAttentionResponse["inventoryCoverage"]["status"];
+	trackerCoverage: QuiAttentionResponse["trackerCoverage"];
+	fileCoverage: QuiAttentionResponse["fileCoverage"]["status"];
+	fileIssueCount: number;
 	isLoading: boolean;
 	isError: boolean;
 	error: unknown;
@@ -352,6 +430,10 @@ interface AttentionSectionProps {
 const AttentionSection = ({
 	items,
 	totalCount,
+	inventoryCoverage,
+	trackerCoverage,
+	fileCoverage,
+	fileIssueCount,
 	isLoading,
 	isError,
 	error,
@@ -381,15 +463,35 @@ const AttentionSection = ({
 		);
 	}
 	if (items.length === 0) {
+		const complete =
+			inventoryCoverage === "current" &&
+			trackerCoverage === "current" &&
+			fileCoverage === "current" &&
+			fileIssueCount === 0;
 		return (
 			<section className="mb-6">
 				<SectionHeading>Needs Attention</SectionHeading>
 				<GlassmorphicCard padding="md">
 					<div className="flex items-center gap-3 text-sm text-muted-foreground">
-						<CheckCircle2 className="h-5 w-5 text-emerald-400" aria-hidden />
+						{complete ? (
+							<CheckCircle2 className="h-5 w-5 text-emerald-400" aria-hidden />
+						) : (
+							<TriangleAlert className="h-5 w-5 text-amber-400" aria-hidden />
+						)}
 						<span>
-							No torrents currently need attention — everything is seeding, downloading, or above
-							ratio target.
+							{complete
+								? "No torrents currently need attention in the complete observation."
+								: inventoryCoverage === "unavailable"
+									? "Attention inventory unavailable; no all-clear can be established."
+									: inventoryCoverage === "last-known"
+										? "No issues in last-known data; current attention status is unknown."
+										: fileIssueCount > 0
+											? `Saved file inventory reports ${fileIssueCount} affected torrent${fileIssueCount === 1 ? "" : "s"}; none is matched in the current attention rows.`
+											: fileCoverage === "unavailable"
+												? "File inventory unavailable; no all-clear can be established."
+												: fileCoverage === "last-known"
+													? "No issues in last-known file inventory; current file status is unknown."
+													: "No issues in available data; inventory, tracker, or file coverage is incomplete."}
 						</span>
 					</div>
 				</GlassmorphicCard>
@@ -398,6 +500,22 @@ const AttentionSection = ({
 	}
 	return (
 		<section className="mb-6">
+			{inventoryCoverage !== "current" ||
+			trackerCoverage !== "current" ||
+			fileCoverage !== "current" ? (
+				<Alert variant="warning" className="mb-3">
+					<AlertDescription>
+						Attention feed or file inventory coverage is incomplete; listed items are observed
+						signals, not a complete all-clear.{" "}
+						{fileIssueCount > 0 ? (
+							<>
+								Saved file inventory reports {fileIssueCount} affected torrent
+								{fileIssueCount === 1 ? "" : "s"}.
+							</>
+						) : null}
+					</AlertDescription>
+				</Alert>
+			) : null}
 			<SectionHeading
 				right={
 					totalCount > items.length ? (
@@ -411,7 +529,11 @@ const AttentionSection = ({
 			</SectionHeading>
 			<ul className="space-y-2">
 				{items.map((item, idx) => (
-					<AttentionRow key={item.hash} item={item} animationDelay={Math.min(idx, 12) * 30} />
+					<AttentionRow
+						key={`${item.quiInstanceId}:${item.qbitInstanceId ?? "none"}:${item.hash}`}
+						item={item}
+						animationDelay={Math.min(idx, 12) * 30}
+					/>
 				))}
 			</ul>
 		</section>

@@ -421,7 +421,14 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 	}>("/:templateId", async (request, reply) => {
 		const { templateId } = validateRequest(getTemplateParamsSchema, request.params);
 
-		await templateService.deleteTemplate(templateId, request.currentUser!.id);
+		const deleted = await templateService.deleteTemplate(templateId, request.currentUser!.id);
+		if (!deleted) {
+			return reply.status(404).send({
+				statusCode: 404,
+				error: "NotFound",
+				message: "Template not found",
+			});
+		}
 
 		request.log.info({ templateId }, "Template deleted");
 

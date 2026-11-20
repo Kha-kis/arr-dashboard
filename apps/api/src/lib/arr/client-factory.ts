@@ -265,6 +265,7 @@ export class ArrClientFactory {
 			body?: unknown;
 			timeout?: number;
 			headers?: Record<string, string>;
+			redirect?: "error" | "follow" | "manual";
 		},
 	): Promise<Response> {
 		const instanceLabel = instance.label ?? instance.id;
@@ -298,6 +299,7 @@ export class ArrClientFactory {
 				headers,
 				body,
 				signal: AbortSignal.timeout(timeout),
+				...(options?.redirect !== undefined ? { redirect: options.redirect } : {}),
 			});
 		} catch (error) {
 			if (error instanceof Error && error.name === "TimeoutError") {

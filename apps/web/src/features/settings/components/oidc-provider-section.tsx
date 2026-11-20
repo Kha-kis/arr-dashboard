@@ -15,7 +15,7 @@ import {
 	Trash2,
 	X,
 } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { PremiumEmptyState, PremiumSection, PremiumSkeleton } from "../../../components/layout";
 import { ToggleSwitch } from "../../../components/layout/config-primitives";
 import { Button } from "../../../components/ui/button";
@@ -54,8 +54,10 @@ interface OIDCProviderSectionProps {
 
 export const OIDCProviderSection = ({ currentUser }: OIDCProviderSectionProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const fieldId = useId();
 
-	const { data: providerData, isLoading } = useOIDCProvider();
+	const oidcQuery = useOIDCProvider();
+	const { data: providerData, isLoading } = oidcQuery;
 	const createMutation = useCreateOIDCProvider();
 	const updateMutation = useUpdateOIDCProvider();
 	const deleteMutation = useDeleteOIDCProvider();
@@ -243,7 +245,7 @@ export const OIDCProviderSection = ({ currentUser }: OIDCProviderSectionProps) =
 		});
 	};
 
-	if (isLoading) {
+	if (isLoading || oidcQuery.isPending) {
 		return (
 			<PremiumSection
 				title="OIDC Provider"
@@ -252,6 +254,29 @@ export const OIDCProviderSection = ({ currentUser }: OIDCProviderSectionProps) =
 			>
 				<div className="space-y-4">
 					<PremiumSkeleton className="h-32" />
+				</div>
+			</PremiumSection>
+		);
+	}
+	if (oidcQuery.isError) {
+		return (
+			<PremiumSection
+				title="OIDC Provider"
+				description="OIDC configuration is unavailable."
+				icon={ShieldCheck}
+			>
+				<div role="alert" className="space-y-3">
+					<p className="text-sm text-muted-foreground">
+						The current configuration could not be verified. Retry before changing sign-in settings.
+					</p>
+					<Button
+						type="button"
+						variant="outline"
+						disabled={oidcQuery.isFetching}
+						onClick={() => void oidcQuery.refetch()}
+					>
+						Retry OIDC configuration
+					</Button>
 				</div>
 			</PremiumSection>
 		);
@@ -318,10 +343,14 @@ export const OIDCProviderSection = ({ currentUser }: OIDCProviderSectionProps) =
 
 								<div className="grid gap-4 sm:grid-cols-2">
 									<div className="space-y-2 sm:col-span-2">
-										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+										<label
+											htmlFor={`${fieldId}-create-displayName`}
+											className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+										>
 											Display Name
 										</label>
 										<Input
+											id={`${fieldId}-create-displayName`}
 											value={formData.displayName}
 											onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
 											placeholder="e.g., Authentik SSO"
@@ -333,10 +362,14 @@ export const OIDCProviderSection = ({ currentUser }: OIDCProviderSectionProps) =
 									</div>
 
 									<div className="space-y-2 sm:col-span-2">
-										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+										<label
+											htmlFor={`${fieldId}-create-issuer`}
+											className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+										>
 											Issuer URL
 										</label>
 										<Input
+											id={`${fieldId}-create-issuer`}
 											value={formData.issuer}
 											onChange={(e) => setFormData({ ...formData, issuer: e.target.value })}
 											placeholder="https://auth.example.com"
@@ -348,10 +381,14 @@ export const OIDCProviderSection = ({ currentUser }: OIDCProviderSectionProps) =
 									</div>
 
 									<div className="space-y-2">
-										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+										<label
+											htmlFor={`${fieldId}-create-clientId`}
+											className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+										>
 											Client ID
 										</label>
 										<Input
+											id={`${fieldId}-create-clientId`}
 											value={formData.clientId}
 											onChange={(e) => setFormData({ ...formData, clientId: e.target.value })}
 											placeholder="OAuth client ID"
@@ -360,10 +397,14 @@ export const OIDCProviderSection = ({ currentUser }: OIDCProviderSectionProps) =
 									</div>
 
 									<div className="space-y-2">
-										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+										<label
+											htmlFor={`${fieldId}-create-clientSecret`}
+											className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+										>
 											Client Secret
 										</label>
 										<Input
+											id={`${fieldId}-create-clientSecret`}
 											type="password"
 											value={formData.clientSecret}
 											onChange={(e) => setFormData({ ...formData, clientSecret: e.target.value })}
@@ -373,10 +414,14 @@ export const OIDCProviderSection = ({ currentUser }: OIDCProviderSectionProps) =
 									</div>
 
 									<div className="space-y-2 sm:col-span-2">
-										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+										<label
+											htmlFor={`${fieldId}-create-redirectUri`}
+											className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+										>
 											Redirect URI
 										</label>
 										<Input
+											id={`${fieldId}-create-redirectUri`}
 											value={formData.redirectUri}
 											onChange={(e) => setFormData({ ...formData, redirectUri: e.target.value })}
 											placeholder={
@@ -392,10 +437,14 @@ export const OIDCProviderSection = ({ currentUser }: OIDCProviderSectionProps) =
 									</div>
 
 									<div className="space-y-2 sm:col-span-2">
-										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+										<label
+											htmlFor={`${fieldId}-create-scopes`}
+											className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+										>
 											Scopes (comma-separated)
 										</label>
 										<Input
+											id={`${fieldId}-create-scopes`}
 											value={formData.scopes}
 											onChange={(e) => setFormData({ ...formData, scopes: e.target.value })}
 											placeholder="openid,email,profile"
@@ -485,10 +534,14 @@ export const OIDCProviderSection = ({ currentUser }: OIDCProviderSectionProps) =
 
 								<div className="grid gap-4 sm:grid-cols-2">
 									<div className="space-y-2 sm:col-span-2">
-										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+										<label
+											htmlFor={`${fieldId}-edit-displayName`}
+											className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+										>
 											Display Name
 										</label>
 										<Input
+											id={`${fieldId}-edit-displayName`}
 											value={editData.displayName}
 											onChange={(e) => setEditData({ ...editData, displayName: e.target.value })}
 											className="bg-card/30 border-border/50"
@@ -496,10 +549,14 @@ export const OIDCProviderSection = ({ currentUser }: OIDCProviderSectionProps) =
 									</div>
 
 									<div className="space-y-2 sm:col-span-2">
-										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+										<label
+											htmlFor={`${fieldId}-edit-issuer`}
+											className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+										>
 											Issuer URL
 										</label>
 										<Input
+											id={`${fieldId}-edit-issuer`}
 											value={editData.issuer}
 											onChange={(e) => setEditData({ ...editData, issuer: e.target.value })}
 											className="bg-card/30 border-border/50"
@@ -507,10 +564,14 @@ export const OIDCProviderSection = ({ currentUser }: OIDCProviderSectionProps) =
 									</div>
 
 									<div className="space-y-2">
-										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+										<label
+											htmlFor={`${fieldId}-edit-clientId`}
+											className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+										>
 											Client ID
 										</label>
 										<Input
+											id={`${fieldId}-edit-clientId`}
 											value={editData.clientId}
 											onChange={(e) => setEditData({ ...editData, clientId: e.target.value })}
 											className="bg-card/30 border-border/50"
@@ -518,10 +579,14 @@ export const OIDCProviderSection = ({ currentUser }: OIDCProviderSectionProps) =
 									</div>
 
 									<div className="space-y-2">
-										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+										<label
+											htmlFor={`${fieldId}-edit-clientSecret`}
+											className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+										>
 											Client Secret
 										</label>
 										<Input
+											id={`${fieldId}-edit-clientSecret`}
 											type="password"
 											value={editData.clientSecret}
 											onChange={(e) => setEditData({ ...editData, clientSecret: e.target.value })}
@@ -532,10 +597,14 @@ export const OIDCProviderSection = ({ currentUser }: OIDCProviderSectionProps) =
 									</div>
 
 									<div className="space-y-2 sm:col-span-2">
-										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+										<label
+											htmlFor={`${fieldId}-edit-redirectUri`}
+											className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+										>
 											Redirect URI
 										</label>
 										<Input
+											id={`${fieldId}-edit-redirectUri`}
 											value={editData.redirectUri}
 											onChange={(e) => setEditData({ ...editData, redirectUri: e.target.value })}
 											className="bg-card/30 border-border/50"
@@ -543,10 +612,14 @@ export const OIDCProviderSection = ({ currentUser }: OIDCProviderSectionProps) =
 									</div>
 
 									<div className="space-y-2 sm:col-span-2">
-										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+										<label
+											htmlFor={`${fieldId}-edit-scopes`}
+											className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+										>
 											Scopes
 										</label>
 										<Input
+											id={`${fieldId}-edit-scopes`}
 											value={editData.scopes}
 											onChange={(e) => setEditData({ ...editData, scopes: e.target.value })}
 											className="bg-card/30 border-border/50"

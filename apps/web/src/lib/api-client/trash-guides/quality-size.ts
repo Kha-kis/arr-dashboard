@@ -55,6 +55,8 @@ export type ApplyQualitySizePayload = {
 
 export type ApplyQualitySizeResponse = {
 	success: boolean;
+	/** Request acknowledgement only, not confirmation of provider completion. */
+	resetStatus?: "requested";
 	appliedCount: number;
 	totalQualities: number;
 	message: string;

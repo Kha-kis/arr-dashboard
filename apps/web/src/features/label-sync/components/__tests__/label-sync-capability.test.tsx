@@ -54,6 +54,13 @@ function makeRule(overrides: Partial<LabelSyncRule> = {}): LabelSyncRule {
 		destInstanceId: "emby-1",
 		destTagName: "Kids",
 		destinationMutationCapability: blockedCapability,
+		recovery: {
+			availability: "known",
+			state: "clear",
+			heldCount: 0,
+			reconciledCount: 0,
+			lastCheckAt: null,
+		},
 		lastRunAt: null,
 		lastRunStatus: null,
 		lastRunMessage: null,

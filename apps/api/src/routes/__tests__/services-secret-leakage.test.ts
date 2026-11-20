@@ -99,6 +99,13 @@ beforeEach(async () => {
 	vi.clearAllMocks();
 
 	mockPrisma = {
+		$executeRaw: vi.fn().mockResolvedValue(1),
+		searchGrabClaim: { findFirst: vi.fn().mockResolvedValue(null) },
+		arrImportOperation: {
+			findFirst: vi.fn().mockResolvedValue(null),
+			count: vi.fn().mockResolvedValue(0),
+		},
+		queueCleanerImportReceipt: { findFirst: vi.fn().mockResolvedValue(null) },
 		$transaction: vi.fn(async (callback: (tx: typeof mockPrisma) => Promise<unknown>) =>
 			callback(mockPrisma),
 		),

@@ -3,8 +3,10 @@ import type { QuiClient } from "../client-factory.js";
 import {
 	__torrentListCacheState,
 	getCachedAllTorrents,
+	getTorrentListObservation,
 	invalidateTorrentListCache,
 	TORRENT_LIST_CACHE_TTL_MS,
+	TORRENT_LIST_MAX_LAST_KNOWN_MS,
 } from "../torrent-list-cache.js";
 
 // Each test starts from a clean cache — module state is process-global.
@@ -12,9 +14,78 @@ afterEach(() => {
 	invalidateTorrentListCache();
 });
 
+describe("getTorrentListObservation", () => {
+	it("moves from current to last-known to unavailable and recovers after a fresh read", async () => {
+		const listAllTorrents = vi
+			.fn()
+			.mockResolvedValueOnce([torrent("a")])
+			.mockRejectedValueOnce(new Error("qui unreachable"))
+			.mockResolvedValueOnce([torrent("b")]);
+		const client = makeClient(listAllTorrents);
+		let clock = 1_000_000;
+
+		expect(await getTorrentListObservation("qui-1", client, () => clock)).toEqual({
+			availability: "current",
+			torrents: [torrent("a")],
+			fetchedAtMs: clock,
+			complete: true,
+		});
+		clock += TORRENT_LIST_CACHE_TTL_MS + 1;
+		expect(await getTorrentListObservation("qui-1", client, () => clock)).toEqual({
+			availability: "last-known",
+			torrents: [torrent("a")],
+			fetchedAtMs: 1_000_000,
+			complete: true,
+		});
+		await vi.waitFor(() => expect(__torrentListCacheState().pending).toBe(0));
+
+		clock = 1_000_000 + TORRENT_LIST_MAX_LAST_KNOWN_MS + 1;
+		expect(await getTorrentListObservation("qui-1", client, () => clock)).toEqual({
+			availability: "unavailable",
+			torrents: [],
+			fetchedAtMs: null,
+		});
+		await vi.waitFor(() => expect(__torrentListCacheState().pending).toBe(0));
+		expect(await getTorrentListObservation("qui-1", client, () => clock)).toEqual({
+			availability: "current",
+			torrents: [torrent("b")],
+			fetchedAtMs: clock,
+			complete: true,
+		});
+	});
+
+	it("retains positive rows but marks an unproven inventory incomplete", async () => {
+		const client = makeClient(vi.fn().mockResolvedValue([torrent("a")]));
+		client.listTorrentInventory = vi
+			.fn()
+			.mockResolvedValue({ torrents: [torrent("a")], complete: false });
+		expect(await getTorrentListObservation("qui-1", client)).toMatchObject({
+			availability: "current",
+			complete: false,
+			torrents: [torrent("a")],
+		});
+	});
+
+	it("preserves a cold provider failure for operator logging without caching it", async () => {
+		const failure = new Error("synthetic provider page failed");
+		const client = makeClient(vi.fn());
+		client.listTorrentInventory = vi.fn().mockRejectedValue(failure);
+		expect(await getTorrentListObservation("qui-1", client)).toEqual({
+			availability: "unavailable",
+			torrents: [],
+			fetchedAtMs: null,
+			failure,
+		});
+		expect(__torrentListCacheState()).toEqual({ cached: 0, pending: 0 });
+	});
+});
+
 /** Minimal QuiClient stub — only listAllTorrents is exercised here. */
 function makeClient(listAllTorrents: QuiClient["listAllTorrents"]): QuiClient {
-	return { listAllTorrents } as unknown as QuiClient;
+	return {
+		listAllTorrents,
+		listTorrentInventory: async () => ({ torrents: await listAllTorrents(), complete: true }),
+	} as unknown as QuiClient;
 }
 
 const torrent = (hash: string) => ({ hash }) as never;
@@ -137,6 +208,29 @@ describe("getCachedAllTorrents", () => {
 		await getCachedAllTorrents("qui-1", client);
 		invalidateTorrentListCache("qui-1");
 		await getCachedAllTorrents("qui-1", client);
+		expect(listAllTorrents).toHaveBeenCalledTimes(2);
+	});
+
+	it("does not let a pre-invalidation fetch repopulate a changed connection", async () => {
+		let resolveOld: (value: never[]) => void = () => {};
+		const listAllTorrents = vi
+			.fn()
+			.mockImplementationOnce(
+				() =>
+					new Promise<never[]>((resolve) => {
+						resolveOld = resolve;
+					}),
+			)
+			.mockResolvedValueOnce([torrent("new")] as never[]);
+		const client = makeClient(listAllTorrents);
+		const oldRead = getCachedAllTorrents("qui-1", client);
+		invalidateTorrentListCache("qui-1");
+		const newRead = getCachedAllTorrents("qui-1", client);
+
+		resolveOld([torrent("old")] as never[]);
+		await expect(oldRead).rejects.toThrow("Torrent list cache was invalidated");
+		expect(await newRead).toEqual([torrent("new")]);
+		expect(await getCachedAllTorrents("qui-1", client)).toEqual([torrent("new")]);
 		expect(listAllTorrents).toHaveBeenCalledTimes(2);
 	});
 });

@@ -11,15 +11,17 @@
  *     "Refresh now" and failed/degraded attempts offering "Retry refresh".
  */
 
-import type { ProviderObservationStatus } from "@arr/shared";
+import type { ProviderNativeWatchCoverage, ProviderObservationStatus } from "@arr/shared";
 import Fastify from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MAX_CONNECTION_ITEMS } from "../../lib/provider-observation/inventory-connection-repository.js";
 
 const evidenceMocks = vi.hoisted(() => ({
 	loadUserGenerationObservations: vi.fn(),
 	getPublishedEpisodeGenerationObservation: vi.fn(),
 	readOwnedTautulliObservation: vi.fn(),
 	readOwnedJellyfinCacheHealthSources: vi.fn(),
+	readNativeInventoryPage: vi.fn(),
 }));
 
 vi.mock("../../lib/plex/plex-evidence-repository.js", () => ({
@@ -33,6 +35,15 @@ vi.mock("../../lib/jellyfin/jellyfin-cache-health.js", () => ({
 	DEFAULT_JELLYFIN_CACHE_HEALTH_MAX_AGE_MS: 12 * 60 * 60 * 1000,
 	readOwnedJellyfinCacheHealthSources: evidenceMocks.readOwnedJellyfinCacheHealthSources,
 }));
+vi.mock("../../lib/provider-observation/native-inventory.js", async () => {
+	const actual = await vi.importActual<
+		typeof import("../../lib/provider-observation/native-inventory.js")
+	>("../../lib/provider-observation/native-inventory.js");
+	return {
+		...actual,
+		readNativeInventoryPage: evidenceMocks.readNativeInventoryPage,
+	};
+});
 
 vi.mock("../../lib/pulse/collectors.js", async () => {
 	const actual = await vi.importActual<typeof import("../../lib/pulse/collectors.js")>(
@@ -50,6 +61,7 @@ let cacheStatuses: CacheStatusRow[];
 let findCacheStatuses: ReturnType<typeof vi.fn>;
 let findTautulliInstances: ReturnType<typeof vi.fn>;
 let findJellyfinInstances: ReturnType<typeof vi.fn>;
+let findPlexInstances: ReturnType<typeof vi.fn>;
 let userCounter = 0;
 
 type CacheStatusRow = {
@@ -205,6 +217,105 @@ function makeHealthSource({
 	};
 }
 
+const recordedPartialWatch: ProviderNativeWatchCoverage = {
+	status: "available",
+	observedAt: "2026-10-19T12:00:00.000Z",
+	expectedScopes: 8,
+	verifiedScopes: 7,
+	incompleteScopes: 1,
+	diagnosticStatus: "recorded",
+	reasonCodes: ["changed-observations", "coverage-incomplete"],
+	refreshPhase: "idle",
+};
+
+describe("recorded native watch recovery", () => {
+	beforeEach(() => {
+		cacheStatuses = [];
+	});
+	it.each(["jellyfin_episode", "emby_episode"] as const)(
+		"offers normal canonical %s recovery even when aggregate evidence is current",
+		async (cacheType) => {
+			evidenceMocks.readOwnedJellyfinCacheHealthSources.mockResolvedValueOnce([
+				{
+					...makeHealthSource({
+						cacheType,
+						status: {
+							availability: "current",
+							evidence: "complete",
+							latestAttempt: "successful",
+							reasonCodes: [],
+						},
+					}),
+					watchCoverage: recordedPartialWatch,
+				},
+			]);
+			const body = JSON.parse((await injectAuthenticated("GET", "/pulse")).payload);
+			expect(body.items).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						title: expect.stringContaining("watch observations have incomplete recorded coverage"),
+						action: {
+							kind: "cache.refresh",
+							target: { instanceId: "inst-jellyfin", cacheType: "jellyfin_episode" },
+							label: "Refresh watch observations",
+							destructive: false,
+						},
+					}),
+				]),
+			);
+		},
+	);
+	it.each(["collecting", "verifying", "finalizing", "unknown"] as const)(
+		"does not offer duplicate refresh during %s",
+		async (refreshPhase) => {
+			evidenceMocks.readOwnedJellyfinCacheHealthSources.mockResolvedValueOnce([
+				{
+					...makeHealthSource({
+						cacheType: "jellyfin_episode",
+						status: {
+							availability: "current",
+							evidence: "complete",
+							latestAttempt: "successful",
+							reasonCodes: [],
+						},
+					}),
+					watchCoverage: { ...recordedPartialWatch, refreshPhase },
+				},
+			]);
+			const body = JSON.parse((await injectAuthenticated("GET", "/pulse")).payload);
+			const item = body.items.find((item: { title: string }) =>
+				item.title.includes("watch observations"),
+			);
+			expect(item).toBeDefined();
+			expect(item.action).toBeUndefined();
+		},
+	);
+	it.each(["identity-changed", "refresh-failed"])(
+		"preserves %s precedence over recorded gaps",
+		async (reason) => {
+			evidenceMocks.readOwnedJellyfinCacheHealthSources.mockResolvedValueOnce([
+				{
+					...makeHealthSource({
+						cacheType: "jellyfin_episode",
+						status: {
+							availability: "unavailable",
+							evidence: "unknown",
+							latestAttempt: "failed",
+							reasonCodes: [reason],
+						},
+					}),
+					watchCoverage: recordedPartialWatch,
+				},
+			]);
+			const body = JSON.parse((await injectAuthenticated("GET", "/pulse")).payload);
+			const item = body.items.find((item: { source: string }) => item.source === "jellyfin");
+			expect(item.title).toContain(
+				reason === "identity-changed" ? "identity needs verification" : "cache refresh failed",
+			);
+		},
+	);
+});
+
 beforeEach(async () => {
 	userCounter += 1;
 	app = Fastify({ logger: false });
@@ -216,6 +327,7 @@ beforeEach(async () => {
 	);
 	findTautulliInstances = vi.fn().mockResolvedValue([]);
 	findJellyfinInstances = vi.fn().mockResolvedValue([]);
+	findPlexInstances = vi.fn().mockResolvedValue([]);
 	evidenceMocks.loadUserGenerationObservations.mockImplementation(async () =>
 		cacheStatuses
 			.filter((row) => row.cacheType === "plex")
@@ -242,6 +354,10 @@ beforeEach(async () => {
 	);
 	evidenceMocks.readOwnedTautulliObservation.mockResolvedValue(null);
 	evidenceMocks.readOwnedJellyfinCacheHealthSources.mockReset().mockResolvedValue([]);
+	evidenceMocks.readNativeInventoryPage.mockReset().mockResolvedValue({
+		status: "unavailable",
+		reason: "no-publication",
+	});
 	app.decorate("prisma", {
 		cacheRefreshStatus: {
 			findMany: findCacheStatuses,
@@ -250,6 +366,9 @@ beforeEach(async () => {
 			findMany: (args: { where?: { service?: unknown } }) => {
 				if (args.where?.service === "TAUTULLI") {
 					return (findTautulliInstances as unknown as (input: unknown) => unknown)(args);
+				}
+				if (args.where?.service === "PLEX") {
+					return (findPlexInstances as unknown as (input: unknown) => unknown)(args);
 				}
 				return (findJellyfinInstances as unknown as (input: unknown) => unknown)(args);
 			},
@@ -834,8 +953,140 @@ describe("GET /pulse — cache.refresh action emission", () => {
 		expect(item).toMatchObject({
 			id: "cache-partial-positive-only",
 			title: "Home Plex: Plex cache has informational coverage gaps",
+			actionUrl: "/settings",
+			actionLabel: "View status",
 		});
 		expect(item.action).toBeUndefined();
+	});
+
+	it("links the published Plex metadata filter even when the legacy Plex cache is complete", async () => {
+		cacheStatuses = [];
+		findPlexInstances.mockResolvedValueOnce([{ id: "inst-1", label: "Home Plex" }]);
+		evidenceMocks.readNativeInventoryPage.mockResolvedValueOnce({
+			status: "available",
+			itemCount: 2_141,
+			freshness: "current",
+			observedAt: new Date("2026-09-30T06:00:00.000Z"),
+		});
+
+		const body = JSON.parse((await injectAuthenticated("GET", "/pulse")).payload);
+		const item = body.items.find(
+			(candidate: { id: string }) => candidate.id === "plex-native-metadata-inst-1",
+		);
+
+		expect(findPlexInstances).toHaveBeenCalledWith({
+			where: { userId: `user-cache-${userCounter}`, enabled: true, service: "PLEX" },
+			select: { id: true, label: true },
+		});
+		expect(evidenceMocks.readNativeInventoryPage).toHaveBeenCalledWith(app.prisma, {
+			userId: `user-cache-${userCounter}`,
+			instanceId: "inst-1",
+			domain: "library",
+			limit: 1,
+			now: expect.any(Date),
+		});
+		expect(item).toMatchObject({
+			severity: "info",
+			category: "health",
+			source: "plex",
+			actionUrl:
+				"/library?inventoryInstanceId=inst-1&inventoryDomain=library&inventoryMetadataFilter=missing-tmdb#media-server-inventory",
+			actionLabel: "Review inventory",
+		});
+		expect(item.detail).toBe("Open the published Plex library's bounded missing-TMDb filter.");
+	});
+
+	it("does not offer the metadata filter for a verified empty Plex inventory", async () => {
+		cacheStatuses = [];
+		findPlexInstances.mockResolvedValueOnce([{ id: "inst-1", label: "Home Plex" }]);
+		evidenceMocks.readNativeInventoryPage.mockResolvedValueOnce({
+			status: "available",
+			itemCount: 0,
+			freshness: "current",
+			observedAt: new Date("2026-09-30T06:00:00.000Z"),
+		});
+
+		const body = JSON.parse((await injectAuthenticated("GET", "/pulse")).payload);
+		expect(
+			body.items.some((item: { id: string }) => item.id === "plex-native-metadata-inst-1"),
+		).toBe(false);
+	});
+
+	it("does not link to a metadata filter beyond its published-inventory size cap", async () => {
+		cacheStatuses = [];
+		findPlexInstances.mockResolvedValueOnce([{ id: "inst-1", label: "Home Plex" }]);
+		evidenceMocks.readNativeInventoryPage.mockResolvedValueOnce({
+			status: "available",
+			itemCount: MAX_CONNECTION_ITEMS + 1,
+			freshness: "current",
+			observedAt: new Date("2026-09-30T06:00:00.000Z"),
+		});
+
+		const body = JSON.parse((await injectAuthenticated("GET", "/pulse")).payload);
+		const item = body.items.find(
+			(candidate: { id: string }) =>
+				candidate.id === "plex-native-metadata-filter-unavailable-inst-1",
+		);
+		expect(item).toMatchObject({
+			severity: "warning",
+			actionUrl: "/library#media-server-inventory",
+		});
+		expect(JSON.stringify(item)).not.toContain("inventoryMetadataFilter=missing-tmdb");
+	});
+
+	it("reports a generic unavailable state for an invalid Plex publication", async () => {
+		cacheStatuses = [];
+		findPlexInstances.mockResolvedValueOnce([{ id: "inst-1", label: "Home Plex" }]);
+		evidenceMocks.readNativeInventoryPage.mockResolvedValueOnce({
+			status: "unavailable",
+			reason: "malformed-publication",
+		});
+
+		const body = JSON.parse((await injectAuthenticated("GET", "/pulse")).payload);
+		const item = body.items.find(
+			(candidate: { id: string }) => candidate.id === "plex-native-metadata-unavailable-inst-1",
+		);
+		expect(item).toMatchObject({
+			severity: "warning",
+			actionUrl: "/library#media-server-inventory",
+		});
+		expect(JSON.stringify(item)).not.toContain("malformed-publication");
+	});
+
+	it("labels a published Plex metadata link as last-known when current coverage is unavailable", async () => {
+		cacheStatuses = [];
+		findPlexInstances.mockResolvedValueOnce([{ id: "inst-1", label: "Home Plex" }]);
+		evidenceMocks.readNativeInventoryPage.mockResolvedValueOnce({
+			status: "available",
+			itemCount: 2_141,
+			freshness: "last-known",
+			observedAt: new Date("2026-09-30T06:00:00.000Z"),
+		});
+
+		const body = JSON.parse((await injectAuthenticated("GET", "/pulse")).payload);
+		const item = body.items.find(
+			(candidate: { id: string }) => candidate.id === "plex-native-metadata-inst-1",
+		);
+		expect(item.detail).toContain("last-known Plex library");
+		expect(item.detail).toContain("current coverage is unknown");
+	});
+
+	it("reports a generic unavailable state when the published Plex metadata read throws", async () => {
+		cacheStatuses = [];
+		findPlexInstances.mockResolvedValueOnce([{ id: "inst-1", label: "Home Plex" }]);
+		evidenceMocks.readNativeInventoryPage.mockRejectedValueOnce(
+			new Error("private fixture path must not escape"),
+		);
+
+		const body = JSON.parse((await injectAuthenticated("GET", "/pulse")).payload);
+		const item = body.items.find(
+			(candidate: { id: string }) => candidate.id === "plex-native-metadata-unavailable-inst-1",
+		);
+		expect(item).toMatchObject({
+			severity: "warning",
+			actionUrl: "/library#media-server-inventory",
+		});
+		expect(JSON.stringify(item)).not.toContain("private fixture path");
 	});
 
 	it("keeps positive-only coverage informational without exposing internal diagnostics", async () => {
@@ -911,6 +1162,7 @@ describe("GET /pulse — cache.refresh action emission", () => {
 		expect(item).toMatchObject({
 			id: "cache-partial-positive-diagnostic",
 			detail: "Current mapped data remains available; some provider coverage is bounded.",
+			actionUrl: "/settings",
 		});
 		expect(JSON.stringify(item)).not.toMatch(/itemCount:|partialReasons:|onDeckFetchFailures/i);
 	});
@@ -1551,6 +1803,7 @@ describe("GET /pulse — cache.refresh action emission", () => {
 		expect(item).toMatchObject({
 			severity: "info",
 			title: "Home Plex: Plex episodes cache has informational coverage gaps",
+			actionUrl: "/settings",
 		});
 		expect(item.detail).toBe(
 			"Current mapped data remains available; some provider coverage is bounded.",

@@ -31,6 +31,7 @@ import {
 } from "../../../hooks/api/useSeerr";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
+import { isSeerrActionOutcomeUnknown, notifySeerrActionError } from "../lib/seerr-action-error";
 import { RequestCard } from "./request-card";
 import { RequestStatusTimeline } from "./request-status-timeline";
 
@@ -59,7 +60,11 @@ export const ApprovalQueueTab = ({
 	const [incognitoMode] = useIncognitoMode();
 	const [sort, setSort] = useState<RequestSort>("added");
 	const [take, setTake] = useState(PAGE_SIZE);
-	const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+	const [selection, setSelection] = useState<{ instanceId: string; ids: Set<number> }>({
+		instanceId,
+		ids: new Set(),
+	});
+	const [unresolvedByInstance, setUnresolvedByInstance] = useState<Record<string, number[]>>({});
 	const [previewId, setPreviewId] = useState<number | null>(null);
 	const { data, isLoading, isFetching, isError } = useSeerrRequests({
 		instanceId,
@@ -74,41 +79,102 @@ export const ApprovalQueueTab = ({
 	const declineMutation = useDeclineSeerrRequest();
 	const deleteMutation = useDeleteSeerrRequest();
 	const bulkMutation = useBulkSeerrRequestAction();
+	const isRequestActionPending =
+		approveMutation.isPending ||
+		declineMutation.isPending ||
+		deleteMutation.isPending ||
+		bulkMutation.isPending;
+	const [confirmationInstanceId, setConfirmationInstanceId] = useState(instanceId);
 	const [confirmingDeclineId, setConfirmingDeclineId] = useState<number | null>(null);
 	const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null);
+	const [bulkConfirmation, setBulkConfirmation] = useState<{
+		action: "decline" | "delete";
+		ids: ReadonlySet<number>;
+	} | null>(null);
 
 	const requests = useMemo(() => data?.results ?? [], [data?.results]);
+	const selectedIds = useMemo(
+		() =>
+			new Set(
+				selection.instanceId === instanceId
+					? requests.filter((request) => selection.ids.has(request.id)).map((request) => request.id)
+					: [],
+			),
+		[selection, instanceId, requests],
+	);
+	// Reset before rendering rows that can reuse another instance's request IDs.
+	if (confirmationInstanceId !== instanceId) {
+		setConfirmationInstanceId(instanceId);
+		setConfirmingDeclineId(null);
+		setConfirmingDeleteId(null);
+		setBulkConfirmation(null);
+	} else if (
+		bulkConfirmation &&
+		(bulkConfirmation.ids.size !== selectedIds.size ||
+			[...selectedIds].some((id) => !bulkConfirmation.ids.has(id)))
+	) {
+		setBulkConfirmation(null);
+	}
+
+	const unknownIds = unresolvedByInstance[instanceId] ?? [];
+	const currentUnknownOutcome =
+		unknownIds.length > 0 ? { count: unknownIds.length, ids: unknownIds } : null;
 	const allSelected = requests.length > 0 && requests.every((r) => selectedIds.has(r.id));
 
-	const toggleSelect = useCallback((id: number) => {
-		setSelectedIds((prev) => {
-			const next = new Set(prev);
-			if (next.has(id)) {
-				next.delete(id);
-			} else {
-				next.add(id);
-			}
-			return next;
-		});
-	}, []);
+	const toggleSelect = useCallback(
+		(id: number) => {
+			if (!requests.some((request) => request.id === id)) return;
+			setSelection((prev) => {
+				const next = new Set(prev.instanceId === instanceId ? prev.ids : []);
+				if (next.has(id)) {
+					next.delete(id);
+				} else {
+					next.add(id);
+				}
+				return { instanceId, ids: next };
+			});
+		},
+		[instanceId, requests],
+	);
 
 	const toggleSelectAll = useCallback(() => {
 		if (allSelected) {
-			setSelectedIds(new Set());
+			setSelection({ instanceId, ids: new Set() });
 		} else {
-			setSelectedIds(new Set(requests.map((r) => r.id)));
+			setSelection({ instanceId, ids: new Set(requests.map((r) => r.id)) });
 		}
-	}, [allSelected, requests]);
+	}, [allSelected, instanceId, requests]);
 
 	const handleBulkAction = useCallback(
 		(action: "approve" | "decline" | "delete") => {
+			if (isRequestActionPending) return;
 			const ids = [...selectedIds];
+			if (ids.length === 0) return;
 			bulkMutation.mutate(
 				{ instanceId, action, requestIds: ids },
 				{
 					onSuccess: (result) => {
-						setSelectedIds(new Set());
-						if (result.totalFailed === 0) {
+						const unknownIds = result.results
+							.filter((item) => item.outcome === "unknown" && ids.includes(item.requestId))
+							.map((item) => item.requestId);
+						setSelection((prev) =>
+							prev.instanceId === instanceId ? { instanceId, ids: new Set() } : prev,
+						);
+						setUnresolvedByInstance((prev) => {
+							const acknowledgedIds = new Set(
+								result.results.filter((item) => item.success).map((item) => item.requestId),
+							);
+							const remaining = new Set(
+								(prev[instanceId] ?? []).filter((id) => !acknowledgedIds.has(id)),
+							);
+							for (const id of unknownIds) remaining.add(id);
+							return { ...prev, [instanceId]: [...remaining] };
+						});
+						if (result.totalUnknown > 0) {
+							toast.warning(
+								`${result.totalSuccess} succeeded, ${result.totalFailed} failed, ${result.totalUnknown} unknown. Check Seerr before retrying.`,
+							);
+						} else if (result.totalFailed === 0) {
 							toast.success(
 								`${action === "approve" ? "Approved" : action === "decline" ? "Declined" : "Deleted"} ${result.totalSuccess} request${result.totalSuccess !== 1 ? "s" : ""}`,
 							);
@@ -116,36 +182,64 @@ export const ApprovalQueueTab = ({
 							toast.warning(`${result.totalSuccess} succeeded, ${result.totalFailed} failed`);
 						}
 					},
-					onError: () => toast.error(`Failed to ${action} requests`),
+					onError: (error) => {
+						setSelection((prev) =>
+							prev.instanceId === instanceId ? { instanceId, ids: new Set() } : prev,
+						);
+						if (isSeerrActionOutcomeUnknown(error)) {
+							setUnresolvedByInstance((prev) => ({
+								...prev,
+								[instanceId]: [...new Set([...(prev[instanceId] ?? []), ...ids])],
+							}));
+						}
+						notifySeerrActionError(error, `Failed to ${action} requests`);
+					},
 				},
 			);
 		},
-		[instanceId, selectedIds, bulkMutation],
+		[instanceId, selectedIds, bulkMutation, isRequestActionPending],
 	);
 
-	const [confirmBulkAction, setConfirmBulkAction] = useState<"decline" | "delete" | null>(null);
+	const confirmBulkAction = bulkConfirmation?.action;
 
 	useEffect(() => {
-		if (!confirmBulkAction) return;
-		const timer = setTimeout(() => setConfirmBulkAction(null), 3000);
+		if (!bulkConfirmation) return;
+		const timer = setTimeout(
+			() => setBulkConfirmation((current) => (current === bulkConfirmation ? null : current)),
+			3000,
+		);
 		return () => clearTimeout(timer);
-	}, [confirmBulkAction]);
+	}, [bulkConfirmation]);
 
 	const handleBulkDestructive = useCallback(
 		(action: "decline" | "delete") => {
+			if (isRequestActionPending) return;
 			if (confirmBulkAction === action) {
 				handleBulkAction(action);
-				setConfirmBulkAction(null);
+				setBulkConfirmation(null);
 			} else {
-				setConfirmBulkAction(action);
+				setBulkConfirmation({ action, ids: selectedIds });
 			}
 		},
-		[confirmBulkAction, handleBulkAction],
+		[confirmBulkAction, handleBulkAction, isRequestActionPending, selectedIds],
 	);
 
 	const togglePreview = useCallback((id: number) => {
 		setPreviewId((prev) => (prev === id ? null : id));
 	}, []);
+
+	const unknownNotice = currentUnknownOutcome && (
+		<div
+			role="status"
+			className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300"
+		>
+			Outcome unknown for {currentUnknownOutcome.count} request
+			{currentUnknownOutcome.count === 1 ? "" : "s"}.
+			{currentUnknownOutcome.ids.length > 0
+				? ` Check Seerr request ${currentUnknownOutcome.ids.map((id) => `#${id}`).join(", ")} before retrying.`
+				: " Request identifiers unavailable; check Seerr before retrying."}
+		</div>
+	);
 
 	if (isLoading) {
 		return (
@@ -159,26 +253,37 @@ export const ApprovalQueueTab = ({
 
 	if (isError) {
 		return (
-			<PremiumEmptyState
-				icon={AlertCircle}
-				title="Failed to Load Requests"
-				description="Could not connect to the Seerr instance. Check your configuration in Settings."
-			/>
+			<div className="space-y-3">
+				{unknownNotice}
+				<PremiumEmptyState
+					icon={AlertCircle}
+					title="Failed to Load Requests"
+					description="Could not connect to the Seerr instance. Check your configuration in Settings."
+				/>
+			</div>
 		);
 	}
 
 	if (requests.length === 0) {
 		return (
-			<PremiumEmptyState
-				icon={Check}
-				title="No Pending Requests"
-				description="All caught up! New requests will appear here when users submit them."
-			/>
+			<div className="space-y-3">
+				{unknownNotice}
+				<PremiumEmptyState
+					icon={Check}
+					title="No Pending Requests"
+					description={
+						currentUnknownOutcome
+							? "No pending rows are currently shown. Reconcile the unknown outcome in Seerr."
+							: "All caught up! New requests will appear here when users submit them."
+					}
+				/>
+			</div>
 		);
 	}
 
 	return (
 		<div className="space-y-3">
+			{unknownNotice}
 			<div className="flex items-center justify-between">
 				<div className="flex items-center gap-3">
 					<label className="flex items-center gap-2 cursor-pointer">
@@ -240,13 +345,15 @@ export const ApprovalQueueTab = ({
 										<GradientButton
 											size="sm"
 											icon={Check}
-											disabled={approveMutation.isPending}
+											disabled={isRequestActionPending}
 											onClick={() =>
+												!isRequestActionPending &&
 												approveMutation.mutate(
 													{ instanceId, requestId: request.id },
 													{
 														onSuccess: () => toast.success("Request approved"),
-														onError: () => toast.error("Failed to approve request"),
+														onError: (error) =>
+															notifySeerrActionError(error, "Failed to approve request"),
 													},
 												)
 											}
@@ -257,8 +364,8 @@ export const ApprovalQueueTab = ({
 											<Button
 												variant="secondary"
 												size="sm"
-												disabled={approveMutation.isPending}
-												onClick={() => onOpenApproveOptions(request)}
+												disabled={isRequestActionPending}
+												onClick={() => !isRequestActionPending && onOpenApproveOptions(request)}
 												title="Approve with quality profile options"
 												className="gap-1.5 border-border/50 bg-card/50 text-xs"
 											>
@@ -271,13 +378,15 @@ export const ApprovalQueueTab = ({
 												<Button
 													variant="destructive"
 													size="sm"
-													disabled={declineMutation.isPending}
+													disabled={isRequestActionPending}
 													onClick={() => {
+														if (isRequestActionPending) return;
 														declineMutation.mutate(
 															{ instanceId, requestId: request.id },
 															{
 																onSuccess: () => toast.success("Request declined"),
-																onError: () => toast.error("Failed to decline request"),
+																onError: (error) =>
+																	notifySeerrActionError(error, "Failed to decline request"),
 															},
 														);
 														setConfirmingDeclineId(null);
@@ -299,8 +408,10 @@ export const ApprovalQueueTab = ({
 											<Button
 												variant="secondary"
 												size="sm"
-												disabled={declineMutation.isPending}
-												onClick={() => setConfirmingDeclineId(request.id)}
+												disabled={isRequestActionPending}
+												onClick={() =>
+													!isRequestActionPending && setConfirmingDeclineId(request.id)
+												}
 												className="gap-1.5 border-border/50 bg-card/50"
 											>
 												<X className="h-3.5 w-3.5" />
@@ -312,13 +423,15 @@ export const ApprovalQueueTab = ({
 												<Button
 													variant="destructive"
 													size="sm"
-													disabled={deleteMutation.isPending}
+													disabled={isRequestActionPending}
 													onClick={() => {
+														if (isRequestActionPending) return;
 														deleteMutation.mutate(
 															{ instanceId, requestId: request.id },
 															{
 																onSuccess: () => toast.success("Request deleted"),
-																onError: () => toast.error("Failed to delete request"),
+																onError: (error) =>
+																	notifySeerrActionError(error, "Failed to delete request"),
 															},
 														);
 														setConfirmingDeleteId(null);
@@ -340,8 +453,8 @@ export const ApprovalQueueTab = ({
 											<Button
 												variant="secondary"
 												size="sm"
-												disabled={deleteMutation.isPending}
-												onClick={() => setConfirmingDeleteId(request.id)}
+												disabled={isRequestActionPending}
+												onClick={() => !isRequestActionPending && setConfirmingDeleteId(request.id)}
 												className="gap-1.5 border-border/50 bg-card/50"
 											>
 												<Trash2 className="h-3 w-3" />
@@ -393,7 +506,7 @@ export const ApprovalQueueTab = ({
 						<GradientButton
 							size="sm"
 							icon={Check}
-							disabled={bulkMutation.isPending}
+							disabled={isRequestActionPending}
 							onClick={() => handleBulkAction("approve")}
 						>
 							{bulkMutation.isPending ? "Processing..." : "Approve All"}
@@ -401,7 +514,7 @@ export const ApprovalQueueTab = ({
 						<Button
 							variant="secondary"
 							size="sm"
-							disabled={bulkMutation.isPending}
+							disabled={isRequestActionPending}
 							onClick={() => handleBulkDestructive("decline")}
 							className={`gap-1.5 border-border/50 bg-card/50 ${confirmBulkAction === "decline" ? "text-red-400 border-red-400/50" : ""}`}
 						>
@@ -417,7 +530,7 @@ export const ApprovalQueueTab = ({
 						<Button
 							variant="secondary"
 							size="sm"
-							disabled={bulkMutation.isPending}
+							disabled={isRequestActionPending}
 							onClick={() => handleBulkDestructive("delete")}
 							className={`gap-1.5 border-border/50 bg-card/50 ${confirmBulkAction === "delete" ? "text-red-400 border-red-400/50" : "text-red-400 hover:text-red-300"}`}
 						>

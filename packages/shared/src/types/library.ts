@@ -240,9 +240,8 @@ export type LibraryFilters = z.infer<typeof libraryFiltersSchema>;
 /**
  * Per-state counts surfaced alongside library page data so the Torrent state
  * filter dropdown can show "Seeding (150)" etc. Optional because it's only
- * computed for users with at least one qui instance configured. The `none`
- * bucket counts rows where `torrentState IS NULL` (qui hasn't covered them
- * yet — the eager backfill scheduler shrinks this over time).
+ * computed only with validated complete qUI publication evidence. The `none`
+ * bucket means no available cached qUI projection, not proven provider absence.
  *
  * Counts honor every other applied filter EXCEPT `torrentState` itself —
  * otherwise filtering by one bucket would zero out the others, defeating the
@@ -264,6 +263,13 @@ export const torrentStateCountsSchema = z.object({
 
 export type TorrentStateCounts = z.infer<typeof torrentStateCountsSchema>;
 
+/** Sanitized complete-publication evidence, distinct from Library cache sync. */
+export const quiObservationStatusSchema = z.object({
+	status: z.enum(["available", "unavailable", "not_configured"]),
+	observedAt: z.string().nullable(),
+});
+export type QuiObservationStatus = z.infer<typeof quiObservationStatusSchema>;
+
 export const paginatedLibraryResponseSchema = z.object({
 	items: z.array(libraryItemSchema),
 	pagination: paginationSchema,
@@ -277,6 +283,7 @@ export const paginatedLibraryResponseSchema = z.object({
 		})
 		.optional(),
 	torrentStateCounts: torrentStateCountsSchema.optional(),
+	quiObservationStatus: quiObservationStatusSchema.optional(),
 });
 
 export type PaginatedLibraryResponse = z.infer<typeof paginatedLibraryResponseSchema>;

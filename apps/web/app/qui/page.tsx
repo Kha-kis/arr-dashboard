@@ -1,3 +1,4 @@
+import { PageLayout } from "../../src/components/layout";
 import { QuiHomeClient } from "../../src/features/qui-home/components/qui-home-client";
 
 export const metadata = {
@@ -5,5 +6,9 @@ export const metadata = {
 };
 
 export default function QuiHomePage() {
-	return <QuiHomeClient />;
+	return (
+		<PageLayout maxWidth="7xl">
+			<QuiHomeClient />
+		</PageLayout>
+	);
 }

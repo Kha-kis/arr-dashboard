@@ -1,4 +1,10 @@
 import type { DiscordConfig } from "@arr/shared";
+import {
+	httpFailureCategory,
+	networkFailureCategory,
+	notificationFailure,
+	NotificationFailureError,
+} from "../failure-diagnostics.js";
 import type { ChannelPlugin, ChannelSender, NotificationPayload, SendResult } from "../types.js";
 import { extractMetadataFields } from "./format-metadata.js";
 
@@ -53,48 +59,47 @@ export const discordSender: ChannelSender = {
 			if (response.ok) {
 				return { success: true, retryable: false };
 			}
-
-			const text = await response.text().catch(() => "");
-			const error = `Discord webhook failed: ${response.status} ${response.statusText} ${text}`;
+			await response.body?.cancel().catch(() => {});
 
 			if (response.status === 429) {
 				const retryAfter = response.headers.get("Retry-After");
 				const retryAfterMs = retryAfter ? Number.parseFloat(retryAfter) * 1000 : undefined;
-				return { success: false, retryable: true, retryAfterMs, error };
+				return notificationFailure("rate-limited", true, retryAfterMs);
 			}
-			if (response.status >= 500) {
-				return { success: false, retryable: true, error };
-			}
-			return { success: false, retryable: false, error };
+			return notificationFailure(httpFailureCategory(response.status), response.status >= 500);
 		} catch (err) {
 			// Timeout or network error
-			const error = err instanceof Error ? err.message : String(err);
-			return { success: false, retryable: true, error: `Discord network error: ${error}` };
+			return notificationFailure(networkFailureCategory(err), true);
 		}
 	},
 
 	async test(config: Record<string, unknown>): Promise<void> {
 		const { webhookUrl } = config as DiscordConfig;
 
-		const response = await fetch(webhookUrl, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({
-				embeds: [
-					{
-						title: "Test Notification",
-						description: "Arr Dashboard notification channel is working!",
-						color: 0x2563eb,
-						timestamp: new Date().toISOString(),
-					},
-				],
-			}),
-			signal: AbortSignal.timeout(DISCORD_TIMEOUT_MS),
-		});
+		try {
+			const response = await fetch(webhookUrl, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					embeds: [
+						{
+							title: "Test Notification",
+							description: "Arr Dashboard notification channel is working!",
+							color: 0x2563eb,
+							timestamp: new Date().toISOString(),
+						},
+					],
+				}),
+				signal: AbortSignal.timeout(DISCORD_TIMEOUT_MS),
+			});
 
-		if (!response.ok) {
-			const text = await response.text().catch(() => "");
-			throw new Error(`Discord webhook test failed: ${response.status} ${text}`);
+			if (!response.ok) {
+				await response.body?.cancel().catch(() => {});
+				throw new NotificationFailureError(httpFailureCategory(response.status));
+			}
+		} catch (err) {
+			if (err instanceof NotificationFailureError) throw err;
+			throw new NotificationFailureError(networkFailureCategory(err));
 		}
 	},
 };

@@ -293,11 +293,16 @@ export type UserWhereInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialListRelationFilter
   trashSettings?: Prisma.XOR<Prisma.TrashSettingsNullableScalarRelationFilter, Prisma.TrashSettingsWhereInput> | null
   serviceInstances?: Prisma.ServiceInstanceListRelationFilter
+  arrImportOperations?: Prisma.ArrImportOperationListRelationFilter
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimListRelationFilter
+  dashboardStatisticsSnapshot?: Prisma.XOR<Prisma.DashboardStatisticsSnapshotNullableScalarRelationFilter, Prisma.DashboardStatisticsSnapshotWhereInput> | null
   historyCollectionLease?: Prisma.XOR<Prisma.HistoryCollectionLeaseNullableScalarRelationFilter, Prisma.HistoryCollectionLeaseWhereInput> | null
   userCustomFormats?: Prisma.UserCustomFormatListRelationFilter
   qualitySizeMappings?: Prisma.QualitySizeMappingListRelationFilter
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigListRelationFilter
   notificationChannels?: Prisma.NotificationChannelListRelationFilter
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventListRelationFilter
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryListRelationFilter
   namingConfigs?: Prisma.NamingConfigListRelationFilter
   namingDeployHistory?: Prisma.NamingDeployHistoryListRelationFilter
   notificationRules?: Prisma.NotificationRuleListRelationFilter
@@ -309,7 +314,12 @@ export type UserWhereInput = {
   traktListCacheRows?: Prisma.TraktListCacheListRelationFilter
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusListRelationFilter
   quiActivityLogs?: Prisma.QuiActivityLogListRelationFilter
+  quiObservationPublication?: Prisma.XOR<Prisma.QuiObservationPublicationNullableScalarRelationFilter, Prisma.QuiObservationPublicationWhereInput> | null
+  quiTorrentObservations?: Prisma.QuiTorrentObservationListRelationFilter
   quiActionLogs?: Prisma.QuiActionLogListRelationFilter
+  quiActionClaims?: Prisma.QuiActionClaimListRelationFilter
+  searchGrabAttempts?: Prisma.SearchGrabAttemptListRelationFilter
+  searchGrabClaims?: Prisma.SearchGrabClaimListRelationFilter
   quiEventLogs?: Prisma.QuiEventLogListRelationFilter
 }
 
@@ -333,11 +343,16 @@ export type UserOrderByWithRelationInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialOrderByRelationAggregateInput
   trashSettings?: Prisma.TrashSettingsOrderByWithRelationInput
   serviceInstances?: Prisma.ServiceInstanceOrderByRelationAggregateInput
+  arrImportOperations?: Prisma.ArrImportOperationOrderByRelationAggregateInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimOrderByRelationAggregateInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotOrderByWithRelationInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseOrderByWithRelationInput
   userCustomFormats?: Prisma.UserCustomFormatOrderByRelationAggregateInput
   qualitySizeMappings?: Prisma.QualitySizeMappingOrderByRelationAggregateInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigOrderByRelationAggregateInput
   notificationChannels?: Prisma.NotificationChannelOrderByRelationAggregateInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventOrderByRelationAggregateInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryOrderByRelationAggregateInput
   namingConfigs?: Prisma.NamingConfigOrderByRelationAggregateInput
   namingDeployHistory?: Prisma.NamingDeployHistoryOrderByRelationAggregateInput
   notificationRules?: Prisma.NotificationRuleOrderByRelationAggregateInput
@@ -349,7 +364,12 @@ export type UserOrderByWithRelationInput = {
   traktListCacheRows?: Prisma.TraktListCacheOrderByRelationAggregateInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusOrderByRelationAggregateInput
   quiActivityLogs?: Prisma.QuiActivityLogOrderByRelationAggregateInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationOrderByWithRelationInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationOrderByRelationAggregateInput
   quiActionLogs?: Prisma.QuiActionLogOrderByRelationAggregateInput
+  quiActionClaims?: Prisma.QuiActionClaimOrderByRelationAggregateInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptOrderByRelationAggregateInput
+  searchGrabClaims?: Prisma.SearchGrabClaimOrderByRelationAggregateInput
   quiEventLogs?: Prisma.QuiEventLogOrderByRelationAggregateInput
 }
 
@@ -376,11 +396,16 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   webauthnCredentials?: Prisma.WebAuthnCredentialListRelationFilter
   trashSettings?: Prisma.XOR<Prisma.TrashSettingsNullableScalarRelationFilter, Prisma.TrashSettingsWhereInput> | null
   serviceInstances?: Prisma.ServiceInstanceListRelationFilter
+  arrImportOperations?: Prisma.ArrImportOperationListRelationFilter
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimListRelationFilter
+  dashboardStatisticsSnapshot?: Prisma.XOR<Prisma.DashboardStatisticsSnapshotNullableScalarRelationFilter, Prisma.DashboardStatisticsSnapshotWhereInput> | null
   historyCollectionLease?: Prisma.XOR<Prisma.HistoryCollectionLeaseNullableScalarRelationFilter, Prisma.HistoryCollectionLeaseWhereInput> | null
   userCustomFormats?: Prisma.UserCustomFormatListRelationFilter
   qualitySizeMappings?: Prisma.QualitySizeMappingListRelationFilter
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigListRelationFilter
   notificationChannels?: Prisma.NotificationChannelListRelationFilter
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventListRelationFilter
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryListRelationFilter
   namingConfigs?: Prisma.NamingConfigListRelationFilter
   namingDeployHistory?: Prisma.NamingDeployHistoryListRelationFilter
   notificationRules?: Prisma.NotificationRuleListRelationFilter
@@ -392,7 +417,12 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   traktListCacheRows?: Prisma.TraktListCacheListRelationFilter
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusListRelationFilter
   quiActivityLogs?: Prisma.QuiActivityLogListRelationFilter
+  quiObservationPublication?: Prisma.XOR<Prisma.QuiObservationPublicationNullableScalarRelationFilter, Prisma.QuiObservationPublicationWhereInput> | null
+  quiTorrentObservations?: Prisma.QuiTorrentObservationListRelationFilter
   quiActionLogs?: Prisma.QuiActionLogListRelationFilter
+  quiActionClaims?: Prisma.QuiActionClaimListRelationFilter
+  searchGrabAttempts?: Prisma.SearchGrabAttemptListRelationFilter
+  searchGrabClaims?: Prisma.SearchGrabClaimListRelationFilter
   quiEventLogs?: Prisma.QuiEventLogListRelationFilter
 }, "id" | "username" | "hashedWebhookSecret" | "hashedQuiWebhookSecret">
 
@@ -458,11 +488,16 @@ export type UserCreateInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
@@ -474,7 +509,12 @@ export type UserCreateInput = {
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -498,11 +538,16 @@ export type UserUncheckedCreateInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
@@ -514,7 +559,12 @@ export type UserUncheckedCreateInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -538,11 +588,16 @@ export type UserUpdateInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
@@ -554,7 +609,12 @@ export type UserUpdateInput = {
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -578,11 +638,16 @@ export type UserUncheckedUpdateInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
@@ -594,7 +659,12 @@ export type UserUncheckedUpdateInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -713,28 +783,8 @@ export type UserScalarRelationFilter = {
   isNot?: Prisma.UserWhereInput
 }
 
-export type StringFieldUpdateOperationsInput = {
-  set?: string
-}
-
-export type NullableStringFieldUpdateOperationsInput = {
-  set?: string | null
-}
-
 export type BoolFieldUpdateOperationsInput = {
   set?: boolean
-}
-
-export type IntFieldUpdateOperationsInput = {
-  set?: number
-  increment?: number
-  decrement?: number
-  multiply?: number
-  divide?: number
-}
-
-export type NullableDateTimeFieldUpdateOperationsInput = {
-  set?: Date | string | null
 }
 
 export type DateTimeFieldUpdateOperationsInput = {
@@ -839,6 +889,20 @@ export type UserUpdateOneRequiredWithoutQualitySizeMappingsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutQualitySizeMappingsInput, Prisma.UserUpdateWithoutQualitySizeMappingsInput>, Prisma.UserUncheckedUpdateWithoutQualitySizeMappingsInput>
 }
 
+export type UserCreateNestedOneWithoutDashboardStatisticsSnapshotInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutDashboardStatisticsSnapshotInput, Prisma.UserUncheckedCreateWithoutDashboardStatisticsSnapshotInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutDashboardStatisticsSnapshotInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutDashboardStatisticsSnapshotNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutDashboardStatisticsSnapshotInput, Prisma.UserUncheckedCreateWithoutDashboardStatisticsSnapshotInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutDashboardStatisticsSnapshotInput
+  upsert?: Prisma.UserUpsertWithoutDashboardStatisticsSnapshotInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutDashboardStatisticsSnapshotInput, Prisma.UserUpdateWithoutDashboardStatisticsSnapshotInput>, Prisma.UserUncheckedUpdateWithoutDashboardStatisticsSnapshotInput>
+}
+
 export type UserCreateNestedOneWithoutUserCustomFormatsInput = {
   create?: Prisma.XOR<Prisma.UserCreateWithoutUserCustomFormatsInput, Prisma.UserUncheckedCreateWithoutUserCustomFormatsInput>
   connectOrCreate?: Prisma.UserCreateOrConnectWithoutUserCustomFormatsInput
@@ -851,6 +915,34 @@ export type UserUpdateOneRequiredWithoutUserCustomFormatsNestedInput = {
   upsert?: Prisma.UserUpsertWithoutUserCustomFormatsInput
   connect?: Prisma.UserWhereUniqueInput
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutUserCustomFormatsInput, Prisma.UserUpdateWithoutUserCustomFormatsInput>, Prisma.UserUncheckedUpdateWithoutUserCustomFormatsInput>
+}
+
+export type UserCreateNestedOneWithoutArrImportOperationsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutArrImportOperationsInput, Prisma.UserUncheckedCreateWithoutArrImportOperationsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutArrImportOperationsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutArrImportOperationsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutArrImportOperationsInput, Prisma.UserUncheckedCreateWithoutArrImportOperationsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutArrImportOperationsInput
+  upsert?: Prisma.UserUpsertWithoutArrImportOperationsInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutArrImportOperationsInput, Prisma.UserUpdateWithoutArrImportOperationsInput>, Prisma.UserUncheckedUpdateWithoutArrImportOperationsInput>
+}
+
+export type UserCreateNestedOneWithoutArrImportSourceClaimsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutArrImportSourceClaimsInput, Prisma.UserUncheckedCreateWithoutArrImportSourceClaimsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutArrImportSourceClaimsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutArrImportSourceClaimsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutArrImportSourceClaimsInput, Prisma.UserUncheckedCreateWithoutArrImportSourceClaimsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutArrImportSourceClaimsInput
+  upsert?: Prisma.UserUpsertWithoutArrImportSourceClaimsInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutArrImportSourceClaimsInput, Prisma.UserUpdateWithoutArrImportSourceClaimsInput>, Prisma.UserUncheckedUpdateWithoutArrImportSourceClaimsInput>
 }
 
 export type UserCreateNestedOneWithoutLibraryCleanupConfigsInput = {
@@ -879,6 +971,34 @@ export type UserUpdateOneRequiredWithoutNotificationChannelsNestedInput = {
   upsert?: Prisma.UserUpsertWithoutNotificationChannelsInput
   connect?: Prisma.UserWhereUniqueInput
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutNotificationChannelsInput, Prisma.UserUpdateWithoutNotificationChannelsInput>, Prisma.UserUncheckedUpdateWithoutNotificationChannelsInput>
+}
+
+export type UserCreateNestedOneWithoutNotificationOutboxEventsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutNotificationOutboxEventsInput, Prisma.UserUncheckedCreateWithoutNotificationOutboxEventsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutNotificationOutboxEventsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutNotificationOutboxEventsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutNotificationOutboxEventsInput, Prisma.UserUncheckedCreateWithoutNotificationOutboxEventsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutNotificationOutboxEventsInput
+  upsert?: Prisma.UserUpsertWithoutNotificationOutboxEventsInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutNotificationOutboxEventsInput, Prisma.UserUpdateWithoutNotificationOutboxEventsInput>, Prisma.UserUncheckedUpdateWithoutNotificationOutboxEventsInput>
+}
+
+export type UserCreateNestedOneWithoutNotificationOutboxDeliveriesInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutNotificationOutboxDeliveriesInput, Prisma.UserUncheckedCreateWithoutNotificationOutboxDeliveriesInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutNotificationOutboxDeliveriesInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutNotificationOutboxDeliveriesNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutNotificationOutboxDeliveriesInput, Prisma.UserUncheckedCreateWithoutNotificationOutboxDeliveriesInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutNotificationOutboxDeliveriesInput
+  upsert?: Prisma.UserUpsertWithoutNotificationOutboxDeliveriesInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutNotificationOutboxDeliveriesInput, Prisma.UserUpdateWithoutNotificationOutboxDeliveriesInput>, Prisma.UserUncheckedUpdateWithoutNotificationOutboxDeliveriesInput>
 }
 
 export type UserCreateNestedOneWithoutNotificationRulesInput = {
@@ -1021,6 +1141,34 @@ export type UserUpdateOneRequiredWithoutListCacheRefreshStatusesNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutListCacheRefreshStatusesInput, Prisma.UserUpdateWithoutListCacheRefreshStatusesInput>, Prisma.UserUncheckedUpdateWithoutListCacheRefreshStatusesInput>
 }
 
+export type UserCreateNestedOneWithoutQuiObservationPublicationInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutQuiObservationPublicationInput, Prisma.UserUncheckedCreateWithoutQuiObservationPublicationInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutQuiObservationPublicationInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutQuiObservationPublicationNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutQuiObservationPublicationInput, Prisma.UserUncheckedCreateWithoutQuiObservationPublicationInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutQuiObservationPublicationInput
+  upsert?: Prisma.UserUpsertWithoutQuiObservationPublicationInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutQuiObservationPublicationInput, Prisma.UserUpdateWithoutQuiObservationPublicationInput>, Prisma.UserUncheckedUpdateWithoutQuiObservationPublicationInput>
+}
+
+export type UserCreateNestedOneWithoutQuiTorrentObservationsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutQuiTorrentObservationsInput, Prisma.UserUncheckedCreateWithoutQuiTorrentObservationsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutQuiTorrentObservationsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutQuiTorrentObservationsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutQuiTorrentObservationsInput, Prisma.UserUncheckedCreateWithoutQuiTorrentObservationsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutQuiTorrentObservationsInput
+  upsert?: Prisma.UserUpsertWithoutQuiTorrentObservationsInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutQuiTorrentObservationsInput, Prisma.UserUpdateWithoutQuiTorrentObservationsInput>, Prisma.UserUncheckedUpdateWithoutQuiTorrentObservationsInput>
+}
+
 export type UserCreateNestedOneWithoutQuiActivityLogsInput = {
   create?: Prisma.XOR<Prisma.UserCreateWithoutQuiActivityLogsInput, Prisma.UserUncheckedCreateWithoutQuiActivityLogsInput>
   connectOrCreate?: Prisma.UserCreateOrConnectWithoutQuiActivityLogsInput
@@ -1035,6 +1183,34 @@ export type UserUpdateOneRequiredWithoutQuiActivityLogsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutQuiActivityLogsInput, Prisma.UserUpdateWithoutQuiActivityLogsInput>, Prisma.UserUncheckedUpdateWithoutQuiActivityLogsInput>
 }
 
+export type UserCreateNestedOneWithoutSearchGrabAttemptsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutSearchGrabAttemptsInput, Prisma.UserUncheckedCreateWithoutSearchGrabAttemptsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutSearchGrabAttemptsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutSearchGrabAttemptsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutSearchGrabAttemptsInput, Prisma.UserUncheckedCreateWithoutSearchGrabAttemptsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutSearchGrabAttemptsInput
+  upsert?: Prisma.UserUpsertWithoutSearchGrabAttemptsInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutSearchGrabAttemptsInput, Prisma.UserUpdateWithoutSearchGrabAttemptsInput>, Prisma.UserUncheckedUpdateWithoutSearchGrabAttemptsInput>
+}
+
+export type UserCreateNestedOneWithoutSearchGrabClaimsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutSearchGrabClaimsInput, Prisma.UserUncheckedCreateWithoutSearchGrabClaimsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutSearchGrabClaimsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutSearchGrabClaimsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutSearchGrabClaimsInput, Prisma.UserUncheckedCreateWithoutSearchGrabClaimsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutSearchGrabClaimsInput
+  upsert?: Prisma.UserUpsertWithoutSearchGrabClaimsInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutSearchGrabClaimsInput, Prisma.UserUpdateWithoutSearchGrabClaimsInput>, Prisma.UserUncheckedUpdateWithoutSearchGrabClaimsInput>
+}
+
 export type UserCreateNestedOneWithoutQuiActionLogsInput = {
   create?: Prisma.XOR<Prisma.UserCreateWithoutQuiActionLogsInput, Prisma.UserUncheckedCreateWithoutQuiActionLogsInput>
   connectOrCreate?: Prisma.UserCreateOrConnectWithoutQuiActionLogsInput
@@ -1047,6 +1223,20 @@ export type UserUpdateOneRequiredWithoutQuiActionLogsNestedInput = {
   upsert?: Prisma.UserUpsertWithoutQuiActionLogsInput
   connect?: Prisma.UserWhereUniqueInput
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutQuiActionLogsInput, Prisma.UserUpdateWithoutQuiActionLogsInput>, Prisma.UserUncheckedUpdateWithoutQuiActionLogsInput>
+}
+
+export type UserCreateNestedOneWithoutQuiActionClaimsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutQuiActionClaimsInput, Prisma.UserUncheckedCreateWithoutQuiActionClaimsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutQuiActionClaimsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutQuiActionClaimsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutQuiActionClaimsInput, Prisma.UserUncheckedCreateWithoutQuiActionClaimsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutQuiActionClaimsInput
+  upsert?: Prisma.UserUpsertWithoutQuiActionClaimsInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutQuiActionClaimsInput, Prisma.UserUpdateWithoutQuiActionClaimsInput>, Prisma.UserUncheckedUpdateWithoutQuiActionClaimsInput>
 }
 
 export type UserCreateNestedOneWithoutQuiEventLogsInput = {
@@ -1082,11 +1272,16 @@ export type UserCreateWithoutSessionsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
@@ -1098,7 +1293,12 @@ export type UserCreateWithoutSessionsInput = {
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -1121,11 +1321,16 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
@@ -1137,7 +1342,12 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -1176,11 +1386,16 @@ export type UserUpdateWithoutSessionsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
@@ -1192,7 +1407,12 @@ export type UserUpdateWithoutSessionsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -1215,11 +1435,16 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
@@ -1231,7 +1456,12 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -1254,11 +1484,16 @@ export type UserCreateWithoutServiceInstancesInput = {
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
@@ -1270,7 +1505,12 @@ export type UserCreateWithoutServiceInstancesInput = {
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -1293,11 +1533,16 @@ export type UserUncheckedCreateWithoutServiceInstancesInput = {
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
@@ -1309,7 +1554,12 @@ export type UserUncheckedCreateWithoutServiceInstancesInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -1348,11 +1598,16 @@ export type UserUpdateWithoutServiceInstancesInput = {
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
@@ -1364,7 +1619,12 @@ export type UserUpdateWithoutServiceInstancesInput = {
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -1387,11 +1647,16 @@ export type UserUncheckedUpdateWithoutServiceInstancesInput = {
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
@@ -1403,7 +1668,12 @@ export type UserUncheckedUpdateWithoutServiceInstancesInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -1427,10 +1697,15 @@ export type UserCreateWithoutHistoryCollectionLeaseInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
@@ -1442,7 +1717,12 @@ export type UserCreateWithoutHistoryCollectionLeaseInput = {
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -1466,10 +1746,15 @@ export type UserUncheckedCreateWithoutHistoryCollectionLeaseInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
@@ -1481,7 +1766,12 @@ export type UserUncheckedCreateWithoutHistoryCollectionLeaseInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -1521,10 +1811,15 @@ export type UserUpdateWithoutHistoryCollectionLeaseInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
@@ -1536,7 +1831,12 @@ export type UserUpdateWithoutHistoryCollectionLeaseInput = {
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -1560,10 +1860,15 @@ export type UserUncheckedUpdateWithoutHistoryCollectionLeaseInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
@@ -1575,7 +1880,12 @@ export type UserUncheckedUpdateWithoutHistoryCollectionLeaseInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -1598,11 +1908,16 @@ export type UserCreateWithoutOidcAccountsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
@@ -1614,7 +1929,12 @@ export type UserCreateWithoutOidcAccountsInput = {
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -1637,11 +1957,16 @@ export type UserUncheckedCreateWithoutOidcAccountsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
@@ -1653,7 +1978,12 @@ export type UserUncheckedCreateWithoutOidcAccountsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -1692,11 +2022,16 @@ export type UserUpdateWithoutOidcAccountsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
@@ -1708,7 +2043,12 @@ export type UserUpdateWithoutOidcAccountsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -1731,11 +2071,16 @@ export type UserUncheckedUpdateWithoutOidcAccountsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
@@ -1747,7 +2092,12 @@ export type UserUncheckedUpdateWithoutOidcAccountsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -1770,11 +2120,16 @@ export type UserCreateWithoutWebauthnCredentialsInput = {
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
@@ -1786,7 +2141,12 @@ export type UserCreateWithoutWebauthnCredentialsInput = {
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -1809,11 +2169,16 @@ export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
@@ -1825,7 +2190,12 @@ export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -1864,11 +2234,16 @@ export type UserUpdateWithoutWebauthnCredentialsInput = {
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
@@ -1880,7 +2255,12 @@ export type UserUpdateWithoutWebauthnCredentialsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -1903,11 +2283,16 @@ export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
@@ -1919,7 +2304,12 @@ export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -1942,11 +2332,16 @@ export type UserCreateWithoutTrashSettingsInput = {
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
@@ -1958,7 +2353,12 @@ export type UserCreateWithoutTrashSettingsInput = {
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -1981,11 +2381,16 @@ export type UserUncheckedCreateWithoutTrashSettingsInput = {
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
@@ -1997,7 +2402,12 @@ export type UserUncheckedCreateWithoutTrashSettingsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -2036,11 +2446,16 @@ export type UserUpdateWithoutTrashSettingsInput = {
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
@@ -2052,7 +2467,12 @@ export type UserUpdateWithoutTrashSettingsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -2075,11 +2495,16 @@ export type UserUncheckedUpdateWithoutTrashSettingsInput = {
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
@@ -2091,7 +2516,12 @@ export type UserUncheckedUpdateWithoutTrashSettingsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -2115,10 +2545,15 @@ export type UserCreateWithoutQualitySizeMappingsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
@@ -2130,7 +2565,12 @@ export type UserCreateWithoutQualitySizeMappingsInput = {
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -2154,10 +2594,15 @@ export type UserUncheckedCreateWithoutQualitySizeMappingsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
@@ -2169,7 +2614,12 @@ export type UserUncheckedCreateWithoutQualitySizeMappingsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -2209,10 +2659,15 @@ export type UserUpdateWithoutQualitySizeMappingsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
@@ -2224,7 +2679,12 @@ export type UserUpdateWithoutQualitySizeMappingsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -2248,10 +2708,15 @@ export type UserUncheckedUpdateWithoutQualitySizeMappingsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
@@ -2263,7 +2728,224 @@ export type UserUncheckedUpdateWithoutQualitySizeMappingsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutDashboardStatisticsSnapshotInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
+  autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutDashboardStatisticsSnapshotInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutDashboardStatisticsSnapshotInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutDashboardStatisticsSnapshotInput, Prisma.UserUncheckedCreateWithoutDashboardStatisticsSnapshotInput>
+}
+
+export type UserUpsertWithoutDashboardStatisticsSnapshotInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutDashboardStatisticsSnapshotInput, Prisma.UserUncheckedUpdateWithoutDashboardStatisticsSnapshotInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutDashboardStatisticsSnapshotInput, Prisma.UserUncheckedCreateWithoutDashboardStatisticsSnapshotInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutDashboardStatisticsSnapshotInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutDashboardStatisticsSnapshotInput, Prisma.UserUncheckedUpdateWithoutDashboardStatisticsSnapshotInput>
+}
+
+export type UserUpdateWithoutDashboardStatisticsSnapshotInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutDashboardStatisticsSnapshotInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -2287,10 +2969,15 @@ export type UserCreateWithoutUserCustomFormatsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
@@ -2302,7 +2989,12 @@ export type UserCreateWithoutUserCustomFormatsInput = {
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -2326,10 +3018,15 @@ export type UserUncheckedCreateWithoutUserCustomFormatsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
@@ -2341,7 +3038,12 @@ export type UserUncheckedCreateWithoutUserCustomFormatsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -2381,10 +3083,15 @@ export type UserUpdateWithoutUserCustomFormatsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
@@ -2396,7 +3103,12 @@ export type UserUpdateWithoutUserCustomFormatsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -2420,10 +3132,15 @@ export type UserUncheckedUpdateWithoutUserCustomFormatsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
@@ -2435,7 +3152,436 @@ export type UserUncheckedUpdateWithoutUserCustomFormatsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutArrImportOperationsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
+  autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutArrImportOperationsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutArrImportOperationsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutArrImportOperationsInput, Prisma.UserUncheckedCreateWithoutArrImportOperationsInput>
+}
+
+export type UserUpsertWithoutArrImportOperationsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutArrImportOperationsInput, Prisma.UserUncheckedUpdateWithoutArrImportOperationsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutArrImportOperationsInput, Prisma.UserUncheckedCreateWithoutArrImportOperationsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutArrImportOperationsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutArrImportOperationsInput, Prisma.UserUncheckedUpdateWithoutArrImportOperationsInput>
+}
+
+export type UserUpdateWithoutArrImportOperationsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutArrImportOperationsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutArrImportSourceClaimsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
+  autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutArrImportSourceClaimsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutArrImportSourceClaimsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutArrImportSourceClaimsInput, Prisma.UserUncheckedCreateWithoutArrImportSourceClaimsInput>
+}
+
+export type UserUpsertWithoutArrImportSourceClaimsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutArrImportSourceClaimsInput, Prisma.UserUncheckedUpdateWithoutArrImportSourceClaimsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutArrImportSourceClaimsInput, Prisma.UserUncheckedCreateWithoutArrImportSourceClaimsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutArrImportSourceClaimsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutArrImportSourceClaimsInput, Prisma.UserUncheckedUpdateWithoutArrImportSourceClaimsInput>
+}
+
+export type UserUpdateWithoutArrImportSourceClaimsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutArrImportSourceClaimsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -2459,10 +3605,15 @@ export type UserCreateWithoutLibraryCleanupConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
@@ -2474,7 +3625,12 @@ export type UserCreateWithoutLibraryCleanupConfigsInput = {
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -2498,10 +3654,15 @@ export type UserUncheckedCreateWithoutLibraryCleanupConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
@@ -2513,7 +3674,12 @@ export type UserUncheckedCreateWithoutLibraryCleanupConfigsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -2553,10 +3719,15 @@ export type UserUpdateWithoutLibraryCleanupConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
@@ -2568,7 +3739,12 @@ export type UserUpdateWithoutLibraryCleanupConfigsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -2592,10 +3768,15 @@ export type UserUncheckedUpdateWithoutLibraryCleanupConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
@@ -2607,7 +3788,12 @@ export type UserUncheckedUpdateWithoutLibraryCleanupConfigsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -2631,10 +3817,15 @@ export type UserCreateWithoutNotificationChannelsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
@@ -2646,7 +3837,12 @@ export type UserCreateWithoutNotificationChannelsInput = {
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -2670,10 +3866,15 @@ export type UserUncheckedCreateWithoutNotificationChannelsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
@@ -2685,7 +3886,12 @@ export type UserUncheckedCreateWithoutNotificationChannelsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -2725,10 +3931,15 @@ export type UserUpdateWithoutNotificationChannelsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
@@ -2740,7 +3951,12 @@ export type UserUpdateWithoutNotificationChannelsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -2764,10 +3980,15 @@ export type UserUncheckedUpdateWithoutNotificationChannelsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
@@ -2779,7 +4000,436 @@ export type UserUncheckedUpdateWithoutNotificationChannelsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutNotificationOutboxEventsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
+  autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutNotificationOutboxEventsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutNotificationOutboxEventsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutNotificationOutboxEventsInput, Prisma.UserUncheckedCreateWithoutNotificationOutboxEventsInput>
+}
+
+export type UserUpsertWithoutNotificationOutboxEventsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutNotificationOutboxEventsInput, Prisma.UserUncheckedUpdateWithoutNotificationOutboxEventsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutNotificationOutboxEventsInput, Prisma.UserUncheckedCreateWithoutNotificationOutboxEventsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutNotificationOutboxEventsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutNotificationOutboxEventsInput, Prisma.UserUncheckedUpdateWithoutNotificationOutboxEventsInput>
+}
+
+export type UserUpdateWithoutNotificationOutboxEventsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutNotificationOutboxEventsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutNotificationOutboxDeliveriesInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
+  autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutNotificationOutboxDeliveriesInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutNotificationOutboxDeliveriesInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutNotificationOutboxDeliveriesInput, Prisma.UserUncheckedCreateWithoutNotificationOutboxDeliveriesInput>
+}
+
+export type UserUpsertWithoutNotificationOutboxDeliveriesInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutNotificationOutboxDeliveriesInput, Prisma.UserUncheckedUpdateWithoutNotificationOutboxDeliveriesInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutNotificationOutboxDeliveriesInput, Prisma.UserUncheckedCreateWithoutNotificationOutboxDeliveriesInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutNotificationOutboxDeliveriesInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutNotificationOutboxDeliveriesInput, Prisma.UserUncheckedUpdateWithoutNotificationOutboxDeliveriesInput>
+}
+
+export type UserUpdateWithoutNotificationOutboxDeliveriesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutNotificationOutboxDeliveriesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -2803,11 +4453,16 @@ export type UserCreateWithoutNotificationRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
@@ -2818,7 +4473,12 @@ export type UserCreateWithoutNotificationRulesInput = {
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -2842,11 +4502,16 @@ export type UserUncheckedCreateWithoutNotificationRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
@@ -2857,7 +4522,12 @@ export type UserUncheckedCreateWithoutNotificationRulesInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -2897,11 +4567,16 @@ export type UserUpdateWithoutNotificationRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
@@ -2912,7 +4587,12 @@ export type UserUpdateWithoutNotificationRulesInput = {
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -2936,11 +4616,16 @@ export type UserUncheckedUpdateWithoutNotificationRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
@@ -2951,7 +4636,12 @@ export type UserUncheckedUpdateWithoutNotificationRulesInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -2975,11 +4665,16 @@ export type UserCreateWithoutNotificationAggregationConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
@@ -2990,7 +4685,12 @@ export type UserCreateWithoutNotificationAggregationConfigsInput = {
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -3014,11 +4714,16 @@ export type UserUncheckedCreateWithoutNotificationAggregationConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
@@ -3029,7 +4734,12 @@ export type UserUncheckedCreateWithoutNotificationAggregationConfigsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -3069,11 +4779,16 @@ export type UserUpdateWithoutNotificationAggregationConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
@@ -3084,7 +4799,12 @@ export type UserUpdateWithoutNotificationAggregationConfigsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -3108,11 +4828,16 @@ export type UserUncheckedUpdateWithoutNotificationAggregationConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
@@ -3123,7 +4848,12 @@ export type UserUncheckedUpdateWithoutNotificationAggregationConfigsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -3147,11 +4877,16 @@ export type UserCreateWithoutNamingConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
@@ -3162,7 +4897,12 @@ export type UserCreateWithoutNamingConfigsInput = {
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -3186,11 +4926,16 @@ export type UserUncheckedCreateWithoutNamingConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
@@ -3201,7 +4946,12 @@ export type UserUncheckedCreateWithoutNamingConfigsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -3241,11 +4991,16 @@ export type UserUpdateWithoutNamingConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
@@ -3256,7 +5011,12 @@ export type UserUpdateWithoutNamingConfigsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -3280,11 +5040,16 @@ export type UserUncheckedUpdateWithoutNamingConfigsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
@@ -3295,7 +5060,12 @@ export type UserUncheckedUpdateWithoutNamingConfigsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -3319,11 +5089,16 @@ export type UserCreateWithoutNamingDeployHistoryInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
@@ -3334,7 +5109,12 @@ export type UserCreateWithoutNamingDeployHistoryInput = {
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -3358,11 +5138,16 @@ export type UserUncheckedCreateWithoutNamingDeployHistoryInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
@@ -3373,7 +5158,12 @@ export type UserUncheckedCreateWithoutNamingDeployHistoryInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -3413,11 +5203,16 @@ export type UserUpdateWithoutNamingDeployHistoryInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
@@ -3428,7 +5223,12 @@ export type UserUpdateWithoutNamingDeployHistoryInput = {
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -3452,11 +5252,16 @@ export type UserUncheckedUpdateWithoutNamingDeployHistoryInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
@@ -3467,7 +5272,12 @@ export type UserUncheckedUpdateWithoutNamingDeployHistoryInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -3491,11 +5301,16 @@ export type UserCreateWithoutLabelSyncRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
@@ -3506,7 +5321,12 @@ export type UserCreateWithoutLabelSyncRulesInput = {
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -3530,11 +5350,16 @@ export type UserUncheckedCreateWithoutLabelSyncRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
@@ -3545,7 +5370,12 @@ export type UserUncheckedCreateWithoutLabelSyncRulesInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -3585,11 +5415,16 @@ export type UserUpdateWithoutLabelSyncRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
@@ -3600,7 +5435,12 @@ export type UserUpdateWithoutLabelSyncRulesInput = {
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -3624,11 +5464,16 @@ export type UserUncheckedUpdateWithoutLabelSyncRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
@@ -3639,7 +5484,12 @@ export type UserUncheckedUpdateWithoutLabelSyncRulesInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -3663,11 +5513,16 @@ export type UserCreateWithoutLabelSyncMutationAttemptsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
@@ -3678,7 +5533,12 @@ export type UserCreateWithoutLabelSyncMutationAttemptsInput = {
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -3702,11 +5562,16 @@ export type UserUncheckedCreateWithoutLabelSyncMutationAttemptsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
@@ -3717,7 +5582,12 @@ export type UserUncheckedCreateWithoutLabelSyncMutationAttemptsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -3757,11 +5627,16 @@ export type UserUpdateWithoutLabelSyncMutationAttemptsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
@@ -3772,7 +5647,12 @@ export type UserUpdateWithoutLabelSyncMutationAttemptsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -3796,11 +5676,16 @@ export type UserUncheckedUpdateWithoutLabelSyncMutationAttemptsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
@@ -3811,7 +5696,12 @@ export type UserUncheckedUpdateWithoutLabelSyncMutationAttemptsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -3835,11 +5725,16 @@ export type UserCreateWithoutAutoTagRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
@@ -3850,7 +5745,12 @@ export type UserCreateWithoutAutoTagRulesInput = {
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -3874,11 +5774,16 @@ export type UserUncheckedCreateWithoutAutoTagRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
@@ -3889,7 +5794,12 @@ export type UserUncheckedCreateWithoutAutoTagRulesInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -3929,11 +5839,16 @@ export type UserUpdateWithoutAutoTagRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
@@ -3944,7 +5859,12 @@ export type UserUpdateWithoutAutoTagRulesInput = {
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -3968,11 +5888,16 @@ export type UserUncheckedUpdateWithoutAutoTagRulesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
@@ -3983,7 +5908,12 @@ export type UserUncheckedUpdateWithoutAutoTagRulesInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -4007,11 +5937,16 @@ export type UserCreateWithoutTmdbListCacheRowsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
@@ -4022,7 +5957,12 @@ export type UserCreateWithoutTmdbListCacheRowsInput = {
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -4046,11 +5986,16 @@ export type UserUncheckedCreateWithoutTmdbListCacheRowsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
@@ -4061,7 +6006,12 @@ export type UserUncheckedCreateWithoutTmdbListCacheRowsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -4101,11 +6051,16 @@ export type UserUpdateWithoutTmdbListCacheRowsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
@@ -4116,7 +6071,12 @@ export type UserUpdateWithoutTmdbListCacheRowsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -4140,11 +6100,16 @@ export type UserUncheckedUpdateWithoutTmdbListCacheRowsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
@@ -4155,7 +6120,12 @@ export type UserUncheckedUpdateWithoutTmdbListCacheRowsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -4179,11 +6149,16 @@ export type UserCreateWithoutTraktListCacheRowsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
@@ -4194,7 +6169,12 @@ export type UserCreateWithoutTraktListCacheRowsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -4218,11 +6198,16 @@ export type UserUncheckedCreateWithoutTraktListCacheRowsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
@@ -4233,7 +6218,12 @@ export type UserUncheckedCreateWithoutTraktListCacheRowsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -4273,11 +6263,16 @@ export type UserUpdateWithoutTraktListCacheRowsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
@@ -4288,7 +6283,12 @@ export type UserUpdateWithoutTraktListCacheRowsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -4312,11 +6312,16 @@ export type UserUncheckedUpdateWithoutTraktListCacheRowsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
@@ -4327,7 +6332,12 @@ export type UserUncheckedUpdateWithoutTraktListCacheRowsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -4351,11 +6361,16 @@ export type UserCreateWithoutListCacheRefreshStatusesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
@@ -4366,7 +6381,12 @@ export type UserCreateWithoutListCacheRefreshStatusesInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -4390,11 +6410,16 @@ export type UserUncheckedCreateWithoutListCacheRefreshStatusesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
@@ -4405,7 +6430,12 @@ export type UserUncheckedCreateWithoutListCacheRefreshStatusesInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -4445,11 +6475,16 @@ export type UserUpdateWithoutListCacheRefreshStatusesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
@@ -4460,7 +6495,12 @@ export type UserUpdateWithoutListCacheRefreshStatusesInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -4484,11 +6524,16 @@ export type UserUncheckedUpdateWithoutListCacheRefreshStatusesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
@@ -4499,7 +6544,436 @@ export type UserUncheckedUpdateWithoutListCacheRefreshStatusesInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutQuiObservationPublicationInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
+  autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutQuiObservationPublicationInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutQuiObservationPublicationInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutQuiObservationPublicationInput, Prisma.UserUncheckedCreateWithoutQuiObservationPublicationInput>
+}
+
+export type UserUpsertWithoutQuiObservationPublicationInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutQuiObservationPublicationInput, Prisma.UserUncheckedUpdateWithoutQuiObservationPublicationInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutQuiObservationPublicationInput, Prisma.UserUncheckedCreateWithoutQuiObservationPublicationInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutQuiObservationPublicationInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutQuiObservationPublicationInput, Prisma.UserUncheckedUpdateWithoutQuiObservationPublicationInput>
+}
+
+export type UserUpdateWithoutQuiObservationPublicationInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutQuiObservationPublicationInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutQuiTorrentObservationsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
+  autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutQuiTorrentObservationsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutQuiTorrentObservationsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutQuiTorrentObservationsInput, Prisma.UserUncheckedCreateWithoutQuiTorrentObservationsInput>
+}
+
+export type UserUpsertWithoutQuiTorrentObservationsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutQuiTorrentObservationsInput, Prisma.UserUncheckedUpdateWithoutQuiTorrentObservationsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutQuiTorrentObservationsInput, Prisma.UserUncheckedCreateWithoutQuiTorrentObservationsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutQuiTorrentObservationsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutQuiTorrentObservationsInput, Prisma.UserUncheckedUpdateWithoutQuiTorrentObservationsInput>
+}
+
+export type UserUpdateWithoutQuiTorrentObservationsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutQuiTorrentObservationsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -4523,11 +6997,16 @@ export type UserCreateWithoutQuiActivityLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
@@ -4538,7 +7017,12 @@ export type UserCreateWithoutQuiActivityLogsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -4562,11 +7046,16 @@ export type UserUncheckedCreateWithoutQuiActivityLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
@@ -4577,7 +7066,12 @@ export type UserUncheckedCreateWithoutQuiActivityLogsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -4617,11 +7111,16 @@ export type UserUpdateWithoutQuiActivityLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
@@ -4632,7 +7131,12 @@ export type UserUpdateWithoutQuiActivityLogsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -4656,11 +7160,16 @@ export type UserUncheckedUpdateWithoutQuiActivityLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
@@ -4671,7 +7180,436 @@ export type UserUncheckedUpdateWithoutQuiActivityLogsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutSearchGrabAttemptsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
+  autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutSearchGrabAttemptsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutSearchGrabAttemptsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutSearchGrabAttemptsInput, Prisma.UserUncheckedCreateWithoutSearchGrabAttemptsInput>
+}
+
+export type UserUpsertWithoutSearchGrabAttemptsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutSearchGrabAttemptsInput, Prisma.UserUncheckedUpdateWithoutSearchGrabAttemptsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutSearchGrabAttemptsInput, Prisma.UserUncheckedCreateWithoutSearchGrabAttemptsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutSearchGrabAttemptsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutSearchGrabAttemptsInput, Prisma.UserUncheckedUpdateWithoutSearchGrabAttemptsInput>
+}
+
+export type UserUpdateWithoutSearchGrabAttemptsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutSearchGrabAttemptsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutSearchGrabClaimsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
+  autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutSearchGrabClaimsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutSearchGrabClaimsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutSearchGrabClaimsInput, Prisma.UserUncheckedCreateWithoutSearchGrabClaimsInput>
+}
+
+export type UserUpsertWithoutSearchGrabClaimsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutSearchGrabClaimsInput, Prisma.UserUncheckedUpdateWithoutSearchGrabClaimsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutSearchGrabClaimsInput, Prisma.UserUncheckedCreateWithoutSearchGrabClaimsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutSearchGrabClaimsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutSearchGrabClaimsInput, Prisma.UserUncheckedUpdateWithoutSearchGrabClaimsInput>
+}
+
+export type UserUpdateWithoutSearchGrabClaimsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutSearchGrabClaimsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -4695,11 +7633,16 @@ export type UserCreateWithoutQuiActionLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
@@ -4711,6 +7654,11 @@ export type UserCreateWithoutQuiActionLogsInput = {
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
@@ -4734,11 +7682,16 @@ export type UserUncheckedCreateWithoutQuiActionLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
@@ -4750,6 +7703,11 @@ export type UserUncheckedCreateWithoutQuiActionLogsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -4789,11 +7747,16 @@ export type UserUpdateWithoutQuiActionLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
@@ -4805,6 +7768,11 @@ export type UserUpdateWithoutQuiActionLogsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
@@ -4828,11 +7796,16 @@ export type UserUncheckedUpdateWithoutQuiActionLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
@@ -4844,6 +7817,223 @@ export type UserUncheckedUpdateWithoutQuiActionLogsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutQuiActionClaimsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptCreateNestedManyWithoutOwnerInput
+  autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutQuiActionClaimsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedCreateNestedManyWithoutOwnerInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutQuiActionClaimsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutQuiActionClaimsInput, Prisma.UserUncheckedCreateWithoutQuiActionClaimsInput>
+}
+
+export type UserUpsertWithoutQuiActionClaimsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutQuiActionClaimsInput, Prisma.UserUncheckedUpdateWithoutQuiActionClaimsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutQuiActionClaimsInput, Prisma.UserUncheckedCreateWithoutQuiActionClaimsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutQuiActionClaimsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutQuiActionClaimsInput, Prisma.UserUncheckedUpdateWithoutQuiActionClaimsInput>
+}
+
+export type UserUpdateWithoutQuiActionClaimsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutQuiActionClaimsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
+  historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncMutationAttempts?: Prisma.LabelSyncMutationAttemptUncheckedUpdateManyWithoutOwnerNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -4867,11 +8057,16 @@ export type UserCreateWithoutQuiEventLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
@@ -4883,7 +8078,12 @@ export type UserCreateWithoutQuiEventLogsInput = {
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutQuiEventLogsInput = {
@@ -4906,11 +8106,16 @@ export type UserUncheckedCreateWithoutQuiEventLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedCreateNestedManyWithoutUserInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedCreateNestedManyWithoutUserInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedCreateNestedOneWithoutUserInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedCreateNestedManyWithoutUserInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedCreateNestedManyWithoutUserInput
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
@@ -4922,7 +8127,12 @@ export type UserUncheckedCreateWithoutQuiEventLogsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedCreateNestedOneWithoutUserInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedCreateNestedManyWithoutUserInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedCreateNestedManyWithoutUserInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutQuiEventLogsInput = {
@@ -4961,11 +8171,16 @@ export type UserUpdateWithoutQuiEventLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
@@ -4977,7 +8192,12 @@ export type UserUpdateWithoutQuiEventLogsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutQuiEventLogsInput = {
@@ -5000,11 +8220,16 @@ export type UserUncheckedUpdateWithoutQuiEventLogsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  arrImportOperations?: Prisma.ArrImportOperationUncheckedUpdateManyWithoutUserNestedInput
+  arrImportSourceClaims?: Prisma.ArrImportSourceClaimUncheckedUpdateManyWithoutUserNestedInput
+  dashboardStatisticsSnapshot?: Prisma.DashboardStatisticsSnapshotUncheckedUpdateOneWithoutUserNestedInput
   historyCollectionLease?: Prisma.HistoryCollectionLeaseUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxEvents?: Prisma.NotificationOutboxEventUncheckedUpdateManyWithoutUserNestedInput
+  notificationOutboxDeliveries?: Prisma.NotificationOutboxDeliveryUncheckedUpdateManyWithoutUserNestedInput
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
@@ -5016,7 +8241,12 @@ export type UserUncheckedUpdateWithoutQuiEventLogsInput = {
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiObservationPublication?: Prisma.QuiObservationPublicationUncheckedUpdateOneWithoutUserNestedInput
+  quiTorrentObservations?: Prisma.QuiTorrentObservationUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionClaims?: Prisma.QuiActionClaimUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabAttempts?: Prisma.SearchGrabAttemptUncheckedUpdateManyWithoutUserNestedInput
+  searchGrabClaims?: Prisma.SearchGrabClaimUncheckedUpdateManyWithoutUserNestedInput
 }
 
 
@@ -5029,10 +8259,14 @@ export type UserCountOutputType = {
   oidcAccounts: number
   webauthnCredentials: number
   serviceInstances: number
+  arrImportOperations: number
+  arrImportSourceClaims: number
   userCustomFormats: number
   qualitySizeMappings: number
   libraryCleanupConfigs: number
   notificationChannels: number
+  notificationOutboxEvents: number
+  notificationOutboxDeliveries: number
   namingConfigs: number
   namingDeployHistory: number
   notificationRules: number
@@ -5044,7 +8278,11 @@ export type UserCountOutputType = {
   traktListCacheRows: number
   listCacheRefreshStatuses: number
   quiActivityLogs: number
+  quiTorrentObservations: number
   quiActionLogs: number
+  quiActionClaims: number
+  searchGrabAttempts: number
+  searchGrabClaims: number
   quiEventLogs: number
 }
 
@@ -5053,10 +8291,14 @@ export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.I
   oidcAccounts?: boolean | UserCountOutputTypeCountOidcAccountsArgs
   webauthnCredentials?: boolean | UserCountOutputTypeCountWebauthnCredentialsArgs
   serviceInstances?: boolean | UserCountOutputTypeCountServiceInstancesArgs
+  arrImportOperations?: boolean | UserCountOutputTypeCountArrImportOperationsArgs
+  arrImportSourceClaims?: boolean | UserCountOutputTypeCountArrImportSourceClaimsArgs
   userCustomFormats?: boolean | UserCountOutputTypeCountUserCustomFormatsArgs
   qualitySizeMappings?: boolean | UserCountOutputTypeCountQualitySizeMappingsArgs
   libraryCleanupConfigs?: boolean | UserCountOutputTypeCountLibraryCleanupConfigsArgs
   notificationChannels?: boolean | UserCountOutputTypeCountNotificationChannelsArgs
+  notificationOutboxEvents?: boolean | UserCountOutputTypeCountNotificationOutboxEventsArgs
+  notificationOutboxDeliveries?: boolean | UserCountOutputTypeCountNotificationOutboxDeliveriesArgs
   namingConfigs?: boolean | UserCountOutputTypeCountNamingConfigsArgs
   namingDeployHistory?: boolean | UserCountOutputTypeCountNamingDeployHistoryArgs
   notificationRules?: boolean | UserCountOutputTypeCountNotificationRulesArgs
@@ -5068,7 +8310,11 @@ export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.I
   traktListCacheRows?: boolean | UserCountOutputTypeCountTraktListCacheRowsArgs
   listCacheRefreshStatuses?: boolean | UserCountOutputTypeCountListCacheRefreshStatusesArgs
   quiActivityLogs?: boolean | UserCountOutputTypeCountQuiActivityLogsArgs
+  quiTorrentObservations?: boolean | UserCountOutputTypeCountQuiTorrentObservationsArgs
   quiActionLogs?: boolean | UserCountOutputTypeCountQuiActionLogsArgs
+  quiActionClaims?: boolean | UserCountOutputTypeCountQuiActionClaimsArgs
+  searchGrabAttempts?: boolean | UserCountOutputTypeCountSearchGrabAttemptsArgs
+  searchGrabClaims?: boolean | UserCountOutputTypeCountSearchGrabClaimsArgs
   quiEventLogs?: boolean | UserCountOutputTypeCountQuiEventLogsArgs
 }
 
@@ -5113,6 +8359,20 @@ export type UserCountOutputTypeCountServiceInstancesArgs<ExtArgs extends runtime
 /**
  * UserCountOutputType without action
  */
+export type UserCountOutputTypeCountArrImportOperationsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ArrImportOperationWhereInput
+}
+
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountArrImportSourceClaimsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ArrImportSourceClaimWhereInput
+}
+
+/**
+ * UserCountOutputType without action
+ */
 export type UserCountOutputTypeCountUserCustomFormatsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   where?: Prisma.UserCustomFormatWhereInput
 }
@@ -5136,6 +8396,20 @@ export type UserCountOutputTypeCountLibraryCleanupConfigsArgs<ExtArgs extends ru
  */
 export type UserCountOutputTypeCountNotificationChannelsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   where?: Prisma.NotificationChannelWhereInput
+}
+
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountNotificationOutboxEventsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.NotificationOutboxEventWhereInput
+}
+
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountNotificationOutboxDeliveriesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.NotificationOutboxDeliveryWhereInput
 }
 
 /**
@@ -5218,8 +8492,36 @@ export type UserCountOutputTypeCountQuiActivityLogsArgs<ExtArgs extends runtime.
 /**
  * UserCountOutputType without action
  */
+export type UserCountOutputTypeCountQuiTorrentObservationsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.QuiTorrentObservationWhereInput
+}
+
+/**
+ * UserCountOutputType without action
+ */
 export type UserCountOutputTypeCountQuiActionLogsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   where?: Prisma.QuiActionLogWhereInput
+}
+
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountQuiActionClaimsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.QuiActionClaimWhereInput
+}
+
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountSearchGrabAttemptsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.SearchGrabAttemptWhereInput
+}
+
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountSearchGrabClaimsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.SearchGrabClaimWhereInput
 }
 
 /**
@@ -5250,11 +8552,16 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   webauthnCredentials?: boolean | Prisma.User$webauthnCredentialsArgs<ExtArgs>
   trashSettings?: boolean | Prisma.User$trashSettingsArgs<ExtArgs>
   serviceInstances?: boolean | Prisma.User$serviceInstancesArgs<ExtArgs>
+  arrImportOperations?: boolean | Prisma.User$arrImportOperationsArgs<ExtArgs>
+  arrImportSourceClaims?: boolean | Prisma.User$arrImportSourceClaimsArgs<ExtArgs>
+  dashboardStatisticsSnapshot?: boolean | Prisma.User$dashboardStatisticsSnapshotArgs<ExtArgs>
   historyCollectionLease?: boolean | Prisma.User$historyCollectionLeaseArgs<ExtArgs>
   userCustomFormats?: boolean | Prisma.User$userCustomFormatsArgs<ExtArgs>
   qualitySizeMappings?: boolean | Prisma.User$qualitySizeMappingsArgs<ExtArgs>
   libraryCleanupConfigs?: boolean | Prisma.User$libraryCleanupConfigsArgs<ExtArgs>
   notificationChannels?: boolean | Prisma.User$notificationChannelsArgs<ExtArgs>
+  notificationOutboxEvents?: boolean | Prisma.User$notificationOutboxEventsArgs<ExtArgs>
+  notificationOutboxDeliveries?: boolean | Prisma.User$notificationOutboxDeliveriesArgs<ExtArgs>
   namingConfigs?: boolean | Prisma.User$namingConfigsArgs<ExtArgs>
   namingDeployHistory?: boolean | Prisma.User$namingDeployHistoryArgs<ExtArgs>
   notificationRules?: boolean | Prisma.User$notificationRulesArgs<ExtArgs>
@@ -5266,7 +8573,12 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   traktListCacheRows?: boolean | Prisma.User$traktListCacheRowsArgs<ExtArgs>
   listCacheRefreshStatuses?: boolean | Prisma.User$listCacheRefreshStatusesArgs<ExtArgs>
   quiActivityLogs?: boolean | Prisma.User$quiActivityLogsArgs<ExtArgs>
+  quiObservationPublication?: boolean | Prisma.User$quiObservationPublicationArgs<ExtArgs>
+  quiTorrentObservations?: boolean | Prisma.User$quiTorrentObservationsArgs<ExtArgs>
   quiActionLogs?: boolean | Prisma.User$quiActionLogsArgs<ExtArgs>
+  quiActionClaims?: boolean | Prisma.User$quiActionClaimsArgs<ExtArgs>
+  searchGrabAttempts?: boolean | Prisma.User$searchGrabAttemptsArgs<ExtArgs>
+  searchGrabClaims?: boolean | Prisma.User$searchGrabClaimsArgs<ExtArgs>
   quiEventLogs?: boolean | Prisma.User$quiEventLogsArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["user"]>
@@ -5329,11 +8641,16 @@ export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   webauthnCredentials?: boolean | Prisma.User$webauthnCredentialsArgs<ExtArgs>
   trashSettings?: boolean | Prisma.User$trashSettingsArgs<ExtArgs>
   serviceInstances?: boolean | Prisma.User$serviceInstancesArgs<ExtArgs>
+  arrImportOperations?: boolean | Prisma.User$arrImportOperationsArgs<ExtArgs>
+  arrImportSourceClaims?: boolean | Prisma.User$arrImportSourceClaimsArgs<ExtArgs>
+  dashboardStatisticsSnapshot?: boolean | Prisma.User$dashboardStatisticsSnapshotArgs<ExtArgs>
   historyCollectionLease?: boolean | Prisma.User$historyCollectionLeaseArgs<ExtArgs>
   userCustomFormats?: boolean | Prisma.User$userCustomFormatsArgs<ExtArgs>
   qualitySizeMappings?: boolean | Prisma.User$qualitySizeMappingsArgs<ExtArgs>
   libraryCleanupConfigs?: boolean | Prisma.User$libraryCleanupConfigsArgs<ExtArgs>
   notificationChannels?: boolean | Prisma.User$notificationChannelsArgs<ExtArgs>
+  notificationOutboxEvents?: boolean | Prisma.User$notificationOutboxEventsArgs<ExtArgs>
+  notificationOutboxDeliveries?: boolean | Prisma.User$notificationOutboxDeliveriesArgs<ExtArgs>
   namingConfigs?: boolean | Prisma.User$namingConfigsArgs<ExtArgs>
   namingDeployHistory?: boolean | Prisma.User$namingDeployHistoryArgs<ExtArgs>
   notificationRules?: boolean | Prisma.User$notificationRulesArgs<ExtArgs>
@@ -5345,7 +8662,12 @@ export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   traktListCacheRows?: boolean | Prisma.User$traktListCacheRowsArgs<ExtArgs>
   listCacheRefreshStatuses?: boolean | Prisma.User$listCacheRefreshStatusesArgs<ExtArgs>
   quiActivityLogs?: boolean | Prisma.User$quiActivityLogsArgs<ExtArgs>
+  quiObservationPublication?: boolean | Prisma.User$quiObservationPublicationArgs<ExtArgs>
+  quiTorrentObservations?: boolean | Prisma.User$quiTorrentObservationsArgs<ExtArgs>
   quiActionLogs?: boolean | Prisma.User$quiActionLogsArgs<ExtArgs>
+  quiActionClaims?: boolean | Prisma.User$quiActionClaimsArgs<ExtArgs>
+  searchGrabAttempts?: boolean | Prisma.User$searchGrabAttemptsArgs<ExtArgs>
+  searchGrabClaims?: boolean | Prisma.User$searchGrabClaimsArgs<ExtArgs>
   quiEventLogs?: boolean | Prisma.User$quiEventLogsArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }
@@ -5360,11 +8682,16 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     webauthnCredentials: Prisma.$WebAuthnCredentialPayload<ExtArgs>[]
     trashSettings: Prisma.$TrashSettingsPayload<ExtArgs> | null
     serviceInstances: Prisma.$ServiceInstancePayload<ExtArgs>[]
+    arrImportOperations: Prisma.$ArrImportOperationPayload<ExtArgs>[]
+    arrImportSourceClaims: Prisma.$ArrImportSourceClaimPayload<ExtArgs>[]
+    dashboardStatisticsSnapshot: Prisma.$DashboardStatisticsSnapshotPayload<ExtArgs> | null
     historyCollectionLease: Prisma.$HistoryCollectionLeasePayload<ExtArgs> | null
     userCustomFormats: Prisma.$UserCustomFormatPayload<ExtArgs>[]
     qualitySizeMappings: Prisma.$QualitySizeMappingPayload<ExtArgs>[]
     libraryCleanupConfigs: Prisma.$LibraryCleanupConfigPayload<ExtArgs>[]
     notificationChannels: Prisma.$NotificationChannelPayload<ExtArgs>[]
+    notificationOutboxEvents: Prisma.$NotificationOutboxEventPayload<ExtArgs>[]
+    notificationOutboxDeliveries: Prisma.$NotificationOutboxDeliveryPayload<ExtArgs>[]
     namingConfigs: Prisma.$NamingConfigPayload<ExtArgs>[]
     namingDeployHistory: Prisma.$NamingDeployHistoryPayload<ExtArgs>[]
     notificationRules: Prisma.$NotificationRulePayload<ExtArgs>[]
@@ -5376,7 +8703,12 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     traktListCacheRows: Prisma.$TraktListCachePayload<ExtArgs>[]
     listCacheRefreshStatuses: Prisma.$ListCacheRefreshStatusPayload<ExtArgs>[]
     quiActivityLogs: Prisma.$QuiActivityLogPayload<ExtArgs>[]
+    quiObservationPublication: Prisma.$QuiObservationPublicationPayload<ExtArgs> | null
+    quiTorrentObservations: Prisma.$QuiTorrentObservationPayload<ExtArgs>[]
     quiActionLogs: Prisma.$QuiActionLogPayload<ExtArgs>[]
+    quiActionClaims: Prisma.$QuiActionClaimPayload<ExtArgs>[]
+    searchGrabAttempts: Prisma.$SearchGrabAttemptPayload<ExtArgs>[]
+    searchGrabClaims: Prisma.$SearchGrabClaimPayload<ExtArgs>[]
     quiEventLogs: Prisma.$QuiEventLogPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
@@ -5812,11 +9144,16 @@ export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Typ
   webauthnCredentials<T extends Prisma.User$webauthnCredentialsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$webauthnCredentialsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$WebAuthnCredentialPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   trashSettings<T extends Prisma.User$trashSettingsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$trashSettingsArgs<ExtArgs>>): Prisma.Prisma__TrashSettingsClient<runtime.Types.Result.GetResult<Prisma.$TrashSettingsPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   serviceInstances<T extends Prisma.User$serviceInstancesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$serviceInstancesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ServiceInstancePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  arrImportOperations<T extends Prisma.User$arrImportOperationsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$arrImportOperationsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ArrImportOperationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  arrImportSourceClaims<T extends Prisma.User$arrImportSourceClaimsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$arrImportSourceClaimsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ArrImportSourceClaimPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  dashboardStatisticsSnapshot<T extends Prisma.User$dashboardStatisticsSnapshotArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$dashboardStatisticsSnapshotArgs<ExtArgs>>): Prisma.Prisma__DashboardStatisticsSnapshotClient<runtime.Types.Result.GetResult<Prisma.$DashboardStatisticsSnapshotPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   historyCollectionLease<T extends Prisma.User$historyCollectionLeaseArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$historyCollectionLeaseArgs<ExtArgs>>): Prisma.Prisma__HistoryCollectionLeaseClient<runtime.Types.Result.GetResult<Prisma.$HistoryCollectionLeasePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   userCustomFormats<T extends Prisma.User$userCustomFormatsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$userCustomFormatsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$UserCustomFormatPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   qualitySizeMappings<T extends Prisma.User$qualitySizeMappingsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$qualitySizeMappingsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QualitySizeMappingPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   libraryCleanupConfigs<T extends Prisma.User$libraryCleanupConfigsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$libraryCleanupConfigsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LibraryCleanupConfigPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   notificationChannels<T extends Prisma.User$notificationChannelsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$notificationChannelsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$NotificationChannelPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  notificationOutboxEvents<T extends Prisma.User$notificationOutboxEventsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$notificationOutboxEventsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$NotificationOutboxEventPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  notificationOutboxDeliveries<T extends Prisma.User$notificationOutboxDeliveriesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$notificationOutboxDeliveriesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$NotificationOutboxDeliveryPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   namingConfigs<T extends Prisma.User$namingConfigsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$namingConfigsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$NamingConfigPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   namingDeployHistory<T extends Prisma.User$namingDeployHistoryArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$namingDeployHistoryArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$NamingDeployHistoryPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   notificationRules<T extends Prisma.User$notificationRulesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$notificationRulesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$NotificationRulePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
@@ -5828,7 +9165,12 @@ export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Typ
   traktListCacheRows<T extends Prisma.User$traktListCacheRowsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$traktListCacheRowsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$TraktListCachePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   listCacheRefreshStatuses<T extends Prisma.User$listCacheRefreshStatusesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$listCacheRefreshStatusesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ListCacheRefreshStatusPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   quiActivityLogs<T extends Prisma.User$quiActivityLogsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$quiActivityLogsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QuiActivityLogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  quiObservationPublication<T extends Prisma.User$quiObservationPublicationArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$quiObservationPublicationArgs<ExtArgs>>): Prisma.Prisma__QuiObservationPublicationClient<runtime.Types.Result.GetResult<Prisma.$QuiObservationPublicationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+  quiTorrentObservations<T extends Prisma.User$quiTorrentObservationsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$quiTorrentObservationsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QuiTorrentObservationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   quiActionLogs<T extends Prisma.User$quiActionLogsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$quiActionLogsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QuiActionLogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  quiActionClaims<T extends Prisma.User$quiActionClaimsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$quiActionClaimsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QuiActionClaimPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  searchGrabAttempts<T extends Prisma.User$searchGrabAttemptsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$searchGrabAttemptsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$SearchGrabAttemptPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  searchGrabClaims<T extends Prisma.User$searchGrabClaimsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$searchGrabClaimsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$SearchGrabClaimPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   quiEventLogs<T extends Prisma.User$quiEventLogsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$quiEventLogsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QuiEventLogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
@@ -6379,6 +9721,73 @@ export type User$serviceInstancesArgs<ExtArgs extends runtime.Types.Extensions.I
 }
 
 /**
+ * User.arrImportOperations
+ */
+export type User$arrImportOperationsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ArrImportOperation
+   */
+  select?: Prisma.ArrImportOperationSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the ArrImportOperation
+   */
+  omit?: Prisma.ArrImportOperationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ArrImportOperationInclude<ExtArgs> | null
+  where?: Prisma.ArrImportOperationWhereInput
+  orderBy?: Prisma.ArrImportOperationOrderByWithRelationInput | Prisma.ArrImportOperationOrderByWithRelationInput[]
+  cursor?: Prisma.ArrImportOperationWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ArrImportOperationScalarFieldEnum | Prisma.ArrImportOperationScalarFieldEnum[]
+}
+
+/**
+ * User.arrImportSourceClaims
+ */
+export type User$arrImportSourceClaimsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ArrImportSourceClaim
+   */
+  select?: Prisma.ArrImportSourceClaimSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the ArrImportSourceClaim
+   */
+  omit?: Prisma.ArrImportSourceClaimOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ArrImportSourceClaimInclude<ExtArgs> | null
+  where?: Prisma.ArrImportSourceClaimWhereInput
+  orderBy?: Prisma.ArrImportSourceClaimOrderByWithRelationInput | Prisma.ArrImportSourceClaimOrderByWithRelationInput[]
+  cursor?: Prisma.ArrImportSourceClaimWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ArrImportSourceClaimScalarFieldEnum | Prisma.ArrImportSourceClaimScalarFieldEnum[]
+}
+
+/**
+ * User.dashboardStatisticsSnapshot
+ */
+export type User$dashboardStatisticsSnapshotArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the DashboardStatisticsSnapshot
+   */
+  select?: Prisma.DashboardStatisticsSnapshotSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the DashboardStatisticsSnapshot
+   */
+  omit?: Prisma.DashboardStatisticsSnapshotOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.DashboardStatisticsSnapshotInclude<ExtArgs> | null
+  where?: Prisma.DashboardStatisticsSnapshotWhereInput
+}
+
+/**
  * User.historyCollectionLease
  */
 export type User$historyCollectionLeaseArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -6491,6 +9900,54 @@ export type User$notificationChannelsArgs<ExtArgs extends runtime.Types.Extensio
   take?: number
   skip?: number
   distinct?: Prisma.NotificationChannelScalarFieldEnum | Prisma.NotificationChannelScalarFieldEnum[]
+}
+
+/**
+ * User.notificationOutboxEvents
+ */
+export type User$notificationOutboxEventsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the NotificationOutboxEvent
+   */
+  select?: Prisma.NotificationOutboxEventSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the NotificationOutboxEvent
+   */
+  omit?: Prisma.NotificationOutboxEventOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.NotificationOutboxEventInclude<ExtArgs> | null
+  where?: Prisma.NotificationOutboxEventWhereInput
+  orderBy?: Prisma.NotificationOutboxEventOrderByWithRelationInput | Prisma.NotificationOutboxEventOrderByWithRelationInput[]
+  cursor?: Prisma.NotificationOutboxEventWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.NotificationOutboxEventScalarFieldEnum | Prisma.NotificationOutboxEventScalarFieldEnum[]
+}
+
+/**
+ * User.notificationOutboxDeliveries
+ */
+export type User$notificationOutboxDeliveriesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the NotificationOutboxDelivery
+   */
+  select?: Prisma.NotificationOutboxDeliverySelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the NotificationOutboxDelivery
+   */
+  omit?: Prisma.NotificationOutboxDeliveryOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.NotificationOutboxDeliveryInclude<ExtArgs> | null
+  where?: Prisma.NotificationOutboxDeliveryWhereInput
+  orderBy?: Prisma.NotificationOutboxDeliveryOrderByWithRelationInput | Prisma.NotificationOutboxDeliveryOrderByWithRelationInput[]
+  cursor?: Prisma.NotificationOutboxDeliveryWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.NotificationOutboxDeliveryScalarFieldEnum | Prisma.NotificationOutboxDeliveryScalarFieldEnum[]
 }
 
 /**
@@ -6758,6 +10215,49 @@ export type User$quiActivityLogsArgs<ExtArgs extends runtime.Types.Extensions.In
 }
 
 /**
+ * User.quiObservationPublication
+ */
+export type User$quiObservationPublicationArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the QuiObservationPublication
+   */
+  select?: Prisma.QuiObservationPublicationSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the QuiObservationPublication
+   */
+  omit?: Prisma.QuiObservationPublicationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.QuiObservationPublicationInclude<ExtArgs> | null
+  where?: Prisma.QuiObservationPublicationWhereInput
+}
+
+/**
+ * User.quiTorrentObservations
+ */
+export type User$quiTorrentObservationsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the QuiTorrentObservation
+   */
+  select?: Prisma.QuiTorrentObservationSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the QuiTorrentObservation
+   */
+  omit?: Prisma.QuiTorrentObservationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.QuiTorrentObservationInclude<ExtArgs> | null
+  where?: Prisma.QuiTorrentObservationWhereInput
+  orderBy?: Prisma.QuiTorrentObservationOrderByWithRelationInput | Prisma.QuiTorrentObservationOrderByWithRelationInput[]
+  cursor?: Prisma.QuiTorrentObservationWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.QuiTorrentObservationScalarFieldEnum | Prisma.QuiTorrentObservationScalarFieldEnum[]
+}
+
+/**
  * User.quiActionLogs
  */
 export type User$quiActionLogsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -6779,6 +10279,78 @@ export type User$quiActionLogsArgs<ExtArgs extends runtime.Types.Extensions.Inte
   take?: number
   skip?: number
   distinct?: Prisma.QuiActionLogScalarFieldEnum | Prisma.QuiActionLogScalarFieldEnum[]
+}
+
+/**
+ * User.quiActionClaims
+ */
+export type User$quiActionClaimsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the QuiActionClaim
+   */
+  select?: Prisma.QuiActionClaimSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the QuiActionClaim
+   */
+  omit?: Prisma.QuiActionClaimOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.QuiActionClaimInclude<ExtArgs> | null
+  where?: Prisma.QuiActionClaimWhereInput
+  orderBy?: Prisma.QuiActionClaimOrderByWithRelationInput | Prisma.QuiActionClaimOrderByWithRelationInput[]
+  cursor?: Prisma.QuiActionClaimWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.QuiActionClaimScalarFieldEnum | Prisma.QuiActionClaimScalarFieldEnum[]
+}
+
+/**
+ * User.searchGrabAttempts
+ */
+export type User$searchGrabAttemptsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the SearchGrabAttempt
+   */
+  select?: Prisma.SearchGrabAttemptSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the SearchGrabAttempt
+   */
+  omit?: Prisma.SearchGrabAttemptOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.SearchGrabAttemptInclude<ExtArgs> | null
+  where?: Prisma.SearchGrabAttemptWhereInput
+  orderBy?: Prisma.SearchGrabAttemptOrderByWithRelationInput | Prisma.SearchGrabAttemptOrderByWithRelationInput[]
+  cursor?: Prisma.SearchGrabAttemptWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.SearchGrabAttemptScalarFieldEnum | Prisma.SearchGrabAttemptScalarFieldEnum[]
+}
+
+/**
+ * User.searchGrabClaims
+ */
+export type User$searchGrabClaimsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the SearchGrabClaim
+   */
+  select?: Prisma.SearchGrabClaimSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the SearchGrabClaim
+   */
+  omit?: Prisma.SearchGrabClaimOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.SearchGrabClaimInclude<ExtArgs> | null
+  where?: Prisma.SearchGrabClaimWhereInput
+  orderBy?: Prisma.SearchGrabClaimOrderByWithRelationInput | Prisma.SearchGrabClaimOrderByWithRelationInput[]
+  cursor?: Prisma.SearchGrabClaimWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.SearchGrabClaimScalarFieldEnum | Prisma.SearchGrabClaimScalarFieldEnum[]
 }
 
 /**

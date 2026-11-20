@@ -22,8 +22,8 @@ import type * as Prisma from "../internal/prismaNamespace"
  * reannounce, tag changes — so the operator has a tamper-evident record of every
  * change arr-dashboard made on their behalf.
  * 
- * Each row goes through `pending` → `success` or `failed`. Failed rows keep the
- * raw error string so the operator can diagnose without re-running. Rows are
+ * Each row goes through `pending` → `success` or an explicitly unresolved
+ * `uncertain` state. Operator resolution is distinct from qUI confirmation. Rows are
  * indexed by `(userId, requestedAt)` for the My Actions feed and
  * `(serviceInstanceId, torrentHash)` for per-torrent history drill-downs.
  */
@@ -55,6 +55,7 @@ export type QuiActionLogMinAggregateOutputType = {
   payload: string | null
   status: string | null
   error: string | null
+  attemptId: string | null
   requestedAt: Date | null
   completedAt: Date | null
 }
@@ -69,6 +70,7 @@ export type QuiActionLogMaxAggregateOutputType = {
   payload: string | null
   status: string | null
   error: string | null
+  attemptId: string | null
   requestedAt: Date | null
   completedAt: Date | null
 }
@@ -83,6 +85,7 @@ export type QuiActionLogCountAggregateOutputType = {
   payload: number
   status: number
   error: number
+  attemptId: number
   requestedAt: number
   completedAt: number
   _all: number
@@ -107,6 +110,7 @@ export type QuiActionLogMinAggregateInputType = {
   payload?: true
   status?: true
   error?: true
+  attemptId?: true
   requestedAt?: true
   completedAt?: true
 }
@@ -121,6 +125,7 @@ export type QuiActionLogMaxAggregateInputType = {
   payload?: true
   status?: true
   error?: true
+  attemptId?: true
   requestedAt?: true
   completedAt?: true
 }
@@ -135,6 +140,7 @@ export type QuiActionLogCountAggregateInputType = {
   payload?: true
   status?: true
   error?: true
+  attemptId?: true
   requestedAt?: true
   completedAt?: true
   _all?: true
@@ -236,6 +242,7 @@ export type QuiActionLogGroupByOutputType = {
   payload: string | null
   status: string
   error: string | null
+  attemptId: string | null
   requestedAt: Date
   completedAt: Date | null
   _count: QuiActionLogCountAggregateOutputType | null
@@ -273,6 +280,7 @@ export type QuiActionLogWhereInput = {
   payload?: Prisma.StringNullableFilter<"QuiActionLog"> | string | null
   status?: Prisma.StringFilter<"QuiActionLog"> | string
   error?: Prisma.StringNullableFilter<"QuiActionLog"> | string | null
+  attemptId?: Prisma.StringNullableFilter<"QuiActionLog"> | string | null
   requestedAt?: Prisma.DateTimeFilter<"QuiActionLog"> | Date | string
   completedAt?: Prisma.DateTimeNullableFilter<"QuiActionLog"> | Date | string | null
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
@@ -289,6 +297,7 @@ export type QuiActionLogOrderByWithRelationInput = {
   payload?: Prisma.SortOrderInput | Prisma.SortOrder
   status?: Prisma.SortOrder
   error?: Prisma.SortOrderInput | Prisma.SortOrder
+  attemptId?: Prisma.SortOrderInput | Prisma.SortOrder
   requestedAt?: Prisma.SortOrder
   completedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   user?: Prisma.UserOrderByWithRelationInput
@@ -308,6 +317,7 @@ export type QuiActionLogWhereUniqueInput = Prisma.AtLeast<{
   payload?: Prisma.StringNullableFilter<"QuiActionLog"> | string | null
   status?: Prisma.StringFilter<"QuiActionLog"> | string
   error?: Prisma.StringNullableFilter<"QuiActionLog"> | string | null
+  attemptId?: Prisma.StringNullableFilter<"QuiActionLog"> | string | null
   requestedAt?: Prisma.DateTimeFilter<"QuiActionLog"> | Date | string
   completedAt?: Prisma.DateTimeNullableFilter<"QuiActionLog"> | Date | string | null
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
@@ -324,6 +334,7 @@ export type QuiActionLogOrderByWithAggregationInput = {
   payload?: Prisma.SortOrderInput | Prisma.SortOrder
   status?: Prisma.SortOrder
   error?: Prisma.SortOrderInput | Prisma.SortOrder
+  attemptId?: Prisma.SortOrderInput | Prisma.SortOrder
   requestedAt?: Prisma.SortOrder
   completedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.QuiActionLogCountOrderByAggregateInput
@@ -346,6 +357,7 @@ export type QuiActionLogScalarWhereWithAggregatesInput = {
   payload?: Prisma.StringNullableWithAggregatesFilter<"QuiActionLog"> | string | null
   status?: Prisma.StringWithAggregatesFilter<"QuiActionLog"> | string
   error?: Prisma.StringNullableWithAggregatesFilter<"QuiActionLog"> | string | null
+  attemptId?: Prisma.StringNullableWithAggregatesFilter<"QuiActionLog"> | string | null
   requestedAt?: Prisma.DateTimeWithAggregatesFilter<"QuiActionLog"> | Date | string
   completedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"QuiActionLog"> | Date | string | null
 }
@@ -358,6 +370,7 @@ export type QuiActionLogCreateInput = {
   payload?: string | null
   status?: string
   error?: string | null
+  attemptId?: string | null
   requestedAt?: Date | string
   completedAt?: Date | string | null
   user: Prisma.UserCreateNestedOneWithoutQuiActionLogsInput
@@ -374,6 +387,7 @@ export type QuiActionLogUncheckedCreateInput = {
   payload?: string | null
   status?: string
   error?: string | null
+  attemptId?: string | null
   requestedAt?: Date | string
   completedAt?: Date | string | null
 }
@@ -386,6 +400,7 @@ export type QuiActionLogUpdateInput = {
   payload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  attemptId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   requestedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   user?: Prisma.UserUpdateOneRequiredWithoutQuiActionLogsNestedInput
@@ -402,6 +417,7 @@ export type QuiActionLogUncheckedUpdateInput = {
   payload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  attemptId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   requestedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
@@ -416,6 +432,7 @@ export type QuiActionLogCreateManyInput = {
   payload?: string | null
   status?: string
   error?: string | null
+  attemptId?: string | null
   requestedAt?: Date | string
   completedAt?: Date | string | null
 }
@@ -428,6 +445,7 @@ export type QuiActionLogUpdateManyMutationInput = {
   payload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  attemptId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   requestedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
@@ -442,6 +460,7 @@ export type QuiActionLogUncheckedUpdateManyInput = {
   payload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  attemptId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   requestedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
@@ -466,6 +485,7 @@ export type QuiActionLogCountOrderByAggregateInput = {
   payload?: Prisma.SortOrder
   status?: Prisma.SortOrder
   error?: Prisma.SortOrder
+  attemptId?: Prisma.SortOrder
   requestedAt?: Prisma.SortOrder
   completedAt?: Prisma.SortOrder
 }
@@ -484,6 +504,7 @@ export type QuiActionLogMaxOrderByAggregateInput = {
   payload?: Prisma.SortOrder
   status?: Prisma.SortOrder
   error?: Prisma.SortOrder
+  attemptId?: Prisma.SortOrder
   requestedAt?: Prisma.SortOrder
   completedAt?: Prisma.SortOrder
 }
@@ -498,6 +519,7 @@ export type QuiActionLogMinOrderByAggregateInput = {
   payload?: Prisma.SortOrder
   status?: Prisma.SortOrder
   error?: Prisma.SortOrder
+  attemptId?: Prisma.SortOrder
   requestedAt?: Prisma.SortOrder
   completedAt?: Prisma.SortOrder
 }
@@ -598,6 +620,7 @@ export type QuiActionLogCreateWithoutUserInput = {
   payload?: string | null
   status?: string
   error?: string | null
+  attemptId?: string | null
   requestedAt?: Date | string
   completedAt?: Date | string | null
   serviceInstance: Prisma.ServiceInstanceCreateNestedOneWithoutQuiActionLogsInput
@@ -612,6 +635,7 @@ export type QuiActionLogUncheckedCreateWithoutUserInput = {
   payload?: string | null
   status?: string
   error?: string | null
+  attemptId?: string | null
   requestedAt?: Date | string
   completedAt?: Date | string | null
 }
@@ -654,6 +678,7 @@ export type QuiActionLogScalarWhereInput = {
   payload?: Prisma.StringNullableFilter<"QuiActionLog"> | string | null
   status?: Prisma.StringFilter<"QuiActionLog"> | string
   error?: Prisma.StringNullableFilter<"QuiActionLog"> | string | null
+  attemptId?: Prisma.StringNullableFilter<"QuiActionLog"> | string | null
   requestedAt?: Prisma.DateTimeFilter<"QuiActionLog"> | Date | string
   completedAt?: Prisma.DateTimeNullableFilter<"QuiActionLog"> | Date | string | null
 }
@@ -666,6 +691,7 @@ export type QuiActionLogCreateWithoutServiceInstanceInput = {
   payload?: string | null
   status?: string
   error?: string | null
+  attemptId?: string | null
   requestedAt?: Date | string
   completedAt?: Date | string | null
   user: Prisma.UserCreateNestedOneWithoutQuiActionLogsInput
@@ -680,6 +706,7 @@ export type QuiActionLogUncheckedCreateWithoutServiceInstanceInput = {
   payload?: string | null
   status?: string
   error?: string | null
+  attemptId?: string | null
   requestedAt?: Date | string
   completedAt?: Date | string | null
 }
@@ -718,6 +745,7 @@ export type QuiActionLogCreateManyUserInput = {
   payload?: string | null
   status?: string
   error?: string | null
+  attemptId?: string | null
   requestedAt?: Date | string
   completedAt?: Date | string | null
 }
@@ -730,6 +758,7 @@ export type QuiActionLogUpdateWithoutUserInput = {
   payload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  attemptId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   requestedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   serviceInstance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutQuiActionLogsNestedInput
@@ -744,6 +773,7 @@ export type QuiActionLogUncheckedUpdateWithoutUserInput = {
   payload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  attemptId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   requestedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
@@ -757,6 +787,7 @@ export type QuiActionLogUncheckedUpdateManyWithoutUserInput = {
   payload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  attemptId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   requestedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
@@ -770,6 +801,7 @@ export type QuiActionLogCreateManyServiceInstanceInput = {
   payload?: string | null
   status?: string
   error?: string | null
+  attemptId?: string | null
   requestedAt?: Date | string
   completedAt?: Date | string | null
 }
@@ -782,6 +814,7 @@ export type QuiActionLogUpdateWithoutServiceInstanceInput = {
   payload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  attemptId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   requestedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   user?: Prisma.UserUpdateOneRequiredWithoutQuiActionLogsNestedInput
@@ -796,6 +829,7 @@ export type QuiActionLogUncheckedUpdateWithoutServiceInstanceInput = {
   payload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  attemptId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   requestedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
@@ -809,6 +843,7 @@ export type QuiActionLogUncheckedUpdateManyWithoutServiceInstanceInput = {
   payload?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  attemptId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   requestedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
@@ -825,6 +860,7 @@ export type QuiActionLogSelect<ExtArgs extends runtime.Types.Extensions.Internal
   payload?: boolean
   status?: boolean
   error?: boolean
+  attemptId?: boolean
   requestedAt?: boolean
   completedAt?: boolean
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
@@ -841,6 +877,7 @@ export type QuiActionLogSelectCreateManyAndReturn<ExtArgs extends runtime.Types.
   payload?: boolean
   status?: boolean
   error?: boolean
+  attemptId?: boolean
   requestedAt?: boolean
   completedAt?: boolean
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
@@ -857,6 +894,7 @@ export type QuiActionLogSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.
   payload?: boolean
   status?: boolean
   error?: boolean
+  attemptId?: boolean
   requestedAt?: boolean
   completedAt?: boolean
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
@@ -873,11 +911,12 @@ export type QuiActionLogSelectScalar = {
   payload?: boolean
   status?: boolean
   error?: boolean
+  attemptId?: boolean
   requestedAt?: boolean
   completedAt?: boolean
 }
 
-export type QuiActionLogOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "serviceInstanceId" | "qbitInstanceId" | "torrentHash" | "action" | "payload" | "status" | "error" | "requestedAt" | "completedAt", ExtArgs["result"]["quiActionLog"]>
+export type QuiActionLogOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "serviceInstanceId" | "qbitInstanceId" | "torrentHash" | "action" | "payload" | "status" | "error" | "attemptId" | "requestedAt" | "completedAt", ExtArgs["result"]["quiActionLog"]>
 export type QuiActionLogInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
   serviceInstance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
@@ -907,6 +946,7 @@ export type $QuiActionLogPayload<ExtArgs extends runtime.Types.Extensions.Intern
     payload: string | null
     status: string
     error: string | null
+    attemptId: string | null
     requestedAt: Date
     completedAt: Date | null
   }, ExtArgs["result"]["quiActionLog"]>
@@ -1343,6 +1383,7 @@ export interface QuiActionLogFieldRefs {
   readonly payload: Prisma.FieldRef<"QuiActionLog", 'String'>
   readonly status: Prisma.FieldRef<"QuiActionLog", 'String'>
   readonly error: Prisma.FieldRef<"QuiActionLog", 'String'>
+  readonly attemptId: Prisma.FieldRef<"QuiActionLog", 'String'>
   readonly requestedAt: Prisma.FieldRef<"QuiActionLog", 'DateTime'>
   readonly completedAt: Prisma.FieldRef<"QuiActionLog", 'DateTime'>
 }

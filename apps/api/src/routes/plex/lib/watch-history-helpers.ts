@@ -5,7 +5,14 @@
  * discrete watch events from SessionSnapshot data.
  */
 
+import { createHash } from "node:crypto";
 import type { WatchHistoryEvent } from "@arr/shared";
+import {
+	type ActivitySnapshotIdentity,
+	readActivityIdentity,
+	readActivityReceipt,
+} from "./native-activity-identity.js";
+import { readVideoMethods } from "./transcode-analytics-helpers.js";
 
 /** Raw session entry parsed from sessionsJson, with a timestamp from the snapshot */
 export interface RawWatchEvent {
@@ -17,9 +24,11 @@ export interface RawWatchEvent {
 }
 
 /** Snapshot row for watch history extraction */
-export interface SnapshotForHistory {
+export interface SnapshotForHistory extends ActivitySnapshotIdentity {
+	id?: string;
 	capturedAt: Date;
 	sessionsJson: string;
+	measurementJson?: string | null;
 }
 
 /**
@@ -36,79 +45,117 @@ export interface WatchHistoryResult {
 	failedPreviews: string[];
 }
 
+export interface WatchHistoryAccumulator {
+	addBatch(snapshots: readonly SnapshotForHistory[]): void;
+	getResult(): WatchHistoryResult;
+}
+
+export function createWatchHistoryAccumulator(limit: number): WatchHistoryAccumulator {
+	let parseFailures = 0;
+	let totalSnapshots = 0;
+	const failedPreviews: string[] = [];
+	// Deduplicate: collapse consecutive entries for same user+title
+	// "Consecutive" = within 10 minutes; each skipped tick advances the chain.
+	const DEDUP_WINDOW_MS = 10 * 60 * 1000;
+	const deduped: WatchHistoryEvent[] = [];
+	const lastSeen = new Map<string, number>(); // key → last timestamp
+	let snapshotSequence = 0;
+
+	function addBatch(snapshots: readonly SnapshotForHistory[]): void {
+		totalSnapshots += snapshots.length;
+		for (const snap of snapshots) {
+			const snapshotOrdinal = snapshotSequence++;
+			let sessions: unknown;
+			try {
+				sessions = JSON.parse(snap.sessionsJson);
+			} catch {
+				parseFailures++;
+				continue;
+			}
+
+			// Keep checking rows for parse diagnostics after enough output events
+			// have been emitted, without retaining or aggregating unused raw events.
+			if (!Array.isArray(sessions)) {
+				parseFailures++;
+				continue;
+			}
+			if (deduped.length > 0 && deduped.length >= limit) continue;
+
+			const receipt = readActivityReceipt(snap, sessions.length);
+			const methods = receipt ? readVideoMethods(snap.sessionsJson, receipt).decisions : null;
+			const platformVerified =
+				receipt !== null &&
+				sessions.length === receipt.observedSessions &&
+				(receipt.provider === "PLEX" || receipt.deviceLabelAxis === "client");
+
+			for (const [index, value] of sessions.entries()) {
+				if (value === null || typeof value !== "object" || Array.isArray(value)) continue;
+				const session = value as Record<string, unknown>;
+				const user =
+					typeof session.user === "string" && session.user.trim() ? session.user : "Unknown";
+				const title =
+					typeof session.title === "string" && session.title.trim() ? session.title : "Unknown";
+				const key = readActivityIdentity(snap, session, receipt).playback;
+				const prevTime = key ? lastSeen.get(key) : undefined;
+				const eventTime = snap.capturedAt.getTime();
+
+				if (prevTime !== undefined && prevTime - eventTime <= DEDUP_WINDOW_MS) {
+					if (key) lastSeen.set(key, eventTime);
+					continue;
+				}
+
+				if (key) lastSeen.set(key, eventTime);
+				deduped.push({
+					key: createHash("sha256")
+						.update(
+							JSON.stringify(
+								key
+									? [key, snap.capturedAt.toISOString()]
+									: [
+											snap.instanceId ?? null,
+											snap.id ?? snapshotOrdinal,
+											snap.capturedAt.toISOString(),
+											index,
+										],
+							),
+						)
+						.digest("hex"),
+					user,
+					title,
+					timestamp: snap.capturedAt.toISOString(),
+					platform:
+						platformVerified && typeof session.platform === "string"
+							? session.platform.trim() || null
+							: null,
+					videoDecision:
+						methods?.[index] === "direct_play"
+							? "direct play"
+							: methods?.[index] === "direct_stream"
+								? "copy"
+								: methods?.[index] === "transcode"
+									? "transcode"
+									: null,
+				});
+
+				if (deduped.length >= limit) break;
+			}
+		}
+	}
+
+	function getResult(): WatchHistoryResult {
+		return { events: deduped, parseFailures, totalSnapshots, failedPreviews };
+	}
+
+	return { addBatch, getResult };
+}
+
 export function deduplicateWatchEvents(
 	snapshots: SnapshotForHistory[],
 	limit: number,
 ): WatchHistoryResult {
-	// Flatten all snapshots into raw events, ordered by time DESC
-	const rawEvents: RawWatchEvent[] = [];
-	let parseFailures = 0;
-	const failedPreviews: string[] = [];
-
-	for (const snap of snapshots) {
-		let sessions: unknown;
-		try {
-			sessions = JSON.parse(snap.sessionsJson);
-		} catch {
-			parseFailures++;
-			continue;
-		}
-
-		// JSON.parse can return any valid JSON value (null, object, number, ...)
-		// — guard against non-iterable shapes so a corrupt row doesn't TypeError
-		// and abort the whole snapshot walk silently.
-		if (!Array.isArray(sessions)) {
-			parseFailures++;
-			continue;
-		}
-
-		for (const session of sessions as Array<{
-			user: string;
-			title: string;
-			platform?: string | null;
-			videoDecision?: string | null;
-		}>) {
-			rawEvents.push({
-				user: session.user || "Unknown",
-				title: session.title || "Unknown",
-				timestamp: snap.capturedAt,
-				platform: session.platform ?? null,
-				videoDecision: session.videoDecision ?? null,
-			});
-		}
-	}
-
-	// Sort by timestamp DESC (most recent first)
-	rawEvents.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-
-	// Deduplicate: collapse consecutive entries for same user+title
-	// "Consecutive" = within 10 minutes (2x the 5-minute interval, to handle jitter)
-	const DEDUP_WINDOW_MS = 10 * 60 * 1000;
-	const deduped: WatchHistoryEvent[] = [];
-	const lastSeen = new Map<string, number>(); // key → last timestamp
-
-	for (const event of rawEvents) {
-		const key = `${event.user}::${event.title}`;
-		const prevTime = lastSeen.get(key);
-		const eventTime = event.timestamp.getTime();
-
-		if (prevTime !== undefined && prevTime - eventTime <= DEDUP_WINDOW_MS) {
-			// Within dedup window — keep anchor at the most recent emitted event
-			// so the window chains correctly across multiple ticks
-			continue;
-		}
-
-		lastSeen.set(key, eventTime);
-		deduped.push({
-			user: event.user,
-			title: event.title,
-			timestamp: event.timestamp.toISOString(),
-			platform: event.platform,
-			videoDecision: event.videoDecision,
-		});
-
-		if (deduped.length >= limit) break;
-	}
-
-	return { events: deduped, parseFailures, totalSnapshots: snapshots.length, failedPreviews };
+	const accumulator = createWatchHistoryAccumulator(limit);
+	accumulator.addBatch(
+		[...snapshots].sort((left, right) => right.capturedAt.getTime() - left.capturedAt.getTime()),
+	);
+	return accumulator.getResult();
 }

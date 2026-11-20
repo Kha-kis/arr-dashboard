@@ -1,8 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import {
 	buildFileIdIndex,
-	getAllHashesForFileId,
+	getAllHashesForFileIdWithPathEvidence,
 } from "../../lib/library-sync/infohash-backfill-by-inode.js";
+import {
+	CURRENT_INODE_SOURCE,
+	isStoredInodeSource,
+} from "../../lib/library-sync/inode-correlation-upgrade.js";
 import { createQuiClient } from "../../lib/qui/client-factory.js";
 import { withQuiObservationTopologyGuard } from "../../lib/qui/observation-topology-guard.js";
 import { enrichTorrentHashes } from "./qui-shared.js";
@@ -79,12 +83,14 @@ export function registerPanelRoutes(app: FastifyInstance): void {
 			});
 
 			const totalEpisodes = episodes.length;
-			const viaInodeEpisodes = episodes.filter((e) => e.infoHashSource === "inode").length;
 
 			// Look up a single qui instance for index building. FS-enabled
 			// instance preferred (only those have a meaningful inode index).
 			const fsInstance = await app.prisma.serviceInstance.findFirst({
 				where: { userId, service: "QUI", enabled: true, hasLocalFilesystemAccess: true },
+			});
+			const enabledQuiCount = await app.prisma.serviceInstance.count({
+				where: { userId, service: "QUI", enabled: true },
 			});
 
 			// Race the inode index build against a 22-second timeout. A cold
@@ -146,15 +152,33 @@ export function registerPanelRoutes(app: FastifyInstance): void {
 			// the stale cached hash from the response.
 			const perEpisode = await Promise.all(
 				episodes.map(async (ep) => {
-					const inodeHashes =
-						inodeIndex && ep.path ? await getAllHashesForFileId(ep.path, inodeIndex) : [];
+					const lookup =
+						inodeIndex && ep.path
+							? await getAllHashesForFileIdWithPathEvidence(ep.path, inodeIndex)
+							: { hashes: [], pathVerified: false, correlationComplete: false };
+					const inodeHashes = lookup.hashes;
 					const cachedStale =
 						ep.infoHash !== null &&
 						inodeHashes.length > 0 &&
 						!inodeHashes.some((h) => h.toLowerCase() === ep.infoHash!.toLowerCase());
-					return { ep, inodeHashes, cachedStale };
+					return {
+						ep,
+						inodeHashes,
+						cachedStale,
+						pathKnown: lookup.pathVerified && lookup.correlationComplete,
+					};
 				}),
 			);
+			const coverageStatus =
+				!inodeIndex || !fsInstance
+					? "unavailable"
+					: enabledQuiCount === 1 &&
+							inodeIndex.inventoryComplete === true &&
+							inodeIndex.skippedUnstatable === 0 &&
+							inodeIndex.incompleteDirectoryWalks === 0 &&
+							perEpisode.every((episode) => episode.pathKnown)
+						? "complete"
+						: "partial";
 
 			// Apply healing: for stale episodes, write the canonical inode
 			// hash back so the next page load (and the backfill sweep) see
@@ -173,7 +197,7 @@ export function registerPanelRoutes(app: FastifyInstance): void {
 								where: { id: ep.id },
 								data: {
 									infoHash: inodeHashes[0],
-									infoHashSource: "inode",
+									infoHashSource: CURRENT_INODE_SOURCE,
 									torrentState: null,
 									torrentRatio: null,
 									torrentSyncedAt: null,
@@ -207,21 +231,23 @@ export function registerPanelRoutes(app: FastifyInstance): void {
 					// Cached hash: include only when not stale. If cachedStale is true
 					// but we have replacements, the cached hash is dropped — that's
 					// what removes the phantom rows.
-					if (ep.infoHash && !cachedStale) hashes.add(ep.infoHash);
+					if (ep.infoHash && !cachedStale && !isStoredInodeSource(ep.infoHashSource))
+						hashes.add(ep.infoHash);
 					return {
 						ep,
 						effectiveHashes: Array.from(hashes),
-						inodeVerified: inodeHashes.length > 0 || ep.infoHashSource === "inode",
+						inodeVerified: inodeHashes.length > 0,
 					};
 				},
 			);
+			const viaInodeEpisodes = episodeContexts.filter((context) => context.inodeVerified).length;
 
 			// "Stuck" now = episode with zero effective hashes. A previously-
 			// correlated episode whose cache we just healed isn't stuck; an
 			// episode whose only cached hash was stale-with-no-replacement
 			// IS stuck (we couldn't find anything live).
-			const stuckEpisodes = episodeContexts.filter((c) => c.effectiveHashes.length === 0).length;
-			const correlatedEpisodes = totalEpisodes - stuckEpisodes;
+			const correlatedEpisodes = episodeContexts.filter((c) => c.effectiveHashes.length > 0).length;
+			const stuckEpisodes = coverageStatus === "complete" ? totalEpisodes - correlatedEpisodes : 0;
 
 			// Per-torrent coverage map — invert the per-episode lookup to
 			// produce one entry per unique torrent hash, recording exactly
@@ -519,13 +545,13 @@ export function registerPanelRoutes(app: FastifyInstance): void {
 					count: dormantClusterCount,
 				});
 			}
-			if (!fsInstance) {
+			if (coverageStatus !== "complete") {
 				actionItems.push({
 					kind: "fs_unavailable",
 					severity: "info",
-					title: "No FS-enabled qui instance",
+					title: "Torrent coverage pending",
 					detail:
-						"Cross-seed coverage relies on cached hashes only. Enable filesystem access on a qui instance for live inode matching.",
+						"Current qUI filesystem evidence is incomplete or unavailable. Missing matches are unknown until coverage is verified.",
 				});
 			}
 
@@ -579,7 +605,7 @@ export function registerPanelRoutes(app: FastifyInstance): void {
 				const group = seasonGroupMap.get(ctx.ep.seasonNumber)!;
 				if (ctx.effectiveHashes.length > 0) {
 					group.correlatedEpisodes++;
-				} else {
+				} else if (coverageStatus === "complete") {
 					group.stuckEpisodes++;
 					group.stuckEpisodeFiles.push({
 						arrEpisodeFileId: ctx.ep.arrEpisodeFileId,
@@ -624,6 +650,7 @@ export function registerPanelRoutes(app: FastifyInstance): void {
 
 			return reply.send({
 				seriesTitle: seriesRow.title,
+				coverageStatus,
 				totalEpisodes,
 				correlatedEpisodes,
 				viaInodeEpisodes,
@@ -731,6 +758,9 @@ export function registerPanelRoutes(app: FastifyInstance): void {
 			const fsInstance = await app.prisma.serviceInstance.findFirst({
 				where: { userId, service: "QUI", enabled: true, hasLocalFilesystemAccess: true },
 			});
+			const enabledQuiCount = await app.prisma.serviceInstance.count({
+				where: { userId, service: "QUI", enabled: true },
+			});
 
 			// Build the inode index — same timeout race the series route uses
 			// to avoid blocking on cold cache builds beyond the proxy limit.
@@ -764,10 +794,22 @@ export function registerPanelRoutes(app: FastifyInstance): void {
 			// found multiple hashes (cross-seeded content), all show up in
 			// the cluster. When the cached hash is stale (in DB but not in
 			// the live index), heal it to the canonical inode hash.
-			let inodeHashes: string[] = [];
-			if (inodeIndex && libraryPath) {
-				inodeHashes = await getAllHashesForFileId(libraryPath, inodeIndex);
-			}
+			const lookup =
+				inodeIndex && libraryPath
+					? await getAllHashesForFileIdWithPathEvidence(libraryPath, inodeIndex)
+					: { hashes: [], pathVerified: false, correlationComplete: false };
+			const inodeHashes = lookup.hashes;
+			const coverageStatus =
+				!inodeIndex || !fsInstance
+					? "unavailable"
+					: enabledQuiCount === 1 &&
+							inodeIndex.inventoryComplete === true &&
+							inodeIndex.skippedUnstatable === 0 &&
+							inodeIndex.incompleteDirectoryWalks === 0 &&
+							lookup.pathVerified &&
+							lookup.correlationComplete
+						? "complete"
+						: "partial";
 
 			const cachedHashIsStale =
 				movieRow.infoHash !== null &&
@@ -781,7 +823,7 @@ export function registerPanelRoutes(app: FastifyInstance): void {
 						where: { id: movieRow.id },
 						data: {
 							infoHash: inodeHashes[0],
-							infoHashSource: "inode",
+							infoHashSource: CURRENT_INODE_SOURCE,
 							torrentState: null,
 							torrentRatio: null,
 							torrentSyncedAt: null,
@@ -801,7 +843,8 @@ export function registerPanelRoutes(app: FastifyInstance): void {
 			//   - Empty when stuck (no torrent at all)
 			const effectiveHashes = new Set<string>();
 			for (const h of inodeHashes) effectiveHashes.add(h);
-			if (movieRow.infoHash && !cachedHashIsStale) effectiveHashes.add(movieRow.infoHash);
+			if (movieRow.infoHash && !cachedHashIsStale && !isStoredInodeSource(movieRow.infoHashSource))
+				effectiveHashes.add(movieRow.infoHash);
 
 			// Resolve quiInstance for enrichment (fsInstance preferred for path-
 			// based matching; fall back to any enabled qui).
@@ -867,7 +910,7 @@ export function registerPanelRoutes(app: FastifyInstance): void {
 					totalSizeBytes: movieRow.sizeOnDisk.toString(),
 					qualityName: qualityTier, // tier ("WEBDL-1080p"), not profile name
 					releaseGroup,
-					inodeVerified: inodeHashes.length > 0 || movieRow.infoHashSource === "inode",
+					inodeVerified: inodeHashes.length > 0,
 					copies,
 					isDormant,
 					primaryState,
@@ -875,8 +918,8 @@ export function registerPanelRoutes(app: FastifyInstance): void {
 				});
 			}
 
-			const stuckEpisodes = effectiveHashes.size === 0 ? 1 : 0;
-			const correlatedEpisodes = 1 - stuckEpisodes;
+			const correlatedEpisodes = effectiveHashes.size > 0 ? 1 : 0;
+			const stuckEpisodes = coverageStatus === "complete" ? 1 - correlatedEpisodes : 0;
 			const viaInodeEpisodes = inodeHashes.length > 0 ? 1 : 0;
 
 			// Action items — same vocabulary as the series route so the
@@ -919,13 +962,13 @@ export function registerPanelRoutes(app: FastifyInstance): void {
 					count: 1,
 				});
 			}
-			if (!fsInstance) {
+			if (coverageStatus !== "complete") {
 				actionItems.push({
 					kind: "fs_unavailable",
 					severity: "info",
-					title: "No FS-enabled qui instance",
+					title: "Torrent coverage pending",
 					detail:
-						"Cross-seed coverage relies on cached hashes only. Enable filesystem access on a qui instance for live inode matching.",
+						"Current qUI filesystem evidence is incomplete or unavailable. Missing matches are unknown until coverage is verified.",
 				});
 			}
 
@@ -942,6 +985,7 @@ export function registerPanelRoutes(app: FastifyInstance): void {
 
 			return reply.send({
 				seriesTitle: movieRow.title, // shape parity — frontend reuses the same field name
+				coverageStatus,
 				totalEpisodes: 1,
 				correlatedEpisodes,
 				viaInodeEpisodes,

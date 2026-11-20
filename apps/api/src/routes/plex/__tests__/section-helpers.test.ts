@@ -9,8 +9,20 @@ describe("mapToSections", () => {
 
 	it("maps groupBy rows to PlexSection objects", () => {
 		const groups = [
-			{ instanceId: "inst-1", sectionId: "1", sectionTitle: "Movies", mediaType: "movie" },
-			{ instanceId: "inst-2", sectionId: "3", sectionTitle: "TV Shows", mediaType: "show" },
+			{
+				instanceId: "inst-1",
+				sectionId: "1",
+				sectionUuid: "movies-uuid",
+				sectionTitle: "Movies",
+				mediaType: "movie",
+			},
+			{
+				instanceId: "inst-2",
+				sectionId: "3",
+				sectionUuid: "shows-uuid",
+				sectionTitle: "TV Shows",
+				mediaType: "show",
+			},
 		];
 
 		const sections = mapToSections(groups, instanceNameMap);
@@ -20,6 +32,7 @@ describe("mapToSections", () => {
 				instanceId: "inst-1",
 				instanceName: "My Plex",
 				sectionId: "1",
+				sectionUuid: "movies-uuid",
 				sectionTitle: "Movies",
 				mediaType: "movie",
 			},
@@ -27,6 +40,7 @@ describe("mapToSections", () => {
 				instanceId: "inst-2",
 				instanceName: "Remote Plex",
 				sectionId: "3",
+				sectionUuid: "shows-uuid",
 				sectionTitle: "TV Shows",
 				mediaType: "show",
 			},
@@ -35,7 +49,13 @@ describe("mapToSections", () => {
 
 	it("returns 'Unknown' for unmapped instance IDs", () => {
 		const groups = [
-			{ instanceId: "inst-999", sectionId: "1", sectionTitle: "Movies", mediaType: "movie" },
+			{
+				instanceId: "inst-999",
+				sectionId: "1",
+				sectionUuid: "movies-uuid",
+				sectionTitle: "Movies",
+				mediaType: "movie",
+			},
 		];
 
 		const sections = mapToSections(groups, instanceNameMap);

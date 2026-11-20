@@ -13,7 +13,7 @@ import { Calendar, Clock, ExternalLink, Film, Layers, Play, Star, Tv } from "luc
 import { useRef } from "react";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { BRAND_COLORS, RATING_COLOR, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { safeOpenUrl } from "../../../lib/utils/url-validation";
+import { isSafeUrl, safeOpenUrl } from "../../../lib/utils/url-validation";
 import { getSeerrImageUrl, isValidYoutubeKey } from "../lib/seerr-image-utils";
 
 // ============================================================================
@@ -250,8 +250,10 @@ export const ExternalLinksSection: React.FC<ExternalLinksSectionProps> = ({
 }) => {
 	const { gradient: themeGradient } = useThemeGradient();
 
-	if (!tmdbId && !imdbId && !tvdbId && !plexUrl) return null;
+	const hasWatchUrl = plexUrl !== null && plexUrl !== undefined;
+	if (!tmdbId && !imdbId && !tvdbId && !hasWatchUrl) return null;
 	const watchLabel = mediaServerLabel ?? "Plex";
+	const hasSafeWatchUrl = !!plexUrl && isSafeUrl(plexUrl);
 
 	const btnClass =
 		"inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:opacity-80";
@@ -308,6 +310,7 @@ export const ExternalLinksSection: React.FC<ExternalLinksSectionProps> = ({
 					</button>
 				)}
 				{plexUrl &&
+					hasSafeWatchUrl &&
 					(() => {
 						const watchColors =
 							watchLabel === "Jellyfin"
@@ -343,6 +346,9 @@ export const ExternalLinksSection: React.FC<ExternalLinksSectionProps> = ({
 							</button>
 						);
 					})()}
+				{hasWatchUrl && !hasSafeWatchUrl ? (
+					<p className="text-sm text-muted-foreground">Watch link unavailable.</p>
+				) : null}
 			</div>
 		</div>
 	);

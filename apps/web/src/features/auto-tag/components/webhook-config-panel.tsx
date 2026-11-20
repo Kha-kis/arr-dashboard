@@ -21,27 +21,43 @@ export const WebhookConfigPanel = () => {
 	const [incognitoMode] = useIncognitoMode();
 	const queryClient = useQueryClient();
 
-	const { data, isLoading } = useQuery({
+	const { data, isLoading, isError, isFetching } = useQuery({
 		queryKey: autoTagKeys.webhookConfig,
 		queryFn: fetchWebhookConfig,
 	});
+	const statusAvailable = Boolean(data) && !isLoading && !isError && !isFetching;
 
 	const regenerate = useMutation({
 		mutationFn: regenerateWebhookSecret,
+		onMutate: () => {
+			// Confirmed replacement retires old plaintext across mounts, even if acknowledgment is lost.
+			queryClient.setQueryData<WebhookConfig>(autoTagKeys.webhookConfig, (previous) =>
+				previous ? { ...previous, secret: null, freshlyGenerated: false } : previous,
+			);
+		},
 		onSuccess: (next: WebhookConfig) => {
 			queryClient.setQueryData<WebhookConfig>(autoTagKeys.webhookConfig, next);
 		},
 	});
+	const visibleSecret =
+		statusAvailable && !regenerate.isPending && !regenerate.isError ? (data?.secret ?? null) : null;
 
 	const handleRegenerate = async () => {
+		if (!statusAvailable || regenerate.isPending) return;
 		if (
 			!confirm(
-				"Rotating the secret invalidates any existing Sonarr/Radarr Connect webhook using the old value. You'll need to update those settings. Continue?",
+				data?.configured
+					? "Rotating the secret invalidates any existing Sonarr/Radarr Connect webhook using the old value. You'll need to update those settings. Continue?"
+					: "Generate a webhook secret? This replaces any secret created in another tab and invalidates webhooks using it. You'll need to update any affected Sonarr/Radarr Connect settings. Continue?",
 			)
 		) {
 			return;
 		}
-		await regenerate.mutateAsync();
+		try {
+			await regenerate.mutateAsync();
+		} catch {
+			// The mutation's error state displays a generic failure without leaking diagnostics.
+		}
 	};
 
 	const copy = async (value: string, kind: "url" | "secret") => {
@@ -104,22 +120,24 @@ export const WebhookConfigPanel = () => {
 								id="webhook-secret"
 								readOnly
 								value={
-									isLoading
-										? "Loading…"
-										: incognitoMode && data?.secret
-											? "•".repeat(43) // mask in incognito mode (43 = base64url length of 32 bytes)
-											: data?.secret
-												? data.secret
-												: data?.configured
-													? "(secret hidden — only shown once at generation; rotate to view a new one)"
-													: ""
+									isError
+										? "Secret status unavailable"
+										: isLoading || isFetching
+											? "Loading…"
+											: incognitoMode && visibleSecret
+												? "•".repeat(43) // mask in incognito mode (43 = base64url length of 32 bytes)
+												: visibleSecret
+													? visibleSecret
+													: data?.configured
+														? "(secret hidden — only shown once at generation; rotate to view a new one)"
+														: ""
 								}
 								className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-mono"
 							/>
 							<button
 								type="button"
-								onClick={() => data?.secret && copy(data.secret, "secret")}
-								disabled={!data?.secret || incognitoMode}
+								onClick={() => visibleSecret && copy(visibleSecret, "secret")}
+								disabled={!visibleSecret || incognitoMode}
 								className="px-2 rounded-md border border-input hover:bg-muted/30 text-xs disabled:opacity-50"
 								title={
 									incognitoMode
@@ -145,15 +163,30 @@ export const WebhookConfigPanel = () => {
 						variant="ghost"
 						size="sm"
 						onClick={handleRegenerate}
-						disabled={regenerate.isPending}
+						disabled={!statusAvailable || regenerate.isPending}
 						className="text-xs"
 					>
 						<RotateCw className={`h-3 w-3 mr-1.5 ${regenerate.isPending ? "animate-spin" : ""}`} />
-						Rotate secret
+						{!statusAvailable
+							? "Manage secret"
+							: data?.configured
+								? "Rotate secret"
+								: "Generate secret"}
 					</Button>
 				</div>
 
-				<AutoInstallSection plaintextSecret={data?.secret ?? null} />
+				{isError && (
+					<p role="alert" className="text-xs text-destructive">
+						Could not load webhook secret status. Try refreshing before generating or rotating a
+						secret.
+					</p>
+				)}
+				{regenerate.isError && (
+					<p role="alert" className="text-xs text-destructive">
+						Could not generate or rotate the webhook secret. Check its status before trying again.
+					</p>
+				)}
+				<AutoInstallSection plaintextSecret={visibleSecret} />
 			</div>
 		</GlassmorphicCard>
 	);
@@ -331,8 +364,8 @@ const AutoInstallSection = ({ plaintextSecret }: { plaintextSecret: string | nul
 				<div className="flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
 					<AlertCircle className="h-3.5 w-3.5 shrink-0" />
 					<span>
-						Click <strong>Rotate secret</strong> above to display the secret — needed for one-click
-						install. (Existing manual webhooks will need to be reconfigured if you rotate.)
+						Generate or rotate a secret above to enable one-click install. Replacing a secret
+						requires updating existing webhooks that use it.
 					</span>
 				</div>
 			)}

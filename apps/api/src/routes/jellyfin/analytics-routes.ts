@@ -13,24 +13,28 @@ import {
 	type JellyfinDisplayInstance,
 	readOwnedJellyfinEpisodeDisplaySources,
 } from "../../lib/jellyfin/jellyfin-display-evidence.js";
+import {
+	readSessionSnapshotMetricsPages,
+	readSessionSnapshotPages,
+} from "../../lib/statistics/session-snapshot-pages.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { analyticsQuery } from "../plex/analytics-schemas.js";
-import { aggregateBandwidthAnalytics } from "../plex/lib/bandwidth-analytics-helpers.js";
-import { aggregateCodecAnalytics } from "../plex/lib/codec-analytics-helpers.js";
-import { aggregateDeviceAnalytics } from "../plex/lib/device-analytics-helpers.js";
-import { computeForecast } from "../plex/lib/forecast-helpers.js";
-import { aggregateMostConcurrent } from "../plex/lib/most-concurrent-helpers.js";
-import { aggregatePlaysByDate } from "../plex/lib/plays-by-date-helpers.js";
-import { computeQualityScore } from "../plex/lib/quality-score-helpers.js";
 import {
-	aggregateLastWatched,
-	aggregatePopularMedia,
-	aggregateTopMedia,
-} from "../plex/lib/top-media-helpers.js";
-import { aggregateTranscodeAnalytics } from "../plex/lib/transcode-analytics-helpers.js";
-import { aggregateUserAnalytics } from "../plex/lib/user-analytics-helpers.js";
+	activityCollectionMeasurement,
+	projectDailyActivityCollection,
+} from "../plex/lib/activity-collection-helpers.js";
+import { createBandwidthAnalyticsAccumulator } from "../plex/lib/bandwidth-analytics-helpers.js";
+import { createCodecAnalyticsAccumulator } from "../plex/lib/codec-analytics-helpers.js";
+import { createDeviceAnalyticsAccumulator } from "../plex/lib/device-analytics-helpers.js";
+import { createForecastAccumulator } from "../plex/lib/forecast-helpers.js";
+import { createMostConcurrentAccumulator } from "../plex/lib/most-concurrent-helpers.js";
+import { createPlaysByDateAccumulator } from "../plex/lib/plays-by-date-helpers.js";
+import { createQualityScoreAccumulator } from "../plex/lib/quality-score-helpers.js";
+import { createTopMediaAccumulator } from "../plex/lib/top-media-helpers.js";
+import { createTranscodeAnalyticsAccumulator } from "../plex/lib/transcode-analytics-helpers.js";
+import { createUserAnalyticsAccumulator } from "../plex/lib/user-analytics-helpers.js";
 import { aggregateUserEpisodeCompletion } from "../plex/lib/user-episode-helpers.js";
-import { deduplicateWatchEvents } from "../plex/lib/watch-history-helpers.js";
+import { createWatchHistoryAccumulator } from "../plex/lib/watch-history-helpers.js";
 
 const watchHistoryQuery = z.object({
 	days: z
@@ -58,43 +62,30 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 	app.get("/transcode", async (request, reply) => {
 		const { days } = validateRequest(analyticsQuery, request.query);
 		const userId = request.currentUser!.id;
-
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true },
-		});
-
-		if (instances.length === 0) {
-			return reply.send({
-				directPlay: 0,
-				transcode: 0,
-				directStream: 0,
-				totalSessions: 0,
-				dailyBreakdown: [],
-			});
-		}
-
 		const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-		const snapshots = await app.prisma.sessionSnapshot.findMany({
-			where: { instanceId: { in: instances.map((i) => i.id) }, capturedAt: { gte: cutoff } },
-			select: {
-				capturedAt: true,
-				directPlayCount: true,
-				transcodeCount: true,
-				directStreamCount: true,
-			},
-			orderBy: { capturedAt: "asc" },
-			take: 50000,
+		const accumulator = createTranscodeAnalyticsAccumulator();
+		const read = await readSessionSnapshotPages(app.prisma, {
+			userId,
+			services: ["JELLYFIN", "EMBY"],
+			cutoff,
+			includeCollectionByDate: true,
+			onPage: (page) => accumulator.addSnapshots(page),
 		});
 
-		const { parseFailures, totalSnapshots, ...analytics } = aggregateTranscodeAnalytics(snapshots);
+		const { parseFailures, totalSnapshots, ...analytics } = accumulator.getResult(
+			read.collection,
+			read.collectionByDate,
+		);
 		if (parseFailures > 0) {
 			request.log.warn(
 				{ parseFailures, totalSnapshots, route: "jellyfin/transcode-analytics" },
 				"Session snapshot parse failures detected",
 			);
 		}
-		return reply.send(analytics);
+		return reply.send({
+			...analytics,
+			measurement: { ...analytics.measurement, configuredSources: read.instanceCount },
+		});
 	});
 
 	/**
@@ -105,43 +96,30 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 	app.get("/bandwidth", async (request, reply) => {
 		const { days } = validateRequest(analyticsQuery, request.query);
 		const userId = request.currentUser!.id;
-
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true },
-		});
-
-		if (instances.length === 0) {
-			return reply.send({
-				peakConcurrent: 0,
-				peakBandwidth: 0,
-				avgBandwidth: 0,
-				timeSeries: [],
-			});
-		}
-
 		const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-		const snapshots = await app.prisma.sessionSnapshot.findMany({
-			where: { instanceId: { in: instances.map((i) => i.id) }, capturedAt: { gte: cutoff } },
-			select: {
-				capturedAt: true,
-				concurrentStreams: true,
-				totalBandwidth: true,
-				lanBandwidth: true,
-				wanBandwidth: true,
-			},
-			orderBy: { capturedAt: "asc" },
-			take: 50000,
+		const accumulator = createBandwidthAnalyticsAccumulator();
+		const read = await readSessionSnapshotMetricsPages(app.prisma, {
+			userId,
+			services: ["JELLYFIN", "EMBY"],
+			cutoff,
+			includeCollectionByDate: true,
+			onPage: (page) => accumulator.addSnapshots(page),
 		});
 
-		const { parseFailures, totalSnapshots, ...analytics } = aggregateBandwidthAnalytics(snapshots);
+		const { parseFailures, totalSnapshots, ...analytics } = accumulator.getResult(
+			read.collection,
+			read.collectionByDate,
+		);
 		if (parseFailures > 0) {
 			request.log.warn(
 				{ parseFailures, totalSnapshots, route: "jellyfin/bandwidth-analytics" },
 				"Session snapshot parse failures detected",
 			);
 		}
-		return reply.send(analytics);
+		return reply.send({
+			...analytics,
+			measurement: { ...analytics.measurement, configuredSources: read.instanceCount },
+		});
 	});
 
 	/**
@@ -152,33 +130,30 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 	app.get("/users", async (request, reply) => {
 		const { days } = validateRequest(analyticsQuery, request.query);
 		const userId = request.currentUser!.id;
-
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true },
-		});
-
-		if (instances.length === 0) {
-			return reply.send({ users: [], dailyBreakdown: [] });
-		}
-
 		const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-		const snapshots = await app.prisma.sessionSnapshot.findMany({
-			where: { instanceId: { in: instances.map((i) => i.id) }, capturedAt: { gte: cutoff } },
-			select: { capturedAt: true, sessionsJson: true },
-			orderBy: { capturedAt: "asc" },
-			take: 20000,
+		const accumulator = createUserAnalyticsAccumulator();
+		const read = await readSessionSnapshotPages(app.prisma, {
+			userId,
+			services: ["JELLYFIN", "EMBY"],
+			cutoff,
+			includeCollectionByDate: true,
+			onPage: (page) => accumulator.addSnapshots(page),
 		});
 
-		const { parseFailures, totalSnapshots, failedPreviews, ...analytics } =
-			aggregateUserAnalytics(snapshots);
+		const { parseFailures, totalSnapshots, ...analytics } = accumulator.getResult(
+			read.collection,
+			read.collectionByDate,
+		);
 		if (parseFailures > 0) {
 			request.log.warn(
-				{ parseFailures, totalSnapshots, failedPreviews, route: "jellyfin/user-analytics" },
+				{ parseFailures, totalSnapshots, route: "jellyfin/user-analytics" },
 				"Session snapshot JSON parse failures detected",
 			);
 		}
-		return reply.send(analytics);
+		return reply.send({
+			...analytics,
+			measurement: { ...analytics.measurement, configuredSources: read.instanceCount },
+		});
 	});
 
 	/**
@@ -190,34 +165,27 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 		const { days, limit } = validateRequest(watchHistoryQuery, request.query);
 		const userId = request.currentUser!.id;
 
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true },
-		});
-
-		if (instances.length === 0) {
-			return reply.send({ events: [] });
-		}
-
 		const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-		const snapshots = await app.prisma.sessionSnapshot.findMany({
-			where: { instanceId: { in: instances.map((i) => i.id) }, capturedAt: { gte: cutoff } },
-			select: { capturedAt: true, sessionsJson: true },
-			orderBy: { capturedAt: "desc" },
-			take: 10000,
-		});
-
-		const { events, parseFailures, totalSnapshots, failedPreviews } = deduplicateWatchEvents(
-			snapshots,
-			limit,
+		const accumulator = createWatchHistoryAccumulator(limit);
+		const read = await readSessionSnapshotPages(
+			app.prisma,
+			{
+				userId,
+				services: ["JELLYFIN", "EMBY"],
+				cutoff,
+				onPage: (page) => accumulator.addBatch(page),
+			},
+			"reverse-chronological",
 		);
+
+		const { events, parseFailures, totalSnapshots, failedPreviews } = accumulator.getResult();
 		if (parseFailures > 0) {
 			request.log.warn(
 				{ parseFailures, totalSnapshots, failedPreviews, route: "jellyfin/watch-history" },
 				"Session snapshot JSON parse failures detected",
 			);
 		}
-		return reply.send({ events });
+		return reply.send({ events, measurement: activityCollectionMeasurement(read) });
 	});
 
 	/**
@@ -228,38 +196,30 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 	app.get("/codec", async (request, reply) => {
 		const { days } = validateRequest(analyticsQuery, request.query);
 		const userId = request.currentUser!.id;
-
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true },
-		});
-
-		if (instances.length === 0) {
-			return reply.send({
-				videoCodecs: [],
-				audioCodecs: [],
-				resolutions: [],
-				totalSessions: 0,
-			});
-		}
-
 		const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-		const snapshots = await app.prisma.sessionSnapshot.findMany({
-			where: { instanceId: { in: instances.map((i) => i.id) }, capturedAt: { gte: cutoff } },
-			select: { sessionsJson: true },
-			orderBy: { capturedAt: "asc" },
-			take: 20000,
+		const accumulator = createCodecAnalyticsAccumulator();
+		const read = await readSessionSnapshotPages(app.prisma, {
+			userId,
+			services: ["JELLYFIN", "EMBY"],
+			cutoff,
+			onPage: (page) => accumulator.addSnapshots(page),
 		});
-
-		const { parseFailures, totalSnapshots, failedPreviews, ...analytics } =
-			aggregateCodecAnalytics(snapshots);
+		const {
+			parseFailures,
+			totalSnapshots,
+			failedPreviews: _unusedPreviews,
+			...analytics
+		} = accumulator.getResult(read.collection);
 		if (parseFailures > 0) {
 			request.log.warn(
-				{ parseFailures, totalSnapshots, failedPreviews, route: "jellyfin/codec-analytics" },
+				{ parseFailures, totalSnapshots, route: "jellyfin/codec-analytics" },
 				"Session snapshot JSON parse failures detected",
 			);
 		}
-		return reply.send(analytics);
+		return reply.send({
+			...analytics,
+			measurement: { ...analytics.measurement, configuredSources: read.instanceCount },
+		});
 	});
 
 	/**
@@ -270,101 +230,85 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 	app.get("/devices", async (request, reply) => {
 		const { days } = validateRequest(analyticsQuery, request.query);
 		const userId = request.currentUser!.id;
-
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true },
-		});
-
-		if (instances.length === 0) {
-			return reply.send({ platforms: [], players: [], totalSessions: 0 });
-		}
-
 		const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-		const snapshots = await app.prisma.sessionSnapshot.findMany({
-			where: { instanceId: { in: instances.map((i) => i.id) }, capturedAt: { gte: cutoff } },
-			select: { sessionsJson: true },
-			orderBy: { capturedAt: "asc" },
-			take: 20000,
+		const accumulator = createDeviceAnalyticsAccumulator();
+		const read = await readSessionSnapshotPages(app.prisma, {
+			userId,
+			services: ["JELLYFIN", "EMBY"],
+			cutoff,
+			onPage: (page) => accumulator.addSnapshots(page),
 		});
-
-		const { parseFailures, totalSnapshots, failedPreviews, ...analytics } =
-			aggregateDeviceAnalytics(snapshots);
+		const {
+			parseFailures,
+			totalSnapshots,
+			failedPreviews: _unusedPreviews,
+			...analytics
+		} = accumulator.getResult(read.collection);
 		if (parseFailures > 0) {
 			request.log.warn(
-				{ parseFailures, totalSnapshots, failedPreviews, route: "jellyfin/device-analytics" },
+				{ parseFailures, totalSnapshots, route: "jellyfin/device-analytics" },
 				"Session snapshot JSON parse failures detected",
 			);
 		}
-		return reply.send(analytics);
+		return reply.send({
+			...analytics,
+			measurement: {
+				...analytics.measurement,
+				configuredSources: read.instanceCount,
+				platformAxis: "client",
+			},
+		});
 	});
 
 	// ── Quality Score ─────────────────────────────────────────────
 	app.get("/quality-score", async (request, reply) => {
 		const { days } = validateRequest(analyticsQuery, request.query);
 		const userId = request.currentUser!.id;
-
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true },
-		});
-
-		if (instances.length === 0) {
-			return reply.send({
-				overallScore: 0,
-				breakdown: { directPlayScore: 0, resolutionScore: 0, transcodeScore: 0 },
-				trend: [],
-				perUser: [],
-			});
-		}
-
 		const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-		const snapshots = await app.prisma.sessionSnapshot.findMany({
-			where: { instanceId: { in: instances.map((i) => i.id) }, capturedAt: { gte: cutoff } },
-			select: { capturedAt: true, sessionsJson: true },
-			orderBy: { capturedAt: "asc" },
-			take: 20000,
+		const accumulator = createQualityScoreAccumulator();
+		const read = await readSessionSnapshotPages(app.prisma, {
+			userId,
+			services: ["JELLYFIN", "EMBY"],
+			cutoff,
+			includeCollectionByDate: true,
+			onPage: (page) => accumulator.addBatch(page),
 		});
 
-		const { parseFailures, totalSnapshots, failedPreviews, ...analytics } =
-			computeQualityScore(snapshots);
+		const { parseFailures, totalSnapshots, ...analytics } = accumulator.getResult(
+			read.collection,
+			read.collectionByDate,
+		);
 		if (parseFailures > 0) {
 			request.log.warn(
-				{ parseFailures, totalSnapshots, failedPreviews, route: "jellyfin/quality-score" },
+				{ parseFailures, totalSnapshots, route: "jellyfin/quality-score" },
 				"Session snapshot JSON parse failures detected",
 			);
 		}
-		return reply.send(analytics);
+		return reply.send({
+			...analytics,
+			measurement: { ...analytics.measurement, configuredSources: read.instanceCount },
+		});
 	});
 
 	// ── Bandwidth Forecast ────────────────────────────────────────
 	app.get("/forecast", async (request, reply) => {
 		const { days } = validateRequest(analyticsQuery, request.query);
 		const userId = request.currentUser!.id;
-
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true },
-		});
-
-		if (instances.length === 0) {
-			return reply.send({
-				historicalDaily: [],
-				forecast: [],
-				peakHours: [],
-				trend: "stable",
-			});
-		}
-
 		const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-		const snapshots = await app.prisma.sessionSnapshot.findMany({
-			where: { instanceId: { in: instances.map((i) => i.id) }, capturedAt: { gte: cutoff } },
-			select: { capturedAt: true, totalBandwidth: true, concurrentStreams: true },
-			orderBy: { capturedAt: "asc" },
-			take: 50000,
+		const accumulator = createForecastAccumulator();
+		const read = await readSessionSnapshotMetricsPages(app.prisma, {
+			userId,
+			services: ["JELLYFIN", "EMBY"],
+			cutoff,
+			includeCollectionByDate: true,
+			onPage: (page) => accumulator.addSnapshots(page),
 		});
 
-		return reply.send(computeForecast(snapshots));
+		const result = accumulator.getResult(7, read.collection, read.collectionByDate);
+		return reply.send({
+			...result,
+			measurement: { ...result.measurement, configuredSources: read.instanceCount },
+		});
 	});
 
 	// ── User Episode Completion ───────────────────────────────────
@@ -403,6 +347,7 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 			prisma: app.prisma,
 			userId,
 			instances: displayInstances,
+			showTmdbIds: tmdbIds,
 		});
 		if (!isArithmeticAuthoritativeProviderObservationStatus(displayEvidence.providerStatus)) {
 			return reply.send({ shows: [], providerStatus: displayEvidence.providerStatus });
@@ -465,27 +410,22 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 	app.get("/top-media", async (request, reply) => {
 		const { mediaType, days, limit } = validateRequest(topMediaQuery, request.query);
 		const userId = request.currentUser!.id;
-
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true },
-		});
-
-		if (instances.length === 0) {
-			return reply.send({ items: [] });
-		}
-
 		const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-		const snapshots = await app.prisma.sessionSnapshot.findMany({
-			where: { instanceId: { in: instances.map((i) => i.id) }, capturedAt: { gte: cutoff } },
-			select: { capturedAt: true, sessionsJson: true },
-			orderBy: { capturedAt: "asc" },
-			take: 20000,
-		});
+		const accumulator = createTopMediaAccumulator(mediaType);
+		const read = await readSessionSnapshotPages(
+			app.prisma,
+			{
+				userId,
+				services: ["JELLYFIN", "EMBY"],
+				cutoff,
+				onPage: (page) => accumulator.addBatch(page),
+			},
+			"reverse-chronological",
+		);
 
-		const { parseFailures, totalSnapshots, failedPreviews, ...response } = aggregateTopMedia(
-			snapshots,
-			{ mediaType, limit },
+		const { parseFailures, totalSnapshots, failedPreviews, ...response } = accumulator.getResult(
+			"top",
+			limit,
 		);
 		if (parseFailures > 0) {
 			request.log.warn(
@@ -493,34 +433,29 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 				"Session snapshot JSON parse failures detected",
 			);
 		}
-		return reply.send(response);
+		return reply.send({ ...response, measurement: activityCollectionMeasurement(read) });
 	});
 
 	// ── Popular Media Leaderboard (sorted by distinct watcher count) ──
 	app.get("/popular-media", async (request, reply) => {
 		const { mediaType, days, limit } = validateRequest(topMediaQuery, request.query);
 		const userId = request.currentUser!.id;
-
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true },
-		});
-
-		if (instances.length === 0) {
-			return reply.send({ items: [] });
-		}
-
 		const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-		const snapshots = await app.prisma.sessionSnapshot.findMany({
-			where: { instanceId: { in: instances.map((i) => i.id) }, capturedAt: { gte: cutoff } },
-			select: { capturedAt: true, sessionsJson: true },
-			orderBy: { capturedAt: "asc" },
-			take: 20000,
-		});
+		const accumulator = createTopMediaAccumulator(mediaType);
+		const read = await readSessionSnapshotPages(
+			app.prisma,
+			{
+				userId,
+				services: ["JELLYFIN", "EMBY"],
+				cutoff,
+				onPage: (page) => accumulator.addBatch(page),
+			},
+			"reverse-chronological",
+		);
 
-		const { parseFailures, totalSnapshots, failedPreviews, ...response } = aggregatePopularMedia(
-			snapshots,
-			{ mediaType, limit },
+		const { parseFailures, totalSnapshots, failedPreviews, ...response } = accumulator.getResult(
+			"popular",
+			limit,
 		);
 		if (parseFailures > 0) {
 			request.log.warn(
@@ -534,38 +469,29 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 				"Session snapshot JSON parse failures detected",
 			);
 		}
-		return reply.send(response);
+		return reply.send({ ...response, measurement: activityCollectionMeasurement(read) });
 	});
 
 	// ── Last Watched Feed (titles deduped, sorted by most-recent watch) ──
 	app.get("/last-watched", async (request, reply) => {
 		const { mediaType, days, limit } = validateRequest(topMediaQuery, request.query);
 		const userId = request.currentUser!.id;
-
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true },
-		});
-
-		if (instances.length === 0) {
-			return reply.send({ items: [] });
-		}
-
 		const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-		// `last-watched` is a "most recent activity" feed — when the take cap is
-		// hit (heavy users with >20k snapshots in the cutoff window), `asc` would
-		// silently drop the recent rows the panel exists to surface. Match the
-		// `desc` pattern used by the history endpoint above.
-		const snapshots = await app.prisma.sessionSnapshot.findMany({
-			where: { instanceId: { in: instances.map((i) => i.id) }, capturedAt: { gte: cutoff } },
-			select: { capturedAt: true, sessionsJson: true },
-			orderBy: { capturedAt: "desc" },
-			take: 20000,
-		});
+		const accumulator = createTopMediaAccumulator(mediaType);
+		const read = await readSessionSnapshotPages(
+			app.prisma,
+			{
+				userId,
+				services: ["JELLYFIN", "EMBY"],
+				cutoff,
+				onPage: (page) => accumulator.addBatch(page),
+			},
+			"reverse-chronological",
+		);
 
-		const { parseFailures, totalSnapshots, failedPreviews, ...response } = aggregateLastWatched(
-			snapshots,
-			{ mediaType, limit },
+		const { parseFailures, totalSnapshots, failedPreviews, ...response } = accumulator.getResult(
+			"last-watched",
+			limit,
 		);
 		if (parseFailures > 0) {
 			request.log.warn(
@@ -579,7 +505,7 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 				"Session snapshot JSON parse failures detected",
 			);
 		}
-		return reply.send(response);
+		return reply.send({ ...response, measurement: activityCollectionMeasurement(read) });
 	});
 
 	// ── Most Concurrent Peaks (snapshot-level, no sessionsJson parse) ──
@@ -603,25 +529,24 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 	app.get("/most-concurrent", async (request, reply) => {
 		const { days, limit } = validateRequest(mostConcurrentQuery, request.query);
 		const userId = request.currentUser!.id;
-
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true },
-		});
-
-		if (instances.length === 0) {
-			return reply.send({ peakConcurrent: 0, events: [] });
-		}
-
 		const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-		const snapshots = await app.prisma.sessionSnapshot.findMany({
-			where: { instanceId: { in: instances.map((i) => i.id) }, capturedAt: { gte: cutoff } },
-			select: { capturedAt: true, concurrentStreams: true, totalBandwidth: true },
-			orderBy: { capturedAt: "asc" },
-			take: 50000,
-		});
+		const accumulator = createMostConcurrentAccumulator({ limit });
+		const read = await readSessionSnapshotMetricsPages(
+			app.prisma,
+			{
+				userId,
+				services: ["JELLYFIN", "EMBY"],
+				cutoff,
+				onPage: (page) => accumulator.addSnapshots(page),
+			},
+			"most-concurrent",
+		);
 
-		return reply.send(aggregateMostConcurrent(snapshots, { limit }));
+		const result = accumulator.getResult(read.collection);
+		return reply.send({
+			...result,
+			measurement: { ...result.measurement, configuredSources: read.instanceCount },
+		});
 	});
 
 	// ── Plays By Date (per-day plays, segmented by mediaType) ──────
@@ -638,24 +563,15 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 	app.get("/plays-by-date", async (request, reply) => {
 		const { days } = validateRequest(playsByDateQuery, request.query);
 		const userId = request.currentUser!.id;
-
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true },
-		});
-
-		if (instances.length === 0) {
-			return reply.send({ categories: [], series: [] });
-		}
-
 		const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-		const snapshots = await app.prisma.sessionSnapshot.findMany({
-			where: { instanceId: { in: instances.map((i) => i.id) }, capturedAt: { gte: cutoff } },
-			select: { capturedAt: true, sessionsJson: true },
-			orderBy: { capturedAt: "asc" },
-			take: 20000,
+		const accumulator = createPlaysByDateAccumulator({ days });
+		const read = await readSessionSnapshotPages(app.prisma, {
+			userId,
+			services: ["JELLYFIN", "EMBY"],
+			cutoff,
+			onPage: (page) => accumulator.addBatch(page),
+			includeCollectionByDate: true,
 		});
-
-		return reply.send(aggregatePlaysByDate(snapshots, { days }));
+		return reply.send(projectDailyActivityCollection(accumulator.getResult(), read));
 	});
 }

@@ -3,6 +3,7 @@
 import type { QuiMediaInfo } from "@arr/shared";
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { useState } from "react";
+import { Button } from "../../../../components/ui/button";
 import { useIncognitoMode } from "../../../../contexts/IncognitoContext";
 import { useQuiFileMediaInfo, useQuiTorrentFiles } from "../../../../hooks/api/useQui";
 import type { SeriesTorrentCopy } from "../../../../lib/api-client/qui";
@@ -50,13 +51,15 @@ const fmtBytes = (n: number) =>
 export const FilesSection: React.FC<{ copy: SeriesTorrentCopy }> = ({ copy }) => {
 	const [incognito] = useIncognitoMode();
 	const [openIndex, setOpenIndex] = useState<number | null>(null);
+	const targetAvailable =
+		!copy.quiUnreachable && copy.quiInstanceId != null && copy.qbitInstanceId != null;
 	const filesQuery = useQuiTorrentFiles({
 		quiInstanceId: copy.quiInstanceId ?? null,
 		qbitInstanceId: copy.qbitInstanceId ?? null,
 		hash: copy.infoHash,
 		enabled: !copy.quiUnreachable,
 	});
-	if (filesQuery.isLoading) {
+	if (targetAvailable && filesQuery.isLoading) {
 		return (
 			<div className="flex items-center gap-2 text-[11px] text-muted-foreground">
 				<Loader2 className="h-3 w-3 animate-spin" />
@@ -64,13 +67,34 @@ export const FilesSection: React.FC<{ copy: SeriesTorrentCopy }> = ({ copy }) =>
 			</div>
 		);
 	}
-	const files = filesQuery.data?.files ?? [];
-	if (files.length === 0)
-		return <div className="text-[11px] italic text-muted-foreground">No files</div>;
+	const files = filesQuery.data?.files;
 	const claimed = claimedTier(copy.name);
 	return (
 		<div className="space-y-1.5 text-[11px]">
-			{files.map((f) => {
+			{!targetAvailable || filesQuery.isError || files === undefined ? (
+				<div className="space-y-1 text-muted-foreground" role="alert">
+					<div>
+						{!targetAvailable
+							? "File list unavailable because this qUI copy is unreachable or missing its instance address."
+							: "File list unavailable. Retry to check the current files."}
+						{files !== undefined ? " Showing last-known file data." : ""}
+					</div>
+					{targetAvailable ? (
+						<Button
+							size="sm"
+							variant="secondary"
+							disabled={filesQuery.isFetching}
+							onClick={() => void filesQuery.refetch()}
+						>
+							Retry
+						</Button>
+					) : null}
+				</div>
+			) : null}
+			{files?.length === 0 && targetAvailable && !filesQuery.isError ? (
+				<div className="italic text-muted-foreground">No files</div>
+			) : null}
+			{files?.map((f) => {
 				const isVideo = VIDEO_EXT.test(f.name);
 				const open = openIndex === f.index;
 				return (
@@ -84,6 +108,7 @@ export const FilesSection: React.FC<{ copy: SeriesTorrentCopy }> = ({ copy }) =>
 								{isVideo && (
 									<button
 										type="button"
+										disabled={!targetAvailable}
 										onClick={() => setOpenIndex(open ? null : f.index)}
 										className="text-[10px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
 									>
@@ -115,6 +140,7 @@ const FileMediaInfo: React.FC<{
 		qbitInstanceId: copy.qbitInstanceId ?? null,
 		hash: copy.infoHash,
 		fileIndex,
+		enabled: !copy.quiUnreachable,
 	});
 	if (query.isLoading) {
 		return (

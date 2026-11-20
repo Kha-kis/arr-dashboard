@@ -369,8 +369,9 @@ export function QualitySizeManager() {
 						<ErrorBanner message={`Reset failed: ${applyMutation.error.message}`} />
 					)}
 					{applyMutation.isSuccess && (
-						<p className="text-sm text-green-400">
-							{applyMutation.data?.message ?? "Quality sizes reset to factory defaults."}
+						<p role="status" className="text-sm text-muted-foreground">
+							Factory-default reset requested. Completion is not confirmed. Check Sonarr/Radarr task
+							status and Quality settings before relying on the reset.
 						</p>
 					)}
 				</div>

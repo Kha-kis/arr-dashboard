@@ -1,6 +1,10 @@
 "use client";
 
-import type { ProwlarrIndexer, ProwlarrIndexerDetails } from "@arr/shared";
+import type {
+	ProwlarrIndexer,
+	SearchIndexerUpdateChanges,
+	SearchIndexerUpdateOutcome,
+} from "@arr/shared";
 import { AlertCircle, ChevronDown, Loader2, Pencil, RefreshCw, Save, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { PremiumSkeleton } from "../../../components/layout/premium-components";
@@ -31,8 +35,8 @@ export const IndexerDetailsPanel = ({
 	onUpdate: (
 		instanceId: string,
 		indexerId: number,
-		payload: ProwlarrIndexerDetails,
-	) => Promise<ProwlarrIndexerDetails>;
+		changes: SearchIndexerUpdateChanges,
+	) => Promise<SearchIndexerUpdateOutcome>;
 }) => {
 	const { gradient: themeGradient } = useThemeGradient();
 
@@ -124,26 +128,24 @@ export const IndexerDetailsPanel = ({
 		setIsSaving(true);
 		setLocalError(null);
 
-		const mergedFields = (detail.fields ?? []).map((field) => {
-			if (fieldValues.has(field.name)) {
-				return { ...field, value: fieldValues.get(field.name) ?? null };
-			}
-			return field;
-		});
-
-		const payload: ProwlarrIndexerDetails = {
-			...detail,
-			id: detail.id ?? indexer.id,
-			instanceId: detail.instanceId ?? instanceId,
-			instanceName: detail.instanceName ?? indexer.instanceName ?? "",
-			instanceUrl: detail.instanceUrl ?? indexer.instanceUrl,
-			enable: formEnable,
-			priority: formPriority ?? detail.priority ?? undefined,
-			fields: mergedFields,
-		};
+		const changes: SearchIndexerUpdateChanges = {};
+		if (formEnable !== initialEnable) changes.enable = formEnable;
+		if (formPriority !== undefined && formPriority !== initialPriority)
+			changes.priority = formPriority;
+		if (fieldValues.size > 0)
+			changes.fields = Array.from(fieldValues, ([name, value]) => ({ name, value }));
+		if (
+			changes.enable === undefined &&
+			changes.priority === undefined &&
+			(changes.fields?.length ?? 0) === 0
+		) {
+			setIsSaving(false);
+			setIsEditing(false);
+			return;
+		}
 
 		try {
-			await onUpdate(instanceId, indexer.id, payload);
+			await onUpdate(instanceId, indexer.id, changes);
 			setIsEditing(false);
 			setFieldValues(new Map());
 		} catch (err) {

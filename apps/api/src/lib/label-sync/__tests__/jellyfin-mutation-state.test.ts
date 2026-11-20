@@ -35,6 +35,176 @@ const baseAttempt = {
 	updatedAt: "2026-09-05T00:00:00.000Z",
 };
 
+const restoreEvidence = {
+	version: 1,
+	originalStatus: "claimed",
+	originalReasonCode: null,
+	originalSendAttemptCount: 0,
+	originalReconcileAttemptCount: 0,
+	originalRequestStartedAt: null,
+	originalLastObservedAt: null,
+	originalCreatedAt: "2026-09-05T00:00:00.000Z",
+	originalUpdatedAt: "2026-09-05T00:00:00.000Z",
+};
+const restoredHeld = {
+	...baseAttempt,
+	status: "restored-held",
+	claimToken: null,
+	reasonCode: "restore_uncertain",
+	restoreEvidence: JSON.stringify(restoreEvidence),
+};
+
+describe("restored-held mutation evidence", () => {
+	it("preserves an honest zero-send hold without a worker token", () => {
+		const parsed = parseLabelSyncMutationAttempt(restoredHeld);
+		expect(parsed).toMatchObject({
+			status: "restored-held",
+			sendAttemptCount: 0,
+			claimToken: null,
+		});
+		expect(parsed.requestStartedAt).toBeNull();
+		expect(parsed.activeOperationKey).toBe("active-1");
+		expect(parsed.restoreEvidence).toBe(JSON.stringify(restoreEvidence));
+	});
+
+	it("permits fresh read-only ownership only after a new reconciliation acquisition", () => {
+		expect(
+			parseLabelSyncMutationAttempt({
+				...restoredHeld,
+				claimToken: "fresh",
+				reconcileAttemptCount: 1,
+			}).status,
+		).toBe("restored-held");
+		expect(() => parseLabelSyncMutationAttempt({ ...restoredHeld, claimToken: "old" })).toThrow();
+	});
+
+	it("records positive observation without claiming an original send succeeded", () => {
+		const observed = {
+			...restoredHeld,
+			status: "reconciled",
+			reasonCode: "desired_state_observed",
+			activeOperationKey: null,
+			reconcileAttemptCount: 1,
+			lastObservedAt: "2026-09-05T00:01:00.000Z",
+			completedAt: "2026-09-05T00:01:00.000Z",
+		};
+		expect(parseLabelSyncMutationAttempt(observed)).toMatchObject({
+			status: "reconciled",
+			sendAttemptCount: 0,
+			requestStartedAt: null,
+		});
+		for (const patch of [
+			{ lastObservedAt: null },
+			{ reconcileAttemptCount: 0 },
+			{ activeOperationKey: "active-1" },
+			{ reasonCode: "applied" },
+			{ claimToken: "old" },
+		]) {
+			expect(() => parseLabelSyncMutationAttempt({ ...observed, ...patch })).toThrow();
+		}
+	});
+
+	it("preserves sending snapshot evidence without adopting sending authority", () => {
+		const evidence = {
+			...restoreEvidence,
+			originalStatus: "sending",
+			originalSendAttemptCount: 1,
+			originalRequestStartedAt: "2026-09-05T00:00:00.000Z",
+		};
+		const held = {
+			...restoredHeld,
+			sendAttemptCount: 1,
+			requestStartedAt: evidence.originalRequestStartedAt,
+			restoreEvidence: JSON.stringify(evidence),
+		};
+		expect(parseLabelSyncMutationAttempt(held).sendAttemptCount).toBe(1);
+		for (const patch of [
+			{ sendAttemptCount: 0 },
+			{ requestStartedAt: null },
+			{ requestStartedAt: "2026-09-05T00:00:01.000Z" },
+		]) {
+			expect(() => parseLabelSyncMutationAttempt({ ...held, ...patch })).toThrow();
+		}
+	});
+
+	it("does not regress pre-restore observation counts", () => {
+		const evidence = {
+			...restoreEvidence,
+			originalStatus: "unknown",
+			originalReasonCode: "reconciliation_unavailable",
+			originalSendAttemptCount: 1,
+			originalReconcileAttemptCount: 2,
+			originalRequestStartedAt: "2026-09-05T00:00:00.000Z",
+		};
+		const held = {
+			...restoredHeld,
+			sendAttemptCount: 1,
+			requestStartedAt: evidence.originalRequestStartedAt,
+			reconcileAttemptCount: 2,
+			restoreEvidence: JSON.stringify(evidence),
+		};
+		expect(parseLabelSyncMutationAttempt(held).reconcileAttemptCount).toBe(2);
+		expect(() => parseLabelSyncMutationAttempt({ ...held, reconcileAttemptCount: 1 })).toThrow();
+		expect(() => parseLabelSyncMutationAttempt({ ...held, claimToken: "old" })).toThrow();
+		expect(
+			parseLabelSyncMutationAttempt({ ...held, claimToken: "fresh", reconcileAttemptCount: 3 })
+				.claimToken,
+		).toBe("fresh");
+	});
+
+	it("requires a new observation attempt for unavailable and attempt-limit outcomes", () => {
+		for (const reasonCode of ["reconciliation_unavailable", "attempt_limit"]) {
+			expect(
+				parseLabelSyncMutationAttempt({ ...restoredHeld, reasonCode, reconcileAttemptCount: 1 })
+					.status,
+			).toBe("restored-held");
+			expect(() => parseLabelSyncMutationAttempt({ ...restoredHeld, reasonCode })).toThrow();
+		}
+	});
+
+	it("requires bounded strict original evidence and rejects synthetic native ownership", () => {
+		expect(parseLabelSyncMutationAttempt(restoredHeld).status).toBe("restored-held");
+		for (const evidence of [
+			null,
+			"not-json",
+			"x".repeat(2049),
+			JSON.stringify({ ...restoreEvidence, version: 2 }),
+			JSON.stringify({ ...restoreEvidence, claimToken: "old" }),
+			JSON.stringify({ ...restoreEvidence, originalSendAttemptCount: 1 }),
+			JSON.stringify({ ...restoreEvidence, originalReconcileAttemptCount: -1 }),
+			JSON.stringify({ ...restoreEvidence, originalCreatedAt: "2026-02-30T00:00:00.000Z" }),
+			JSON.stringify({ ...restoreEvidence, originalStatus: "verified" }),
+			JSON.stringify({ ...restoreEvidence, originalReasonCode: "private-details" }),
+		]) {
+			expect(() =>
+				parseLabelSyncMutationAttempt({ ...restoredHeld, restoreEvidence: evidence }),
+			).toThrow();
+		}
+		expect(() =>
+			parseLabelSyncMutationAttempt({
+				...baseAttempt,
+				restoreEvidence: restoredHeld.restoreEvidence,
+			}),
+		).toThrow();
+	});
+
+	it("normalizes absent native legacy evidence without changing its lifecycle", () => {
+		expect(parseLabelSyncMutationAttempt(baseAttempt)).toMatchObject({
+			status: "claimed",
+			restoreEvidence: null,
+		});
+		expect(() => parseLabelSyncMutationAttempt({ ...baseAttempt, claimToken: null })).toThrow();
+		expect(() =>
+			parseLabelSyncMutationAttempt({
+				...baseAttempt,
+				status: "unknown",
+				claimToken: null,
+				reasonCode: "uncertain_send",
+			}),
+		).toThrow();
+	});
+});
+
 describe("Jellyfin/Emby mutation state codecs", () => {
 	it("accepts only the finite status and reason vocabularies", () => {
 		expect(parseLabelSyncMutationStatus("claimed")).toBe("claimed");

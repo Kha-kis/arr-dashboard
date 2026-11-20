@@ -18,35 +18,37 @@ import { isProwlarrClient, isRadarrClient, isSonarrClient } from "./client-helpe
  */
 export async function warmConnectionsForUser(app: FastifyInstance, userId: string): Promise<void> {
 	try {
-		// Fetch all enabled instances for the user
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: {
-				userId,
-				enabled: true,
-				service: { in: [...ARR_SERVICES_UPPER] },
-			},
-		});
+		await app.restoreRuntime.runIndependentOperation(async () => {
+			// Fetch all enabled instances for the user
+			const instances = await app.prisma.serviceInstance.findMany({
+				where: {
+					userId,
+					enabled: true,
+					service: { in: [...ARR_SERVICES_UPPER] },
+				},
+			});
 
-		if (instances.length === 0) {
-			return;
-		}
+			if (instances.length === 0) {
+				return;
+			}
 
-		// Warm connections in parallel. Each ARR client owns a bounded request
-		// timeout; do not race these promises with an uncancelling outer timer.
-		// Callers may retain a restore-exclusion lease until every request settles.
-		const warmPromises = instances.map((instance) =>
-			warmSingleConnection(app, instance).catch((error) => {
-				// Log but don't fail - this is best-effort
-				app.log.debug(
-					{ instanceId: instance.id, error: error.message },
-					"Connection warm-up failed (non-critical)",
-				);
-			}),
-		);
+			// Warm connections in parallel. Each ARR client owns a bounded request
+			// timeout; do not race these promises with an uncancelling outer timer.
+			// Callers may retain a restore-exclusion lease until every request settles.
+			const warmPromises = instances.map((instance) =>
+				warmSingleConnection(app, instance).catch((error) => {
+					// Log but don't fail - this is best-effort
+					app.log.debug(
+						{ instanceId: instance.id, error: error.message },
+						"Connection warm-up failed (non-critical)",
+					);
+				}),
+			);
 
-		await Promise.all(warmPromises);
+			await Promise.all(warmPromises);
 
-		app.log.info({ userId, instanceCount: instances.length }, "Connections pre-warmed for user");
+			app.log.info({ userId, instanceCount: instances.length }, "Connections pre-warmed for user");
+		}, "connection-warmup");
 	} catch (error) {
 		// Never fail on warm-up errors
 		app.log.debug({ error }, "Connection warm-up error (non-critical)");

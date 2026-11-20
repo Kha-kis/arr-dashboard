@@ -7,6 +7,7 @@ import pino from "pino";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import { Encryptor } from "../../auth/encryption.js";
+import { evidenceFingerprint } from "../../evidence-fingerprint.js";
 import type { PrismaClient, ServiceInstance } from "../../prisma.js";
 import {
 	beginNativeInventoryAttempt,
@@ -19,7 +20,9 @@ import {
 	reconcileJellyfinMutationAttempts,
 } from "../jellyfin-mutation-executor.js";
 import { JellyfinMutationRepository } from "../jellyfin-mutation-repository.js";
+import { prepareRestoredLabelSyncMutationAttempt } from "../jellyfin-mutation-restore.js";
 import { registerLabelSyncMutationAdmission } from "../mutation-admission.js";
+import { projectLabelSyncRecovery } from "../recovery-projection.js";
 
 const databases: Array<{
 	directory: string;
@@ -59,6 +62,7 @@ type ProviderState = {
 	pendingBody?: FixtureDto;
 	releasePending: () => void;
 	requestPaths: string[];
+	readStatus?: number;
 };
 
 function json(response: import("node:http").ServerResponse, status: number, body: unknown) {
@@ -116,7 +120,11 @@ async function provider(state: ProviderState): Promise<{
 			return;
 		}
 		if (parsed.pathname === `/Items/${ITEM_ID}` && request.method === "GET") {
-			json(response, 200, state.item);
+			json(
+				response,
+				state.readStatus ?? 200,
+				state.readStatus ? { error: "fixture unavailable" } : state.item,
+			);
 			return;
 		}
 		if (parsed.pathname === `/Items/${ITEM_ID}` && request.method === "POST") {
@@ -174,7 +182,7 @@ function row(): NativeInventoryRow {
 	};
 }
 
-async function publishCatalog(prisma: PrismaClient, instance: ServiceInstance) {
+async function publishCatalog(prisma: PrismaClient, instance: ServiceInstance, rows = [row()]) {
 	const begun = await beginNativeInventoryAttempt(prisma, {
 		userId: instance.userId,
 		instance,
@@ -188,7 +196,7 @@ async function publishCatalog(prisma: PrismaClient, instance: ServiceInstance) {
 			authority: begun.authority,
 			attempt: begun.attempt,
 			now: NOW,
-			snapshots: [{ domain: "library", scopeKeys: [LIBRARY_ID], rows: [row()] }],
+			snapshots: [{ domain: "library", scopeKeys: [LIBRARY_ID], rows }],
 		}),
 	);
 	if (published.status !== "published") throw new Error("native fixture publication superseded");
@@ -282,6 +290,60 @@ function execute(
 	});
 }
 
+async function restoreClaimedFixture(
+	fixture: Awaited<ReturnType<typeof createFixture>>,
+	tmdbId = TMDB_ID,
+) {
+	const ruleFingerprint = evidenceFingerprint({
+		id: fixture.rule.id,
+		userId: fixture.rule.userId,
+		sourceService: fixture.rule.sourceService,
+		sourceInstanceId: fixture.rule.sourceInstanceId,
+		sourceTagName: fixture.rule.sourceTagName,
+		destService: fixture.rule.destService,
+		destInstanceId: fixture.rule.destInstanceId,
+		destTagName: fixture.rule.destTagName,
+	});
+	const repository = new JellyfinMutationRepository(fixture.prisma);
+	const claim = await repository.claim({
+		userId: fixture.instance.userId,
+		ruleId: fixture.rule.id,
+		destinationInstanceId: fixture.instance.id,
+		provider: "jellyfin",
+		mediaType: "movie",
+		tmdbId,
+		connectionGeneration: fixture.instance.connectionGeneration,
+		identityGeneration: fixture.instance.identityGeneration,
+		targetItemId: ITEM_ID,
+		libraryId: LIBRARY_ID,
+		intentFingerprint: "fixture-restored-intent",
+		ruleFingerprint,
+		destinationTag: fixture.rule.destTagName,
+	});
+	if (claim.kind !== "acquired") throw new Error("fixture claim unavailable");
+	const source = await fixture.prisma.labelSyncMutationAttempt.findUniqueOrThrow({
+		where: { id: claim.id },
+	});
+	const held = prepareRestoredLabelSyncMutationAttempt(source);
+	await fixture.prisma.$executeRawUnsafe(
+		'UPDATE "label_sync_mutation_attempts" SET "status" = ?, "reasonCode" = ?, "claimToken" = NULL, "restoreEvidence" = ? WHERE "id" = ?',
+		held.status,
+		held.reasonCode,
+		held.restoreEvidence,
+		claim.id,
+	);
+	return held;
+}
+
+function reconcile(fixture: Awaited<ReturnType<typeof createFixture>>, limit?: number) {
+	return reconcileJellyfinMutationAttempts({
+		prisma: fixture.prisma,
+		encryptor: fixture.encryptor,
+		log: log as never,
+		limit,
+	});
+}
+
 afterEach(async () => {
 	for (const fixture of databases.splice(0)) {
 		fixture.unregister();
@@ -294,6 +356,180 @@ afterEach(async () => {
 describe("Jellyfin mutation executor against disposable native publication", {
 	timeout: 30_000,
 }, () => {
+	it("observes restored pre-send desired state without POST or invented labelsApplied", async () => {
+		const fixture = await createFixture({ tags: ["prior-tag", "managed-tag"] });
+		const held = await restoreClaimedFixture(fixture);
+		await expect(execute(fixture)).resolves.toEqual({
+			matchesFound: 1,
+			labelsApplied: 0,
+			failures: 1,
+		});
+		await expect(reconcile(fixture)).resolves.toMatchObject({
+			examined: 1,
+			verified: 1,
+			unknown: 0,
+		});
+		expect(
+			await fixture.prisma.labelSyncMutationAttempt.findUniqueOrThrow({ where: { id: held.id } }),
+		).toMatchObject({
+			status: "reconciled",
+			reasonCode: "desired_state_observed",
+			sendAttemptCount: 0,
+			requestStartedAt: null,
+			restoreEvidence: held.restoreEvidence,
+			activeOperationKey: null,
+			lastObservedAt: expect.any(Date),
+		});
+		expect(
+			(await projectLabelSyncRecovery(fixture.prisma, fixture.rule.userId, [fixture.rule.id])).get(
+				fixture.rule.id,
+			),
+		).toMatchObject({
+			availability: "known",
+			state: "reconciled",
+			lastCheckAt: expect.any(String),
+		});
+		expect(fixture.state.postBodies).toHaveLength(0);
+		expect(fixture.state.requestPaths.some((path) => path.startsWith("POST "))).toBe(false);
+	});
+	it.each(
+		[
+			"absent",
+			"unavailable",
+			"identity-drift",
+			"generation-drift",
+			"ambiguous-cache",
+			"missing-inventory",
+		].flatMap((category) =>
+			[null, "2026-09-05T00:00:00.000Z"].map((previous) => ({ category, previous })),
+		),
+	)(
+		"keeps held observation truthful after $category with previous=$previous",
+		async ({ category, previous }) => {
+			const fixture = await createFixture({
+				tags: category === "absent" ? ["prior-tag"] : ["managed-tag"],
+			});
+			const held = await restoreClaimedFixture(fixture);
+			if (previous !== null)
+				await fixture.prisma.labelSyncMutationAttempt.update({
+					where: { id: held.id },
+					data: { lastObservedAt: new Date(previous) },
+				});
+			if (category === "unavailable") fixture.state.readStatus = 503;
+			if (category === "identity-drift") fixture.state.item.ProviderIds.Tmdb = "9999";
+			if (category === "generation-drift")
+				await fixture.prisma.serviceInstance.update({
+					where: { id: fixture.instance.id },
+					data: { connectionGeneration: { increment: 1 } },
+				});
+			if (category === "ambiguous-cache")
+				await publishCatalog(fixture.prisma, fixture.instance, [
+					row(),
+					{ ...row(), nativeId: "duplicate-fixture" },
+				]);
+			if (category === "missing-inventory")
+				await fixture.prisma.providerNativeInventorySnapshot.deleteMany({
+					where: { instanceId: fixture.instance.id },
+				});
+			await expect(reconcile(fixture)).resolves.toMatchObject({
+				examined: 1,
+				verified: 0,
+				unknown: 1,
+			});
+			expect(
+				await fixture.prisma.labelSyncMutationAttempt.findUniqueOrThrow({ where: { id: held.id } }),
+			).toMatchObject({
+				status: "restored-held",
+				reasonCode: "reconciliation_unavailable",
+				sendAttemptCount: 0,
+				requestStartedAt: null,
+				claimToken: null,
+				activeOperationKey: held.activeOperationKey,
+				restoreEvidence: held.restoreEvidence,
+			});
+			const persisted = await fixture.prisma.labelSyncMutationAttempt.findUniqueOrThrow({
+				where: { id: held.id },
+			});
+			const expectedObservation =
+				category === "absent" ? persisted.lastObservedAt?.toISOString() : previous;
+			if (category === "absent") {
+				expect(persisted.lastObservedAt).toBeInstanceOf(Date);
+				expect(persisted.lastObservedAt!.getTime()).toBeGreaterThan(
+					new Date(previous ?? 0).getTime(),
+				);
+			} else {
+				expect(persisted.lastObservedAt?.toISOString() ?? null).toBe(previous);
+			}
+			expect(
+				(
+					await projectLabelSyncRecovery(fixture.prisma, fixture.rule.userId, [fixture.rule.id])
+				).get(fixture.rule.id),
+			).toMatchObject({
+				availability: "known",
+				state: "restored-held",
+				lastCheckAt: expectedObservation,
+			});
+			if (category !== "absent") {
+				await reconcile(fixture);
+				expect(
+					await fixture.prisma.labelSyncMutationAttempt.findUniqueOrThrow({
+						where: { id: held.id },
+					}),
+				).toMatchObject({
+					lastObservedAt: previous === null ? null : new Date(previous),
+					reconcileAttemptCount: 2,
+					claimToken: null,
+					activeOperationKey: held.activeOperationKey,
+				});
+				expect(
+					(
+						await projectLabelSyncRecovery(fixture.prisma, fixture.rule.userId, [fixture.rule.id])
+					).get(fixture.rule.id),
+				).toMatchObject({ lastCheckAt: previous });
+			}
+			if (
+				category === "generation-drift" ||
+				category === "ambiguous-cache" ||
+				category === "missing-inventory"
+			)
+				expect(fixture.state.requestPaths).toHaveLength(0);
+			expect(fixture.state.postBodies).toHaveLength(0);
+		},
+	);
+	it("rotates bounded read selection instead of starving the next restored hold", async () => {
+		const fixture = await createFixture();
+		const first = await restoreClaimedFixture(fixture);
+		const second = await restoreClaimedFixture(fixture, TMDB_ID + 1);
+		await fixture.prisma.labelSyncMutationAttempt.update({
+			where: { id: first.id },
+			data: { updatedAt: new Date(0) },
+		});
+		await fixture.prisma.labelSyncMutationAttempt.update({
+			where: { id: second.id },
+			data: { updatedAt: new Date(1) },
+		});
+		await reconcile(fixture, 1);
+		await reconcile(fixture, 1);
+		const rows = await fixture.prisma.labelSyncMutationAttempt.findMany();
+		expect(rows.map((attempt) => attempt.reconcileAttemptCount)).toEqual([1, 1]);
+		expect(rows.every((attempt) => attempt.status === "restored-held")).toBe(true);
+		expect(fixture.state.postBodies).toHaveLength(0);
+	});
+	it("does not observe or send restored work before startup admission opens", async () => {
+		const fixture = await createFixture();
+		const held = await restoreClaimedFixture(fixture);
+		fixture.setAdmitted(false);
+		await expect(reconcile(fixture)).resolves.toEqual({
+			examined: 0,
+			verified: 0,
+			failed: 0,
+			unknown: 0,
+		});
+		expect(
+			await fixture.prisma.labelSyncMutationAttempt.findUniqueOrThrow({ where: { id: held.id } }),
+		).toMatchObject({ status: "restored-held", reconcileAttemptCount: 0 });
+		expect(fixture.state.requestPaths).toHaveLength(0);
+	});
 	it("round-trips the full DTO and unions the prior tags after provider readback", async () => {
 		const fixture = await createFixture();
 		await expect(execute(fixture)).resolves.toEqual({

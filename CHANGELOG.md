@@ -7,18 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- **Native media-server inventory**: Plex and Jellyfin library views include
+## [2.25.0] — Durable grabs and restore recovery
+
+### Upgrade and API migration
+
+Back up the database and configuration before upgrading. Run one Arr Dashboard
+API/container per database.
+
+**Manual Search Grab.** For `POST /api/search/grab`, replace the old
+`{ instanceId, result }` body with `{ instanceId, selector, intentId }`. Use the
+accepted `/api/search/query` row's opaque `grabSelector` as `selector`. Generate
+and save one UUID `intentId` per operator action before the first POST. Only an
+empty HTTP `204` confirms a durably acknowledged submission. HTTP `202` is
+pending, `422` records a provider rejection, and `502` leaves delivery
+unconfirmed. A `409` conflict leaves any earlier submission's outcome open.
+
+After a lost reply or uncertain outcome, keep the same intent and read
+`GET /api/search/grab/intents/:intentId`. A missing or unavailable record leaves
+the outcome unknown. If the operator separately confirms a new submission
+after uncertainty, use a new intent UUID, a fresh selector for the identical
+target, and `retry: { predecessorId, duplicateRiskConfirmed: true }`. Use the
+recorded attempt ID as `predecessorId`.
+
+**Backup Restore.** For both `POST /api/backup/restore` and
+`POST /api/backup/restore-from-file`, replace generic success/metadata parsing
+with validation of the HTTP status and the structured response together.
+Terminal responses contain `restoreId`, `outcome`, `success`, `reason`,
+`restartRequired: true`, and `restart`.
+
+| HTTP | Outcome | `success` | `reason` |
+| --- | --- | --- | --- |
+| `200` | `committed` | `true` | `null` |
+| `409` | `not-committed` | `false` | `state-changed` |
+| `503` | `unavailable` | `false` | `ownership-unavailable`, `closure-unverified`, or `commit-unknown` |
+
+Pre-publication refusals have no `restoreId`. A bare HTTP `200`, HTTP `202`,
+malformed reply, or connection loss leaves the outcome unconfirmed. Disable
+automatic Restore retries after an unconfirmed reply.
+`restart` is `automatic-requested` or `manual-required`, with `unavailable` always
+requiring manual recovery. When the application returns after a committed
+restore, sign in with the restored account. With a fresh authenticated session,
+`GET /api/backup/restore/status` can confirm a commit if
+`latestCommitted.restoreId` matches the attempt's ID. Missing or different
+evidence leaves the outcome unconfirmed.
+
+**Provider cache refresh.** A Plex, Jellyfin/Emby, or Tautulli refresh POST now
+returns HTTP `202` with `{ status: "accepted", cacheType }`. The `cacheType` is
+`plex`, `jellyfin` (including Emby), or `tautulli`. Replace synchronous
+completion and counter handling with reads of the corresponding cache
+health/status endpoint to observe the refresh and its published data.
+
+See the [API route reference](docs/API-ROUTES.md) for the full contracts.
+
+### Added
+
+- **Native media-server inventory** — Plex and Jellyfin library views include
   movies, series, and episodes that have no ARR or TMDB match. The additive
   `ProviderNativeInventorySnapshot` and `ProviderNativeInventoryItem` models
   retain each owned provider's published inventory across refresh attempts.
   ARR matching and watch evidence are evaluated separately; unknown matches or
   watch status do not authorize cleanup.
 
-- **Plex refresh startup recovery** — Episode work waits automatically while a
-  valid library refresh is running. Cache status retains validated partial
-  observations instead of misreporting their metadata as malformed. Interrupted
-  refresh claims are released at startup while completed scan units are retained
-  for automatic recovery.
+- **Positive watch-count cleanup** — Jellyfin and Tautulli rules can use verified
+  positive counts for greater-than conditions, with the exact media item, server
+  identity, and count checked again before execution. Tautulli checks historical
+  plays even when its recent cache is empty. Provider reads are bounded; reaching
+  the limit produces a partial result and leaves unchecked items unknown.
+
+### Changed
+
+- Backup Restore uses one authenticated preparation and exclusive publication
+  path for uploaded and stored backups. It replaces backed-up accounts and
+  settings, revokes sessions, and preserves destination secrets and safety
+  holds.
+- **Restore preparation memory** — Preparation releases transient encrypted
+  input references and avoids copying immutable string values between isolated
+  record containers, retaining authenticated validation and the existing
+  50 MiB encoded-upload / 200 MiB stored ciphertext/plaintext ceilings.
 
 - **Library watch insights and progress** — Incomplete media-server evidence now
   returns useful read-only results with explicit unknown watch status instead of
@@ -29,19 +94,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `configured` fields; requested insights also distinguish request coverage from
   watch coverage. Insight results alone do not authorize cleanup or provider writes.
 
-- **Positive watch-count cleanup** — Jellyfin and Tautulli rules can use verified
-  positive counts for greater-than conditions, with the exact media item, server
-  identity, and count checked again before execution. Tautulli checks historical
-  plays even when its recent cache is empty. Provider reads are bounded; reaching
-  the limit produces a partial result and leaves unchecked items unknown.
+### Fixed
+
+- **Navigation and keyboard usability** — Desktop navigation stays within the
+  viewport and scrolls independently. The mobile menu opens from the header,
+  contains keyboard focus, and closes on navigation or desktop resize. The
+  command palette supports modal focus, Escape, and outside dismissal, and its
+  documentation action opens the canonical repository.
+
+- **Radarr language custom formats** — Deployment readback and new recovery
+  tokens accept one omitted `exceptLanguage` field materialized as Boolean
+  `false`. Explicit intent and other writable drift remain strict; existing
+  Radarr recovery tokens retain their original checks.
+
+- **Plex refresh startup recovery** — Episode work waits automatically while a
+  valid library refresh is running. Cache status retains validated partial
+  observations instead of misreporting their metadata as malformed. Interrupted
+  refresh claims are released at startup while completed scan units are retained
+  for automatic recovery.
 
 - **Truthful Jellyfin cache display** — Safe positive observations can be
   displayed as partial evidence while semantic omissions remain visible and
   mutation authority stays fail-closed.
-- **Durable cache refresh acceptance** — Plex, Jellyfin/Emby, and Tautulli
-  refresh requests now use a prompt `202 Accepted` receipt; observe eventual
-  completion through cache health/status instead of treating request acceptance
-  as refresh completion.
+
+- Plex and Jellyfin library reads retain the last published inventory during
+  refresh. Jellyfin series progress can show its last verified ratio and
+  observation time if current evidence is incomplete. Plex collection counts
+  exclude collections from library item totals.
+- History exposes a bounded unavailable state when reads fail. Statistics
+  reports gaps in source coverage and keeps native Plex reports available
+  during failures of optional Tautulli enrichment.
+- Queue Cleaner and Library Cleanup revalidate target evidence before acting
+  and retain recovery state after partial or unconfirmed outcomes. qUI remains
+  responsive during torrent-state sync.
+- TRaSH cache refresh keeps readable catalogues available when another
+  catalogue fails. Interrupted deployments retain guarded recovery.
+- Concurrent dashboard session validation shares a request, primary mobile
+  controls fit the viewport, and Enter on Seerr widget actions no longer opens
+  the surrounding Requests link.
+- Search Grab clears the sending indicator when its owning intent settles,
+  even if the search results have changed. Duplicate-risk checking belongs
+  to the active retry dialog. A check from a dismissed dialog can no longer
+  disable its replacement or clear the replacement's busy indicator.
+- Container supervision and shutdown diagnostics improve recovery visibility.
+  Populated SQLite installations scan dates with lower startup allocation,
+  and Jellyfin refresh staging batches episode writes.
+
+### Database changes
+
+New records persist provider inventory and observations (including
+`ProviderNativeInventorySnapshot` and `ProviderNativeInventoryItem`), History
+and Statistics snapshots, restore coordination, import and Grab attempts
+(including `SearchGrabAttempt` and `SearchGrabClaim`), qUI and Label Sync
+action evidence, and notification outbox delivery.
 
 ## [2.24.1] - 2026-08-16 — Recovery and timezone correctness
 
@@ -1758,6 +1863,8 @@ Major dependency updates:
 
 ---
 
+[Unreleased]: https://github.com/Kha-kis/arr-dashboard/compare/v2.25.0...HEAD
+[2.25.0]: https://github.com/Kha-kis/arr-dashboard/compare/v2.24.1...v2.25.0
 [2.9.0]: https://github.com/Kha-kis/arr-dashboard/compare/v2.8.5...v2.9.0
 [2.8.5]: https://github.com/Kha-kis/arr-dashboard/compare/v2.8.4...v2.8.5
 [2.8.4]: https://github.com/Kha-kis/arr-dashboard/compare/v2.8.3...v2.8.4

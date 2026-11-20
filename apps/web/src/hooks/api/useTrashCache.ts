@@ -22,7 +22,7 @@ import {
 	refreshCache,
 } from "../../lib/api-client/trash-guides";
 import { POLLING_STANDARD } from "../../lib/polling-intervals";
-import { trashCacheKeys } from "../../lib/query-keys";
+import { customFormatKeys, trashCacheKeys } from "../../lib/query-keys";
 
 /**
  * Hook to fetch TRaSH Guides cache status
@@ -57,6 +57,15 @@ export const useRefreshTrashCache = () => {
 			// Invalidate cache status and entries queries to refetch fresh data
 			void queryClient.invalidateQueries({ queryKey: trashCacheKeys.allStatus });
 			void queryClient.invalidateQueries({ queryKey: trashCacheKeys.allEntries });
+			if (!variables.configType || variables.configType === "CUSTOM_FORMATS") {
+				void queryClient.invalidateQueries({ queryKey: customFormatKeys.all });
+			}
+			if (variables.configType === "CF_DESCRIPTIONS") {
+				void queryClient.invalidateQueries({ queryKey: customFormatKeys.allDescriptions });
+			}
+			if (variables.configType === "CF_INCLUDES") {
+				void queryClient.invalidateQueries({ queryKey: trashCacheKeys.cfIncludes });
+			}
 			// Also invalidate trash-guides related queries for the specific service type
 			void queryClient.invalidateQueries({
 				queryKey: ["trash-guides", variables.serviceType],

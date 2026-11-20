@@ -48,21 +48,44 @@ export const InstanceOverridesPanel = ({
 	instances,
 	onOverrideChanged,
 }: InstanceOverridesPanelProps) => {
+	// Confirmed presentation readback belongs only to this authoritative input.
+	const scope = useMemo(
+		() => JSON.stringify([template.id, template.instanceOverrides]),
+		[template.id, template.instanceOverrides],
+	);
+	return (
+		<ScopedInstanceOverridesPanel
+			key={scope}
+			template={template}
+			instances={instances}
+			onOverrideChanged={onOverrideChanged}
+		/>
+	);
+};
+
+const ScopedInstanceOverridesPanel = ({
+	template,
+	instances,
+	onOverrideChanged,
+}: InstanceOverridesPanelProps) => {
 	const [isExpanded, setIsExpanded] = useState(false);
 	const [editingInstance, setEditingInstance] = useState<ServiceInstance | null>(null);
+	const [confirmedOverrides, setConfirmedOverrides] = useState<
+		Record<string, TemplateInstanceOverride>
+	>({});
 
 	// Parse instance overrides from template
 	const instanceOverrides = useMemo((): Record<string, TemplateInstanceOverride> => {
-		if (!template.instanceOverrides) return {};
+		if (!template.instanceOverrides) return confirmedOverrides;
 		if (typeof template.instanceOverrides === "string") {
 			try {
-				return JSON.parse(template.instanceOverrides);
+				return { ...JSON.parse(template.instanceOverrides), ...confirmedOverrides };
 			} catch {
-				return {};
+				return confirmedOverrides;
 			}
 		}
-		return template.instanceOverrides;
-	}, [template.instanceOverrides]);
+		return { ...template.instanceOverrides, ...confirmedOverrides };
+	}, [template.instanceOverrides, confirmedOverrides]);
 
 	// Build override status for each relevant instance
 	const overrideStatuses = useMemo((): InstanceOverrideStatus[] => {
@@ -264,7 +287,13 @@ export const InstanceOverridesPanel = ({
 					instanceLabel={editingInstance.label}
 					serviceType={template.serviceType as "RADARR" | "SONARR"}
 					templateDefaultConfig={templateDefaultConfig}
-					onSaved={() => {
+					onSaved={(readback) => {
+						if (readback.templateId !== template.id || readback.instanceId !== editingInstance.id)
+							return;
+						setConfirmedOverrides((previous) => ({
+							...previous,
+							[readback.instanceId]: readback.overrides,
+						}));
 						setEditingInstance(null);
 						onOverrideChanged?.();
 					}}

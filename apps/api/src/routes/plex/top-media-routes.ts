@@ -6,11 +6,12 @@
  * pre-aggregated home-stats top_movies / top_tv / top_music.
  */
 
-import type { TopMediaResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import { readSessionSnapshotPages } from "../../lib/statistics/session-snapshot-pages.js";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { aggregateTopMedia } from "./lib/top-media-helpers.js";
+import { activityCollectionMeasurement } from "./lib/activity-collection-helpers.js";
+import { createTopMediaAccumulator } from "./lib/top-media-helpers.js";
 
 const topMediaQuery = z.object({
 	mediaType: z.enum(["movie", "series", "music"]),
@@ -41,30 +42,22 @@ export async function registerTopMediaRoutes(app: FastifyInstance, _opts: Fastif
 		const { mediaType, days, limit } = validateRequest(topMediaQuery, request.query);
 		const userId = request.currentUser!.id;
 
-		const plexInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "PLEX", enabled: true },
-			select: { id: true },
-		});
-
-		if (plexInstances.length === 0) {
-			const empty: TopMediaResponse = { items: [] };
-			return reply.send(empty);
-		}
-
 		const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-		const snapshots = await app.prisma.sessionSnapshot.findMany({
-			where: {
-				instanceId: { in: plexInstances.map((i) => i.id) },
-				capturedAt: { gte: cutoff },
+		const accumulator = createTopMediaAccumulator(mediaType);
+		const read = await readSessionSnapshotPages(
+			app.prisma,
+			{
+				userId,
+				services: ["PLEX"],
+				cutoff,
+				onPage: (page) => accumulator.addBatch(page),
 			},
-			select: { capturedAt: true, sessionsJson: true },
-			orderBy: { capturedAt: "asc" },
-			take: 20000,
-		});
+			"reverse-chronological",
+		);
 
-		const { parseFailures, totalSnapshots, failedPreviews, ...response } = aggregateTopMedia(
-			snapshots,
-			{ mediaType, limit },
+		const { parseFailures, totalSnapshots, failedPreviews, ...response } = accumulator.getResult(
+			"top",
+			limit,
 		);
 		if (parseFailures > 0) {
 			request.log.warn(
@@ -72,6 +65,6 @@ export async function registerTopMediaRoutes(app: FastifyInstance, _opts: Fastif
 				"Session snapshot JSON parse failures detected",
 			);
 		}
-		return reply.send(response);
+		return reply.send({ ...response, measurement: activityCollectionMeasurement(read) });
 	});
 }

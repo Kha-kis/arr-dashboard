@@ -6,7 +6,13 @@ import {
 } from "../jellyfin-cache-health.js";
 import type { JellyfinObservation } from "../jellyfin-evidence-repository.js";
 
-const repositoryMock = vi.hoisted(() => ({ read: vi.fn() }));
+const repositoryMock = vi.hoisted(() => ({ read: vi.fn(), coverage: vi.fn(), scoped: vi.fn() }));
+vi.mock("../jellyfin-native-watch-coverage.js", () => ({
+	readOwnedNativeWatchCoverage: repositoryMock.coverage,
+}));
+vi.mock("../jellyfin-generation-scoped-display.js", () => ({
+	readOwnedGenerationScopedEpisodeDisplay: repositoryMock.scoped,
+}));
 
 vi.mock("../jellyfin-evidence-repository.js", async (importOriginal) => ({
 	...(await importOriginal<typeof import("../jellyfin-evidence-repository.js")>()),
@@ -71,6 +77,38 @@ function observation(
 afterEach(() => vi.clearAllMocks());
 
 describe("readOwnedJellyfinCacheHealthSources", () => {
+	it("attaches separate recorded coverage without degrading an otherwise current canonical item", async () => {
+		repositoryMock.read.mockImplementation(async ({ cacheType, instanceId }) =>
+			observation(instanceId, "JELLYFIN", cacheType, status("current")),
+		);
+		repositoryMock.scoped.mockResolvedValue(null);
+		const coverage = {
+			status: "available",
+			observedAt: observedAt.toISOString(),
+			expectedScopes: 8,
+			verifiedScopes: 7,
+			incompleteScopes: 1,
+			diagnosticStatus: "recorded",
+			reasonCodes: ["changed-observations"],
+			refreshPhase: "idle",
+		};
+		repositoryMock.coverage.mockResolvedValue(coverage);
+		const result = await readOwnedJellyfinCacheHealthSources({
+			prisma: { $transaction: vi.fn() } as never,
+			userId: "owner",
+			instances: [instances[0]!],
+			now,
+		});
+		expect(result[0]).not.toHaveProperty("watchCoverage");
+		expect(result[1]).toMatchObject({
+			watchCoverage: coverage,
+			item: { lastResult: "success", itemCount: 1, providerStatus: { availability: "current" } },
+		});
+		expect(repositoryMock.coverage).toHaveBeenCalledWith(expect.anything(), {
+			userId: "owner",
+			instanceId: "jellyfin-2",
+		});
+	});
 	it("reads two stable slots per owned instance with one shared now", async () => {
 		repositoryMock.read.mockImplementation(async ({ cacheType, instanceId }) =>
 			observation(

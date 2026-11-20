@@ -8,7 +8,7 @@ import type { PrismaClient } from "../../lib/prisma.js";
  * Upserts tags and returns tag IDs
  */
 export async function upsertTags(
-	prisma: PrismaClient,
+	prisma: Pick<PrismaClient, "serviceTag">,
 	tagNames: string[],
 ): Promise<Array<{ tagId: string }>> {
 	return await Promise.all(

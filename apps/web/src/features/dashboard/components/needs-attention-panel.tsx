@@ -158,7 +158,7 @@ function AttentionRow({ item, incognito }: { item: PulseItem; incognito: boolean
 	const detail = incognito && item.detail ? anonymizeHealthMessage(item.detail) : item.detail;
 
 	return (
-		<li className="flex items-start gap-3 border-b border-border/30 px-6 py-3 last:border-b-0">
+		<li className="flex flex-wrap items-start gap-3 border-b border-border/30 px-6 py-3 last:border-b-0 sm:flex-nowrap">
 			<div
 				role="img"
 				aria-label={visual.srLabel}
@@ -179,17 +179,19 @@ function AttentionRow({ item, incognito }: { item: PulseItem; incognito: boolean
 			{item.actionUrl && (
 				<Link
 					href={item.actionUrl}
-					className="inline-flex shrink-0 items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+					className="inline-flex w-full min-w-0 items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground sm:w-auto sm:max-w-[50%] sm:shrink-0"
 				>
 					{/* actionLabel is static on today's collectors ("Resolve",
 					    "Open service", etc.), but routing it through the same
 					    anonymizer as detail keeps incognito safe if a future
 					    collector ever interpolates a name into the label. */}
-					{(() => {
-						const label = item.actionLabel ?? "Resolve";
-						return incognito ? anonymizeHealthMessage(label) : label;
-					})()}
-					<ChevronRight className="h-3 w-3" />
+					<span className="min-w-0 break-words">
+						{(() => {
+							const label = item.actionLabel ?? "Resolve";
+							return incognito ? anonymizeHealthMessage(label) : label;
+						})()}
+					</span>
+					<ChevronRight className="h-3 w-3 shrink-0" />
 				</Link>
 			)}
 		</li>

@@ -32,9 +32,9 @@ export const CalendarHeader = ({
 			className="animate-in fade-in slide-in-from-bottom-2 duration-400"
 			style={{ animationFillMode: "backwards" }}
 		>
-			<div className="flex items-center justify-between gap-4">
+			<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 				{/* Left: Title + Month Navigation */}
-				<div className="flex items-center gap-5">
+				<div className="flex flex-wrap items-center gap-5 sm:flex-nowrap">
 					{/* Title with ambient glow */}
 					<div className="relative">
 						<h1 className="text-[22px] font-bold tracking-tight relative z-10">

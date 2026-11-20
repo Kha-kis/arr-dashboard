@@ -2,52 +2,26 @@ import type {
 	ProwlarrIndexer,
 	ProwlarrIndexerDetails,
 	ProwlarrIndexerHealth,
-	SearchGrabRequest,
+	SearchCoverage,
+	SearchIndexerUpdateChanges,
 	SearchRequest,
 	SearchResult,
 } from "@arr/shared";
-import { prowlarrIndexerDetailsSchema } from "@arr/shared";
+import { isSensitiveProwlarrField, prowlarrIndexerDetailsSchema } from "@arr/shared";
+import { ArrError } from "arr-sdk";
 import type { ProwlarrClient } from "arr-sdk/prowlarr";
 import type { ServiceInstance } from "../../lib/prisma.js";
+import { AppValidationError, ConflictError } from "../errors.js";
 import { loggers } from "../logger.js";
-import { normalizeIndexer, normalizeIndexerDetails, normalizeSearchResult } from "./normalizers.js";
+import { type SearchGrabTarget, searchGrabTargetSchema } from "./grab-selector.js";
+import {
+	normalizeIndexer,
+	normalizeIndexerDetails,
+	normalizeIndexerField,
+	normalizeSearchResult,
+} from "./normalizers.js";
 
 const log = loggers.api;
-
-/**
- * Converts a value to a string if possible, otherwise returns undefined.
- */
-const toStringValue = (value: unknown): string | undefined => {
-	if (typeof value === "string") {
-		const trimmed = value.trim();
-		return trimmed.length > 0 ? trimmed : undefined;
-	}
-
-	if (typeof value === "number" && Number.isFinite(value)) {
-		return value.toString();
-	}
-
-	return undefined;
-};
-
-/**
- * Converts a value to a number if possible, otherwise returns undefined.
- */
-const toNumber = (value: unknown): number | undefined => {
-	if (typeof value === "number" && Number.isFinite(value)) {
-		return value;
-	}
-
-	if (typeof value === "string") {
-		const parsed = Number(value);
-
-		if (Number.isFinite(parsed)) {
-			return parsed;
-		}
-	}
-
-	return undefined;
-};
 
 /**
  * Builds a fallback indexer details object when the real data cannot be fetched.
@@ -197,13 +171,117 @@ export const fetchProwlarrIndexerDetailsWithSdk = async (
 /**
  * Updates an indexer configuration in Prowlarr using the SDK.
  */
+export class IndexerUpdateDispatchError extends Error {
+	constructor(cause: unknown) {
+		super("Indexer update outcome is unknown", { cause });
+		this.name = "IndexerUpdateDispatchError";
+	}
+}
+
+export class IndexerUpdateRejectedError extends Error {
+	readonly statusCode: number;
+
+	constructor(providerStatus: number) {
+		super("Prowlarr rejected the indexer update");
+		this.name = "IndexerUpdateRejectedError";
+		this.statusCode =
+			providerStatus === 400 ? 400 : providerStatus === 404 || providerStatus === 409 ? 409 : 502;
+	}
+}
+
+/** A verified result requires every requested edit to survive provider readback. */
+export const indexerUpdateReadbackMatchesChanges = (
+	readback: ProwlarrIndexerDetails,
+	changes: SearchIndexerUpdateChanges,
+): boolean => {
+	if (changes.enable !== undefined && readback.enable !== changes.enable) return false;
+	if (changes.priority !== undefined && readback.priority !== changes.priority) return false;
+	for (const changed of changes.fields ?? []) {
+		const matching = readback.fields?.filter((field) => field.name === changed.name) ?? [];
+		if (matching.length !== 1 || matching[0]?.value !== changed.value) return false;
+	}
+	return true;
+};
+
 export const updateProwlarrIndexerWithSdk = async (
 	client: ProwlarrClient,
 	indexerId: number,
-	// biome-ignore lint/suspicious/noExplicitAny: SDK type compatibility
-	indexerData: any,
+	changes: SearchIndexerUpdateChanges,
 ): Promise<unknown> => {
-	return client.indexer.update(indexerId, { ...indexerData, id: indexerId });
+	const fetched = await client.indexer.getById(indexerId);
+	if (!fetched || typeof fetched !== "object" || Array.isArray(fetched)) {
+		throw new ConflictError("Indexer identity could not be verified before update");
+	}
+	const current = fetched as Record<string, unknown>;
+	if (current.id !== indexerId) {
+		throw new ConflictError("Indexer identity changed before update");
+	}
+
+	const update = { ...fetched, id: indexerId };
+	const editable = update as Record<string, unknown>;
+	if (changes.enable !== undefined) editable.enable = changes.enable;
+	if (changes.priority !== undefined) editable.priority = changes.priority;
+
+	if (changes.fields?.length) {
+		if (!Array.isArray(current.fields)) {
+			throw new ConflictError("Indexer fields could not be verified before update");
+		}
+		const currentByName = new Map<string, Record<string, unknown>>();
+		for (const value of current.fields) {
+			if (!value || typeof value !== "object" || Array.isArray(value)) {
+				throw new ConflictError("Indexer fields could not be verified before update");
+			}
+			const field = value as Record<string, unknown>;
+			const normalized = normalizeIndexerField(field);
+			if (!normalized || currentByName.has(normalized.name)) {
+				throw new ConflictError("Indexer field identity is ambiguous");
+			}
+			currentByName.set(normalized.name, field);
+		}
+		const changedByName = new Map<
+			string,
+			NonNullable<SearchIndexerUpdateChanges["fields"]>[number]
+		>();
+		for (const field of changes.fields) {
+			if (changedByName.has(field.name)) {
+				throw new AppValidationError("Duplicate indexer field change");
+			}
+			const original = currentByName.get(field.name);
+			const normalized = original ? normalizeIndexerField(original) : null;
+			if (!normalized) throw new AppValidationError("Unknown indexer field change");
+			const nonEditableType = ["info", "password", "hidden"].includes(
+				(normalized.type ?? "").toLowerCase(),
+			);
+			const nonEditableName = ["baseurl", "basesettings", "definitionfile"].includes(
+				normalized.name.toLowerCase(),
+			);
+			if (nonEditableType || nonEditableName || isSensitiveProwlarrField(normalized)) {
+				throw new AppValidationError("Indexer field is not editable");
+			}
+			changedByName.set(field.name, field);
+		}
+		editable.fields = current.fields.map((value) => {
+			const original = value as Record<string, unknown>;
+			const changed = changedByName.get(String(original.name));
+			return changed ? { ...original, value: changed.value } : original;
+		});
+	}
+
+	try {
+		return await client.indexer.update(indexerId, update);
+	} catch (error) {
+		if (
+			error instanceof ArrError &&
+			error.statusCode >= 400 &&
+			error.statusCode < 500 &&
+			error.statusCode !== 408 &&
+			error.statusCode !== 429
+		) {
+			throw new IndexerUpdateRejectedError(error.statusCode);
+		}
+		// A lost response cannot establish whether Prowlarr applied the single PUT.
+		throw new IndexerUpdateDispatchError(error);
+	}
 };
 
 /**
@@ -226,7 +304,7 @@ export const performProwlarrSearchWithSdk = async (
 	client: ProwlarrClient,
 	instance: ServiceInstance,
 	options: ManualSearchOptions,
-): Promise<SearchResult[]> => {
+): Promise<{ results: SearchResult[]; coverage: SearchCoverage }> => {
 	const limit = Number.isFinite(options.limit) ? Math.max(1, Math.min(options.limit, 200)) : 100;
 
 	// Map search type to SDK format (SDK uses "tvsearch" instead of "tv")
@@ -256,23 +334,55 @@ export const performProwlarrSearchWithSdk = async (
 		}
 	}
 
-	return results;
+	return {
+		results,
+		coverage: {
+			receivedCount: rawReleases.length,
+			acceptedCount: results.length,
+			rejectedCount: rawReleases.length - results.length,
+			metadataIncompleteCount: results.filter((result) => result.metadataIncomplete === true)
+				.length,
+		},
+	};
 };
 
-/**
- * Grabs a release from Prowlarr using the SDK.
- */
-export const grabProwlarrReleaseWithSdk = async (
+/** Dispatch only the minimal tuple already authorized by the durable submission service. */
+export const grabVerifiedProwlarrTargetWithSdk = async (
 	client: ProwlarrClient,
-	release: SearchGrabRequest["result"],
+	target: Pick<SearchGrabTarget, "guid" | "indexerId">,
 ): Promise<void> => {
-	const releaseRecord = release as Record<string, unknown>;
-	const guid = toStringValue(releaseRecord.guid) ?? toStringValue(releaseRecord.id);
-	const indexerId = toNumber(releaseRecord.indexerId);
+	const { guid, indexerId } = searchGrabTargetSchema
+		.pick({ guid: true, indexerId: true })
+		.parse(target);
 
-	if (typeof indexerId !== "number" || !guid) {
-		throw new Error("Release is missing required identifier information");
+	const unknownOutcome =
+		"Grab outcome is unknown. Check Prowlarr and the download client before retrying.";
+	let acknowledgement: unknown;
+	try {
+		acknowledgement = await client.search.grab({ guid, indexerId });
+	} catch (error) {
+		if (
+			error instanceof ArrError &&
+			error.statusCode >= 400 &&
+			error.statusCode < 500 &&
+			error.statusCode !== 408 &&
+			error.statusCode !== 429
+		) {
+			throw error;
+		}
+		// A failed transport or response parser cannot prove the single POST failed.
+		throw new ArrError(unknownOutcome, 502);
 	}
-
-	await client.search.grab({ guid, indexerId });
+	if (
+		!acknowledgement ||
+		typeof acknowledgement !== "object" ||
+		Array.isArray(acknowledgement) ||
+		!("guid" in acknowledgement) ||
+		acknowledgement.guid !== guid ||
+		!("indexerId" in acknowledgement) ||
+		acknowledgement.indexerId !== indexerId
+	) {
+		// The dispatch may have succeeded: an invalid reply is not safe retry authority.
+		throw new ArrError(unknownOutcome, 502);
+	}
 };

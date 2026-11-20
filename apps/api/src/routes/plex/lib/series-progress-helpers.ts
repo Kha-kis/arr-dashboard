@@ -11,7 +11,7 @@ export interface EpisodeInput {
 export function aggregateSeriesProgress(
 	episodes: EpisodeInput[],
 	requestedIds: readonly number[] = [...new Set(episodes.map((episode) => episode.showTmdbId))],
-	complete = true,
+	complete: boolean | ReadonlySet<number> = true,
 ): Record<number, SeriesProgressItem> {
 	const selected = new Set(requestedIds);
 	const coordinates = new Map<number, Map<string, boolean>>();
@@ -37,7 +37,8 @@ export function aggregateSeriesProgress(
 	for (const tmdbId of requestedIds) {
 		const show = coordinates.get(tmdbId);
 		const watched = show ? [...show.values()].filter(Boolean).length : 0;
-		if (complete && !malformed.has(tmdbId) && show && show.size > 0) {
+		const completeForShow = typeof complete === "boolean" ? complete : complete.has(tmdbId);
+		if (completeForShow && !malformed.has(tmdbId) && show && show.size > 0) {
 			progress[tmdbId] = {
 				status: "exact",
 				total: show.size,

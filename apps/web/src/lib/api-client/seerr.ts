@@ -17,6 +17,7 @@ import type {
 	SeerrIssueParams,
 	SeerrMovieDetails,
 	SeerrNotificationAgent,
+	SeerrNotificationAgentsResponse,
 	SeerrPageResult,
 	SeerrQuota,
 	SeerrRequest,
@@ -29,7 +30,7 @@ import type {
 	SeerrUserParams,
 	SeerrUserUpdateData,
 } from "@arr/shared";
-import { apiRequest } from "./base";
+import { apiRequest, InvalidSuccessResponseError } from "./base";
 
 // ============================================================================
 // Requests
@@ -112,9 +113,10 @@ export async function retrySeerrRequest(
 // ============================================================================
 
 export interface BulkRequestResult {
-	results: { requestId: number; success: boolean; error?: string }[];
+	results: { requestId: number; success: boolean; outcome?: "unknown"; error?: string }[];
 	totalSuccess: number;
 	totalFailed: number;
+	totalUnknown: number;
 }
 
 export async function bulkSeerrRequestAction(
@@ -122,10 +124,64 @@ export async function bulkSeerrRequestAction(
 	action: "approve" | "decline" | "delete",
 	requestIds: number[],
 ): Promise<BulkRequestResult> {
-	return apiRequest(`/api/seerr/requests/${instanceId}/bulk`, {
+	const payload = await apiRequest<unknown>(`/api/seerr/requests/${instanceId}/bulk`, {
 		method: "POST",
 		json: { action, requestIds },
+		requireJsonSuccess: true,
 	});
+	if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+		throw new InvalidSuccessResponseError();
+	}
+	const record = payload as Record<string, unknown>;
+	const expectedIds = new Set(requestIds);
+	if (
+		!Array.isArray(record.results) ||
+		record.results.length !== requestIds.length ||
+		expectedIds.size !== requestIds.length ||
+		![record.totalSuccess, record.totalFailed, record.totalUnknown].every(
+			(count) => typeof count === "number" && Number.isSafeInteger(count) && count >= 0,
+		)
+	) {
+		throw new InvalidSuccessResponseError();
+	}
+	const seen = new Set<number>();
+	const results: BulkRequestResult["results"] = [];
+	for (const item of record.results) {
+		if (
+			!item ||
+			typeof item !== "object" ||
+			Array.isArray(item) ||
+			typeof item.requestId !== "number" ||
+			!Number.isSafeInteger(item.requestId) ||
+			item.requestId <= 0 ||
+			!expectedIds.has(item.requestId) ||
+			seen.has(item.requestId) ||
+			typeof item.success !== "boolean" ||
+			("outcome" in item && item.outcome !== "unknown") ||
+			(item.success && ("outcome" in item || "error" in item)) ||
+			("error" in item && typeof item.error !== "string")
+		) {
+			throw new InvalidSuccessResponseError();
+		}
+		seen.add(item.requestId);
+		// Retain only action evidence, never provider diagnostics or extra fields.
+		results.push({
+			requestId: item.requestId,
+			success: item.success,
+			...(item.outcome === "unknown" ? { outcome: "unknown" as const } : {}),
+		});
+	}
+	const totalSuccess = results.filter((item) => item.success).length;
+	const totalUnknown = results.filter((item) => item.outcome === "unknown").length;
+	const totalFailed = results.length - totalSuccess - totalUnknown;
+	if (
+		record.totalSuccess !== totalSuccess ||
+		record.totalFailed !== totalFailed ||
+		record.totalUnknown !== totalUnknown
+	) {
+		throw new InvalidSuccessResponseError();
+	}
+	return { results, totalSuccess, totalFailed, totalUnknown };
 }
 
 // ============================================================================
@@ -205,7 +261,7 @@ export async function updateSeerrIssueStatus(
 
 export async function fetchSeerrNotifications(
 	instanceId: string,
-): Promise<{ agents: SeerrNotificationAgent[] }> {
+): Promise<SeerrNotificationAgentsResponse> {
 	return apiRequest(`/api/seerr/notifications/${instanceId}`);
 }
 

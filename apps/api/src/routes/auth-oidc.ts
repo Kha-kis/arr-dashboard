@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { oidcRedirectUriSchema } from "@arr/shared";
-import type { FastifyPluginCallback } from "fastify";
+import type { FastifyPluginCallback, RouteShorthandOptions } from "fastify";
 import * as oauth from "oauth4webapi";
 import { z } from "zod";
 import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
@@ -12,6 +12,7 @@ import {
 } from "../lib/auth/oidc-redirect-uri.js";
 import { resolveCanonicalIssuer } from "../lib/auth/oidc-utils.js";
 import { getSessionMetadata } from "../lib/auth/session-metadata.js";
+import { withIsolatedRuntimePrismaReadClient } from "../lib/backup/restore-runtime-client.js";
 import { withIndependentCleanupOperationGuard } from "../lib/library-cleanup/cleanup-maintenance-gate.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { validateRequest } from "../lib/utils/validate.js";
@@ -77,6 +78,45 @@ const OIDC_SETUP_RATE_LIMIT = { max: 5, timeWindow: "1 minute" };
 const OIDC_LOGIN_RATE_LIMIT = { max: 10, timeWindow: "1 minute" };
 const OIDC_PROVIDER_CHANGED = "OIDC_PROVIDER_CHANGED";
 
+const OIDC_CALLBACK_RECOVERY_PAGE = `<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Sign-in could not be completed</title>
+</head>
+<body>
+	<main>
+		<h1>Sign-in could not be completed</h1>
+		<p>Return to Arr Dashboard to try again.</p>
+		<a href="/">Return to Arr Dashboard</a>
+	</main>
+</body>
+</html>`;
+
+const oidcCallbackOptions: RouteShorthandOptions = {
+	config: { backupMutation: true },
+	async onSend(request, reply, payload) {
+		if (reply.statusCode < 400) return payload;
+
+		reply.header("Cache-Control", "no-store").header("Referrer-Policy", "no-referrer");
+		if (
+			request.headers["sec-fetch-mode"] !== "navigate" ||
+			request.headers["sec-fetch-dest"] !== "document"
+		) {
+			return payload;
+		}
+
+		reply
+			.type("text/html; charset=utf-8")
+			.header(
+				"Content-Security-Policy",
+				"default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+			);
+		return OIDC_CALLBACK_RECOVERY_PAGE;
+	},
+};
+
 const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	/**
 	 * GET /auth/oidc/providers
@@ -84,12 +124,12 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.get("/oidc/providers", async (_request, reply) => {
 		// Load the OIDC provider from database
-		const dbProvider = await app.prisma.oIDCProvider.findFirst({
-			where: { enabled: true },
-			select: {
-				displayName: true,
-			},
-		});
+		const dbProvider = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			prisma.oIDCProvider.findFirst({
+				where: { enabled: true },
+				select: { displayName: true },
+			}),
+		);
 
 		return reply.send({
 			provider: dbProvider ? { displayName: dbProvider.displayName, enabled: true } : null,
@@ -333,7 +373,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * GET /auth/oidc/callback
 	 * Handles OIDC callback after user authorization
 	 */
-	app.get("/oidc/callback", { config: { backupMutation: true } }, async (request, reply) => {
+	app.get("/oidc/callback", oidcCallbackOptions, async (request, reply) => {
 		const queryParams = request.query as Record<string, unknown>;
 		request.log.info({ hasCode: "code" in queryParams }, "OIDC callback received");
 

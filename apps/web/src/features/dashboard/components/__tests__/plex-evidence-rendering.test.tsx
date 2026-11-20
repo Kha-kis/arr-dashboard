@@ -207,10 +207,48 @@ beforeEach(() => {
 describe("dashboard Plex evidence rendering", () => {
 	it.each([
 		[
+			"Continue Watching",
+			<OnDeckWidget key="on-deck" hasPlexInstances={true} hasJellyfinInstances={false} />,
+		],
+		[
+			"Recently Added",
+			<RecentlyAddedWidget
+				key="recently-added"
+				hasPlexInstances={true}
+				hasJellyfinInstances={false}
+			/>,
+		],
+	] as const)("exposes the %s carousel arrow on touch screens", (name, widget) => {
+		queryState.plexOnDeck = {
+			data: { items: [plexItem()], evidence: authoritativeEvidence },
+			isLoading: false,
+			isError: false,
+			error: null,
+		};
+		queryState.plexRecentlyAdded = queryState.plexOnDeck;
+		const clientWidth = vi
+			.spyOn(HTMLDivElement.prototype, "clientWidth", "get")
+			.mockReturnValue(308);
+		const scrollWidth = vi
+			.spyOn(HTMLDivElement.prototype, "scrollWidth", "get")
+			.mockReturnValue(1_500);
+		try {
+			renderWithIncognito(widget);
+			const arrow = screen.getByRole("button", { name: `Scroll ${name} right` });
+			expect(arrow).toHaveClass("opacity-100");
+			expect(arrow).toHaveClass("md:focus-visible:opacity-100");
+		} finally {
+			clientWidth.mockRestore();
+			scrollWidth.mockRestore();
+		}
+	});
+
+	it.each([
+		[
 			"partial",
 			plexPartialEvidence,
 			/Showing current mapped data/i,
-			/Some unsupported items were excluded/i,
+			/Some observations were not verified/i,
 		],
 		[
 			"last-known",

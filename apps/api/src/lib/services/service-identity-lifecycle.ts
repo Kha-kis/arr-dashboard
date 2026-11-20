@@ -93,6 +93,18 @@ export function replacementIdentityData(
 }
 
 type ProviderCacheStatePrisma = {
+	providerNativeInventoryRun: {
+		updateMany(args: {
+			where: { instanceId: string; activeSlotKey: { not: null } };
+			data: {
+				state: "superseded";
+				activeSlotKey: null;
+				claimToken: null;
+				leaseUntil: null;
+				nextAttemptAt: null;
+			};
+		}): Promise<unknown>;
+	};
 	providerNativeInventorySnapshot: {
 		deleteMany(args: { where: { instanceId: string } }): Promise<unknown>;
 	};
@@ -101,6 +113,16 @@ type ProviderCacheStatePrisma = {
 	tautulliCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
 	jellyfinCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
 	jellyfinEpisodeCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
+	jellyfinNativeWatchPublication: {
+		deleteMany(args: { where: { instanceId: string } }): Promise<unknown>;
+	};
+	jellyfinNativeWatchScopeReceipt: {
+		deleteMany(args: { where: { instanceId: string } }): Promise<unknown>;
+	};
+	jellyfinNativeWatchRow: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
+	jellyfinPositiveWatchRow: {
+		deleteMany(args: { where: { instanceId: string } }): Promise<unknown>;
+	};
 	cacheRefreshStatus: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
 };
 
@@ -108,11 +130,25 @@ export async function clearDurableProviderCacheState(
 	prisma: ProviderCacheStatePrisma,
 	instanceId: string,
 ): Promise<void> {
+	await prisma.providerNativeInventoryRun.updateMany({
+		where: { instanceId, activeSlotKey: { not: null } },
+		data: {
+			state: "superseded",
+			activeSlotKey: null,
+			claimToken: null,
+			leaseUntil: null,
+			nextAttemptAt: null,
+		},
+	});
 	await prisma.providerNativeInventorySnapshot.deleteMany({ where: { instanceId } });
 	await deletePlexCacheRows(prisma as never, instanceId);
 	await prisma.tautulliCache.deleteMany({ where: { instanceId } });
 	await prisma.jellyfinCache.deleteMany({ where: { instanceId } });
 	await prisma.jellyfinEpisodeCache.deleteMany({ where: { instanceId } });
+	await prisma.jellyfinNativeWatchPublication.deleteMany({ where: { instanceId } });
+	await prisma.jellyfinNativeWatchScopeReceipt.deleteMany({ where: { instanceId } });
+	await prisma.jellyfinNativeWatchRow.deleteMany({ where: { instanceId } });
+	await prisma.jellyfinPositiveWatchRow.deleteMany({ where: { instanceId } });
 	await deleteProviderCacheStatuses(prisma as never, instanceId);
 }
 

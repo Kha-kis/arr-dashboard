@@ -6,7 +6,7 @@
 
 import type { TrashConfigType } from "@arr/shared";
 import { TRASH_CONFIG_TYPES } from "@arr/shared";
-import type { FastifyInstance, FastifyPluginOptions } from "fastify";
+import type { FastifyInstance, FastifyPluginOptions, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { CacheCorruptionError, createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher, getRateLimitState } from "../../lib/trash-guides/github-fetcher.js";
@@ -81,7 +81,8 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 	/** Create a fetcher configured for the current user's repo settings */
 	async function getFetcher(userId: string) {
 		const repoConfig = await getRepoConfig(app.prisma, userId);
-		return createTrashFetcher({ repoConfig, logger: app.log });
+		// Publishing requires a complete fetch, not a best-effort partial result.
+		return createTrashFetcher({ repoConfig, logger: app.log, strictContent: true });
 	}
 
 	/**
@@ -147,12 +148,12 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 		if (configType) {
 			// Check if refresh is needed
 			if (!force) {
-				const isFresh = await cacheManager.isFresh(serviceType, configType);
-				if (isFresh) {
+				const status = await cacheManager.getStatus(serviceType, configType);
+				if (status && !status.isStale && !status.unavailable) {
 					return reply.send({
 						message: "Cache is already fresh",
 						refreshed: false,
-						status: await cacheManager.getStatus(serviceType, configType),
+						status,
 					});
 				}
 			}
@@ -193,8 +194,8 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 			try {
 				// Check if refresh is needed
 				if (!force) {
-					const isFresh = await cacheManager.isFresh(serviceType, type);
-					if (isFresh) {
+					const status = await cacheManager.getStatus(serviceType, type);
+					if (status && !status.isStale && !status.unavailable) {
 						results[type] = {
 							success: true,
 							skipped: true,
@@ -331,6 +332,49 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 		});
 	});
 
+	async function listCatalogue(
+		request: FastifyRequest<{ Querystring: z.infer<typeof optionalServiceTypeSchema> }>,
+		configType: "CUSTOM_FORMATS" | "CF_DESCRIPTIONS",
+	) {
+		const { serviceType } = validateRequest(optionalServiceTypeSchema, request.query);
+
+		const results: Record<string, unknown> = {};
+		const unavailableServices: ServiceType[] = [];
+		const serviceTypes = serviceType ? [serviceType] : ALL_SERVICE_TYPES;
+
+		for (const service of serviceTypes) {
+			const isFresh = await cacheManager.isFresh(service, configType);
+
+			if (!isFresh) {
+				const fetcher = await getFetcher(request.currentUser!.id);
+				let data: unknown[];
+				try {
+					data = await fetcher.fetchConfigs(service, configType);
+				} catch (error) {
+					if (serviceType) throw error;
+					request.log.warn(
+						{ serviceType: service, configType },
+						"TRaSH catalogue refresh unavailable",
+					);
+					unavailableServices.push(service);
+					continue;
+				}
+				await cacheManager.set(service, configType, data);
+				results[SERVICE_RESULT_KEY[service]] = data;
+			} else {
+				try {
+					results[SERVICE_RESULT_KEY[service]] =
+						(await cacheManager.get(service, configType)) ?? [];
+				} catch (error) {
+					if (!(error instanceof CacheCorruptionError) || serviceType) throw error;
+					unavailableServices.push(service);
+				}
+			}
+		}
+
+		return unavailableServices.length > 0 ? { ...results, unavailableServices } : results;
+	}
+
 	/**
 	 * GET /api/trash-guides/cache/custom-formats/list
 	 * Get all available custom formats from cache for browsing
@@ -338,34 +382,7 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 	app.get<{
 		Querystring: z.infer<typeof optionalServiceTypeSchema>;
 	}>("/custom-formats/list", async (request, reply) => {
-		const { serviceType } = validateRequest(optionalServiceTypeSchema, request.query);
-
-		const results: Record<string, unknown> = {};
-		const serviceTypes: ServiceType[] = serviceType ? [serviceType] : [...ALL_SERVICE_TYPES];
-
-		for (const service of serviceTypes) {
-			const isFresh = await cacheManager.isFresh(service, "CUSTOM_FORMATS");
-
-			if (!isFresh) {
-				const fetcher = await getFetcher(request.currentUser!.id);
-				const data = await fetcher.fetchConfigs(service, "CUSTOM_FORMATS");
-				await cacheManager.set(service, "CUSTOM_FORMATS", data);
-				results[SERVICE_RESULT_KEY[service]] = data;
-			} else {
-				try {
-					const data = await cacheManager.get(service, "CUSTOM_FORMATS");
-					results[SERVICE_RESULT_KEY[service]] = data || [];
-				} catch (error) {
-					if (error instanceof CacheCorruptionError) {
-						results[SERVICE_RESULT_KEY[service]] = [];
-					} else {
-						throw error;
-					}
-				}
-			}
-		}
-
-		return reply.send(results);
+		return reply.send(await listCatalogue(request, "CUSTOM_FORMATS"));
 	});
 
 	/**
@@ -375,34 +392,7 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 	app.get<{
 		Querystring: z.infer<typeof optionalServiceTypeSchema>;
 	}>("/cf-descriptions/list", async (request, reply) => {
-		const { serviceType } = validateRequest(optionalServiceTypeSchema, request.query);
-
-		const results: Record<string, unknown> = {};
-		const serviceTypes: ServiceType[] = serviceType ? [serviceType] : [...ALL_SERVICE_TYPES];
-
-		for (const service of serviceTypes) {
-			const isFresh = await cacheManager.isFresh(service, "CF_DESCRIPTIONS");
-
-			if (!isFresh) {
-				const fetcher = await getFetcher(request.currentUser!.id);
-				const data = await fetcher.fetchConfigs(service, "CF_DESCRIPTIONS");
-				await cacheManager.set(service, "CF_DESCRIPTIONS", data);
-				results[SERVICE_RESULT_KEY[service]] = data;
-			} else {
-				try {
-					const data = await cacheManager.get(service, "CF_DESCRIPTIONS");
-					results[SERVICE_RESULT_KEY[service]] = data || [];
-				} catch (error) {
-					if (error instanceof CacheCorruptionError) {
-						results[SERVICE_RESULT_KEY[service]] = [];
-					} else {
-						throw error;
-					}
-				}
-			}
-		}
-
-		return reply.send(results);
+		return reply.send(await listCatalogue(request, "CF_DESCRIPTIONS"));
 	});
 
 	/**
@@ -475,14 +465,7 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 			return reply.send({ data });
 		}
 
-		try {
-			const data = await cacheManager.get("RADARR", "CF_INCLUDES");
-			return reply.send({ data: data || [] });
-		} catch (error) {
-			if (error instanceof CacheCorruptionError) {
-				return reply.send({ data: [] });
-			}
-			throw error;
-		}
+		const data = await cacheManager.get("RADARR", "CF_INCLUDES");
+		return reply.send({ data: data ?? [] });
 	});
 }

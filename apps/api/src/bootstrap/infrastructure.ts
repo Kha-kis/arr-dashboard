@@ -1,9 +1,12 @@
 import type { FastifyInstance } from "fastify";
+import { registerRestoreBootstrapPlugin } from "../lib/backup/restore-runtime-bootstrap.js";
 
 import { arrClientPlugin } from "../plugins/arr-client.js";
 import deploymentExecutorPlugin from "../plugins/deployment-executor.js";
 import heapMonitorPlugin from "../plugins/heap-monitor.js";
 import httpAuthMigrationPlugin from "../plugins/http-auth-migration.js";
+import inodeCorrelationUpgradePlugin from "../plugins/inode-correlation-upgrade.js";
+import inodeIndexHydrationPlugin from "../plugins/inode-index-hydration.js";
 import labelSyncMutationRecoveryPlugin from "../plugins/label-sync-mutation-recovery.js";
 import lifecyclePlugin from "../plugins/lifecycle.js";
 import notificationServicePlugin from "../plugins/notification-service.js";
@@ -11,6 +14,7 @@ import { prismaPlugin } from "../plugins/prisma.js";
 import providerCacheAttemptRecoveryPlugin from "../plugins/provider-cache-attempt-recovery.js";
 import providerObservationRunRecoveryPlugin from "../plugins/provider-observation-run-recovery.js";
 import schedulerRegistryPlugin from "../plugins/scheduler-registry.js";
+import searchGrabRecoveryPlugin from "../plugins/search-grab-recovery.js";
 import { securityPlugin } from "../plugins/security.js";
 import seerrCachePlugin from "../plugins/seerr-cache.js";
 import seerrCircuitBreakerPlugin from "../plugins/seerr-circuit-breaker.js";
@@ -32,21 +36,25 @@ import seerrCircuitBreakerPlugin from "../plugins/seerr-circuit-breaker.js";
  *  - notificationService → `app.notificationService`
  *  - schedulerRegistry → `app.schedulerRegistry` (must precede scheduler plugins)
  *  - lifecycle         → graceful shutdown + health wiring
+ *  - inodeIndexHydration→ owned background snapshot warm-up after inode upgrade
  *  - heapMonitor       → periodic process.memoryUsage() samples (issue #427 follow-up)
  */
 export function registerInfrastructure(app: FastifyInstance): void {
 	app.register(prismaPlugin);
-	app.register(labelSyncMutationRecoveryPlugin);
-	app.register(providerCacheAttemptRecoveryPlugin);
-	app.register(securityPlugin);
-	app.register(providerObservationRunRecoveryPlugin);
-	app.register(httpAuthMigrationPlugin);
-	app.register(arrClientPlugin);
-	app.register(seerrCircuitBreakerPlugin);
-	app.register(seerrCachePlugin);
-	app.register(deploymentExecutorPlugin);
-	app.register(notificationServicePlugin);
-	app.register(schedulerRegistryPlugin);
-	app.register(lifecyclePlugin);
-	app.register(heapMonitorPlugin);
+	registerRestoreBootstrapPlugin(app, inodeCorrelationUpgradePlugin);
+	registerRestoreBootstrapPlugin(app, labelSyncMutationRecoveryPlugin);
+	registerRestoreBootstrapPlugin(app, providerCacheAttemptRecoveryPlugin);
+	registerRestoreBootstrapPlugin(app, securityPlugin);
+	registerRestoreBootstrapPlugin(app, searchGrabRecoveryPlugin);
+	registerRestoreBootstrapPlugin(app, providerObservationRunRecoveryPlugin);
+	registerRestoreBootstrapPlugin(app, httpAuthMigrationPlugin);
+	registerRestoreBootstrapPlugin(app, arrClientPlugin);
+	registerRestoreBootstrapPlugin(app, seerrCircuitBreakerPlugin);
+	registerRestoreBootstrapPlugin(app, seerrCachePlugin);
+	registerRestoreBootstrapPlugin(app, deploymentExecutorPlugin);
+	registerRestoreBootstrapPlugin(app, notificationServicePlugin);
+	registerRestoreBootstrapPlugin(app, schedulerRegistryPlugin);
+	registerRestoreBootstrapPlugin(app, lifecyclePlugin);
+	registerRestoreBootstrapPlugin(app, inodeIndexHydrationPlugin);
+	registerRestoreBootstrapPlugin(app, heapMonitorPlugin);
 }

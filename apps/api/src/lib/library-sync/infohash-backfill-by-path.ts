@@ -47,12 +47,17 @@ import type { QuiTorrent } from "@arr/shared";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { createQuiClient } from "../qui/client-factory.js";
 import { withQuiObservationTopologyGuard } from "../qui/observation-topology-guard.js";
+import {
+	assertQuiTopologyGenerationCurrent,
+	captureQuiTopologyGeneration,
+} from "../qui/topology-generation.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import {
 	buildFileIdIndex,
 	type FileIdIndex,
 	matchLibraryByFileId,
 } from "./infohash-backfill-by-inode.js";
+import { CURRENT_INODE_SOURCE } from "./inode-correlation-upgrade.js";
 
 /**
  * Stable string identifiers for the strategy that produced an infoHash.
@@ -63,6 +68,8 @@ import {
  *     fingerprints; could be wrong in rare cases.
  */
 export type InfoHashSource = "inode" | "path-exact" | "name-size" | "title-year";
+
+const BACKFILL_MISS_RETRY_MS = 30 * 60_000;
 
 export interface PathBackfillSweepResult {
 	usersScanned: number;
@@ -78,6 +85,8 @@ export interface PathBackfillSweepArgs {
 	log?: FastifyBaseLogger;
 	/** Cap on rows touched per sweep. Same as the *arr-history backfill. */
 	batchSize: number;
+	/** Periodic recovery considers only previously deferred rows, not new backlog. */
+	dueOnly?: boolean;
 }
 
 /**
@@ -106,7 +115,7 @@ interface MovieFileFingerprint {
  * JSON blob. Returns null if any required field is missing — better
  * to silently skip a malformed row than write a guess.
  */
-function extractMovieFingerprint(rawData: string): MovieFileFingerprint | null {
+export function extractMovieFingerprint(rawData: string): MovieFileFingerprint | null {
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(rawData);
@@ -131,6 +140,14 @@ function extractMovieFingerprint(rawData: string): MovieFileFingerprint | null {
 		arrTitle,
 		arrYear,
 	};
+}
+
+/** An ARR file replacement invalidates both a deferred miss and an old hash. */
+export function movieCorrelationInputChanged(previous: string | null, current: string): boolean {
+	return (
+		JSON.stringify(previous ? extractMovieFingerprint(previous) : null) !==
+		JSON.stringify(extractMovieFingerprint(current))
+	);
 }
 
 /**
@@ -327,6 +344,7 @@ export async function runPathBackfillSweep({
 	app,
 	log,
 	batchSize,
+	dueOnly = false,
 }: PathBackfillSweepArgs): Promise<PathBackfillSweepResult> {
 	const startedAt = Date.now();
 	const result: PathBackfillSweepResult = {
@@ -362,6 +380,7 @@ export async function runPathBackfillSweep({
 			where: { service: "QUI", userId, enabled: true },
 		});
 		if (quiInstances.length === 0) continue;
+		const topologyGeneration = captureQuiTopologyGeneration(quiInstances);
 
 		const fsEnabledInstances = quiInstances.filter((qi) => qi.hasLocalFilesystemAccess === true);
 		const fsDisabledInstances = quiInstances.filter((qi) => qi.hasLocalFilesystemAccess !== true);
@@ -374,7 +393,7 @@ export async function runPathBackfillSweep({
 		for (const qi of fsEnabledInstances) {
 			try {
 				const client = createQuiClient(app, qi);
-				const index = await buildFileIdIndex(client, qi, log);
+				const index = await buildFileIdIndex(client, qi, log, app.prisma);
 				inodeIndices.push({ instanceId: qi.id, index });
 			} catch (err) {
 				result.errors++;
@@ -412,6 +431,7 @@ export async function runPathBackfillSweep({
 		}
 
 		const remaining = batchSize - result.rowsScanned;
+		const now = new Date();
 		// Path-correlation is movies-only for v1 (see module-level doc).
 		// Restrict by Radarr service AND no infoHash AND has a file.
 		const rows = await app.prisma.libraryCache.findMany({
@@ -420,17 +440,43 @@ export async function runPathBackfillSweep({
 				itemType: "movie",
 				hasFile: true,
 				instance: { userId, service: "RADARR" },
+				...(dueOnly
+					? { pathBackfillRetryAfter: { lte: now } }
+					: { OR: [{ pathBackfillRetryAfter: null }, { pathBackfillRetryAfter: { lte: now } }] }),
 			},
-			orderBy: { cachedAt: "asc" },
+			orderBy: [{ pathBackfillRetryAfter: "asc" }, { cachedAt: "asc" }],
 			take: remaining,
 			select: { id: true, data: true, title: true },
 		});
 
 		for (const row of rows) {
 			result.rowsScanned++;
+			const deferMiss = async () => {
+				result.rowsMissed++;
+				try {
+					await withQuiObservationTopologyGuard(userId, async () => {
+						await assertQuiTopologyGenerationCurrent(app.prisma, userId, topologyGeneration);
+						await app.prisma.libraryCache.updateMany({
+							where: {
+								id: row.id,
+								data: row.data,
+								infoHash: null,
+								instance: { userId, service: "RADARR" },
+							},
+							data: { pathBackfillRetryAfter: new Date(Date.now() + BACKFILL_MISS_RETRY_MS) },
+						});
+					});
+				} catch (err) {
+					result.errors++;
+					log?.warn(
+						{ err: getErrorMessage(err), userId, cacheRowId: row.id },
+						"path-backfill: failed to defer unmatched row",
+					);
+				}
+			};
 			const fp = extractMovieFingerprint(row.data);
 			if (!fp) {
-				result.rowsMissed++;
+				await deferMiss();
 				continue;
 			}
 
@@ -455,23 +501,34 @@ export async function runPathBackfillSweep({
 			}
 
 			if (!match) {
-				result.rowsMissed++;
+				await deferMiss();
 				continue;
 			}
 
 			try {
-				await withQuiObservationTopologyGuard(userId, () =>
-					app.prisma.libraryCache.update({
-						where: { id: row.id },
+				const persisted = await withQuiObservationTopologyGuard(userId, async () => {
+					await assertQuiTopologyGenerationCurrent(app.prisma, userId, topologyGeneration);
+					return app.prisma.libraryCache.updateMany({
+						where: {
+							id: row.id,
+							data: row.data,
+							infoHash: null,
+							instance: { userId, service: "RADARR" },
+						},
 						data: {
 							infoHash: match.hash,
-							infoHashSource: match.source,
+							infoHashSource: match.source === "inode" ? CURRENT_INODE_SOURCE : match.source,
+							pathBackfillRetryAfter: null,
 							torrentState: null,
 							torrentRatio: null,
 							torrentSyncedAt: null,
 						},
-					}),
-				);
+					});
+				});
+				if (persisted.count !== 1) {
+					result.rowsMissed++;
+					continue;
+				}
 				result.rowsHashed++;
 				log?.debug(
 					{

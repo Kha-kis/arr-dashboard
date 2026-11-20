@@ -130,6 +130,65 @@ beforeEach(() => {
 });
 
 describe("runProviderObservationAttempt", () => {
+	it.each([false, true])(
+		"reports failure-recording entry and joins the held write with throwing observer: %s",
+		async (throwObserver) => {
+			const state = setup();
+			const events: string[] = [];
+			let release!: () => void;
+			let entered!: () => void;
+			const held = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			const recordingEntered = new Promise<void>((resolve) => {
+				entered = resolve;
+			});
+			let recordingCompleted = false;
+			let settled = false;
+			lifecycle.finishFailure.mockImplementation(async () => {
+				events.push("recording-entered");
+				entered();
+				await held;
+				recordingCompleted = true;
+				events.push("recording-completed");
+				return "recorded";
+			});
+			const value = input({
+				prepare: () => {
+					throw new Error("private preparation error");
+				},
+				options: {
+					onStage: (stage) => {
+						events.push(stage);
+						if (throwObserver) throw new Error("private observer error");
+					},
+				},
+			});
+			const work = runClaimedProviderObservationAttempt(value, state.attempt)
+				.catch((error: unknown) => error)
+				.finally(() => {
+					settled = true;
+				});
+			await Promise.race([recordingEntered, work]);
+			try {
+				expect(events).toEqual(["failure-recording", "recording-entered"]);
+				expect(recordingCompleted).toBe(false);
+				expect(settled).toBe(false);
+			} finally {
+				release();
+				await work;
+			}
+			expect(recordingCompleted).toBe(true);
+			expect(events).toEqual(["failure-recording", "recording-entered", "recording-completed"]);
+			const error = await work;
+			expect(error).toBeInstanceOf(ProviderObservationCoordinatorError);
+			expect(error).toMatchObject({
+				code: "provider-unavailable",
+				message: "Provider observation attempt did not publish.",
+			});
+		},
+	);
+
 	it("executes a supplied durable claim without beginning a second attempt", async () => {
 		const state = setup();
 		const value = input();

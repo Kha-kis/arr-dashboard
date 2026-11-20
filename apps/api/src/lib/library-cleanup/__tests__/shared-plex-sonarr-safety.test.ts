@@ -1,6 +1,7 @@
 import { NotFoundError } from "arr-sdk";
 import { describe, expect, it, vi } from "vitest";
 import { evidenceFingerprint } from "../../evidence-fingerprint.js";
+import { EPISODE_CACHE_PUBLICATION_WARNING } from "../episode-cache-publication.js";
 
 const positiveEpisodeEvidence = vi.hoisted(() => new Map<string, unknown>());
 const exactEpisodeEvidenceUnavailable = vi.hoisted(() => ({ value: false }));
@@ -712,6 +713,34 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 			options.action ?? "delete",
 		),
 	];
+	const monitoringRows = new Map<
+		number,
+		{ id: string; data: string; monitored: boolean; updatedAt: Date }
+	>();
+	const monitoringRow = (id: number) => {
+		let row = monitoringRows.get(id);
+		if (!row) {
+			row = {
+				id: "monitoring-" + id,
+				monitored: true,
+				updatedAt: new Date("2026-07-27T12:00:00.000Z"),
+				data: JSON.stringify({
+					id,
+					instanceId: targetInstance.id,
+					service: "sonarr",
+					type: "series",
+					monitored: true,
+					path: series.path,
+					remoteIds: { tvdbId: series.tvdbId },
+					_arrDashboardSource: {
+						serviceFingerprint: createArrServiceFingerprint(targetInstance as never),
+					},
+				}),
+			};
+			monitoringRows.set(id, row);
+		}
+		return row;
+	};
 	const deps: CleanupExecutorDeps = {
 		prisma: {
 			cacheRefreshStatus: {
@@ -760,10 +789,27 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 				update: vi.fn().mockResolvedValue({}),
 			},
 			libraryCache: {
-				findFirst: vi.fn().mockResolvedValue(null),
+				findFirst: vi.fn(async ({ where }: { where: { arrItemId: number } }) => ({
+					...monitoringRow(where.arrItemId),
+				})),
 				findMany: vi.fn().mockResolvedValue([]),
 				deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
-				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				updateMany: vi.fn(
+					async ({
+						where,
+						data,
+					}: {
+						where: { id?: string; data?: string };
+						data: Record<string, unknown>;
+					}) => {
+						if (where.id) {
+							const row = [...monitoringRows.values()].find((r) => r.id === where.id);
+							if (!row || where.data !== row.data) return { count: 0 };
+							Object.assign(row, data);
+						}
+						return { count: 1 };
+					},
+				),
 			},
 			episodeFileCache: {
 				findMany: vi.fn().mockResolvedValue(
@@ -818,6 +864,7 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 
 	return {
 		deps,
+		monitoringRow,
 		targetInstance,
 		plexInstance,
 		quiInstance,
@@ -2940,6 +2987,342 @@ describe("shared Plex deletion safety for Sonarr", () => {
 });
 
 describe("verified Sonarr mutation handoff", () => {
+	it("W1007 completed queued fallback retains cache warning without replay", async () => {
+		const fixture = makeSonarrDeps();
+		const target = exactEpisodeTarget(),
+			context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(target));
+		if (plan?.kind !== "verified_sonarr_episode") throw new Error("Expected exact episode plan");
+		const stored = {
+			...approval(),
+			targetScope: "episode",
+			arrEpisodeId: 9001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		} as Record<string, unknown>;
+		const update = configureApprovalStore(fixture.deps, stored);
+		const actualStoreWrite = update.getMockImplementation()!;
+		let throws = 0;
+		update.mockImplementation((async (args: {
+			where: { id?: string };
+			data: { status?: string };
+		}) => {
+			if (args.where.id === stored.id && args.data.status === "executed" && throws === 0) {
+				throws++;
+				throw new Error("synthetic first completion write failure");
+			}
+			return actualStoreWrite(args as never);
+		}) as never);
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+		expect(result).toMatchObject({
+			removed: 1,
+			failed: 0,
+			errors: [],
+			warnings: [EPISODE_CACHE_PUBLICATION_WARNING],
+		});
+		expect(throws).toBe(1);
+		expect(stored).toMatchObject({
+			status: "executed",
+			executionToken: null,
+			lastExecutionError: EPISODE_CACHE_PUBLICATION_WARNING,
+			executedAt: expect.any(Date),
+		});
+		expect(fixture.setEpisodeMonitored).toHaveBeenCalledOnce();
+		expect(fixture.bulkDelete).toHaveBeenCalledExactlyOnceWith([3001]);
+	});
+	it("publishes normalized episode deletion facts after direct delete", async () => {
+		const action = "delete";
+		const fixture = makeSonarrDeps({ action });
+		configureRetryStore(fixture.deps);
+		const cached = {
+			id: "series-cache",
+			instanceId: fixture.targetInstance.id,
+			arrItemId: 201,
+			itemType: "series",
+			hasFile: true,
+			sizeOnDisk: 4003n,
+			data: JSON.stringify({
+				id: 201,
+				path: fixture.series.path,
+				remoteIds: { tvdbId: 123 },
+				_arrDashboardSource: { serviceFingerprint: sonarrServiceFingerprint },
+				hasFile: true,
+				sizeOnDisk: 4003,
+				monitored: true,
+				title: "Retained metadata",
+				statistics: { episodeFileCount: 2, totalEpisodeCount: 2 },
+				seasons: [
+					{
+						seasonNumber: 1,
+						monitored: true,
+						episodeCount: 2,
+						episodeFileCount: 2,
+						missingEpisodeCount: 0,
+					},
+				],
+			}),
+		};
+		vi.mocked(fixture.deps.prisma.libraryCache.findFirst).mockResolvedValue(cached as never);
+		(fixture.deps.prisma as unknown as { $transaction: unknown }).$transaction = vi.fn(
+			async (callback: (tx: typeof fixture.deps.prisma) => Promise<unknown>) =>
+				callback(fixture.deps.prisma),
+		);
+		const getFiles = fixture.targetClient.episodeFile.getBySeries.getMockImplementation()!;
+		fixture.deps.arrClientFactory.createSonarrClient = vi.fn(() => fixture.targetClient) as never;
+		fixture.targetClient.episodeFile.getBySeries.mockImplementation(async () =>
+			(await getFiles()).map((file) => ({ ...file, seriesId: 201, seasonNumber: 1 })),
+		);
+		vi.mocked(fixture.deps.prisma.libraryCache.updateMany).mockImplementation((async ({
+			data,
+		}: {
+			data: object;
+		}) => {
+			Object.assign(cached, data);
+			return { count: 1 };
+		}) as never);
+		const result = await executeDirectRemoval(
+			fixture.deps,
+			{
+				id: "config-1",
+				maxRemovalsPerRun: 10,
+				respectQuiSeeding: true,
+				rules: [episodeCleanupRule(action)],
+			} as never,
+			"user-1",
+			[directEpisodeFlaggedItem(fixture, action)],
+			1,
+			1,
+			Date.now(),
+			undefined,
+			undefined,
+			new Map(),
+			undefined,
+			TEST_PLEX_PROVIDER_EVIDENCE,
+		);
+		expect(result).toMatchObject(
+			action === "delete" ? { itemsRemoved: 1 } : { itemsFilesDeleted: 1 },
+		);
+		expect(JSON.parse(cached.data)).toMatchObject({
+			sizeOnDisk: 2002,
+			monitored: true,
+			title: "Retained metadata",
+			statistics: { episodeFileCount: 1 },
+			seasons: [{ seasonNumber: 1, monitored: true, episodeFileCount: 1, missingEpisodeCount: 1 }],
+		});
+	});
+	it.each([
+		{ kind: "positive-only", health: "ok", flagged: 1 },
+		{ kind: "available-empty", health: "ok", flagged: 0 },
+		{ kind: "exact", health: "ok", flagged: 2 },
+		{ kind: "exact-empty", health: "ok", flagged: 0 },
+		{ kind: "mixed-completion", health: "failed", flagged: 0 },
+		{ kind: "mixed-missing-source", health: "failed", flagged: 1 },
+		{ kind: "invalid-source", health: "failed", flagged: 0 },
+		{ kind: "no-plex", health: "failed", flagged: 0 },
+		{ kind: "no-relevant-rules", health: "skipped", flagged: 0 },
+	])(
+		"W1004 preview consumer reports $kind requested capability truthfully",
+		async ({ kind, health, flagged }) => {
+			const fixture = makeSonarrDeps();
+			const rule = episodeCleanupRule("unmonitor");
+			const rules =
+				kind === "no-relevant-rules"
+					? [currentSeriesRule("nonmatching", "unmonitor", false)]
+					: [rule];
+			if (kind === "mixed-completion")
+				rules.push({
+					...currentSeriesRule("completion", "unmonitor", false),
+					ruleType: "plex_episode_completion",
+					parameters: JSON.stringify({ operator: "greater_than", percent: 90 }),
+				});
+			vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+				id: "config-1",
+				userId: "user-1",
+				enabled: true,
+				dryRunMode: true,
+				requireApproval: false,
+				maxRemovalsPerRun: 10,
+				respectQuiSeeding: false,
+				rules,
+			} as never);
+			const plexInstances = kind === "no-plex" ? [] : [fixture.plexInstance];
+			if (kind === "mixed-missing-source")
+				plexInstances.push({
+					...fixture.plexInstance,
+					id: "plex-missing",
+					baseUrl: "http://missing.internal",
+				});
+			vi.mocked(fixture.deps.prisma.serviceInstance.findMany).mockImplementation(((args: {
+				where?: { service?: string | { in?: string[] } };
+			}) => {
+				const service = args?.where?.service;
+				if (service === "PLEX") return Promise.resolve(plexInstances);
+				if (service === "QUI") return Promise.resolve([]);
+				if (service) return Promise.resolve([fixture.targetInstance]);
+				return Promise.resolve([fixture.targetInstance, ...plexInstances]);
+			}) as never);
+			if (!kind.startsWith("exact"))
+				vi.mocked(fixture.deps.prisma.cacheRefreshStatus.findMany).mockResolvedValue([]);
+			if (kind === "exact-empty") {
+				fixture.episodeStatus.itemCount = 0;
+				vi.mocked(fixture.deps.prisma.plexEpisodeCache.findMany).mockResolvedValue([]);
+			}
+			positiveEpisodeEvidence.set(fixture.plexInstance.id, {
+				available: true,
+				instanceId: fixture.plexInstance.id,
+				connectionGeneration: 1,
+				identityGeneration: 1,
+				provenance: {
+					publicationLevel: "positive-only",
+					completeness: "partial",
+					parentPlexGenerationId: "parent-v4",
+					parentTargetDigest: POSITIVE_PARENT_DIGEST,
+					episodeGenerationId: "episode-v3",
+					episodeDigest: POSITIVE_EPISODE_DIGEST,
+					publishedAt: new Date().toISOString(),
+				},
+				rows:
+					kind === "available-empty"
+						? []
+						: [
+								{
+									showTmdbId: 456,
+									seasonNumber: 1,
+									episodeNumber: 1,
+									ratingKey: "episode-1",
+									lowerBound: 2,
+									sourceFingerprint: kind === "invalid-source" ? "wrong" : PLEX_SOURCE_FINGERPRINT,
+									soleParentTarget: { ratingKey: "show-123" },
+								},
+							],
+			});
+			if (kind.startsWith("exact")) positiveEpisodeEvidence.clear();
+			vi.mocked(fixture.deps.prisma.libraryCache.findMany).mockImplementation(((args: {
+				cursor?: unknown;
+			}) =>
+				Promise.resolve(
+					args.cursor
+						? []
+						: [
+								{
+									id: "cache-series",
+									instanceId: fixture.targetInstance.id,
+									arrItemId: 201,
+									itemType: "series",
+									title: fixture.series.title,
+									monitored: true,
+									hasFile: true,
+									status: "continuing",
+									sizeOnDisk: 4003n,
+									cachedAt: new Date(),
+									data: JSON.stringify({
+										remoteIds: { tvdbId: 123, tmdbId: 456 },
+										path: fixture.series.path,
+										_arrDashboardSource: { serviceFingerprint: sonarrServiceFingerprint },
+									}),
+								},
+							],
+				)) as never);
+			try {
+				const result = await executeCleanupPreview(fixture.deps, "user-1");
+				expect.soft(result.prefetchHealth?.plex).toBe(health);
+				expect(result.itemsFlagged).toBe(flagged);
+				if (flagged)
+					expect(result.details[0]).toMatchObject({
+						targetScope: "episode",
+						arrEpisodeId: 9001,
+						episodeFileId: 3001,
+					});
+				expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+				expect(fixture.bulkDelete).not.toHaveBeenCalled();
+			} finally {
+				positiveEpisodeEvidence.clear();
+			}
+		},
+	);
+
+	it.each(["unchanged", "unavailable", "omitted", "changed-coordinate", "confirmed"] as const)(
+		"W1004 nominal episode ACK requires exact %s readback",
+		async (kind) => {
+			const fixture = makeSonarrDeps();
+			const episodeTarget = { ...exactEpisodeTarget(), action: "unmonitor" as const };
+			const context = createSharedPlexSafetyContext();
+			await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+			const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+			if (plan?.kind !== "verified_sonarr_episode") throw Error("Expected verified episode plan");
+			const rows = await fixture.targetClient.episode.getAll();
+			let acknowledged = false;
+			fixture.setEpisodeMonitored.mockImplementation(async () => {
+				acknowledged = true;
+				if (kind !== "unchanged") fixture.setLiveEpisodeMonitored(9001, false);
+			});
+			fixture.targetClient.episode.getAll.mockImplementation(async () => {
+				if (acknowledged && kind === "unavailable") throw Error("private upstream read failure");
+				if (acknowledged && kind === "omitted")
+					return rows.map((row) => {
+						const copy = { ...row };
+						if (copy.id === 9001) delete (copy as Record<string, unknown>).monitored;
+						return copy;
+					});
+				if (acknowledged && kind === "changed-coordinate")
+					return rows.map((row) => (row.id === 9001 ? { ...row, episodeNumber: 9 } : row));
+				return rows;
+			});
+			vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+				id: "config-1",
+				respectQuiSeeding: true,
+				rules: [episodeCleanupRule("unmonitor")],
+			} as never);
+			const stored = {
+				...approval("unmonitor"),
+				targetScope: "episode",
+				arrEpisodeId: 9001,
+				seasonNumber: 1,
+				episodeNumber: 1,
+				episodeTitle: "Episode 1",
+				safetySnapshot: serializeExecutableSafetyPlan(plan),
+			} as Record<string, unknown>;
+			configureApprovalStore(fixture.deps, stored);
+			const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+			expect
+				.soft(result)
+				.toMatchObject(
+					kind === "confirmed" ? { removed: 1, failed: 0 } : { removed: 0, failed: 1 },
+				);
+			expect
+				.soft(stored.status)
+				.toBe(
+					kind === "confirmed"
+						? "executed"
+						: ["unchanged", "changed-coordinate"].includes(kind)
+							? "pending"
+							: "retry_pending",
+				);
+			if (kind !== "confirmed") expect(stored.executedAt ?? null).toBe(null);
+			expect(rows.find((row) => row.id === 9002)).toMatchObject({
+				monitored: true,
+				episodeFileId: 3002,
+			});
+			expect(fixture.bulkDelete).not.toHaveBeenCalled();
+			expect(fixture.episodeFileCacheDeleteMany).not.toHaveBeenCalled();
+			expect(fixture.setEpisodeMonitored).toHaveBeenCalledTimes(1);
+			if (["unavailable", "omitted"].includes(kind)) {
+				expect
+					.soft(stored.lastExecutionError)
+					.toEqual(expect.stringContaining("could not confirm"));
+				expect(stored.lastExecutionError).not.toContain("private upstream read failure");
+				fixture.targetClient.episode.getAll.mockResolvedValue(rows);
+				const retry = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
+				expect(retry).toMatchObject({ removed: 0, reconciled: 1, failed: 0 });
+				expect(stored.status).toBe("executed");
+				expect(fixture.setEpisodeMonitored).toHaveBeenCalledTimes(1);
+			}
+		},
+	);
+
 	it("joins reporter preview identity to the approved exact episode mutation", async () => {
 		const fixture = makeSonarrDeps({
 			episodes: [
@@ -3160,6 +3543,7 @@ describe("verified Sonarr mutation handoff", () => {
 			removed: 1,
 			failed: 0,
 			errors: [],
+			warnings: [EPISODE_CACHE_PUBLICATION_WARNING],
 		});
 		expect(storedApproval).toMatchObject({
 			targetScope: "episode",
@@ -4251,17 +4635,12 @@ describe("verified Sonarr mutation handoff", () => {
 			removed: 1,
 			failed: 0,
 			errors: [],
+			warnings: [EPISODE_CACHE_PUBLICATION_WARNING],
 		});
 		expect(fixture.setEpisodeMonitored).toHaveBeenCalledWith([9_001], false);
 		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
 		expect(fixture.deleteSeries).not.toHaveBeenCalled();
-		expect(fixture.episodeFileCacheDeleteMany).toHaveBeenCalledWith({
-			where: {
-				instanceId: "sonarr-4k",
-				arrSeriesId: 201,
-				arrEpisodeFileId: 3_001,
-			},
-		});
+		expect(fixture.episodeFileCacheDeleteMany).not.toHaveBeenCalled();
 	});
 
 	it("does not call Sonarr when the episode unmonitor phase cannot be persisted", async () => {
@@ -4498,7 +4877,10 @@ describe("verified Sonarr mutation handoff", () => {
 		const result = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
 
 		expect(result).toMatchObject({ removed: 1, failed: 0 });
-		expect(storedApproval).toMatchObject({ status: "executed", lastExecutionError: null });
+		expect(storedApproval).toMatchObject({
+			status: "executed",
+			lastExecutionError: EPISODE_CACHE_PUBLICATION_WARNING,
+		});
 		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
 		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
 	});
@@ -5135,6 +5517,7 @@ describe("verified Sonarr mutation handoff", () => {
 			removed: 1,
 			failed: 0,
 			errors: [],
+			warnings: [EPISODE_CACHE_PUBLICATION_WARNING],
 		});
 		expect(plan.watchProof.watchCount).toBe(1);
 		expect(fixture.setEpisodeMonitored).toHaveBeenCalledWith([9_001], false);
@@ -5300,6 +5683,7 @@ describe("verified Sonarr mutation handoff", () => {
 			removed: 1,
 			failed: 0,
 			errors: [],
+			warnings: [EPISODE_CACHE_PUBLICATION_WARNING],
 		});
 		expect(storedApproval).toMatchObject({ status: "executed" });
 		expect(fixture.setEpisodeMonitored).toHaveBeenCalledWith([9_001], false);
@@ -5335,6 +5719,7 @@ describe("verified Sonarr mutation handoff", () => {
 			removed: 1,
 			failed: 0,
 			errors: [],
+			warnings: [EPISODE_CACHE_PUBLICATION_WARNING],
 		});
 		expect(second.secondGetEpisodeWatchCount).not.toHaveBeenCalled();
 		expect(second.secondGetSeriesEpisodeMediaPartsByTvdbId).not.toHaveBeenCalled();
@@ -5939,7 +6324,7 @@ describe("verified Sonarr mutation handoff", () => {
 		);
 
 		expect(retryResult).toMatchObject({
-			status: "completed",
+			status: "partial",
 			itemsRemoved: 1,
 			itemsFlagged: 0,
 		});
@@ -6815,6 +7200,7 @@ describe("verified Sonarr mutation handoff", () => {
 			removed: 1,
 			failed: 0,
 			errors: [],
+			warnings: [EPISODE_CACHE_PUBLICATION_WARNING],
 		});
 		expect(fixture.setEpisodeMonitored).toHaveBeenCalledWith([9_001], false);
 		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
@@ -6976,11 +7362,9 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(result.errors[0]).toContain("retained series inventory changed");
 		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
 		expect(fixture.deleteSeries).not.toHaveBeenCalled();
-		expect(fixture.deps.prisma.libraryCache.updateMany).toHaveBeenCalledWith({
-			where: { instanceId: "sonarr-4k", arrItemId: 201, itemType: "series" },
-			data: { hasFile: true, sizeOnDisk: 4_005 },
-		});
+		expect(fixture.deps.prisma.libraryCache.updateMany).not.toHaveBeenCalled();
 		expect(storedApproval).toMatchObject({ status: "retry_pending" });
+		expect(result.warnings).toContain(EPISODE_CACHE_PUBLICATION_WARNING);
 	});
 
 	it("preserves the live retained size for direct episode cleanup partials", async () => {
@@ -7032,10 +7416,8 @@ describe("verified Sonarr mutation handoff", () => {
 				lastExecutionError: expect.stringContaining("retained series inventory changed"),
 			}),
 		]);
-		expect(fixture.deps.prisma.libraryCache.updateMany).toHaveBeenCalledWith({
-			where: { instanceId: "sonarr-4k", arrItemId: 201, itemType: "series" },
-			data: { hasFile: true, sizeOnDisk: 4_005 },
-		});
+		expect(fixture.deps.prisma.libraryCache.updateMany).not.toHaveBeenCalled();
+		expect(result.warnings).toContain(EPISODE_CACHE_PUBLICATION_WARNING);
 	});
 
 	it("records a confirmed episode deletion when Sonarr loses the response", async () => {
@@ -7072,17 +7454,9 @@ describe("verified Sonarr mutation handoff", () => {
 			status: "retry_pending",
 			lastExecutionError: expect.stringContaining("response was lost"),
 		});
-		expect(fixture.deps.prisma.episodeFileCache.deleteMany).toHaveBeenCalledWith({
-			where: {
-				instanceId: "sonarr-4k",
-				arrSeriesId: 201,
-				arrEpisodeFileId: { in: [3_001] },
-			},
-		});
-		expect(fixture.deps.prisma.libraryCache.updateMany).toHaveBeenCalledWith({
-			where: { instanceId: "sonarr-4k", arrItemId: 201, itemType: "series" },
-			data: { hasFile: true, sizeOnDisk: 2_002 },
-		});
+		expect(fixture.deps.prisma.episodeFileCache.deleteMany).not.toHaveBeenCalled();
+		expect(fixture.deps.prisma.libraryCache.updateMany).not.toHaveBeenCalled();
+		expect(result.warnings).toContain(EPISODE_CACHE_PUBLICATION_WARNING);
 	});
 
 	it("keeps an unverifiable direct episode deletion retryable without claiming a deletion", async () => {
@@ -7130,10 +7504,7 @@ describe("verified Sonarr mutation handoff", () => {
 			}),
 		]);
 		expect(fixture.deps.prisma.episodeFileCache.deleteMany).not.toHaveBeenCalled();
-		expect(fixture.deps.prisma.libraryCache.updateMany).toHaveBeenCalledWith({
-			where: { instanceId: "sonarr-4k", arrItemId: 201, itemType: "series" },
-			data: { hasFile: true, sizeOnDisk: 4_003 },
-		});
+		expect(fixture.deps.prisma.libraryCache.updateMany).not.toHaveBeenCalled();
 	});
 
 	it("keeps an unverifiable delete_files result action-neutral and retryable", async () => {
@@ -7735,17 +8106,18 @@ describe("verified Sonarr mutation handoff", () => {
 
 		const result = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
 
-		expect(result).toEqual({ removed: 0, reconciled: 1, failed: 0, errors: [] });
+		expect(result).toEqual({
+			removed: 0,
+			reconciled: 1,
+			failed: 0,
+			errors: [],
+			warnings: [EPISODE_CACHE_PUBLICATION_WARNING],
+		});
 		expect(storedRetry).toMatchObject({ status: "executed", executionToken: null });
 		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
 		expect(fixture.bulkDelete).not.toHaveBeenCalled();
-		expect(fixture.deps.prisma.episodeFileCache.deleteMany).toHaveBeenCalledWith({
-			where: {
-				instanceId: "sonarr-4k",
-				arrSeriesId: 201,
-				arrEpisodeFileId: 3_001,
-			},
-		});
+		expect(fixture.deps.prisma.episodeFileCache.deleteMany).not.toHaveBeenCalled();
+		expect(result.warnings).toContain(EPISODE_CACHE_PUBLICATION_WARNING);
 	});
 
 	it("purges both caches when an episode-unmonitor retry finds its parent series absent", async () => {
@@ -8769,6 +9141,86 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(deleteSeries).toHaveBeenCalledOnce();
 	});
 
+	it("does not complete or publish a nominal Sonarr unmonitor that was not applied", async () => {
+		const fixture = makeSonarrDeps();
+		const storedApproval = seriesUnmonitorApproval();
+		configureApprovalStore(fixture.deps, storedApproval);
+		setSonarrMutationRules(fixture.deps, [monitoredSeriesUnmonitorRule()]);
+		fixture.targetClient.series.update.mockResolvedValueOnce({ monitored: true } as never);
+
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).not.toMatchObject({ status: "executed" });
+		expect(storedApproval).not.toHaveProperty("executedAt", expect.anything());
+		expect(fixture.targetClient.series.update).toHaveBeenCalledOnce();
+		expect(fixture.monitoringRow(201).monitored).toBe(true);
+		expect(JSON.parse(fixture.monitoringRow(201).data).monitored).toBe(true);
+	});
+
+	it("keeps an omitted Sonarr monitoring outcome retryable and reconciles without a second PUT", async () => {
+		const fixture = makeSonarrDeps();
+		const storedApproval = seriesUnmonitorApproval();
+		configureApprovalStore(fixture.deps, storedApproval);
+		setSonarrMutationRules(fixture.deps, [monitoredSeriesUnmonitorRule()]);
+		const read = fixture.targetClient.series.getById.getMockImplementation()!;
+		let omitted = false;
+		fixture.targetClient.series.getById.mockImplementation(async (...args) => {
+			const current = await read(...args);
+			if (!omitted) return current;
+			const { monitored: _monitored, ...rest } = current;
+			return rest as never;
+		});
+		fixture.targetClient.series.update.mockImplementationOnce(async () => {
+			fixture.series.monitored = false;
+			omitted = true;
+			return {} as never;
+		});
+
+		const unknown = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+		expect(unknown).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({ status: "retry_pending" });
+		expect(storedApproval).not.toHaveProperty("executedAt", expect.anything());
+		expect(storedApproval).toHaveProperty(
+			"lastExecutionError",
+			expect.stringContaining("outcome remains unknown"),
+		);
+		expect(fixture.monitoringRow(201).monitored).toBe(true);
+		expect(JSON.parse(fixture.monitoringRow(201).data).monitored).toBe(true);
+		omitted = false;
+		const retry = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
+		expect(retry).toMatchObject({ removed: 0, reconciled: 1, failed: 0 });
+		expect(storedApproval).toMatchObject({ status: "executed" });
+		expect(fixture.targetClient.series.update).toHaveBeenCalledOnce();
+		expect(fixture.monitoringRow(201).monitored).toBe(false);
+		expect(JSON.parse(fixture.monitoringRow(201).data).monitored).toBe(false);
+	});
+
+	it("preserves confirmed queued Sonarr success and its cache publication warning without retrying the PUT", async () => {
+		const fixture = makeSonarrDeps();
+		const storedApproval = seriesUnmonitorApproval();
+		configureApprovalStore(fixture.deps, storedApproval);
+		setSonarrMutationRules(fixture.deps, [monitoredSeriesUnmonitorRule()]);
+		fixture.monitoringRow(201).data = "invalid cached JSON";
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+		expect(result).toMatchObject({ removed: 1, failed: 0 });
+		const warning = result.warnings?.find((message) =>
+			message.includes("Library cache could not be verified or updated"),
+		);
+		expect(warning).toBeTruthy();
+		expect(storedApproval).toMatchObject({ status: "executed", lastExecutionError: warning });
+		expect(fixture.monitoringRow(201)).toMatchObject({
+			monitored: true,
+			data: "invalid cached JSON",
+		});
+		expect(await executeRetryItems(fixture.deps, "user-1", ["approval-1"])).toMatchObject({
+			removed: 0,
+			reconciled: 0,
+			failed: 1,
+		});
+		expect(fixture.targetClient.series.update).toHaveBeenCalledOnce();
+	});
+
 	it("reconciles a queued Sonarr series unmonitor when the successful PUT response is lost", async () => {
 		const fixture = makeSonarrDeps();
 		const storedApproval = seriesUnmonitorApproval();
@@ -8783,10 +9235,8 @@ describe("verified Sonarr mutation handoff", () => {
 
 		expect(result).toMatchObject({ failed: 0 });
 		expect(fixture.targetClient.series.update).toHaveBeenCalledOnce();
-		expect(fixture.deps.prisma.libraryCache.updateMany).toHaveBeenCalledWith({
-			where: { instanceId: "sonarr-4k", arrItemId: 201, itemType: "series" },
-			data: { monitored: false },
-		});
+		expect(fixture.monitoringRow(201).monitored).toBe(false);
+		expect(JSON.parse(fixture.monitoringRow(201).data).monitored).toBe(false);
 		expect(storedApproval).toMatchObject({ status: "executed", executionToken: null });
 	});
 
@@ -8828,10 +9278,8 @@ describe("verified Sonarr mutation handoff", () => {
 
 		expect(result).toEqual({ removed: 0, reconciled: 1, failed: 0, errors: [] });
 		expect(fixture.targetClient.series.update).not.toHaveBeenCalled();
-		expect(fixture.deps.prisma.libraryCache.updateMany).toHaveBeenCalledWith({
-			where: { instanceId: "sonarr-4k", arrItemId: 201, itemType: "series" },
-			data: { monitored: false },
-		});
+		expect(fixture.monitoringRow(201).monitored).toBe(false);
+		expect(JSON.parse(fixture.monitoringRow(201).data).monitored).toBe(false);
 		expect(fixture.deps.prisma.episodeFileCache.deleteMany).not.toHaveBeenCalled();
 		expect(fixture.deps.prisma.libraryCache.deleteMany).not.toHaveBeenCalled();
 		expect(storedRetry).toMatchObject({ status: "executed", executionToken: null });

@@ -16,6 +16,19 @@ export type PlexCatalogChange =
 
 type CatalogSection = Pick<PlexSettlementLibrary, "key" | (typeof CATALOG_FIELDS)[number][0]>;
 
+/** Fixed diagnostics only; never carry provider errors, block reasons or identifiers. */
+export type PlexInnerCollectionRejection = {
+	innerStage:
+		| "initial-collection"
+		| "section-verification"
+		| "inventory-verification"
+		| "history-verification"
+		| "on-deck-verification"
+		| "positive-history-verification"
+		| "publication-policy";
+	innerFailure: "unexpected-failure" | "coverage-blocker" | "policy-blocker";
+};
+
 /** Classify known client failures without serializing any upstream error text. */
 export function classifyPlexHistoryFailure(
 	error: unknown,
@@ -74,7 +87,7 @@ export function logPlexCollectionRejection(
 		stage: string;
 		reason: string;
 		catalogChanges?: readonly PlexCatalogChange[];
-	},
+	} & Partial<PlexInnerCollectionRejection>,
 ): void {
 	try {
 		if (!log) return;

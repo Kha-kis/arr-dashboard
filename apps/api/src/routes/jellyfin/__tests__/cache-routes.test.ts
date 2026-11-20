@@ -225,6 +225,7 @@ describe("POST /api/jellyfin/cache/:instanceId/refresh", () => {
 				prisma: app.prisma,
 				encryptor: app.encryptor,
 				instance: storedInstance,
+				nativeInventoryMode: "force",
 			}),
 			expect.objectContaining({ resultMarker: expect.stringMatching(/^in_progress:/) }),
 		);

@@ -15,6 +15,7 @@ vi.mock("../../../lib/api-client/seerr");
 
 // Import after mock declaration
 import * as seerrApi from "../../../lib/api-client/seerr";
+import { NetworkError } from "../../../lib/api-client/base";
 import {
 	useApproveSeerrRequest,
 	useBulkSeerrRequestAction,
@@ -293,6 +294,22 @@ describe("useApproveSeerrRequest", () => {
 			}),
 		);
 	});
+
+	it("re-reads the request detail and list after a lost write response", async () => {
+		vi.mocked(seerrApi.approveSeerrRequest).mockRejectedValue(new NetworkError());
+		const { wrapper, queryClient } = createWrapper();
+		const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+		const { result } = renderHook(() => useApproveSeerrRequest(), { wrapper });
+
+		await act(async () => {
+			await expect(
+				result.current.mutateAsync({ instanceId: "inst-1", requestId: 1 }),
+			).rejects.toBeInstanceOf(NetworkError);
+		});
+
+		expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["seerr", "requests", "inst-1"] });
+		expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["seerr", "request", "inst-1", 1] });
+	});
 });
 
 // ============================================================================
@@ -309,6 +326,7 @@ describe("useBulkSeerrRequestAction", () => {
 			],
 			totalSuccess: 3,
 			totalFailed: 0,
+			totalUnknown: 0,
 		};
 		vi.mocked(seerrApi.bulkSeerrRequestAction).mockResolvedValue(bulkResult);
 
@@ -336,6 +354,7 @@ describe("useBulkSeerrRequestAction", () => {
 			results: [],
 			totalSuccess: 0,
 			totalFailed: 0,
+			totalUnknown: 0,
 		});
 
 		const { wrapper, queryClient } = createWrapper();

@@ -176,3 +176,14 @@ export class SeerrApiError extends Error {
 		});
 	}
 }
+
+/** A Seerr write was dispatched, but its provider outcome cannot be established. */
+export class SeerrMutationOutcomeUnknownError extends Error {
+	readonly statusCode = 502;
+	readonly code = "SEERR_MUTATION_OUTCOME_UNKNOWN";
+
+	constructor() {
+		super("Action outcome is unknown. Check Seerr before retrying.");
+		this.name = "SeerrMutationOutcomeUnknownError";
+	}
+}

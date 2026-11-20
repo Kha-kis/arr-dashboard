@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
+import { synchronizeSqliteRuntimeSchema } from "../../backup/runtime-schema-sqlite.js";
 
 const apiRoot = resolve(process.cwd());
 const schemaPath = resolve(apiRoot, "prisma/schema.prisma");
@@ -20,24 +21,6 @@ const historyInstanceRelations = [
 	"historySourceStatus HistorySourceStatus?",
 ];
 const historyModels = ["HistoryObservation", "HistorySourceStatus", "HistoryCollectionLease"];
-const labelSyncMutationAttemptRelations = [
-	["User", "labelSyncMutationAttempts LabelSyncMutationAttempt[]"],
-	["ServiceInstance", "labelSyncMutationAttempts LabelSyncMutationAttempt[]"],
-	["LabelSyncRule", "mutationAttempts LabelSyncMutationAttempt[]"],
-] as const;
-const providerObservationRelations = [
-	["ServiceInstance", "providerObservationRuns ProviderObservationRun[]"],
-	["ServiceInstance", "nativeInventorySnapshots ProviderNativeInventorySnapshot[]"],
-] as const;
-const providerObservationModels = [
-	"ProviderNativeInventorySnapshot",
-	"ProviderNativeInventoryItem",
-	"ProviderObservationRun",
-	"ProviderObservationUnit",
-	"PlexEpisodeObservationStage",
-	"JellyfinEpisodeObservationStage",
-	"JellyfinEpisodeObservationExclusion",
-] as const;
 
 afterEach(() => {
 	for (const directory of temporaryDirectories.splice(0)) {
@@ -74,7 +57,7 @@ describe("durable History schema", () => {
 			expect(countTrimmedLines(modelBlock(schema, "ServiceInstance"), relation), relation).toBe(1);
 		}
 		expect(countTrimmedLines(modelBlock(schema, "ServiceInstance"), "@@unique([id, userId])")).toBe(
-			0,
+			1,
 		);
 		expect(
 			countTrimmedLines(modelBlock(schema, "User"), "historyObservations HistoryObservation[]"),
@@ -392,7 +375,9 @@ describe("durable History schema", () => {
 		}
 	});
 
-	it("preserves old synthetic rows during an additive schema push", { timeout: 30_000 }, () => {
+	it("preserves old synthetic rows during the native additive startup upgrade", {
+		timeout: 30_000,
+	}, async () => {
 		const databasePath = emptyDatabasePath("history-upgrade-");
 		const oldSchemaPath = materializePreHistorySchema();
 		syncSchema(oldSchemaPath, databasePath);
@@ -404,7 +389,7 @@ describe("durable History schema", () => {
 		} finally {
 			oldDatabase.close();
 		}
-		syncSchema(schemaPath, databasePath);
+		await synchronizeSqliteRuntimeSchema(`file:${databasePath}`);
 
 		const upgraded = new Database(databasePath, { readonly: true });
 		try {
@@ -462,6 +447,31 @@ describe("durable History schema", () => {
 		}
 	});
 
+	it("isolates the History upgrade from all later model additions", () => {
+		const isolated = normalizeSchemaText(
+			readFileSync(materializeHistoryOnlyUpgradeSchema(), "utf8"),
+		);
+		const baseline = normalizeSchemaText(readFileSync(preHistorySchemaPath, "utf8"));
+		const current = normalizeSchemaText(readFileSync(schemaPath, "utf8"));
+		const modelNames = (schema: string) =>
+			Array.from(schema.matchAll(/^model (\w+) \{/gm), (match) => {
+				if (!match[1]) throw new Error("Schema fixture model name is missing");
+				return match[1];
+			}).sort();
+		expect(modelNames(isolated).filter((name) => !historyModels.includes(name))).toEqual(
+			modelNames(baseline),
+		);
+		for (const model of historyModels) {
+			expect(modelBlock(isolated, model)).toBe(modelBlock(current, model));
+		}
+		for (const relation of historyUserRelations) {
+			expect(countTrimmedLines(modelBlock(isolated, "User"), relation)).toBe(1);
+		}
+		for (const relation of historyInstanceRelations) {
+			expect(countTrimmedLines(modelBlock(isolated, "ServiceInstance"), relation)).toBe(1);
+		}
+	});
+
 	it("proves the immutable pre-History schema identity before compatibility checks", () => {
 		const oldSchemaPath = materializePreHistorySchema();
 		const immutable = normalizeSchemaText(readFileSync(oldSchemaPath, "utf8"));
@@ -484,7 +494,9 @@ describe("durable History schema", () => {
 		} finally {
 			legacy.close();
 		}
-		syncSchema(schemaPath, databasePath);
+		// Characterize History rollback only; later Grab ownership/index additions
+		// must not change this historical Prisma reverse-push experiment.
+		syncSchema(materializeHistoryOnlyUpgradeSchema(), databasePath);
 		const upgraded = new Database(databasePath);
 		let beforeReverse: ReturnType<typeof captureHistoryCompatibilityState>;
 		try {
@@ -825,51 +837,6 @@ function removeHistorySchema(schema: string): string {
 	return normalized;
 }
 
-function removeLabelSyncMutationAttemptSchema(schema: string): string {
-	let normalized = normalizeSchemaText(schema);
-	for (const [model, fragment] of labelSyncMutationAttemptRelations) {
-		const block = modelBlock(normalized, model);
-		const lines = block.split("\n");
-		const matching = lines.filter(
-			(line) => line.trim().replace(/\s+/g, " ") === fragment.replace(/\s+/g, " "),
-		);
-		if (matching.length !== 1) {
-			throw new Error(
-				"Label-sync mutation schema additions do not match the expected removable fragments",
-			);
-		}
-		const removedBlock = lines
-			.filter((line) => line.trim().replace(/\s+/g, " ") !== fragment.replace(/\s+/g, " "))
-			.join("\n");
-		normalized = normalized.replace(block, removedBlock);
-	}
-	return normalized.replace(modelBlock(normalized, "LabelSyncMutationAttempt"), "");
-}
-
-function removeProviderObservationSchema(schema: string): string {
-	let normalized = normalizeSchemaText(schema);
-	for (const [model, fragment] of providerObservationRelations) {
-		const block = modelBlock(normalized, model);
-		const lines = block.split("\n");
-		const matching = lines.filter(
-			(line) => line.trim().replace(/\s+/g, " ") === fragment.replace(/\s+/g, " "),
-		);
-		if (matching.length !== 1) {
-			throw new Error(
-				"Provider-observation schema additions do not match the expected removable fragments",
-			);
-		}
-		const removedBlock = lines
-			.filter((line) => line.trim().replace(/\s+/g, " ") !== fragment.replace(/\s+/g, " "))
-			.join("\n");
-		normalized = normalized.replace(block, removedBlock);
-	}
-	for (const model of providerObservationModels) {
-		normalized = normalized.replace(modelBlock(normalized, model), "");
-	}
-	return normalized;
-}
-
 function removeSchedulingSchemaFields(schema: string): string {
 	return normalizeSchemaText(schema)
 		.split("\n")
@@ -918,12 +885,21 @@ function materializeHistoryOnlyUpgradeSchema(): string {
 		temporaryDirectories.at(-1) ?? mkdtempSync(join(tmpdir(), "history-schema-isolation-"));
 	if (!temporaryDirectories.includes(directory)) temporaryDirectories.push(directory);
 	const isolatedSchemaPath = join(directory, "history-only-upgrade-schema.prisma");
-	const withoutMutationAttempt = removeLabelSyncMutationAttemptSchema(
-		readFileSync(schemaPath, "utf8"),
-	);
-	writeFileSync(isolatedSchemaPath, removeProviderObservationSchema(withoutMutationAttempt), {
-		mode: 0o600,
-	});
+	// Build from the immutable baseline, not a growing list of later additions to remove.
+	let isolated = normalizeSchemaText(readFileSync(preHistorySchemaPath, "utf8"));
+	const current = normalizeSchemaText(readFileSync(schemaPath, "utf8"));
+	for (const [model, relations] of [
+		["User", historyUserRelations],
+		["ServiceInstance", historyInstanceRelations],
+	] as const) {
+		const block = modelBlock(isolated, model);
+		isolated = isolated.replace(
+			block,
+			`${block.slice(0, -1)}${relations.map((relation) => `  ${relation}\n`).join("")}}`,
+		);
+	}
+	isolated += `\n\n${historyModels.map((model) => modelBlock(current, model)).join("\n\n")}\n`;
+	writeFileSync(isolatedSchemaPath, isolated, { mode: 0o600 });
 	return resolve(isolatedSchemaPath);
 }
 

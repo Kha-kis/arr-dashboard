@@ -127,6 +127,29 @@ assert_cache_logs_clean() {
     fi
 }
 
+stop_gracefully() {
+    stop_ok=true
+    docker stop --time 120 "$1" >/dev/null 2>&1 || stop_ok=false
+    stop_state=$(docker inspect -f 'state={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' "$1" 2>/dev/null) ||
+        stop_state="state=unknown exit=unknown oom=unknown"
+    if [ "$stop_ok" = true ] && [ "$stop_state" = "state=exited exit=0 oom=false" ]; then
+        ok "$2 stopped gracefully ($stop_state)"
+        return 0
+    fi
+
+    bad "$2 did not stop gracefully (stop_ok=$stop_ok $stop_state)"
+    docker logs --tail 100 "$1" 2>&1 |
+        grep -E -e '^Shutting down services\.\.\.$' \
+            -e '^\[Launcher\] Received SIGTERM, shutting down\.\.\.$' \
+            -e '"category":"(shutdown-progress|launcher-shutdown-failure)"' \
+            -e '^SUPERVISOR_WAIT_COMPLETED pid=[0-9]+ status=[0-9]+$' \
+            -e '^  (API|Web) did not stop within [0-9]+s - sending SIGKILL$' \
+            -e '^ERROR: Services required forced or failed termination$' \
+            -e '^Services stopped gracefully$' |
+        tail -20 >&2
+    return 1
+}
+
 assert_runtime_boundaries() {
     ctr=$1
     ids=$2
@@ -190,15 +213,18 @@ run_case() {
     echo ""
     echo "========== $mode ($uid:$gid) =========="
 
+    # The supervision suite covers shutdown with an active TRaSH scheduler.
     if [ "$rootless" = true ]; then
         docker run -d --name "$CURRENT_CTR" \
             --user "$uid:$gid" \
+            -e TRASH_UPDATE_SCHEDULER_ENABLED=false \
             -p 127.0.0.1::3000 -p 127.0.0.1::3001 \
             -v "$config_dir:/config" \
             "$IMAGE" >/dev/null
     else
         docker run -d --name "$CURRENT_CTR" \
             -e PUID="$uid" -e PGID="$gid" \
+            -e TRASH_UPDATE_SCHEDULER_ENABLED=false \
             -p 127.0.0.1::3000 -p 127.0.0.1::3001 \
             -v "$config_dir:/config" \
             "$IMAGE" >/dev/null
@@ -235,11 +261,18 @@ run_case() {
     assert_runtime_boundaries "$CURRENT_CTR" "$uid:$gid" "$mode"
     assert_cache_logs_clean "$CURRENT_CTR" "$mode"
 
-    if docker restart --time 15 "$CURRENT_CTR" >/dev/null; then
-        web_port=$(docker port "$CURRENT_CTR" 3000/tcp | sed -n '1s/.*://p')
-        api_port=$(docker port "$CURRENT_CTR" 3001/tcp | sed -n '1s/.*://p')
+    # Inspect the stopped run before starting the same container again.
+    if ! stop_gracefully "$CURRENT_CTR" "$mode before restart"; then
+        docker rm -f "$CURRENT_CTR" >/dev/null 2>&1 || true
+        CURRENT_CTR=""
+        return
     fi
-    if [ -n "${web_port:-}" ] && [ -n "${api_port:-}" ] && wait_health "$CURRENT_CTR" "$api_port" "$web_port"; then
+
+    if docker start "$CURRENT_CTR" >/dev/null &&
+        web_port=$(docker port "$CURRENT_CTR" 3000/tcp | sed -n '1s/.*://p') &&
+        api_port=$(docker port "$CURRENT_CTR" 3001/tcp | sed -n '1s/.*://p') &&
+        [ -n "$web_port" ] && [ -n "$api_port" ] &&
+        wait_health "$CURRENT_CTR" "$api_port" "$web_port"; then
         ok "$mode container restart is healthy"
         assert_optimizer_request "$CURRENT_CTR" "$web_port" "$mode-restart"
         assert_cache_logs_clean "$CURRENT_CTR" "$mode-restart"
@@ -248,16 +281,7 @@ run_case() {
         docker logs "$CURRENT_CTR" 2>&1 | tail -60 >&2 || true
     fi
 
-    if docker stop --time 15 "$CURRENT_CTR" >/dev/null; then
-        exit_code=$(docker inspect -f '{{.State.ExitCode}}' "$CURRENT_CTR")
-        if [ "$exit_code" = 0 ]; then
-            ok "$mode container stopped gracefully"
-        else
-            bad "$mode container stopped with exit code $exit_code"
-        fi
-    else
-        bad "$mode container did not stop gracefully"
-    fi
+    stop_gracefully "$CURRENT_CTR" "$mode after restart" || true
 
     docker rm -f "$CURRENT_CTR" >/dev/null 2>&1 || true
     CURRENT_CTR=""
@@ -272,6 +296,7 @@ assert_unwritable_cache_fails_fast() {
     echo "========== fail-fast read-only cache =========="
     docker run -d --name "$CURRENT_CTR" \
         --read-only --user 1000:1000 \
+        -e TRASH_UPDATE_SCHEDULER_ENABLED=false \
         -v "$config_dir:/config" \
         "$IMAGE" >/dev/null
 

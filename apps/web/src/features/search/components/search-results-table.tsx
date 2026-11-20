@@ -18,8 +18,14 @@ import {
 	getLinuxIsoName,
 	useIncognitoMode,
 } from "../../../lib/incognito";
+import type { SearchGrabRowState } from "../hooks/use-search-grab-recovery";
 
 const integer = new Intl.NumberFormat();
+
+const knownMetric = (value?: number): value is number =>
+	typeof value === "number" && Number.isFinite(value) && value >= 0;
+const formatMetric = (value?: number) => (knownMetric(value) ? integer.format(value) : "Unknown");
+const formatFactor = (value?: number) => (knownMetric(value) ? `${value}x` : "Unknown");
 
 const _formatDate = (value?: string): string => {
 	if (!value) {
@@ -110,6 +116,7 @@ interface SearchResultsTableProps {
 	emptyMessage?: string;
 	onGrab?: (result: SearchResult) => Promise<void> | void;
 	grabbingKey?: string | null;
+	getGrabState?: (result: SearchResult) => SearchGrabRowState;
 	onCopyMagnet?: (result: SearchResult) => Promise<void> | void;
 	onOpenInfo?: (result: SearchResult) => void;
 }
@@ -123,6 +130,7 @@ export const SearchResultsTable = ({
 	emptyMessage,
 	onGrab,
 	grabbingKey,
+	getGrabState,
 	onCopyMagnet,
 	onOpenInfo,
 }: SearchResultsTableProps) => {
@@ -158,16 +166,19 @@ export const SearchResultsTable = ({
 				<tbody className="divide-y divide-border">
 					{results.map((result) => {
 						const key = buildRowKey(result);
+						const grabState = getGrabState?.(result);
 						const copyable = Boolean(result.magnetUrl ?? result.downloadUrl ?? result.link);
 						const hasInfo = Boolean(
 							result.infoUrl ?? result.link ?? result.downloadUrl ?? result.magnetUrl,
 						);
 						const qualityLabel = getQualityLabel(result.quality);
 						const ageLabel = formatAgeLabel(result);
-						const sizeLabel = formatBytes(result.size);
+						const sizeLabel = knownMetric(result.size) ? formatBytes(result.size) : "Unknown";
 						const rejectionMessage =
 							result.rejected && result.rejectionReasons?.length
-								? result.rejectionReasons.join(", ")
+								? incognitoMode
+									? "Indexer rejected this release. Review its status in Prowlarr."
+									: result.rejectionReasons.join(", ")
 								: null;
 
 						return (
@@ -187,6 +198,9 @@ export const SearchResultsTable = ({
 												</span>
 											) : null}
 											{result.rejected ? <StatusBadge status="error">Rejected</StatusBadge> : null}
+											{result.metadataIncomplete ? (
+												<StatusBadge status="warning">Metadata incomplete</StatusBadge>
+											) : null}
 										</div>
 
 										<div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
@@ -204,17 +218,17 @@ export const SearchResultsTable = ({
 										<div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
 											<span className={metricBadgeClass}>Size {sizeLabel}</span>
 											<span className={metricBadgeClass}>
-												Seeders {integer.format(result.seeders ?? 0)}
+												Seeders {formatMetric(result.seeders)}
 											</span>
 											<span className={metricBadgeClass}>
-												Leechers {integer.format(result.leechers ?? 0)}
+												Leechers {formatMetric(result.leechers)}
 											</span>
 											<span className={metricBadgeClass}>Age {ageLabel}</span>
 											{typeof result.downloadVolumeFactor === "number" ||
 											typeof result.uploadVolumeFactor === "number" ? (
 												<span className={metricBadgeClass}>
-													Ratio DL {result.downloadVolumeFactor ?? 1}x / UL{" "}
-													{result.uploadVolumeFactor ?? 1}x
+													Ratio DL {formatFactor(result.downloadVolumeFactor)} / UL{" "}
+													{formatFactor(result.uploadVolumeFactor)}
 												</span>
 											) : null}
 										</div>
@@ -244,11 +258,11 @@ export const SearchResultsTable = ({
 									<div className="flex flex-col items-end gap-2 sm:flex-row sm:justify-end sm:gap-3">
 										<Button
 											variant="secondary"
-											disabled={!onGrab || grabbingKey === key}
+											disabled={!onGrab || grabbingKey === key || grabState?.disabled}
 											onClick={() => onGrab?.(result)}
 											className="px-3"
 										>
-											{grabbingKey === key ? "Sending..." : "Grab"}
+											{grabbingKey === key ? "Sending..." : (grabState?.label ?? "Grab")}
 										</Button>
 										<Button
 											variant="ghost"
@@ -267,6 +281,11 @@ export const SearchResultsTable = ({
 											<ExternalLink className="mr-2 h-4 w-4" /> Details
 										</Button>
 									</div>
+									{grabState && (
+										<p role="status" className="mt-2 max-w-xs text-xs text-muted-foreground">
+											{grabState.message}
+										</p>
+									)}
 								</td>
 							</PremiumTableRow>
 						);

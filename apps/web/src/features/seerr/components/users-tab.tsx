@@ -1,6 +1,6 @@
 "use client";
 
-import type { SeerrUser } from "@arr/shared";
+import type { SeerrQuota, SeerrUser } from "@arr/shared";
 import { AlertCircle, Loader2, Settings, Users } from "lucide-react";
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -51,7 +51,7 @@ export const UsersTab = ({ instanceId }: UsersTabProps) => {
 	const [sort, setSort] = useState<UserSort>("displayname");
 	const [take, setTake] = useState(PAGE_SIZE);
 	const { data, isLoading, isFetching, isError } = useSeerrUsers({ instanceId, take, sort });
-	const [managingUser, setManagingUser] = useState<SeerrUser | null>(null);
+	const [managingUser, setManagingUser] = useState<{ user: SeerrUser } | null>(null);
 	const totalResults = data?.pageInfo.results ?? 0;
 	const hasMore = (data?.results.length ?? 0) < totalResults;
 	const handleLoadMore = useCallback(() => setTake((prev) => prev + PAGE_SIZE), []);
@@ -145,7 +145,7 @@ export const UsersTab = ({ instanceId }: UsersTabProps) => {
 							}}
 						/>
 
-						<div className="relative flex items-center gap-4 py-3.5 pl-5 pr-4">
+						<div className="relative flex flex-wrap items-center gap-x-4 gap-y-2 py-3.5 pl-5 pr-4 sm:flex-nowrap">
 							{/* Avatar */}
 							<div
 								className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full ring-1 ring-white/[0.06]"
@@ -198,13 +198,15 @@ export const UsersTab = ({ instanceId }: UsersTabProps) => {
 							</div>
 
 							{/* Quota bars */}
-							<UserQuotaBars instanceId={instanceId} userId={user.id} />
+							<div className="order-last shrink-0 basis-full sm:order-none sm:basis-auto">
+								<UserQuotaBars instanceId={instanceId} userId={user.id} />
+							</div>
 
 							{/* Manage button */}
 							<button
 								type="button"
-								onClick={() => setManagingUser(user)}
-								className="shrink-0 rounded-lg p-1.5 text-muted-foreground/40 transition-all hover:bg-white/[0.06] hover:text-foreground opacity-0 group-hover:opacity-100"
+								onClick={() => setManagingUser({ user })}
+								className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
 								title="Manage user quotas"
 							>
 								<Settings className="h-4 w-4" />
@@ -229,11 +231,12 @@ export const UsersTab = ({ instanceId }: UsersTabProps) => {
 			)}
 
 			<UserSettingsDialog
-				user={managingUser}
+				user={managingUser?.user ?? null}
 				instanceId={instanceId}
 				open={managingUser !== null}
 				onOpenChange={(open) => {
-					if (!open) setManagingUser(null);
+					if (!open)
+						setManagingUser((selection) => (selection === managingUser ? null : selection));
 				}}
 			/>
 		</div>
@@ -244,44 +247,42 @@ export const UsersTab = ({ instanceId }: UsersTabProps) => {
  * Inline quota bars — fetches per-user quota on demand.
  */
 function UserQuotaBars({ instanceId, userId }: { instanceId: string; userId: number }) {
-	const { data: quota } = useSeerrUserQuota(instanceId, userId);
+	const { data: quota, isError, isLoading } = useSeerrUserQuota(instanceId, userId);
 
-	if (!quota) return null;
+	if (isLoading) {
+		return <p className="text-xs text-muted-foreground">Loading quota…</p>;
+	}
 
-	const moviePct =
-		quota.movie.restricted && quota.movie.limit > 0
-			? Math.round((quota.movie.used / quota.movie.limit) * 100)
-			: null;
-	const tvPct =
-		quota.tv.restricted && quota.tv.limit > 0
-			? Math.round((quota.tv.used / quota.tv.limit) * 100)
-			: null;
-
-	if (moviePct === null && tvPct === null) return null;
+	if (isError || !quota) {
+		return <p className="text-xs text-muted-foreground">Quota unavailable</p>;
+	}
 
 	return (
 		<div className="flex shrink-0 flex-col gap-1.5 text-right">
-			{moviePct !== null && (
-				<div className="flex items-center gap-2">
-					<span className="text-[10px] text-muted-foreground">Movie</span>
+			<UserQuotaBar label="Movie" quota={quota.movie} />
+			<UserQuotaBar label="TV" quota={quota.tv} />
+		</div>
+	);
+}
+
+function UserQuotaBar({ label, quota }: { label: string; quota: SeerrQuota["movie"] }) {
+	const { limit, used, restricted } = quota;
+
+	return (
+		<div className="flex items-center justify-end gap-2 text-[10px] text-muted-foreground">
+			<span>{label}</span>
+			{limit > 0 ? (
+				<>
 					<div className="w-20">
-						<PremiumProgress value={moviePct} max={100} />
+						<PremiumProgress value={used} max={limit} variant={restricted ? "danger" : "default"} />
+						{restricted && <span className="text-destructive">Exhausted</span>}
 					</div>
-					<span className="w-8 text-right text-[10px] text-muted-foreground">
-						{quota.movie.used}/{quota.movie.limit}
+					<span className="min-w-8">
+						{used}/{limit}
 					</span>
-				</div>
-			)}
-			{tvPct !== null && (
-				<div className="flex items-center gap-2">
-					<span className="text-[10px] text-muted-foreground">TV</span>
-					<div className="w-20">
-						<PremiumProgress value={tvPct} max={100} />
-					</div>
-					<span className="w-8 text-right text-[10px] text-muted-foreground">
-						{quota.tv.used}/{quota.tv.limit}
-					</span>
-				</div>
+				</>
+			) : (
+				<span>{limit === 0 ? "Unlimited" : "Unavailable"}</span>
 			)}
 		</div>
 	);

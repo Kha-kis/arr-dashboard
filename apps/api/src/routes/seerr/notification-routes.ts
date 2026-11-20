@@ -29,22 +29,25 @@ export async function registerNotificationRoutes(
 	app.get("/:instanceId", async (request) => {
 		const { instanceId } = validateRequest(instanceIdParams, request.params);
 		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
-		const agents = await client.getNotificationAgents();
-		return { agents };
+		return client.getNotificationAgents();
 	});
 
 	// POST /api/seerr/notifications/:instanceId/:agentId — Update notification config
 	app.post("/:instanceId/:agentId", async (request) => {
 		const { instanceId, agentId } = validateRequest(agentParams, request.params);
 		const body = validateRequest(updateNotificationBody, request.body);
-		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
+		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId, {
+			requireEnabled: true,
+		});
 		return client.updateNotificationAgent(agentId, body);
 	});
 
 	// POST /api/seerr/notifications/:instanceId/:agentId/test — Test notification
 	app.post("/:instanceId/:agentId/test", async (request, reply) => {
 		const { instanceId, agentId } = validateRequest(agentParams, request.params);
-		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
+		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId, {
+			requireEnabled: true,
+		});
 		await client.testNotificationAgent(agentId);
 		return reply.status(204).send();
 	});

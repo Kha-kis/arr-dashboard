@@ -28,6 +28,19 @@ describe("DedupGate", () => {
 		expect(gate.isDuplicate(payload)).toBe(true);
 	});
 
+	it("keeps identical payloads independent across owners", () => {
+		gate = new DedupGate(5000);
+		const payload = {
+			eventType: "HUNT_COMPLETED" as const,
+			title: "Hunt finished",
+			body: "Found 3 items",
+		};
+
+		expect(gate.isDuplicate(payload, "user-a")).toBe(false);
+		expect(gate.isDuplicate(payload, "user-b")).toBe(false);
+		expect(gate.isDuplicate(payload, "user-a")).toBe(true);
+	});
+
 	it("allows payloads with different titles", () => {
 		gate = new DedupGate(5000);
 

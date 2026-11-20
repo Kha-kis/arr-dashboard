@@ -1,4 +1,10 @@
 import type { GotifyConfig } from "@arr/shared";
+import {
+	httpFailureCategory,
+	networkFailureCategory,
+	notificationFailure,
+	NotificationFailureError,
+} from "../failure-diagnostics.js";
 import type { ChannelPlugin, ChannelSender, NotificationPayload, SendResult } from "../types.js";
 import { extractMetadataFields } from "./format-metadata.js";
 
@@ -48,43 +54,42 @@ export const gotifySender: ChannelSender = {
 			if (response.ok) {
 				return { success: true, retryable: false };
 			}
+			await response.body?.cancel().catch(() => {});
 
-			const text = await response.text().catch(() => "");
-			const error = `Gotify API failed: ${response.status} ${text}`;
-
-			if (response.status === 429) {
-				return { success: false, retryable: true, error };
-			}
-			if (response.status >= 500) {
-				return { success: false, retryable: true, error };
-			}
-			return { success: false, retryable: false, error };
+			return notificationFailure(
+				httpFailureCategory(response.status),
+				response.status === 429 || response.status >= 500,
+			);
 		} catch (err) {
-			const error = err instanceof Error ? err.message : String(err);
-			return { success: false, retryable: true, error: `Gotify network error: ${error}` };
+			return notificationFailure(networkFailureCategory(err), true);
 		}
 	},
 
 	async test(config: Record<string, unknown>): Promise<void> {
 		const { serverUrl, appToken } = config as GotifyConfig;
 
-		const response = await fetch(`${serverUrl.replace(/\/+$/, "")}/message`, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				"X-Gotify-Key": appToken,
-			},
-			body: JSON.stringify({
-				title: "Test Notification",
-				message: "Arr Dashboard notification channel is working!",
-				priority: 4,
-			}),
-			signal: AbortSignal.timeout(GOTIFY_TIMEOUT_MS),
-		});
+		try {
+			const response = await fetch(`${serverUrl.replace(/\/+$/, "")}/message`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"X-Gotify-Key": appToken,
+				},
+				body: JSON.stringify({
+					title: "Test Notification",
+					message: "Arr Dashboard notification channel is working!",
+					priority: 4,
+				}),
+				signal: AbortSignal.timeout(GOTIFY_TIMEOUT_MS),
+			});
 
-		if (!response.ok) {
-			const text = await response.text().catch(() => "");
-			throw new Error(`Gotify test failed: ${response.status} ${text}`);
+			if (!response.ok) {
+				await response.body?.cancel().catch(() => {});
+				throw new NotificationFailureError(httpFailureCategory(response.status));
+			}
+		} catch (err) {
+			if (err instanceof NotificationFailureError) throw err;
+			throw new NotificationFailureError(networkFailureCategory(err));
 		}
 	},
 };

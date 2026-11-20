@@ -71,6 +71,7 @@ export type EpisodeFileCacheMinAggregateOutputType = {
   releaseGroup: string | null
   infoHash: string | null
   infoHashSource: string | null
+  inodeBackfillRetryAfter: Date | null
   torrentState: string | null
   torrentRatio: number | null
   torrentSyncedAt: Date | null
@@ -91,6 +92,7 @@ export type EpisodeFileCacheMaxAggregateOutputType = {
   releaseGroup: string | null
   infoHash: string | null
   infoHashSource: string | null
+  inodeBackfillRetryAfter: Date | null
   torrentState: string | null
   torrentRatio: number | null
   torrentSyncedAt: Date | null
@@ -111,6 +113,7 @@ export type EpisodeFileCacheCountAggregateOutputType = {
   releaseGroup: number
   infoHash: number
   infoHashSource: number
+  inodeBackfillRetryAfter: number
   torrentState: number
   torrentRatio: number
   torrentSyncedAt: number
@@ -149,6 +152,7 @@ export type EpisodeFileCacheMinAggregateInputType = {
   releaseGroup?: true
   infoHash?: true
   infoHashSource?: true
+  inodeBackfillRetryAfter?: true
   torrentState?: true
   torrentRatio?: true
   torrentSyncedAt?: true
@@ -169,6 +173,7 @@ export type EpisodeFileCacheMaxAggregateInputType = {
   releaseGroup?: true
   infoHash?: true
   infoHashSource?: true
+  inodeBackfillRetryAfter?: true
   torrentState?: true
   torrentRatio?: true
   torrentSyncedAt?: true
@@ -189,6 +194,7 @@ export type EpisodeFileCacheCountAggregateInputType = {
   releaseGroup?: true
   infoHash?: true
   infoHashSource?: true
+  inodeBackfillRetryAfter?: true
   torrentState?: true
   torrentRatio?: true
   torrentSyncedAt?: true
@@ -296,6 +302,7 @@ export type EpisodeFileCacheGroupByOutputType = {
   releaseGroup: string | null
   infoHash: string | null
   infoHashSource: string | null
+  inodeBackfillRetryAfter: Date | null
   torrentState: string | null
   torrentRatio: number | null
   torrentSyncedAt: Date | null
@@ -339,6 +346,7 @@ export type EpisodeFileCacheWhereInput = {
   releaseGroup?: Prisma.StringNullableFilter<"EpisodeFileCache"> | string | null
   infoHash?: Prisma.StringNullableFilter<"EpisodeFileCache"> | string | null
   infoHashSource?: Prisma.StringNullableFilter<"EpisodeFileCache"> | string | null
+  inodeBackfillRetryAfter?: Prisma.DateTimeNullableFilter<"EpisodeFileCache"> | Date | string | null
   torrentState?: Prisma.StringNullableFilter<"EpisodeFileCache"> | string | null
   torrentRatio?: Prisma.FloatNullableFilter<"EpisodeFileCache"> | number | null
   torrentSyncedAt?: Prisma.DateTimeNullableFilter<"EpisodeFileCache"> | Date | string | null
@@ -360,6 +368,7 @@ export type EpisodeFileCacheOrderByWithRelationInput = {
   releaseGroup?: Prisma.SortOrderInput | Prisma.SortOrder
   infoHash?: Prisma.SortOrderInput | Prisma.SortOrder
   infoHashSource?: Prisma.SortOrderInput | Prisma.SortOrder
+  inodeBackfillRetryAfter?: Prisma.SortOrderInput | Prisma.SortOrder
   torrentState?: Prisma.SortOrderInput | Prisma.SortOrder
   torrentRatio?: Prisma.SortOrderInput | Prisma.SortOrder
   torrentSyncedAt?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -385,6 +394,7 @@ export type EpisodeFileCacheWhereUniqueInput = Prisma.AtLeast<{
   releaseGroup?: Prisma.StringNullableFilter<"EpisodeFileCache"> | string | null
   infoHash?: Prisma.StringNullableFilter<"EpisodeFileCache"> | string | null
   infoHashSource?: Prisma.StringNullableFilter<"EpisodeFileCache"> | string | null
+  inodeBackfillRetryAfter?: Prisma.DateTimeNullableFilter<"EpisodeFileCache"> | Date | string | null
   torrentState?: Prisma.StringNullableFilter<"EpisodeFileCache"> | string | null
   torrentRatio?: Prisma.FloatNullableFilter<"EpisodeFileCache"> | number | null
   torrentSyncedAt?: Prisma.DateTimeNullableFilter<"EpisodeFileCache"> | Date | string | null
@@ -406,6 +416,7 @@ export type EpisodeFileCacheOrderByWithAggregationInput = {
   releaseGroup?: Prisma.SortOrderInput | Prisma.SortOrder
   infoHash?: Prisma.SortOrderInput | Prisma.SortOrder
   infoHashSource?: Prisma.SortOrderInput | Prisma.SortOrder
+  inodeBackfillRetryAfter?: Prisma.SortOrderInput | Prisma.SortOrder
   torrentState?: Prisma.SortOrderInput | Prisma.SortOrder
   torrentRatio?: Prisma.SortOrderInput | Prisma.SortOrder
   torrentSyncedAt?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -434,6 +445,7 @@ export type EpisodeFileCacheScalarWhereWithAggregatesInput = {
   releaseGroup?: Prisma.StringNullableWithAggregatesFilter<"EpisodeFileCache"> | string | null
   infoHash?: Prisma.StringNullableWithAggregatesFilter<"EpisodeFileCache"> | string | null
   infoHashSource?: Prisma.StringNullableWithAggregatesFilter<"EpisodeFileCache"> | string | null
+  inodeBackfillRetryAfter?: Prisma.DateTimeNullableWithAggregatesFilter<"EpisodeFileCache"> | Date | string | null
   torrentState?: Prisma.StringNullableWithAggregatesFilter<"EpisodeFileCache"> | string | null
   torrentRatio?: Prisma.FloatNullableWithAggregatesFilter<"EpisodeFileCache"> | number | null
   torrentSyncedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"EpisodeFileCache"> | Date | string | null
@@ -453,6 +465,7 @@ export type EpisodeFileCacheCreateInput = {
   releaseGroup?: string | null
   infoHash?: string | null
   infoHashSource?: string | null
+  inodeBackfillRetryAfter?: Date | string | null
   torrentState?: string | null
   torrentRatio?: number | null
   torrentSyncedAt?: Date | string | null
@@ -474,6 +487,7 @@ export type EpisodeFileCacheUncheckedCreateInput = {
   releaseGroup?: string | null
   infoHash?: string | null
   infoHashSource?: string | null
+  inodeBackfillRetryAfter?: Date | string | null
   torrentState?: string | null
   torrentRatio?: number | null
   torrentSyncedAt?: Date | string | null
@@ -493,6 +507,7 @@ export type EpisodeFileCacheUpdateInput = {
   releaseGroup?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   infoHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   infoHashSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  inodeBackfillRetryAfter?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   torrentState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentRatio?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   torrentSyncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -514,6 +529,7 @@ export type EpisodeFileCacheUncheckedUpdateInput = {
   releaseGroup?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   infoHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   infoHashSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  inodeBackfillRetryAfter?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   torrentState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentRatio?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   torrentSyncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -534,6 +550,7 @@ export type EpisodeFileCacheCreateManyInput = {
   releaseGroup?: string | null
   infoHash?: string | null
   infoHashSource?: string | null
+  inodeBackfillRetryAfter?: Date | string | null
   torrentState?: string | null
   torrentRatio?: number | null
   torrentSyncedAt?: Date | string | null
@@ -553,6 +570,7 @@ export type EpisodeFileCacheUpdateManyMutationInput = {
   releaseGroup?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   infoHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   infoHashSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  inodeBackfillRetryAfter?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   torrentState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentRatio?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   torrentSyncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -573,6 +591,7 @@ export type EpisodeFileCacheUncheckedUpdateManyInput = {
   releaseGroup?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   infoHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   infoHashSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  inodeBackfillRetryAfter?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   torrentState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentRatio?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   torrentSyncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -608,6 +627,7 @@ export type EpisodeFileCacheCountOrderByAggregateInput = {
   releaseGroup?: Prisma.SortOrder
   infoHash?: Prisma.SortOrder
   infoHashSource?: Prisma.SortOrder
+  inodeBackfillRetryAfter?: Prisma.SortOrder
   torrentState?: Prisma.SortOrder
   torrentRatio?: Prisma.SortOrder
   torrentSyncedAt?: Prisma.SortOrder
@@ -636,6 +656,7 @@ export type EpisodeFileCacheMaxOrderByAggregateInput = {
   releaseGroup?: Prisma.SortOrder
   infoHash?: Prisma.SortOrder
   infoHashSource?: Prisma.SortOrder
+  inodeBackfillRetryAfter?: Prisma.SortOrder
   torrentState?: Prisma.SortOrder
   torrentRatio?: Prisma.SortOrder
   torrentSyncedAt?: Prisma.SortOrder
@@ -656,6 +677,7 @@ export type EpisodeFileCacheMinOrderByAggregateInput = {
   releaseGroup?: Prisma.SortOrder
   infoHash?: Prisma.SortOrder
   infoHashSource?: Prisma.SortOrder
+  inodeBackfillRetryAfter?: Prisma.SortOrder
   torrentState?: Prisma.SortOrder
   torrentRatio?: Prisma.SortOrder
   torrentSyncedAt?: Prisma.SortOrder
@@ -725,6 +747,7 @@ export type EpisodeFileCacheCreateWithoutInstanceInput = {
   releaseGroup?: string | null
   infoHash?: string | null
   infoHashSource?: string | null
+  inodeBackfillRetryAfter?: Date | string | null
   torrentState?: string | null
   torrentRatio?: number | null
   torrentSyncedAt?: Date | string | null
@@ -744,6 +767,7 @@ export type EpisodeFileCacheUncheckedCreateWithoutInstanceInput = {
   releaseGroup?: string | null
   infoHash?: string | null
   infoHashSource?: string | null
+  inodeBackfillRetryAfter?: Date | string | null
   torrentState?: string | null
   torrentRatio?: number | null
   torrentSyncedAt?: Date | string | null
@@ -792,6 +816,7 @@ export type EpisodeFileCacheScalarWhereInput = {
   releaseGroup?: Prisma.StringNullableFilter<"EpisodeFileCache"> | string | null
   infoHash?: Prisma.StringNullableFilter<"EpisodeFileCache"> | string | null
   infoHashSource?: Prisma.StringNullableFilter<"EpisodeFileCache"> | string | null
+  inodeBackfillRetryAfter?: Prisma.DateTimeNullableFilter<"EpisodeFileCache"> | Date | string | null
   torrentState?: Prisma.StringNullableFilter<"EpisodeFileCache"> | string | null
   torrentRatio?: Prisma.FloatNullableFilter<"EpisodeFileCache"> | number | null
   torrentSyncedAt?: Prisma.DateTimeNullableFilter<"EpisodeFileCache"> | Date | string | null
@@ -811,6 +836,7 @@ export type EpisodeFileCacheCreateManyInstanceInput = {
   releaseGroup?: string | null
   infoHash?: string | null
   infoHashSource?: string | null
+  inodeBackfillRetryAfter?: Date | string | null
   torrentState?: string | null
   torrentRatio?: number | null
   torrentSyncedAt?: Date | string | null
@@ -830,6 +856,7 @@ export type EpisodeFileCacheUpdateWithoutInstanceInput = {
   releaseGroup?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   infoHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   infoHashSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  inodeBackfillRetryAfter?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   torrentState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentRatio?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   torrentSyncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -849,6 +876,7 @@ export type EpisodeFileCacheUncheckedUpdateWithoutInstanceInput = {
   releaseGroup?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   infoHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   infoHashSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  inodeBackfillRetryAfter?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   torrentState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentRatio?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   torrentSyncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -868,6 +896,7 @@ export type EpisodeFileCacheUncheckedUpdateManyWithoutInstanceInput = {
   releaseGroup?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   infoHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   infoHashSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  inodeBackfillRetryAfter?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   torrentState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentRatio?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   torrentSyncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -890,6 +919,7 @@ export type EpisodeFileCacheSelect<ExtArgs extends runtime.Types.Extensions.Inte
   releaseGroup?: boolean
   infoHash?: boolean
   infoHashSource?: boolean
+  inodeBackfillRetryAfter?: boolean
   torrentState?: boolean
   torrentRatio?: boolean
   torrentSyncedAt?: boolean
@@ -911,6 +941,7 @@ export type EpisodeFileCacheSelectCreateManyAndReturn<ExtArgs extends runtime.Ty
   releaseGroup?: boolean
   infoHash?: boolean
   infoHashSource?: boolean
+  inodeBackfillRetryAfter?: boolean
   torrentState?: boolean
   torrentRatio?: boolean
   torrentSyncedAt?: boolean
@@ -932,6 +963,7 @@ export type EpisodeFileCacheSelectUpdateManyAndReturn<ExtArgs extends runtime.Ty
   releaseGroup?: boolean
   infoHash?: boolean
   infoHashSource?: boolean
+  inodeBackfillRetryAfter?: boolean
   torrentState?: boolean
   torrentRatio?: boolean
   torrentSyncedAt?: boolean
@@ -953,6 +985,7 @@ export type EpisodeFileCacheSelectScalar = {
   releaseGroup?: boolean
   infoHash?: boolean
   infoHashSource?: boolean
+  inodeBackfillRetryAfter?: boolean
   torrentState?: boolean
   torrentRatio?: boolean
   torrentSyncedAt?: boolean
@@ -960,7 +993,7 @@ export type EpisodeFileCacheSelectScalar = {
   updatedAt?: boolean
 }
 
-export type EpisodeFileCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "arrEpisodeFileId" | "arrSeriesId" | "seasonNumber" | "relativePath" | "path" | "size" | "qualityName" | "releaseGroup" | "infoHash" | "infoHashSource" | "torrentState" | "torrentRatio" | "torrentSyncedAt" | "cachedAt" | "updatedAt", ExtArgs["result"]["episodeFileCache"]>
+export type EpisodeFileCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "arrEpisodeFileId" | "arrSeriesId" | "seasonNumber" | "relativePath" | "path" | "size" | "qualityName" | "releaseGroup" | "infoHash" | "infoHashSource" | "inodeBackfillRetryAfter" | "torrentState" | "torrentRatio" | "torrentSyncedAt" | "cachedAt" | "updatedAt", ExtArgs["result"]["episodeFileCache"]>
 export type EpisodeFileCacheInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }
@@ -989,6 +1022,7 @@ export type $EpisodeFileCachePayload<ExtArgs extends runtime.Types.Extensions.In
     releaseGroup: string | null
     infoHash: string | null
     infoHashSource: string | null
+    inodeBackfillRetryAfter: Date | null
     torrentState: string | null
     torrentRatio: number | null
     torrentSyncedAt: Date | null
@@ -1430,6 +1464,7 @@ export interface EpisodeFileCacheFieldRefs {
   readonly releaseGroup: Prisma.FieldRef<"EpisodeFileCache", 'String'>
   readonly infoHash: Prisma.FieldRef<"EpisodeFileCache", 'String'>
   readonly infoHashSource: Prisma.FieldRef<"EpisodeFileCache", 'String'>
+  readonly inodeBackfillRetryAfter: Prisma.FieldRef<"EpisodeFileCache", 'DateTime'>
   readonly torrentState: Prisma.FieldRef<"EpisodeFileCache", 'String'>
   readonly torrentRatio: Prisma.FieldRef<"EpisodeFileCache", 'Float'>
   readonly torrentSyncedAt: Prisma.FieldRef<"EpisodeFileCache", 'DateTime'>

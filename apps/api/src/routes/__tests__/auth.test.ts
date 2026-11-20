@@ -302,6 +302,7 @@ describe("POST /auth/login", () => {
 			"user-1",
 			false, // rememberMe default
 			expect.any(Object),
+			{ authorizePasswordSession: expect.any(Function) },
 		);
 		expect(mockSessionService.attachCookie).toHaveBeenCalled();
 	});
@@ -515,6 +516,8 @@ describe("DELETE /auth/password", () => {
 		});
 
 		expect(res.statusCode).toBe(200);
+		expect(res.json().message).toMatch(/OIDC/);
+		expect(res.json().message).not.toMatch(/passkey/i);
 		expect(mockPrisma.oIDCProvider.updateMany).toHaveBeenCalledWith({
 			where: {
 				...oidcProvider,

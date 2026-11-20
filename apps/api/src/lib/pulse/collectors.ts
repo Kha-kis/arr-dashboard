@@ -36,6 +36,10 @@ import {
 	isSonarrClient,
 } from "../arr/client-helpers.js";
 import { QuiApiError, QuiInstanceUnreachableError } from "../errors.js";
+import {
+	withIsolatedRuntimePrismaBulkReadClient,
+	withIsolatedRuntimePrismaReadClient,
+} from "../backup/restore-runtime-client.js";
 import type { JellyfinCacheHealthInstance } from "../jellyfin/jellyfin-cache-health.js";
 import {
 	DEFAULT_JELLYFIN_CACHE_HEALTH_MAX_AGE_MS,
@@ -52,6 +56,8 @@ import {
 	loadUserGenerationObservations,
 } from "../plex/plex-persisted-observation-repository.js";
 import { decodePlexPositiveEpisodeGenerationMetadata } from "../plex/plex-positive-episode-generation-metadata.js";
+import { MAX_CONNECTION_ITEMS } from "../provider-observation/inventory-connection-repository.js";
+import { readNativeInventoryPage } from "../provider-observation/native-inventory.js";
 import { createQuiClient } from "../qui/client-factory.js";
 import { listQuiInstances } from "../qui/instance-helpers.js";
 import {
@@ -86,9 +92,11 @@ type Collector = (
 // ============================================================================
 
 const collectArrSignals: Collector = async (app, userId, log) => {
-	const instances = await app.prisma.serviceInstance.findMany({
-		where: { enabled: true, userId },
-	});
+	const instances = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		prisma.serviceInstance.findMany({
+			where: { enabled: true, userId },
+		}),
+	);
 
 	const arrInstances = instances.filter((i) =>
 		(ARR_SERVICES_UPPER as readonly string[]).includes(i.service),
@@ -271,13 +279,15 @@ const collectArrSignals: Collector = async (app, userId, log) => {
 //     collectArrSignals. One bad instance doesn't silence the others.
 
 const collectMediaServerReachability: Collector = async (app, userId, log) => {
-	const instances = await app.prisma.serviceInstance.findMany({
-		where: {
-			enabled: true,
-			userId,
-			service: { in: ["PLEX", "JELLYFIN", "TAUTULLI"] },
-		},
-	});
+	const instances = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		prisma.serviceInstance.findMany({
+			where: {
+				enabled: true,
+				userId,
+				service: { in: ["PLEX", "JELLYFIN", "TAUTULLI"] },
+			},
+		}),
+	);
 
 	if (instances.length === 0) return [];
 
@@ -443,13 +453,15 @@ async function fetchRawQueue(client: ArrClient): Promise<QueueItemRecord[]> {
 }
 
 const collectArrQueueFailures: Collector = async (app, userId, log) => {
-	const instances = await app.prisma.serviceInstance.findMany({
-		where: {
-			enabled: true,
-			userId,
-			service: { in: [...LIBRARY_SERVICES_UPPER] },
-		},
-	});
+	const instances = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		prisma.serviceInstance.findMany({
+			where: {
+				enabled: true,
+				userId,
+				service: { in: [...LIBRARY_SERVICES_UPPER] },
+			},
+		}),
+	);
 
 	if (instances.length === 0) return [];
 
@@ -565,9 +577,11 @@ const collectArrQueueFailures: Collector = async (app, userId, log) => {
 // ============================================================================
 
 const collectSeerrCircuitBreaker: Collector = async (app, userId) => {
-	const seerrInstances = await app.prisma.serviceInstance.findMany({
-		where: { enabled: true, userId, service: "SEERR" },
-	});
+	const seerrInstances = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		prisma.serviceInstance.findMany({
+			where: { enabled: true, userId, service: "SEERR" },
+		}),
+	);
 
 	if (seerrInstances.length === 0) return [];
 
@@ -704,11 +718,44 @@ function projectJellyfinPulseItem(
 	const projection = status
 		? projectProviderObservationUi(status)
 		: { condition: "unavailable" as const };
+	const coverage = source.watchCoverage;
+	const incompleteWatch = coverage?.status === "available" && coverage.incompleteScopes > 0;
+	const activeWatch =
+		coverage?.status === "available" && !["idle", "failed"].includes(coverage.refreshPhase);
+	const watchGap =
+		incompleteWatch &&
+		projection.condition !== "identity-action-required" &&
+		projection.condition !== "retryable-failure" &&
+		projection.condition !== "collecting";
+	if (watchGap) {
+		return {
+			id: `cache-${provider}-watch-coverage-${item.instanceId}-${cacheType}`,
+			severity: "info",
+			category: "health",
+			title: `${item.instanceName}: ${cacheLabel} watch observations have incomplete recorded coverage`,
+			detail: activeWatch
+				? "Watch refresh work is already active or unconfirmed; recorded values remain visible."
+				: "Some watch observations were not verified. Recorded values remain visible.",
+			actionUrl: "/settings",
+			actionLabel: "View status",
+			source: provider,
+			timestamp: coverage.observedAt,
+			...(!activeWatch
+				? {
+						action: actionForCache(
+							item.instanceId,
+							"jellyfin_episode",
+							"Refresh watch observations",
+						),
+					}
+				: {}),
+		};
+	}
 	if (projection.condition === "current") return null;
 	const details = {
 		"informational-gap": {
 			suffix: "cache has informational coverage gaps",
-			detail: "Current mapped data remains available; unsupported items were excluded.",
+			detail: "Current mapped data remains available; some observations were not verified.",
 			severity: "info" as const,
 			actionLabel: "View status",
 		},
@@ -739,7 +786,7 @@ function projectJellyfinPulseItem(
 	} as const;
 	const detail = details[projection.condition];
 	const action =
-		projection.condition === "retryable-failure"
+		projection.condition === "retryable-failure" && !activeWatch
 			? actionForCache(
 					item.instanceId,
 					cacheType === "emby"
@@ -954,41 +1001,62 @@ function projectTautulliPulseItem(
 
 const collectCacheStaleness: Collector = async (app, userId) => {
 	const observationNow = new Date();
-	const [cacheStatuses, tautulliInstances, jellyfinInstances] = await Promise.all([
-		app.prisma.cacheRefreshStatus.findMany({
-			where: {
-				instance: { userId, enabled: true },
-				cacheType: { notIn: ["jellyfin", "jellyfin_episode", "tautulli"] },
-			},
-			include: { instance: { select: { label: true, service: true } } },
-		}),
-		app.prisma.serviceInstance.findMany({
-			where: { userId, enabled: true, service: "TAUTULLI" },
-			select: { id: true, label: true, createdAt: true },
-		}),
-		app.prisma.serviceInstance.findMany({
-			where: {
-				userId,
-				enabled: true,
-				service: { in: ["JELLYFIN", "EMBY"] },
-			},
-			select: { id: true, label: true, service: true, createdAt: true },
-		}),
+	const [cacheStatuses, tautulliInstances, jellyfinInstances, plexInstances] = await Promise.all([
+		withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			prisma.cacheRefreshStatus.findMany({
+				where: {
+					instance: { userId, enabled: true },
+					cacheType: { notIn: ["jellyfin", "jellyfin_episode", "tautulli"] },
+				},
+				include: { instance: { select: { label: true, service: true } } },
+			}),
+		),
+		withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			prisma.serviceInstance.findMany({
+				where: { userId, enabled: true, service: "TAUTULLI" },
+				select: { id: true, label: true, createdAt: true },
+			}),
+		),
+		withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			prisma.serviceInstance.findMany({
+				where: {
+					userId,
+					enabled: true,
+					service: { in: ["JELLYFIN", "EMBY"] },
+				},
+				select: { id: true, label: true, service: true, createdAt: true },
+			}),
+		),
+		withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			prisma.serviceInstance.findMany({
+				where: { userId, enabled: true, service: "PLEX" },
+				select: { id: true, label: true },
+			}),
+		),
 	]);
-	const jellyfinHealthSources = await readOwnedJellyfinCacheHealthSources({
-		prisma: app.prisma,
-		userId,
-		instances: jellyfinInstances as JellyfinCacheHealthInstance[],
-		now: observationNow,
-		maxAgeMs: DEFAULT_JELLYFIN_CACHE_HEALTH_MAX_AGE_MS,
-	});
+	const jellyfinHealthSources = await withIsolatedRuntimePrismaBulkReadClient(
+		app.prisma,
+		(prisma) =>
+			readOwnedJellyfinCacheHealthSources({
+				prisma,
+				userId,
+				instances: jellyfinInstances as JellyfinCacheHealthInstance[],
+				now: observationNow,
+				maxAgeMs: DEFAULT_JELLYFIN_CACHE_HEALTH_MAX_AGE_MS,
+			}),
+		{ lease: "phase" },
+	);
 
 	const plexEvidenceByStatus = new Map<
 		string,
 		Awaited<ReturnType<typeof loadUserGenerationObservations>>[number]["evidence"]
 	>();
 	if (cacheStatuses.some((status) => status.cacheType === "plex")) {
-		for (const evidence of await loadUserGenerationObservations(app.prisma, { userId })) {
+		for (const evidence of await withIsolatedRuntimePrismaBulkReadClient(
+			app.prisma,
+			(prisma) => loadUserGenerationObservations(prisma, { userId }),
+			{ lease: "phase" },
+		)) {
 			if (evidence.instanceId) {
 				plexEvidenceByStatus.set(`${evidence.instanceId}:plex`, evidence.evidence);
 			}
@@ -996,10 +1064,15 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 	}
 	for (const status of cacheStatuses) {
 		if (status.cacheType !== "plex_episode") continue;
-		const evidence = await getPublishedEpisodeGenerationObservation(app.prisma, {
-			userId,
-			instanceId: status.instanceId,
-		});
+		const evidence = await withIsolatedRuntimePrismaBulkReadClient(
+			app.prisma,
+			(prisma) =>
+				getPublishedEpisodeGenerationObservation(prisma, {
+					userId,
+					instanceId: status.instanceId,
+				}),
+			{ lease: "phase" },
+		);
 		plexEvidenceByStatus.set(`${status.instanceId}:plex_episode`, evidence.evidence);
 	}
 
@@ -1162,11 +1235,81 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 		}
 	}
 
-	for (const instance of tautulliInstances) {
-		const observation = await readOwnedTautulliObservation(app.prisma, {
-			userId,
-			instanceId: instance.id,
+	for (const instance of plexInstances) {
+		const actionUrl = `/library?inventoryInstanceId=${encodeURIComponent(instance.id)}&inventoryDomain=library&inventoryMetadataFilter=missing-tmdb#media-server-inventory`;
+		let inventory: Awaited<ReturnType<typeof readNativeInventoryPage>> | { status: "unavailable" };
+		try {
+			inventory = await withIsolatedRuntimePrismaBulkReadClient(
+				app.prisma,
+				(prisma) =>
+					readNativeInventoryPage(prisma, {
+						userId,
+						instanceId: instance.id,
+						domain: "library",
+						limit: 1,
+						now: observationNow,
+					}),
+				{ lease: "phase" },
+			);
+		} catch {
+			inventory = { status: "unavailable" };
+		}
+		if (inventory.status !== "available") {
+			items.push({
+				id: `plex-native-metadata-unavailable-${instance.id}`,
+				severity: "warning",
+				category: "health",
+				title: `${instance.label}: Plex inventory is unavailable`,
+				detail: "Published Plex inventory is unavailable; metadata status is unknown.",
+				actionUrl: "/library#media-server-inventory",
+				actionLabel: "View inventory",
+				source: "plex",
+				timestamp: observationNow.toISOString(),
+			});
+			continue;
+		}
+		if (inventory.itemCount < 1) continue;
+		if (inventory.itemCount > MAX_CONNECTION_ITEMS) {
+			items.push({
+				id: `plex-native-metadata-filter-unavailable-${instance.id}`,
+				severity: "warning",
+				category: "health",
+				title: `${instance.label}: Plex metadata filter is unavailable`,
+				detail:
+					"Published Plex inventory exceeds the bounded metadata filter; metadata status is unknown.",
+				actionUrl: "/library#media-server-inventory",
+				actionLabel: "View inventory",
+				source: "plex",
+				timestamp: inventory.observedAt.toISOString(),
+			});
+			continue;
+		}
+		const isCurrent = inventory.freshness === "current";
+		items.push({
+			id: `plex-native-metadata-${instance.id}`,
+			severity: "info",
+			category: "health",
+			title: `${instance.label}: Plex metadata review`,
+			detail: isCurrent
+				? "Open the published Plex library's bounded missing-TMDb filter."
+				: "Open the last-known Plex library's bounded missing-TMDb filter; current coverage is unknown.",
+			actionUrl,
+			actionLabel: "Review inventory",
+			source: "plex",
+			timestamp: inventory.observedAt.toISOString(),
 		});
+	}
+
+	for (const instance of tautulliInstances) {
+		const observation = await withIsolatedRuntimePrismaBulkReadClient(
+			app.prisma,
+			(prisma) =>
+				readOwnedTautulliObservation(prisma, {
+					userId,
+					instanceId: instance.id,
+				}),
+			{ lease: "phase" },
+		);
 		if (!observation) continue;
 		items.push(projectTautulliPulseItem(instance, observation));
 	}
@@ -1221,10 +1364,12 @@ const collectValidationHealth: Collector = async () => {
 
 const collectLibraryInsightCounts: Collector = async (app, userId) => {
 	// Check which services are available for correlation
-	const instances = await app.prisma.serviceInstance.findMany({
-		where: { enabled: true, userId },
-		select: { service: true },
-	});
+	const instances = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		prisma.serviceInstance.findMany({
+			where: { enabled: true, userId },
+			select: { service: true },
+		}),
+	);
 
 	const hasArr = instances.some((i) =>
 		(ARR_SERVICES_UPPER as readonly string[]).includes(i.service),
@@ -1233,13 +1378,15 @@ const collectLibraryInsightCounts: Collector = async (app, userId) => {
 	if (!hasArr) return [];
 
 	// Cutoff-unmet is a pure ARR concept — no Plex/Seerr dependency
-	const count = await app.prisma.libraryCache.count({
-		where: {
-			instance: { userId },
-			hasFile: true,
-			cutoffUnmet: true,
-		},
-	});
+	const count = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		prisma.libraryCache.count({
+			where: {
+				instance: { userId },
+				hasFile: true,
+				cutoffUnmet: true,
+			},
+		}),
+	);
 
 	if (count === 0) return [];
 
@@ -1263,22 +1410,26 @@ const collectLibraryInsightCounts: Collector = async (app, userId) => {
 // ============================================================================
 
 const collectHuntFailures: Collector = async (app, userId) => {
-	const hasConfigs = await app.prisma.huntConfig.count({
-		where: { instance: { userId } },
-	});
+	const hasConfigs = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		prisma.huntConfig.count({
+			where: { instance: { userId } },
+		}),
+	);
 	if (hasConfigs === 0) return [];
 
 	const since = new Date(Date.now() - FAILURE_LOOKBACK_MS);
-	const failures = await app.prisma.huntLog.findMany({
-		where: {
-			instance: { userId },
-			status: "error",
-			startedAt: { gte: since },
-		},
-		include: { instance: { select: { label: true, service: true } } },
-		orderBy: { startedAt: "desc" },
-		take: 5,
-	});
+	const failures = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		prisma.huntLog.findMany({
+			where: {
+				instance: { userId },
+				status: "error",
+				startedAt: { gte: since },
+			},
+			include: { instance: { select: { label: true, service: true } } },
+			orderBy: { startedAt: "desc" },
+			take: 5,
+		}),
+	);
 
 	return failures.map((f) => ({
 		id: `hunt-error-${f.id}`,
@@ -1298,22 +1449,26 @@ const collectHuntFailures: Collector = async (app, userId) => {
 // ============================================================================
 
 const collectQueueCleanerFailures: Collector = async (app, userId) => {
-	const hasConfigs = await app.prisma.queueCleanerConfig.count({
-		where: { instance: { userId } },
-	});
+	const hasConfigs = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		prisma.queueCleanerConfig.count({
+			where: { instance: { userId } },
+		}),
+	);
 	if (hasConfigs === 0) return [];
 
 	const since = new Date(Date.now() - FAILURE_LOOKBACK_MS);
-	const failures = await app.prisma.queueCleanerLog.findMany({
-		where: {
-			instance: { userId },
-			status: "error",
-			startedAt: { gte: since },
-		},
-		include: { instance: { select: { label: true, service: true } } },
-		orderBy: { startedAt: "desc" },
-		take: 5,
-	});
+	const failures = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		prisma.queueCleanerLog.findMany({
+			where: {
+				instance: { userId },
+				status: "error",
+				startedAt: { gte: since },
+			},
+			include: { instance: { select: { label: true, service: true } } },
+			orderBy: { startedAt: "desc" },
+			take: 5,
+		}),
+	);
 
 	return failures.map((f) => ({
 		id: `cleaner-error-${f.id}`,
@@ -1334,13 +1489,15 @@ const collectQueueCleanerFailures: Collector = async (app, userId) => {
 
 const collectTrashSyncFailures: Collector = async (app, userId) => {
 	// Get the most recent sync per instance
-	const recentSyncs = await app.prisma.trashSyncHistory.findMany({
-		where: { userId },
-		orderBy: { startedAt: "desc" },
-		distinct: ["instanceId"],
-		include: { instance: { select: { label: true } } },
-		take: 20,
-	});
+	const recentSyncs = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		prisma.trashSyncHistory.findMany({
+			where: { userId },
+			orderBy: { startedAt: "desc" },
+			distinct: ["instanceId"],
+			include: { instance: { select: { label: true } } },
+			take: 20,
+		}),
+	);
 
 	if (recentSyncs.length === 0) return [];
 
@@ -1475,19 +1632,21 @@ const collectSchedulerHealth: Collector = async (app) => {
 // ============================================================================
 
 const collectCleanupOpportunities: Collector = async (app, userId, _log) => {
-	const config = await app.prisma.libraryCleanupConfig.findFirst({
-		where: { userId },
-		select: {
-			enabled: true,
-			rules: { where: { enabled: true }, select: { id: true } },
-			logs: {
-				where: { status: "completed" },
-				orderBy: { startedAt: "desc" },
-				take: 1,
-				select: { itemsFlagged: true, itemsEvaluated: true, startedAt: true },
+	const config = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		prisma.libraryCleanupConfig.findFirst({
+			where: { userId },
+			select: {
+				enabled: true,
+				rules: { where: { enabled: true }, select: { id: true } },
+				logs: {
+					where: { status: "completed" },
+					orderBy: { startedAt: "desc" },
+					take: 1,
+					select: { itemsFlagged: true, itemsEvaluated: true, startedAt: true },
+				},
 			},
-		},
-	});
+		}),
+	);
 
 	if (!config) return [];
 
@@ -1527,9 +1686,11 @@ const collectCleanupOpportunities: Collector = async (app, userId, _log) => {
 
 	// No rules configured but has a meaningful library
 	if (ruleCount === 0) {
-		const libraryCount = await app.prisma.libraryCache.count({
-			where: { instance: { userId } },
-		});
+		const libraryCount = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			prisma.libraryCache.count({
+				where: { instance: { userId } },
+			}),
+		);
 		if (libraryCount > 50) {
 			items.push({
 				id: "cleanup-no-rules",
@@ -1599,20 +1760,22 @@ const collectQuiSignals: Collector = async (app, userId, log) => {
 
 	const items: PulseItem[] = [];
 
-	// Webhook-drop signal: if QuiEventLog insert failed at the receiver, we
-	// 200-suppress to qui so it doesn't retry-storm us, but we still log a
-	// `qui_webhook_dropped` activity row. Surface as Pulse so the operator
+	// Webhook-drop signal: a failed QuiEventLog insert returns an error to qUI
+	// and records a best-effort `qui_webhook_dropped` activity row. Sender
+	// retries are not guaranteed. Surface as Pulse so the operator
 	// sees the gap on their health dashboard, not just in pino logs.
 	// Window: last 24h, matches the activity log retention floor.
 	try {
 		const dropCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
-		const droppedCount = await app.prisma.quiActivityLog.count({
-			where: {
-				userId,
-				eventType: "qui_webhook_dropped",
-				createdAt: { gte: dropCutoff },
-			},
-		});
+		const droppedCount = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			prisma.quiActivityLog.count({
+				where: {
+					userId,
+					eventType: "qui_webhook_dropped",
+					createdAt: { gte: dropCutoff },
+				},
+			}),
+		);
 		if (droppedCount > 0) {
 			items.push({
 				id: "qui-webhook-drops",
@@ -1620,7 +1783,7 @@ const collectQuiSignals: Collector = async (app, userId, log) => {
 				category: "health",
 				title: `${droppedCount} qui webhook event${droppedCount === 1 ? "" : "s"} dropped in the last 24h`,
 				detail:
-					"The dashboard acknowledged these events to qui (to stop retry storms) but couldn't persist them — usually a disk-full / schema-drift / migration issue. Check arr-dashboard logs for the underlying DB error.",
+					"The dashboard couldn't persist these webhook deliveries. Failed saves return an error to qUI; sender retries are not guaranteed. Check the activity feed and arr-dashboard logs for persistence failure details.",
 				actionUrl: "/qui-activity",
 				actionLabel: "View qui Activity → Activity feed → qui_webhook_dropped",
 				source: "qui",

@@ -33,15 +33,15 @@ function fixture(
 ) {
 	const libraries = options.libraries ?? [library("library-1")];
 	const items = options.items ?? { "library-1": [episode("episode-1")] };
-	const getNativeMediaFolders = vi.fn(async () => libraries);
+	const getNativeMediaFolders = vi.fn(async (_options?: { timeoutMs?: number }) => libraries);
 	const getUsers = vi.fn(() => {
 		throw new Error("Native inventory must not enumerate users");
 	});
 	const getLibraries = vi.fn(() => {
 		throw new Error("Native inventory must not enumerate user views");
 	});
-	const getNativeEpisodeItemsWithCoverage = vi.fn(async (libraryId: string) =>
-		page(items[libraryId] ?? []),
+	const getNativeEpisodeItemsWithCoverage = vi.fn(
+		async (libraryId: string, _timeBudgetMs?: number) => page(items[libraryId] ?? []),
 	);
 	const client = {
 		getNativeMediaFolders,
@@ -87,14 +87,77 @@ describe("complete Jellyfin server-native episode inventory", () => {
 			],
 		});
 		expect(f.getNativeMediaFolders).toHaveBeenCalledTimes(3);
+		for (const [options] of f.getNativeMediaFolders.mock.calls) {
+			expect(options?.timeoutMs).toBeGreaterThan(0);
+			expect(options?.timeoutMs).toBeLessThanOrEqual(20 * 60 * 1000);
+		}
 		expect(f.getNativeEpisodeItemsWithCoverage.mock.calls).toEqual([
-			["one"],
-			["two"],
-			["one"],
-			["two"],
+			["one", expect.any(Number)],
+			["two", expect.any(Number)],
+			["one", expect.any(Number)],
+			["two", expect.any(Number)],
 		]);
+		for (const [, remainingMs] of f.getNativeEpisodeItemsWithCoverage.mock.calls) {
+			expect(remainingMs).toBeGreaterThan(0);
+			expect(remainingMs).toBeLessThanOrEqual(20 * 60 * 1000);
+		}
 		expect(f.getUsers).not.toHaveBeenCalled();
 		expect(f.getLibraries).not.toHaveBeenCalled();
+	});
+	it("records only bounded timing and count fields for each native episode scope", async () => {
+		const f = fixture();
+		const info = vi.fn();
+		expect(await collectJellyfinNativeEpisodeInventory(f.client, { info })).toMatchObject({
+			complete: true,
+		});
+		const scopeCalls = info.mock.calls.filter(
+			([fields]) => fields.category === "native-episode-scope-timing",
+		);
+		expect(scopeCalls).toHaveLength(2);
+		for (const [fields] of scopeCalls) {
+			expect(Object.keys(fields).sort()).toEqual(
+				[
+					"category",
+					"elapsedMs",
+					"pagesAttempted",
+					"pagesCompleted",
+					"pass",
+					"rawObserved",
+					"scopeOrdinal",
+					"status",
+				].sort(),
+			);
+			expect(fields).toMatchObject({
+				category: "native-episode-scope-timing",
+				pagesAttempted: 1,
+				pagesCompleted: 1,
+				rawObserved: 1,
+				scopeOrdinal: 1,
+				status: "complete",
+			});
+			expect(fields.elapsedMs).toBeGreaterThanOrEqual(0);
+		}
+		const passCalls = info.mock.calls.filter(
+			([fields]) => fields.category === "native-episode-pass-timing",
+		);
+		expect(passCalls).toHaveLength(2);
+		for (const [fields] of passCalls) {
+			expect(Object.keys(fields).sort()).toEqual(
+				["category", "elapsedMs", "pass", "rows", "scopes", "status"].sort(),
+			);
+			expect(fields).toMatchObject({ rows: 1, scopes: 1, status: "complete" });
+		}
+	});
+	it("does not change native episode publication when timing telemetry throws", async () => {
+		const f = fixture();
+		const info = vi.fn(() => {
+			throw new Error("timing logger unavailable");
+		});
+		expect(await collectJellyfinNativeEpisodeInventory(f.client, { info })).toMatchObject({
+			complete: true,
+			snapshots: [{ rows: [{ nativeId: "episode-1" }] }],
+		});
+		expect(f.getNativeEpisodeItemsWithCoverage).toHaveBeenCalledTimes(2);
 	});
 	it("omits only the playlist grouping while retaining custom media folders", async () => {
 		const f = fixture({
@@ -206,9 +269,9 @@ describe("complete Jellyfin server-native episode inventory", () => {
 			snapshots: [{ scopeKeys: ["library:library-2"], rows: [{ nativeId: "new" }] }],
 		});
 		expect(f.getNativeEpisodeItemsWithCoverage.mock.calls).toEqual([
-			["library-1"],
-			["library-2"],
-			["library-2"],
+			["library-1", expect.any(Number)],
+			["library-2", expect.any(Number)],
+			["library-2", expect.any(Number)],
 		]);
 	});
 	it("withholds publication after final scope drift even when item membership matched", async () => {

@@ -16,6 +16,7 @@ import {
 	useLibrarySeriesSearchMutation,
 } from "../../../hooks/api/useLibrary";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { showMonitoringUnconfirmedToast } from "../lib/monitoring-feedback";
 
 export interface LibraryActions {
 	handleSeasonMonitor: (
@@ -93,7 +94,6 @@ export function useLibraryActions(): LibraryActions {
 			}
 
 			const seasonLabel = seasonNumber === 0 ? "Specials" : `Season ${seasonNumber}`;
-			const seriesTitle = series.title ?? "Series";
 			const actionKey = `monitor:${series.instanceId}:${series.id}:${seasonNumber}`;
 			setPendingSeasonAction(actionKey);
 			try {
@@ -105,11 +105,10 @@ export function useLibraryActions(): LibraryActions {
 					seasonNumbers: [seasonNumber],
 				});
 				toast.success(
-					`${seasonLabel} ${nextMonitored ? "monitoring enabled" : "monitoring disabled"} for ${seriesTitle}`,
+					`${seasonLabel} ${nextMonitored ? "monitoring enabled" : "monitoring disabled"}`,
 				);
-			} catch (error) {
-				const message = getErrorMessage(error, "Unknown error");
-				toast.error(`Failed to ${nextMonitored ? "enable" : "disable"} ${seasonLabel}: ${message}`);
+			} catch {
+				showMonitoringUnconfirmedToast();
 			} finally {
 				setPendingSeasonAction(null);
 			}
@@ -259,11 +258,8 @@ export function useLibraryActions(): LibraryActions {
 					monitored: nextMonitored,
 				});
 				toast.success(`Album ${nextMonitored ? "monitoring enabled" : "monitoring disabled"}`);
-			} catch (error) {
-				const message = getErrorMessage(error, "Unknown error");
-				toast.error(
-					`Failed to ${nextMonitored ? "enable" : "disable"} album monitoring: ${message}`,
-				);
+			} catch {
+				showMonitoringUnconfirmedToast();
 			} finally {
 				setPendingAlbumAction(null);
 			}
@@ -349,11 +345,8 @@ export function useLibraryActions(): LibraryActions {
 					monitored: nextMonitored,
 				});
 				toast.success(`Book ${nextMonitored ? "monitoring enabled" : "monitoring disabled"}`);
-			} catch (error) {
-				const message = getErrorMessage(error, "Unknown error");
-				toast.error(
-					`Failed to ${nextMonitored ? "enable" : "disable"} book monitoring: ${message}`,
-				);
+			} catch {
+				showMonitoringUnconfirmedToast();
 			} finally {
 				setPendingBookAction(null);
 			}

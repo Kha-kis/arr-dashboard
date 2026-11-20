@@ -4,11 +4,12 @@
  * Returns a deduplicated timeline of recent watch events from SessionSnapshot data.
  */
 
-import type { WatchHistoryResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import { readSessionSnapshotPages } from "../../lib/statistics/session-snapshot-pages.js";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { deduplicateWatchEvents } from "./lib/watch-history-helpers.js";
+import { activityCollectionMeasurement } from "./lib/activity-collection-helpers.js";
+import { createWatchHistoryAccumulator } from "./lib/watch-history-helpers.js";
 
 const watchHistoryQuery = z.object({
 	days: z
@@ -35,39 +36,26 @@ export async function registerWatchHistoryRoutes(
 		const { days, limit } = validateRequest(watchHistoryQuery, request.query);
 		const userId = request.currentUser!.id;
 
-		const plexInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "PLEX", enabled: true },
-			select: { id: true },
-		});
-
-		if (plexInstances.length === 0) {
-			const response: WatchHistoryResponse = { events: [] };
-			return reply.send(response);
-		}
-
-		const instanceIds = plexInstances.map((i) => i.id);
 		const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-
-		const snapshots = await app.prisma.sessionSnapshot.findMany({
-			where: {
-				instanceId: { in: instanceIds },
-				capturedAt: { gte: cutoff },
+		const accumulator = createWatchHistoryAccumulator(limit);
+		const read = await readSessionSnapshotPages(
+			app.prisma,
+			{
+				userId,
+				services: ["PLEX"],
+				cutoff,
+				onPage: (page) => accumulator.addBatch(page),
 			},
-			select: { capturedAt: true, sessionsJson: true },
-			orderBy: { capturedAt: "desc" },
-			take: 20000,
-		});
-
-		const { events, parseFailures, totalSnapshots, failedPreviews } = deduplicateWatchEvents(
-			snapshots,
-			limit,
+			"reverse-chronological",
 		);
+
+		const { events, parseFailures, totalSnapshots, failedPreviews } = accumulator.getResult();
 		if (parseFailures > 0) {
 			request.log.warn(
 				{ parseFailures, totalSnapshots, failedPreviews, route: "watch-history" },
 				"Session snapshot JSON parse failures detected",
 			);
 		}
-		return reply.send({ events });
+		return reply.send({ events, measurement: activityCollectionMeasurement(read) });
 	});
 }

@@ -352,6 +352,27 @@ describe("Jellyfin mutation failure boundaries", () => {
 		expect(fakes.readTarget).toHaveBeenCalledTimes(1);
 		expect(fakes.addTargetTag).not.toHaveBeenCalled();
 	});
+	it("blocks a staged replacement scan even while the old published head remains readable", async () => {
+		fakes.readNativePage.mockResolvedValue({
+			status: "available",
+			generationId: "generation-1",
+			freshness: "last-known",
+			complete: false,
+			attempt: {
+				state: "running",
+				passOrdinal: 2,
+				pagesCompleted: 3,
+				itemsStaged: 30,
+				failureCount: 0,
+				reasonCode: null,
+			},
+		});
+		expect((await execute()).failures).toBe(1);
+		expect(fakes.addTargetTag).not.toHaveBeenCalled();
+		expect(fakes.completePreSend).toHaveBeenCalledWith(
+			expect.objectContaining({ status: "blocked", reasonCode: "generation_changed" }),
+		);
+	});
 	it("does not send after losing the sending CAS", async () => {
 		fakes.markSending.mockResolvedValue({ kind: "superseded" });
 		expect((await execute()).labelsApplied).toBe(0);

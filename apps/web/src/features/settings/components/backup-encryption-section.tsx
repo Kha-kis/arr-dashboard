@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertCircle, AlertTriangle, CheckCircle2, Key, Loader2, Shield } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { PremiumSection } from "../../../components/layout";
 import { Button, Input, toast } from "../../../components/ui";
 import {
@@ -15,12 +15,19 @@ import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 export const BackupEncryptionSection = () => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const fieldId = useId();
 
 	const [showPasswordForm, setShowPasswordForm] = useState(false);
 	const [newPassword, setNewPassword] = useState("");
 	const [confirmPassword, setConfirmPassword] = useState("");
 
-	const { data: passwordStatus, isLoading: passwordStatusLoading } = useBackupPasswordStatus();
+	const {
+		data: passwordStatus,
+		isLoading: passwordStatusLoading,
+		isError: passwordStatusError,
+		isFetching: passwordStatusFetching,
+		refetch: refetchPasswordStatus,
+	} = useBackupPasswordStatus();
 	const setPasswordMutation = useSetBackupPassword();
 	const removePasswordMutation = useRemoveBackupPassword();
 
@@ -75,6 +82,39 @@ export const BackupEncryptionSection = () => {
 					<div className="flex items-center gap-2 text-muted-foreground">
 						<Loader2 className="h-4 w-4 animate-spin" />
 						<span>Checking password configuration...</span>
+					</div>
+				) : passwordStatusError ? (
+					<div
+						role="alert"
+						className="flex items-start gap-3 p-4 rounded-xl"
+						style={{
+							backgroundColor: SEMANTIC_COLORS.error.bg,
+							border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+						}}
+					>
+						<AlertCircle
+							className="h-5 w-5 shrink-0"
+							style={{ color: SEMANTIC_COLORS.error.text }}
+						/>
+						<div className="min-w-0 flex-1">
+							<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
+								Password status unavailable
+							</p>
+							<p className="text-xs text-muted-foreground">
+								Could not verify the current backup password configuration. Retry the status check
+								before relying on it.
+							</p>
+							<Button
+								type="button"
+								variant="secondary"
+								size="sm"
+								className="mt-3"
+								disabled={passwordStatusFetching}
+								onClick={() => void refetchPasswordStatus()}
+							>
+								{passwordStatusFetching ? "Checking..." : "Retry status check"}
+							</Button>
+						</div>
 					</div>
 				) : passwordStatus?.reason === "invalid_database_password" ? (
 					<div
@@ -173,10 +213,14 @@ export const BackupEncryptionSection = () => {
 					<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 						<form onSubmit={handleSetPassword} className="space-y-4">
 							<div className="space-y-2">
-								<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+								<label
+									htmlFor={`${fieldId}-new-password`}
+									className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+								>
 									New Password
 								</label>
 								<Input
+									id={`${fieldId}-new-password`}
 									type="password"
 									value={newPassword}
 									onChange={(e) => setNewPassword(e.target.value)}
@@ -188,10 +232,14 @@ export const BackupEncryptionSection = () => {
 							</div>
 
 							<div className="space-y-2">
-								<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+								<label
+									htmlFor={`${fieldId}-confirm-password`}
+									className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+								>
 									Confirm Password
 								</label>
 								<Input
+									id={`${fieldId}-confirm-password`}
 									type="password"
 									value={confirmPassword}
 									onChange={(e) => setConfirmPassword(e.target.value)}

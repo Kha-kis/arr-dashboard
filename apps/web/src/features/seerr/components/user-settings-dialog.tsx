@@ -18,6 +18,7 @@ import {
 import { SimpleFormField } from "../../../components/ui/simple-form-field";
 import { useSeerrUserQuota, useUpdateSeerrUser } from "../../../hooks/api/useSeerr";
 import { getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
+import { notifySeerrActionError } from "../lib/seerr-action-error";
 
 interface UserSettingsDialogProps {
 	user: SeerrUser | null;
@@ -57,7 +58,8 @@ export const UserSettingsDialog = ({
 	});
 	const [incognitoMode] = useIncognitoMode();
 	const updateMutation = useUpdateSeerrUser();
-	const { data: quota } = useSeerrUserQuota(instanceId, user?.id ?? 0);
+	const { data, isError, isLoading } = useSeerrUserQuota(instanceId, user?.id ?? 0);
+	const quota = isError ? undefined : data;
 
 	// Sync draft from user props when dialog opens
 	useEffect(() => {
@@ -75,22 +77,16 @@ export const UserSettingsDialog = ({
 		draft.tvQuotaLimit !== original.tvQuotaLimit ||
 		draft.tvQuotaDays !== original.tvQuotaDays;
 
-	const handleSave = () => {
-		updateMutation.mutate(
-			{ instanceId, seerrUserId: user.id, data: draft },
-			{
-				onSuccess: () => {
-					toast.success(
-						`Updated quota settings for ${incognitoMode ? getLinuxUsername(user.displayName) : user.displayName}`,
-					);
-					onOpenChange(false);
-				},
-				onError: () =>
-					toast.error(
-						`Failed to update quota for ${incognitoMode ? getLinuxUsername(user.displayName) : user.displayName}`,
-					),
-			},
-		);
+	const handleSave = async () => {
+		if (!hasChanges || updateMutation.isPending) return;
+		const displayName = incognitoMode ? getLinuxUsername(user.displayName) : user.displayName;
+		try {
+			await updateMutation.mutateAsync({ instanceId, seerrUserId: user.id, data: draft });
+			toast.success(`Updated quota settings for ${displayName}`);
+			onOpenChange(false);
+		} catch (error) {
+			notifySeerrActionError(error, `Failed to update quota for ${displayName}`);
+		}
 	};
 
 	return (
@@ -109,6 +105,11 @@ export const UserSettingsDialog = ({
 			</LegacyDialogHeader>
 
 			<LegacyDialogContent className="space-y-6">
+				{!quota && (
+					<p className="text-xs text-muted-foreground">
+						{isLoading ? "Loading quota…" : "Quota unavailable"}
+					</p>
+				)}
 				{/* Movie Quota */}
 				<QuotaSection
 					icon={Film}
@@ -139,7 +140,7 @@ export const UserSettingsDialog = ({
 					size="sm"
 					variant="primary"
 					disabled={!hasChanges || updateMutation.isPending}
-					onClick={handleSave}
+					onClick={() => void handleSave()}
 					icon={updateMutation.isPending ? Loader2 : undefined}
 				>
 					{updateMutation.isPending ? "Saving..." : "Save"}
@@ -184,17 +185,26 @@ function QuotaSection({
 				<h4 className="text-sm font-semibold text-foreground">{label}</h4>
 			</div>
 
-			{/* Current usage bar */}
-			{quota?.restricted && quota.limit > 0 && (
-				<div className="flex items-center gap-3 rounded-lg border border-border/50 bg-background/50 px-3 py-2">
-					<div className="min-w-0 flex-1">
-						<PremiumProgress value={Math.round((quota.used / quota.limit) * 100)} max={100} />
+			{quota &&
+				(quota.limit > 0 ? (
+					<div className="flex items-center gap-3 rounded-lg border border-border/50 bg-background/50 px-3 py-2">
+						<div className="min-w-0 flex-1">
+							<PremiumProgress
+								value={quota.used}
+								max={quota.limit}
+								variant={quota.restricted ? "danger" : "default"}
+							/>
+						</div>
+						<span className="shrink-0 text-xs text-muted-foreground">
+							{quota.used} of {quota.limit} used
+						</span>
+						{quota.restricted && <span className="text-xs text-destructive">Exhausted</span>}
 					</div>
-					<span className="shrink-0 text-xs text-muted-foreground">
-						{quota.used} of {quota.limit} used
-					</span>
-				</div>
-			)}
+				) : (
+					<p className="text-xs text-muted-foreground">
+						{quota.limit === 0 ? "Unlimited" : "Unavailable"}
+					</p>
+				))}
 
 			<div className="grid grid-cols-2 gap-3">
 				<SimpleFormField label="Request limit" htmlFor={limitId} hint="Max requests allowed">

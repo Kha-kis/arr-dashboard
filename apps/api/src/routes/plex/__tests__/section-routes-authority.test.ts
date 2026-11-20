@@ -1,150 +1,64 @@
-import Fastify, { type FastifyInstance } from "fastify";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import Fastify from "fastify";
+import { describe, expect, it } from "vitest";
 import { createInjectAuthenticated, setupAuthInjection } from "../../__tests__/test-helpers.js";
-
-const mocks = vi.hoisted(() => ({
-	loadUserSelectedEvidence: vi.fn(),
-}));
-
-vi.mock("../../../lib/plex/plex-evidence-repository.js", async (importOriginal) => ({
-	...(await importOriginal<typeof import("../../../lib/plex/plex-evidence-repository.js")>()),
-	loadUserSelectedEvidence: mocks.loadUserSelectedEvidence,
-}));
-
-vi.mock("../../../lib/plex/plex-authority-service.js", async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import("../../../lib/plex/plex-authority-service.js")>();
-	return {
-		...actual,
-		PlexAuthorityService: class {
-			readUserSelected(input: unknown) {
-				return mocks.loadUserSelectedEvidence(undefined, input);
-			}
-		},
-	};
-});
-
 import { registerSectionRoutes } from "../section-routes.js";
+import { sectionCatalogFixture } from "./section-catalog-fixture.js";
 
-describe("GET /api/plex/sections authority", () => {
-	let app: FastifyInstance;
-
-	beforeEach(async () => {
-		app = Fastify({ logger: false });
+describe("GET /api/plex/sections authority separation", () => {
+	async function read(change: (fixture: ReturnType<typeof sectionCatalogFixture>) => void) {
+		const fixture = sectionCatalogFixture();
+		change(fixture);
+		const app = Fastify({ logger: false });
 		setupAuthInjection(app);
-		app.decorate("prisma", {} as never);
+		app.decorate("prisma", fixture.prisma as never);
 		await app.register(registerSectionRoutes, { prefix: "/api/plex/sections" });
-		await app.ready();
-	});
+		try {
+			return await createInjectAuthenticated(app)("GET", "/api/plex/sections");
+		} finally {
+			await app.close();
+		}
+	}
 
-	afterEach(async () => {
-		await app.close();
-	});
-
-	it("does not expose a silently truncated section list when one instance is unavailable", async () => {
-		mocks.loadUserSelectedEvidence.mockResolvedValue([
-			{
-				available: true,
-				instanceId: "plex-1",
-				instanceName: "Primary",
-				sections: [{ key: "movies", title: "Movies", type: "movie" }],
-				evidence: {
-					publicationLevel: "authoritative",
-					completeness: "complete",
-					reasonCodes: [],
-				},
-			},
-			{
-				available: false,
-				instanceId: "plex-2",
-				evidence: {
-					availability: "unavailable",
-					authority: "unavailable",
-					attemptState: "success",
-					publicationLevel: "unavailable",
-					completeness: "unknown",
-					reasonCodes: ["published_generation_stale"],
-				},
-			},
-		]);
-
-		const response = await createInjectAuthenticated(app)("GET", "/api/plex/sections");
-
-		expect(response.statusCode).toBe(503);
-		expect(response.json()).toMatchObject({
-			error: "Plex cache evidence is unavailable",
-			evidence: {
-				publicationLevel: "unavailable",
-				completeness: "unknown",
-				reasonCodes: ["published_generation_stale"],
-			},
+	it("does not expose a silently truncated section list when one owned instance is unavailable", async () => {
+		const response = await read((f) => {
+			f.instances.push({ ...f.instance, id: "plex-2", identityStatus: "UNVERIFIED" });
 		});
+		expect(response.statusCode).toBe(503);
 		expect(response.json()).not.toHaveProperty("sections");
+		expect(response.json()).toMatchObject({
+			catalog: { availability: "unavailable", observedAt: null },
+		});
 	});
 
-	it("withholds current section values while reporting a failed latest attempt as degraded", async () => {
-		mocks.loadUserSelectedEvidence.mockResolvedValue([
-			{
-				available: true,
-				instanceId: "plex-1",
-				instanceName: "Primary",
-				sections: [{ key: "movies", title: "Movies", type: "movie" }],
-				evidence: {
-					availability: "last-known",
-					authority: "unavailable",
-					attemptState: "error",
-					publicationLevel: "unavailable",
-					completeness: "unknown",
-					reasonCodes: ["latest_attempt_failed"],
-					publishedGeneration: {
-						generationId: "generation-1",
-						publicationLevel: "authoritative",
-						publishedAt: "2026-08-20T12:00:00.000Z",
-						itemCount: 1,
-					},
-				},
-			},
-		]);
-
-		const response = await createInjectAuthenticated(app)("GET", "/api/plex/sections");
-
-		expect(response.statusCode).toBe(503);
+	it("does not present retained catalog values as current or promote failed canonical evidence", async () => {
+		const response = await read((f) => {
+			f.status.lastAttemptResult = "error";
+		});
+		expect(response.statusCode).toBe(200);
 		expect(response.json()).toMatchObject({
-			error: "Plex cache evidence is unavailable",
+			catalog: { availability: "last-known" },
 			evidence: {
 				availability: "last-known",
 				authority: "unavailable",
 				attemptState: "error",
-				publicationLevel: "unavailable",
-				completeness: "unknown",
 				reasonCodes: ["latest_attempt_failed"],
-				publishedGeneration: { publicationLevel: "authoritative" },
 			},
 		});
-		expect(response.json()).not.toHaveProperty("sections");
 	});
 
-	it("withholds section contents from a current V4 positive-only catalog", async () => {
-		mocks.loadUserSelectedEvidence.mockResolvedValue([
-			{
-				available: true,
-				instanceId: "plex-1",
-				instanceName: "Primary",
-				sections: [{ key: "shows", title: "Shows", type: "show" }],
-				rows: [],
-				evidence: {
-					availability: "current",
-					authority: "positive-only",
-					attemptState: "partial",
-					publicationLevel: "positive-only",
-					completeness: "partial",
-					reasonCodes: ["latest_attempt_partial"],
-				},
-			},
-		]);
-
-		const response = await createInjectAuthenticated(app)("GET", "/api/plex/sections");
-
+	it("withholds section contents from a V4 positive-only catalog without independent receipt proof", async () => {
+		const response = await read((f) => {
+			const {
+				coverageReceipt: _receipt,
+				ambiguousTmdbCandidates: _candidates,
+				...legacy
+			} = f.metadata;
+			f.status.generationMetadata = JSON.stringify({
+				...legacy,
+				version: 4,
+				partialReasons: [{ code: "currentItemsWithoutTmdbMetadata", count: 1 }],
+			});
+		});
 		expect(response.statusCode).toBe(503);
 		expect(response.json()).not.toHaveProperty("sections");
 	});

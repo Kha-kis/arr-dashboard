@@ -1,7 +1,12 @@
 import { ALL_SERVICES, arrServiceTypeSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
+import {
+	assertNoUnsettledImportConnection,
+	withImportConnectionWriteGuard,
+} from "../lib/arr/import-operations/connection-guards.js";
 import { requireInstance } from "../lib/arr/instance-helpers.js";
+import { withIsolatedRuntimePrismaReadClient } from "../lib/backup/restore-runtime-client.js";
 import { AppValidationError, ConflictError } from "../lib/errors.js";
 import { clearDurableHistoryObservationState } from "../lib/history/history-observation-lifecycle.js";
 import { isHistoryServiceType } from "../lib/history/history-source-contract.js";
@@ -11,9 +16,20 @@ import {
 	withExclusiveCleanupTopologyMutationLease,
 } from "../lib/library-cleanup/cleanup-executor.js";
 import { clearFileIdIndexCache } from "../lib/library-sync/infohash-backfill-by-inode.js";
-import type { ServiceInstance, ServiceType } from "../lib/prisma.js";
+import type { Prisma, ServiceInstance, ServiceType } from "../lib/prisma.js";
+import { invalidateQuiObservationTopology } from "../lib/qui/torrent-observation-repository.js";
+import {
+	assertImportDeletionFence,
+	type ImportDeletionFence,
+	prepareImportDeletion,
+} from "../lib/queue-cleaner/import-deletion-guard.js";
+import { importConnectionFingerprint } from "../lib/queue-cleaner/import-receipt.js";
 import { withQuiObservationTopologyGuard } from "../lib/qui/observation-topology-guard.js";
 import { invalidateTorrentListCache } from "../lib/qui/torrent-list-cache.js";
+import {
+	assertSearchGrabConnectionMutation,
+	withSearchGrabConnectionTransaction,
+} from "../lib/search/grab-connection-guard.js";
 import { testServiceConnection } from "../lib/services/connection-tester.js";
 import {
 	createHttpAuthHeaders,
@@ -215,30 +231,13 @@ function buildIdentityCandidateSnapshot(
 }
 
 async function clearDurableQuiObservations(
-	prisma: {
-		libraryCache: {
-			updateMany(args: {
-				where: { instance: { userId: string } };
-				data: {
-					torrentState: null;
-					torrentRatio: null;
-					torrentSyncedAt: null;
-				};
-			}): Promise<unknown>;
-		};
-		episodeFileCache: {
-			updateMany(args: {
-				where: { instance: { userId: string } };
-				data: {
-					torrentState: null;
-					torrentRatio: null;
-					torrentSyncedAt: null;
-				};
-			}): Promise<unknown>;
-		};
-	},
+	prisma: Pick<
+		Prisma.TransactionClient,
+		"libraryCache" | "episodeFileCache" | "quiObservationPublication"
+	>,
 	userId: string,
 ): Promise<void> {
+	await invalidateQuiObservationTopology(prisma, userId);
 	const where = { instance: { userId } };
 	const data = {
 		torrentState: null,
@@ -254,6 +253,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	async function deleteArrAliasWithStateMigration(
 		userId: string,
 		existing: ServiceInstance,
+		importFence: ImportDeletionFence,
 	): Promise<void> {
 		await app.deploymentExecutor.runWithEndpointMutation(
 			userId,
@@ -276,7 +276,13 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 					);
 				}
 
-				await app.prisma.$transaction(async (tx) => {
+				await withSearchGrabConnectionTransaction(app.prisma, async (tx) => {
+					await assertSearchGrabConnectionMutation(tx, {
+						userId,
+						expected: current,
+						deleting: true,
+					});
+					await assertImportDeletionFence(tx, userId, current.id, importFence);
 					await mutationRepository.guardDestinationInTransaction(tx, {
 						userId,
 						destinationInstanceId: current.id,
@@ -501,17 +507,19 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	}
 
 	app.get("/services", async (request, reply) => {
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId: request.currentUser!.id },
-			include: {
-				tags: {
-					include: {
-						tag: true,
+		const instances = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+			prisma.serviceInstance.findMany({
+				where: { userId: request.currentUser!.id },
+				include: {
+					tags: {
+						include: {
+							tag: true,
+						},
 					},
 				},
-			},
-			orderBy: { createdAt: "asc" },
-		});
+				orderBy: { createdAt: "asc" },
+			}),
+		);
 
 		const formatted = instances.map(formatServiceInstance);
 		return reply.send({ services: formatted });
@@ -560,17 +568,17 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			{ prisma: app.prisma, log: request.log },
 			userId,
 			async () => {
-				if (isDefault) {
-					await app.prisma.serviceInstance.updateMany({
-						where: { service: serviceEnum, userId },
-						data: { isDefault: false },
-					});
-				}
-
-				const tagRecords = await upsertTags(app.prisma, tags);
-
-				const createInstance = (prisma: Pick<typeof app.prisma, "serviceInstance">) =>
-					prisma.serviceInstance.create({
+				const createInstance = async (
+					prisma: Pick<typeof app.prisma, "serviceInstance" | "serviceTag">,
+				) => {
+					if (isDefault) {
+						await prisma.serviceInstance.updateMany({
+							where: { service: serviceEnum, userId },
+							data: { isDefault: false },
+						});
+					}
+					const tagRecords = await upsertTags(prisma, tags);
+					return prisma.serviceInstance.create({
 						data: {
 							userId, // preHandler guarantees auth
 							service: serviceEnum,
@@ -592,6 +600,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 							},
 						},
 					});
+				};
 				const created =
 					serviceEnum === "QUI"
 						? await withQuiObservationTopologyGuard(userId, () =>
@@ -601,7 +610,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 									return instance;
 								}),
 							)
-						: await createInstance(app.prisma);
+						: await app.prisma.$transaction(createInstance);
 
 				invalidatePulseCache(userId);
 				request.log.info({ service, label: rest.label }, "Service instance added");
@@ -623,169 +632,228 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				? withExclusiveCleanupTopologyMutationLease
 				: withCleanupTopologyMutationLease;
 		return await withTopologyLease({ prisma: app.prisma, log: request.log }, userId, async () => {
-			const existing = await requireInstance(app, userId, id);
-			const targetServiceName = payload.service ?? existing.service.toLowerCase();
-			const keepsExistingHttpAuth =
-				payload.httpAuth === undefined && Boolean(existing.encryptedHttpAuthCredentials);
-			const httpAuthConflict =
-				payload.httpAuth || keepsExistingHttpAuth ? getHttpAuthConflict(targetServiceName) : null;
-			if (httpAuthConflict) {
-				return reply.status(400).send({
-					error: `HTTP Basic Auth is not supported for ${targetServiceName}`,
-					details: `${httpAuthConflict} Remove HTTP Basic Auth or configure a proxy bypass.`,
-				});
-			}
-
-			const updateData = buildUpdateData(payload, app.encryptor);
-
-			const targetService = (
-				payload.service ?? existing.service.toLowerCase()
-			).toUpperCase() as ServiceType;
-			const resetOtherDefaults = async (
-				prisma: Pick<typeof app.prisma, "serviceInstance">,
-			): Promise<void> => {
-				if (payload.isDefault === true || payload.service) {
-					await prisma.serviceInstance.updateMany({
-						where: { service: targetService, userId, NOT: { id } },
-						data: { isDefault: false },
+			const updateConnection = async () => {
+				const existing = await requireInstance(app, userId, id);
+				const targetServiceName = payload.service ?? existing.service.toLowerCase();
+				const keepsExistingHttpAuth =
+					payload.httpAuth === undefined && Boolean(existing.encryptedHttpAuthCredentials);
+				const httpAuthConflict =
+					payload.httpAuth || keepsExistingHttpAuth ? getHttpAuthConflict(targetServiceName) : null;
+				if (httpAuthConflict) {
+					return reply.status(400).send({
+						error: `HTTP Basic Auth is not supported for ${targetServiceName}`,
+						details: `${httpAuthConflict} Remove HTTP Basic Auth or configure a proxy bypass.`,
 					});
 				}
-			};
 
-			const quiTopologyChanged = changesQuiTopology(existing.service, payload);
-			const providerConnectionChanged = changesCacheProviderConnection(existing, payload);
-			const serviceTypeChanged = targetService !== existing.service;
-			const leavesProviderIdentityFamily =
-				serviceTypeChanged &&
-				isProviderIdentityService(existing.service) &&
-				!isProviderIdentityService(targetService);
-			const providerIdentityReadRequired =
-				providerConnectionChanged &&
-				isProviderIdentityService(targetService) &&
-				(serviceTypeChanged ||
-					payload.baseUrl !== undefined ||
-					payload.apiKey !== undefined ||
-					payload.httpAuth !== undefined);
-			if (providerIdentityReadRequired) {
-				let observation: ProviderIdentityObservation;
-				try {
-					observation = await readProviderIdentity(
-						buildIdentityCandidateSnapshot(existing, payload, app.encryptor),
-						request.log,
-					);
-				} catch {
-					throw new AppValidationError(
-						"The provider identity could not be verified, so the service connection was not changed.",
-					);
+				const updateData = buildUpdateData(payload, app.encryptor);
+
+				const targetService = (
+					payload.service ?? existing.service.toLowerCase()
+				).toUpperCase() as ServiceType;
+				const resetOtherDefaults = async (
+					prisma: Pick<typeof app.prisma, "serviceInstance">,
+				): Promise<void> => {
+					if (payload.isDefault === true || payload.service) {
+						await prisma.serviceInstance.updateMany({
+							where: { service: targetService, userId, NOT: { id } },
+							data: { isDefault: false },
+						});
+					}
+				};
+
+				const quiTopologyChanged = changesQuiTopology(existing.service, payload);
+				const providerConnectionChanged = changesCacheProviderConnection(existing, payload);
+				const serviceTypeChanged = targetService !== existing.service;
+				const leavesProviderIdentityFamily =
+					serviceTypeChanged &&
+					isProviderIdentityService(existing.service) &&
+					!isProviderIdentityService(targetService);
+				const providerIdentityReadRequired =
+					providerConnectionChanged &&
+					isProviderIdentityService(targetService) &&
+					(serviceTypeChanged ||
+						payload.baseUrl !== undefined ||
+						payload.apiKey !== undefined ||
+						payload.httpAuth !== undefined);
+				if (providerIdentityReadRequired) {
+					let observation: ProviderIdentityObservation;
+					try {
+						observation = await readProviderIdentity(
+							buildIdentityCandidateSnapshot(existing, payload, app.encryptor),
+							request.log,
+						);
+					} catch {
+						throw new AppValidationError(
+							"The provider identity could not be verified, so the service connection was not changed.",
+						);
+					}
+					if (
+						existing.expectedIdentity !== null &&
+						(existing.expectedIdentity !== observation.rawIdentity ||
+							existing.identityKind !== toPersistedIdentityKind(observation.identityKind))
+					) {
+						throw createIdentityConflict(
+							"IDENTITY_REPLACEMENT_REQUIRED",
+							"The provider identity differs from the enrolled server. Replace the server explicitly.",
+							existing,
+							toSafeIdentityCandidate(observation),
+						);
+					}
 				}
+				const targetConnection = {
+					...existing,
+					...updateData,
+					service: targetService,
+				};
+				const arrConnectionInvolved = isArrService(existing.service) || isArrService(targetService);
+				const arrCredentialFieldsSubmitted =
+					payload.apiKey !== undefined || payload.httpAuth !== undefined;
+				const historyConnectionInvolved =
+					isHistoryServiceType(existing.service) || isHistoryServiceType(targetService);
+				const credentialIdentityChanged =
+					historyConnectionInvolved &&
+					arrCredentialFieldsSubmitted &&
+					app.arrClientFactory.createConnectionCredentialIdentity(existing) !==
+						app.arrClientFactory.createConnectionCredentialIdentity(targetConnection);
+				const arrCredentialsChanged = arrConnectionInvolved && credentialIdentityChanged;
+				const arrConnectionFieldsSubmitted =
+					serviceTypeChanged || payload.baseUrl !== undefined || arrCredentialFieldsSubmitted;
+				const arrConnectionChanged =
+					arrConnectionInvolved &&
+					arrConnectionFieldsSubmitted &&
+					(serviceTypeChanged ||
+						normalizeDeploymentBaseUrl(existing.baseUrl) !==
+							normalizeDeploymentBaseUrl(targetConnection.baseUrl) ||
+						arrCredentialsChanged);
+				const historyCredentialsChanged = credentialIdentityChanged;
 				if (
-					existing.expectedIdentity !== null &&
-					(existing.expectedIdentity !== observation.rawIdentity ||
-						existing.identityKind !== toPersistedIdentityKind(observation.identityKind))
+					historyConnectionInvolved &&
+					arrCredentialFieldsSubmitted &&
+					!historyCredentialsChanged
 				) {
-					throw createIdentityConflict(
-						"IDENTITY_REPLACEMENT_REQUIRED",
-						"The provider identity differs from the enrolled server. Replace the server explicitly.",
-						existing,
-						toSafeIdentityCandidate(observation),
-					);
-				}
-			}
-			const targetConnection = {
-				...existing,
-				...updateData,
-				service: targetService,
-			};
-			const arrConnectionInvolved = isArrService(existing.service) || isArrService(targetService);
-			const arrCredentialFieldsSubmitted =
-				payload.apiKey !== undefined || payload.httpAuth !== undefined;
-			const historyConnectionInvolved =
-				isHistoryServiceType(existing.service) || isHistoryServiceType(targetService);
-			const credentialIdentityChanged =
-				historyConnectionInvolved &&
-				arrCredentialFieldsSubmitted &&
-				app.arrClientFactory.createConnectionCredentialIdentity(existing) !==
-					app.arrClientFactory.createConnectionCredentialIdentity(targetConnection);
-			const arrCredentialsChanged = arrConnectionInvolved && credentialIdentityChanged;
-			const arrConnectionFieldsSubmitted =
-				serviceTypeChanged || payload.baseUrl !== undefined || arrCredentialFieldsSubmitted;
-			const arrConnectionChanged =
-				arrConnectionInvolved &&
-				arrConnectionFieldsSubmitted &&
-				(serviceTypeChanged ||
-					normalizeDeploymentBaseUrl(existing.baseUrl) !==
-						normalizeDeploymentBaseUrl(targetConnection.baseUrl) ||
-					arrCredentialsChanged);
-			const historyCredentialsChanged = credentialIdentityChanged;
-			if (historyConnectionInvolved && arrCredentialFieldsSubmitted && !historyCredentialsChanged) {
-				if (payload.apiKey !== undefined) {
-					delete updateData.encryptedApiKey;
-					delete updateData.encryptionIv;
-				}
-				if (payload.httpAuth !== undefined) {
-					delete updateData.encryptedHttpAuthCredentials;
-					delete updateData.httpAuthEncryptionIv;
-				}
-			}
-			const historyConnectionChanged =
-				historyConnectionInvolved &&
-				(serviceTypeChanged ||
-					(payload.enabled !== undefined && payload.enabled !== existing.enabled) ||
-					normalizeDeploymentBaseUrl(existing.baseUrl) !==
-						normalizeDeploymentBaseUrl(targetConnection.baseUrl) ||
-					historyCredentialsChanged);
-			const arrAuthorityConnectionChanged =
-				isArrService(existing.service) && (arrConnectionChanged || historyConnectionChanged);
-			if (arrAuthorityConnectionChanged) {
-				const aliases = await app.prisma.serviceInstance.findMany({
-					where: { userId, service: existing.service },
-				});
-				const currentEndpoint = normalizeDeploymentBaseUrl(existing.baseUrl);
-				const equivalentInstanceIds = aliases
-					.filter(
-						(alias) =>
-							alias.userId === userId &&
-							alias.service === existing.service &&
-							normalizeDeploymentBaseUrl(alias.baseUrl) === currentEndpoint,
-					)
-					.map((alias) => alias.id);
-				if (!equivalentInstanceIds.includes(id)) equivalentInstanceIds.push(id);
-				const unresolvedIntents = await app.prisma.instanceQualityProfileOverride.findMany({
-					where: {
-						userId,
-						instanceId: { in: equivalentInstanceIds },
-						status: { in: ["PENDING", "UNCERTAIN"] },
-					},
-				});
-				if (unresolvedIntents.length > 0) {
-					throw new ConflictError(
-						"This ARR endpoint has unresolved score intent. Reconcile it before changing the connection.",
-					);
-				}
-				await assertNoActiveDeploymentOwnership(app.prisma, userId, equivalentInstanceIds);
-			}
-			const connectionChanged =
-				arrConnectionChanged || providerConnectionChanged || historyConnectionChanged;
-			const serviceUpdateData = connectionChanged
-				? {
-						...updateData,
-						connectionGeneration: { increment: 1 },
+					if (payload.apiKey !== undefined) {
+						delete updateData.encryptedApiKey;
+						delete updateData.encryptionIv;
 					}
-				: updateData;
-			const updateDataWithResetProviderIdentity = leavesProviderIdentityFamily
-				? {
-						...serviceUpdateData,
-						expectedIdentity: null,
-						identityKind: null,
-						identityStatus: "UNVERIFIED" as const,
-						identityGeneration: { increment: 1 },
-						identityVerifiedAt: null,
-						identityLastCheckedAt: null,
+					if (payload.httpAuth !== undefined) {
+						delete updateData.encryptedHttpAuthCredentials;
+						delete updateData.httpAuthEncryptionIv;
 					}
-				: serviceUpdateData;
-			if (quiTopologyChanged) {
-				await withQuiObservationTopologyGuard(userId, async () => {
-					await app.prisma.$transaction(async (tx) => {
+				}
+				const historyConnectionChanged =
+					historyConnectionInvolved &&
+					(serviceTypeChanged ||
+						(payload.enabled !== undefined && payload.enabled !== existing.enabled) ||
+						normalizeDeploymentBaseUrl(existing.baseUrl) !==
+							normalizeDeploymentBaseUrl(targetConnection.baseUrl) ||
+						historyCredentialsChanged);
+				const importConnectionChanged =
+					importConnectionFingerprint(existing) !==
+						importConnectionFingerprint({ ...existing, ...updateData, service: targetService }) ||
+					(payload.enabled !== undefined && payload.enabled !== existing.enabled);
+				const assertImportConnection = async (
+					tx: Pick<typeof app.prisma, "arrImportOperation" | "queueCleanerImportReceipt">,
+				) => {
+					if (importConnectionChanged) await assertNoUnsettledImportConnection(tx, userId, id);
+				};
+				await assertImportConnection(app.prisma);
+				const arrAuthorityConnectionChanged =
+					isArrService(existing.service) && (arrConnectionChanged || historyConnectionChanged);
+				if (arrAuthorityConnectionChanged) {
+					const aliases = await app.prisma.serviceInstance.findMany({
+						where: { userId, service: existing.service },
+					});
+					const currentEndpoint = normalizeDeploymentBaseUrl(existing.baseUrl);
+					const equivalentInstanceIds = aliases
+						.filter(
+							(alias) =>
+								alias.userId === userId &&
+								alias.service === existing.service &&
+								normalizeDeploymentBaseUrl(alias.baseUrl) === currentEndpoint,
+						)
+						.map((alias) => alias.id);
+					if (!equivalentInstanceIds.includes(id)) equivalentInstanceIds.push(id);
+					const unresolvedIntents = await app.prisma.instanceQualityProfileOverride.findMany({
+						where: {
+							userId,
+							instanceId: { in: equivalentInstanceIds },
+							status: { in: ["PENDING", "UNCERTAIN"] },
+						},
+					});
+					if (unresolvedIntents.length > 0) {
+						throw new ConflictError(
+							"This ARR endpoint has unresolved score intent. Reconcile it before changing the connection.",
+						);
+					}
+					await assertNoActiveDeploymentOwnership(app.prisma, userId, equivalentInstanceIds);
+				}
+				const connectionChanged =
+					arrConnectionChanged ||
+					providerConnectionChanged ||
+					historyConnectionChanged ||
+					quiTopologyChanged;
+				const serviceUpdateData = connectionChanged
+					? {
+							...updateData,
+							connectionGeneration: { increment: 1 },
+						}
+					: updateData;
+				const updateDataWithResetProviderIdentity = leavesProviderIdentityFamily
+					? {
+							...serviceUpdateData,
+							expectedIdentity: null,
+							identityKind: null,
+							identityStatus: "UNVERIFIED" as const,
+							identityGeneration: { increment: 1 },
+							identityVerifiedAt: null,
+							identityLastCheckedAt: null,
+						}
+					: serviceUpdateData;
+				if (quiTopologyChanged) {
+					await withQuiObservationTopologyGuard(userId, async () => {
+						await withSearchGrabConnectionTransaction(app.prisma, async (tx) => {
+							await assertSearchGrabConnectionMutation(tx, {
+								userId,
+								expected: existing,
+								changes: updateData,
+							});
+							await assertImportConnection(tx);
+							await mutationRepository.guardDestinationInTransaction(tx, {
+								userId,
+								destinationInstanceId: id,
+							});
+							await resetOtherDefaults(tx);
+							await tx.serviceInstance.updateMany({
+								where: { id, userId },
+								data: updateDataWithResetProviderIdentity,
+							});
+							if (payload.tags !== undefined) {
+								await updateInstanceTags(tx, id, payload.tags);
+							}
+							if (serviceTypeChanged || providerConnectionChanged) {
+								await clearDurableProviderCacheState(tx, id);
+							}
+							if (historyConnectionChanged) {
+								await clearDurableHistoryObservationState(tx, id, userId);
+							}
+							await tx.inodeIndexCache.deleteMany({ where: { instanceId: id } });
+							await clearDurableQuiObservations(tx, userId);
+						});
+						// Keep process-local evidence in the same guarded topology
+						// transition. Releasing the guard first would allow another
+						// observer to reuse the previous endpoint's inode inventory.
+						invalidateTorrentListCache(id);
+						clearFileIdIndexCache(id);
+					});
+				} else if (providerConnectionChanged || serviceTypeChanged || historyConnectionChanged) {
+					await withSearchGrabConnectionTransaction(app.prisma, async (tx) => {
+						await assertSearchGrabConnectionMutation(tx, {
+							userId,
+							expected: existing,
+							changes: updateData,
+						});
+						await assertImportConnection(tx);
 						await mutationRepository.guardDestinationInTransaction(tx, {
 							userId,
 							destinationInstanceId: id,
@@ -804,100 +872,85 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 						if (historyConnectionChanged) {
 							await clearDurableHistoryObservationState(tx, id, userId);
 						}
-						await clearDurableQuiObservations(tx, userId);
 					});
-					// Keep process-local evidence in the same guarded topology
-					// transition. Releasing the guard first would allow another
-					// observer to reuse the previous endpoint's inode inventory.
-					invalidateTorrentListCache(id);
-					clearFileIdIndexCache(id);
-				});
-			} else if (providerConnectionChanged || serviceTypeChanged || historyConnectionChanged) {
-				await app.prisma.$transaction(async (tx) => {
-					await mutationRepository.guardDestinationInTransaction(tx, {
-						userId,
-						destinationInstanceId: id,
+				} else {
+					await withSearchGrabConnectionTransaction(app.prisma, async (tx) => {
+						await assertSearchGrabConnectionMutation(tx, {
+							userId,
+							expected: existing,
+							changes: updateData,
+						});
+						await assertImportConnection(tx);
+						await mutationRepository.guardDestinationInTransaction(tx, {
+							userId,
+							destinationInstanceId: id,
+						});
+						await resetOtherDefaults(tx);
+						await tx.serviceInstance.updateMany({
+							where: { id, userId },
+							data: updateDataWithResetProviderIdentity,
+						});
+						if (payload.tags !== undefined) await updateInstanceTags(tx, id, payload.tags);
 					});
-					await resetOtherDefaults(tx);
-					await tx.serviceInstance.updateMany({
-						where: { id, userId },
-						data: updateDataWithResetProviderIdentity,
-					});
-					if (payload.tags !== undefined) {
-						await updateInstanceTags(tx, id, payload.tags);
-					}
-					if (serviceTypeChanged || providerConnectionChanged) {
-						await clearDurableProviderCacheState(tx, id);
-					}
-					if (historyConnectionChanged) {
-						await clearDurableHistoryObservationState(tx, id, userId);
-					}
-				});
-			} else {
-				await app.prisma.$transaction(async (tx) => {
-					await mutationRepository.guardDestinationInTransaction(tx, {
-						userId,
-						destinationInstanceId: id,
-					});
-					await resetOtherDefaults(tx);
-					await tx.serviceInstance.updateMany({
-						where: { id, userId },
-						data: updateDataWithResetProviderIdentity,
-					});
-					if (payload.tags !== undefined) await updateInstanceTags(tx, id, payload.tags);
-				});
-			}
-			if (providerConnectionChanged || serviceTypeChanged) {
-				invalidatePulseCache(userId);
-			}
+				}
+				if (providerConnectionChanged || serviceTypeChanged) {
+					invalidatePulseCache(userId);
+				}
 
-			// A qUI topology change invalidates both durable observations
-			// (inside the transaction above) and process-local data keyed
-			// by this instance. Connection, credential, enabled-state, and
-			// filesystem/path-mapping changes participate in one conservative
-			// topology generation so no observer can reuse evidence produced
-			// before a concurrent physical-evidence mutation.
-			const wasQui = existing.service === "QUI";
-			const nowDisabled = payload.enabled === false && existing.enabled === true;
-			const switchedAwayFromQui =
-				payload.service !== undefined && payload.service.toLowerCase() !== "qui";
-			if (quiTopologyChanged) {
-				request.log.info(
-					{
-						instanceId: id,
-						reason: nowDisabled
-							? "disabled"
-							: switchedAwayFromQui
-								? "service-changed"
-								: wasQui
-									? "connection-changed"
-									: "qui-enabled",
+				// A qUI topology change invalidates both durable observations
+				// (inside the transaction above) and process-local data keyed
+				// by this instance. Connection, credential, enabled-state, and
+				// filesystem/path-mapping changes participate in one conservative
+				// topology generation so no observer can reuse evidence produced
+				// before a concurrent physical-evidence mutation.
+				const wasQui = existing.service === "QUI";
+				const nowDisabled = payload.enabled === false && existing.enabled === true;
+				const switchedAwayFromQui =
+					payload.service !== undefined && payload.service.toLowerCase() !== "qui";
+				if (quiTopologyChanged) {
+					request.log.info(
+						{
+							instanceId: id,
+							reason: nowDisabled
+								? "disabled"
+								: switchedAwayFromQui
+									? "service-changed"
+									: wasQui
+										? "connection-changed"
+										: "qui-enabled",
+						},
+						"qui caches dropped after instance update",
+					);
+				}
+
+				// Fetch updated instance - include userId to ensure we only get owned instances
+				const fresh = await app.prisma.serviceInstance.findFirst({
+					where: {
+						id,
+						userId,
 					},
-					"qui caches dropped after instance update",
+					include: { tags: { include: { tag: true } } },
+				});
+
+				if (!fresh) {
+					return reply.status(404).send({ error: "Service instance not found" });
+				}
+
+				request.log.info(
+					{ service: fresh.service, label: fresh.label, instanceId: id },
+					"Service instance updated",
 				);
-			}
 
-			// Fetch updated instance - include userId to ensure we only get owned instances
-			const fresh = await app.prisma.serviceInstance.findFirst({
-				where: {
-					id,
-					userId,
-				},
-				include: { tags: { include: { tag: true } } },
-			});
-
-			if (!fresh) {
-				return reply.status(404).send({ error: "Service instance not found" });
-			}
-
-			request.log.info(
-				{ service: fresh.service, label: fresh.label, instanceId: id },
-				"Service instance updated",
+				return reply.send({
+					service: formatServiceInstance(fresh),
+				});
+			};
+			const changesImportConnection = ["baseUrl", "apiKey", "httpAuth", "service", "enabled"].some(
+				(field) => Object.hasOwn(payload, field),
 			);
-
-			return reply.send({
-				service: formatServiceInstance(fresh),
-			});
+			return changesImportConnection
+				? withImportConnectionWriteGuard(userId, id, updateConnection)
+				: updateConnection();
 		});
 	});
 
@@ -959,7 +1012,8 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				}
 
 				const verified = verifiedIdentityData(existing, observation);
-				const updated = await app.prisma.$transaction(async (tx) => {
+				const updated = await withSearchGrabConnectionTransaction(app.prisma, async (tx) => {
+					await assertSearchGrabConnectionMutation(tx, { userId, expected: existing });
 					await mutationRepository.guardDestinationInTransaction(tx, {
 						userId,
 						destinationInstanceId: id,
@@ -1073,7 +1127,12 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				const replacementService = (
 					candidate.service ?? existing.service
 				).toUpperCase() as ServiceType;
-				const replaced = await app.prisma.$transaction(async (tx) => {
+				const replaced = await withSearchGrabConnectionTransaction(app.prisma, async (tx) => {
+					await assertSearchGrabConnectionMutation(tx, {
+						userId,
+						expected: existing,
+						changes: replacementData,
+					});
 					await mutationRepository.guardDestinationInTransaction(tx, {
 						userId,
 						destinationInstanceId: id,
@@ -1131,27 +1190,66 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			userId,
 			async () => {
 				const existing = await requireInstance(app, userId, id);
+				const importFence = await prepareImportDeletion(app, existing);
+				// Pre-claim action logs can be unresolved without a restrictive FK.
+				// Check every service-type branch before cascading those rows away.
+				// New actions also hold a restrictive claim if this read races them.
+				const unresolvedQuiActions = await app.prisma.quiActionLog.count({
+					where: {
+						userId,
+						serviceInstanceId: id,
+						status: { in: ["pending", "uncertain"] },
+					},
+				});
+				if (unresolvedQuiActions > 0) {
+					throw new ConflictError(
+						"Resolve unresolved qUI actions before deleting this connection.",
+					);
+				}
 				if (existing.service === "RADARR" || existing.service === "SONARR") {
 					// Re-check after exclusive ownership is established. This is the
 					// execution-time authority check before the cascading delete.
 					await assertNoActiveTrashRecoveryForInstance(app.prisma, userId, id);
-					await deleteArrAliasWithStateMigration(userId, existing);
+					await deleteArrAliasWithStateMigration(userId, existing, importFence);
 				} else if (existing.service === "QUI") {
 					await withQuiObservationTopologyGuard(userId, async () => {
-						await app.prisma.$transaction(async (tx) => {
-							await mutationRepository.guardDestinationInTransaction(tx, {
-								userId,
-								destinationInstanceId: id,
-								deleteTerminalRows: true,
+						try {
+							await withSearchGrabConnectionTransaction(app.prisma, async (tx) => {
+								await assertSearchGrabConnectionMutation(tx, {
+									userId,
+									expected: existing,
+									deleting: true,
+								});
+								await assertImportDeletionFence(tx, userId, id, importFence);
+								await mutationRepository.guardDestinationInTransaction(tx, {
+									userId,
+									destinationInstanceId: id,
+									deleteTerminalRows: true,
+								});
+								await tx.serviceInstance.delete({ where: { id, userId } });
+								await clearDurableQuiObservations(tx, userId);
 							});
-							await tx.serviceInstance.delete({ where: { id, userId } });
-							await clearDurableQuiObservations(tx, userId);
-						});
+						} catch (error) {
+							// The claim FK uses RESTRICT, so this remains safe even if a
+							// concurrent action claims the target after route preflight.
+							if ((error as { code?: string }).code === "P2003") {
+								throw new ConflictError(
+									"Resolve unresolved qUI actions before deleting this connection.",
+								);
+							}
+							throw error;
+						}
 						invalidateTorrentListCache(id);
 						clearFileIdIndexCache(id);
 					});
 				} else {
-					await app.prisma.$transaction(async (tx) => {
+					await withSearchGrabConnectionTransaction(app.prisma, async (tx) => {
+						await assertSearchGrabConnectionMutation(tx, {
+							userId,
+							expected: existing,
+							deleting: true,
+						});
+						await assertImportDeletionFence(tx, userId, id, importFence);
 						await mutationRepository.guardDestinationInTransaction(tx, {
 							userId,
 							destinationInstanceId: id,
@@ -1260,15 +1358,18 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			request.log.warn({ service, baseUrl }, "Connection test failed");
 
 			app.notificationService
-				?.notify({
-					eventType: "SERVICE_CONNECTION_FAILED",
-					title: `Connection test failed for ${service}`,
-					body: result.error ?? `Failed to connect to ${service} at ${baseUrl}`,
-					metadata: {
-						service,
-						baseUrl,
+				?.notify(
+					{
+						eventType: "SERVICE_CONNECTION_FAILED",
+						title: `Connection test failed for ${service}`,
+						body: result.error ?? `Failed to connect to ${service} at ${baseUrl}`,
+						metadata: {
+							service,
+							baseUrl,
+						},
 					},
-				})
+					{ userId: request.currentUser!.id },
+				)
 				.catch((err) => {
 					request.log.warn({ err }, "Service connection failed notification dispatch failed");
 				});

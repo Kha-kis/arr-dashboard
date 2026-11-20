@@ -1,6 +1,6 @@
 "use client";
 
-import type { SeerrUser } from "@arr/shared";
+import type { SeerrQuota, SeerrUser } from "@arr/shared";
 import { ExternalLink, Film, Loader2, Tv, User } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
@@ -32,22 +32,14 @@ interface RequesterProfilePopoverProps {
 function QuotaBar({
 	label,
 	icon: Icon,
-	used,
-	limit,
-	restricted,
+	quota,
 }: {
 	label: string;
 	icon: React.ComponentType<{ className?: string }>;
-	used: number;
-	limit: number;
-	restricted: boolean;
+	quota: SeerrQuota["movie"];
 }) {
-	if (!restricted) return null;
-
-	const remaining = Math.max(0, limit - used);
-	const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
-	const isExhausted = remaining === 0;
-	const barColor = isExhausted ? SEMANTIC_COLORS.error.from : SEMANTIC_COLORS.success.from;
+	const { limit, used, restricted } = quota;
+	const barColor = restricted ? SEMANTIC_COLORS.error.from : SEMANTIC_COLORS.success.from;
 
 	return (
 		<div className="space-y-1">
@@ -56,26 +48,35 @@ function QuotaBar({
 					<Icon className="h-3 w-3" />
 					{label}
 				</span>
-				<span
-					className="font-medium"
-					style={{ color: isExhausted ? SEMANTIC_COLORS.error.text : undefined }}
-				>
-					{used}/{limit}
-				</span>
+				{limit > 0 ? (
+					<span className="flex items-center gap-1.5 font-medium">
+						{restricted && <span className="text-destructive">Exhausted</span>}
+						<span>
+							{used}/{limit}
+						</span>
+					</span>
+				) : (
+					<span className="text-muted-foreground">{limit === 0 ? "Unlimited" : "Unavailable"}</span>
+				)}
 			</div>
-			<div
-				role="progressbar"
-				aria-label={label}
-				aria-valuenow={used}
-				aria-valuemin={0}
-				aria-valuemax={limit > 0 ? limit : undefined}
-				className="h-1.5 w-full rounded-full bg-muted/30 overflow-hidden"
-			>
+			{limit > 0 && (
 				<div
-					className="h-full rounded-full transition-all duration-300"
-					style={{ width: `${pct}%`, backgroundColor: barColor }}
-				/>
-			</div>
+					role="progressbar"
+					aria-label={label}
+					aria-valuenow={Math.max(0, Math.min(used, limit))}
+					aria-valuemin={0}
+					aria-valuemax={limit}
+					className="h-1.5 w-full rounded-full bg-muted/30 overflow-hidden"
+				>
+					<div
+						className="h-full rounded-full transition-all duration-300"
+						style={{
+							width: `${Math.max(0, Math.min(100, (used / limit) * 100))}%`,
+							backgroundColor: barColor,
+						}}
+					/>
+				</div>
+			)}
 		</div>
 	);
 }
@@ -100,9 +101,7 @@ export const RequesterProfilePopover = ({
 		isError: quotaError,
 	} = useSeerrUserQuota(isOpen ? instanceId : "", seerrUser.id);
 
-	const hasMovieQuota = quota?.movie.restricted;
-	const hasTvQuota = quota?.tv.restricted;
-	const hasAnyQuota = hasMovieQuota || hasTvQuota;
+	const bothUnlimited = quota?.movie.limit === 0 && quota.tv.limit === 0;
 
 	return (
 		<Popover open={isOpen} onOpenChange={setIsOpen}>
@@ -137,7 +136,7 @@ export const RequesterProfilePopover = ({
 
 				{/* Quota section */}
 				<div className="p-3 space-y-2.5">
-					{quotaLoading && (
+					{quotaLoading ? (
 						<div
 							role="status"
 							aria-label="Loading quota"
@@ -148,36 +147,17 @@ export const RequesterProfilePopover = ({
 								aria-hidden="true"
 							/>
 						</div>
-					)}
-					{quotaError && (
+					) : quotaError || !quota ? (
 						<p className="text-[11px] text-destructive/70 text-center py-1">Could not load quota</p>
-					)}
-					{quota && hasAnyQuota && (
-						<>
-							{hasMovieQuota && (
-								<QuotaBar
-									label="Movie Quota"
-									icon={Film}
-									used={quota.movie.used}
-									limit={quota.movie.limit}
-									restricted={quota.movie.restricted}
-								/>
-							)}
-							{hasTvQuota && (
-								<QuotaBar
-									label="TV Quota"
-									icon={Tv}
-									used={quota.tv.used}
-									limit={quota.tv.limit}
-									restricted={quota.tv.restricted}
-								/>
-							)}
-						</>
-					)}
-					{quota && !hasAnyQuota && (
+					) : bothUnlimited ? (
 						<p className="text-[11px] text-muted-foreground/60 text-center">
 							No quota restrictions
 						</p>
+					) : (
+						<>
+							<QuotaBar label="Movie Quota" icon={Film} quota={quota.movie} />
+							<QuotaBar label="TV Quota" icon={Tv} quota={quota.tv} />
+						</>
 					)}
 
 					{/* Deep-link action */}

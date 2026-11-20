@@ -6,11 +6,11 @@
  */
 
 import type { FastifyInstance } from "fastify";
+import { withIsolatedRuntimePrismaReadClient } from "../backup/restore-runtime-client.js";
+import { AppValidationError, InstanceNotFoundError } from "../errors.js";
 import type { ServiceInstance } from "../prisma.js";
-import { InstanceNotFoundError } from "../errors.js";
-import { AppValidationError } from "../errors.js";
 import { getErrorMessage } from "../utils/error-message.js";
-import { type PlexClient, createPlexClient } from "./plex-client.js";
+import { createPlexClient, type PlexClient } from "./plex-client.js";
 
 // ============================================================================
 // Types
@@ -81,10 +81,12 @@ export async function executeOnPlexInstances<T>(
 	userId: string,
 	operation: (client: PlexClient, instance: ServiceInstance) => Promise<T>,
 ): Promise<PlexMultiInstanceResponse<T>> {
-	const instances = await app.prisma.serviceInstance.findMany({
-		where: { userId, service: "PLEX", enabled: true },
-		orderBy: { label: "asc" },
-	});
+	const instances = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		prisma.serviceInstance.findMany({
+			where: { userId, service: "PLEX", enabled: true },
+			orderBy: { label: "asc" },
+		}),
+	);
 
 	const results = await Promise.all(
 		instances.map(async (instance): Promise<PlexInstanceOperationResult<T>> => {

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { integrationHealth } from "../integration-health.js";
 
 describe("IntegrationHealthRegistry", () => {
@@ -225,5 +225,170 @@ describe("Health degradation notifications", () => {
 
 		const call = notifyFn.mock.calls[0]![0];
 		expect(call.metadata.affectedCategories).toContain("sessions");
+	});
+});
+
+describe("health alert submission and retry", () => {
+	const failure = { total: 1, validated: 0, rejected: 1 };
+	const success = { total: 1, validated: 1, rejected: 0 };
+	const fail = (source = "synthetic-source") =>
+		integrationHealth.record(source, "category", failure);
+	const recover = (source = "synthetic-source") =>
+		integrationHealth.record(source, "category", success);
+	const settle = async () => {
+		for (let i = 0; i < 4; i++) await Promise.resolve();
+	};
+	const deferred = () => {
+		let resolve!: () => void;
+		let reject!: (reason: Error) => void;
+		const promise = new Promise<void>((done, fail) => {
+			resolve = done;
+			reject = fail;
+		});
+		// The test observes this promise independently; registry rejection handling is
+		// additionally exercised through the actual plugin in the combined tests.
+		void promise.catch(() => undefined);
+		return { promise, resolve, reject };
+	};
+	beforeEach(() => {
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(new Date("2026-10-02T00:00:00Z"));
+		integrationHealth.reset();
+		integrationHealth.setNotifyFn(() => undefined);
+	});
+	afterEach(() => {
+		integrationHealth.reset();
+		vi.useRealTimers();
+	});
+
+	it.each([false, true])(
+		"retries a rejected submission after one minute (recovery=%s)",
+		async (recovery) => {
+			const first = deferred();
+			let attempts = 0;
+			integrationHealth.setNotifyFn(() => {
+				attempts++;
+				return attempts === 1 ? first.promise : undefined;
+			});
+			fail();
+			first.reject(new Error("Synthetic admission rejected"));
+			await settle();
+			if (recovery) recover();
+			vi.setSystemTime(new Date("2026-10-02T00:00:59.999Z"));
+			fail();
+			expect(attempts).toBe(1);
+			vi.setSystemTime(new Date("2026-10-02T00:01:00Z"));
+			fail();
+			expect(attempts).toBe(2);
+			expect(integrationHealth.getByIntegration("synthetic-source")).toMatchObject({
+				state: recovery ? "degraded" : "failing",
+				consecutiveFailures: recovery ? 2 : 3,
+				totals: recovery
+					? { total: 4, validated: 1, rejected: 3 }
+					: { total: 3, validated: 0, rejected: 3 },
+			});
+			// An accepted retry does not create hourly repeats while health stays bad.
+			vi.setSystemTime(new Date("2026-10-02T02:01:00Z"));
+			fail();
+			expect(attempts).toBe(2);
+		},
+	);
+
+	it("starts the full cooldown at accepted completion rather than initial attempt", async () => {
+		const first = deferred();
+		let attempts = 0;
+		integrationHealth.setNotifyFn(() => {
+			attempts++;
+			return attempts === 1 ? first.promise : undefined;
+		});
+		fail();
+		vi.setSystemTime(new Date("2026-10-02T00:10:00Z"));
+		first.resolve();
+		await settle();
+		vi.setSystemTime(new Date("2026-10-02T01:09:59.999Z"));
+		recover();
+		fail();
+		expect(attempts).toBe(1);
+		vi.setSystemTime(new Date("2026-10-02T01:10:00Z"));
+		recover();
+		fail();
+		expect(attempts).toBe(2);
+	});
+
+	it("keeps one pending submission while health changes and isolates other sources", async () => {
+		const first = deferred();
+		const sources: string[] = [];
+		integrationHealth.setNotifyFn((payload) => {
+			sources.push(payload.metadata.integration!);
+			return payload.metadata.integration === "synthetic-source" ? first.promise : undefined;
+		});
+		fail();
+		vi.setSystemTime(new Date("2026-10-02T02:00:00Z"));
+		recover();
+		fail();
+		fail();
+		fail("other-source");
+		expect(sources).toEqual(["synthetic-source", "other-source"]);
+		first.resolve();
+		await settle();
+		recover();
+		fail();
+		expect(sources).toEqual(["synthetic-source", "other-source"]);
+	});
+
+	it("does not propagate a synchronous alert rejection into provider health recording", () => {
+		let attempts = 0;
+		integrationHealth.setNotifyFn(() => {
+			attempts++;
+			if (attempts === 1) throw new Error("Synthetic callback failure");
+		});
+		expect(() => fail()).not.toThrow();
+		expect(integrationHealth.getByIntegration("synthetic-source")?.state).toBe("degraded");
+		vi.setSystemTime(new Date("2026-10-02T00:01:00Z"));
+		fail();
+		expect(attempts).toBe(2);
+	});
+
+	it.each([false, true])(
+		"does not let pre-reset completion overwrite new notification admission (reject=%s)",
+		async (reject) => {
+			const first = deferred();
+			const second = deferred();
+			let attempts = 0;
+			integrationHealth.setNotifyFn(() => {
+				attempts++;
+				return attempts === 1 ? first.promise : attempts === 2 ? second.promise : undefined;
+			});
+			fail();
+			integrationHealth.reset();
+			fail();
+			if (reject) first.reject(new Error("Synthetic obsolete failure"));
+			else first.resolve();
+			await settle();
+			recover();
+			fail();
+			expect(attempts).toBe(2);
+			second.reject(new Error("Synthetic current failure"));
+			await settle();
+			vi.setSystemTime(new Date("2026-10-02T00:01:00Z"));
+			fail();
+			expect(attempts).toBe(3);
+		},
+	);
+
+	it("applies accepted cooldown at epoch zero and preserves it across single-source stat reset", () => {
+		vi.setSystemTime(new Date(0));
+		let attempts = 0;
+		integrationHealth.setNotifyFn(() => {
+			attempts++;
+		});
+		fail();
+		integrationHealth.resetIntegration("synthetic-source");
+		fail();
+		expect(attempts).toBe(1);
+		vi.setSystemTime(new Date(60 * 60 * 1000));
+		recover();
+		fail();
+		expect(attempts).toBe(2);
 	});
 });

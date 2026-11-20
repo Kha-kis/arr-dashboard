@@ -19,6 +19,76 @@ export const PLEX_CACHE_READ_PAGE_SIZE = 500;
 export const PLEX_CACHE_WRITE_CHUNK_SIZE = 100;
 export const PLEX_EPISODE_SHOW_SELECTION_BATCH_SIZE = 250;
 
+function dateValue(value: Date | string | null | undefined): number | null {
+	if (value == null) return null;
+	const time = value instanceof Date ? value.getTime() : new Date(value).getTime();
+	if (!Number.isFinite(time)) throw new Error("Invalid Plex cache date");
+	return time;
+}
+
+/** Explicit Prisma defaults; no persisted value other than the storage id is ignored. */
+function rowValue(row: Prisma.PlexCacheCreateManyInput): string {
+	return JSON.stringify({
+		instanceId: row.instanceId,
+		tmdbId: row.tmdbId,
+		mediaType: row.mediaType,
+		sectionId: row.sectionId,
+		sectionTitle: row.sectionTitle,
+		title: row.title ?? "",
+		ratingKey: row.ratingKey ?? null,
+		lastWatchedAt: dateValue(row.lastWatchedAt),
+		watchCount: row.watchCount ?? 0,
+		watchedByUsers: row.watchedByUsers,
+		onDeck: row.onDeck ?? false,
+		userRating: row.userRating ?? null,
+		collections: row.collections,
+		labels: row.labels,
+		addedAt: dateValue(row.addedAt),
+		thumb: row.thumb ?? null,
+		connectionGeneration: row.connectionGeneration ?? null,
+		identityGeneration: row.identityGeneration ?? null,
+	} satisfies Record<Exclude<keyof PlexCache, "id">, unknown>);
+}
+
+/** Compares every persisted value within the caller's owned publication transaction. */
+export async function hasSamePersistedPlexCacheRows(
+	tx: Pick<Prisma.TransactionClient, "plexCache">,
+	instanceId: string,
+	rows: readonly Prisma.PlexCacheCreateManyInput[],
+): Promise<boolean> {
+	const remaining = new Map<string, number>();
+	for (const row of rows) {
+		if (row.instanceId !== instanceId) return false;
+		const value = rowValue(row);
+		remaining.set(value, (remaining.get(value) ?? 0) + 1);
+	}
+	let seen = 0;
+	let cursor: string | undefined;
+	while (true) {
+		// One extra row detects a corrupt count, including an allegedly empty head.
+		const take = Math.min(PLEX_CACHE_READ_PAGE_SIZE, rows.length - seen + 1);
+		const page = await tx.plexCache.findMany({
+			where: { instanceId },
+			orderBy: { id: "asc" },
+			take,
+			...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+		});
+		if (page.length > take || seen + page.length > rows.length) return false;
+		for (const row of page) {
+			const value = rowValue(row);
+			const count = remaining.get(value) ?? 0;
+			if (count === 0) return false;
+			if (count === 1) remaining.delete(value);
+			else remaining.set(value, count - 1);
+		}
+		seen += page.length;
+		if (page.length < take) return seen === rows.length && remaining.size === 0;
+		const next = page.at(-1)?.id;
+		if (!next || next === cursor) return false;
+		cursor = next;
+	}
+}
+
 export class PlexRefreshAttemptSupersededError extends Error {
 	constructor() {
 		super("Plex cache refresh attempt was superseded");

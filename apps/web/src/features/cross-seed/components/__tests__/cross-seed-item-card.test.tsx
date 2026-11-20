@@ -114,3 +114,19 @@ describe("CrossSeedItemCard — passkey display pin", () => {
 		expect(container.textContent ?? "").not.toMatch(/\/announce/);
 	});
 });
+
+describe("CrossSeedItemCard — match provenance", () => {
+	it.each(["hardlink", "reflink"] as const)(
+		"labels a %s sibling without treating it as an error",
+		(matchType) => {
+			const item = baseItem({
+				siblings: [{ ...baseItem().siblings[0]!, matchType }],
+			});
+			render(<CrossSeedItemCard item={item} animationDelay={0} />, { wrapper: Wrapper });
+			expect(screen.getByText(`${matchType} match`)).toHaveAttribute(
+				"title",
+				`qui matched these through a filesystem ${matchType} relationship.`,
+			);
+		},
+	);
+});

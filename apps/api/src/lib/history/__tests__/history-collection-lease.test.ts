@@ -33,6 +33,93 @@ afterEach(async () => {
 });
 
 describe("owner-global History collection lease", { timeout: 30_000 }, () => {
+	it("persists canonical database-clock dates with an exact five-minute claim lifetime", async () => {
+		const { prisma } = await createDatabase();
+		await createUser(prisma, "owner-canonical-claim");
+		const before = Date.now();
+		const claim = await acquireHistoryCollectionLease(prisma, "owner-canonical-claim", {
+			dialect: "sqlite",
+		});
+		const after = Date.now();
+		if (!claim) throw new Error("expected claim");
+		const dates = await readCanonicalLeaseDates(prisma, claim.userId);
+		expect(dates.claimedAt).toBe(dates.heartbeatAt);
+		expect(dates.claimedAt).toBe(dates.lastAttemptAt);
+		expect(dates.claimedAt).toBe(dates.updatedAt);
+		expect(claim.claimedAt.getTime()).toBeGreaterThanOrEqual(before);
+		expect(claim.claimedAt.getTime()).toBeLessThanOrEqual(after);
+		expect(claim.expiresAt.getTime() - claim.claimedAt.getTime()).toBe(300_000);
+		// Exercise the indexed Prisma DateTime consumer, not only raw text parsing.
+		expect(
+			await prisma.historyCollectionLease.count({
+				where: { userId: claim.userId, expiresAt: { gt: new Date(after) } },
+			}),
+		).toBe(1);
+	});
+
+	it.each(["heartbeat", "heartbeat-cursor", "fence", "fence-cursor", "release"] as const)(
+		"keeps canonical persisted dates after %s without changing ownership",
+		async (operation) => {
+			const { prisma } = await createDatabase();
+			const userId = `owner-canonical-${operation}`;
+			await createUser(prisma, userId);
+			const original = await acquireHistoryCollectionLease(prisma, userId, { dialect: "sqlite" });
+			if (!original) throw new Error("expected claim");
+			// Isolate each writer: start it with adapter-written canonical date values.
+			const started = new Date(Date.now() - 1_000);
+			await prisma.historyCollectionLease.update({
+				where: { userId },
+				data: {
+					claimedAt: started,
+					heartbeatAt: started,
+					expiresAt: new Date(Date.now() + 60_000),
+					lastAttemptAt: started,
+					nextSourceCursor: "previous-cursor",
+				},
+			});
+			if (operation === "release") {
+				expect(await releaseHistoryCollectionLease(prisma, original, { dialect: "sqlite" })).toBe(
+					true,
+				);
+			} else if (operation.startsWith("heartbeat")) {
+				expect(
+					await heartbeatHistoryCollectionLease(
+						prisma,
+						original,
+						operation.endsWith("cursor") ? "next-cursor" : undefined,
+						{ dialect: "sqlite" },
+					),
+				).toBe(true);
+			} else {
+				expect(
+					await withHistoryCollectionLeaseAuthority(prisma, original, async () => "accepted", {
+						dialect: "sqlite",
+						...(operation.endsWith("cursor") ? { nextSourceCursor: "next-cursor" } : {}),
+					}),
+				).toEqual({ matched: true, value: "accepted" });
+			}
+			const dates = await readCanonicalLeaseDates(prisma, userId);
+			const row = await readLease(prisma, userId);
+			if (operation === "release") {
+				expect(dates.claimedAt).toBeNull();
+				expect(dates.heartbeatAt).toBeNull();
+				expect(dates.expiresAt).toBeNull();
+				expect(row.claimToken).toBeNull();
+				expect(row.nextSourceCursor).toBe("previous-cursor");
+			} else {
+				expect(row.claimToken).toBe(original.claimToken);
+				expect(dates.claimedAt).toBe(started.toISOString().replace("Z", "+00:00"));
+				expect(dates.heartbeatAt).toBe(dates.updatedAt);
+				expect(new Date(dates.expiresAt!).getTime() - new Date(dates.heartbeatAt!).getTime()).toBe(
+					300_000,
+				);
+				expect(row.nextSourceCursor).toBe(
+					operation.endsWith("cursor") ? "next-cursor" : "previous-cursor",
+				);
+			}
+		},
+	);
+
 	it("allows exactly one winner for two concurrent first claims", async () => {
 		const { clients, prisma } = await createDatabase(2);
 		await createUser(prisma, "owner-first");
@@ -172,7 +259,7 @@ describe("owner-global History collection lease", { timeout: 30_000 }, () => {
 		if (!claim) throw new Error("expected claim");
 		// Keep the live fixture beyond this test's timeout but below the renewed five-minute TTL.
 		await prisma.$executeRawUnsafe(
-			`UPDATE history_collection_leases SET expiresAt = datetime(CURRENT_TIMESTAMP, '+60 seconds') WHERE userId = ?`,
+			`UPDATE history_collection_leases SET expiresAt = strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now', '+60 seconds') WHERE userId = ?`,
 			"owner-heartbeat",
 		);
 		const before = await readLease(prisma, "owner-heartbeat");
@@ -702,4 +789,24 @@ async function readLease(prisma: PrismaClient, userId: string): Promise<Record<s
 		userId,
 	);
 	return rows[0] ?? {};
+}
+
+async function readCanonicalLeaseDates(
+	prisma: PrismaClient,
+	userId: string,
+): Promise<Record<string, string | null>> {
+	const rows = await prisma.$queryRawUnsafe<Array<Record<string, string | null>>>(
+		`SELECT CAST(claimedAt AS TEXT) AS claimedAt, CAST(heartbeatAt AS TEXT) AS heartbeatAt,
+		 CAST(expiresAt AS TEXT) AS expiresAt, CAST(lastAttemptAt AS TEXT) AS lastAttemptAt,
+		 CAST(updatedAt AS TEXT) AS updatedAt FROM history_collection_leases WHERE userId = ?`,
+		userId,
+	);
+	const row = rows[0];
+	if (!row) throw new Error("expected lease dates");
+	for (const value of Object.values(row)) {
+		if (value !== null) {
+			expect(value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}\+00:00$/);
+		}
+	}
+	return row;
 }

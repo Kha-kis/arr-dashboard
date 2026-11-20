@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach, afterAll } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Module-level mocks
@@ -6,7 +6,7 @@ import { vi, describe, it, expect, beforeEach, afterAll } from "vitest";
 
 const { mockNotificationService, mockGetDeliveryStatistics } = vi.hoisted(() => ({
 	mockNotificationService: {
-		testChannel: vi.fn().mockResolvedValue(undefined),
+		testChannel: vi.fn().mockResolvedValue({ success: true, statusRecorded: true }),
 		getDecryptedConfig: vi
 			.fn()
 			.mockResolvedValue({ webhookUrl: "https://discord.com/api/webhooks/123" }),
@@ -23,13 +23,14 @@ vi.mock("../../lib/notifications/statistics.js", () => ({
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
-import Fastify from "fastify";
+import Fastify, { type FastifyBaseLogger } from "fastify";
+import pino from "pino";
 import { registerNotificationRoutes } from "../notifications.js";
 import {
-	setupAuthInjection,
 	createInjectAuthenticated,
 	createMockEncryptor,
 	registerTestErrorHandler,
+	setupAuthInjection,
 } from "./test-helpers.js";
 
 // ---------------------------------------------------------------------------
@@ -71,6 +72,9 @@ function makeRule(overrides: Record<string, unknown> = {}) {
 		]),
 		targetChannelIds: null,
 		throttleMinutes: null,
+		quietHoursStart: null,
+		quietHoursEnd: null,
+		quietHoursTimezone: null,
 		createdAt: now,
 		updatedAt: now,
 		...overrides,
@@ -82,6 +86,7 @@ function makeRule(overrides: Record<string, unknown> = {}) {
 // ---------------------------------------------------------------------------
 
 function createMockPrisma() {
+	const executeRaw = vi.fn().mockResolvedValue(1);
 	const subscriptionMock = {
 		findMany: vi.fn().mockResolvedValue([]),
 		deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -89,6 +94,7 @@ function createMockPrisma() {
 	};
 
 	return {
+		$executeRaw: executeRaw,
 		notificationChannel: {
 			findMany: vi.fn().mockResolvedValue([]),
 			findFirst: vi.fn().mockResolvedValue(null),
@@ -139,6 +145,7 @@ function createMockPrisma() {
 		},
 		$transaction: vi.fn().mockImplementation(async (fn: any) => {
 			return fn({
+				$executeRaw: executeRaw,
 				notificationSubscription: subscriptionMock,
 			});
 		}),
@@ -152,13 +159,19 @@ function createMockPrisma() {
 let app: ReturnType<typeof Fastify>;
 let mockPrisma: ReturnType<typeof createMockPrisma>;
 let injectAuthenticated: ReturnType<typeof createInjectAuthenticated>;
+let routeLogs: string[];
 
 beforeEach(async () => {
 	vi.clearAllMocks();
 
 	mockPrisma = createMockPrisma();
 
-	app = Fastify();
+	routeLogs = [];
+	const logger = pino(
+		{ level: "debug", base: null, timestamp: false },
+		{ write: (line: string) => routeLogs.push(line) },
+	) as unknown as FastifyBaseLogger;
+	app = Fastify({ loggerInstance: logger });
 
 	app.decorate("prisma", mockPrisma);
 	app.decorate(
@@ -217,7 +230,7 @@ describe("POST /channels", () => {
 });
 
 describe("PUT /channels/:id", () => {
-	it("merges redacted config fields with existing decrypted values", async () => {
+	it("retains the owned encrypted identity when masked settings are unchanged", async () => {
 		mockPrisma.notificationChannel.findFirst.mockResolvedValue(makeChannel());
 
 		const res = await injectAuthenticated("PUT", "/channels/ch-1", {
@@ -234,8 +247,20 @@ describe("PUT /channels/:id", () => {
 			iv: "mock-iv",
 		});
 
-		// Should re-encrypt the merged config (original webhookUrl preserved)
-		expect((app as any).encryptor.encrypt).toHaveBeenCalled();
+		// Equivalent settings must not rotate identity or discard existing Test evidence.
+		expect(mockPrisma.notificationChannel.update).toHaveBeenCalledWith({
+			where: {
+				id: "ch-1",
+				userId: "user-1",
+				type: "DISCORD",
+				name: "Discord Alerts",
+				enabled: true,
+				encryptedConfig: "encrypted-config-data",
+				configIv: "mock-iv",
+			},
+			data: {},
+			include: { subscriptions: true },
+		});
 	});
 
 	it("returns 404 for non-owned channel", async () => {
@@ -258,7 +283,7 @@ describe("DELETE /channels/:id", () => {
 
 		expect(res.statusCode).toBe(204);
 		expect(mockPrisma.notificationChannel.delete).toHaveBeenCalledWith({
-			where: { id: "ch-1" },
+			where: { id: "ch-1", userId: "user-1" },
 		});
 	});
 
@@ -280,7 +305,7 @@ describe("POST /channels/:id/test", () => {
 		const res = await injectAuthenticated("POST", "/channels/ch-1/test");
 
 		expect(res.statusCode).toBe(200);
-		expect(JSON.parse(res.payload).success).toBe(true);
+		expect(res.json()).toEqual({ success: true, statusRecorded: true });
 		expect(mockNotificationService.testChannel).toHaveBeenCalledWith("ch-1", "user-1");
 	});
 
@@ -292,6 +317,35 @@ describe("POST /channels/:id/test", () => {
 		expect(res.statusCode).toBe(400);
 		expect(JSON.parse(res.payload).error).toBe("Test failed");
 	});
+
+	it("preserves a confirmed Test whose status could not be recorded", async () => {
+		mockNotificationService.testChannel.mockResolvedValueOnce({
+			success: true,
+			statusRecorded: false,
+		});
+		const res = await injectAuthenticated("POST", "/channels/ch-1/test");
+		expect(res.statusCode).toBe(200);
+		expect(res.json()).toEqual({ success: true, statusRecorded: false });
+		expect(mockPrisma.notificationChannel.updateMany).not.toHaveBeenCalled();
+	});
+
+	it("maps a failed outcome category without writing status again", async () => {
+		mockNotificationService.testChannel.mockResolvedValueOnce({
+			success: false,
+			statusRecorded: false,
+			failureCategory: "authentication",
+		});
+		const res = await injectAuthenticated("POST", "/channels/ch-1/test");
+		expect(res.statusCode).toBe(400);
+		expect(res.json()).toEqual({
+			success: false,
+			statusRecorded: false,
+			failureCategory: "authentication",
+			error: "Test failed",
+			message: "Provider authentication failed. Check channel credentials and permissions.",
+		});
+		expect(mockPrisma.notificationChannel.updateMany).not.toHaveBeenCalled();
+	});
 });
 
 // ===========================================================================
@@ -302,6 +356,20 @@ describe("PUT /subscriptions", () => {
 	it("filters out subscriptions for non-owned channels", async () => {
 		// User owns only ch-1
 		mockPrisma.notificationChannel.findMany.mockResolvedValue([{ id: "ch-1" }]);
+		const txMock = {
+			$executeRaw: vi.fn().mockResolvedValue(1),
+			notificationChannel: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([{ id: "ch-1", name: "Synthetic channel", type: "DISCORD" }]),
+			},
+			notificationSubscription: {
+				findMany: vi.fn().mockResolvedValue([{ channelId: "ch-1", eventType: "HUNT_COMPLETED" }]),
+				deleteMany: vi.fn(),
+				upsert: vi.fn(),
+			},
+		};
+		mockPrisma.$transaction.mockImplementation(async (fn) => fn(txMock));
 
 		const res = await injectAuthenticated("PUT", "/subscriptions", {
 			body: {
@@ -313,20 +381,20 @@ describe("PUT /subscriptions", () => {
 		});
 
 		expect(res.statusCode).toBe(200);
+		expect(res.json()).toEqual({
+			success: true,
+			omittedCount: 1,
+			grid: {
+				channels: [{ id: "ch-1", name: "Synthetic channel", type: "DISCORD" }],
+				events: expect.arrayContaining(["HUNT_COMPLETED"]),
+				subscriptions: [{ channelId: "ch-1", eventType: "HUNT_COMPLETED" }],
+			},
+		});
 
 		// Transaction should have been called
 		expect(mockPrisma.$transaction).toHaveBeenCalled();
 
 		// Only ch-1 subscription should have been upserted, not ch-other-user
-		const txFn = mockPrisma.$transaction.mock.calls[0]![0];
-		const txMock = {
-			notificationSubscription: {
-				deleteMany: vi.fn(),
-				upsert: vi.fn(),
-			},
-		};
-		await txFn(txMock);
-
 		expect(txMock.notificationSubscription.upsert).toHaveBeenCalledTimes(1);
 		expect(txMock.notificationSubscription.upsert).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -380,7 +448,7 @@ describe("DELETE /rules/:id", () => {
 
 		expect(res.statusCode).toBe(204);
 		expect(mockPrisma.notificationRule.delete).toHaveBeenCalledWith({
-			where: { id: "rule-1" },
+			where: { id: "rule-1", userId: "user-1" },
 		});
 	});
 
@@ -415,5 +483,176 @@ describe("GET /channels/:id/config", () => {
 		const res = await injectAuthenticated("GET", "/channels/ch-999/config");
 
 		expect(res.statusCode).toBe(404);
+	});
+});
+
+describe("notification failure boundaries", () => {
+	const privateDetail =
+		"private-sentinel https://secret-user:short-pass@private.invalid/hook?token=short-token provider-body";
+
+	it.each([
+		["Error", new Error(privateDetail)],
+		["structured throw", { message: privateDetail, cause: new Error(privateDetail) }],
+		["string throw", privateDetail],
+	])(
+		"keeps test %s out of response and persisted status while retaining failure",
+		async (_label, error) => {
+			mockNotificationService.testChannel.mockRejectedValueOnce(error);
+			const res = await injectAuthenticated("POST", "/channels/ch-1/test");
+			expect(res.statusCode).toBe(400);
+			expect(res.json()).toEqual({
+				success: false,
+				failureCategory: "unknown",
+				statusRecorded: false,
+				error: "Test failed",
+				message: "Delivery was not confirmed. Check channel settings and provider availability.",
+			});
+			expect(res.payload).not.toContain("private-sentinel");
+			expect(mockPrisma.notificationChannel.updateMany).not.toHaveBeenCalled();
+			expect(mockPrisma.notificationChannel.update).not.toHaveBeenCalled();
+			expect(routeLogs.join("")).not.toContain("private-sentinel");
+		},
+	);
+
+	it("does not attempt a blind status write when the service unexpectedly throws", async () => {
+		mockNotificationService.testChannel.mockRejectedValueOnce(new Error(privateDetail));
+		mockPrisma.notificationChannel.updateMany.mockRejectedValueOnce(new Error(privateDetail));
+		const res = await injectAuthenticated("POST", "/channels/ch-1/test");
+		expect(res.statusCode).toBe(400);
+		expect(res.json().error).toBe("Test failed");
+		expect(res.json()).toMatchObject({
+			success: false,
+			statusRecorded: false,
+			failureCategory: "unknown",
+		});
+		expect(mockPrisma.notificationChannel.updateMany).not.toHaveBeenCalled();
+		expect(res.payload).not.toContain("private-sentinel");
+		expect(routeLogs.join("")).not.toContain("private-sentinel");
+	});
+
+	it.each([new Error(privateDetail), new SyntaxError(privateDetail)])(
+		"does not expose config-read exceptions in response or actual Pino logs",
+		async (error) => {
+			mockNotificationService.getDecryptedConfig.mockRejectedValueOnce(error);
+			const res = await injectAuthenticated("GET", "/channels/ch-1/config");
+			expect(res.statusCode).toBe(500);
+			expect(res.json()).toEqual({
+				error: "Failed to read channel config",
+				message:
+					"Notification channel settings could not be read. Try reopening settings; if this persists, check the channel configuration.",
+			});
+			expect(res.payload).not.toContain("private-sentinel");
+			expect(routeLogs.join("")).not.toContain("private-sentinel");
+			expect(routeLogs.map((line) => JSON.parse(line))).toContainEqual(
+				expect.objectContaining({
+					operation: "notification-config-read",
+					status: "failed",
+					msg: "Failed to read notification channel config",
+				}),
+			);
+		},
+	);
+
+	it.each(["GET", "PUT"] as const)(
+		"projects legacy provider status text safely in %s channel responses",
+		async (method) => {
+			const row = makeChannel({
+				lastTestResult: `failed: ${privateDetail}`,
+				lastSendResult: privateDetail,
+			});
+			mockPrisma.notificationChannel.findMany.mockResolvedValue([row]);
+			mockPrisma.notificationChannel.findFirst.mockResolvedValue(row);
+			mockPrisma.notificationChannel.update.mockResolvedValue(row);
+			const res = await injectAuthenticated(
+				method,
+				method === "GET" ? "/channels" : "/channels/ch-1",
+				method === "PUT" ? { body: { enabled: false } } : {},
+			);
+			expect(res.statusCode).toBe(200);
+			const returned = method === "GET" ? res.json()[0] : res.json();
+			expect(returned.lastTestResult).toBe("failed");
+			expect(res.payload).not.toContain("private-sentinel");
+			if (method === "GET") expect(returned.lastSendResult).toBe("failed");
+		},
+	);
+
+	it("projects only config status metadata, preserving the existing safe edit config", async () => {
+		mockNotificationService.getDecryptedConfig.mockResolvedValueOnce({
+			id: "ch-1",
+			name: "Synthetic channel",
+			type: "TELEGRAM",
+			enabled: true,
+			config: { botToken: "••••••••", chatId: "synthetic-chat" },
+			lastTestedAt: now,
+			lastTestResult: privateDetail,
+			lastSentAt: now,
+			lastSendResult: privateDetail,
+		});
+		const res = await injectAuthenticated("GET", "/channels/ch-1/config");
+		expect(res.statusCode).toBe(200);
+		expect(res.json()).toMatchObject({
+			config: { botToken: "••••••••", chatId: "synthetic-chat" },
+			lastTestResult: "failed",
+			lastSendResult: "failed",
+		});
+		expect(res.payload).not.toContain("private-sentinel");
+	});
+
+	it("does not republish provider errors from legacy delivery-log records", async () => {
+		mockPrisma.notificationChannel.findMany.mockResolvedValue([{ id: "ch-1" }]);
+		mockPrisma.notificationLog.findMany.mockResolvedValue([
+			{
+				id: "log-1",
+				channelId: "ch-1",
+				channelType: "TELEGRAM",
+				eventType: "HUNT_COMPLETED",
+				title: "Synthetic event",
+				body: "Synthetic body",
+				status: "failed",
+				error: privateDetail,
+				retryCount: 2,
+				sentAt: now,
+			},
+		]);
+		mockPrisma.notificationLog.count.mockResolvedValue(1);
+		const res = await injectAuthenticated("GET", "/logs");
+		expect(res.statusCode).toBe(200);
+		expect(res.json()).toMatchObject({
+			logs: [
+				{
+					status: "failed",
+					error: "Delivery was not confirmed. Check channel settings and provider availability.",
+					retryCount: 2,
+				},
+			],
+			total: 1,
+			page: 1,
+			limit: 50,
+		});
+		expect(res.payload).not.toContain("private-sentinel");
+		expect(mockPrisma.notificationLog.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { channelId: { in: ["ch-1"] } },
+			}),
+		);
+	});
+
+	it("preserves successful and never-tested channel states rather than inventing a failure", async () => {
+		mockPrisma.notificationChannel.findMany.mockResolvedValue([
+			makeChannel({ lastTestResult: "success", lastSendResult: "success" }),
+			makeChannel({ id: "ch-2", lastTestResult: null, lastSendResult: null }),
+		]);
+		const res = await injectAuthenticated("GET", "/channels");
+		expect(
+			res
+				.json()
+				.map((row: { lastTestResult: string | null; lastSendResult: string | null }) => [
+					row.lastTestResult,
+					row.lastSendResult,
+				]),
+		).toEqual([
+			["success", "success"],
+			[null, null],
+		]);
 	});
 });

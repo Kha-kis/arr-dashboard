@@ -1,3 +1,4 @@
+import type { FastifyBaseLogger } from "fastify";
 import type { NativeInventoryRow } from "../provider-observation/native-inventory.js";
 import type {
 	JellyfinClient,
@@ -15,6 +16,143 @@ export type JellyfinNativeEpisodeInventoryResult =
 	| { complete: true; snapshots: [CollectedJellyfinNativeEpisodeInventory] }
 	| { complete: false; reason: "coverage-incomplete" | "provider-unavailable" };
 
+type NativeEpisodeJobReader = Pick<
+	JellyfinClient,
+	"getNativeMediaFolders" | "readNativeInventoryPage"
+>;
+
+export interface JellyfinNativeEpisodeJobScope {
+	libraryId: string;
+	collectionType: string;
+	scopeKey: string;
+}
+
+export function createJellyfinNativeEpisodeJobAdapter(
+	client: NativeEpisodeJobReader,
+): NativeInventoryJobAdapter<JellyfinNativeEpisodeJobScope>;
+export function createJellyfinNativeEpisodeJobAdapter(
+	client: Pick<NativeEpisodeJobReader, "readNativeInventoryPage">,
+	options: {
+		discoverScopes: NativeInventoryJobAdapter<JellyfinNativeEpisodeJobScope>["discoverScopes"];
+	},
+): NativeInventoryJobAdapter<JellyfinNativeEpisodeJobScope>;
+export function createJellyfinNativeEpisodeJobAdapter(
+	client: Pick<NativeEpisodeJobReader, "readNativeInventoryPage"> &
+		Partial<Pick<NativeEpisodeJobReader, "getNativeMediaFolders">>,
+	options?: {
+		discoverScopes?: NativeInventoryJobAdapter<JellyfinNativeEpisodeJobScope>["discoverScopes"];
+	},
+): NativeInventoryJobAdapter<JellyfinNativeEpisodeJobScope> {
+	return {
+		domain: "episode" as const,
+		async discoverScopes(deadlineAt: number): Promise<
+			| { status: "ready"; catalogIdentity: string; scopes: JellyfinNativeEpisodeJobScope[] }
+			| {
+					status: "unavailable";
+					reason: "deadline-exceeded" | "provider-unavailable" | "coverage-incomplete";
+			  }
+		> {
+			if (options?.discoverScopes) return await options.discoverScopes(deadlineAt);
+			if (!client.getNativeMediaFolders)
+				return { status: "unavailable", reason: "provider-unavailable" };
+			const remainingMs = deadlineAt - Date.now();
+			if (remainingMs <= 0) return { status: "unavailable", reason: "deadline-exceeded" };
+			let libraries: JellyfinLibrary[];
+			try {
+				libraries = await client.getNativeMediaFolders({ timeoutMs: remainingMs });
+			} catch {
+				return { status: "unavailable", reason: "provider-unavailable" };
+			}
+			const ids = new Set<string>();
+			const scopes: JellyfinNativeEpisodeJobScope[] = [];
+			for (const library of libraries) {
+				if (!validIdentity(library.id) || ids.has(library.id)) {
+					return { status: "unavailable", reason: "coverage-incomplete" };
+				}
+				ids.add(library.id);
+				if (library.collectionType === "playlists") continue;
+				scopes.push({
+					libraryId: library.id,
+					collectionType: library.collectionType,
+					scopeKey: `library:${library.id}`,
+				});
+			}
+			scopes.sort((a, b) => a.scopeKey.localeCompare(b.scopeKey));
+			return { status: "ready", catalogIdentity: scopeIdentity(scopes), scopes };
+		},
+		async readPage(
+			scope: JellyfinNativeEpisodeJobScope,
+			startIndex: number,
+			limit: number,
+			deadlineAt: number,
+		): Promise<
+			| {
+					status: "page";
+					domain: "episode";
+					scopeKey: string;
+					startIndex: number;
+					totalRecordCount: number;
+					rawNativeIds: string[];
+					comparisonKeys: string[];
+					rows: NativeInventoryRow[];
+			  }
+			| {
+					status: "unavailable";
+					reason: "deadline-exceeded" | "provider-unavailable" | "coverage-incomplete";
+			  }
+		> {
+			if (!validIdentity(scope.libraryId) || scope.scopeKey !== `library:${scope.libraryId}`) {
+				return { status: "unavailable", reason: "coverage-incomplete" };
+			}
+			let page: Awaited<ReturnType<JellyfinClient["readNativeInventoryPage"]>>;
+			try {
+				page = await client.readNativeInventoryPage({
+					domain: "episode",
+					libraryId: scope.libraryId,
+					startIndex,
+					limit,
+					deadlineAt,
+				});
+			} catch {
+				return { status: "unavailable", reason: "provider-unavailable" };
+			}
+			if (page.status === "unavailable") return page;
+			if (page.domain !== "episode" || page.startIndex !== startIndex) {
+				return { status: "unavailable", reason: "coverage-incomplete" };
+			}
+			const rawNativeIds: string[] = [];
+			const comparisonKeys: string[] = [];
+			const rows: NativeInventoryRow[] = [];
+			const ids = new Set<string>();
+			for (const item of page.items) {
+				if (item.type !== "Episode" || !validIdentity(item.id) || ids.has(item.id)) {
+					return { status: "unavailable", reason: "coverage-incomplete" };
+				}
+				ids.add(item.id);
+				rawNativeIds.push(item.id);
+				comparisonKeys.push("Episode");
+				rows.push({
+					nativeId: item.id,
+					mediaType: "episode",
+					libraryIds: [scope.libraryId],
+					...coordinate(item),
+					title: typeof item.name === "string" ? item.name : "",
+				});
+			}
+			return {
+				status: "page",
+				domain: "episode",
+				scopeKey: scope.scopeKey,
+				startIndex: page.startIndex,
+				totalRecordCount: page.totalRecordCount,
+				rawNativeIds,
+				comparisonKeys,
+				rows,
+			};
+		},
+	};
+}
+
 interface JellyfinNativeEpisodeScope {
 	libraryId: string;
 	collectionType: string;
@@ -28,6 +166,19 @@ interface JellyfinNativeEpisodePass {
 
 class IncompleteJellyfinNativeEpisodeInventory extends Error {}
 class UnavailableJellyfinNativeEpisodeInventory extends Error {}
+const NATIVE_EPISODE_MAX_DURATION_MS = 20 * 60 * 1000;
+
+function logNativeEpisodeTiming(
+	log: Pick<FastifyBaseLogger, "info"> | undefined,
+	fields: Record<string, string | number>,
+	message: string,
+): void {
+	try {
+		log?.info(fields, message);
+	} catch {
+		// Diagnostic telemetry must not change inventory coverage or publication.
+	}
+}
 
 function validIdentity(value: unknown): value is string {
 	return typeof value === "string" && value.trim().length > 0 && !value.includes("\0");
@@ -73,10 +224,15 @@ function requireCompletePage(
 	return page.items;
 }
 
-async function discoverScopes(client: JellyfinClient): Promise<JellyfinNativeEpisodeScope[]> {
+async function discoverScopes(
+	client: JellyfinClient,
+	deadlineAt: number,
+): Promise<JellyfinNativeEpisodeScope[]> {
 	let libraries: JellyfinLibrary[];
 	try {
-		libraries = await client.getNativeMediaFolders();
+		const remainingMs = deadlineAt - Date.now();
+		if (remainingMs <= 0) throw new UnavailableJellyfinNativeEpisodeInventory();
+		libraries = await client.getNativeMediaFolders({ timeoutMs: remainingMs });
 	} catch {
 		throw new UnavailableJellyfinNativeEpisodeInventory();
 	}
@@ -143,18 +299,53 @@ function mergePassSnapshots(
 async function collectPass(
 	client: JellyfinClient,
 	scopes: readonly JellyfinNativeEpisodeScope[],
+	pass: number,
+	deadlineAt: number,
+	log?: Pick<FastifyBaseLogger, "info">,
 ): Promise<JellyfinNativeEpisodePass> {
+	const passStartedAt = Date.now();
 	const rowsById = new Map<string, NativeInventoryRow>();
 	const scopedItems: JellyfinNativeEpisodePass["scopedItems"] = [];
 	const scopedIds = new Set<string>();
 
-	for (const scope of scopes) {
+	for (const [scopeIndex, scope] of scopes.entries()) {
+		const scopeStartedAt = Date.now();
 		let page: Awaited<ReturnType<JellyfinClient["getNativeEpisodeItemsWithCoverage"]>>;
 		try {
-			page = await client.getNativeEpisodeItemsWithCoverage(scope.libraryId);
+			const remainingMs = deadlineAt - Date.now();
+			if (remainingMs <= 0) throw new UnavailableJellyfinNativeEpisodeInventory();
+			page = await client.getNativeEpisodeItemsWithCoverage(scope.libraryId, remainingMs);
 		} catch {
+			logNativeEpisodeTiming(
+				log,
+				{
+					category: "native-episode-scope-timing",
+					pass,
+					scopeOrdinal: scopeIndex + 1,
+					pagesAttempted: 0,
+					pagesCompleted: 0,
+					rawObserved: 0,
+					elapsedMs: Date.now() - scopeStartedAt,
+					status: "provider-unavailable",
+				},
+				"Jellyfin native episode scope read timing",
+			);
 			throw new UnavailableJellyfinNativeEpisodeInventory();
 		}
+		logNativeEpisodeTiming(
+			log,
+			{
+				category: "native-episode-scope-timing",
+				pass,
+				scopeOrdinal: scopeIndex + 1,
+				pagesAttempted: page.pagesAttempted,
+				pagesCompleted: page.pagesCompleted,
+				rawObserved: page.rawObserved,
+				elapsedMs: Date.now() - scopeStartedAt,
+				status: page.reason === null ? "complete" : "coverage-incomplete",
+			},
+			"Jellyfin native episode scope read timing",
+		);
 		for (const item of requireCompletePage(page)) {
 			if (item.type !== "Episode" || !validIdentity(item.id)) {
 				throw new IncompleteJellyfinNativeEpisodeInventory();
@@ -179,27 +370,43 @@ async function collectPass(
 		}
 	}
 
-	return {
-		snapshot: {
-			domain: "episode",
-			scopeKeys: scopes.map((scope) => scope.scopeKey),
-			rows: [...rowsById.values()].sort((a, b) => a.nativeId.localeCompare(b.nativeId)),
+	const snapshot: CollectedJellyfinNativeEpisodeInventory = {
+		domain: "episode",
+		scopeKeys: scopes.map((scope) => scope.scopeKey),
+		rows: [...rowsById.values()].sort((a, b) => a.nativeId.localeCompare(b.nativeId)),
+	};
+	logNativeEpisodeTiming(
+		log,
+		{
+			category: "native-episode-pass-timing",
+			pass,
+			scopes: scopes.length,
+			rows: snapshot.rows.length,
+			elapsedMs: Date.now() - passStartedAt,
+			status: "complete",
 		},
+		"Jellyfin native episode pass timing",
+	);
+	return {
+		snapshot,
 		scopedItems,
 	};
 }
 
 export async function collectJellyfinNativeEpisodeInventory(
 	client: JellyfinClient,
+	log?: Pick<FastifyBaseLogger, "info">,
 ): Promise<JellyfinNativeEpisodeInventoryResult> {
 	try {
-		let scopes = await discoverScopes(client);
+		const deadlineAt = Date.now() + NATIVE_EPISODE_MAX_DURATION_MS;
+		let scopes = await discoverScopes(client, deadlineAt);
 		let previous: JellyfinNativeEpisodePass | undefined;
 		// A moving catalog gets one extra complete pass. Only consecutive agreement
 		// within unchanged physical scopes can replace the published inventory.
 		for (let pass = 0; pass < 3; pass++) {
-			const current = await collectPass(client, scopes);
-			const after = await discoverScopes(client);
+			const current = await collectPass(client, scopes, pass + 1, deadlineAt, log);
+			const after = await discoverScopes(client, deadlineAt);
+			if (Date.now() >= deadlineAt) throw new UnavailableJellyfinNativeEpisodeInventory();
 			if (scopeIdentity(scopes) !== scopeIdentity(after)) {
 				previous = undefined;
 			} else {
@@ -227,3 +434,4 @@ export async function collectJellyfinNativeEpisodeInventory(
 		};
 	}
 }
+import type { NativeInventoryJobAdapter } from "../provider-observation/native-inventory-job-runner.js";

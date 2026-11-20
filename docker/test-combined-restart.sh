@@ -10,7 +10,7 @@
 # Uses the real image, real services, and a fresh SQLite config volume:
 #   register initial admin -> login -> record tracked API PID -> trigger
 #   restart -> assert container still running, launcher logged the restart,
-#   tracked API PID changed, web stayed healthy the whole time.
+#   tracked API PID changed, web PID unchanged, readiness recovered.
 #
 # Usage: docker/test-combined-restart.sh [image] [--rootless]
 
@@ -29,13 +29,46 @@ COOKIE="$WORK/cookies.txt"
 PASS=0
 FAIL=0
 
+report_failure() {
+    if fixture_state=$(docker inspect "$CTR" --format \
+        'restart-fixture state={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} restarts={{.RestartCount}}' 2>/dev/null); then
+        printf '%s\n' "$fixture_state" >&2
+    else
+        printf '%s\n' 'restart-fixture state unavailable' >&2
+    fi
+    if ! failure_logs=$(docker logs --tail 200 "$CTR" 2>&1); then
+        printf '%s\n' 'restart-fixture phases unavailable' >&2
+        return
+    fi
+    printf '%s\n' "$failure_logs" | awk '
+        /"msg":"Manual restart requested"/ { manual++ }
+        /"msg":"Initiating application restart"/ { scheduled++ }
+        /"msg":"Closing server connections gracefully"/ { closing++ }
+        /"msg":"Stopping TRaSH Guides update scheduler"/ { trash++ }
+        /"msg":"TRaSH Guides update scheduler stopped"/ { trash_timer_stop++ }
+        /"msg":"Exiting current process"/ { exit_requested++ }
+        /Restart requested [(]count:/ { handoff++ }
+        /"msg":"Error (closing Fastify server|during restart)"/ { errors++ }
+        END {
+            printf "restart-fixture phases manual=%d scheduled=%d close=%d trash=%d trash_timer_stop=%d exit_requested=%d handoff=%d errors=%d\n", manual, scheduled, closing, trash, trash_timer_stop, exit_requested, handoff, errors
+        }
+    ' >&2
+}
+
 cleanup() {
+    result=$?
+    trap - EXIT
+    if [ "$result" -ne 0 ]; then
+        report_failure || true
+    fi
     docker rm -f "$CTR" >/dev/null 2>&1 || true
     rm -rf "$WORK" 2>/dev/null || true
+    exit "$result"
 }
+mkdir -m 700 "$WORK"
 trap cleanup EXIT
 
-mkdir -p "$CONFIG_DIR"
+mkdir "$CONFIG_DIR"
 if [ "$ROOTLESS" = true ]; then
     chown -R 1000:1000 "$CONFIG_DIR" 2>/dev/null || true
     chmod 700 "$CONFIG_DIR" 2>/dev/null || true
@@ -48,26 +81,32 @@ HOST_WEB_PORT=33091
 if [ "$ROOTLESS" = true ]; then
     docker run -d --name "$CTR" --user 1000:1000 \
         -v "$CONFIG_DIR":/config \
-        -p "$HOST_API_PORT":3001 -p "$HOST_WEB_PORT":3000 \
+        -p "127.0.0.1:$HOST_API_PORT":3001 -p "127.0.0.1:$HOST_WEB_PORT":3000 \
         "$IMAGE" >/dev/null
 else
     docker run -d --name "$CTR" \
         -v "$CONFIG_DIR":/config \
         -e PUID=1000 -e PGID=1000 \
-        -p "$HOST_API_PORT":3001 -p "$HOST_WEB_PORT":3000 \
+        -p "127.0.0.1:$HOST_API_PORT":3001 -p "127.0.0.1:$HOST_WEB_PORT":3000 \
         "$IMAGE" >/dev/null
 fi
 
 ok() { echo "  PASS: $*"; PASS=$((PASS + 1)); }
 bad() { echo "  FAIL: $*" >&2; FAIL=$((FAIL + 1)); }
 
+http_status() {
+    umask 077
+    status=$(curl -s -o /dev/null -w '%{http_code}' "$@") || status=000
+    printf '%s\n' "$status"
+}
+
 wait_health() {
     timeout=${1:-120}
     elapsed=0
     while [ "$elapsed" -lt "$timeout" ]; do
-        a=$(curl -sf "http://localhost:$HOST_API_PORT/health" 2>/dev/null || echo '')
-        w=$(curl -sf "http://localhost:$HOST_WEB_PORT/health" 2>/dev/null || echo '')
-        if [ -n "$a" ] && [ -n "$w" ]; then
+        a=$(http_status "http://127.0.0.1:$HOST_API_PORT/health")
+        w=$(http_status "http://127.0.0.1:$HOST_WEB_PORT/health")
+        if [ "$a" = 200 ] && [ "$w" = 200 ]; then
             return 0
         fi
         sleep 1
@@ -85,36 +124,35 @@ echo "########## LIVE RESTART TEST (image: $IMAGE) ##########"
 
 if ! wait_health; then
     bad "services did not become healthy"
-    docker logs "$CTR" 2>&1 | tail -30 >&2
 else
     ok "services healthy"
 fi
 
 echo "=== registering initial admin ==="
-reg=$(curl -sf -X POST "http://localhost:$HOST_API_PORT/auth/register" \
+reg=$(http_status -X POST "http://127.0.0.1:$HOST_API_PORT/auth/register" \
     -H "Content-Type: application/json" \
     -d '{"username":"admin","password":"TestPassw0rd!","rememberMe":false}' \
-    -c "$COOKIE" 2>/dev/null || echo "{}")
-echo "  register response: $reg"
-case "$reg" in
-    *"id"*|*"success"*|*"true"*) ok "admin registered" ;;
-    *) bad "register failed: $reg" ;;
-esac
+    -c "$COOKIE")
+if [ "$reg" = 201 ]; then
+    ok "admin registered (HTTP $reg)"
+else
+    bad "register failed (HTTP ${reg:-000})"
+fi
 
 echo "=== logging in ==="
-login=$(curl -sf -X POST "http://localhost:$HOST_API_PORT/auth/login" \
+login=$(http_status -X POST "http://127.0.0.1:$HOST_API_PORT/auth/login" \
     -H "Content-Type: application/json" \
     -d '{"username":"admin","password":"TestPassw0rd!","rememberMe":false}' \
-    -c "$COOKIE" 2>/dev/null || echo "")
-echo "  login response: $login"
-case "$login" in
-    *"token"*|*"success"*|*"user"*) ok "login succeeded" ;;
-    *) bad "login failed: $login" ;;
-esac
+    -c "$COOKIE")
+if [ "$login" = 200 ]; then
+    ok "login succeeded (HTTP $login)"
+else
+    bad "login failed (HTTP ${login:-000})"
+fi
 
 api_pid_before=$(tracked_pid API)
 web_pid_before=$(tracked_pid Web)
-inner_pid_before=$(docker exec "$CTR" sh -c "pgrep -f 'dist/index.js' | head -1" 2>/dev/null || echo "")
+inner_pid_before=$(docker exec "$CTR" sh -c "pgrep -f '[d]ist/index[.]js' | head -1" 2>/dev/null || echo "")
 echo "  tracked API (launcher) pid before restart: $api_pid_before"
 echo "  tracked Web pid before restart: $web_pid_before"
 echo "  inner API server pid before restart: $inner_pid_before"
@@ -130,13 +168,12 @@ else
 fi
 
 echo "=== triggering POST /api/system/restart ==="
-resp=$(curl -sf -X POST "http://localhost:$HOST_API_PORT/api/system/restart" \
-    -b "$COOKIE" 2>/dev/null || echo "")
-echo "  restart response: $resp"
-case "$resp" in
-    *"success"*) ok "restart request accepted" ;;
-    *) bad "restart request failed: $resp" ;;
-esac
+resp=$(http_status -X POST "http://127.0.0.1:$HOST_API_PORT/api/system/restart" -b "$COOKIE")
+if [ "$resp" = 200 ]; then
+    ok "restart request accepted (HTTP $resp)"
+else
+    bad "restart request failed (HTTP ${resp:-000})"
+fi
 
 # The inner server exits 42; the launcher restarts it after ~1s. The container
 # must NEVER exit. Watch for up to 30s while the API comes back.
@@ -148,7 +185,7 @@ while [ "$elapsed" -lt 30 ]; do
         bad "container exited during application restart (state=$state)"
         break
     fi
-    inner_pid_after=$(docker exec "$CTR" sh -c "pgrep -f 'dist/index.js' | head -1" 2>/dev/null || echo "")
+    inner_pid_after=$(docker exec "$CTR" sh -c "pgrep -f '[d]ist/index[.]js' | head -1" 2>/dev/null || echo "")
     if [ -n "$inner_pid_after" ] && [ "$inner_pid_after" != "$inner_pid_before" ]; then
         break
     fi
@@ -176,6 +213,12 @@ else
     bad "top-level launcher PID changed on an app restart (before=$api_pid_before after=$api_pid_after)"
 fi
 
+if [ -n "$web_pid_before" ] && [ "$(tracked_pid Web)" = "$web_pid_before" ]; then
+    ok "web process stayed constant through the API restart"
+else
+    bad "web process changed during the API restart"
+fi
+
 logs=$(docker logs "$CTR" 2>&1 || true)
 if echo "$logs" | grep -q "Restart requested"; then
     ok "launcher logged the application restart"
@@ -199,9 +242,9 @@ echo "=== web continuity check ==="
 recovered=false
 elapsed=0
 while [ "$elapsed" -lt 60 ]; do
-    a=$(curl -sf "http://localhost:$HOST_API_PORT/health" 2>/dev/null || echo '')
-    w=$(curl -sf "http://localhost:$HOST_WEB_PORT/health" 2>/dev/null || echo '')
-    if [ -n "$a" ] && [ -n "$w" ]; then
+    a=$(http_status "http://127.0.0.1:$HOST_API_PORT/health")
+    w=$(http_status "http://127.0.0.1:$HOST_WEB_PORT/health")
+    if [ "$a" = 200 ] && [ "$w" = 200 ]; then
         recovered=true
         break
     fi
@@ -210,12 +253,12 @@ while [ "$elapsed" -lt 60 ]; do
 done
 
 if [ "$recovered" = true ]; then
-    ok "web stayed healthy through the API restart"
+    ok "web readiness recovered after the API restart"
 else
-    bad "web became unhealthy after API restart (health web='$w' api='$a')"
+    bad "web did not recover after API restart (HTTP web=${w:-000} api=${a:-000})"
 fi
 
-if [ -n "$a" ]; then
+if [ "$a" = 200 ]; then
     ok "API healthy after restart"
 else
     bad "API not healthy after restart"

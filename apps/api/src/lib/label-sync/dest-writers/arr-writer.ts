@@ -98,13 +98,6 @@ function createWriter(config: ArrWriterConfig): DestWriter {
 			let labelsApplied = 0;
 			let failures = 0;
 			for (const item of matched) {
-				const existingTags = Array.isArray(item.tags) ? item.tags : [];
-				if (existingTags.includes(tagId)) {
-					labelsApplied++; // idempotent — already applied
-					continue;
-				}
-
-				const mergedTags = [...existingTags, tagId];
 				try {
 					// biome-ignore lint/suspicious/noExplicitAny: SDK union typing requires runtime accessor
 					const resource = (arrClient as any)[config.itemsAccessor];
@@ -114,10 +107,26 @@ function createWriter(config: ArrWriterConfig): DestWriter {
 					// current item so the update preserves every field the *arr
 					// expects.
 					const fullItem = await resource.getById(item.id);
+					if (
+						!fullItem ||
+						fullItem.id !== item.id ||
+						fullItem.tmdbId !== item.tmdbId ||
+						!Array.isArray(fullItem.tags) ||
+						!fullItem.tags.every(
+							(tag: unknown) => typeof tag === "number" && Number.isInteger(tag) && tag > 0,
+						)
+					) {
+						throw new Error("Current *arr item identity or tag evidence is inconsistent");
+					}
+					const existingTags: number[] = fullItem.tags;
+					if (existingTags.includes(tagId)) {
+						labelsApplied++; // idempotent — observed on the current resource
+						continue;
+					}
 					await resource.update(item.id, {
 						...fullItem,
 						id: item.id,
-						tags: mergedTags,
+						tags: [...existingTags, tagId],
 					});
 					labelsApplied++;
 				} catch (err) {

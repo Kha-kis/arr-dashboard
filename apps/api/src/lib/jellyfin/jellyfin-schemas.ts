@@ -5,6 +5,7 @@
  * Uses the same parseUpstreamOrThrow pattern as plex-schemas.ts.
  */
 
+import { getSessionBandwidthKbps } from "@arr/shared";
 import { z } from "zod";
 
 // ============================================================================
@@ -173,19 +174,42 @@ const jellyfinPlayStateSchema = z.object({
 	CanSeek: z.boolean().optional(),
 	IsPaused: z.boolean().optional(),
 	PlayMethod: z.string().optional(), // "DirectPlay" | "DirectStream" | "Transcode"
+	// Optional selection evidence is validated independently by the session
+	// source-quality projection, never used to reject otherwise usable playback.
+	MediaSourceId: z.unknown().optional(),
+	AudioStreamIndex: z.unknown().optional(),
+	MediaSource: z.unknown().optional(),
 });
 
-const jellyfinTranscodingInfoSchema = z.object({
-	IsVideoDirect: z.boolean().optional(),
-	IsAudioDirect: z.boolean().optional(),
-	Bitrate: z.number().optional(),
-	Width: z.number().optional(),
-	Height: z.number().optional(),
-	AudioCodec: z.string().optional(),
-	VideoCodec: z.string().optional(),
-	Container: z.string().optional(),
-	CompletionPercentage: z.number().optional(),
-});
+const jellyfinSessionDimensionSchema = z
+	.number()
+	.int()
+	.positive()
+	.refine(Number.isSafeInteger)
+	.optional()
+	.catch(undefined);
+const jellyfinSessionCodecSchema = z.string().trim().min(1).optional().catch(undefined);
+
+const jellyfinTranscodingInfoSchema = z
+	.object({
+		IsVideoDirect: z.boolean().optional().catch(undefined),
+		IsAudioDirect: z.boolean().optional().catch(undefined),
+		Bitrate: z
+			.unknown()
+			.transform((value) => getSessionBandwidthKbps(value) ?? undefined)
+			.optional(),
+		Width: jellyfinSessionDimensionSchema,
+		Height: jellyfinSessionDimensionSchema,
+		AudioCodec: jellyfinSessionCodecSchema,
+		VideoCodec: jellyfinSessionCodecSchema,
+		Container: z.string().optional().catch(undefined),
+		CompletionPercentage: z.number().optional().catch(undefined),
+	})
+	.transform((info) => ({
+		...info,
+		Width: info.Width !== undefined && info.Height !== undefined ? info.Width : undefined,
+		Height: info.Width !== undefined && info.Height !== undefined ? info.Height : undefined,
+	}));
 
 export const jellyfinSessionSchema = z.object({
 	Id: z.string(),
@@ -198,8 +222,10 @@ export const jellyfinSessionSchema = z.object({
 	IsActive: z.boolean().optional(),
 	LastActivityDate: z.string().optional(),
 	PlayState: jellyfinPlayStateSchema.optional(),
-	NowPlayingItem: jellyfinItemSchema.optional(),
-	TranscodingInfo: jellyfinTranscodingInfoSchema.optional(),
+	NowPlayingItem: jellyfinItemSchema
+		.extend({ MediaStreams: z.unknown().optional(), MediaSources: z.unknown().optional() })
+		.optional(),
+	TranscodingInfo: jellyfinTranscodingInfoSchema.optional().catch(undefined),
 });
 
 export const jellyfinSessionsResponseSchema = z.array(jellyfinSessionSchema);

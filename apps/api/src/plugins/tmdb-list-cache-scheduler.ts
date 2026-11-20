@@ -12,6 +12,8 @@ const tmdbListCacheSchedulerPlugin = fastifyPlugin(
 		let timer: NodeJS.Timeout | null = null;
 		let startupTimer: NodeJS.Timeout | null = null;
 		let inFlight = false;
+		let closing = false;
+		const pendingRounds = new Set<Promise<void>>();
 
 		const tick = async () => {
 			if (inFlight) {
@@ -32,31 +34,50 @@ const tmdbListCacheSchedulerPlugin = fastifyPlugin(
 			}
 		};
 
+		async function runTrackedTick() {
+			if (closing) return;
+			let finish!: () => void;
+			const completion = new Promise<void>((resolve) => {
+				finish = resolve;
+			});
+			// Retain the whole round, including publication, orphan cleanup and registry release.
+			pendingRounds.add(completion);
+			try {
+				await app.schedulerRegistry.track(JOB_ID.tmdbListCache, tick);
+			} finally {
+				pendingRounds.delete(completion);
+				finish();
+			}
+		}
+
 		app.addHook("onReady", async () => {
+			if (closing) return;
 			await runSchedulerInit(
 				{ registry: app.schedulerRegistry, log: app.log },
 				JOB_ID.tmdbListCache,
 				"TMDb list cache",
 				async () => {
+					if (closing) return;
 					app.log.info({ intervalMs: TICK_INTERVAL_MS }, "Starting TMDb list cache scheduler");
 
 					startupTimer = setTimeout(() => {
 						startupTimer = null;
-						app.schedulerRegistry
-							.track(JOB_ID.tmdbListCache, tick)
-							.catch((err) => app.log.error({ err }, "Initial TMDb list cache tick failed"));
+						runTrackedTick().catch((err) =>
+							app.log.error({ err }, "Initial TMDb list cache tick failed"),
+						);
 					}, STARTUP_DELAY_MS);
 
 					timer = setInterval(() => {
-						app.schedulerRegistry
-							.track(JOB_ID.tmdbListCache, tick)
-							.catch((err) => app.log.error({ err }, "Scheduled TMDb list cache tick failed"));
+						runTrackedTick().catch((err) =>
+							app.log.error({ err }, "Scheduled TMDb list cache tick failed"),
+						);
 					}, TICK_INTERVAL_MS);
 				},
 			);
 		});
 
-		app.addHook("onClose", async () => {
+		function closeAdmission() {
+			closing = true;
 			if (startupTimer) {
 				clearTimeout(startupTimer);
 				startupTimer = null;
@@ -66,6 +87,11 @@ const tmdbListCacheSchedulerPlugin = fastifyPlugin(
 				timer = null;
 				app.log.info("TMDb list cache scheduler stopped");
 			}
+		}
+		app.addHook("preClose", async () => closeAdmission());
+		app.addHook("onClose", async () => {
+			closeAdmission();
+			while (pendingRounds.size > 0) await Promise.all([...pendingRounds]);
 		});
 	},
 	{

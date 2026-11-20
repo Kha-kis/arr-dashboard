@@ -19,7 +19,11 @@ describe("prewarmInstance", () => {
 			timeoutMs: 1000,
 			logger,
 		});
-		expect(getCachedAllTorrents).toHaveBeenCalledWith("qui-1", expect.anything());
+		expect(getCachedAllTorrents).toHaveBeenCalledWith(
+			"qui-1",
+			expect.anything(),
+			expect.any(AbortSignal),
+		);
 		expect(logger.info).toHaveBeenCalledTimes(1);
 		expect(logger.warn).not.toHaveBeenCalled();
 		// Torrent count is read off the resolved value.
@@ -46,8 +50,13 @@ describe("prewarmInstance", () => {
 	});
 
 	it("times out when the fetch outlives the budget — counts as a per-instance failure", async () => {
-		// A fetch that never resolves stands in for a hung qui.
-		const getCachedAllTorrents = vi.fn().mockImplementation(() => new Promise(() => {}));
+		// Model transport cancellation, not a wrapper abandoning a forever-pending fetch.
+		const getCachedAllTorrents = vi.fn().mockImplementation(
+			(_id, _client, signal: AbortSignal) =>
+				new Promise((_, reject) => {
+					signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+				}),
+		);
 		const logger = makeLogger();
 		// Inject a synchronous timer so the timeout fires immediately;
 		// avoids real-world wall-clock delays in the test.

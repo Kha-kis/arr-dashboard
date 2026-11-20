@@ -5,6 +5,7 @@
  */
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
+import { registerPlexAnalyticsReportRoutes } from "../media-analytics-report-routes.js";
 import { registerAccountRoutes } from "./account-routes.js";
 import { registerBandwidthAnalyticsRoutes } from "./bandwidth-analytics-routes.js";
 import { registerCacheRoutes } from "./cache-routes.js";
@@ -49,6 +50,7 @@ export async function registerPlexRoutes(app: FastifyInstance, _opts: FastifyPlu
 	app.register(registerAccountRoutes, { prefix: "/accounts" });
 	app.register(registerSeriesProgressRoutes, { prefix: "/series-progress" });
 	app.register(registerTranscodeAnalyticsRoutes, { prefix: "/analytics/transcode" });
+	app.register(registerPlexAnalyticsReportRoutes, { prefix: "/analytics/report" });
 	app.register(registerBandwidthAnalyticsRoutes, { prefix: "/analytics/bandwidth" });
 	app.register(registerUserAnalyticsRoutes, { prefix: "/analytics/users" });
 	app.register(registerWatchHistoryRoutes, { prefix: "/analytics/history" });

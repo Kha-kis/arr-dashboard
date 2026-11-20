@@ -1,11 +1,21 @@
 /**
  * Seerr Action Logger
  *
- * Fire-and-forget helper for recording user actions in the SeerrActionLog table.
+ * Joined best-effort helper for recording user actions in the SeerrActionLog table.
  * Never throws — wraps all DB operations in try/catch to avoid breaking user actions.
  */
 
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
+import { SeerrMutationOutcomeUnknownError } from "../errors.js";
+
+/** Preserve ambiguity in the legacy boolean audit row without a schema change. */
+export function seerrActionFailureDetail(error: unknown): {
+	detail?: { outcome: "unknown" };
+} {
+	return error instanceof SeerrMutationOutcomeUnknownError
+		? { detail: { outcome: "unknown" } }
+		: {};
+}
 
 /** Enumerated action types for audit consistency */
 export type SeerrAction =
@@ -29,13 +39,13 @@ export interface SeerrActionLogEntry {
 	success?: boolean;
 }
 
-export function logSeerrAction(
+export async function logSeerrAction(
 	app: FastifyInstance,
 	log: FastifyBaseLogger,
 	entry: SeerrActionLogEntry,
-): void {
-	app.prisma.seerrActionLog
-		.create({
+): Promise<void> {
+	try {
+		await app.prisma.seerrActionLog.create({
 			data: {
 				instanceId: entry.instanceId,
 				userId: entry.userId,
@@ -45,8 +55,8 @@ export function logSeerrAction(
 				detail: entry.detail ? JSON.stringify(entry.detail) : null,
 				success: entry.success ?? true,
 			},
-		})
-		.catch((err) => {
-			log.warn({ err, entry }, "Failed to log Seerr action");
 		});
+	} catch (err) {
+		log.warn({ err, entry }, "Failed to log Seerr action");
+	}
 }

@@ -41,21 +41,24 @@ type Raw = { id: number; bulk: string };
 type Slim = { id: number };
 
 /** Build a paginated fetcher that serves `pageCount` fully-loaded pages
- *  followed by an empty page. Each page has `pageSize` records.
+ *  with a stable provider total. Each page has `pageSize` records.
  */
 function makePagedFetcher(
 	pageCount: number,
 	pageSize: number,
-): { fetcher: (p: number, ps: number) => Promise<{ records: Raw[] }>; calls: number[] } {
+): {
+	fetcher: (p: number, ps: number) => Promise<{ records: Raw[]; totalRecords: number }>;
+	calls: number[];
+} {
 	const calls: number[] = [];
 	const fetcher = async (page: number, _ps: number) => {
 		calls.push(page);
-		if (page > pageCount) return { records: [] };
+		if (page > pageCount) return { records: [], totalRecords: pageCount * pageSize };
 		const records: Raw[] = Array.from({ length: pageSize }, (_, i) => ({
 			id: (page - 1) * pageSize + i + 1,
 			bulk: "x".repeat(50),
 		}));
-		return { records };
+		return { records, totalRecords: pageCount * pageSize };
 	};
 	return { fetcher, calls };
 }
@@ -123,8 +126,8 @@ describe("fetchWantedWithWrapAround", () => {
 		});
 
 		expect(out).toEqual([{ id: 4 }, { id: 5 }, { id: 6 }]);
-		// Should have fetched both data pages plus the trailing empty page.
-		expect(calls).toEqual([1, 2, 3]);
+		// Raw coverage proves completion even though projected rows were dropped.
+		expect(calls).toEqual([1, 2]);
 	});
 
 	it("stops on a partial page (end-of-list signal)", async () => {
@@ -135,6 +138,7 @@ describe("fetchWantedWithWrapAround", () => {
 			// Page 1: full (3 records). Page 2: partial (1 record) ⇒ end of list.
 			if (page === 1) {
 				return {
+					totalRecords: 4,
 					records: [
 						{ id: 1, bulk: "" },
 						{ id: 2, bulk: "" },
@@ -142,8 +146,8 @@ describe("fetchWantedWithWrapAround", () => {
 					],
 				};
 			}
-			if (page === 2) return { records: [{ id: 4, bulk: "" }] };
-			return { records: [] };
+			if (page === 2) return { records: [{ id: 4, bulk: "" }], totalRecords: 4 };
+			return { records: [], totalRecords: 4 };
 		};
 
 		const out = await fetchWantedWithWrapAround<Raw>(fetcher, {
@@ -156,18 +160,17 @@ describe("fetchWantedWithWrapAround", () => {
 		expect(calls).toEqual([1, 2]);
 	});
 
-	it("respects the 20-page MAX_PAGES cap even when more pages exist", async () => {
+	it("rejects an inventory beyond the read budget instead of returning a truncated pool", async () => {
 		const counter: ApiCallCounter = { count: 0 };
 		const { fetcher, calls } = makePagedFetcher(100, 2); // way more than the cap
 
-		const out = await fetchWantedWithWrapAround<Raw>(fetcher, {
-			counter,
-			logger: stubLogger,
-			fetchSize: 2,
-		});
-
-		// 20 pages × 2 records each = 40 records max under the cap.
-		expect(out).toHaveLength(40);
+		await expect(
+			fetchWantedWithWrapAround<Raw>(fetcher, {
+				counter,
+				logger: stubLogger,
+				fetchSize: 2,
+			}),
+		).rejects.toThrow(/wanted inventory.*incomplete/i);
 		expect(calls).toHaveLength(20);
 		expect(counter.count).toBe(20);
 	});
@@ -184,22 +187,108 @@ describe("fetchWantedWithWrapAround", () => {
 			project: (raw) => (raw.id % 2 === 0 ? { id: raw.id } : null),
 		});
 
-		// 3 data pages + 1 trailing empty page = 4 fetches.
-		expect(counter.count).toBe(4);
+		// Stable total proves completion without a fourth, empty GET.
+		expect(counter.count).toBe(3);
 	});
 
-	it("handles null records gracefully (e.g. malformed upstream response)", async () => {
+	it("rejects null records rather than claiming an empty wanted inventory", async () => {
 		const counter: ApiCallCounter = { count: 0 };
 		const fetcher = async () => ({ records: null });
 
-		const out = await fetchWantedWithWrapAround<Raw>(fetcher, {
-			counter,
-			logger: stubLogger,
-			fetchSize: 10,
-		});
-
-		expect(out).toEqual([]);
+		await expect(
+			fetchWantedWithWrapAround<Raw>(fetcher, {
+				counter,
+				logger: stubLogger,
+				fetchSize: 10,
+			}),
+		).rejects.toThrow(/wanted inventory.*invalid/i);
 		expect(counter.count).toBe(1);
+	});
+
+	it("continues through provider-clamped pages until the reported total is covered", async () => {
+		const counter = { count: 0 };
+		const out = await fetchWantedWithWrapAround<Raw>(
+			async (page) => ({
+				records: [{ id: page, bulk: "" }],
+				totalRecords: 3,
+			}),
+			{ counter, logger: stubLogger, fetchSize: 500 },
+		);
+		expect(out.map((row) => row.id)).toEqual([1, 2, 3]);
+		expect(counter.count).toBe(3);
+	});
+
+	it("accepts complete inventory exactly at the read-budget boundary without an extra GET", async () => {
+		const counter = { count: 0 };
+		const out = await fetchWantedWithWrapAround<Raw>(
+			async (page) => ({
+				records: [{ id: page, bulk: "" }],
+				totalRecords: 20,
+			}),
+			{ counter, logger: stubLogger, fetchSize: 1 },
+		);
+		expect(out.map((row) => row.id)).toEqual(Array.from({ length: 20 }, (_, i) => i + 1));
+		expect(counter.count).toBe(20);
+	});
+
+	it("rejects a premature empty page when the provider reports remaining records", async () => {
+		await expect(
+			fetchWantedWithWrapAround<Raw>(async () => ({ records: [], totalRecords: 1 }), {
+				counter: { count: 0 },
+				logger: stubLogger,
+			}),
+		).rejects.toThrow(/wanted inventory.*incomplete/i);
+	});
+
+	it.each([undefined, null])(
+		"rejects missing provider total (%s) rather than guessing from a short page",
+		async (totalRecords) => {
+			await expect(
+				fetchWantedWithWrapAround<Raw>(
+					async () => ({
+						records: [{ id: 1, bulk: "" }],
+						totalRecords,
+					}),
+					{ counter: { count: 0 }, logger: stubLogger },
+				),
+			).rejects.toThrow(/wanted inventory.*invalid/i);
+		},
+	);
+
+	it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+		"rejects invalid provider totals (%s)",
+		async (totalRecords) => {
+			await expect(
+				fetchWantedWithWrapAround<Raw>(async () => ({ records: [], totalRecords }), {
+					counter: { count: 0 },
+					logger: stubLogger,
+				}),
+			).rejects.toThrow(/wanted inventory.*invalid/i);
+		},
+	);
+
+	it("rejects a total that changes during pagination", async () => {
+		await expect(
+			fetchWantedWithWrapAround<Raw>(
+				async (page) => ({
+					records: [{ id: page, bulk: "" }],
+					totalRecords: page === 1 ? 2 : 3,
+				}),
+				{ counter: { count: 0 }, logger: stubLogger, fetchSize: 1 },
+			),
+		).rejects.toThrow(/wanted inventory.*changed/i);
+	});
+
+	it("rejects rows in excess of the reported total", async () => {
+		await expect(
+			fetchWantedWithWrapAround<Raw>(
+				async () => ({
+					records: [{ id: 1, bulk: "" }],
+					totalRecords: 0,
+				}),
+				{ counter: { count: 0 }, logger: stubLogger },
+			),
+		).rejects.toThrow(/wanted inventory.*invalid/i);
 	});
 
 	it("propagates errors thrown by `project` without silently returning a partial result", async () => {
@@ -239,6 +328,7 @@ describe("fetchWantedWithWrapAround", () => {
 			page++;
 			if (page === 2) throw new Error("upstream 503");
 			return {
+				totalRecords: 6,
 				records: [
 					{ id: page, bulk: "" },
 					{ id: page + 100, bulk: "" },

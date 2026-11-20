@@ -444,6 +444,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 				encryptor: fakeApp.encryptor,
 				instance: plexInstance,
 				log: fakeLog,
+				nativeInventoryMode: "force",
 			},
 			expect.objectContaining({ resultMarker: expect.stringMatching(/^in_progress:/) }),
 		);

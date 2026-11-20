@@ -46,7 +46,7 @@ export const useSearchData = (
 			if (protocolFilter !== "all" && result.protocol !== protocolFilter) {
 				return false;
 			}
-			if (minSeeders !== null && (result.seeders ?? 0) < minSeeders) {
+			if (minSeeders !== null && (result.seeders === undefined || result.seeders < minSeeders)) {
 				return false;
 			}
 			if (maxAgeHours !== null) {
@@ -59,18 +59,17 @@ export const useSearchData = (
 		});
 
 		const sorted = [...filtered].sort((a, b) => {
-			const comparison = compareBySortKey(sortKey, a, b);
+			const comparison = compareBySortKey(sortKey, a, b, sortDirection);
 			if (comparison !== 0) {
-				return sortDirection === "asc" ? comparison : -comparison;
+				return comparison;
 			}
 
-			const seedFallback = compareBySortKey("seeders", a, b);
+			const seedFallback = compareBySortKey("seeders", a, b, sortDirection);
 			if (seedFallback !== 0) {
-				return sortDirection === "asc" ? seedFallback : -seedFallback;
+				return seedFallback;
 			}
 
-			const publishFallback = compareBySortKey("publishDate", a, b);
-			return sortDirection === "asc" ? publishFallback : -publishFallback;
+			return compareBySortKey("publishDate", a, b, sortDirection);
 		});
 
 		return {

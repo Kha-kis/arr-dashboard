@@ -9,8 +9,10 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
-import { hasAuthoritativePlexEvidence } from "../plex/plex-authority-service.js";
-import { PlexAuthorityService } from "../plex/plex-authority-service.js";
+import {
+	hasAuthoritativePlexEvidence,
+	PlexAuthorityService,
+} from "../plex/plex-authority-service.js";
 import type { PrismaClient } from "../prisma.js";
 import {
 	passthroughTickWrapper,
@@ -28,6 +30,11 @@ const MIN_WATCH_COUNT = 1; // Minimum plays to qualify for watched-monitored sig
 
 export class InsightsDigestScheduler {
 	private intervalId: NodeJS.Timeout | null = null;
+	private startupTimeoutId: NodeJS.Timeout | null = null;
+	private scheduleGeneration = 0;
+	private admissionClosed = false;
+	private pendingChecks = new Set<Promise<void>>();
+	private shutdownPromise: Promise<void> | null = null;
 	private lastNotifiedRequestedUnwatched: number = 0;
 	private lastNotifiedWatchedMonitored: number = 0;
 	private trackTick: TickWrapper;
@@ -37,42 +44,78 @@ export class InsightsDigestScheduler {
 		private logger: FastifyBaseLogger,
 		private arrClientFactory: ArrClientFactory,
 		private encryptor: Encryptor,
-		private notifyFn?: (payload: NotificationPayload) => Promise<void>,
+		private notifyFn?: (payload: NotificationPayload, userId: string) => Promise<void>,
 		options?: { trackTick?: TickWrapper },
 	) {
 		this.trackTick = options?.trackTick ?? passthroughTickWrapper;
 	}
 
 	start() {
+		if (this.admissionClosed) return;
 		if (this.intervalId) {
 			this.logger.warn("Insights digest scheduler already running");
 			return;
 		}
 
 		this.logger.info("Starting insights digest scheduler");
+		const generation = ++this.scheduleGeneration;
 
 		// First check after 5 minutes (let other services warm up)
-		setTimeout(
+		this.startupTimeoutId = setTimeout(
 			() => {
-				this.trackTick(() => this.check()).catch((err) => {
-					this.logger.error({ err }, "Failed initial insights digest check");
-				});
+				if (generation === this.scheduleGeneration) this.startupTimeoutId = null;
+				void this.runCheck(generation, "Failed initial insights digest check");
 			},
 			5 * 60 * 1000,
 		);
 
 		this.intervalId = setInterval(() => {
-			this.trackTick(() => this.check()).catch((err) => {
-				this.logger.error({ err }, "Failed insights digest check");
-			});
+			void this.runCheck(generation, "Failed insights digest check");
 		}, CHECK_INTERVAL_MS);
 	}
 
 	stop() {
+		if (this.startupTimeoutId) {
+			clearTimeout(this.startupTimeoutId);
+			this.startupTimeoutId = null;
+		}
 		if (this.intervalId) {
 			clearInterval(this.intervalId);
 			this.intervalId = null;
 			this.logger.info("Insights digest scheduler stopped");
+		}
+	}
+
+	/** Stop timer admission without delaying sibling plugins' shutdown hooks. */
+	closeAdmission(): void {
+		this.admissionClosed = true;
+		this.stop();
+	}
+
+	/** Drain complete accepted checks, not just their scheduling timers. */
+	shutdown(): Promise<void> {
+		this.closeAdmission();
+		this.shutdownPromise ??= (async () => {
+			while (this.pendingChecks.size > 0) await Promise.all(this.pendingChecks);
+		})();
+		return this.shutdownPromise;
+	}
+
+	private async runCheck(generation: number, errorMessage: string): Promise<void> {
+		if (this.admissionClosed || !this.intervalId || generation !== this.scheduleGeneration) return;
+		// Register before invoking the wrapper: its lookup/dispatch can already be active.
+		let settle!: () => void;
+		const completion = new Promise<void>((resolve) => {
+			settle = resolve;
+		});
+		this.pendingChecks.add(completion);
+		try {
+			await this.trackTick(() => this.check());
+		} catch (err) {
+			this.logger.error({ err }, errorMessage);
+		} finally {
+			this.pendingChecks.delete(completion);
+			settle();
 		}
 	}
 
@@ -100,18 +143,29 @@ export class InsightsDigestScheduler {
 		const itemList = topItems.map((i) => `• ${i.title} (requested by ${i.requestedBy})`).join("\n");
 		const moreText = items.length > 5 ? `\n+${items.length - 5} more` : "";
 
-		await this.notifyFn!({
-			eventType: "LIBRARY_INSIGHT_REQUESTED_UNWATCHED",
-			title: `${items.length} requested item${items.length !== 1 ? "s" : ""} never watched`,
-			body: `The following Seerr requests are available but have not been watched after ${MIN_AGE_DAYS}+ days:\n${itemList}${moreText}`,
-			url: "/library?insight=requested-unwatched",
-			metadata: { count: items.length, signal: "requested_unwatched" },
-		}).catch((err) => {
-			this.logger.debug({ err }, "Requested-unwatched notification dispatch failed");
-		});
+		const submitted = await this.notifyFn!(
+			{
+				eventType: "LIBRARY_INSIGHT_REQUESTED_UNWATCHED",
+				title: `${items.length} requested item${items.length !== 1 ? "s" : ""} never watched`,
+				body: `The following Seerr requests are available but have not been watched after ${MIN_AGE_DAYS}+ days:\n${itemList}${moreText}`,
+				url: "/library?insight=requested-unwatched",
+				metadata: { count: items.length, signal: "requested_unwatched" },
+			},
+			userId,
+		).then(
+			() => true,
+			(err) => {
+				this.logger.debug({ err }, "Requested-unwatched notification dispatch failed");
+				return false;
+			},
+		);
+		if (!submitted) return;
 
 		this.lastNotifiedRequestedUnwatched = Date.now();
-		this.logger.info({ count: items.length }, "Sent requested-unwatched insights digest");
+		this.logger.info(
+			{ count: items.length },
+			"Submitted requested-unwatched insights digest for notification processing",
+		);
 	}
 
 	private async checkWatchedMonitored(userId: string) {
@@ -126,18 +180,29 @@ export class InsightsDigestScheduler {
 			.join("\n");
 		const moreText = items.length > 5 ? `\n+${items.length - 5} more` : "";
 
-		await this.notifyFn!({
-			eventType: "LIBRARY_INSIGHT_WATCHED_MONITORED",
-			title: `${items.length} watched item${items.length !== 1 ? "s" : ""} still monitored`,
-			body: `These items have been watched but are still being monitored for new downloads:\n${itemList}${moreText}`,
-			url: "/library?insight=watched-monitored",
-			metadata: { count: items.length, signal: "watched_monitored" },
-		}).catch((err) => {
-			this.logger.debug({ err }, "Watched-monitored notification dispatch failed");
-		});
+		const submitted = await this.notifyFn!(
+			{
+				eventType: "LIBRARY_INSIGHT_WATCHED_MONITORED",
+				title: `${items.length} watched item${items.length !== 1 ? "s" : ""} still monitored`,
+				body: `These items have been watched but are still being monitored for new downloads:\n${itemList}${moreText}`,
+				url: "/library?insight=watched-monitored",
+				metadata: { count: items.length, signal: "watched_monitored" },
+			},
+			userId,
+		).then(
+			() => true,
+			(err) => {
+				this.logger.debug({ err }, "Watched-monitored notification dispatch failed");
+				return false;
+			},
+		);
+		if (!submitted) return;
 
 		this.lastNotifiedWatchedMonitored = Date.now();
-		this.logger.info({ count: items.length }, "Sent watched-monitored insights digest");
+		this.logger.info(
+			{ count: items.length },
+			"Submitted watched-monitored insights digest for notification processing",
+		);
 	}
 
 	private async findRequestedUnwatched(

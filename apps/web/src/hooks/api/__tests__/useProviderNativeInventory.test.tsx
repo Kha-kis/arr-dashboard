@@ -53,12 +53,14 @@ describe("useProviderNativeInventory", () => {
 		await waitFor(() => expect(result.current.isSuccess).toBe(true));
 		expect(apiRequest).toHaveBeenCalledWith(
 			"/api/library/provider-inventory?instanceId=private-instance&domain=library&limit=100",
+			{ signal: expect.any(AbortSignal) },
 		);
 
 		rerender({ refreshKey: 1 });
 		await waitFor(() => expect(apiRequest).toHaveBeenCalledTimes(2));
 		expect(apiRequest).toHaveBeenLastCalledWith(
 			"/api/library/provider-inventory?instanceId=private-instance&domain=library&limit=100",
+			{ signal: expect.any(AbortSignal) },
 		);
 	});
 
@@ -78,6 +80,7 @@ describe("useProviderNativeInventory", () => {
 		await waitFor(() => expect(result.current.isSuccess).toBe(true));
 		expect(apiRequest).toHaveBeenCalledWith(
 			"/api/library/provider-inventory?instanceId=private-instance&domain=episode&limit=100&afterNativeId=native-100&expectedGenerationId=generation-1",
+			{ signal: expect.any(AbortSignal) },
 		);
 	});
 });

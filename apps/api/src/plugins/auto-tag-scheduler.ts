@@ -12,7 +12,9 @@ declare module "fastify" {
 
 const autoTagSchedulerPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
+		let closing = false;
 		app.addHook("onReady", async () => {
+			if (closing) return;
 			await runSchedulerInit(
 				{ registry: app.schedulerRegistry, log: app.log },
 				JOB_ID.autoTag,
@@ -35,10 +37,15 @@ const autoTagSchedulerPlugin = fastifyPlugin(
 			);
 		});
 
+		app.addHook("preClose", async () => {
+			closing = true;
+			app.autoTagScheduler?.closeAdmission();
+		});
+
 		app.addHook("onClose", async () => {
 			if (app.autoTagScheduler) {
 				app.log.info("Stopping auto-tag scheduler");
-				app.autoTagScheduler.stop();
+				await app.autoTagScheduler.shutdown();
 			}
 		});
 	},

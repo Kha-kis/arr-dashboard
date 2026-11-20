@@ -484,6 +484,18 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 								label="Episode watch status"
 							/>
 						))}
+					{!isMovie && episodeWatchQuery.canRetry && (
+						<Button
+							type="button"
+							variant="secondary"
+							size="sm"
+							disabled={episodeWatchQuery.isRetrying}
+							aria-busy={episodeWatchQuery.isRetrying}
+							onClick={episodeWatchQuery.retry}
+						>
+							Retry episode data
+						</Button>
+					)}
 
 					{/* Loading spinner */}
 					{isDetailsLoading && (

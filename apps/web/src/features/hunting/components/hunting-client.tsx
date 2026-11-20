@@ -29,7 +29,7 @@ export const HuntingClient = () => {
 	const { gradient: _themeGradient } = useThemeGradient();
 
 	const [activeTab, setActiveTab] = useState<HuntingTab>("overview");
-	const { status, isLoading, error, refetch } = useHuntingStatus();
+	const { status, isLoading, isUnavailable, isFetching, refetch } = useHuntingStatus();
 
 	// Tab configuration with gradient styling
 	const tabs: PremiumTab[] = [
@@ -52,15 +52,26 @@ export const HuntingClient = () => {
 	];
 
 	// Loading state
-	if (isLoading) {
+	if (isLoading && !isUnavailable) {
 		return <PremiumPageLoading showHeader cardCount={4} />;
 	}
 
 	// Error state
-	if (error) {
+	if (isUnavailable) {
 		return (
-			<Alert variant="danger">
-				<AlertDescription>Failed to load hunting status. Please try again later.</AlertDescription>
+			<Alert
+				variant="danger"
+				aria-busy={isFetching}
+				className="flex flex-wrap items-center justify-between gap-3"
+			>
+				<AlertDescription>Unable to verify hunting status.</AlertDescription>
+				<Button
+					variant="secondary"
+					onClick={() => void refetch({ cancelRefetch: false })}
+					disabled={isFetching}
+				>
+					Retry
+				</Button>
 			</Alert>
 		);
 	}

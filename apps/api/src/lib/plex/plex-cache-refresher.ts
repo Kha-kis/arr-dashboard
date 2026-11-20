@@ -60,6 +60,7 @@ import {
 	type PlexLibraryItem,
 	type PlexReadContext,
 	type PlexSettlementLibrary,
+	plexExternalIds,
 } from "./plex-client.js";
 import { collectWithinPlexBudget } from "./plex-collection-budget.js";
 import {
@@ -67,11 +68,14 @@ import {
 	classifyPlexHistoryFailure,
 	logPlexCollectionRejection,
 	type PlexCatalogChange,
+	type PlexInnerCollectionRejection,
 } from "./plex-collection-diagnostics.js";
 import {
 	encodeAuthoritativePlexGenerationMetadata,
 	encodePositivePlexGenerationMetadata,
+	type PlexAmbiguousTmdbCandidate,
 } from "./plex-generation-metadata.js";
+import { findReusablePlexGeneration } from "./plex-generation-reuse.js";
 import {
 	createPlexTargetLedgerBinding,
 	normalizePlexGenerationTargets,
@@ -89,36 +93,6 @@ export const PLEX_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS = 60_000;
 // ============================================================================
 // GUID Parsing
 // ============================================================================
-
-/**
- * Parse TMDB ID from Plex's Guid array.
- * Plex stores GUIDs like: [{id: "tmdb://12345"}, {id: "imdb://tt1234567"}]
- */
-function parsePlexTmdbId(guids: Array<{ id: string }> | undefined): number | null {
-	if (!guids) return null;
-
-	for (const guid of guids) {
-		const match = guid.id.match(/^tmdb:\/\/(\d+)$/);
-		if (match?.[1]) {
-			return Number.parseInt(match[1], 10);
-		}
-	}
-
-	return null;
-}
-
-function parsePlexTvdbId(guids: Array<{ id: string }> | undefined): number | null {
-	if (!guids) return null;
-
-	for (const guid of guids) {
-		const match = guid.id.match(/^tvdb:\/\/(\d+)$/);
-		if (match?.[1]) {
-			return Number.parseInt(match[1], 10);
-		}
-	}
-
-	return null;
-}
 
 function normalizePlexViewCount(value: unknown): number | null {
 	return Number.isSafeInteger(value) && (value as number) >= 0 ? (value as number) : null;
@@ -218,6 +192,7 @@ export interface PlexInventoryTarget {
 export interface PlexCachePositiveObservation {
 	rows: PlexCacheSnapshotRow[];
 	observedTargets: PlexInventoryTarget[];
+	ambiguousTmdbCandidates: PlexAmbiguousTmdbCandidate[];
 	capabilities: readonly [PlexPositiveCapability];
 	observedRoots: PlexGenerationDomainRoot[];
 	partialReasons: readonly PlexPartialReason[];
@@ -228,16 +203,18 @@ export interface PlexCachePositiveObservation {
 }
 
 export interface PlexPublicationContext {
+	signal?: AbortSignal;
 	prisma: PrismaClient;
 	instance: OwnedProviderPublicationSnapshot;
 	log: FastifyBaseLogger;
 	cleanupRunClaimToken?: string;
+	nativeInventoryMode?: "automatic" | "force";
 }
 
 export interface PlexCacheRefreshResult {
 	/** Collection-local only: watch values did not reach a fixed point. */
 	unsettledWatch?: boolean;
-	nativeInventoryStatus?: "published" | "failed" | "superseded";
+	nativeInventoryStatus?: "scheduled" | "coalesced" | "current" | "failed" | "superseded";
 	upserted: number;
 	errors: number;
 	errorMessages: string[];
@@ -481,7 +458,7 @@ function libraryInventoryItemSignature(
 
 const incompleteReasonLabels: Record<string, string> = {
 	currentLibraryItemsWithoutRatingKeys: "current library item(s) without a usable rating key",
-	currentItemsWithoutTmdbMetadata: "current library item(s) without TMDB metadata",
+	currentItemsWithoutTmdbMetadata: "current library item(s) without a unique usable TMDB mapping",
 	historyItemsWithoutUsableMediaKey: "history item(s) without a usable media key",
 	currentHistoryItemsWithoutMappedMetadata: "current history item(s) without mapped TMDB metadata",
 	historyItemsWithUnknownAccounts: "history item(s) with unknown accounts",
@@ -605,10 +582,12 @@ export async function refreshPlexCacheWithAttempt(
 							log,
 							{ attemptStartedAt: attempt.attemptedAt },
 						),
+					context.signal,
 				),
 			async (tx, collected) => await publishPlexCacheSnapshot(tx, instance, attempt!, collected),
 			{
 				cleanupRunClaimToken: context.cleanupRunClaimToken,
+				signal: context.signal,
 				timeout: PLEX_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS,
 			},
 		);
@@ -672,47 +651,63 @@ async function publishPlexCacheSnapshot(
 	if (!inventoryTargets || !settlement) {
 		throw new Error("Plex settled collection lacked exact inventory targets");
 	}
-	const generationId = randomUUID();
-	const targets: PlexGenerationTarget[] = normalizePlexGenerationTargets(
-		inventoryTargets.map((target) => {
-			if (!target.sectionUuid) {
-				throw new Error("Plex settled inventory target lacked its section UUID");
-			}
-			return {
-				instanceId: instance.id,
-				generationId,
-				sectionId: target.sectionId,
-				sectionUuid: target.sectionUuid,
-				mediaType: target.mediaType,
-				tmdbId: target.tmdbId,
-				tvdbId: target.tvdbId ?? null,
-				ratingKey: target.ratingKey,
-			};
-		}),
-		{ instanceId: instance.id, generationId },
-	);
-	const targetLedger = createPlexTargetLedgerBinding({
-		instanceId: instance.id,
-		generationId,
-		connectionGeneration: instance.connectionGeneration,
-		identityGeneration: instance.identityGeneration,
-		targets,
-	});
 	const storedRows = rows.map((row) => ({
 		...row,
 		connectionGeneration: instance.connectionGeneration,
 		identityGeneration: instance.identityGeneration,
 	}));
-	if (positiveOnly) {
-		const generationMetadata = encodePositivePlexGenerationMetadata({
-			sections: settlement.sections,
-			itemCount: rows.length,
-			canonicalizationVersion: PLEX_CANONICALIZATION_VERSION,
-			observedRoots: collected.observation.observedRoots,
-			targetLedger,
-			partialReasons: collected.observation.partialReasons,
-			coverageReceipt: collected.receipt,
+	const publication = (generationId: string) => {
+		const targets: PlexGenerationTarget[] = normalizePlexGenerationTargets(
+			inventoryTargets.map((target) => {
+				if (!target.sectionUuid) {
+					throw new Error("Plex settled inventory target lacked its section UUID");
+				}
+				return {
+					instanceId: instance.id,
+					generationId,
+					sectionId: target.sectionId,
+					sectionUuid: target.sectionUuid,
+					mediaType: target.mediaType,
+					tmdbId: target.tmdbId,
+					tvdbId: target.tvdbId ?? null,
+					ratingKey: target.ratingKey,
+				};
+			}),
+			{ instanceId: instance.id, generationId },
+		);
+		const targetLedger = createPlexTargetLedgerBinding({
+			instanceId: instance.id,
+			generationId,
+			connectionGeneration: instance.connectionGeneration,
+			identityGeneration: instance.identityGeneration,
+			targets,
 		});
+		const generationMetadata = positiveOnly
+			? encodePositivePlexGenerationMetadata({
+					sections: settlement.sections,
+					itemCount: rows.length,
+					canonicalizationVersion: PLEX_CANONICALIZATION_VERSION,
+					observedRoots: collected.observation.observedRoots,
+					targetLedger,
+					partialReasons: collected.observation.partialReasons,
+					ambiguousTmdbCandidates: collected.observation.ambiguousTmdbCandidates,
+					coverageReceipt: collected.receipt,
+				})
+			: encodeAuthoritativePlexGenerationMetadata({
+					sections: settlement.sections,
+					itemCount: rows.length,
+					canonicalizationVersion: PLEX_CANONICALIZATION_VERSION,
+					roots: settlement.roots,
+					targetLedger,
+					partialReasons: [],
+					coverageReceipt: collected.receipt,
+				});
+		return { generationId, targets, targetLedger, generationMetadata };
+	};
+	const { generationId, targets, targetLedger, generationMetadata } =
+		(await findReusablePlexGeneration(tx, { instance, attempt, rows: storedRows, publication })) ??
+		publication(randomUUID());
+	if (positiveOnly) {
 		await publishPositivePlexCacheGeneration(tx, {
 			instance,
 			rows: storedRows,
@@ -723,15 +718,6 @@ async function publishPlexCacheSnapshot(
 			attempt,
 		});
 	} else {
-		const generationMetadata = encodeAuthoritativePlexGenerationMetadata({
-			sections: settlement.sections,
-			itemCount: rows.length,
-			canonicalizationVersion: PLEX_CANONICALIZATION_VERSION,
-			roots: settlement.roots,
-			targetLedger,
-			partialReasons: [],
-			coverageReceipt: collected.receipt,
-		});
 		await publishAuthoritativePlexCacheGeneration(tx, {
 			instance,
 			rows: storedRows,
@@ -859,6 +845,7 @@ function positiveObservationSignature(observation: PlexCachePositiveObservation)
 			target.tvdbId ?? null,
 			target.ratingKey,
 		]),
+		ambiguousTmdbCandidates: observation.ambiguousTmdbCandidates,
 		reasons: observation.partialReasons,
 	});
 }
@@ -892,6 +879,7 @@ function withoutWatchAuthority(result: CollectedPlexEvidence): CollectedPlexEvid
 				: {
 						rows: result.snapshot.rows,
 						observedTargets: result.inventoryTargets,
+						ambiguousTmdbCandidates: [],
 						capabilities: [
 							{
 								domain: "episode-parents",
@@ -918,6 +906,8 @@ function stableNonWatchSignature(result: CollectedPlexEvidence): string {
 			result.kind === "authoritative-snapshot"
 				? result.inventoryTargets
 				: result.observation.observedTargets,
+		ambiguousTmdbCandidates:
+			result.kind === "authoritative-snapshot" ? [] : result.observation.ambiguousTmdbCandidates,
 		reasons: result.kind === "authoritative-snapshot" ? [] : result.observation.partialReasons,
 		domains: result.receipt.domains.filter(
 			(domain) => domain.domain !== "watch-count" && domain.domain !== "watch-attribution",
@@ -960,6 +950,9 @@ class CanonicalCollectionRejected extends Error {
 		super("Plex canonical collection rejected");
 	}
 }
+
+/** Collection-local diagnostic channel, deliberately absent from collection results. */
+type PlexCollectionDiagnosticContext = { rejection?: PlexInnerCollectionRejection };
 
 async function loadPublicationSettlementProbe(client: PlexClient): Promise<{
 	all: PlexSettlementLibrary[];
@@ -1013,6 +1006,7 @@ export async function collectSettledPlexCacheLiveEvidence(
 ): Promise<PlexCacheCollectionResult> {
 	const attemptStartedAt = options.attemptStartedAt ?? new Date();
 	let stage: CanonicalCollectionStage = "start-probe";
+	const diagnostics: PlexCollectionDiagnosticContext = {};
 	const reportRejection = (
 		reason: CanonicalCollectionRejectionReason,
 		catalogChanges?: readonly PlexCatalogChange[],
@@ -1022,10 +1016,11 @@ export async function collectSettledPlexCacheLiveEvidence(
 			stage,
 			reason,
 			...(catalogChanges ? { catalogChanges } : {}),
+			...(reason === "collection-incomplete" ? diagnostics.rejection : {}),
 		});
 	};
 	try {
-		const collectionOptions = { ...options, attemptStartedAt };
+		const collectionOptions = { ...options, attemptStartedAt, diagnostics };
 		const startObservation = await loadPublicationSettlementProbe(client);
 		stage = "preliminary-collection";
 		const preliminary = await collectPlexCacheLiveEvidence(
@@ -1215,6 +1210,7 @@ export async function collectPlexCacheLiveEvidence(
 		preserveProviderDuplicates?: boolean;
 		attemptStartedAt?: Date;
 		settlementSections?: PlexSettlementLibrary[];
+		diagnostics?: PlexCollectionDiagnosticContext;
 	} = {},
 ): Promise<PlexCacheCollectionResult> {
 	const upserted = 0;
@@ -1244,6 +1240,16 @@ export async function collectPlexCacheLiveEvidence(
 	let attributionResolvedHistory = 0;
 	let attributionUnresolvedHistory = 0;
 	let unsettledWatch = false;
+	let innerStage: PlexInnerCollectionRejection["innerStage"] = "initial-collection";
+	let rejection: PlexInnerCollectionRejection | undefined;
+	const recordRejection = (innerFailure: PlexInnerCollectionRejection["innerFailure"]) => {
+		try {
+			rejection = { innerStage, innerFailure };
+			if (options.diagnostics) options.diagnostics.rejection = rejection;
+		} catch {
+			// An optional diagnostic context must never change collection outcomes.
+		}
+	};
 	const markIncomplete = (reason: string) => {
 		complete = false;
 		incompleteReasons[reason] = (incompleteReasons[reason] ?? 0) + 1;
@@ -1330,6 +1336,7 @@ export async function collectPlexCacheLiveEvidence(
 		const currentLibraryRatingKeys = new Set<string>();
 		const initialLibraryInventorySignature: string[] = [];
 		const inventoryTargets: PlexInventoryTarget[] = [];
+		const ambiguousTmdbCandidates = new Map<string, PlexAmbiguousTmdbCandidate>();
 
 		for (const lib of inventorySections) {
 			let pageResult: PlexCompletePageResult<PlexLibraryItem>;
@@ -1392,15 +1399,28 @@ export async function collectPlexCacheLiveEvidence(
 					totalLibraryItems++;
 					libraryUnit.sourceBindings++;
 					mappingUnit.rawObserved++;
+					const externalIds = plexExternalIds(item.Guid);
+					const mediaType: "movie" | "series" = item.type === "movie" ? "movie" : "series";
 					if (!item.ratingKey.trim()) {
+						for (const tmdbId of externalIds.tmdb ?? []) {
+							ambiguousTmdbCandidates.set(`${mediaType}:${tmdbId}`, { mediaType, tmdbId });
+						}
 						acceptCoverageSkip(unit, "missing-stable-key");
 						acceptCoverageSkip(mappingUnit, "missing-stable-key");
 						markIncomplete("currentLibraryItemsWithoutRatingKeys");
 						continue;
 					}
 					currentLibraryRatingKeys.add(item.ratingKey);
-					const tmdbId = parsePlexTmdbId(item.Guid);
+					const tmdbId = externalIds.tmdb?.length === 1 ? externalIds.tmdb[0] : null;
 					if (!tmdbId) {
+						if (externalIds.tmdb && externalIds.tmdb.length > 1) {
+							for (const candidate of externalIds.tmdb) {
+								ambiguousTmdbCandidates.set(`${mediaType}:${candidate}`, {
+									mediaType,
+									tmdbId: candidate,
+								});
+							}
+						}
 						acceptCoverageSkip(unit, "missing-supported-mapping");
 						acceptCoverageSkip(mappingUnit, "missing-supported-mapping");
 						markIncomplete("currentItemsWithoutTmdbMetadata");
@@ -1414,8 +1434,8 @@ export async function collectPlexCacheLiveEvidence(
 						positiveWatchEvidence = Math.max(positiveWatchEvidence, viewCount);
 					}
 
-					const mediaType: "movie" | "series" = item.type === "movie" ? "movie" : "series";
-					const tvdbId = mediaType === "series" ? parsePlexTvdbId(item.Guid) : null;
+					const tvdbId =
+						mediaType === "series" && externalIds.tvdb?.length === 1 ? externalIds.tvdb[0] : null;
 					inventoryTargets.push({
 						sectionId: lib.key,
 						mediaType,
@@ -1872,6 +1892,7 @@ export async function collectPlexCacheLiveEvidence(
 		};
 
 		if (errors === 0 || incompleteReasons.onDeckFetchFailures !== undefined) {
+			innerStage = "section-verification";
 			const latestSections = await client.getLibrarySections();
 			const latestMediaLibs = latestSections.filter(
 				(section) =>
@@ -1884,6 +1905,7 @@ export async function collectPlexCacheLiveEvidence(
 				throw new Error("Plex library sections changed before cache publication");
 			}
 			const latestLibraryInventorySignature: string[] = [];
+			innerStage = "inventory-verification";
 			for (const lib of latestMediaLibs) {
 				const pageResult = await client.getLibraryItemsWithCoverage(lib.key);
 				if (pageResult.reason !== null) {
@@ -1914,7 +1936,9 @@ export async function collectPlexCacheLiveEvidence(
 				}
 				withdrawWatchAuthority();
 			}
+			innerStage = "history-verification";
 			await verifyCollectedHistory();
+			innerStage = "on-deck-verification";
 			try {
 				const latestOnDeckSignature = onDeckSignature(await client.getOnDeck());
 				if (
@@ -1928,6 +1952,7 @@ export async function collectPlexCacheLiveEvidence(
 			}
 		}
 
+		innerStage = "publication-policy";
 		if (errors === 0 && complete) {
 			completedAt = new Date();
 			logCompletion();
@@ -1975,8 +2000,10 @@ export async function collectPlexCacheLiveEvidence(
 				).length,
 			}));
 			try {
+				innerStage = "positive-history-verification";
 				await verifyCollectedHistory();
 			} catch (error) {
+				recordRejection("unexpected-failure");
 				errorMessages.push(
 					`Plex positive observation verification failed: ${getErrorMessage(error)}`,
 				);
@@ -1987,6 +2014,7 @@ export async function collectPlexCacheLiveEvidence(
 					attemptStartedAt,
 				});
 			}
+			innerStage = "publication-policy";
 			logCompletion();
 			return {
 				kind: "positive-observation",
@@ -2006,6 +2034,10 @@ export async function collectPlexCacheLiveEvidence(
 				observation: {
 					rows: positiveRows,
 					observedTargets: inventoryTargets,
+					ambiguousTmdbCandidates: [...ambiguousTmdbCandidates.values()].sort(
+						(left, right) =>
+							left.mediaType.localeCompare(right.mediaType) || left.tmdbId - right.tmdbId,
+					),
 					capabilities: [
 						{
 							domain: "episode-parents",
@@ -2021,6 +2053,7 @@ export async function collectPlexCacheLiveEvidence(
 		}
 		logCompletion();
 	} catch (error) {
+		recordRejection("unexpected-failure");
 		complete = false;
 		const msg = `Plex cache refresh failed: ${getErrorMessage(error)}`;
 		log.error(
@@ -2033,6 +2066,7 @@ export async function collectPlexCacheLiveEvidence(
 
 	appendIncompleteReasonMessages(errorMessages, incompleteReasons);
 
+	if (!rejection) recordRejection(coverageFailure ? "coverage-blocker" : "policy-blocker");
 	return unpublishedCollection({
 		errors,
 		errorMessages,

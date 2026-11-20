@@ -3,6 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import Fastify from "fastify";
+import fastifyPlugin from "fastify-plugin";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "../../generated/prisma/client.js";
 import { createTestPgClient } from "../__tests__/test-prisma.js";
@@ -27,16 +29,654 @@ import {
 	finishPlexCacheRefreshAttemptFailure,
 	finishProviderCacheRefreshAttemptFailure,
 	reconcileInterruptedProviderCacheRefreshAttempts,
+	reconcileSettledProviderCacheRefreshAttempt,
 } from "./provider-cache-status.js";
 import type { ProviderPublicationAuthority } from "./provider-identity-guard.js";
+import { startProviderCacheRefreshInBackground } from "../provider-observation/background-cache-refresh.js";
+import type { FastifyWithLibraryRefreshRecovery } from "./library-refresh-recovery.js";
+import jellyfinCacheScheduler from "../../plugins/jellyfin-cache-scheduler.js";
+import plexCacheScheduler from "../../plugins/plex-cache-scheduler.js";
+import { runJellyfinCacheRefreshSingleFlightWithAttempt } from "../jellyfin/jellyfin-cache-singleflight.js";
+
+const recoveryProducer = vi.hoisted(() => vi.fn());
+vi.mock("../plex/plex-refresh-orchestration.js", () => ({
+	refreshOwnedPlexCacheWithAttempt: recoveryProducer,
+}));
+vi.mock("../jellyfin/jellyfin-cache-refresher.js", () => ({
+	refreshOwnedJellyfinCacheWithAttempt: recoveryProducer,
+	refreshOwnedJellyfinCache: async (context: {
+		prisma: PrismaClient;
+		instance: ProviderPublicationAuthority;
+	}) => {
+		const attempt = await beginProviderCacheRefreshAttempt(
+			context.prisma,
+			"jellyfin",
+			context.instance,
+		);
+		return attempt ? await recoveryProducer(context, attempt) : { superseded: true };
+	},
+}));
 
 const apiRoot = join(process.cwd());
-const log = { warn: vi.fn() };
+const log = { warn: vi.fn(), info: vi.fn() };
 const databases: Array<{
 	clients: PrismaClient[];
 	directory: string;
 	databasePath: string;
 }> = [];
+
+describe("settled Library attempt recovery", () => {
+	it.each(["plex", "jellyfin"] as const)(
+		"FAR-SAF-003 %s retains a newer C acquired after B arms during real claim backoff",
+		async (provider) => {
+			await exerciseLateClaim(provider, false);
+		},
+		30_000,
+	);
+	it.each(["plex", "jellyfin"] as const)(
+		"FAR-SAF-003 %s rejects an older C settlement after a genuinely newer B",
+		async (provider) => {
+			await exerciseLateClaim(provider, true);
+		},
+		30_000,
+	);
+	it("FAR-REG-002 retains the exact marker through temporary cleanup exclusion and recovers after releasing only that token", async () => {
+		const client = await createDatabase();
+		await seedAuthority(client);
+		await seedObsoleteStatus(client, "plex", { connectionGeneration: 4, identityGeneration: 9 });
+		const claim = await claimProviderCacheRefreshAttempt(client, "plex", authority);
+		if (claim.status !== "acquired") throw new Error("missing test claim");
+		const snapshot = await client.cacheRefreshStatus.findFirstOrThrow();
+		await client.libraryCleanupConfig.update({
+			where: { userId: authority.userId },
+			data: { runClaimToken: "synthetic-cleanup-token" },
+		});
+		expect(
+			await reconcileSettledProviderCacheRefreshAttempt(client, "plex", authority, claim.attempt),
+		).toBe("unavailable");
+		expect(await client.cacheRefreshStatus.findFirstOrThrow()).toEqual(snapshot);
+		expect(
+			(await client.libraryCleanupConfig.findUniqueOrThrow({ where: { userId: authority.userId } }))
+				.runClaimToken,
+		).toBe("synthetic-cleanup-token");
+		expect(
+			(
+				await client.libraryCleanupConfig.updateMany({
+					where: { userId: authority.userId, runClaimToken: "synthetic-cleanup-token" },
+					data: { runClaimToken: null },
+				})
+			).count,
+		).toBe(1);
+		expect(
+			await reconcileSettledProviderCacheRefreshAttempt(client, "plex", authority, claim.attempt),
+		).toBe("ready");
+		expect((await claimProviderCacheRefreshAttempt(client, "plex", authority)).status).toBe(
+			"acquired",
+		);
+		expect(await client.cacheRefreshStatus.findFirstOrThrow()).toMatchObject({
+			lastRefreshedAt: snapshot.lastRefreshedAt,
+			lastResult: snapshot.lastResult,
+			generationId: snapshot.generationId,
+			generationMetadata: snapshot.generationMetadata,
+			itemCount: snapshot.itemCount,
+		});
+	}, 30_000);
+	it("rejects another nonce, newer publication and every changed authority; concurrent fresh claims retain a single owner", async () => {
+		const client = await createDatabase();
+		await seedAuthority(client);
+		await seedObsoleteStatus(client, "plex", { connectionGeneration: 4, identityGeneration: 9 });
+		const claim = await claimProviderCacheRefreshAttempt(client, "plex", authority);
+		expect(claim.status).toBe("acquired");
+		if (claim.status !== "acquired") throw new Error("missing test claim");
+		const snapshot = await client.cacheRefreshStatus.findFirstOrThrow();
+		const otherMarker = "in_progress:00000000-0000-4000-8000-000000000099";
+		for (const change of [
+			{ lastAttemptResult: otherMarker },
+			{
+				lastAttemptAt: new Date(claim.attempt.attemptedAt.getTime() + 1),
+				lastAttemptResult: otherMarker,
+			},
+			{
+				lastAttemptAt: new Date(claim.attempt.attemptedAt.getTime() + 1),
+				lastAttemptResult: "success",
+			},
+		]) {
+			await client.cacheRefreshStatus.update({ where: { id: snapshot.id }, data: change });
+			const before = await client.cacheRefreshStatus.findFirstOrThrow();
+			expect(
+				await reconcileSettledProviderCacheRefreshAttempt(client, "plex", authority, claim.attempt),
+			).toBe("superseded");
+			expect(await client.cacheRefreshStatus.findFirstOrThrow()).toEqual(before);
+			await client.cacheRefreshStatus.update({
+				where: { id: snapshot.id },
+				data: {
+					lastAttemptAt: claim.attempt.attemptedAt,
+					lastAttemptResult: claim.attempt.resultMarker,
+				},
+			});
+		}
+		await client.user.create({
+			data: { id: "other-user", username: "other", hashedPassword: "hash" },
+		});
+		for (const change of [
+			{ userId: "other-user" },
+			{ baseUrl: "https://other.invalid" },
+			{ encryptedApiKey: "replacement" },
+			{ encryptionIv: "replacement" },
+			{ encryptedHttpAuthCredentials: "replacement" },
+			{ httpAuthEncryptionIv: "replacement" },
+			{ connectionGeneration: 5 },
+			{ identityGeneration: 10 },
+			{ expectedIdentity: "other-server" },
+			{ enabled: false },
+			{ identityStatus: "UNVERIFIED" as const },
+			{ identityStatus: "MISMATCH" as const },
+			{ service: "JELLYFIN" as const },
+		]) {
+			await client.serviceInstance.update({ where: { id: authority.id }, data: change });
+			expect(
+				await reconcileSettledProviderCacheRefreshAttempt(client, "plex", authority, claim.attempt),
+			).toBe("unavailable");
+			expect(await client.cacheRefreshStatus.findFirstOrThrow()).toEqual(snapshot);
+			await client.serviceInstance.update({ where: { id: authority.id }, data: authority });
+		}
+		const peer = await createDatabasePeer(client);
+		const recover = async (db: PrismaClient) => {
+			const result = await reconcileSettledProviderCacheRefreshAttempt(
+				db,
+				"plex",
+				authority,
+				claim.attempt,
+			);
+			return result === "ready"
+				? await claimProviderCacheRefreshAttempt(db, "plex", authority)
+				: { status: result };
+		};
+		const outcomes = await Promise.all([recover(client), recover(peer)]);
+		expect(outcomes.map((outcome) => outcome.status).sort()).toEqual([
+			"acquired",
+			"already-running",
+		]);
+		const after = await client.cacheRefreshStatus.findFirstOrThrow();
+		expect(after).toMatchObject({
+			generationMetadata: snapshot.generationMetadata,
+			generationId: snapshot.generationId,
+			lastRefreshedAt: snapshot.lastRefreshedAt,
+			itemCount: snapshot.itemCount,
+			lastResult: "success",
+		});
+	}, 30_000);
+
+	it("preserves matching canonical success on native failure and rejects a later publication", async () => {
+		const client = await createDatabase();
+		await seedAuthority(client);
+		await seedObsoleteStatus(client, "plex", { connectionGeneration: 4, identityGeneration: 9 });
+		const claim = await claimProviderCacheRefreshAttempt(client, "plex", authority);
+		if (claim.status !== "acquired") throw new Error("missing test claim");
+		const completedAt = new Date(claim.attempt.attemptedAt.getTime() + 1);
+		await client.cacheRefreshStatus.updateMany({
+			data: {
+				lastAttemptAt: completedAt,
+				lastRefreshedAt: completedAt,
+				lastAttemptResult: "success",
+			},
+		});
+		const successful = await client.cacheRefreshStatus.findFirstOrThrow();
+		expect(
+			await reconcileSettledProviderCacheRefreshAttempt(
+				client,
+				"plex",
+				authority,
+				claim.attempt,
+				completedAt,
+			),
+		).toBe("ready");
+		expect(await client.cacheRefreshStatus.findFirstOrThrow()).toEqual(successful);
+		expect(
+			await reconcileSettledProviderCacheRefreshAttempt(client, "plex", authority, claim.attempt),
+		).toBe("superseded");
+		await client.cacheRefreshStatus.updateMany({
+			data: {
+				lastAttemptAt: new Date(completedAt.getTime() + 1),
+				lastRefreshedAt: new Date(completedAt.getTime() + 1),
+			},
+		});
+		expect(
+			await reconcileSettledProviderCacheRefreshAttempt(
+				client,
+				"plex",
+				authority,
+				claim.attempt,
+				completedAt,
+			),
+		).toBe("superseded");
+	}, 30_000);
+
+	it.each([false, true])(
+		"reconciles an exhausted failure write before the finite scheduler retry without replacing last-good data (arm lookup unavailable: %s)",
+		async (armLookupUnavailable) => {
+			const client = await createDatabase();
+			await seedAuthority(client);
+			await client.serviceInstance.update({
+				where: { id: authority.id },
+				data: { service: "JELLYFIN" },
+			});
+			const stored = await client.serviceInstance.findUniqueOrThrow({
+				where: { id: authority.id },
+			});
+			const origin = { ...authority, service: "JELLYFIN" as const };
+			await client.serviceInstance.create({
+				data: { ...origin, id: "jellyfin-sibling", label: "Same library" },
+			});
+			await client.cacheRefreshStatus.create({
+				data: {
+					instanceId: origin.id,
+					cacheType: "jellyfin",
+					lastRefreshedAt: new Date("2026-09-01"),
+					lastResult: "success",
+					itemCount: 1,
+					generationId: "last-good",
+					generationMetadata: "last-good-metadata",
+					connectionGeneration: 4,
+					identityGeneration: 9,
+				},
+			});
+			await client.jellyfinCache.create({
+				data: {
+					instanceId: origin.id,
+					tmdbId: 42,
+					mediaType: "movie",
+					title: "Last good",
+					jellyfinId: "item-1",
+					libraryId: "movies",
+					libraryName: "Movies",
+					watchedByUsers: "[]",
+					collections: "[]",
+					connectionGeneration: 4,
+					identityGeneration: 9,
+				},
+			});
+			await client.jellyfinCache.create({
+				data: {
+					instanceId: "jellyfin-sibling",
+					tmdbId: 42,
+					mediaType: "movie",
+					title: "Last good",
+					jellyfinId: "other-item",
+					libraryId: "movies",
+					libraryName: "Movies",
+					watchedByUsers: "[]",
+					collections: "[]",
+					connectionGeneration: 4,
+					identityGeneration: 9,
+				},
+			});
+			const beforeRows = await client.jellyfinCache.findMany();
+			const before = await client.cacheRefreshStatus.findFirstOrThrow();
+			const app = Fastify();
+			let lookupUnavailable = false;
+			let blockedLookups = 0;
+			const schedulerClient = client.$extends({
+				query: {
+					serviceInstance: {
+						async findFirst({ args, query }) {
+							if (lookupUnavailable) {
+								blockedLookups++;
+								throw new Error("database unavailable during arm");
+							}
+							return await query(args);
+						},
+					},
+				},
+			});
+			await app.register(
+				fastifyPlugin(
+					async (server) => {
+						server.decorate("prisma", schedulerClient as never);
+						server.decorate("encryptor", {} as never);
+						server.decorate("schedulerRegistry", {
+							track: async (_id: string, fn: () => Promise<void>) => await fn(),
+						} as never);
+					},
+					{ name: "scheduler-registry" },
+				),
+			);
+			await app.register(jellyfinCacheScheduler);
+			await app.ready();
+			vi.useFakeTimers();
+			try {
+				const bridge = (app as unknown as FastifyWithLibraryRefreshRecovery).libraryRefreshRecovery;
+				let exactAttempt: Awaited<ReturnType<typeof beginProviderCacheRefreshAttempt>>;
+				recoveryProducer.mockReset().mockResolvedValue({ complete: true, errors: 0, upserted: 1 });
+				await client.$executeRawUnsafe(
+					"CREATE TRIGGER fail_terminal_write BEFORE UPDATE ON cache_refresh_status WHEN NEW.lastAttemptResult = 'error' BEGIN SELECT RAISE(ABORT, 'database is locked'); END",
+				);
+				const admission = await startProviderCacheRefreshInBackground({
+					cacheType: "jellyfin",
+					log,
+					claim: async () => {
+						const claim = await claimProviderCacheRefreshAttempt(client, "jellyfin", origin);
+						if (claim.status === "acquired") exactAttempt = claim.attempt;
+						return claim;
+					},
+					produce: async (attempt) => {
+						expect(
+							await finishProviderCacheRefreshAttemptFailure(
+								client,
+								"jellyfin",
+								"provider-unavailable",
+								origin,
+								attempt,
+								log,
+							),
+						).toBe("failed");
+						lookupUnavailable = armLookupUnavailable;
+						return { complete: false, errors: 1 };
+					},
+					recovery: {
+						provider: "jellyfin",
+						userId: origin.userId,
+						instanceId: origin.id,
+						authority: origin,
+						handoff: bridge,
+					},
+				});
+				await vi.advanceTimersByTimeAsync(1850);
+				await admission.backgroundTask;
+				expect(blockedLookups).toBe(0);
+				expect((await client.cacheRefreshStatus.findFirstOrThrow()).lastAttemptResult).toBe(
+					exactAttempt!.resultMarker,
+				);
+				await client.$executeRawUnsafe("DROP TRIGGER fail_terminal_write");
+				lookupUnavailable = false;
+				await vi.advanceTimersByTimeAsync(30_000);
+				expect(recoveryProducer).toHaveBeenCalledOnce();
+				expect(recoveryProducer.mock.calls[0]?.[0].instance).toEqual(stored);
+				expect(recoveryProducer.mock.calls[0]?.[1].resultMarker).not.toBe(
+					exactAttempt!.resultMarker,
+				);
+				expect(await client.jellyfinCache.findMany()).toEqual(beforeRows);
+				expect(await client.cacheRefreshStatus.findFirstOrThrow()).toMatchObject({
+					lastRefreshedAt: before.lastRefreshedAt,
+					lastResult: "success",
+					itemCount: 1,
+					generationId: "last-good",
+					generationMetadata: "last-good-metadata",
+				});
+			} finally {
+				await app.close();
+				vi.useRealTimers();
+			}
+		},
+		30_000,
+	);
+});
+
+async function exerciseLateClaim(provider: "plex" | "jellyfin", olderC: boolean) {
+	const client = await createDatabase();
+	await seedAuthority(client);
+	const origin = {
+		...authority,
+		service: provider === "plex" ? ("PLEX" as const) : ("JELLYFIN" as const),
+	};
+	await client.serviceInstance.update({
+		where: { id: origin.id },
+		data: { service: origin.service },
+	});
+	await client.cacheRefreshStatus.create({
+		data: {
+			instanceId: origin.id,
+			cacheType: provider,
+			lastRefreshedAt: new Date("2026-08-20"),
+			lastResult: "success",
+			itemCount: 1,
+			generationId: "last-good",
+			generationMetadata: "last-good-metadata",
+			connectionGeneration: 4,
+			identityGeneration: 9,
+		},
+	});
+	const a = await claimProviderCacheRefreshAttempt(client, provider, origin);
+	if (a.status !== "acquired") throw new Error("missing initial claim");
+	await finishProviderCacheRefreshAttemptFailure(
+		client,
+		provider,
+		"provider-unavailable",
+		origin,
+		a.attempt,
+		log,
+	);
+	const lastGood = await client.cacheRefreshStatus.findFirstOrThrow();
+	const gate = () => {
+		let resolve!: () => void;
+		const promise = new Promise<void>((done) => {
+			resolve = done;
+		});
+		return { promise, resolve };
+	};
+	const backoff = gate(),
+		cStarted = gate(),
+		finishC = gate();
+	let bridge!: FastifyWithLibraryRefreshRecovery["libraryRefreshRecovery"];
+	let bAdmission: ReturnType<typeof startProviderCacheRefreshInBackground> | undefined;
+	let bAttempt: typeof a.attempt | undefined, cAttempt: typeof a.attempt | undefined;
+	let claimReads = 0,
+		queueB = !olderC,
+		conflict = !olderC,
+		backoffObserved = false;
+	const reconciled: string[] = [];
+	const startB = () =>
+		startProviderCacheRefreshInBackground({
+			cacheType: provider,
+			log,
+			claim: async () => {
+				const claimed = await claimProviderCacheRefreshAttempt(prisma, provider, origin);
+				if (claimed.status === "acquired") bAttempt = claimed.attempt;
+				return claimed;
+			},
+			produce: async (attempt) => {
+				const produce = async () => {
+					if (!olderC) {
+						await backoff.promise;
+						await finishProviderCacheRefreshAttemptFailure(
+							prisma,
+							provider,
+							"provider-unavailable",
+							origin,
+							attempt,
+							log,
+						);
+					}
+					return { complete: false as const, errors: 1 };
+				};
+				return provider === "jellyfin"
+					? await runJellyfinCacheRefreshSingleFlightWithAttempt(
+							origin,
+							"jellyfin",
+							attempt,
+							produce,
+						)
+					: await produce();
+			},
+			recovery: {
+				provider,
+				userId: origin.userId,
+				instanceId: origin.id,
+				authority: origin,
+				handoff: bridge,
+			},
+		});
+	const prisma = new Proxy(client, {
+		get(target, key) {
+			if (key === "$transaction")
+				return async (operation: unknown, options: never) => {
+					if (typeof operation !== "function")
+						return await client.$transaction(operation as never, options);
+					return await client.$transaction(async (tx) => {
+						const status = new Proxy(tx.cacheRefreshStatus, {
+							get(model, method) {
+								if (method !== "findUnique") return Reflect.get(model, method);
+								return async (args: {
+									select?: unknown;
+									where: { instanceId_cacheType?: { cacheType: string } };
+								}) => {
+									const row = await model.findUnique(args as never);
+									if (args.where.instanceId_cacheType?.cacheType !== provider) return row;
+									if (args.select) {
+										claimReads++;
+										if (conflict && claimReads === 2) {
+											conflict = false;
+											throw new Error("database is locked");
+										}
+									} else {
+										if (row?.lastAttemptResult) reconciled.push(row.lastAttemptResult);
+										if (queueB) {
+											queueB = false;
+											bAdmission = startB();
+										}
+									}
+									return row;
+								};
+							},
+						});
+						return await operation(
+							new Proxy(tx, {
+								get(transaction, method) {
+									return method === "cacheRefreshStatus"
+										? status
+										: Reflect.get(transaction, method);
+								},
+							}),
+						);
+					}, options);
+				};
+			const value = Reflect.get(target, key);
+			return typeof value === "function" ? value.bind(target) : value;
+		},
+	});
+	const app = Fastify();
+	await app.register(
+		fastifyPlugin(
+			async (server) => {
+				server.decorate("prisma", prisma);
+			},
+			{ name: "prisma" },
+		),
+	);
+	await app.register(
+		fastifyPlugin(
+			async (server) => {
+				server.decorate("encryptor", {} as never);
+			},
+			{ name: "security" },
+		),
+	);
+	await app.register(
+		fastifyPlugin(
+			async (server) => {
+				server.decorate("notificationService", {
+					runProducer: async (fn: () => Promise<void>) => await fn(),
+					notify: async () => undefined,
+				} as never);
+			},
+			{ name: "notification-service" },
+		),
+	);
+	await app.register(
+		fastifyPlugin(
+			async (server) => {
+				server.decorate("schedulerRegistry", {
+					track: async (_id: string, fn: () => Promise<void>) => await fn(),
+				} as never);
+			},
+			{ name: "scheduler-registry" },
+		),
+	);
+	vi.useFakeTimers();
+	const timeout = globalThis.setTimeout;
+	const timeoutSpy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+		fn: () => void,
+		ms?: number,
+	) => {
+		const handle = timeout(fn, ms);
+		if (ms !== undefined && ms >= 100 && ms < 350) {
+			backoffObserved = true;
+			backoff.resolve();
+		}
+		return handle;
+	}) as typeof setTimeout);
+	recoveryProducer
+		.mockReset()
+		.mockImplementationOnce(async (_context, attempt) => {
+			cAttempt = attempt;
+			cStarted.resolve();
+			if (olderC)
+				await finishProviderCacheRefreshAttemptFailure(
+					prisma,
+					provider,
+					"provider-unavailable",
+					origin,
+					attempt,
+					log,
+				);
+			await finishC.promise;
+			return { complete: false, errors: 1, upserted: 0 };
+		})
+		.mockResolvedValue({ complete: true, errors: 0, upserted: 1 });
+	try {
+		await app.register(provider === "plex" ? plexCacheScheduler : jellyfinCacheScheduler);
+		await app.ready();
+		bridge = (app as unknown as FastifyWithLibraryRefreshRecovery).libraryRefreshRecovery;
+		const requestA = {
+			provider,
+			userId: origin.userId,
+			instanceId: origin.id,
+			authority: origin,
+			attempt: a.attempt,
+		};
+		bridge.admit(requestA);
+		await bridge.arm(requestA);
+		await vi.advanceTimersByTimeAsync(30_000);
+		if (provider === "plex") await vi.advanceTimersByTimeAsync(1_000);
+		if (!olderC) {
+			if (!bAdmission) throw new Error("B did not queue behind reconciliation");
+			await (await bAdmission).backgroundTask;
+			expect(backoffObserved).toBe(true);
+			await vi.advanceTimersByTimeAsync(400);
+		} else {
+			await cStarted.promise;
+			bAdmission = startB();
+			await (await bAdmission).backgroundTask;
+		}
+		await cStarted.promise;
+		expect(bAttempt?.resultMarker).not.toBe(cAttempt?.resultMarker);
+		expect(reconciled).not.toContain(cAttempt!.resultMarker);
+		finishC.resolve();
+		await vi.advanceTimersByTimeAsync(0);
+		if (!olderC) {
+			await vi.advanceTimersByTimeAsync(119_999);
+			expect(recoveryProducer).toHaveBeenCalledOnce();
+			await vi.advanceTimersByTimeAsync(1);
+		} else await vi.advanceTimersByTimeAsync(30_000);
+		expect(recoveryProducer).toHaveBeenCalledTimes(2);
+		expect(reconciled).toContain(olderC ? bAttempt!.resultMarker : cAttempt!.resultMarker);
+		const after = await client.cacheRefreshStatus.findFirstOrThrow();
+		expect(after).toMatchObject({
+			lastRefreshedAt: lastGood.lastRefreshedAt,
+			lastResult: "success",
+			generationId: "last-good",
+			generationMetadata: "last-good-metadata",
+			itemCount: 1,
+		});
+		if (!olderC) expect(claimReads).toBeGreaterThanOrEqual(4);
+	} finally {
+		finishC.resolve();
+		backoff.resolve();
+		await app.close();
+		timeoutSpy.mockRestore();
+		vi.useRealTimers();
+	}
+}
 
 afterEach(async () => {
 	vi.unstubAllEnvs();

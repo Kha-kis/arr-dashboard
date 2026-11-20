@@ -3,17 +3,29 @@ import type {
 	CrossSeedDiscoveryResponse,
 	QuiAction,
 	QuiActionLogResponse,
+	QuiActionStatus,
 	QuiActivityFeedResponse,
 	QuiAttentionResponse,
 	QuiCapabilities,
 	QuiEventLogResponse,
+	QuiLoggedOperation,
 	QuiMediaInfo,
 	QuiSummaryResponse,
+	QuiTrackerViewsResponse,
+} from "@arr/shared";
+import {
+	crossSeedDiscoveryAvailabilitySchema,
+	crossSeedDiscoveryResponseSchema,
 } from "@arr/shared";
 import { apiRequest } from "./base";
 
 export async function fetchCrossSeedAvailability(): Promise<CrossSeedDiscoveryAvailability> {
-	return apiRequest<CrossSeedDiscoveryAvailability>("/api/qui/cross-seed/availability");
+	const payload = await apiRequest<unknown>("/api/qui/cross-seed/availability");
+	const result = crossSeedDiscoveryAvailabilitySchema.safeParse(payload);
+	if (!result.success) {
+		throw new Error("Cross-seed availability response could not be verified. Retry availability.");
+	}
+	return result.data;
 }
 
 export interface CrossSeedDiscoveryParams {
@@ -28,9 +40,12 @@ export async function fetchCrossSeedDiscoveryBatch(
 	if (params.cursor) search.set("cursor", params.cursor);
 	if (params.batchSize) search.set("batchSize", String(params.batchSize));
 	const qs = search.toString();
-	return apiRequest<CrossSeedDiscoveryResponse>(
-		`/api/qui/cross-seed/discover${qs ? `?${qs}` : ""}`,
-	);
+	const payload = await apiRequest<unknown>(`/api/qui/cross-seed/discover${qs ? `?${qs}` : ""}`);
+	const result = crossSeedDiscoveryResponseSchema.safeParse(payload);
+	if (!result.success) {
+		throw new Error("Cross-seed discovery response could not be verified. Retry the scan.");
+	}
+	return result.data;
 }
 
 export interface QuiActivityFeedParams {
@@ -55,8 +70,8 @@ export async function fetchQuiActivityFeed(
 export interface QuiActionLogParams {
 	cursor?: string | null;
 	limit?: number;
-	action?: QuiAction;
-	status?: "pending" | "success" | "failed";
+	action?: QuiLoggedOperation;
+	status?: QuiActionStatus;
 }
 
 export async function fetchQuiActionLog(
@@ -69,6 +84,18 @@ export async function fetchQuiActionLog(
 	if (params.status) search.set("status", params.status);
 	const qs = search.toString();
 	return apiRequest<QuiActionLogResponse>(`/api/qui/actions${qs ? `?${qs}` : ""}`);
+}
+
+export type QuiActionResolutionDecision = "applied" | "not_applied";
+
+export async function postQuiActionReconciliation(args: {
+	actionLogId: string;
+	decision: QuiActionResolutionDecision;
+}): Promise<{ status: "operator_verified_applied" | "operator_verified_not_applied" }> {
+	return apiRequest(`/api/qui/actions/${encodeURIComponent(args.actionLogId)}/reconcile`, {
+		method: "POST",
+		json: { decision: args.decision, acknowledgeVerified: true },
+	});
 }
 
 export interface SingleTorrentActionArgs {
@@ -190,6 +217,17 @@ export async function fetchQuiTorrentFiles(args: {
 	);
 }
 
+export async function fetchQuiTorrentTrackers(args: {
+	quiInstanceId: string;
+	qbitInstanceId: number;
+	hash: string;
+}): Promise<QuiTrackerViewsResponse> {
+	const { quiInstanceId, qbitInstanceId, hash } = args;
+	return apiRequest<QuiTrackerViewsResponse>(
+		`/api/qui/instances/${quiInstanceId}/qbit/${qbitInstanceId}/torrents/${hash}/trackers`,
+	);
+}
+
 export interface QuiMediaInfoResponse {
 	mediaInfo: QuiMediaInfo;
 }
@@ -232,21 +270,18 @@ export async function postQuiAddTrackers(args: {
 	);
 }
 
-/**
- * Remove trackers by HOSTNAME. The drawer only ever holds passkey-stripped
- * hostnames; the API resolves each to its full announce URL before calling
- * qBit (which matches removal by exact URL). See trackers/remove route.
- */
+/** Remove trackers by opaque selector, with a legacy hostname form for callers. */
 export async function postQuiRemoveTrackers(args: {
 	quiInstanceId: string;
 	qbitInstanceId: number;
 	hash: string;
-	hostnames: string[];
+	trackerSelectors?: string[];
+	hostnames?: string[];
 }): Promise<{ status: "success" }> {
-	const { quiInstanceId, qbitInstanceId, hash, hostnames } = args;
+	const { quiInstanceId, qbitInstanceId, hash, trackerSelectors, hostnames } = args;
 	return apiRequest<{ status: "success" }>(
 		`/api/qui/instances/${quiInstanceId}/qbit/${qbitInstanceId}/torrents/${hash}/trackers/remove`,
-		{ method: "POST", json: { hostnames } },
+		{ method: "POST", json: trackerSelectors ? { trackerSelectors } : { hostnames } },
 	);
 }
 
@@ -292,22 +327,22 @@ export async function fetchQuiCapabilities(args: {
 	);
 }
 
-/**
- * Replace a tracker. The tracker to replace is identified by HOSTNAME
- * (resolved to its full URL server-side); `newURL` is operator-supplied so
- * it travels whole. See trackers/edit route.
- */
+/** Replace a tracker by opaque selector, with a legacy hostname form for callers. */
 export async function postQuiEditTracker(args: {
 	quiInstanceId: string;
 	qbitInstanceId: number;
 	hash: string;
-	oldHostname: string;
+	trackerSelector?: string;
+	oldHostname?: string;
 	newURL: string;
 }): Promise<{ status: "success" }> {
-	const { quiInstanceId, qbitInstanceId, hash, oldHostname, newURL } = args;
+	const { quiInstanceId, qbitInstanceId, hash, trackerSelector, oldHostname, newURL } = args;
 	return apiRequest<{ status: "success" }>(
 		`/api/qui/instances/${quiInstanceId}/qbit/${qbitInstanceId}/torrents/${hash}/trackers/edit`,
-		{ method: "POST", json: { oldHostname, newURL } },
+		{
+			method: "POST",
+			json: trackerSelector ? { trackerSelector, newURL } : { oldHostname, newURL },
+		},
 	);
 }
 
@@ -650,6 +685,7 @@ export interface SeriesSeason {
 
 export interface SeriesTorrentsResponse {
 	seriesTitle: string;
+	coverageStatus: "complete" | "partial" | "unavailable";
 	totalEpisodes: number;
 	correlatedEpisodes: number;
 	viaInodeEpisodes: number;
@@ -729,6 +765,7 @@ export interface LibrarySeedingSummary {
 }
 
 export interface LibrarySeedingSummaryResponse {
+	status: "available" | "partial" | "building" | "unavailable" | "not-configured";
 	/** Keyed by `"${itemType}:${itemId}"`. Missing entries = item not correlated. */
 	summaries: Record<string, LibrarySeedingSummary>;
 }
